@@ -78,7 +78,7 @@ class TransferScenarioContracts(unittest.TestCase):
         ignored = by_id["raw-source-nonzero-legacy-denoise-pasted"]["expect"]["notices_by_platform"]
         self.assertEqual(set(ignored), PLATFORMS, "Q3 scenario must declare notices for all four platforms")
         self.assertEqual(set(ignored["macos"]), {"ignored_post_rgb_denoise"})
-        self.assertEqual(set(ignored["ios"]), {"ignored_raw_denoise"})
+        self.assertEqual(set(ignored["ios"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
         self.assertEqual(set(ignored["android"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
         self.assertEqual(set(ignored["windows"]), {"ignored_raw_denoise", "ignored_post_rgb_denoise"})
         retained = by_id["sdr-source-v1-pasted-retains-target-version"]["expect"]["notices"]
@@ -146,6 +146,36 @@ class TransferScenarioContracts(unittest.TestCase):
         self.assertIsNone(plain["payload"]["source"].get("recipe"))
         self.assertEqual(plain["expect"]["status"], "applied")
         self.assertEqual(plain["expect"]["values"], plain["payload"]["values"])
+
+    def test_post_rgb_is_hdr_only_across_all_platforms(self):
+        # D-02/W-A2a：detail.denoise.post_rgb 四端仅在 HDR 建模；SDR 目标必须忽略非零请求并回吐 0。
+        by_id = {scenario["id"]: scenario for scenario in self.scenarios}
+        self.assertNotIn("raster-all-preserves-ios-post-rgb-denoise", by_id)
+        self.assertNotIn("raster-post-rgb-zero-unchanged-on-ios-raw", by_id)
+        for scenario in self.scenarios:
+            if scenario["target"]["kind"] == "hdr":
+                continue
+            for expect in (scenario["expect"], *scenario.get("platform_expect", {}).values()):
+                values = expect.get("values") or {}
+                if "detail.denoise.post_rgb" in values:
+                    self.assertEqual(values["detail.denoise.post_rgb"], 0, scenario["id"])
+        sdr_all = by_id["sdr-raw-all-ignores-seeded-post-rgb-denoise"]
+        self.assertEqual(set(sdr_all.get("platforms", PLATFORMS)), PLATFORMS)
+        self.assertEqual(sdr_all["target"]["kind"], "sdr_raw")
+        self.assertEqual(sdr_all["expect"]["status"], "applied")
+        self.assertEqual(sdr_all["expect"]["notices"], [])
+        self.assertEqual(sdr_all["expect"]["values"]["detail.denoise.post_rgb"], 0)
+        sdr_ignored = by_id["sdr-post-rgb-nonzero-ignored-unchanged-on-raw"]
+        self.assertEqual(set(sdr_ignored.get("platforms", PLATFORMS)), PLATFORMS)
+        self.assertEqual(sdr_ignored["target"]["kind"], "sdr_raw")
+        self.assertEqual(sdr_ignored["expect"]["status"], "unchanged")
+        self.assertEqual(sdr_ignored["expect"]["notices"], ["ignored_post_rgb_denoise"])
+        self.assertEqual(sdr_ignored["expect"]["values"], {"detail.denoise.post_rgb": 0})
+        hdr_applied = by_id["hdr-v6-post-rgb-denoise-applies"]
+        self.assertEqual(set(hdr_applied.get("platforms", PLATFORMS)), PLATFORMS)
+        self.assertEqual(hdr_applied["target"]["kind"], "hdr")
+        self.assertEqual(hdr_applied["expect"]["status"], "applied")
+        self.assertEqual(hdr_applied["expect"]["values"], {"detail.denoise.post_rgb": 0.25})
 
     def test_seed_payloads_are_full_payloads(self):
         for scenario in self.scenarios:

@@ -18,6 +18,7 @@ internal static class EditDurabilityChecks
         MalformedSubSettingsAndEmptyArraysIsolateEntriesAndPreserveTableValidation();
         CorruptReceiptDoesNotBreakStoreAndActsAsAbsent();
         ResetTransactionClearsReceiptAndUndoRestoresValuesWithoutRestoringReceipt();
+        LegacySettingsVersion0MigrationAndFutureGuard();
         Console.WriteLine("PASS: ProRAW dormant version, per-entry store isolation, manual reset recovery and reset receipt clearing");
     }
 
@@ -671,8 +672,45 @@ internal static class EditDurabilityChecks
     {
         var settings = new Adjustments { Processing = ProcessingIdentity.C5 };
         settings.Set(Parameter.Exposure, 0.7);
-        settings.Set(Parameter.Contrast, 18);
+        settings.Set(Parameter.Contrast, 1.18);
         return new(identity, settings.Capture(), "film.cube");
+    }
+
+    private static void LegacySettingsVersion0MigrationAndFutureGuard()
+    {
+        // Legacy v0 JSON omitting SettingsVersion uses old % units and reversed Highlights sign.
+        const string legacyJson = """
+        {
+          "Values": [90, 0.35, 5800, 4.5, 12.5, -18, 22, -10, 8.5, 25],
+          "ExposureMode": 1,
+          "CameraWhiteBalance": false,
+          "AsShotTemperature": 6500,
+          "AsShotTint": 0
+        }
+        """;
+        var rawSnapshot = JsonSerializer.Deserialize<AdjustmentSnapshot>(legacyJson)!;
+        Check(rawSnapshot.SettingsVersion == 0, "Omitted SettingsVersion deserializes as 0");
+        var restored = rawSnapshot.Restore();
+        Check(Math.Abs(restored[Parameter.Strength] - 0.9) < 1e-9 &&
+              Math.Abs(restored[Parameter.Exposure] - 0.35) < 1e-9 &&
+              Math.Abs(restored[Parameter.Temperature] - 5800) < 1e-9 &&
+              Math.Abs(restored[Parameter.Tint] - 4.5) < 1e-9 &&
+              Math.Abs(restored[Parameter.Contrast] - 1.125) < 1e-9 &&
+              Math.Abs(restored[Parameter.Highlights] - 0.18) < 1e-9 &&
+              Math.Abs(restored[Parameter.Shadows] - 0.22) < 1e-9 &&
+              Math.Abs(restored[Parameter.ToneCurve] - (-0.1)) < 1e-9 &&
+              Math.Abs(restored[Parameter.Saturation] - 1.085) < 1e-9 &&
+              Math.Abs(restored[Parameter.Sharpening] - 0.25) < 1e-9,
+            "Legacy SettingsVersion == 0 migrates all 7 divergent SDR scalars to canonical units with Highlights sign flip");
+        var recaptured = restored.Capture();
+        Check(recaptured.SettingsVersion == AdjustmentSnapshot.CurrentSettingsVersion &&
+              recaptured.SettingsVersion == 2,
+            "Capture emits SettingsVersion == 2");
+        var futureSnapshot = recaptured with { SettingsVersion = AdjustmentSnapshot.CurrentSettingsVersion + 1 };
+        var rejectedFuture = false;
+        try { _ = futureSnapshot.Restore(); }
+        catch (InvalidDataException) { rejectedFuture = true; }
+        Check(rejectedFuture, "Future SettingsVersion > 2 is rejected by Restore()");
     }
 
     private static Native.ProcessingMigrationResult SampleMigrationResult() => new() {

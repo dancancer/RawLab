@@ -15,7 +15,7 @@ internal sealed record AIDenoiseIdentity(OriginalIdentity Source,ProcessingIdent
         var request=settings.Request(path,null,0,null);
         // 相机 WB 由原片确定；配方身份只记录用户偏移，不随首帧解析出的 AsShot 改变。
         var temperature=settings.CameraWhiteBalance ? 0 : request.Temperature;
-        var tint=settings.MasterRecipeID==null ? request.Tint : (float)(settings[Parameter.Tint]*settings[Parameter.Strength]/100);
+        var tint=settings.MasterRecipeID==null ? request.Tint : (float)(settings[Parameter.Tint]*settings[Parameter.Strength]);
         return new(source,settings.Processing,request.WbMode,temperature,tint,backend,settings.Lens,deviceID);
     }
 }

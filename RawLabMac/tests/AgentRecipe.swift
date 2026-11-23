@@ -34,9 +34,10 @@ extension RenderEngine {
         let fx = state.photoEffectsConfig
         let geometry = state.geometrySettings
         let lens = state.lensSettings
-        let wavelet = state.waveletNoiseReduction
-        let chroma = wavelet == nil ? (state.chromaNoiseReduction ?? 0) : 0
-        let raw = wavelet == nil && chroma == 0 ? state.rawNoiseReduction : 0
+        let hasWavelet = state.waveletNoiseReduction != WaveletDenoiseSettings()
+        let wavelet: WaveletDenoiseSettings? = hasWavelet ? state.waveletNoiseReduction : nil
+        let chroma = !hasWavelet ? state.chromaNoiseReduction : 0
+        let raw = !hasWavelet && chroma == 0 ? state.rawNoiseReduction : 0
         var wb: [String: Any] = ["mode": "camera"]
         let raster = Self.isRasterInput(url)
         if raster { wb = ["mode": "none"] }

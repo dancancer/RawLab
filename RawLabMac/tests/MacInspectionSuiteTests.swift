@@ -120,7 +120,7 @@ struct MacInspectionSuiteTests {
         // 4. Zero Adjustments / PhotoEditState / Export Byte-Identity across all 5 Overlays
         var adjustments = Adjustments()
         adjustments.exposure = 0.5
-        adjustments.contrast = 15
+        adjustments.contrast = 1.15
         adjustments.geometry = geom
         let editState = MacPhotoEditState(settings: adjustments, filmID: "CLASSIC_CHROME")
         let encoder = JSONEncoder()

@@ -41,6 +41,7 @@ import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LensSettings
+import com.rawlab.android.settings.canonicalZero
 import com.rawlab.android.settings.editingBlackPoint
 import com.rawlab.android.settings.editingClarity
 import com.rawlab.android.settings.editingDehaze
@@ -97,11 +98,11 @@ internal fun EditorTool(
     val scalar = when (index) {
         1 -> Triple(edits.strength * 100f, 100f, 0f..200f)
         2 -> Triple(edits.exposure, 0f, if (edits.isHDREditing) -4f..4f else -5f..5f)
-        3 -> Triple(edits.highlights * 100f, 0f, -100f..100f)
+        3 -> Triple((-edits.highlights * 100f).canonicalZero(), 0f, -100f..100f)
         4 -> Triple(edits.shadows * 100f, 0f, -100f..100f)
-        5 -> Triple(edits.contrast * 100f, 0f, -100f..100f)
+        5 -> Triple((edits.contrast - 1f) * 100f, 0f, -100f..100f)
         6 -> if (edits.editingCurve.mode == com.rawlab.android.settings.ToneCurveMode.LEGACY) Triple(edits.editingCurveStrength * 100f, 0f, -100f..100f) else null
-        7 -> Triple(edits.saturation * 100f, 0f, -100f..100f)
+        7 -> Triple((edits.saturation - 1f) * 100f, 0f, -100f..100f)
         // Temperature and tint share one entry; keep the legacy tint slot for restored UI state only.
         9 -> Triple(edits.tint, if (edits.recipeID != null) 0f else state.preview?.tint ?: edits.tint, -150f..150f)
         10 -> Triple(edits.editingSharpening * 100f, 0f, 0f..200f)

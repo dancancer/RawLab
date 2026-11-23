@@ -10,8 +10,8 @@ internal object SettingsCodec {
     fun encode(settings: EditSettings): String = StructuredSettingsCodec.encode(settings, "batch_settings")
 
     fun decode(value: String): EditSettings {
-        if (value.startsWith("v2:")) {
-            // 旧 film ID 也能以 v2: 开头；只有完整合法的旧记录才走此兼容分支。
+        if (value.startsWith("v3:") || value.startsWith("v2:")) {
+            // 旧 film ID 也能以 v2:/v3: 开头；只有完整合法的旧记录才走此兼容分支。
             return runCatching { decodeLegacy(value) }.getOrElse {
                 StructuredSettingsCodec.decode(value, "batch_settings")
             }
@@ -24,8 +24,8 @@ internal object SettingsCodec {
         require(fields.size in listOf(12, 16, 25, 50, 51, 52, 53, 54))
         return EditSettings(film = fields[0], strength = fields[1].toFloat(), exposure = fields[2].toFloat(),
             x3fMode = X3fMode.LEGACY,
-            highlights = fields[3].toFloat(), shadows = fields[4].toFloat(), contrast = fields[5].toFloat(),
-            toneCurve = fields[6].toFloat(), saturation = fields[7].toFloat(), customWb = parseBoolean(fields[8]),
+            highlights = (-fields[3].toFloat()).canonicalZero(), shadows = fields[4].toFloat(), contrast = 1f + fields[5].toFloat(),
+            toneCurve = fields[6].toFloat(), saturation = 1f + fields[7].toFloat(), customWb = parseBoolean(fields[8]),
             temperature = fields[9].toFloat(), tint = fields[10].toFloat(), sharpening = fields[11].toFloat(),
             denoise = if (fields.size == 16) DenoiseSettings(parseBoolean(fields[12]), fields[13].toFloat(),
                 fields[14].toFloat(), fields[15].toFloat())

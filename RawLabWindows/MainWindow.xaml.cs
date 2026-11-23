@@ -209,7 +209,7 @@ public partial class MainWindow : Window
         };
         CurveEditor.LegacyChanged+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Set(Parameter.ToneCurve,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.Set(Parameter.ToneCurve,ParameterSpec.All[(int)Parameter.ToneCurve].ToCanonical(value));interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         GradingEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -237,13 +237,13 @@ public partial class MainWindow : Window
             interacting=dragging;
             if(selectedHdrRenditionParameter is {} rendition)settings.SetHDRRendition(rendition,value);
             else if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
-            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,ParameterSpec.All[(int)selectedParameter].ToCanonical(value));
             MarkEdited();RefreshControls();Schedule();
         };
         LookStrengthRow.Changed += (value, dragging) => {
             if (!ready || syncing || exporting || transform.Active) return;
             interacting = dragging;
-            settings.Set(Parameter.Strength, value);
+            settings.Set(Parameter.Strength, ParameterSpec.All[(int)Parameter.Strength].ToCanonical(value));
             MarkEdited(); RefreshControls(); Schedule();
         };
         LookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);

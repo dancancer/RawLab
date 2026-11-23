@@ -31,7 +31,8 @@ LOCKED_ALLOWED_EXPIRATION_MILESTONES = (
 )
 
 LOCKED_EXEMPTED_DIVERGENT_FIELDS: dict[str, frozenset[str]] = {
-    "v0.13": frozenset({
+    "v0.13": frozenset(),
+    "platform_step_policy": frozenset({
         "looks.strength",
         "light.exposure",
         "light.contrast",
@@ -39,25 +40,6 @@ LOCKED_EXEMPTED_DIVERGENT_FIELDS: dict[str, frozenset[str]] = {
         "light.shadows",
         "light.s_curve",
         "color.saturation",
-        "effects.vignette.amount",
-        "effects.vignette.midpoint",
-        "effects.vignette.roundness",
-        "effects.vignette.feather",
-        "effects.vignette.highlights",
-        "effects.grain.amount",
-        "effects.grain.size",
-        "effects.grain.roughness",
-        "detail.sharpening",
-        "detail.denoise.post_rgb",
-        "detail.denoise.chroma_mode",
-        "detail.denoise.wavelet",
-        "geometry.crop.width",
-        "geometry.crop.height",
-        "geometry.perspective.horizontal",
-        "geometry.perspective.vertical",
-        "geometry.lens.vignetting",
-    }),
-    "platform_step_policy": frozenset({
         "tone.black_point",
         "tone.white_point",
         "color.vibrance",
@@ -91,9 +73,22 @@ LOCKED_EXEMPTED_DIVERGENT_FIELDS: dict[str, frozenset[str]] = {
         "color.hsl.lightness.blue",
         "color.hsl.lightness.purple",
         "color.hsl.lightness.magenta",
+        "effects.vignette.amount",
+        "effects.vignette.midpoint",
+        "effects.vignette.roundness",
+        "effects.vignette.feather",
+        "effects.vignette.highlights",
+        "effects.grain.amount",
         "effects.clarity",
         "effects.dehaze",
+        "effects.grain.size",
+        "effects.grain.roughness",
+        "detail.sharpening",
+        "detail.denoise.post_rgb",
+        "detail.denoise.wavelet",
         "geometry.straighten_degrees",
+        "geometry.perspective.horizontal",
+        "geometry.perspective.vertical",
     }),
     "platform_capability": frozenset({
         "detail.denoise.raw_level",
@@ -111,7 +106,7 @@ def validate_spec_document(doc: dict) -> None:
     if len({f["field_id"] for f in fields}) != 89:
         raise AssertionError("Duplicate field_id in spec")
     summary, policy = doc["summary"], doc["divergence_policy"]
-    if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 64:
+    if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 60:
         raise AssertionError("Invalid divergence_policy ratchet")
     allowed_milestones = policy.get("allowed_expiration_milestones")
     if (
@@ -190,7 +185,7 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         doc = json.loads(SPEC_PATH.read_text(encoding="utf-8"))
         validate_spec_document(doc)
         over = copy.deepcopy(doc)
-        over["divergence_policy"]["max_divergent_fields"] = 63
+        over["divergence_policy"]["max_divergent_fields"] = 59
         with self.assertRaisesRegex(AssertionError, r"exceeds max_divergent_fields"):
             validate_spec_document(over)
         missing_exp = copy.deepcopy(doc)
@@ -230,9 +225,9 @@ class AdjustmentFieldsSpecTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, r"Unauthorized allowed_expiration_milestones"):
             validate_spec_document(extra_milestone)
 
-        # Adding a new unauthorized divergent field (even by swapping count <= 64) must fail
+        # Adding a new unauthorized divergent field (even by swapping count <= 60) must fail
         new_div = copy.deepcopy(doc)
-        old_div = next(f for f in new_div["fields"] if f["field_id"] == "geometry.lens.vignetting")
+        old_div = next(f for f in new_div["fields"] if f["field_id"] == "detail.denoise.raw_level")
         old_div["divergence"] = {"has_divergence": False, "categories": []}
         for plat in PLATFORMS[1:]:
             old_div["ui"][plat] = copy.deepcopy(old_div["ui"][PLATFORMS[0]])

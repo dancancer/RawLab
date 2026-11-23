@@ -55,10 +55,10 @@ internal fun GeometryControls(value: GeometrySettings, enabled: Boolean,
     CompositionLocalProvider(LocalCompactAdjustmentRows provides true) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (perspective) {
-            NumericControl(R.string.geometry_perspective_horizontal, value.perspectiveHorizontal * 100f, -100f..100f, "%", enabled,
+            NumericControl(R.string.geometry_perspective_horizontal, value.perspectiveHorizontal * 100f, -100f..100f, "", enabled,
                 { next, dragging -> onChange(value.copy(perspectiveHorizontal = next / 100f), dragging) },
                 { onChange(value.copy(perspectiveHorizontal = 0f), false) })
-            NumericControl(R.string.geometry_perspective_vertical, value.perspectiveVertical * 100f, -100f..100f, "%", enabled,
+            NumericControl(R.string.geometry_perspective_vertical, value.perspectiveVertical * 100f, -100f..100f, "", enabled,
                 { next, dragging -> onChange(value.copy(perspectiveVertical = next / 100f), dragging) },
                 { onChange(value.copy(perspectiveVertical = 0f), false) })
         } else {

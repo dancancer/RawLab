@@ -9,19 +9,20 @@ struct MacLensDraftControlsTests {
     }
 
     private static let matched = LensCandidate(id: "gm", maker: "Sony", model: "FE 24–70mm F2.8 GM",
-                                               hasDistortion: true, hasTCA: true, isMatch: true)
+                                               hasDistortion: true, hasTCA: true, isMatch: true, hasVignetting: true)
     private static let partial = LensCandidate(id: "za", maker: "Sony", model: "FE 24–70mm F4 ZA OSS",
-                                               hasDistortion: true, hasTCA: false, isMatch: false)
+                                               hasDistortion: true, hasTCA: false, isMatch: false, hasVignetting: false)
     private static let noCalibration = LensCandidate(id: "none", maker: "Sony", model: "Uncalibrated",
-                                                     hasDistortion: false, hasTCA: false, isMatch: false)
+                                                     hasDistortion: false, hasTCA: false, isMatch: false, hasVignetting: false)
     private static let candidates = [matched, partial, noCalibration]
 
     private static func report(_ state: LensMatchState = .off,
-                               distortion: Bool = false, tca: Bool = false, crop: Float = 1,
+                               distortion: Bool = false, tca: Bool = false, vignetting: Bool = false,
+                               crop: Float = 1,
                                candidates: [LensCandidate] = candidates) -> LensInfo {
         LensInfo(state: state, detectedLens: "FE 24–70mm F2.8 GM", selectedLens: "FE 24–70mm F2.8 GM",
-                 focalLength: 35, appliedDistortion: distortion, appliedTCA: tca, cropScale: crop,
-                 candidates: candidates)
+                 focalLength: 35, appliedDistortion: distortion, appliedTCA: tca,
+                 cropScale: crop, candidates: candidates, appliedVignetting: vignetting)
     }
 
     static func main() {
@@ -76,31 +77,37 @@ struct MacLensDraftControlsTests {
         check(off.candidate == matched && off.identityStatusKey == "已匹配配置 · 校正尚未开启" &&
               off.correctionStatusKey == "镜头校正已关闭" && off.cropPercent == nil,
               "Automatic identity remains matched while corrections are off")
-        check(off.canChangeCorrection(tca: false) && off.canChangeCorrection(tca: true),
-              "Available distortion and TCA calibration permit independent activation")
+        check(off.canChangeCorrection(tca: false) && off.canChangeCorrection(tca: true) && off.canChangeVignetting,
+              "Available distortion, TCA, and vignetting calibration permit independent activation")
         settings.distortion = true
         settings.tca = true
+        settings.vignetting = true
         let stale = MacLensPresentation(settings: settings,
-            info: report(.matched, distortion: true, tca: true, crop: 1.1), previewIsCurrent: false)
+            info: report(.matched, distortion: true, tca: true, vignetting: true, crop: 1.1), previewIsCurrent: false)
         check(stale.correctionStatusKey == "正在预览镜头校正…" && stale.cropPercent == nil &&
-              stale.correctionDetailKey(tca: false) == "正在预览镜头校正…",
+              stale.correctionDetailKey(tca: false) == "正在预览镜头校正…" &&
+              stale.vignettingDetailKey == "正在预览镜头校正…",
               "A stale report never confirms the draft's correction or crop amount")
         let rendered = MacLensPresentation(settings: settings,
-            info: report(.matched, distortion: true, tca: false, crop: 1.1), previewIsCurrent: true)
+            info: report(.matched, distortion: true, tca: false, vignetting: true, crop: 1.1), previewIsCurrent: true)
         check(rendered.correctionDetailKey(tca: false) == "已应用" &&
-              rendered.correctionDetailKey(tca: true) == "横向色差未应用" && rendered.cropPercent == 9,
+              rendered.correctionDetailKey(tca: true) == "横向色差未应用" &&
+              rendered.vignettingDetailKey == "已应用" && rendered.cropPercent == 9,
               "Current render reports actual applied corrections and measured crop separately")
         settings.mode = .manual
         settings.profileID = partial.id
         let partialDraft = MacLensPresentation(settings: settings, info: report(), previewIsCurrent: true)
         check(partialDraft.candidate == partial && partialDraft.identityStatusKey == "手动选择" &&
               partialDraft.correctionDetailKey(tca: true) == "横向色差标定不可用" &&
-              partialDraft.canChangeCorrection(tca: true),
-              "An unsupported enabled TCA value is retained and can still be switched off")
+              partialDraft.vignettingDetailKey == "此镜头没有所选校正的标定数据" &&
+              partialDraft.canChangeCorrection(tca: true) && partialDraft.canChangeVignetting,
+              "An unsupported enabled TCA or vignetting value is retained and can still be switched off")
         settings.tca = false
+        settings.vignetting = false
         let partialOff = MacLensPresentation(settings: settings, info: report(), previewIsCurrent: true)
-        check(!partialOff.canChangeCorrection(tca: true) && partialOff.canChangeCorrection(tca: false),
-              "Missing TCA calibration disables only its activation")
+        check(!partialOff.canChangeCorrection(tca: true) && !partialOff.canChangeVignetting &&
+              partialOff.canChangeCorrection(tca: false),
+              "Missing TCA or vignetting calibration disables only its activation")
         settings.profileID = "missing"
         let missing = MacLensPresentation(settings: settings, info: report(), previewIsCurrent: true)
         check(missing.candidate == nil && missing.identityStatusKey == "所选镜头不可用" &&

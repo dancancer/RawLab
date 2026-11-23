@@ -145,21 +145,21 @@ enum BatchFlowModelTests {
         try require(savedFallback.hdr == savedHDR.hdr && savedFallback.exposure == 0.8 &&
                     savedFallback.geometry?.quarterTurns == 3,
                     "stored fallback edits preserve the HDR mode and snapshot while updating SDR exposure and geometry")
-        model.settings.contrast = 12
+        model.settings.contrast = 1.12
         try require(model.saveEdits(), "a second fallback save succeeds")
         try require(try model.editStore!.state(for: photo)!.settings.hdr == savedHDR.hdr,
                     "repeated fallback saves retain the original HDR snapshot")
         model.undoAdjustment()
-        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 0,
+        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 1,
                     "fallback undo restores SDR controls without enabling HDR")
         model.redoAdjustment()
-        try require(!model.settings.isHDREditing && model.settings.contrast == 12,
+        try require(!model.settings.isHDREditing && model.settings.contrast == 1.12,
                     "fallback redo restores SDR controls without enabling HDR")
         try require(try model.editStore!.state(for: photo)!.settings.hdr == savedHDR.hdr,
                     "fallback history retains the stored HDR snapshot")
         model.open(other)
         model.open(photo)
-        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 12,
+        try require(!model.settings.isHDREditing && model.settings.exposure == 0.8 && model.settings.contrast == 1.12,
                     "reopening a fallback edit restores the saved SDR layer")
     }
 

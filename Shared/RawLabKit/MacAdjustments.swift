@@ -89,17 +89,15 @@ public struct Adjustments: Equatable, Codable {
     public var whiteBalanceMode = WhiteBalanceMode.asShot
     public private(set) var asShotWhiteBalance: WhiteBalance?
     public var strength = 1.0
-    public var contrast = 0.0
+    public var contrast = 1.0
     public var highlights = 0.0
     public var shadows = 0.0
     public var toneCurve = 0.0
-    public var saturation = 0.0
+    public var saturation = 1.0
     public var sharpening = 0.0
     public var rawNoiseReduction = 0.0
-    // 缺少此字段的旧记录继续按 FBDD 解释，不静默切换算法。
-    public var chromaNoiseReduction: Double?
-    // nil 保留旧算法语义，显式启用或选择预设后才迁移。
-    public var waveletNoiseReduction: WaveletDenoiseSettings?
+    public var chromaNoiseReduction = 0
+    public var waveletNoiseReduction = WaveletDenoiseSettings()
     public var aiDenoiseEnabled = false
     private var aiDenoiseBlend: Double?
     public var aiDenoiseStrength: Double {
@@ -255,13 +253,17 @@ public struct Adjustments: Equatable, Codable {
             .allSatisfy { editingEffectValue($0) == $0.defaultValue }
     }
 
-    public var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction ?? WaveletDenoiseSettings() }
-    public var hasLegacyDenoise: Bool { waveletNoiseReduction == nil && denoiseMode > 0 }
-    public var isDenoiseEnabled: Bool { activeAIDenoise || (!isHDREditing && (waveletNoiseReduction?.enabled ?? (denoiseMode > 0))) }
+    public var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction }
+    public var isWaveletDefault: Bool { waveletNoiseReduction == WaveletDenoiseSettings() }
+    public var hasLegacyDenoise: Bool { isWaveletDefault && denoiseMode > 0 }
+    public var hasLegacyFBDD: Bool { isWaveletDefault && chromaNoiseReduction == 0 && rawNoiseReduction > 0 }
+    public var isDenoiseEnabled: Bool {
+        activeAIDenoise || (!isHDREditing && (!isWaveletDefault ? waveletNoiseReduction.enabled : denoiseMode > 0))
+    }
     public var denoiseSummary: String {
         if activeAIDenoise { return L10n.text("AI 降噪") }
-        if let settings = waveletNoiseReduction {
-            return settings.enabled ? settings.preset.title : L10n.text("停用")
+        if !isWaveletDefault {
+            return waveletNoiseReduction.enabled ? waveletNoiseReduction.preset.title : L10n.text("停用")
         }
         if denoiseMode == 0 { return L10n.text("停用") }
         if denoiseMode == 3 { return L10n.text("旧版 FBDD") }
@@ -269,11 +271,11 @@ public struct Adjustments: Equatable, Codable {
     }
 
     public mutating func setDenoiseEnabled(_ enabled: Bool) {
-        var state = waveletSettings
+        var state = waveletNoiseReduction
         state.enabled = enabled
-        waveletNoiseReduction = state == WaveletDenoiseSettings() ? nil : state
+        waveletNoiseReduction = state
         rawNoiseReduction = 0
-        chromaNoiseReduction = nil
+        chromaNoiseReduction = 0
     }
 
     public mutating func applyDenoisePreset(_ preset: DenoisePreset) {
@@ -284,12 +286,12 @@ public struct Adjustments: Equatable, Codable {
         if preset == .clean { state.luma = 10; state.chroma = 72; state.coarse = 100 }
         waveletNoiseReduction = state
         rawNoiseReduction = 0
-        chromaNoiseReduction = nil
+        chromaNoiseReduction = 0
     }
 
     public mutating func setDenoiseParameter(_ parameter: DenoiseParameter, to value: Double) {
         guard value.isFinite else { return }
-        var state = waveletSettings
+        var state = waveletNoiseReduction
         let value = min(100, max(0, (value * 10).rounded() / 10))
         guard state[keyPath: parameter.keyPath] != value else { return }
         state[keyPath: parameter.keyPath] = value
@@ -298,11 +300,11 @@ public struct Adjustments: Equatable, Codable {
     }
 
     public var denoiseMode: Double {
-        get { chromaNoiseReduction ?? (rawNoiseReduction > 0 ? 3 : 0) }
+        get { chromaNoiseReduction > 0 ? Double(chromaNoiseReduction) : (rawNoiseReduction > 0 ? 3 : 0) }
         set {
             guard ChromaNoiseReductionMode(rawValue: newValue) != nil else { return }
-            waveletNoiseReduction = nil
-            chromaNoiseReduction = newValue == 0 ? nil : newValue
+            waveletNoiseReduction = WaveletDenoiseSettings()
+            chromaNoiseReduction = Int(newValue.rounded())
             rawNoiseReduction = 0
         }
     }
@@ -326,12 +328,12 @@ public struct Adjustments: Equatable, Codable {
             brightness: 1,
             temperature: temperatureWB ? Float(effectiveTemp) : 6500,
             tint: temperatureWB ? Float(recipeActive ? min(150, max(-150, effectiveTint)) : effectiveTint) : 0,
-            contrast: Float(1 + contrast * scale / 100),
-            saturation: Float(1 + saturation * scale / 100),
-            highlights: Float(-highlights * scale / 100),
-            shadows: Float(shadows * scale / 100),
-            toneCurve: curveSettings.mode == .custom ? 0 : Float(min(100, max(-100, toneCurve * refinementScale)) / 100),
-            sharpening: Float(sharpening / 100)
+            contrast: Float(1 + (contrast - 1) * scale),
+            saturation: Float(1 + (saturation - 1) * scale),
+            highlights: Float(highlights * scale),
+            shadows: Float(shadows * scale),
+            toneCurve: curveSettings.mode == .custom ? 0 : Float(min(1, max(-1, toneCurve * refinementScale))),
+            sharpening: Float(sharpening)
         )
     }
 
@@ -340,10 +342,10 @@ public struct Adjustments: Equatable, Codable {
         masterRecipeSettingsVersion = recipe.version
         strength = 1
         exposure = recipe.exposureDelta
-        shadows = recipe.shadowsDelta
-        highlights = recipe.highlightsDelta
-        contrast = recipe.contrastDelta
-        saturation = recipe.saturationDelta
+        shadows = recipe.shadowsDelta / 100
+        highlights = -recipe.highlightsDelta / 100
+        contrast = 1 + recipe.contrastDelta / 100
+        saturation = 1 + recipe.saturationDelta / 100
         tint = recipe.tintDelta
         hsl = recipe.hsl.isIdentity ? nil : recipe.hsl
         if recipe.version >= 4 {
@@ -368,7 +370,7 @@ public struct Adjustments: Equatable, Codable {
     public mutating func reset(_ group: AdjustmentGroup) {
         if isHDREditing {
             for parameter in group.parameters where parameter.hdrKeyPath != nil {
-                set(parameter, to: parameter.spec.defaultValue)
+                set(parameter, to: parameter.spec(for: self).defaultValue)
             }
             if group == .tone { hdr?.toneSettings.curve = ToneCurveSettings() }
             if group == .color { hdr?.colorSettings = HDRColorSettings() }
@@ -394,7 +396,7 @@ public struct Adjustments: Equatable, Codable {
     public func isDefault(_ group: AdjustmentGroup) -> Bool {
         if isHDREditing {
             return group.parameters.filter { $0.hdrKeyPath != nil }.allSatisfy {
-                $0.value(from: self) == $0.spec.defaultValue
+                $0.value(from: self) == $0.spec(for: self).defaultValue
             } && (group != .geometry || geometrySettings.isIdentity)
                 && (group != .tone || editingCurveSettings.isDefault)
                 && (group != .color || (hdr?.colorSettings.isDefault ?? true))
@@ -517,9 +519,9 @@ public struct Adjustments: Equatable, Codable {
         }
         guard rawNoiseReduction.rounded() == rawNoiseReduction,
               aiDenoiseStrength.isFinite, (0...100).contains(aiDenoiseStrength),
-              chromaNoiseReduction.map({ $0.isFinite && (0...2).contains($0) && $0.rounded() == $0 }) ?? true,
+              (0...2).contains(chromaNoiseReduction),
               DenoiseParameter.allCases.allSatisfy({
-                  let value = waveletSettings[keyPath: $0.keyPath]
+                  let value = waveletNoiseReduction[keyPath: $0.keyPath]
                   return value.isFinite && (0...100).contains(value)
               }) else { throw EditorResetBlockedReason.invalidSnapshot("denoise") }
         guard PhotoEffectParameter.allCases.allSatisfy({
@@ -571,13 +573,13 @@ public struct Adjustments: Equatable, Codable {
             result.atmosphere = atmosphere.isIdentity ? nil : atmosphere
             result.gradingSettings = renderGradingSettings
             result.curveSettings = renderCurveSettings
-            result.toneCurve = min(100, max(-100, toneCurve * refinementScale))
+            result.toneCurve = min(1, max(-1, toneCurve * refinementScale))
             let scale = strength
             result.exposure = exposure * scale
-            result.contrast = contrast * scale
+            result.contrast = 1 + (contrast - 1) * scale
             result.highlights = highlights * scale
             result.shadows = shadows * scale
-            result.saturation = saturation * scale
+            result.saturation = 1 + (saturation - 1) * scale
             if context.isRaw {
                 if (tint * scale != 0 || !usesAsShotWhiteBalance) && asShotWhiteBalance == nil {
                     throw EditorResetBlockedReason.missingAsShotWhiteBalance
@@ -610,9 +612,84 @@ public struct Adjustments: Equatable, Codable {
         return result
     }
 
+    static let legacyV1EncodingKey = CodingUserInfoKey(rawValue: "RawLabKit.Adjustments.legacyV1Encoding")!
+
+    private enum CodingKeys: String, CodingKey {
+        case settingsVersion
+        case toneCurveConfig, colorGrading, atmosphere, toneControls
+        case processing, x3fMode, hdr, proRAWDecodeVersion
+        case exposureMode, exposure, temperature, tint, whiteBalanceMode, asShotWhiteBalance
+        case strength, contrast, highlights, shadows, toneCurve, saturation, sharpening
+        case rawNoiseReduction, chromaNoiseReduction, waveletNoiseReduction
+        case aiDenoiseEnabled, aiDenoiseBlend, hdrCameraAI
+        case photoEffects, hsl, lensCorrection, geometry
+        case supportsRawNoiseReduction, masterRecipeID, masterRecipeSettingsVersion
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let isLegacyV1 = (encoder.userInfo[Self.legacyV1EncodingKey] as? Bool) == true
+        try container.encodeIfPresent(toneCurveConfig, forKey: .toneCurveConfig)
+        try container.encodeIfPresent(colorGrading, forKey: .colorGrading)
+        try container.encodeIfPresent(atmosphere, forKey: .atmosphere)
+        try container.encodeIfPresent(toneControls, forKey: .toneControls)
+        try container.encode(processing, forKey: .processing)
+        try container.encode(x3fMode, forKey: .x3fMode)
+        try container.encodeIfPresent(hdr, forKey: .hdr)
+        try container.encodeIfPresent(proRAWDecodeVersion, forKey: .proRAWDecodeVersion)
+        try container.encode(exposureMode, forKey: .exposureMode)
+        try container.encode(exposure, forKey: .exposure)
+        try container.encode(temperature, forKey: .temperature)
+        try container.encode(tint, forKey: .tint)
+        try container.encode(whiteBalanceMode, forKey: .whiteBalanceMode)
+        try container.encodeIfPresent(asShotWhiteBalance, forKey: .asShotWhiteBalance)
+        try container.encode(strength, forKey: .strength)
+        if isLegacyV1 {
+            try container.encode((contrast - 1) * 100, forKey: .contrast)
+            try container.encode(highlights == 0 ? 0 : -highlights * 100, forKey: .highlights)
+            try container.encode(shadows * 100, forKey: .shadows)
+            try container.encode(toneCurve * 100, forKey: .toneCurve)
+            try container.encode((saturation - 1) * 100, forKey: .saturation)
+            try container.encode(sharpening * 100, forKey: .sharpening)
+            try container.encode(rawNoiseReduction, forKey: .rawNoiseReduction)
+            if chromaNoiseReduction != 0 {
+                try container.encode(Double(chromaNoiseReduction), forKey: .chromaNoiseReduction)
+            }
+            if waveletNoiseReduction != WaveletDenoiseSettings() {
+                try container.encode(waveletNoiseReduction, forKey: .waveletNoiseReduction)
+            }
+        } else {
+            try container.encode(2, forKey: .settingsVersion)
+            try container.encode(contrast, forKey: .contrast)
+            try container.encode(highlights, forKey: .highlights)
+            try container.encode(shadows, forKey: .shadows)
+            try container.encode(toneCurve, forKey: .toneCurve)
+            try container.encode(saturation, forKey: .saturation)
+            try container.encode(sharpening, forKey: .sharpening)
+            try container.encode(rawNoiseReduction, forKey: .rawNoiseReduction)
+            try container.encode(chromaNoiseReduction, forKey: .chromaNoiseReduction)
+            try container.encode(waveletNoiseReduction, forKey: .waveletNoiseReduction)
+        }
+        try container.encode(aiDenoiseEnabled, forKey: .aiDenoiseEnabled)
+        try container.encodeIfPresent(aiDenoiseBlend, forKey: .aiDenoiseBlend)
+        try container.encodeIfPresent(hdrCameraAI, forKey: .hdrCameraAI)
+        try container.encodeIfPresent(photoEffects, forKey: .photoEffects)
+        try container.encodeIfPresent(hsl, forKey: .hsl)
+        try container.encodeIfPresent(lensCorrection, forKey: .lensCorrection)
+        try container.encodeIfPresent(geometry, forKey: .geometry)
+        try container.encode(supportsRawNoiseReduction, forKey: .supportsRawNoiseReduction)
+        try container.encodeIfPresent(masterRecipeID, forKey: .masterRecipeID)
+        try container.encodeIfPresent(masterRecipeSettingsVersion, forKey: .masterRecipeSettingsVersion)
+    }
+
     public init(from decoder: Decoder) throws {
         self.init()
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        let settingsVersion = try values.decodeIfPresent(Int.self, forKey: .settingsVersion)
+        guard settingsVersion == nil || settingsVersion == 1 || settingsVersion == 2 else {
+            throw DecodingError.dataCorruptedError(forKey: .settingsVersion, in: values, debugDescription: "Unsupported settings version")
+        }
+        let isCanonicalV2 = settingsVersion == 2
         processing = values.contains(.processing) ?
             try values.decode(ProcessingIdentity.self, forKey: .processing) : .legacy
         x3fMode = values.contains(.x3fMode) ? try values.decode(X3fMode.self, forKey: .x3fMode) : .legacy
@@ -637,15 +714,30 @@ public struct Adjustments: Equatable, Codable {
         whiteBalanceMode = try values.decodeIfPresent(WhiteBalanceMode.self, forKey: .whiteBalanceMode) ?? .asShot
         asShotWhiteBalance = try values.decodeIfPresent(WhiteBalance.self, forKey: .asShotWhiteBalance)
         strength = try values.decodeIfPresent(Double.self, forKey: .strength) ?? 1
-        contrast = try values.decodeIfPresent(Double.self, forKey: .contrast) ?? 0
-        highlights = try values.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
-        shadows = try values.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
-        toneCurve = try values.decodeIfPresent(Double.self, forKey: .toneCurve) ?? 0
-        saturation = try values.decodeIfPresent(Double.self, forKey: .saturation) ?? 0
-        sharpening = try values.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
+        let rawContrast = try values.decodeIfPresent(Double.self, forKey: .contrast)
+        contrast = isCanonicalV2 ? (rawContrast ?? 1) : (rawContrast.map { 1 + $0 / 100 } ?? 1)
+        let rawHighlights = try values.decodeIfPresent(Double.self, forKey: .highlights)
+        highlights = isCanonicalV2 ? (rawHighlights ?? 0) : (rawHighlights.map { -$0 / 100 } ?? 0)
+        if highlights == 0 { highlights = 0 }
+        let rawShadows = try values.decodeIfPresent(Double.self, forKey: .shadows)
+        shadows = isCanonicalV2 ? (rawShadows ?? 0) : (rawShadows.map { $0 / 100 } ?? 0)
+        if shadows == 0 { shadows = 0 }
+        let rawToneCurve = try values.decodeIfPresent(Double.self, forKey: .toneCurve)
+        toneCurve = isCanonicalV2 ? (rawToneCurve ?? 0) : (rawToneCurve.map { $0 / 100 } ?? 0)
+        if toneCurve == 0 { toneCurve = 0 }
+        let rawSaturation = try values.decodeIfPresent(Double.self, forKey: .saturation)
+        saturation = isCanonicalV2 ? (rawSaturation ?? 1) : (rawSaturation.map { 1 + $0 / 100 } ?? 1)
+        let rawSharpening = try values.decodeIfPresent(Double.self, forKey: .sharpening)
+        sharpening = isCanonicalV2 ? (rawSharpening ?? 0) : (rawSharpening.map { $0 / 100 } ?? 0)
+        if sharpening == 0 { sharpening = 0 }
         rawNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .rawNoiseReduction) ?? 0
-        chromaNoiseReduction = try values.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction)
-        waveletNoiseReduction = try values.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction)
+        if let rawChroma = try values.decodeIfPresent(Double.self, forKey: .chromaNoiseReduction) {
+            guard rawChroma.isFinite, (0...2).contains(rawChroma), rawChroma.rounded() == rawChroma else {
+                throw DecodingError.dataCorruptedError(forKey: .chromaNoiseReduction, in: values, debugDescription: "Invalid chroma noise reduction")
+            }
+            chromaNoiseReduction = Int(rawChroma.rounded())
+        }
+        waveletNoiseReduction = try values.decodeIfPresent(WaveletDenoiseSettings.self, forKey: .waveletNoiseReduction) ?? WaveletDenoiseSettings()
         aiDenoiseEnabled = try values.decodeIfPresent(Bool.self, forKey: .aiDenoiseEnabled) ?? false
         if let blend = try values.decodeIfPresent(Double.self, forKey: .aiDenoiseBlend) {
             guard blend.isFinite, (0.0...100.0).contains(blend) else {
@@ -680,10 +772,10 @@ public struct Adjustments: Equatable, Codable {
             let cameraWB = whiteBalanceMode == .asShot ||
                 (temperature == asShotWhiteBalance?.temperature && tint == asShotWhiteBalance?.tint)
             exposure += defaults.exposureDelta
-            shadows += defaults.shadowsDelta
-            highlights += defaults.highlightsDelta
-            contrast += defaults.contrastDelta
-            saturation += defaults.saturationDelta
+            shadows += defaults.shadowsDelta / 100
+            highlights += -defaults.highlightsDelta / 100
+            contrast += defaults.contrastDelta / 100
+            saturation += defaults.saturationDelta / 100
             tint = (cameraWB ? 0 : tint - (asShotWhiteBalance?.tint ?? 0)) + defaults.tintDelta
             if cameraWB { whiteBalanceMode = .asShot }
         }
@@ -696,10 +788,10 @@ public struct Adjustments: Equatable, Codable {
         if !cameraRAW {
             let scale = masterRecipe == nil ? 1 : strength
             initial.exposure = min(4, max(-4, exposure * scale))
-            initial.contrast = min(100, max(-100, contrast * scale))
-            initial.highlights = min(100, max(-100, highlights * scale))
-            initial.shadows = min(100, max(-100, shadows * scale))
-            initial.saturation = min(100, max(-100, saturation * scale))
+            initial.contrast = min(100, max(-100, (contrast - 1) * 100 * scale))
+            initial.highlights = min(100, max(-100, -highlights * 100 * scale))
+            initial.shadows = min(100, max(-100, shadows * scale * 100))
+            initial.saturation = min(100, max(-100, (saturation - 1) * 100 * scale))
             initial.geometry = geometry ?? GeometrySettings()
         }
         result.hdr = try HDRSettings.enabling(stored: hdr, initial: initial, sourceIsHDR: sourceIsHDR || cameraRAW)

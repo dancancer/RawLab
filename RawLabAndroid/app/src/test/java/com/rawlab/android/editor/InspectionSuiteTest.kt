@@ -122,7 +122,7 @@ class InspectionSuiteTest {
         // Zero EditSettings / CanonicalEditRecipe pollution
         val edits = EditSettings(
             exposure = 0.4f,
-            contrast = 0.25f,
+            contrast = 1.25f,
             geometry = GeometrySettings(0.1f, 0.1f, 0.8f, 0.8f, quarterTurns = 1)
         )
         val baseRecipe = edits.toCanonicalRecipeJson(isRaster = false)

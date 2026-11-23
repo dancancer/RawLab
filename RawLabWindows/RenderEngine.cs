@@ -640,7 +640,7 @@ internal sealed partial class RenderEngine : IDisposable
             X3fMode = (int)settings.X3fMode,
             ExposureMode = settings.ExposureMode,
             RecipeActive = 1,
-            RecipeStrength = (float)(settings[Parameter.Strength] / 100.0),
+            RecipeStrength = (float)settings[Parameter.Strength],
             CustomWb = settings.CameraWhiteBalance ? 0 : 1,
             Temperature = (float)settings[Parameter.Temperature],
             Tint = (float)settings[Parameter.Tint],

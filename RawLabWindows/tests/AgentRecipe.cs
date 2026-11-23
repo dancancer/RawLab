@@ -39,7 +39,7 @@ internal static class AgentRecipeTestTool
             edits=new{
                 exposure=new{mode=exposure,ev=request.ExposureEv,brightness=request.Brightness},
                 white_balance=whiteBalance,
-                look=new{path=look==null ? null : Path.GetFullPath(look),strength=(float)state[Parameter.Strength]/100},
+                look=new{path=look==null ? null : Path.GetFullPath(look),strength=(float)state[Parameter.Strength]},
                 tone,
                 detail=new{sharpening=Math.Clamp(request.Sharpening,0,2)},
                 hsl=new{hue=hsl.Hue,saturation=hsl.Saturation,lightness=hsl.Lightness},

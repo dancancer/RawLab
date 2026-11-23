@@ -36,9 +36,9 @@ data class EditSettings(
     val exposure: Float = 0f,
     val highlights: Float = 0f,
     val shadows: Float = 0f,
-    val contrast: Float = 0f,
+    val contrast: Float = 1f,
     val toneCurve: Float = 0f,
-    val saturation: Float = 0f,
+    val saturation: Float = 1f,
     val customWb: Boolean = false,
     val temperature: Float = 6500f,
     val tint: Float = 0f,
@@ -87,7 +87,7 @@ data class EditSettings(
         require(sharpening.isFinite() && sharpening in f.DETAIL_SHARPENING.androidModel.floatRange!!)
         require(displayChromaDenoise in f.DETAIL_DENOISE_CHROMA_MODE.androidModel.min!!.toInt()..f.DETAIL_DENOISE_CHROMA_MODE.androidModel.max!!.toInt())
         if (hdr == null) require(sdrSnapshot == null)
-        else require(sdrSnapshot == null || sdrSnapshot.startsWith("v2:"))
+        else require(sdrSnapshot == null || sdrSnapshot.startsWith("v2:") || sdrSnapshot.startsWith("v3:"))
     }
     val isHDREditing get() = hdr?.mode == HDRMode.HDR
 
@@ -318,8 +318,9 @@ internal fun EditSettings.resetRenderValues(
         custom = true
     }
     val rasterRelative = input == PhotoInputKind.RASTER && recipeID == null && (kelvin != 6500f || wbTint != 0f)
-    return ResetRenderValues(listOf(exposure * recipeScale, -highlights * recipeScale, shadows * recipeScale,
-        1f + contrast * recipeScale, renderToneCurve, 1f + saturation * recipeScale, sharpening,
+    return ResetRenderValues(listOf(exposure * recipeScale, (highlights * recipeScale).canonicalZero(), shadows * recipeScale,
+        if (recipeScale == 1f) contrast else 1f + (contrast - 1f) * recipeScale, renderToneCurve,
+        if (recipeScale == 1f) saturation else 1f + (saturation - 1f) * recipeScale, sharpening,
         effective.exposureMode.toFloat(), if (custom) 1f else if (rasterRelative) 4f else 0f,
         if (custom || rasterRelative) kelvin else 6500f, if (custom || rasterRelative) wbTint else 0f) + renderHsl.packed().toList() +
         listOf(renderBlackPoint, renderWhitePoint, renderVibrance, renderClarity, renderDehaze) +
@@ -338,13 +339,14 @@ internal fun EditSettings.independentForReset(
 ): EditSettings? {
     val before = resetRenderValues(input, asShotTemperature, asShotTint) ?: return null
     val scaledExposure = exposure * recipeScale
-    val scaledHighlights = highlights * recipeScale
+    val scaledHighlights = (highlights * recipeScale).canonicalZero()
     val scaledShadows = shadows * recipeScale
-    val scaledContrast = contrast * recipeScale
-    val scaledSaturation = saturation * recipeScale
+    val scaledContrast = if (recipeScale == 1f) contrast else 1f + (contrast - 1f) * recipeScale
+    val scaledSaturation = if (recipeScale == 1f) saturation else 1f + (saturation - 1f) * recipeScale
     val convertWb = input == PhotoInputKind.RAW && recipeID != null && (customWb || tint * strength != 0f)
     if (scaledExposure !in -5f..5f ||
-        listOf(scaledHighlights, scaledShadows, scaledContrast, scaledSaturation).any { it !in -1f..1f } ||
+        scaledHighlights !in -1f..1f || scaledShadows !in -1f..1f ||
+        scaledContrast !in 0f..2f || scaledSaturation !in 0f..2f ||
         (convertWb && (before.temperature !in 2000f..50000f || before.tint !in -150f..150f))) return null
     val candidate = copy(film = "neutral", recipeID = null, strength = 1f, masterRecipeSettingsVersion = 3,
         blackPoint = renderBlackPoint, whitePoint = renderWhitePoint, vibrance = renderVibrance,

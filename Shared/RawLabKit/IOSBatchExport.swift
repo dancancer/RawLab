@@ -162,7 +162,6 @@ public struct BatchSourceSnapshot: Codable, Equatable {
         result.whiteBalanceMode = .camera
         result.temperature = 6500
         if result.masterRecipeID == nil { result.tint = 0 }
-        result.noiseReduction = 0
         result.lensCorrection = nil
         return result
     }

@@ -29,7 +29,7 @@ struct ControlGroupTests {
         let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
         check(restored == source && restored.isDenoiseEnabled, "AI enabled state persists with ordinary settings retained")
         check(!source.neutralSettings.aiDenoiseEnabled, "Original comparison excludes AI")
-        var exposure = source; exposure.exposure = 2; exposure.contrast = 20
+        var exposure = source; exposure.exposure = 2; exposure.contrast = 1.2
         check(exposure.aiWhiteBalanceSignature == source.aiWhiteBalanceSignature, "Exposure and tone reuse AI results")
         exposure.whiteBalanceMode = .custom; exposure.temperature = 4500
         check(exposure.aiWhiteBalanceSignature != source.aiWhiteBalanceSignature, "Effective WB invalidates RGB results")
@@ -86,7 +86,7 @@ struct ControlGroupTests {
         check(navigation.normalized(isHDREditing: false) == navigation,
               "SDR normalization leaves visible SDR tools untouched")
         var source = Adjustments()
-        source.exposure = 1; source.highlights = 22; source.sharpening = 15
+        source.exposure = 1; source.highlights = -0.22; source.sharpening = 0.15
         source.photoEffects = PhotoEffectsSettings(vignetteMidpoint: 12, grainSize: 62)
         source.waveletNoiseReduction = WaveletDenoiseSettings(luma: 23, preset: .custom)
         let exposure = candidate(.tool(.exposure), state(source))
@@ -96,8 +96,8 @@ struct ControlGroupTests {
         expected = source; expected.resetEffect(.vignetteAmount)
         check(vignette.settings == expected, "Vignette tool resets auxiliary fields while retaining grain")
         let denoise = candidate(.tool(.denoise), state(source))
-        expected = source; expected.rawNoiseReduction = 0; expected.chromaNoiseReduction = nil; expected.waveletNoiseReduction = nil
-        check(denoise.settings == expected && denoise.settings.sharpening == 15, "Disabled denoise tool reset clears the complete object and preserves sharpening")
+        expected = source; expected.rawNoiseReduction = 0; expected.chromaNoiseReduction = 0; expected.waveletNoiseReduction = WaveletDenoiseSettings()
+        check(denoise.settings == expected && denoise.settings.sharpening == 0.15, "Disabled denoise tool reset clears the complete object and preserves sharpening")
         check(MacEditorAdjustmentRules.prepareReset(scope: .tool(.recipe), snapshot: state(source), context: rawContext) == .unchanged, "Unselected recipe reset is NoChange")
         source.strength = 0.2
         var selected = state(source); selected.filmID = "film"
@@ -174,7 +174,7 @@ struct ControlGroupTests {
               "One denoise parameter reset preserves the others and enable state")
         settings.setEffect(.grainAmount, to: 15.6)
         settings.set(.denoiseMode, to: 0)
-        check(settings.waveletNoiseReduction == nil && settings.denoiseMode == 0 && settings.grainAmount == 15.6,
+        check(settings.waveletNoiseReduction == WaveletDenoiseSettings() && settings.denoiseMode == 0 && settings.grainAmount == 15.6,
               "Denoise group reset preserves unrelated effects")
         settings.rawNoiseReduction = 2
         check(settings.hasLegacyDenoise && settings.denoiseMode == 3, "Legacy FBDD remains selected until migration")
@@ -250,7 +250,7 @@ struct ControlGroupTests {
             check(true, "No-op reset creates no candidate")
         } else { check(false, "No-op reset creates no candidate") }
         var source = neutral
-        source.settings.exposure = 1.25; source.settings.saturation = 23.4
+        source.settings.exposure = 1.25; source.settings.saturation = 1.234
         source.settings.photoEffects = PhotoEffectsSettings(vignetteMidpoint: 68.2, grainSize: 42.1)
         source.settings.waveletNoiseReduction = WaveletDenoiseSettings(luma: 12.3, preset: .custom)
         source.settings.lensCorrection = LensCorrectionSettings(autoCrop: false, mode: .manual, profileID: "lens")
@@ -269,7 +269,7 @@ struct ControlGroupTests {
         expected = source; expected.settings.geometry = nil; expected.settings.lensCorrection = nil
         check(geometry == expected, "Geometry reset includes the complete lens object")
         let detail = candidate(.group(.detail), source)
-        expected = source; expected.settings.waveletNoiseReduction = nil
+        expected = source; expected.settings.waveletNoiseReduction = WaveletDenoiseSettings()
         check(detail == expected, "Detail reset removes disabled custom denoise without touching other groups")
         let effects = candidate(.group(.effects), source)
         expected = source; expected.settings.photoEffects = nil
@@ -286,7 +286,7 @@ struct ControlGroupTests {
               "Legacy missing exposure mode keeps scene instead of silently adopting the new-photo default")
         legacy.rawNoiseReduction = 2
         let resetLegacy = candidate(.group(.detail), state(legacy))
-        check(resetLegacy.settings.rawNoiseReduction == 0 && resetLegacy.settings.waveletNoiseReduction == nil,
+        check(resetLegacy.settings.rawNoiseReduction == 0 && resetLegacy.settings.waveletNoiseReduction == WaveletDenoiseSettings(),
               "Reset legacy denoise does not enable a different algorithm")
         let raster = MacEditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor, neutralFilmID: "neutral")
         let resetRaster = candidate(.all, source, context: raster)
@@ -419,13 +419,13 @@ struct ControlGroupTests {
               "Recipe detachment preserves exact effect, geometry, lens and denoise snapshots")
         let color = candidate(.group(.color), state(coupled))
         var expected = coupled
-        expected.resetWhiteBalance(); expected.saturation = 0; expected.hsl = nil
+        expected.resetWhiteBalance(); expected.saturation = 1; expected.hsl = nil
         expected.vibrance = 0; expected.gradingSettings = ColorGradingSettings()
         check(color.settings == expected && color.settings.strength == 0.5 && color.masterRecipeID == coupled.masterRecipeID,
               "Color reset clears only logical color fields and does not replay the recipe")
         let light = candidate(.group(.light), state(coupled))
         expected = coupled
-        expected.exposure = 0; expected.contrast = 0; expected.highlights = 0; expected.shadows = 0; expected.toneCurve = 0
+        expected.exposure = 0; expected.contrast = 1; expected.highlights = 0; expected.shadows = 0; expected.toneCurve = 0
         expected.blackPoint = 0; expected.whitePoint = 0; expected.curveSettings = ToneCurveSettings()
         check(light.settings == expected, "Light reset preserves color values and the recipe scale")
         var selected = state(coupled); selected.filmID = "film"

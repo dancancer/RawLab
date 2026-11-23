@@ -54,7 +54,7 @@ enum QuickPresetModelChecks {
                   "preset persistence retains the source default")
         model.closeQuickPresets()
         model.open(second); try rendered(model)
-        model.settings.exposure = -0.2; model.settings.saturation = 14
+        model.settings.exposure = -0.2; model.settings.saturation = 1.14
         try check(model.saveEdits(), "quick preset target saves")
         let unchanged = try model.presetStore.create(name: "Existing exposure", payload: model.capturePresetAdjustments(scope: .custom([.exposure])))
         let initialHistory = model.adjustmentSession!.transactions.count
@@ -62,7 +62,7 @@ enum QuickPresetModelChecks {
         model.applyPresetToCurrentPhoto(preset)
         try wait { !model.quickPresetState.isPreparing }; try rendered(model)
         guard case .saved(_, let transaction) = model.quickPresetState else { throw NSError(domain: "quick preset must report a saved transaction", code: 1) }
-        try check(model.settings.exposure == 0.7 && model.settings.saturation == 14 && !model.dirty,
+        try check(model.settings.exposure == 0.7 && model.settings.saturation == 1.14 && !model.dirty,
             "one quick action saves only the selected fields")
         try check(model.adjustmentSession!.transactions.count == initialHistory + 1 &&
             model.adjustmentSession!.transactions.last?.action == .preset && model.lastAdjustmentTransaction == transaction,
@@ -83,12 +83,12 @@ enum QuickPresetModelChecks {
             "unchanged quick apply adds no history and keeps the redo branch")
         model.applyPresetToCurrentPhoto(preset)
         try wait { !model.quickPresetState.isPreparing }; try rendered(model)
-        model.settings.saturation = 22
+        model.settings.saturation = 1.22
         try check(model.saveEdits(), "later ordinary edit saves after quick apply")
         let later = try model.editStore!.readState(for: second)
         model.undoQuickPreset()
         guard case .undoFailed = model.quickPresetState else { throw NSError(domain: "stale quick undo must report conflict", code: 1) }
-        try check(try model.editStore!.readState(for: second) == later && model.settings.saturation == 22,
+        try check(try model.editStore!.readState(for: second) == later && model.settings.saturation == 1.22,
             "quick undo never substitutes the latest unrelated edit")
 
         for action in ["cancel", "close", "edit", "photo", "conflict", "restart"] {
@@ -127,7 +127,7 @@ enum QuickPresetModelChecks {
             RunLoop.main.run(until: Date().addingTimeInterval(0.03))
             model.prepareQuickPresetOperation = prepare
             if action == "restart" {
-                try check(model.settings.exposure == 0.7 && model.settings.saturation == 22,
+                try check(model.settings.exposure == 0.7 && model.settings.saturation == 1.22,
                     "a newer quick request alone applies after the older request is cancelled")
             } else {
                 try check(try model.editStore!.readState(for: second) == expected,

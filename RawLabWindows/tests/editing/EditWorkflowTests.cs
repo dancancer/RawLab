@@ -148,7 +148,7 @@ public sealed class EditWorkflowTests
             EditorResetScope Tool(EditorAdjustmentTool tool) => new((EditorResetKind)4, Tool: tool);
             var toolState = new Adjustments { Processing = ProcessingIdentity.Legacy };
             toolState.ResolveWhiteBalance((5200, 8));
-            toolState.Set(Parameter.Exposure, .7); toolState.Set(Parameter.Contrast, 23);
+            toolState.Set(Parameter.Exposure, .7); toolState.Set(Parameter.Contrast, 1.23);
             toolState.SetEffect(PhotoEffectParameter.VignetteMidpoint, 12);
             toolState.SetEffect(PhotoEffectParameter.GrainSize, 45);
             toolState.DisplayChromaDenoise = 1;
@@ -157,7 +157,7 @@ public sealed class EditWorkflowTests
             var exposureOnly = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Exposure), toolEdit);
             Check(exposureOnly.Status == EditorResetStatus.Ready && !exposureOnly.RequiresConfirmation &&
                 exposureOnly.Candidate!.Settings.Values[(int)Parameter.Exposure] == 0 &&
-                exposureOnly.Candidate.Settings.Values[(int)Parameter.Contrast] == 23 &&
+                exposureOnly.Candidate.Settings.Values[(int)Parameter.Contrast] == 1.23 &&
                 exposureOnly.Candidate.Settings.Processing == ProcessingIdentity.Legacy,
                 "Exposure tool reset preserves contrast and processing identity");
             var vignetteOnly = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Vignette), toolEdit).Candidate!;
@@ -195,7 +195,7 @@ public sealed class EditWorkflowTests
             Check(EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), Edit(neutral, null)).Status == EditorResetStatus.NoChange,
                 "neutral reset has no candidate and cannot produce an edit");
             var mixedState = neutral.Clone(); mixedState.Set(Parameter.Exposure, .75); mixedState.ExposureMode = 0;
-            mixedState.Set(Parameter.Saturation, 23); mixedState.Set(Parameter.Sharpening, 42);
+            mixedState.Set(Parameter.Saturation, 1.23); mixedState.Set(Parameter.Sharpening, .42);
             mixedState.Hsl = mixedState.Hsl.WithValue(0, 2, .5).WithValue(1, 6, -33).WithValue(2, 2, 24);
             mixedState.Effects = new(0, 21, 11, 70, 33, 0, 66, 80);
             mixedState.Denoise = new(false, 13, 40, 27); mixedState.DisplayChromaDenoise = 2;
@@ -210,8 +210,8 @@ public sealed class EditWorkflowTests
                 var ownedState = mixedState.Clone();
                 if (EditorAdjustmentRules.AtmosphereParameterFor(tool) is { } atmosphereParameter) ownedState.SetAtmosphere(atmosphereParameter, 25);
                 if (EditorAdjustmentRules.ToneParameterFor(tool) is { } toneParameter) ownedState.SetTone(toneParameter, 25);
-                ownedState.Set(Parameter.Strength, 37); ownedState.Set(Parameter.Highlights, 11); ownedState.Set(Parameter.Shadows, -14);
-                ownedState.Set(Parameter.Contrast, 23); ownedState.Set(Parameter.ToneCurve, -19); ownedState.Set(Parameter.Temperature, 6000); ownedState.Set(Parameter.Tint, 12);
+                ownedState.Set(Parameter.Strength, .37); ownedState.Set(Parameter.Highlights, -.11); ownedState.Set(Parameter.Shadows, -.14);
+                ownedState.Set(Parameter.Contrast, 1.23); ownedState.Set(Parameter.ToneCurve, -.19); ownedState.Set(Parameter.Temperature, 6000); ownedState.Set(Parameter.Tint, 12);
                 var edit = Edit(ownedState); var frozen = edit.Settings.Copy(); var expected = frozen.Copy(); var ownedLook = edit.Look;
                 switch (tool)
                 {
@@ -233,7 +233,8 @@ public sealed class EditWorkflowTests
                     case EditorAdjustmentTool.WhitePoint: expected = expected with { ToneControls = expected.ToneControls! with { WhitePoint = 0 } }; break;
                     case EditorAdjustmentTool.Vibrance: expected = expected with { ToneControls = expected.ToneControls! with { Vibrance = 0 } }; break;
                     default:
-                        var parameter = EditorAdjustmentRules.ParameterFor(tool); expected.Values[(int)parameter] = parameter == Parameter.Strength ? 100 : 0;
+                        var parameter = EditorAdjustmentRules.ParameterFor(tool);
+                        expected.Values[(int)parameter] = parameter is Parameter.Strength or Parameter.Contrast or Parameter.Saturation ? 1 : 0;
                         if (tool == EditorAdjustmentTool.Exposure) expected = expected with { ExposureMode = 1 }; break;
                 }
                 var prepared = EditorAdjustmentRules.PrepareReset(Tool(tool), edit);
@@ -302,12 +303,12 @@ public sealed class EditWorkflowTests
                 var expected = mixedFrozen.Copy();
                 if (group == EditorAdjustmentGroup.Light)
                 {
-                    foreach (var index in new[] { 1, 4, 5, 6, 7 }) expected.Values[index] = 0;
+                    expected.Values[1] = 0; expected.Values[4] = 1; expected.Values[5] = 0; expected.Values[6] = 0; expected.Values[7] = 0;
                     expected = expected with { ExposureMode = 1 };
                 }
                 if (group == EditorAdjustmentGroup.Color)
                 {
-                    expected.Values[2] = 5200; expected.Values[3] = 8; expected.Values[8] = 0;
+                    expected.Values[2] = 5200; expected.Values[3] = 8; expected.Values[8] = 1;
                     expected = expected with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null };
                 }
                 if (group == EditorAdjustmentGroup.Effects) expected = expected with { Effects = new() };
@@ -325,14 +326,15 @@ public sealed class EditWorkflowTests
             var channelReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.HslChannel, Channel: 2), mixedEdit);
             Check(channelReset.Status == EditorResetStatus.Ready && !channelReset.RequiresConfirmation &&
                 channelReset.Candidate!.Settings.Hsl!.Value(0, 2) == 0 && channelReset.Candidate.Settings.Hsl.Value(2, 2) == 0 &&
-                channelReset.Candidate.Settings.Hsl.Value(1, 6) == -33 && channelReset.Candidate.Settings.Values[8] == 23,
+                channelReset.Candidate.Settings.Hsl.Value(1, 6) == -33 && channelReset.Candidate.Settings.Values[8] == 1.23,
                 "current HSL channel clears only its three axes");
             var allHsl = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.AllHsl), mixedEdit);
             Check(allHsl.Status == EditorResetStatus.Ready && allHsl.RequiresConfirmation && allHsl.Candidate!.Settings.Hsl!.IsIdentity &&
                 allHsl.Candidate.Settings.Values.SequenceEqual(mixedEdit.Settings.Values), "all HSL preserves other color controls");
             var allReset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), mixedEdit).Candidate!;
             Check(allReset.Look == null && allReset.Settings.SameAs(neutral.Capture()), "all reset includes look and full effective defaults");
-            var oldSnapshot = new AdjustmentSnapshot((double[])neutral.Capture().Values.Clone(), 0, true, 5200, 8);
+            var oldSnapshot = new AdjustmentSnapshot((double[])neutral.Capture().Values.Clone(), 0, true, 5200, 8)
+                { SettingsVersion = AdjustmentSnapshot.CurrentSettingsVersion };
             var oldReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Effects), new(resetIdentity, oldSnapshot, null));
             Check(oldReset.Status == EditorResetStatus.NoChange && oldSnapshot.Restore().ExposureMode == 0,
                 "missing optional fields retain existing defaults and historical exposure mode");
@@ -347,12 +349,12 @@ public sealed class EditWorkflowTests
             var unknown = mixedFrozen with { MasterRecipeID = "unknown" };
             Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), new(resetIdentity, unknown, "film")).Status == EditorResetStatus.Blocked,
                 "unknown recipe cannot silently become ordinary adjustments");
-            foreach (var strength in new[] { 0.0, 50, 100, 200 })
+            foreach (var strength in new[] { 0.0, .5, 1, 2 })
             {
                 var recipeState = neutral.Clone(); recipeState.ApplyMasterRecipe(MasterRecipe.All[0]);
                 recipeState.Set(Parameter.Strength, strength); recipeState.Set(Parameter.Exposure, .75);
-                recipeState.Set(Parameter.Contrast, 17.3); recipeState.Set(Parameter.Highlights, 13.7);
-                recipeState.Set(Parameter.Shadows, -21.1); recipeState.Set(Parameter.Saturation, 22.9);
+                recipeState.Set(Parameter.Contrast, 1.173); recipeState.Set(Parameter.Highlights, -.137);
+                recipeState.Set(Parameter.Shadows, -.211); recipeState.Set(Parameter.Saturation, 1.229);
                 recipeState.Set(Parameter.Tint, 10); recipeState.Hsl = new HslSettings().WithValue(0, 0, .5).WithValue(1, 7, -80);
                 var recipeEdit = Edit(recipeState); var recipeFrozen = recipeEdit.Settings.Copy();
                 var detached = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), recipeEdit);
@@ -365,7 +367,7 @@ public sealed class EditWorkflowTests
                     Check(toolDetached.MaterializedFields!.Count > 0, "Recipe confirmation carries actual converted fields: " + tool + "/" + strength);
                 }
                 var detachedState = detached.Candidate!.Settings.Restore();
-                Check(detached.Candidate.Look == null && detachedState.MasterRecipeID == null && detachedState[Parameter.Strength] == 100,
+                Check(detached.Candidate.Look == null && detachedState.MasterRecipeID == null && detachedState[Parameter.Strength] == 1,
                     "look and recipe identities are both cleared");
                 var before = recipeState.Request("fixture.ARW", null, 64, null); var after = detachedState.Request("fixture.ARW", null, 64, null);
                 Check(before.ExposureEv == after.ExposureEv && before.Contrast == after.Contrast && before.Highlights == after.Highlights &&
@@ -375,7 +377,7 @@ public sealed class EditWorkflowTests
                     "detach preserves exact final core Float fields and HSL for strength " + strength);
                 if (strength == 0) Check(detachedState[Parameter.Tint] == 8 && detachedState.CameraWhiteBalance,
                     "zero recipe offset becomes stored absolute as-shot tint when identity is cleared");
-                Check(detachedState.Hsl.Value(1, 7) == (strength == 200 ? -100 : -80 * strength / 100), "detach retains existing HSL clamp");
+                Check(detachedState.Hsl.Value(1, 7) == (strength == 2 ? -100 : -80 * strength), "detach retains existing HSL clamp");
                 Check(recipeEdit.Settings.SameAs(recipeFrozen), "preparing and discarding a recipe candidate is cancellation without mutation");
                 var colorReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), recipeEdit).Candidate!.Settings.Restore();
                 Check(colorReset.MasterRecipeID == recipeState.MasterRecipeID && colorReset[Parameter.Tint] == 0 &&
@@ -393,7 +395,7 @@ public sealed class EditWorkflowTests
             unsafeRecipe.Set(Parameter.Tint, 0); unsafeRecipe.Set(Parameter.Temperature, 7000);
             Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
                 "RAW custom recipe WB also needs real calibration");
-            unsafeRecipe.Set(Parameter.Exposure, 4); unsafeRecipe.Set(Parameter.Strength, 200);
+            unsafeRecipe.Set(Parameter.Exposure, 4); unsafeRecipe.Set(Parameter.Strength, 2);
             unsafeRecipe.ResolveWhiteBalance((5200, 8));
             Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(unsafeRecipe)).Status == EditorResetStatus.Blocked,
                 "out of range materialized exposure is blocked without clamping");
@@ -406,14 +408,14 @@ public sealed class EditWorkflowTests
             Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Effects), Edit(unsafeRecipe)).Status == EditorResetStatus.NoChange,
                 "unrelated scope does not require recipe calibration");
             var clippedTint = neutral.Clone(); clippedTint.ApplyMasterRecipe(MasterRecipe.All[0]);
-            clippedTint.Set(Parameter.Tint, 150); clippedTint.Set(Parameter.Strength, 200);
+            clippedTint.Set(Parameter.Tint, 150); clippedTint.Set(Parameter.Strength, 2);
             var clippedDetach = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(clippedTint));
             Check(clippedDetach.Status == EditorResetStatus.Ready && clippedDetach.Candidate!.Settings.Values[3] == 150,
                 "materialization retains original renderer tint clamp");
-            clippedTint.Set(Parameter.Contrast, 100);
+            clippedTint.Set(Parameter.Contrast, 2);
             Check(EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), Edit(clippedTint)).Status == EditorResetStatus.Blocked,
                 "materialized contrast outside native range is blocked");
-            var rasterState = mixedState.Clone(); rasterState.ApplyMasterRecipe(MasterRecipe.All[0]); rasterState.Set(Parameter.Strength, 50);
+            var rasterState = mixedState.Clone(); rasterState.ApplyMasterRecipe(MasterRecipe.All[0]); rasterState.Set(Parameter.Strength, .5);
             var rasterEdit = new SavedEdit(resetIdentity with { Path = "fixture.jpg" }, rasterState.Capture(), "film");
             var rasterDetached = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Looks), rasterEdit);
             Check(rasterDetached.Status == EditorResetStatus.Ready && rasterDetached.Candidate!.Settings.CameraWhiteBalance &&
@@ -445,7 +447,7 @@ public sealed class EditWorkflowTests
             Check(rasterLightReset.Status == EditorResetStatus.Ready && rasterLightReset.Candidate!.Settings.ExposureMode == 2 &&
                 rasterLightReset.Candidate.Settings.Values[1] == 0 && rasterLightReset.Candidate.Settings.Values[2] == 7300,
                 "real raster light reset restores owned exposure defaults and preserves stored WB");
-            var rasterColorChanged = rasterMetadataOnly.Copy(); rasterColorChanged.Values[8] = 20;
+            var rasterColorChanged = rasterMetadataOnly.Copy(); rasterColorChanged.Values[8] = 1.2;
             var rasterColorReset = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), rasterMetadataEdit with { Settings = rasterColorChanged });
             Check(rasterColorReset.Status == EditorResetStatus.Ready && rasterColorReset.Candidate!.Settings.CameraWhiteBalance &&
                 rasterColorReset.Candidate.Settings.Values[2] == 6500 && rasterColorReset.Candidate.Settings.Values[3] == 0 &&
@@ -536,17 +538,17 @@ public sealed class EditWorkflowTests
             foreach (var recipe in MasterRecipe.All)
             {
                 var preset = new Adjustments(); preset.ResolveWhiteBalance((5000, 8));
-                preset.Set(Parameter.Temperature, 8000); preset.Set(Parameter.Sharpening, 75);
+                preset.Set(Parameter.Temperature, 8000); preset.Set(Parameter.Sharpening, .75);
                 preset.Hsl = preset.Hsl.WithValue(0, 7, 90); preset.ApplyMasterRecipe(recipe);
                 Check(preset.Hsl.Equals(recipe.Hsl.Settings()) && preset[Parameter.Exposure] == recipe.ExposureDelta &&
-                      preset[Parameter.Highlights] == recipe.HighlightsDelta && preset[Parameter.Tint] == recipe.TintDelta,
+                      preset[Parameter.Highlights] == -recipe.HighlightsDelta / 100.0 && preset[Parameter.Tint] == recipe.TintDelta,
                       recipe.Id + " overwrites visible settings and HSL");
-                Check(preset[Parameter.Temperature] == 8000 && preset[Parameter.Sharpening] == 75, "unrelated settings survive");
+                Check(preset[Parameter.Temperature] == 8000 && preset[Parameter.Sharpening] == .75, "unrelated settings survive");
                 preset.Hsl = preset.Hsl.WithValue(0, 7, 37).WithValue(1, 5, -80);
                 var originalHsl = preset.Hsl;
                 foreach (var strength in new[] { 0.0, .5, 1, 2 })
                 {
-                    preset.Set(Parameter.Strength, strength * 100);
+                    preset.Set(Parameter.Strength, strength);
                     var request = preset.Request("fixture.ARW", "look.cube", 64, null);
                     Check(Math.Abs(request.ExposureEv - recipe.ExposureDelta * strength) < 1e-5 &&
                           Math.Abs(request.Highlights + recipe.HighlightsDelta * strength / 100) < 1e-5 &&

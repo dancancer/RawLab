@@ -174,12 +174,12 @@ private func makeMixedSettings() -> Adjustments {
     settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 32.375)
     settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 0)
     settings.gradingSettings[.highlights] = ColorGradingWheel(hue: 359.999999, saturation: 17.5)
-    settings.contrast = 24.5
-    settings.highlights = 31.5
-    settings.shadows = -27.5
-    settings.toneCurve = 36.5
-    settings.saturation = -18.5
-    settings.sharpening = 82.5
+    settings.contrast = 1.245
+    settings.highlights = -0.315
+    settings.shadows = -0.275
+    settings.toneCurve = 0.365
+    settings.saturation = 0.815
+    settings.sharpening = 0.825
     settings.setHSL(.hue, channel: 0, value: 18)
     settings.setHSL(.saturation, channel: 5, value: -43)
     settings.setHSL(.lightness, channel: 3, value: 21)
@@ -404,13 +404,13 @@ struct AgentRecipeRenderTests {
         var clamped = Adjustments()
         clamped.applyMasterRecipe(.hamadaDaylightV2)
         clamped.strength = 2
-        clamped.contrast = 150
-        clamped.saturation = -100
-        clamped.highlights = 100
-        clamped.shadows = -100
+        clamped.contrast = 2.5
+        clamped.saturation = 0
+        clamped.highlights = -1
+        clamped.shadows = -1
         clamped.curveSettings = ToneCurveSettings()
-        clamped.toneCurve = 100
-        clamped.sharpening = 200
+        clamped.toneCurve = 1
+        clamped.sharpening = 2
         let clampData = try cpu.agentRecipe(input, settings: clamped, lut: recipeLUT,
                                             output: root.appendingPathComponent("clamped.png"), exportLongEdge: 257)
         let clampRecipe = try inspectRecipe(clampData, label: "core-clamp")
@@ -427,7 +427,7 @@ struct AgentRecipeRenderTests {
                   "agent v4 emits core-clamped tone and detail values")
 
         var oldChroma = mixed
-        oldChroma.waveletNoiseReduction = nil
+        oldChroma.waveletNoiseReduction = WaveletDenoiseSettings()
         oldChroma.chromaNoiseReduction = 2
         oldChroma.rawNoiseReduction = 0
         oldChroma.geometry = nil

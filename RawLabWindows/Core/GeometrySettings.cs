@@ -23,7 +23,7 @@ public sealed record GeometrySettings(double CropX = 0, double CropY = 0, double
     public GeometrySettings WithCropPercent(CropComponent component, double percent)
     {
         if (!double.IsFinite(percent)) throw new ArgumentOutOfRangeException(nameof(percent));
-        const double minimum = .0001;
+        const double minimum = .001;
         var fraction = percent / 100;
         return component switch {
             CropComponent.X => this with { CropX = Math.Clamp(fraction, 0, 1 - minimum),

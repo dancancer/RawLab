@@ -154,7 +154,7 @@ internal static class RasterChecks
         var dormant=new Adjustments { ExposureMode=0, Lens=new(true,true,true,true,"dormant-profile"), Denoise=DenoiseSettings.Clean,
             Effects=new(-21,62,13,71,22,15,27,39), DisplayChromaDenoise=2,
             Hsl=new HslSettings().WithValue(0,3,17), Geometry=new(.08,.09,.77,.74,1,true,false,2.5,.02,-.03) };
-        dormant.ApplyMasterRecipe(recipe);dormant.ResolveWhiteBalance((2000,-150));dormant.Set(Parameter.Temperature,4200);dormant.Set(Parameter.Tint,44);dormant.Set(Parameter.Strength,73);
+        dormant.ApplyMasterRecipe(recipe);dormant.ResolveWhiteBalance((2000,-150));dormant.Set(Parameter.Temperature,4200);dormant.Set(Parameter.Tint,44);dormant.Set(Parameter.Strength,.73);
         var dormantSnapshot=dormant.Capture();
         var rasterSourceJob=BatchJob.Create(png,dormantSnapshot,null,"Raster source");rasterSourceJob.Format=ExportFormat.Png;
         rasterSourceJob.OutputDirectory=Path.Combine(output,"batch-raster-source");Directory.CreateDirectory(rasterSourceJob.OutputDirectory);

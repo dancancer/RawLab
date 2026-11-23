@@ -55,11 +55,11 @@ internal static class ToneCurveChecks
             movedWhite.Points[3] == new ToneCurvePoint(1, .9), "Endpoints move along Y within monotonic neighbor bounds");
         var moved = curve.Moving(1, 1, 1);
         Check(moved.Points[1].X < moved.Points[2].X && moved.Points[1].Y == .875, "Moving cannot cross adjacent points");
-        var state = new Adjustments { Curve = curve }; state.Set(Parameter.ToneCurve, 65);
+        var state = new Adjustments { Curve = curve }; state.Set(Parameter.ToneCurve, .65);
         var snapshot = state.Capture();
         Check(snapshot.Values.Length == 10 && JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!.Restore().Curve == curve,
             "Curve preserves Double coordinates without changing legacy parameter indexes");
-        Check(state.Request("curve.jpg", null, 32, null).ToneCurve == 0 && state[Parameter.ToneCurve] == 65, "Custom adapter masks but retains inactive legacy value");
+        Check(state.Request("curve.jpg", null, 32, null).ToneCurve == 0 && state[Parameter.ToneCurve] == .65, "Custom adapter masks but retains inactive legacy value");
         var old = JsonSerializer.SerializeToNode(snapshot)!.AsObject(); old.Remove("Curve");
         Check(old.Deserialize<AdjustmentSnapshot>()!.Restore().Curve.IsDefault, "Legacy records use legacy mode");
         Check(!snapshot.SameAs(snapshot with { Curve = null }) && snapshot.SameAs(snapshot.Copy()), "Snapshots compare curve points by value");
@@ -96,16 +96,16 @@ internal static class ToneCurveChecks
             "HDR v8 channel transfer preserves independent curves");
         var all = AdjustmentTransfer.Capture(AdjustmentScope.Modified, Edit(state), context);
         Check(all.Fields.SetEquals([F.SCurve, F.Curve]), "Modified scope includes inactive scalar and selected custom mode");
-        var target = new Adjustments(); target.Set(Parameter.ToneCurve, -25);
+        var target = new Adjustments(); target.Set(Parameter.ToneCurve, -.25);
         var partial = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Curve]), Edit(state), context);
         var pasted = AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(partial.ToJson()), Edit(target), context).Settings.Restore();
-        Check(pasted.Curve == curve && pasted[Parameter.ToneCurve] == -25, "Curve-only paste leaves legacy scalar untouched");
+        Check(pasted.Curve == curve && pasted[Parameter.ToneCurve] == -.25, "Curve-only paste leaves legacy scalar untouched");
         var scalar = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.SCurve]), Edit(state), context);
         Check(AdjustmentTransfer.Prepare(scalar, Edit(pasted), context).Settings.Restore().Curve == curve, "Legacy scalar-only paste keeps custom mode");
         var legacyRecipe = MasterRecipe.All[0] with { SettingsVersion = 3,
             Tone = null, Atmosphere = null, Grading = null, Curve = null };
         state.ApplyMasterRecipe(legacyRecipe);
-        foreach (var strength in new[] { 0.0, 50, 100, 200 }) {
+        foreach (var strength in new[] { 0.0, .5, 1, 2 }) {
             state.Set(Parameter.Strength, strength);
             Check(state.Curve == curve && state.Request("curve.jpg", null, 32, null).ToneCurve == 0, "Curve is independent of v3 recipe strength");
         }

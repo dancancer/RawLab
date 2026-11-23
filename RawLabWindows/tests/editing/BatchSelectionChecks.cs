@@ -27,7 +27,7 @@ static class BatchSelectionChecks
             var sync=Guid.NewGuid();selection.RecordSynchronization(sync,true);selection.RecordSynchronization(Guid.NewGuid(),false);
             Check(selection.LastSynchronization==sync,"Unchanged operation does not replace collection history");
             var store=new EditStore(Path.Combine(root,"edits"));var settings=new Adjustments();settings.Set(Parameter.Exposure,.5);
-            store.Save(source,settings.Capture(),null);settings.Set(Parameter.Exposure,1);settings.Set(Parameter.Contrast,20);
+            store.Save(source,settings.Capture(),null);settings.Set(Parameter.Exposure,1);settings.Set(Parameter.Contrast,1.2);
             var look=Path.Combine(root,"look.cube");File.WriteAllText(look,"original look");store.Save(target,settings.Capture(),look);
             var transfer=new AdjustmentTransferSession(store);
             var payload=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new HashSet<AdjustmentField>{AdjustmentField.Exposure}),
@@ -40,7 +40,7 @@ static class BatchSelectionChecks
             Check(synchronized.Targets.Count==1 && synchronized.Targets[0].ID==target,"Session excludes source hardlinks and duplicate targets");
             var sourceRecord=store.ReadState(source);
             Check(transfer.Apply(synchronized).Single().Status==AdjustmentStatus.Applied,"Scoped synchronization writes target only");
-            Check(store.ReadState(source).SameAs(sourceRecord) && store.Find(target)!.Settings.Restore()[Parameter.Contrast]==20,"Synchronization preserves source and target micro-edits");
+            Check(store.ReadState(source).SameAs(sourceRecord) && store.Find(target)!.Settings.Restore()[Parameter.Contrast]==1.2,"Synchronization preserves source and target micro-edits");
             Check(ReferenceEquals(transfer.Clipboard,clipboard),"Synchronization retains independent clipboard");
             var sourcePrepared=transfer.Prepare(payload,[Descriptor(source)]).Targets.Single();
             Check(transfer.Apply(synchronized with{ID=Guid.NewGuid(),Targets=new[]{sourcePrepared}}).Single().Status==AdjustmentStatus.Blocked,
@@ -61,7 +61,7 @@ static class BatchSelectionChecks
                 "Batch freeze preserves the exact settings shown in the confirmation snapshot");
             journal.Discard(mutableJob);
             review=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
-            settings.Set(Parameter.Contrast,30);
+            settings.Set(Parameter.Contrast,1.3);
             var targetBeforeEdit=store.ReadState(target);
             Check(transfer.CommitEdit(targetBeforeEdit,new(targetBeforeEdit.Identity,settings.Capture(),look)).Status==AdjustmentStatus.Applied,
                 "A later local target edit advances its in-memory generation");
@@ -73,7 +73,7 @@ static class BatchSelectionChecks
             selection.Select(sourceKey,false);Rejected(()=>exporter.Freeze(selection,review,_=>null),"Late selection invalidates confirmation");selection.Select(sourceKey,true);
             var job=exporter.Freeze(selection,review,_=>null);
             Rejected(()=>exporter.Freeze(selection,review,_=>null),"Pending task is preserved until explicitly discarded");
-            Check(job.Mode==BatchJob.PerTargetFrozen && job.Items[1].Frozen!.Settings.Restore()[Parameter.Contrast]==30,"Each item keeps its own micro-edit");
+            Check(job.Mode==BatchJob.PerTargetFrozen && job.Items[1].Frozen!.Settings.Restore()[Parameter.Contrast]==1.3,"Each item keeps its own micro-edit");
             journal.Discard(job);
 
             var sharpReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null,OutputSharpening.Standard);
@@ -226,7 +226,7 @@ static class BatchSelectionChecks
                 .OrderBy(path=>path,StringComparer.OrdinalIgnoreCase).ToArray();
 
             var newSettingsA=new Adjustments();newSettingsA.Set(Parameter.Exposure,1.0);
-            var newSettingsB=new Adjustments();newSettingsB.Set(Parameter.Contrast,20);
+            var newSettingsB=new Adjustments();newSettingsB.Set(Parameter.Contrast,1.2);
             store.Save(photoA,newSettingsA.Capture(),newLook);
             store.Save(photoB,newSettingsB.Capture(),newLook);
             var selection=new BatchSelectionSession();selection.Add([photoA,photoB]);

@@ -47,7 +47,7 @@ internal static class HotPathIoAndRefreshChecks
             storeA.SaveState(initialA.Identity, new SavedEdit(initialA.Identity, modifiedA.Capture(), null));
 
             var modifiedB = new Adjustments();
-            modifiedB.Set(Parameter.Contrast, 22);
+            modifiedB.Set(Parameter.Contrast, 1.22);
             storeA.SaveState(initialB.Identity, new SavedEdit(initialB.Identity, modifiedB.Capture(), null));
 
             // Hot ReadState hits in-process RegistryCache without re-reading edits.json.
@@ -70,7 +70,7 @@ internal static class HotPathIoAndRefreshChecks
                 $"Batch ReadStates must reuse or read once (expected <= 1, observed {batchReads})");
             Check(batch.Count == 2 &&
                 batch[0].Edit?.Settings.Values[(int)Parameter.Exposure] == 0.75 &&
-                batch[1].Edit?.Settings.Values[(int)Parameter.Contrast] == 22,
+                batch[1].Edit?.Settings.Values[(int)Parameter.Contrast] == 1.22,
                 "Batch ReadStates returns accurate states for every requested photo");
 
             // Cross-instance SaveState invalidates sibling EditStore cache via shared path epoch.
@@ -178,13 +178,13 @@ internal static class HotPathIoAndRefreshChecks
             Check(transientRead.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25,
                 "Transient stat probe error on existing edits.json must not spoof empty ReadState");
             var settingsB = new Adjustments();
-            settingsB.Set(Parameter.Contrast, 15.0);
+            settingsB.Set(Parameter.Contrast, 1.15);
             transientStore.SaveState(idBState, new SavedEdit(idBState, settingsB.Capture(), null));
             failTransientStat = false;
             var persistedA = transientStore.ReadState(tPhotoA);
             var persistedB = transientStore.ReadState(tPhotoB);
             Check(persistedA.Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
-                  persistedB.Edit?.Settings.Values[(int)Parameter.Contrast] == 15.0,
+                  persistedB.Edit?.Settings.Values[(int)Parameter.Contrast] == 1.15,
                 "Transient stat probe error during SaveState must never wipe existing photo records in edits.json");
 
             // Explicit StatReliable=false (e.g. Windows GetFileInformationByHandle returning false on sharing violation)
@@ -220,7 +220,7 @@ internal static class HotPathIoAndRefreshChecks
             reliableStore.SaveState(uIdB, new SavedEdit(uIdB, settingsB.Capture(), null));
             unreliableMode = 0;
             Check(reliableStore.ReadState(tPhotoA).Edit?.Settings.Values[(int)Parameter.Exposure] == 1.25 &&
-                  reliableStore.ReadState(tPhotoB).Edit?.Settings.Values[(int)Parameter.Contrast] == 15.0,
+                  reliableStore.ReadState(tPhotoB).Edit?.Settings.Values[(int)Parameter.Contrast] == 1.15,
                 "SaveState while StatReliable=false preserves all existing photo records");
         }
         finally

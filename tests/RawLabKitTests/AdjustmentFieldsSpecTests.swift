@@ -88,8 +88,13 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         XCTAssertEqual(mac.saturation, try XCTUnwrap((try model("color.saturation", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(mac.sharpening, try XCTUnwrap((try model("detail.sharpening", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(mac.rawNoiseReduction, try XCTUnwrap((try model("detail.denoise.raw_level", platform: "macos")["default"] as? NSNumber)?.doubleValue))
-        XCTAssertNil(mac.chromaNoiseReduction)
-        XCTAssertNil(mac.waveletNoiseReduction)
+        XCTAssertEqual(mac.chromaNoiseReduction, try XCTUnwrap((try model("detail.denoise.chroma_mode", platform: "macos")["default"] as? NSNumber)?.intValue))
+        let macWaveletDefault = try XCTUnwrap(try model("detail.denoise.wavelet", platform: "macos")["default"] as? [String: Any])
+        XCTAssertEqual(mac.waveletNoiseReduction.enabled, macWaveletDefault["enabled"] as? Bool)
+        XCTAssertEqual(mac.waveletNoiseReduction.luma, (macWaveletDefault["luma"] as? NSNumber)?.doubleValue)
+        XCTAssertEqual(mac.waveletNoiseReduction.chroma, (macWaveletDefault["chroma"] as? NSNumber)?.doubleValue)
+        XCTAssertEqual(mac.waveletNoiseReduction.coarse, (macWaveletDefault["coarse"] as? NSNumber)?.doubleValue)
+        XCTAssertEqual(mac.waveletNoiseReduction.preset.rawValue, macWaveletDefault["preset"] as? String)
         XCTAssertEqual(mac.aiDenoiseEnabled, try XCTUnwrap(try model("local.ai_denoise_enabled", platform: "macos")["default"] as? Bool))
         XCTAssertEqual(mac.aiDenoiseStrength, try XCTUnwrap((try model("local.ai_denoise_strength", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(mac.hdrCameraAIEnabled, try XCTUnwrap(try model("local.hdr_camera_ai_enabled", platform: "macos")["default"] as? Bool))
@@ -109,7 +114,8 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         XCTAssertEqual(ios.tint, try XCTUnwrap((try model("color.white_balance.tint", platform: "ios")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(ios.saturation, try XCTUnwrap((try model("color.saturation", platform: "ios")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(ios.sharpening, try XCTUnwrap((try model("detail.sharpening", platform: "ios")["default"] as? NSNumber)?.doubleValue))
-        XCTAssertEqual(ios.noiseReduction, try XCTUnwrap((try model("detail.denoise.post_rgb", platform: "ios")["default"] as? NSNumber)?.doubleValue))
+        XCTAssertEqual(try model("detail.denoise.post_rgb", platform: "ios")["modes"] as? [String], ["hdr"])
+        XCTAssertEqual(HDRSettings().detailSettings.denoise, try XCTUnwrap((try model("detail.denoise.post_rgb", platform: "ios")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(try model("detail.denoise.raw_level", platform: "ios")["supported"] as? Bool, false)
         XCTAssertEqual(ios.displayChromaDenoise, try XCTUnwrap((try model("detail.denoise.chroma_mode", platform: "ios")["default"] as? NSNumber)?.intValue))
 
@@ -256,16 +262,20 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
                 ((macModel["default"] as? NSNumber) ?? (macUI["default"] as? NSNumber))?.doubleValue,
                 fid
             )
-            let uiStep = try XCTUnwrap((macUI["step"] as? NSNumber)?.doubleValue, fid)
-            let expectedUnit = (macUI["unit"] as? String) ?? ""
-
             let spec = parameter.spec
             XCTAssertEqual(spec.range, minV...maxV, "\(parameter.rawValue) range")
             XCTAssertEqual(spec.defaultValue, defaultV, "\(parameter.rawValue) default")
-            XCTAssertEqual(spec.step * spec.multiplier, uiStep, accuracy: 1e-9, "\(parameter.rawValue) UI step")
-            XCTAssertEqual(spec.unit, expectedUnit, "\(parameter.rawValue) unit")
-            XCTAssertEqual(spec.decimals, expectedDecimals(forUIStep: uiStep), "\(parameter.rawValue) decimals")
             XCTAssertEqual(spec.reciprocalScale, parameter == .temperature, "\(parameter.rawValue) reciprocalScale")
+            if (macUI["exposed"] as? Bool) == true {
+                let uiStep = try XCTUnwrap((macUI["step"] as? NSNumber)?.doubleValue, fid)
+                let expectedUnit = (macUI["unit"] as? String) ?? ""
+                XCTAssertEqual(spec.step * spec.displayScale, uiStep, accuracy: 1e-9, "\(parameter.rawValue) UI step")
+                XCTAssertEqual(spec.unit, expectedUnit, "\(parameter.rawValue) unit")
+                XCTAssertEqual(spec.decimals, expectedDecimals(forUIStep: uiStep), "\(parameter.rawValue) decimals")
+            } else {
+                XCTAssertEqual(parameter, .denoiseMode)
+                XCTAssertNil(macUI["step"] as? NSNumber)
+            }
         }
 
         var hdrSettings = Adjustments()
@@ -290,8 +300,21 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         XCTAssertEqual(hdrDenoiseSpec.range, postRgbMin...postRgbMax)
         XCTAssertEqual(hdrDenoiseSpec.defaultValue, postRgbDefault)
         XCTAssertEqual(hdrDenoiseSpec.step, 0.01, accuracy: 1e-9)
-        XCTAssertEqual(hdrDenoiseSpec.multiplier, 100)
+        XCTAssertEqual(hdrDenoiseSpec.displayScale, 100)
         XCTAssertEqual(hdrDenoiseSpec.unit, "%")
+
+        for parameter in [AdjustmentParameter.contrast, .highlights, .shadows, .toneCurve, .saturation] {
+            let hdrSpec = parameter.spec(for: hdrSettings)
+            XCTAssertEqual(hdrSpec.range, -100...100, "\(parameter.rawValue) HDR range")
+            XCTAssertEqual(hdrSpec.displayRange, -100...100, "\(parameter.rawValue) HDR displayRange")
+            XCTAssertEqual(hdrSpec.defaultValue, 0, "\(parameter.rawValue) HDR default")
+            XCTAssertEqual(hdrSpec.displayScale, 1.0, "\(parameter.rawValue) HDR displayScale")
+        }
+
+        let lensVignettingEntry = try XCTUnwrap(entryById["geometry.lens.vignetting"])
+        let lensVignettingMacUI = try XCTUnwrap((lensVignettingEntry["ui"] as? [String: Any])?["macos"] as? [String: Any])
+        XCTAssertEqual(lensVignettingMacUI["exposed"] as? Bool, true)
+        XCTAssertEqual(lensVignettingMacUI["modes"] as? [String], ["sdr", "hdr"])
 
         var sdrWithAsShot = Adjustments()
         sdrWithAsShot.resolveWhiteBalance(WhiteBalance(temperature: 5200, tint: 12))

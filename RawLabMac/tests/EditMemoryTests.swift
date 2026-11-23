@@ -16,13 +16,13 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         let directory = root.appendingPathComponent("edits")
         let store = try MacEditPersistence(directory: directory)
         var settings = Adjustments(); settings.processing = .c5; settings.exposure = 0.5
-        settings.highlights = -20; settings.vibrance = 17.5
+        settings.highlights = 0.2; settings.vibrance = 17.5
         let original = MacPhotoEditState(settings: settings, filmID: "saved-look")
         try store.save(photo, state: original)
         let expected = try store.readState(for: photo)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.003, worstTileRMSE: 0.002,
             detailRMSE: 0.001, evaluations: 24)
-        var candidate = original; candidate.settings.processing = .current; candidate.settings.highlights = -14
+        var candidate = original; candidate.settings.processing = .current; candidate.settings.highlights = 0.14
         let failing = try MacEditPersistence(directory: directory, writeData: { _, _ in throw Failure(message: "disk full") })
         let file = directory.appendingPathComponent("edits.json"), before = try Data(contentsOf: file)
         do {
@@ -56,7 +56,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try check(try store.readState(for: rejectedPhoto) == rejectedExpected, "rejected fit preserves the complete old record")
         let kept = try store.processingMigration(for: rejectedPhoto)!
         try check(!kept.shouldAttempt(current: original, sourceVersion: 2), "unchanged rejected settings do not retry")
-        var edited = original; edited.settings.shadows = 25
+        var edited = original; edited.settings.shadows = 0.25
         try check(kept.shouldAttempt(current: edited, sourceVersion: 2), "changed rejected settings may be reconsidered")
         try store.save(rejectedPhoto, state: edited)
         do {
@@ -222,7 +222,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
         try reopened.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
         let wavelet = try MacEditPersistence(directory: directory).state(for: a)?.settings
         try check(wavelet?.waveletSettings.luma == 53 && wavelet?.waveletSettings.preset == .custom &&
-                  wavelet?.waveletSettings.enabled == false && wavelet?.chromaNoiseReduction == nil,
+                  wavelet?.waveletSettings.enabled == false && wavelet?.chromaNoiseReduction == 0,
                   "disabled custom wavelet settings survive restart without reviving old algorithms")
         settings.resetAll()
         try reopened.save(a, state: MacPhotoEditState(settings: settings, filmID: "look-id"))
@@ -237,11 +237,16 @@ private func check(_ value: @autoclosure () throws -> Bool, _ message: String) t
             try cannotSave.save(b, state: MacPhotoEditState(settings: settings, filmID: ""))
             throw Failure(message: "failed write must propagate")
         } catch is CocoaError { }
-        try Data("not JSON".utf8).write(to: directory.appendingPathComponent("edits.json"))
-        do {
-            _ = try MacEditPersistence(directory: directory)
-            throw Failure(message: "corrupt store must not be silently replaced")
-        } catch is CocoaError { }
+        let corruptBytes = Data("not JSON".utf8)
+        let storeFile = directory.appendingPathComponent("edits.json")
+        try corruptBytes.write(to: storeFile)
+        let healed = try MacEditPersistence(directory: directory)
+        let archived = healed.lastQuarantinedURL
+        try check(archived != nil && archived!.lastPathComponent.hasPrefix("edits.json.corrupt-") &&
+                  (try Data(contentsOf: archived!)) == corruptBytes &&
+                  !FileManager.default.fileExists(atPath: storeFile.path) &&
+                  healed.consumeQuarantinedError() != nil && healed.consumeQuarantinedError() == nil,
+                  "corrupt store must be quarantined with preserved bytes, not silently discarded")
         print("PASS: edit restart, identity, reset, all fields, failed writes and corrupt store")
     }
 }

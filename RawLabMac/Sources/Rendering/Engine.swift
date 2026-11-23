@@ -864,20 +864,20 @@ final class RenderEngine {
         let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
         let key = LensCatalogKey(url: url.standardizedFileURL, modified: values?.contentModificationDate, size: values?.fileSize)
         if lensCatalogKey != key {
-            var inspection = sony2fuji_lens_report()
+            var inspection = sony2fuji_lens_report_v2()
             var count: UInt32 = 0
-            let status = url.path.withCString { sony2fuji_session_inspect_lens(session, $0, &inspection, nil, 0, &count) }
+            let status = url.path.withCString { sony2fuji_session_inspect_lens_v2(session, $0, &inspection, nil, 0, &count) }
             guard status == SONY2FUJI_STATUS_OK else { return nil }
-            var profiles = [sony2fuji_lens_profile](repeating: sony2fuji_lens_profile(), count: Int(count))
+            var profiles = [sony2fuji_lens_profile_v2](repeating: sony2fuji_lens_profile_v2(), count: Int(count))
             let filled = url.path.withCString { input in
                 profiles.withUnsafeMutableBufferPointer { storage in
-                    sony2fuji_session_inspect_lens(session, input, &inspection, storage.baseAddress, count, &count)
+                    sony2fuji_session_inspect_lens_v2(session, input, &inspection, storage.baseAddress, count, &count)
                 }
             }
             guard filled == SONY2FUJI_STATUS_OK else { return nil }
-            lensCandidates = profiles.map { LensCandidate(id: nativeText($0.id), maker: nativeText($0.maker),
-                model: nativeText($0.model), hasDistortion: $0.has_distortion != 0,
-                hasTCA: $0.has_tca != 0, isMatch: $0.is_match != 0) }
+            lensCandidates = profiles.map { LensCandidate(id: nativeText($0.base.id), maker: nativeText($0.base.maker),
+                model: nativeText($0.base.model), hasDistortion: $0.base.has_distortion != 0,
+                hasTCA: $0.base.has_tca != 0, isMatch: $0.base.is_match != 0, hasVignetting: $0.has_vignetting != 0) }
             lensCatalogKey = key
         }
         var extended = sony2fuji_lens_report_v2()

@@ -116,9 +116,9 @@ class StrictJSONTest {
     @Test fun persistenceCodecsRejectDuplicateKeysCommentsTrailingCommasAndFloatMetadata() {
         val encodedSettings = SettingsCodec.encode(EditSettings(exposure = 0.5f))
         for (mutated in listOf(
-            encodedSettings.replaceFirst("v2:{", "v2:{/*comment*/"),
-            encodedSettings.replaceFirst("\"version\":2", "\"version\":1,\"version\":2"),
-            encodedSettings.replaceFirst("\"version\":2", "\"version\":2.0"),
+            encodedSettings.replaceFirst("v3:{", "v3:{/*comment*/"),
+            encodedSettings.replaceFirst("\"version\":3", "\"version\":1,\"version\":3"),
+            encodedSettings.replaceFirst("\"version\":3", "\"version\":3.0"),
             encodedSettings.removeSuffix("}") + ",}",
         )) {
             assertThrows(mutated, IllegalArgumentException::class.java) { SettingsCodec.decode(mutated) }

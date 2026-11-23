@@ -31,7 +31,7 @@ struct ViewportPreviewTests {
         let cpu = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
         let metal = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
         var detail = Adjustments()
-        detail.exposure = 0.35; detail.sharpening = 100
+        detail.exposure = 0.35; detail.sharpening = 1.0
         detail.setEffect(.vignetteAmount, to: -35)
         detail.setEffect(.grainAmount, to: 45)
         var wavelet = detail
@@ -195,7 +195,7 @@ struct ViewportPreviewTests {
         wait("initial viewport-sized model preview") { !model.busy && model.result?.image.width == 832 }
         model.selectedFilmID = lut.path
         let original = model.neutral!.image
-        model.settings.sharpening = 100
+        model.settings.sharpening = 1.0
         model.settings.setEffect(.grainAmount, to: 45)
         wait("numeric and effects changes use the viewport") { !model.busy && model.result?.image.width == 832 }
         let engine = try RenderEngine()

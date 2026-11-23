@@ -174,7 +174,8 @@ struct BatchExportView: View {
                             valueRow(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
                         }
                     }
-                    if let denoise = model.job.settings.waveletNoiseReduction {
+                    let denoise = model.job.settings.waveletNoiseReduction
+                    if denoise != WaveletDenoiseSettings() {
                         valueRow(L10n.text("降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
                         valueRow(L10n.text("亮度降噪"), String(format: "%.0f", denoise.luma))
                         valueRow(L10n.text("色彩降噪"), String(format: "%.0f", denoise.chroma))

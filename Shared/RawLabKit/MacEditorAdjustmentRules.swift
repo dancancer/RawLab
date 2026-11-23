@@ -21,7 +21,7 @@ public enum MacEditorAdjustmentRules {
             case .hsl: return !settings.hslSettings.isIdentity
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
             case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
-            case .denoise: return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+            case .denoise: return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.rawNoiseReduction != 0 || settings.chromaNoiseReduction != 0 || settings.waveletNoiseReduction != WaveletDenoiseSettings()
             case .geometry: return !settings.geometrySettings.isIdentity
             case .lens: return settings.lensSettings != LensCorrectionSettings()
             case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: return false
@@ -41,17 +41,17 @@ public enum MacEditorAdjustmentRules {
                 settings.masterRecipeID != nil || settings.strength != 1
         case .group(.light):
             return (context.isRaw && settings.exposureMode != context.defaultExposureMode) || settings.exposure != 0 ||
-                settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 || !settings.curveSettings.isDefault ||
+                settings.contrast != 1 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 || !settings.curveSettings.isDefault ||
                 settings.blackPoint != 0 || settings.whitePoint != 0
         case .group(.color):
             let wbModified = context.isRaw
                 ? ((!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance) || (settings.masterRecipe != nil && settings.tint != 0))
                 : (settings.masterRecipe == nil && (!settings.isWhiteBalanceDefault || settings.whiteBalanceMode != .asShot))
-            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault || wbModified
+            return settings.saturation != 1 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault || wbModified
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings() || !settings.atmosphereSettings.isIdentity
         case .group(.detail):
             return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
-                (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+                settings.chromaNoiseReduction != 0 || settings.waveletNoiseReduction != WaveletDenoiseSettings()
         case .group(.geometry):
             return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
         case .group(.hdrRendition):
@@ -91,7 +91,7 @@ public enum MacEditorAdjustmentRules {
                 case .denoise:
                     result.settings.aiDenoiseEnabled = false
                     result.settings.aiDenoiseStrength = 100
-                    result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+                    result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = 0; result.settings.waveletNoiseReduction = WaveletDenoiseSettings()
                 case .geometry: result.settings.geometry = nil
                 case .lens: result.settings.lensCorrection = nil
                 case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: break
@@ -112,11 +112,11 @@ public enum MacEditorAdjustmentRules {
                 result.masterRecipeID = nil
             case .group(.light):
                 result.settings.exposureMode = context.defaultExposureMode
-                result.settings.exposure = 0; result.settings.contrast = 0
+                result.settings.exposure = 0; result.settings.contrast = 1
                 result.settings.highlights = 0; result.settings.shadows = 0; result.settings.toneCurve = 0; result.settings.toneCurveConfig = nil
                 result.settings.blackPoint = 0; result.settings.whitePoint = 0
             case .group(.color):
-                result.settings.saturation = 0; result.settings.vibrance = 0; result.settings.colorGrading = nil
+                result.settings.saturation = 1; result.settings.vibrance = 0; result.settings.colorGrading = nil
                 result.settings.resetWhiteBalance()
                 result.settings.hsl = nil
             case .group(.effects): result.settings.photoEffects = nil; result.settings.atmosphere = nil
@@ -124,7 +124,7 @@ public enum MacEditorAdjustmentRules {
                 result.settings.aiDenoiseEnabled = false
                 result.settings.aiDenoiseStrength = 100
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
-                result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
+                result.settings.chromaNoiseReduction = 0; result.settings.waveletNoiseReduction = WaveletDenoiseSettings()
             case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
             case .group(.hdrRendition): break
             case .allGrading: result.settings.colorGrading = nil

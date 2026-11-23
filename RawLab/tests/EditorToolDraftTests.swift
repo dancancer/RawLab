@@ -73,8 +73,8 @@ import Foundation
         let loadedVig = try checkPresent(try store.load(identity: vigIdentity, committed: sdrDecimalBase),
             "Vignette decimal draft reloads from store")
         let projectedVig = loadedVig.projecting(on: sdrDecimalBase)
-        try check(projectedVig.photoEffects.vignetteAmount == -10.0,
-            "Edited vignette UI slider narrows to integer UI step (-10.0)")
+        try check(projectedVig.photoEffects.vignetteAmount == -10.3,
+            "Edited vignette UI slider preserves decimal value (-10.3)")
         try check(projectedVig.photoEffects.vignetteMidpoint == 62.5
             && projectedVig.photoEffects.vignetteRoundness == -12.5
             && projectedVig.photoEffects.vignetteFeather == 50.5
@@ -116,8 +116,8 @@ import Foundation
         let loadedHdrVig = try checkPresent(try store.load(identity: hdrVigIdentity, committed: hdrDecimalBase),
             "HDR vignette decimal draft reloads from store")
         let projectedHdrVig = loadedHdrVig.projecting(on: hdrDecimalBase)
-        try check(projectedHdrVig.hdr?.effectsSettings.vignetteAmount == -10.0,
-            "Edited HDR vignette UI slider narrows to integer UI step (-10.0)")
+        try check(projectedHdrVig.hdr?.effectsSettings.vignetteAmount == -10.3,
+            "Edited HDR vignette UI slider preserves decimal value (-10.3)")
         try check(projectedHdrVig.hdr?.effectsSettings.vignetteMidpoint == 62.5
             && projectedHdrVig.hdr?.effectsSettings.vignetteRoundness == -12.5
             && projectedHdrVig.hdr?.effectsSettings.vignetteFeather == 50.5

@@ -1012,8 +1012,6 @@ extension RawEditorViewModel {
             rhs.temperature = 6500
             lhs.tint = 0
             rhs.tint = 0
-            lhs.noiseReduction = 0
-            rhs.noiseReduction = 0
         } else if lhs.masterRecipeID == nil && lhs.whiteBalanceMode == .camera && rhs.whiteBalanceMode == .camera {
             lhs.temperature = 6500
             rhs.temperature = 6500

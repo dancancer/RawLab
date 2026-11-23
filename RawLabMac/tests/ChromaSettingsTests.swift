@@ -16,7 +16,7 @@ struct ChromaSettingsTests {
         var legacy = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
         legacy.removeValue(forKey: "chromaNoiseReduction")
         let decoded = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: legacy))
-        check(decoded.rawNoiseReduction == 2 && decoded.denoiseMode == 3 && decoded.chromaNoiseReduction == nil,
+        check(decoded.rawNoiseReduction == 2 && decoded.denoiseMode == 3 && decoded.chromaNoiseReduction == 0,
               "Old FBDD record retains its original meaning")
         settings = decoded
         settings.set(.denoiseMode, to: 1)
@@ -25,7 +25,7 @@ struct ChromaSettingsTests {
         let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(settings))
         check(restored.denoiseMode == 2 && restored.rawNoiseReduction == 0, "New mode persists independently")
         settings.reset(.detail)
-        check(settings.denoiseMode == 0 && settings.chromaNoiseReduction == nil && settings.rawNoiseReduction == 0,
+        check(settings.denoiseMode == 0 && settings.chromaNoiseReduction == 0 && settings.rawNoiseReduction == 0,
               "Reset clears both legacy and new denoising")
         check(settings == Adjustments(), "Reset keeps default state canonical")
         settings.set(.denoiseMode, to: 1)

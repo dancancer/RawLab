@@ -36,9 +36,9 @@ class EditPersistenceTest {
         val directory = Files.createTempDirectory("rawlab-edits").toFile()
         try {
             val identity = PhotoIdentity("content://media/external/images/media/7")
-            val changed = EditSettings(film = "velvia", exposure = .75f, contrast = .25f,
+            val changed = EditSettings(film = "velvia", exposure = .75f, contrast = 1.25f,
                 exposureMode = 2, hsl = HslSettings().withValue(1, 0, -60f),
-                highlights = .25f, customWb = true, temperature = 4200f,
+                highlights = -.25f, customWb = true, temperature = 4200f,
                 denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2,
                 effects = PhotoEffectsSettings(vignetteAmount = -40f, vignetteMidpoint = 20f,
                     grainAmount = 65f, grainSize = 70f),
@@ -111,6 +111,35 @@ class EditPersistenceTest {
             assertEquals(.5f, store.load(identity)?.exposure)
             assertEquals("An externally modified file must force exactly one re-read",
                 readsAfterSave + 1, store.fileReadCount)
+        } finally { directory.deleteRecursively() }
+    }
+
+    @Test fun legacyPropertiesCsvAndV2JsonUpgradeToCanonicalValuesAndPersistAsV3() {
+        val directory = Files.createTempDirectory("rawlab-legacy-upgrade").toFile()
+        try {
+            val csvIdentity = PhotoIdentity("legacy-csv-1")
+            val csvEncoded = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(csvIdentity.value.toByteArray(Charsets.UTF_8))
+            val propsFile = File(directory, "edits.properties")
+            // Legacy CSV order: strength, exposure, highlights(UI sign), shadows, contrast(delta), toneCurve, saturation(delta), customWb, temp, tint, sharpening
+            val props = java.util.Properties().apply {
+                setProperty("record.$csvEncoded.values", "1.0,0.5,-0.4,0.2,0.25,0.0,-0.15,0.0,6500.0,0.0,0.1")
+            }
+            propsFile.outputStream().use { props.store(it, null) }
+
+            val store = EditStore(directory)
+            val loadedCsv = store.readState(csvIdentity).settings!!
+            assertEquals(0.4f, loadedCsv.highlights, 1e-6f)
+            assertEquals(1.25f, loadedCsv.contrast, 1e-6f)
+            assertEquals(0.85f, loadedCsv.saturation, 1e-6f)
+
+            store.save(csvIdentity, loadedCsv.copy(exposure = 0.6f))
+            val savedProps = java.util.Properties().also { propsFile.inputStream().use(it::load) }
+            assertTrue(savedProps.getProperty("record.$csvEncoded.values").startsWith("v3:"))
+            val reloadedV3 = EditStore(directory).readState(csvIdentity).settings!!
+            assertEquals(0.4f, reloadedV3.highlights, 1e-6f)
+            assertEquals(1.25f, reloadedV3.contrast, 1e-6f)
+            assertEquals(0.85f, reloadedV3.saturation, 1e-6f)
         } finally { directory.deleteRecursively() }
     }
 }

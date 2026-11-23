@@ -210,9 +210,10 @@ struct AdjustmentDock: View {
         if tool == .toneCurve {
             let source = model.sourceRevision
             let hdr = model.settings.isHDREditing
+            let toneCurveSpec = AdjustmentParameter.toneCurve.spec(for: model.settings)
             MacToneCurveControls(settings: Binding(get: { model.settings.editingCurveSettings }, set: { model.settings.editingCurveSettings = $0 }),
-                legacy: Binding(get: { AdjustmentParameter.toneCurve.value(from: model.settings) },
-                                set: { model.settings.set(.toneCurve, to: $0) }),
+                legacy: Binding(get: { toneCurveSpec.displayValue(AdjustmentParameter.toneCurve.value(from: model.settings)) },
+                                set: { model.settings.set(.toneCurve, to: toneCurveSpec.modelValue($0)) }),
                 usesExposureStops: hdr, source: "\(source).\(hdr)",
                 isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
                     model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },

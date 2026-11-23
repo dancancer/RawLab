@@ -278,7 +278,8 @@ class EditStore internal constructor(
                 }
                 val encodedSettings = properties.getProperty("record.$encoded.values")
                 require(encodedSettings != null) { "Missing edit record values" }
-                require(!encodedSettings.startsWith("v2:") || entries.all { it.second == "values" }) { "Conflicting structured edit fields" }
+                val isStructured = encodedSettings.startsWith("v2:") || encodedSettings.startsWith("v3:")
+                require(!isStructured || entries.all { it.second == "values" }) { "Conflicting structured edit fields" }
                 val storedFilm = properties.getProperty("record.$encoded.film")
                 val film = if (storedFilm == null) {
                     "neutral"
@@ -286,7 +287,7 @@ class EditStore internal constructor(
                     runCatching { String(Base64.getUrlDecoder().decode(storedFilm), StandardCharsets.UTF_8) }
                         .getOrDefault(storedFilm)
                 }
-                records[identity] = (if (encodedSettings.startsWith("v2:")) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
+                records[identity] = (if (isStructured) StructuredSettingsCodec.decode(encodedSettings, "photo_edit")
                 else decode(encodedSettings, film).copy(
                     recipeID = properties.getProperty("record.$encoded.recipe"),
                     lens = LensSettings.decode(properties.getProperty("record.$encoded.lens")),
@@ -487,8 +488,8 @@ class EditStore internal constructor(
         require(fields.size in listOf(11, 15, 24, 49))
         return EditSettings(film = film, strength = fields[0], exposure = fields[1],
             x3fMode = X3fMode.LEGACY,
-            highlights = fields[2], shadows = fields[3], contrast = fields[4], toneCurve = fields[5],
-            saturation = fields[6], customWb = parseBoolean(fields[7]), temperature = fields[8], tint = fields[9],
+            highlights = (-fields[2]).canonicalZero(), shadows = fields[3], contrast = 1f + fields[4], toneCurve = fields[5],
+            saturation = 1f + fields[6], customWb = parseBoolean(fields[7]), temperature = fields[8], tint = fields[9],
             sharpening = fields[10], denoise = if (fields.size == 15)
                 DenoiseSettings(parseBoolean(fields[11]), fields[12], fields[13], fields[14])
             else if (fields.size >= 24)

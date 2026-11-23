@@ -256,16 +256,15 @@ import Foundation
         var context = raw
         context.transferNotices = { notices.append($0) }
         var target = RawSettings.default
-        target.noiseReduction = 0.2
         let old = AdjustmentTransferSource(identifier: "old", isRaw: true, processingVersion: 1, recipe: nil)
         let payload = try AdjustmentTransferPayload(source: old, values: [
             "light.exposure": .number(0.33), "detail.denoise.raw_level": .number(1), "detail.denoise.post_rgb": .number(0.5)])
         let result = try IOSAdjustmentTransfer.prepare(payload: payload, target: state(target), context: context)
-        check(result.settings.exposure == 0.33 && result.settings.noiseReduction == 0.5 &&
+        check(result.settings.exposure == 0.33 &&
             result.settings.processing.version == 3,
-            "iOS applies post_rgb, ignores raw_level and keeps the target processing version on mismatch")
-        check(notices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
-            "iOS reports the retained processing version first and the ignored raw level once")
+            "iOS ignores raw_level and SDR post_rgb and keeps the target processing version on mismatch")
+        check(notices == [.retainedTargetProcessingVersion, .ignoredRawDenoise, .ignoredPostRGBDenoise],
+            "iOS reports the retained processing version first and each ignored denoise field once")
         var silentNotices = [AdjustmentTransferNotice]()
         var quiet = raw
         quiet.transferNotices = { silentNotices.append($0) }
@@ -610,34 +609,35 @@ import Foundation
     }
     static func rasterDormantDenoise() throws {
         var raster = raw; raster.isRaw = false
-        var saved = RawSettings.default
-        saved.noiseReduction = 0.4
-        let loaded = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(saved))
         var source = RawSettings.default
         source.denoise = RawDenoiseSettings(enabled: true, luma: 20, chroma: 30, coarse: 40)
         let selected = try IOSAdjustmentTransfer.capture(scope: .custom([.waveletDenoise]), snapshot: state(source), context: raw)
-        let candidate = try IOSAdjustmentTransfer.prepare(payload: selected, target: state(loaded), context: raster)
-        check(candidate.settings.denoise == source.denoise && candidate.settings.noiseReduction == 0.4,
-            "Raster wavelet paste preserves loaded dormant post-RGB values without an unselected-field error")
+        let candidate = try IOSAdjustmentTransfer.prepare(payload: selected, target: state(), context: raster)
+        check(candidate.settings.denoise == source.denoise,
+            "Raster wavelet paste succeeds cleanly")
     }
 
     static func objects() throws {
-        var source = RawSettings.default; source.noiseReduction = 0.25
-        let copy = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
-        check(copy.fields == [.postRGBDenoise] && copy[.postRGBDenoise] == .number(0.25), "Legacy post-RGB request has its own field")
-        check(try IOSAdjustmentTransfer.prepare(payload: copy, target: state(), context: raw).settings.noiseReduction == 0.25,
-            "Legacy post-RGB request survives iOS transfer")
+        var source = RawSettings.default
+        let capturedAll = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+        check(capturedAll[.postRGBDenoise] == .number(0), "SDR capture emits 0 for post_rgb")
+        var postRGBNotices: [AdjustmentTransferNotice] = []
+        var postRGBNoticing = raw
+        postRGBNoticing.transferNotices = { postRGBNotices.append($0) }
+        let ignoredPostRGB = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.post_rgb": .number(0.25)]), target: state(), context: postRGBNoticing)
+        check(ignoredPostRGB.settings == RawSettings.default && postRGBNotices == [.retainedTargetProcessingVersion, .ignoredPostRGBDenoise],
+            "SDR iOS target ignores non-zero post_rgb with notice")
         var rawOnlyNotices: [AdjustmentTransferNotice] = []
         var rawNoticing = raw
         rawNoticing.transferNotices = { rawOnlyNotices.append($0) }
         let ignored = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: state(), context: rawNoticing)
-        check(ignored.settings.noiseReduction == RawSettings.default.noiseReduction &&
+        check(ignored.settings == RawSettings.default &&
             rawOnlyNotices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
-            "RAW FBDD is ignored with a notice and never maps to iOS post-RGB denoise")
+            "RAW FBDD is ignored with a notice")
         var target = RawSettings.default; target.displayChromaDenoise = 2
         let nullChroma = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.chroma_mode": .null]), target: state(target), context: raw)
         check(nullChroma.settings.displayChromaDenoise == 0, "Null legacy chroma maps to the real disabled native request")
-        source.denoise = .init(enabled: true, luma: 2, chroma: 3, coarse: 4); source.noiseReduction = 0
+        source.denoise = .init(enabled: true, luma: 2, chroma: 3, coarse: 4)
         let wavelet = try IOSAdjustmentTransfer.capture(scope: .custom([.waveletDenoise]), snapshot: state(source), context: raw)
         let denoised = try IOSAdjustmentTransfer.prepare(payload: wavelet, target: state(target), context: raw)
         check(denoised.settings.denoise == source.denoise && denoised.settings.displayChromaDenoise == 2,
@@ -649,10 +649,6 @@ import Foundation
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.wavelet": .object([
                 "enabled": .boolean(true), "luma": .number(0), "chroma": .number(46), "coarse": .number(50), "preset": .string("clean")])]),
                 target: state(), context: raw)
-        }
-        target.noiseReduction = 0.4
-        rejects("Wavelet enable cannot silently disable unselected active post-RGB denoise") {
-            _ = try IOSAdjustmentTransfer.prepare(payload: wavelet, target: state(target), context: raw)
         }
         target = .default; target.geometry.cropX = 0.2; target.geometry.cropWidth = 0.5
         let cropped = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.6)]), target: state(target), context: raw)
@@ -738,7 +734,6 @@ import Foundation
         var target = RawSettings.default
         target.exposureMode = .scene
         target.whiteBalanceMode = .custom; target.temperature = 5850; target.tint = -18
-        target.noiseReduction = 0.25
         target.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false, mode: .manual,
             profileID: "fixture-profile", vignetting: true)
         let before = state(target)
@@ -748,8 +743,8 @@ import Foundation
         let applied = try IOSAdjustmentTransfer.prepare(payload: all, target: before, context: rawLens)
         check(applied.settings.exposure == 0.75 && applied.settings.exposureMode == .scene
             && applied.settings.whiteBalanceMode == .custom && applied.settings.temperature == 5850 && applied.settings.tint == -18
-            && applied.settings.noiseReduction == 0.25 && applied.settings.lensCorrection == target.lensCorrection,
-            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, post-RGB denoise and lens")
+            && applied.settings.lensCorrection == target.lensCorrection,
+            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, and lens")
 
         var neutralJpeg = RawSettings.default; neutralJpeg.exposureMode = .sensor
         let placeholders = Set<AdjustmentTransferField>([.exposureMode, .whiteBalanceMode, .temperature, .tint, .rawDenoise, .postRGBDenoise])

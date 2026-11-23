@@ -424,8 +424,8 @@ struct ParameterValueTests {
         settings.setDenoiseParameter(.luma, to: 20.16)
         check(settings.effectSettings.grainAmount == 10.1 && settings.waveletSettings.luma == 20.2,
               "Effects and denoise preserve the fine tenth grid in saved settings")
-        check(AdjustmentParameter.strength.spec.multiplier == 100 && AdjustmentParameter.strength.spec.step == 0.001 &&
-              AdjustmentParameter.sharpening.spec.multiplier == 1 && AdjustmentParameter.sharpening.spec.step == 0.1,
+        check(AdjustmentParameter.strength.spec.displayScale == 100 && AdjustmentParameter.strength.spec.step == 0.001 &&
+              AdjustmentParameter.sharpening.spec.displayScale == 100 && AdjustmentParameter.sharpening.spec.step == 0.001,
               "Strength and sharpening retain their engine-to-display mappings")
         shiftHorizontalChecks()
         discreteLineWheelChecks()
@@ -433,7 +433,7 @@ struct ParameterValueTests {
         rowAlignmentChecks()
         rowLayoutChecks()
         sliderDrawingChecks()
-        check(AdjustmentParameter.exposure.spec.display(0.4) == "+0.40 EV" && AdjustmentParameter.contrast.spec.display(-15) == "-15%" &&
+        check(AdjustmentParameter.exposure.spec.display(0.4) == "+0.40 EV" && AdjustmentParameter.contrast.spec.display(0.85) == "-15%" &&
               AdjustmentParameter.temperature.spec.display(5105) == "5105 K" && AdjustmentParameter.strength.spec.display(1) == "100%",
               "Displayed values match the editor field: sign for signed ranges, a space before EV and K, none before %")
         print("PASS: parameter value precision and native field regressions")

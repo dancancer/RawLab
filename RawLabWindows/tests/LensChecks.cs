@@ -57,5 +57,10 @@ internal static class LensChecks
         check(changed?.Manual == true, "Windows manual radio selects manual mode");
         ((TextBox)panel.FindName("Search")).Text = "no-profile-with-this-name";
         check(((ListBox)panel.FindName("Profiles")).Items.Count == 0, "Windows lens search filters profiles");
+        var vignettingBox = (CheckBox)panel.FindName("Vignetting");
+        check(vignettingBox != null && Equals(vignettingBox.Content, Loc.Text("暗角校正")), "Windows lens panel exposes localized Vignetting toggle");
+        changed = null;
+        vignettingBox!.IsChecked = true;
+        check(changed?.Vignetting == true, "Windows lens panel Vignetting toggle updates LensSettings.Vignetting");
     }
 }

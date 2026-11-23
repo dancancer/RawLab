@@ -302,7 +302,8 @@ public sealed class ToneCurvePanel : StackPanel
             actions.Visibility = parametricVisible ? Visibility.Collapsed : Visibility.Visible;
             parametricPanel.Visibility = parametricVisible ? Visibility.Visible : Visibility.Collapsed;
             exposureAxis.Visibility = hdr ? Visibility.Visible : Visibility.Collapsed;
-            legacy.SourceIdentity = identity; legacy.Refresh(Loc.Text("S 曲线"), new(-100, 100), scalar, 0, "%");
+            var toneCurveSpec = ParameterSpec.All[(int)Parameter.ToneCurve];
+            legacy.SourceIdentity = identity; legacy.Refresh(Loc.Text("S 曲线"), NumericRange.For(toneCurveSpec), scalar, 0, toneCurveSpec.Unit);
             RefreshRows();
             RefreshParametricRows();
             canvas.Refresh(active, identity, selected, channel, parametricVisible);

@@ -315,7 +315,7 @@ public enum EditorAdjustmentRules {
                     result.temperature = defaults.temperature; result.tint = defaults.tint
                 case .toneCurve: result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
                 case .noiseReduction:
-                    result.noiseReduction = defaults.noiseReduction; result.denoise = defaults.denoise
+                    result.denoise = defaults.denoise
                     result.displayChromaDenoise = defaults.displayChromaDenoise
                 default: kind.reset(in: &result)
                 }
@@ -342,7 +342,6 @@ public enum EditorAdjustmentRules {
             case .effects: result.photoEffects = defaults.photoEffects; result.atmosphere = nil
             case .detail:
                 result.sharpening = defaults.sharpening; result.denoise = defaults.denoise
-                result.noiseReduction = defaults.noiseReduction
                 result.displayChromaDenoise = defaults.displayChromaDenoise
             case .geometry:
                 result.geometry = defaults.geometry; result.lensCorrection = defaults.lensCorrection
@@ -391,7 +390,7 @@ public enum EditorAdjustmentRules {
             (settings.exposure, -5...5), (settings.contrast, 0...2), (settings.saturation, 0...2),
             (settings.temperature, RawSettings.temperatureRange), (settings.tint, RawSettings.tintRange),
             (settings.highlights, -1...1), (settings.shadows, -1...1), (settings.toneCurve, -1...1),
-            (settings.noiseReduction, 0...1), (settings.sharpening, 0...2),
+            (settings.sharpening, 0...2),
             (settings.lutStrength, RawSettings.lutStrengthRange)
         ]
         return fields.allSatisfy { $0.0.isFinite && $0.1.contains($0.0) } &&

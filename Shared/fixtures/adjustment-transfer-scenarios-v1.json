@@ -513,10 +513,7 @@
       }
     },
     {
-      "id": "raster-all-preserves-ios-post-rgb-denoise",
-      "platforms": [
-        "ios"
-      ],
+      "id": "sdr-raw-all-ignores-seeded-post-rgb-denoise",
       "target": {
         "kind": "sdr_raw",
         "as_shot_wb": [
@@ -668,13 +665,14 @@
       },
       "expect": {
         "status": "applied",
+        "notices": [],
         "values": {
           "light.exposure": 0.75,
           "light.exposure_mode": "scene",
           "color.white_balance.mode": "temperature",
           "color.white_balance.temperature_kelvin": 5850,
           "color.white_balance.tint": -18,
-          "detail.denoise.post_rgb": 0.25,
+          "detail.denoise.post_rgb": 0,
           "geometry.lens.distortion": true,
           "geometry.lens.tca": true,
           "geometry.lens.vignetting": true,
@@ -1048,10 +1046,7 @@
       }
     },
     {
-      "id": "raster-post-rgb-zero-unchanged-on-ios-raw",
-      "platforms": [
-        "ios"
-      ],
+      "id": "sdr-post-rgb-nonzero-ignored-unchanged-on-raw",
       "target": {
         "kind": "sdr_raw",
         "as_shot_wb": [
@@ -1061,42 +1056,28 @@
         "lens_valid": true,
         "supports_raw_denoise": false,
         "available_looks": [],
-        "seed_payload": {
-          "payload_version": 1,
-          "scope_version": 1,
-          "source": {
-            "identifier": "seed.ARW",
-            "is_raw": true,
-            "processing_version": 3
-          },
-          "values": {
-            "light.exposure_mode": "scene",
-            "color.white_balance.mode": "temperature",
-            "color.white_balance.temperature_kelvin": 5850,
-            "color.white_balance.tint": -18,
-            "geometry.lens.distortion": true,
-            "geometry.lens.tca": true,
-            "geometry.lens.vignetting": true,
-            "geometry.lens.auto_crop": false,
-            "geometry.lens.profile_id": "fixture-profile",
-            "detail.denoise.post_rgb": 0.25
-          }
-        }
+        "seed_payload": null
       },
       "payload": {
         "payload_version": 1,
         "scope_version": 1,
         "source": {
-          "identifier": "source.jpg",
-          "is_raw": false,
+          "identifier": "source.ARW",
+          "is_raw": true,
           "processing_version": 3
         },
         "values": {
-          "detail.denoise.post_rgb": 0
+          "detail.denoise.post_rgb": 0.25
         }
       },
       "expect": {
-        "status": "unchanged"
+        "status": "unchanged",
+        "notices": [
+          "ignored_post_rgb_denoise"
+        ],
+        "values": {
+          "detail.denoise.post_rgb": 0
+        }
       }
     },
     {
@@ -1730,7 +1711,8 @@
             "ignored_post_rgb_denoise"
           ],
           "ios": [
-            "ignored_raw_denoise"
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
           ],
           "android": [
             "ignored_raw_denoise",

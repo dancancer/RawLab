@@ -28,7 +28,7 @@ public sealed class AgentTransferHotReloadChecks
     {
         var adj = new Adjustments();
         adj.Set(Parameter.Exposure, 0.75);
-        adj.Set(Parameter.Contrast, 16);
+        adj.Set(Parameter.Contrast, 1.16);
         adj.ToneControls = new ToneControlsSettings(BlackPoint: -0.15, WhitePoint: 0.1, Vibrance: 0.25);
         adj.Atmosphere = new AtmosphereSettings(Clarity: 0.3, Dehaze: -0.2);
         adj.EditingCurve = new ToneCurveSettings(

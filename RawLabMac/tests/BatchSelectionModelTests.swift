@@ -117,7 +117,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "synchronization records collection history without changing clipboard")
         model.editCollectionPhoto(ids[1]); try rendered(model)
         try check(model.settings.exposure == 0.7, "single editor opens synchronized saved state")
-        model.settings.contrast = 19; try check(model.saveEdits(), "micro edit saved")
+        model.settings.contrast = 1.19; try check(model.saveEdits(), "micro edit saved")
         model.returnToBatchSelection()
         try check(model.batchSelection.current == nil && model.batchSelection.returnPosition == ids[1] && model.batchSelection.ordered == ids && model.batchSelection.selected == Set(ids),
             "return retains collection order selection and navigation position")
@@ -125,7 +125,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         model.editCollectionPhoto(ids[0]); try rendered(model)
         model.settings.exposure = 1.2; try check(model.saveEdits(), "source updated")
         model.applyAdjustmentPaste(try model.prepareCollectionSynchronization(scope: .custom([.exposure])))
-        try check(model.editStore!.state(for: second)?.settings.contrast == 19, "resynchronization preserves unselected micro edits")
+        try check(model.editStore!.state(for: second)?.settings.contrast == 1.19, "resynchronization preserves unselected micro edits")
         model.editCollectionPhoto(ids[1]); try rendered(model)
         model.setInteracting(true); model.settings.exposure = 2.4
         let draftReview = try model.prepareCollectionExport(skipping: [], format: .jpeg, longEdge: 1024, directory: root)
@@ -147,7 +147,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try BatchFlowModelTests.initializationFailure(job: job, root: root)
         model.settings.exposure = 3; try check(model.saveEdits(), "edit after freeze saved independently")
         let restored = try model.batchJournal.load()!
-        try check(restored.items[1].frozen!.settings.exposure == 2.6 && restored.items[1].frozen!.settings.contrast == 19, "recovery never reads later live editor settings")
+        try check(restored.items[1].frozen!.settings.exposure == 2.6 && restored.items[1].frozen!.settings.contrast == 1.19, "recovery never reads later live editor settings")
         model.batch?.setLongEdge(400); model.batch?.selectAll(false); model.batch?.remove(job.items[0].id)
         try check(model.batch?.job.longEdge == 1024 && model.batch?.job.selectedCount == 3 && model.batch?.job.items.count == 3,
             "frozen task cannot be edited as a uniform export draft")

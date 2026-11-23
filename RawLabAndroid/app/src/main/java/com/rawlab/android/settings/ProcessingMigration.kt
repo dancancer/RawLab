@@ -46,8 +46,8 @@ internal class ProcessingMigrationOutcome private constructor(private val before
     fun candidate(settings: EditSettings): EditSettings? {
         require(settings == before)
         if (values[4] != 1f) return null
-        return settings.copy(processing = ProcessingIdentity.CURRENT, exposure = values[6], contrast = values[7] - 1,
-            highlights = -values[8], shadows = values[9], saturation = values[10] - 1,
+        return settings.copy(processing = ProcessingIdentity.CURRENT, exposure = values[6], contrast = values[7],
+            highlights = values[8], shadows = values[9], saturation = values[10],
             blackPoint = values[11] * 100, whitePoint = values[12] * 100, vibrance = values[13] * 100,
             clarity = values[14] * 100, dehaze = values[15] * 100).canonicalZeros()
     }

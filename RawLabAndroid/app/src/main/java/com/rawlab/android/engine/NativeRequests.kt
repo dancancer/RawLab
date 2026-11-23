@@ -17,6 +17,7 @@ import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.PhotoEffectsSettings
 import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurveShape
+import com.rawlab.android.settings.canonicalZero
 import java.io.File
 
 internal data class NativeGeometry(
@@ -412,11 +413,11 @@ internal fun EditSettings.toNativeProcessRequest(
         whiteBalance = whiteBalance,
         tone = NativeProcessTone(
             exposureEv = exposure * scale,
-            contrast = 1f + contrast * scale,
-            highlights = -(highlights * scale),
+            contrast = if (scale == 1f) contrast else 1f + (contrast - 1f) * scale,
+            highlights = (highlights * scale).canonicalZero(),
             shadows = shadows * scale,
             toneCurve = renderToneCurve,
-            saturation = 1f + saturation * scale,
+            saturation = if (scale == 1f) saturation else 1f + (saturation - 1f) * scale,
             sharpening = sharpening,
         ),
         exposureMode = exposureMode,

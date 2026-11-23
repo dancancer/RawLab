@@ -388,7 +388,6 @@ public final class EditPersistence: @unchecked Sendable {
               s.highlights.isFinite, (-1.0...1.0).contains(s.highlights),
               s.shadows.isFinite, (-1.0...1.0).contains(s.shadows),
               s.toneCurve.isFinite, (-1.0...1.0).contains(s.toneCurve),
-              s.noiseReduction.isFinite, (0.0...1.0).contains(s.noiseReduction),
               s.sharpening.isFinite, (0.0...2.0).contains(s.sharpening),
               s.lutStrength.isFinite, RawSettings.lutStrengthRange.contains(s.lutStrength),
               (s.hdr?.isValid ?? true),

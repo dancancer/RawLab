@@ -186,7 +186,6 @@ extension Sony2FujiProcessor {
             result.temperature = 6500
             result.tint = 0
         }
-        result.noiseReduction = 0
         return result
     }
 
@@ -220,7 +219,7 @@ extension Sony2FujiProcessor {
         request.highlights = Float(settings.highlights)
         request.shadows = Float(settings.shadows)
         request.tone_curve = settings.curveSettings.mode == .custom ? 0 : Float(settings.toneCurve)
-        request.noise_reduction = displayInput || settings.denoise.enabled ? 0 : Float(settings.noiseReduction)
+        request.noise_reduction = 0
         request.sharpening = Float(settings.sharpening)
         return request
     }

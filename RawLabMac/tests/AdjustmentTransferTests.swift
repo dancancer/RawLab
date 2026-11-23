@@ -239,7 +239,7 @@ struct AdjustmentTransferTests {
 
     static func toneCurve() throws {
         var source = Adjustments()
-        source.toneCurve = 65
+        source.toneCurve = 0.65
         source.curveSettings = ToneCurveSettings.identity.inserting(x: 0.25, y: 0.12).inserting(x: 0.75, y: 0.88)
         let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(source))
         check(restored == source, "Curve mode, binary64 points and inactive legacy scalar persist")
@@ -247,13 +247,13 @@ struct AdjustmentTransferTests {
         check(modified.fields.contains(.curve) && modified.fields.contains(.sCurve), "Modified scope keeps curve and inactive legacy scalar")
         let partial = try MacAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: state(source), context: raw)
         var target = Adjustments()
-        target.toneCurve = -25
+        target.toneCurve = -0.25
         let merged = try MacAdjustmentTransfer.prepare(payload: partial, target: state(target), context: raw)
-        check(merged.settings.curveSettings == source.curveSettings && merged.settings.toneCurve == -25,
+        check(merged.settings.curveSettings == source.curveSettings && merged.settings.toneCurve == -0.25,
             "Pasting curve mode and points preserves unselected legacy scalar")
         let scalar = try MacAdjustmentTransfer.capture(scope: .custom([.sCurve]), snapshot: state(target), context: raw)
         let legacyOnly = try MacAdjustmentTransfer.prepare(payload: scalar, target: state(source), context: raw)
-        check(legacyOnly.settings.curveSettings == source.curveSettings && legacyOnly.settings.toneCurve == -25,
+        check(legacyOnly.settings.curveSettings == source.curveSettings && legacyOnly.settings.toneCurve == -0.25,
             "Old scalar-only payload preserves unselected custom curve mode")
         let bytes = try JSONEncoder().encode(partial)
         check(try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes) == partial, "Curve payload round trip")
@@ -372,7 +372,7 @@ struct AdjustmentTransferTests {
 
     static func scopesAndFreeze() throws {        var source = Adjustments()
         source.exposure = 1.25
-        source.contrast = 20
+        source.contrast = 1.2
         source.geometry = GeometrySettings()
         source.geometry?.straightenDegrees = 3
         source.resolveWhiteBalance(WhiteBalance(temperature: 5123, tint: 17))
@@ -387,7 +387,7 @@ struct AdjustmentTransferTests {
         let modified = try MacAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
         check(modified.fields == [.exposure, .contrast, .hslHueRed], "Modified uses logical defaults and excludes geometry")
         var target = Adjustments()
-        target.exposure = -2; target.contrast = -10; target.sharpening = 47
+        target.exposure = -2; target.contrast = 0.9; target.sharpening = 0.47
         target.processing = .legacy
         target.resolveWhiteBalance(WhiteBalance(temperature: 6001, tint: -8))
         let before = state(target, film: "builtin:PROVIA.cube")
@@ -419,7 +419,7 @@ struct AdjustmentTransferTests {
         for strength in [0.5, 1.0] {
             var source = Adjustments()
             source.applyMasterRecipe(.hamadaDaylightV2)
-            source.exposure = 1; source.contrast = 40; source.strength = strength
+            source.exposure = 1; source.contrast = 1.4; source.strength = strength
             let payload = try MacAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast]), snapshot: state(source), context: raw)
             let applied = try MacAdjustmentTransfer.prepare(payload: payload, target: state(hdrTarget), context: hdrContext).settings.hdr!
             check(applied.exposure == strength && abs(applied.contrast - 40 * strength) < 1e-9,
@@ -450,7 +450,7 @@ struct AdjustmentTransferTests {
     static func recipeConversions() throws {
         var source = Adjustments()
         source.applyMasterRecipe(.hamadaDaylightV2)
-        source.exposure = 1.4; source.contrast = 40; source.strength = 0.5
+        source.exposure = 1.4; source.contrast = 1.4; source.strength = 0.5
         let selected: Set<AdjustmentTransferField> = [.exposure, .contrast]
         let payload = try MacAdjustmentTransfer.capture(scope: .custom(selected), snapshot: state(source), context: raw)
         let plain = try MacAdjustmentTransfer.prepare(payload: payload, target: state(), context: raw)
@@ -459,14 +459,14 @@ struct AdjustmentTransferTests {
         check(plain.settings.masterRecipeID == nil && plain.filmID.isEmpty, "Partial paste does not select source look")
         var target = Adjustments()
         target.applyMasterRecipe(.hamadaDaylightV2)
-        target.strength = 0.5; target.saturation = 13; target.tint = 0
+        target.strength = 0.5; target.saturation = 1.13; target.tint = 0
         let before = state(target)
         let merged = try MacAdjustmentTransfer.prepare(payload: payload, target: before, context: raw)
         check(request(merged).exposure_ev == request(plain).exposure_ev && request(merged).contrast == request(plain).contrast,
               "Representable recipe target inversely maps selected contributions")
         check(merged.settings.saturation == target.saturation && merged.settings.strength == target.strength
             && merged.masterRecipeID == before.masterRecipeID, "Recipe target keeps unselected context")
-        source.contrast = 80; source.strength = 1
+        source.contrast = 1.8; source.strength = 1
         let wide = try MacAdjustmentTransfer.capture(scope: .custom([.contrast]), snapshot: state(source), context: raw)
         rejects("Unrepresentable recipe target is blocked without clamping") {
             _ = try MacAdjustmentTransfer.prepare(payload: wide, target: before, context: raw)
@@ -1020,7 +1020,7 @@ struct AdjustmentTransferTests {
         var source = Adjustments(); source.strength = 0.7
         let strength = try MacAdjustmentTransfer.capture(scope: .custom([.strength]), snapshot: state(source), context: raw)
         var target = Adjustments()
-        target.contrast = 13.37; target.saturation = -16.29
+        target.contrast = 1.1337; target.saturation = 0.8371
         target.photoEffects = PhotoEffectsSettings()
         target.hsl = HSLSettings()
         target.geometry = GeometrySettings()
@@ -1124,9 +1124,9 @@ struct AdjustmentTransferTests {
             for scope in scopes + [.custom([.rawDenoise])] {
                 let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(fbddSource), context: raw)
                 let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
-                check(pasted.settings.waveletNoiseReduction == nil &&
+                check(pasted.settings.waveletNoiseReduction == WaveletDenoiseSettings() &&
                       pasted.settings.rawNoiseReduction == 2 &&
-                      pasted.settings.chromaNoiseReduction == nil &&
+                      pasted.settings.chromaNoiseReduction == 0 &&
                       pasted.settings.hasLegacyDenoise &&
                       pasted.settings.isDenoiseEnabled &&
                       pasted.settings.denoiseSummary == L10n.text("旧版 FBDD"),
@@ -1135,7 +1135,7 @@ struct AdjustmentTransferTests {
             for scope in scopes + [.custom([.chromaDenoise])] {
                 let payload = try MacAdjustmentTransfer.capture(scope: scope, snapshot: state(chromaSource), context: raw)
                 let pasted = try MacAdjustmentTransfer.prepare(payload: payload, target: state(target), context: raw)
-                check(pasted.settings.waveletNoiseReduction == nil &&
+                check(pasted.settings.waveletNoiseReduction == WaveletDenoiseSettings() &&
                       pasted.settings.chromaNoiseReduction == 1 &&
                       pasted.settings.rawNoiseReduction == 0 &&
                       pasted.settings.hasLegacyDenoise &&
@@ -1143,34 +1143,6 @@ struct AdjustmentTransferTests {
                       "Legacy chroma paste activates on \(label) target (\(scope))")
             }
         }
-
-        // Uncanonicalized target with matching wire values must not slip past previewCapture or prepare early-exit.
-        var staleTarget = Adjustments()
-        staleTarget.resolveRawNoiseReductionSupport(true)
-        staleTarget.rawNoiseReduction = 2
-        staleTarget.chromaNoiseReduction = 0
-        staleTarget.waveletNoiseReduction = WaveletDenoiseSettings()
-
-        let stalePreview = Result {
-            try MacAdjustmentTransfer.previewCapture(scope: .all, snapshot: state(staleTarget),
-                committed: state(fbddSource), context: raw)
-        }
-        if case .failure(let error) = stalePreview {
-            check(error as? AdjustmentTransferError == .draftRequiresPreflight,
-                  "previewCapture treats stored denoise nil-vs-default mismatch as uncommitted state")
-        } else {
-            check(false, "previewCapture must not accept uncanonicalized denoise storage mismatch")
-        }
-
-        let canonicalPayload = try MacAdjustmentTransfer.capture(scope: .all, snapshot: state(fbddSource), context: raw)
-        let repaired = try MacAdjustmentTransfer.prepare(payload: canonicalPayload, target: state(staleTarget), context: raw)
-        check(repaired.settings.waveletNoiseReduction == nil &&
-              repaired.settings.chromaNoiseReduction == nil &&
-              repaired.settings.rawNoiseReduction == 2 &&
-              repaired.settings.hasLegacyDenoise &&
-              repaired.settings.isDenoiseEnabled &&
-              MacAdjustmentTransfer.values(repaired, isRaw: true) == MacAdjustmentTransfer.values(state(fbddSource), isRaw: true),
-              "prepare does not early-return stale non-nil default denoise storage")
     }
 
     static func x3fModeReset() throws {

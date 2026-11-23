@@ -172,22 +172,22 @@ class AdjustmentTransferSessionTest {
     @Test fun synchronizationExcludesFrozenSourceTwiceAndDoesNotTouchClipboard() = inStore { directory ->
         val store = EditStore(directory); val session = AdjustmentTransferSession(store)
         val source = PhotoIdentity("source")
-        store.save(source, EditSettings(exposure = 1f)); store.save(a, EditSettings(contrast = .4f))
+        store.save(source, EditSettings(exposure = 1f)); store.save(a, EditSettings(contrast = 1.4f))
         val sourceBefore = store.readState(source)
-        val clipboard = session.copy(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST)), EditSettings(contrast = .2f), target(b).context)
+        val clipboard = session.copy(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST)), EditSettings(contrast = 1.2f), target(b).context)
         val operation = session.prepare(payload(), listOf(target(source).copy(displayName = "same.raw"),
             target(a).copy(displayName = "same.raw"), target(a)), AdjustmentHistoryTransaction.Action.SYNCHRONIZE)
         assertEquals(listOf(a.value), operation.targets.map { it.id })
         assertEquals(AdjustmentStatus.APPLIED, session.apply(operation).single().status)
         assertEquals(sourceBefore, store.readState(source))
-        assertEquals(.4f, store.load(a)!!.contrast)
+        assertEquals(1.4f, store.load(a)!!.contrast)
         assertEquals(clipboard, session.clipboard)
         val forgedTarget = session.prepare(payload(2.0), listOf(target(source))).targets.single()
         val forged = operation.copy(id = java.util.UUID.randomUUID(), targets = listOf(forgedTarget))
         assertEquals(AdjustmentStatus.BLOCKED, session.apply(forged).single().status)
         assertEquals(sourceBefore, store.readState(source))
         assertEquals(listOf(a.value), session.undoTransaction(operation.id).map { it.targetID })
-        assertEquals(0f, store.load(a)!!.exposure); assertEquals(.4f, store.load(a)!!.contrast)
+        assertEquals(0f, store.load(a)!!.exposure); assertEquals(1.4f, store.load(a)!!.contrast)
     }
 
 }

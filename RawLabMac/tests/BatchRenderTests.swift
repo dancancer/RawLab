@@ -11,7 +11,7 @@ import ImageIO
         let original = try OriginalFileIdentity(input)
         let journal = MacBatchJournal(directory: root.appendingPathComponent("journal"))
         var settings = Adjustments()
-        settings.exposure = 0.5; settings.highlights = 25; settings.contrast = 20
+        settings.exposure = 0.5; settings.highlights = -0.25; settings.contrast = 1.20
         settings.setEffect(.vignetteAmount, to: -40)
         settings.setEffect(.vignetteMidpoint, to: 65)
         settings.setEffect(.grainAmount, to: 50)

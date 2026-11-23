@@ -63,15 +63,15 @@ class ToneCurveSettingsTest {
         val source = EditSettings(toneCurve = .65f, curve = precise)
         assertEquals(source, SettingsCodec.decode(SettingsCodec.encode(source)))
         assertEquals(0f, source.renderToneCurve)
-        val old = JSONObject(SettingsCodec.encode(source).removePrefix("v2:"))
+        val old = JSONObject(SettingsCodec.encode(source).removePrefix("v3:"))
         old.getJSONObject("settings").remove("curve")
-        val restored = SettingsCodec.decode("v2:$old")
+        val restored = SettingsCodec.decode("v3:$old")
         assertTrue(restored.curve.isDefault); assertEquals(.65f, restored.renderToneCurve)
         for (bad in listOf("""{"mode":"custom","points":[[0,0],[1,1,2]]}""",
             """{"mode":"custom","points":[[0,0],[0.5,0.6],[0.5,0.8],[1,1]]}""",
             """{"mode":"custom","points":[[0,0],[1,1]],"future":0}""")) {
             old.getJSONObject("settings").put("curve", JSONObject(bad))
-            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$old") }
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v3:$old") }
         }
     }
 

@@ -125,7 +125,7 @@ class VersionedEditPersistenceTest {
         val file = File(directory, "edits.properties")
         val keyFuture = "record.${java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(brokenProcessing.value.toByteArray())}.values"
         val keyBadSub = "record.${java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(brokenSubSetting.value.toByteArray())}.values"
-        val rawFutureLine = "$keyFuture=v2:{\"kind\":\"photo_edit\",\"version\":2,\"processing\":{\"engine\":\"rawlab\",\"version\":99,\"profile\":\"standard\"},\"settings\":{}}"
+        val rawFutureLine = "$keyFuture=v3:{\"kind\":\"photo_edit\",\"version\":3,\"processing\":{\"engine\":\"rawlab\",\"version\":99,\"profile\":\"standard\"},\"settings\":{}}"
         val baseV2 = StructuredSettingsCodec.encode(EditSettings(), "photo_edit")
         val rawBadSubLine = "$keyBadSub=" + baseV2.replace("\"blackPoint\":0", "\"blackPoint\":999")
         val existingLines = file.readLines().filterNot { it.startsWith("$keyFuture=") }
