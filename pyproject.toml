@@ -19,6 +19,7 @@ python_files = ["test_*.py", "*_test.py"]
 addopts = [
     "--ignore=lutools/tests/test_agent_commands.py",
     "--ignore=lutools/tests/test_agent_preview.py",
+    "--ignore=lutools/tests/test_bsh_cli.py",
     "--ignore=lutools/tests/test_dcp_compiler.py",
     "--ignore=lutools/tests/test_edit_recipe_cli.py",
     "--ignore=lutools/tests/test_edit_recipe_schema.py",

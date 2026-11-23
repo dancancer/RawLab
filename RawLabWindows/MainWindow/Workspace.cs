@@ -20,7 +20,7 @@ public partial class MainWindow
                 if(hdr && !button.IsEnabled)reason="HDR 模式暂不支持此工具。";
                 else if(ReferenceEquals(button,LensCategory) && PhotoInput.IsNormalX3f(file,settings))reason="此输入不支持镜头校正";
                 else if(ReferenceEquals(button,LensCategory) && raster)reason="仅 RAW 照片支持镜头校正。";
-                else if(ReferenceEquals(button,WhiteBalanceCategory) && !hdr && settings.AsShot==null)reason="此照片没有可用的相机白平衡校准。";
+                else if(ReferenceEquals(button,WhiteBalanceCategory) && !hdr && !raster && settings.AsShot==null)reason="此照片没有可用的相机白平衡校准。";
             }
             AutomationProperties.SetHelpText(button,reason==null ? "" : Loc.Text(reason));
             ToolTipService.SetShowOnDisabled(button,true);
@@ -148,6 +148,7 @@ public partial class MainWindow
             (mode == WorkspaceMode.Preview && result == null)) return;
         if (workspaceLayout.Mode == WorkspaceMode.Editing && !SuspendInspectorTool()) return;
         if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
+        if (mode != WorkspaceMode.Editing && curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
         CancelViewingInput();
         HistogramPopup.IsOpen = ProcessingPopup.IsOpen = false;
         workspaceLayout.SetMode(mode);

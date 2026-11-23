@@ -197,6 +197,11 @@ struct BatchExportView: View {
                 .disabled(model.job.started || model.job.mode == .perTargetFrozen).accessibilityIdentifier("batch.format")
             ExportSizePicker(longEdge: Binding(get: { model.job.longEdge }, set: model.setLongEdge))
                 .disabled(model.job.started || model.job.mode == .perTargetFrozen)
+            OutputSharpeningPicker(outputSharpening: Binding(
+                get: { model.job.format == .renderedDNG ? .off : model.job.effectiveOutputSharpening },
+                set: model.setOutputSharpening
+            ))
+            .disabled(model.job.started || model.job.mode == .perTargetFrozen || model.job.format == .renderedDNG)
             HStack {
                 Text(L10n.text("保存到"))
                 Spacer(minLength: 10)

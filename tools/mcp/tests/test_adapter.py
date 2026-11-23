@@ -21,6 +21,7 @@ sys.path.insert(0, str(SRC))
 import rawlab_mcp.adapter as adapter_module  # noqa: E402
 from rawlab_mcp.adapter import AdapterError, CliAdapter  # noqa: E402
 from rawlab_mcp.config import ServerConfig  # noqa: E402
+import rawlab_mcp.gui_sync as gui_sync  # noqa: E402
 
 
 class AdapterTests(unittest.IsolatedAsyncioTestCase):
@@ -95,6 +96,22 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 path = pathlib.Path(os.path.normpath(args[args.index("--info") + 1]))
                 emit(envelope("info", {"input_path": str(path), "identified_size": {"width": 2, "height": 2}}))
 
+            if "--analyze" in args:
+                target = args[args.index("--input") + 1] if "--input" in args else args[args.index("--recipe") + 1]
+                samples = [args[i + 1] for i, a in enumerate(args) if a == "--sample" and i + 1 < len(args)]
+                long_edge = int(args[args.index("--long-edge") + 1]) if "--long-edge" in args else 1024
+                emit(envelope("analyze", {
+                    "target": target,
+                    "long_edge": long_edge,
+                    "dimensions": {"width": 16, "height": 12, "bit_depth": 16, "channels": 3, "sampled_pixels": 192},
+                    "luma_zones": {"mean_luma_0_1": 0.45, "shadows_10_35_pct": 25.0, "midtones_35_65_pct": 50.0, "highlights_90_100_pct": 5.0},
+                    "color_balance": {"r_over_g": 1.01, "b_over_g": 0.99, "cast_hint": "neutral"},
+                    "saturation": {"mean_s_pct": 24.0},
+                    "hsl_channels": [],
+                    "samples": [{"raw": s} for s in samples],
+                    "auto_diagnostics": [],
+                }))
+
             mode = "" if "--print-recipe" in args else os.environ.get("FAKE_MODE", "")
             if mode == "invalid_json":
                 print("bad json")
@@ -158,12 +175,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         return CliAdapter(self.config, environment=merged)
 
     async def test_capabilities_negotiate_hdr_recipe_versions(self):
-        adapter = self.adapter(FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16")
+        adapter = self.adapter(
+            FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18",
+            FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze,print_transfer",
+        )
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15))
-        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17))
+        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
         self.assertEqual(capabilities.result["commands"], [
-            "capabilities", "validate_recipe", "info", "preview", "export",
+            "capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer",
         ])
 
     async def test_lens_database_is_read_root_scoped_and_forwarded(self):
@@ -909,6 +929,854 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         await adapter.start()
         result = await adapter.validate_recipe(self.recipe_path)
         self.assertTrue(result.ok, str(result.error))
+
+    async def test_diagnose_image_validates_roots_samples_and_capabilities(self):
+        legacy_adapter = self.adapter()
+        await legacy_adapter.start()
+        unsupported = await legacy_adapter.diagnose_image(image_path=str(self.input_path))
+        self.assertFalse(unsupported.ok)
+        self.assertEqual(unsupported.error.code, "unsupported")
+
+        adapter = self.adapter(FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze")
+        await adapter.start()
+
+        by_image = await adapter.diagnose_image(
+            image_path=str(self.input_path),
+            samples=["0.5,0.5,center", "0.2,0.3,sky"],
+            long_edge=640,
+        )
+        self.assertTrue(by_image.ok, str(by_image.error))
+        self.assertEqual(by_image.result["long_edge"], 640)
+        self.assertEqual(by_image.result["samples"], [{"raw": "0.5,0.5,center"}, {"raw": "0.2,0.3,sky"}])
+
+        # Recipe mode does not require write_root output parent to exist
+        doc = json.loads(self.recipe_path.read_text(encoding="utf-8"))
+        doc["output"]["path"] = "/nonexistent-dir/out.jpg"
+        self.recipe_path.write_text(json.dumps(doc), encoding="utf-8")
+        by_recipe = await adapter.diagnose_image(recipe_path=str(self.recipe_path), samples=["0.5,0.5"])
+        self.assertTrue(by_recipe.ok, str(by_recipe.error))
+
+        for bad_sample in ("not_a_coord", "1.5,0.5", "-0.1,0.5", "0.5,0.5,  "):
+            res = await adapter.diagnose_image(image_path=str(self.input_path), samples=[bad_sample])
+            self.assertFalse(res.ok)
+            self.assertEqual(res.error.code, "invalid_argument")
+
+        outside = self.root / "outside.dng"
+        outside.write_bytes(b"secret")
+        escape = self.read_root / "escape.dng"
+        escape.symlink_to(outside)
+        escaped = await adapter.diagnose_image(image_path=str(escape))
+        self.assertFalse(escaped.ok)
+        self.assertEqual(escaped.error.code, "invalid_argument")
+
+    async def test_list_catalog_looks_filters_and_isolates(self):
+        adapter = self.adapter()
+        await adapter.start()
+        all_looks = await adapter.list_catalog_looks()
+        self.assertTrue(all_looks.ok)
+        counts = all_looks.result["counts"]
+        self.assertEqual(counts["master_recipe"], 14)
+        self.assertEqual(counts["bundled"], 29)
+        self.assertEqual(counts["fuji_flog2"], 16)
+        self.assertEqual(counts["hdr"], 1)
+
+        recipes_only = await adapter.list_catalog_looks(category="master_recipe", query="hamada")
+        self.assertTrue(recipes_only.ok)
+        self.assertEqual(len(recipes_only.result["looks"]), 1)
+        self.assertEqual(recipes_only.result["looks"][0]["id"], "hamada_daylight_v2")
+
+    async def test_gui_sync_tools_require_opt_in_and_enforce_controlled_data_dir(self):
+        # Default config disables GUI sync tools
+        adapter = self.adapter()
+        await adapter.start()
+        denied_preset = await adapter.save_preset(name="Test", values={"light.exposure": 0.5})
+        self.assertFalse(denied_preset.ok)
+        self.assertEqual(denied_preset.error.code, "unsupported")
+        denied_sync = await adapter.sync_photo_edit(photo_path=str(self.input_path), adjustments={"exposure": 0.5})
+        self.assertFalse(denied_sync.ok)
+        self.assertEqual(denied_sync.error.code, "unsupported")
+
+        data_dir = self.root / "appdata"
+        gui_config = ServerConfig(
+            cli=self.cli,
+            read_roots=(self.read_root,),
+            write_roots=(self.write_root,),
+            timeout=2.0,
+            enable_gui_sync=True,
+            data_dir=data_dir,
+        )
+        gui_adapter = CliAdapter(gui_config, environment={
+            "FAKE_ARGV_LOG": str(self.argv_log),
+            "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await gui_adapter.start()
+
+        # Seed an unreadable future preset entry and verify it is preserved verbatim
+        presets_dir = data_dir / "Presets"
+        presets_dir.mkdir(parents=True)
+        future_entry = {"id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "name": "Future V99", "future": True}
+        (presets_dir / "presets.json").write_text(json.dumps({
+            "registry_version": 1,
+            "presets": [future_entry],
+            "retired_ids": ["11111111-2222-4333-8444-555555555555"],
+        }), encoding="utf-8")
+
+        created = await gui_adapter.save_preset(
+            name="  Agent  Look\u00a0",
+            values={
+                "light.exposure": 0.4,
+                "light.curve.apply_to_luminosity": True,
+                "color.grading.balance": -12.0,
+            },
+        )
+        self.assertTrue(created.ok, str(created.error))
+        self.assertEqual(created.result["action"], "created")
+        self.assertEqual(created.result["name"], "Agent  Look")
+
+        # Duplicate without overwrite fails
+        dup = await gui_adapter.save_preset(name="Agent  Look", values={"light.exposure": 0.8})
+        self.assertFalse(dup.ok)
+        self.assertEqual(dup.error.code, "invalid_argument")
+
+        updated = await gui_adapter.save_preset(
+            name="Agent  Look",
+            values={"light.exposure": 0.8},
+            overwrite=True,
+        )
+        self.assertTrue(updated.ok, str(updated.error))
+        self.assertEqual(updated.result["action"], "updated")
+        self.assertEqual(updated.result["id"], created.result["id"])
+
+        saved_registry = json.loads((presets_dir / "presets.json").read_text(encoding="utf-8"))
+        self.assertEqual(saved_registry["retired_ids"], ["11111111-2222-4333-8444-555555555555"])
+        self.assertEqual(saved_registry["presets"][-1], future_entry)
+        self.assertEqual(saved_registry["presets"][0]["payload"]["values"]["light.exposure"], 0.8)
+
+        # Symlink escape in Presets/ must be rejected
+        outside = self.root / "outside-presets"
+        outside.mkdir()
+        escaped_data = self.root / "escaped-appdata"
+        escaped_data.mkdir()
+        (escaped_data / "Presets").symlink_to(outside, target_is_directory=True)
+        escaped_adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=escaped_data,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await escaped_adapter.start()
+        symlink_rejected = await escaped_adapter.save_preset(name="Escape", values={"light.exposure": 0.1})
+        self.assertFalse(symlink_rejected.ok)
+        self.assertEqual(symlink_rejected.error.code, "invalid_argument")
+        self.assertFalse((outside / "presets.json").exists())
+
+        # sync_photo_edit: macOS writes Edits/edits.json with epoch 978307200; non-darwin returns unsupported
+        sync_res = await gui_adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={
+                "exposure": 0.65,
+                "tone_curve": {
+                    "mode": "custom",
+                    "points": [[0.0, 0.0], [1.0, 1.0]],
+                    "apply_to_luminosity": True,
+                    "parametric": {
+                        "highlights": -10,
+                        "lights": 5,
+                        "darks": -3,
+                        "shadows": 8,
+                        "split_shadow": 0.25,
+                        "split_midtone": 0.5,
+                        "split_highlight": 0.75,
+                    },
+                },
+                "color_grading": {
+                    "global": {"hue": 200, "saturation": 15, "luminance": 4},
+                    "blending": 65,
+                    "balance": -10,
+                },
+            },
+        )
+        if sys.platform == "darwin":
+            self.assertTrue(sync_res.ok, str(sync_res.error))
+            edits_doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+            self.assertEqual(edits_doc["version"], 1)
+            rec = edits_doc["records"][sync_res.result["photo_path"]]
+            self.assertFalse(rec["identity"]["path"].startswith("/private/var"))
+            self.assertEqual(rec["state"]["settings"]["exposure"], 0.65)
+            self.assertTrue(rec["state"]["settings"]["toneCurveConfig"]["apply_to_luminosity"])
+            self.assertEqual(rec["state"]["settings"]["toneCurveConfig"]["parametric"]["split_midtone"], 0.5)
+            self.assertEqual(rec["state"]["settings"]["colorGrading"]["shadows"], {"hue": 0.0, "saturation": 0.0, "luminance": 0.0})
+            self.assertEqual(rec["state"]["settings"]["colorGrading"]["midtones"], {"hue": 0.0, "saturation": 0.0, "luminance": 0.0})
+            self.assertEqual(rec["state"]["settings"]["colorGrading"]["highlights"], {"hue": 0.0, "saturation": 0.0, "luminance": 0.0})
+            self.assertEqual(rec["state"]["settings"]["colorGrading"]["balance"], -10.0)
+        else:
+            self.assertFalse(sync_res.ok)
+            self.assertEqual(sync_res.error.code, "unsupported")
+
+    def test_transfer_spec_matches_shared_adjustment_fields_v1(self):
+        repo_root = Path(__file__).resolve().parents[3]
+        spec_path = repo_root / "Shared" / "specs" / "adjustment-fields-v1.json"
+        self.assertTrue(spec_path.is_file(), f"Missing spec at {spec_path}")
+        full_spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        bundled = json.loads(gui_sync.BUNDLED_TRANSFER_SPEC_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(bundled["spec_version"], full_spec["spec_version"])
+        expected_fields = {
+            entry["field_id"]: {
+                "value_type": entry["protocol"]["value_type"],
+                "nullable": bool(entry["protocol"]["nullable"]),
+                "min": entry["protocol"]["min"],
+                "max": entry["protocol"]["max"],
+                "exclusive_min": bool(entry["protocol"].get("exclusive_min", False)),
+                "exclusive_max": bool(entry["protocol"].get("exclusive_max", False)),
+                "non_empty": bool(entry["protocol"].get("non_empty", False)),
+                "allowed_values": entry["protocol"].get("allowed_values"),
+                "object_keys": entry["protocol"].get("object_keys"),
+                "optional_keys": entry["protocol"].get("optional_keys"),
+                "hdr_only": bool(entry["protocol"].get("hdr_only", False)),
+                "sub_fields": entry["protocol"].get("sub_fields"),
+            }
+            for entry in full_spec["fields"]
+            if entry["protocol"].get("transferable")
+        }
+        self.assertEqual(bundled["fields"], expected_fields)
+        self.assertEqual(gui_sync._TRANSFER_FIELDS, expected_fields)
+
+    async def test_save_preset_v012_contracts_and_verbatim_unreadable_preservation(self):
+        data_dir = self.root / "appdata-v012"
+        presets_dir = data_dir / "Presets"
+        presets_dir.mkdir(parents=True)
+
+        # Unreadable future entry with non-sorted keys, extra whitespace, and 1.000 float formatting
+        raw_unreadable = (
+            '{  "name" : "Future V99",  "id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", '
+            '"created_at": 1, "updated_at": 1, '
+            '"payload": { "payload_version": 99, "ratio": 1.000, "extra": [ 1, 2 ] }  }'
+        )
+        initial_json = (
+            '{"registry_version":1,"presets":['
+            + raw_unreadable
+            + '],"retired_ids":["11111111-2222-4333-8444-555555555555"]}'
+        )
+        (presets_dir / "presets.json").write_text(initial_json, encoding="utf-8")
+
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        # Valid SDR v0.12 preset using protocol ranges, neutral look, subset curve channels, 7-key parametric, grading v2
+        ok_sdr = await adapter.save_preset(
+            name="Canonical V012 SDR",
+            is_raw=True,
+            recipe_context={"id": "hamada_daylight_v2", "strength": 1.6, "settings_version": 4},
+            values={
+                "looks.reference": {"kind": "neutral", "id": None},
+                "looks.strength": 1.6,
+                "light.exposure": -12.5,
+                "light.contrast": 1.25,
+                "light.highlights": -0.45,
+                "light.shadows": 0.35,
+                "color.saturation": 1.15,
+                "color.hsl.hue.red": 65.0,
+                "detail.sharpening": 1.4,
+                "detail.denoise.post_rgb": 0.0,
+                "geometry.perspective.horizontal": -0.6,
+                "geometry.crop.width": 0.001,
+                "light.curve": {
+                    "mode": "custom",
+                    "points": [[0.0, 0.05], [0.5, 0.55], [1.0, 0.95]],
+                    "channels": {
+                        "red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]]},
+                    },
+                },
+                "light.curve.apply_to_luminosity": True,
+                "light.curve.parametric": {
+                    "highlights": -15,
+                    "lights": 10,
+                    "darks": -5,
+                    "shadows": 20,
+                    "split_shadow": 0.2,
+                    "split_midtone": 0.5,
+                    "split_highlight": 0.8,
+                },
+                "color.grading.shadows": {"hue": 359.9, "saturation": 35.0, "luminance": -12.0},
+            },
+        )
+        self.assertTrue(ok_sdr.ok, str(ok_sdr.error))
+
+        # Valid HDR v9 preset (is_raw defaults to False)
+        ok_hdr = await adapter.save_preset(
+            name="Canonical V012 HDR",
+            hdr_processing_version=9,
+            values={
+                "light.exposure": 1.25,
+                "hdr.relative_temperature": 6200.0,
+                "hdr.relative_tint": -8.0,
+                "hdr.peak_limit_ev": 3.5,
+                "hdr.sdr_exposure_ev": -0.5,
+                "hdr.sdr_contrast": 15.0,
+                "hdr.sdr_saturation": 10.0,
+                "hdr.look": {"sha256": "a" * 64, "name": "HDR Silver", "strength": 1.5},
+                "hdr.camera_development": {
+                    "version": 1,
+                    "white_balance_mode": "as_shot",
+                    "temperature": 0.0,
+                    "tint": 0.0,
+                    "exposure_reference": "metadata",
+                    "fbdd_level": 1,
+                },
+                "light.curve.parametric": {
+                    "highlights": 0, "lights": 0, "darks": 0, "shadows": 0,
+                    "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
+                },
+                "color.grading.global": {"hue": 45.0, "saturation": 12.0, "luminance": 5.0},
+                "color.grading.blending": 60.0,
+                "color.grading.balance": -10.0,
+            },
+        )
+        self.assertTrue(ok_hdr.ok, str(ok_hdr.error))
+
+        # recipe_lut reference kind is valid
+        ok_lut = await adapter.save_preset(
+            name="Recipe LUT Ref",
+            values={"looks.reference": {"kind": "recipe_lut", "id": "FilmLook.cube"}},
+        )
+        self.assertTrue(ok_lut.ok, str(ok_lut.error))
+
+        # Verify byte-for-byte preservation of unreadable entry
+        presets_text = (presets_dir / "presets.json").read_text(encoding="utf-8")
+        self.assertIn(raw_unreadable, presets_text)
+
+        # Invalid cases rejected
+        invalid_cases = [
+            ({"looks.reference": {"kind": "none", "id": None}}, {}),
+            ({"looks.reference": {"kind": "neutral", "id": "abc"}}, {}),
+            ({"looks.reference": {"kind": "builtin", "id": "sub/look.cube"}}, {}),
+            ({"looks.strength": 2.1}, {}),
+            ({"light.contrast": -50.0}, {}),
+            ({"light.highlights": 50.0}, {}),
+            ({"color.saturation": -50.0}, {}),
+            ({"detail.sharpening": 50.0}, {}),
+            ({"detail.denoise.post_rgb": 50.0}, {}),
+            ({"geometry.perspective.horizontal": 10.0}, {}),
+            ({"geometry.crop.width": 0.0}, {}),
+            ({"color.grading.shadows": {"hue": 360.0, "saturation": 20.0}}, {}),
+            ({"light.curve": {"mode": "legacy", "points": [[0.0, 0.0], [1.0, 1.0]]}}, {}),
+            ({"light.curve": {"mode": "custom", "points": [[0.1, 0.0], [1.0, 1.0]]}}, {}),
+            ({"light.curve": {"mode": "custom", "points": [[0.0, 0.5], [0.5, 0.4], [1.0, 1.0]]}}, {}),
+            ({"light.curve": {"mode": "legacy", "points": [], "channels": {"red": [[0.0, 0.0], [1.0, 1.0]]}}}, {}),
+            ({"light.curve.parametric": {"highlights": 0, "lights": 0, "darks": 0, "shadows": 0}}, {}),
+            ({"light.curve.parametric": {
+                "highlights": 0, "lights": 0, "darks": 0, "shadows": 0,
+                "split_shadow": 0.25, "split_midtone": 0.26, "split_highlight": 0.75,
+            }}, {}),
+            ({"hdr.relative_temperature": 6000.0}, {"hdr_processing_version": 9, "is_raw": True}),
+            ({"hdr.camera_development": {
+                "version": 2, "white_balance_mode": "as_shot", "temperature": 0.0, "tint": 0.0,
+                "exposure_reference": "metadata", "fbdd_level": 0,
+            }}, {"hdr_processing_version": 9}),
+            ({"hdr.camera_development": {
+                "version": 1, "white_balance_mode": "as_shot", "temperature": 6500.0, "tint": 0.0,
+                "exposure_reference": "metadata", "fbdd_level": 0,
+            }}, {"hdr_processing_version": 9}),
+            ({"hdr.camera_development": {
+                "version": 1, "white_balance_mode": "camera", "temperature": 0.0, "tint": 0.0,
+                "exposure_reference": "preview", "fbdd_level": 0,
+            }}, {"hdr_processing_version": 9}),
+            ({"light.exposure": 0.5}, {"recipe_context": {"id": "r", "strength": 2.1, "settings_version": 4}}),
+            # P0-2 HDR version gates: channels require >= 8; free endpoints & luminance require >= 9
+            ({"light.curve": {
+                "mode": "legacy", "points": [],
+                "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]]}},
+            }}, {"hdr_processing_version": 7}),
+            ({"light.curve": {
+                "mode": "custom", "points": [[0.0, 0.1], [1.0, 1.0]],
+            }}, {"hdr_processing_version": 8}),
+            ({"light.curve": {
+                "mode": "legacy", "points": [],
+                "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [1.0, 0.9]]}},
+            }}, {"hdr_processing_version": 8}),
+            ({"color.grading.shadows": {"hue": 120.0, "saturation": 25.0, "luminance": -5.0}}, {"hdr_processing_version": 8}),
+            ({"color.grading.global": {"hue": 30.0, "saturation": 10.0, "luminance": 2.5}}, {"hdr_processing_version": 8}),
+        ]
+        for idx, (bad_values, extra_kwargs) in enumerate(invalid_cases):
+            res = await adapter.save_preset(name=f"Bad {idx}", values=bad_values, **extra_kwargs)
+            self.assertFalse(res.ok, f"Expected failure for invalid case {idx}: {bad_values}")
+            self.assertEqual(res.error.code, "invalid_argument", f"Case {idx} got {res.error}")
+
+        # Malformed retired_ids must raise AdapterError(..., "output_io_error")
+        bad_retired_dir = self.root / "appdata-bad-retired"
+        (bad_retired_dir / "Presets").mkdir(parents=True)
+        (bad_retired_dir / "Presets" / "presets.json").write_text(
+            '{"registry_version":1,"presets":[],"retired_ids":null}',
+            encoding="utf-8",
+        )
+        bad_retired_adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=bad_retired_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await bad_retired_adapter.start()
+        retired_err = await bad_retired_adapter.save_preset(name="X", values={"light.exposure": 0.2})
+        self.assertFalse(retired_err.ok)
+        self.assertEqual(retired_err.error.code, "output_io_error")
+
+    async def test_sync_photo_edit_v012_mac_edit_state_contracts(self):
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+        data_dir = self.root / "appdata-sync"
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        ok = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={
+                "exposure": -4.5,
+                "s_curve": 25.0,
+                "sharpening": 150.0,
+                "hsl": {
+                    "hue": [85.0, 0, 0, 0, 0, 0, 0, -90.0],
+                    "saturation": [10, 0, 0, 0, 0, 0, 0, 0],
+                    "lightness": [0, 0, 0, 0, 0, 0, 0, 0],
+                },
+                "tone_curve": {
+                    "mode": "legacy",
+                    "points": [],
+                    "channels": {
+                        "red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.65], [1.0, 1.0]]},
+                    },
+                    "parametric": {
+                        "highlights": -10, "lights": 5, "darks": -3, "shadows": 8,
+                        "split_shadow": 0.2, "split_midtone": 0.5, "split_highlight": 0.8,
+                    },
+                },
+                "color_grading": {
+                    "shadows": {"hue": 220.0, "saturation": 30.0},
+                },
+                "geometry": {
+                    "crop_x": 0.1,
+                    "crop_y": 0.2,
+                    "crop_width": 0.9,
+                    "crop_height": 0.8,
+                    "perspective_horizontal": -0.75,
+                    "perspective_vertical": 0.5,
+                },
+            },
+        )
+        self.assertTrue(ok.ok, str(ok.error))
+        doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+        settings = doc["records"][ok.result["photo_path"]]["state"]["settings"]
+        self.assertEqual(settings["exposure"], -4.5)
+        self.assertEqual(settings["sharpening"], 150.0)
+        self.assertEqual(settings["toneCurveConfig"]["channels"]["red"]["mode"], "custom")
+        self.assertEqual(settings["colorGrading"]["midtones"], {"hue": 0.0, "saturation": 0.0, "luminance": 0.0})
+        self.assertEqual(settings["colorGrading"]["highlights"], {"hue": 0.0, "saturation": 0.0, "luminance": 0.0})
+        self.assertEqual(settings["geometry"]["perspectiveHorizontal"], -0.75)
+
+        bad_adjustments = [
+            {"exposure": 5.5},
+            {"tone_curve": {"mode": "legacy", "points": [], "channels": {"red": [[0.0, 0.0], [1.0, 1.0]]}}},
+            {"tone_curve": {"mode": "legacy", "points": [], "parametric": {"highlights": 1, "lights": 2, "darks": 3, "shadows": 4}}},
+            {"color_grading": {"shadows": {"hue": 360.0, "saturation": 10.0}}},
+            {"color_grading": {"shadows": {"hue": 359.99999, "saturation": 10.0}}},
+            {"geometry": {"perspective_horizontal": 1.5}},
+            {"geometry": {"crop_x": 0.5, "crop_width": 0.6}},
+            {"geometry": {"crop_y": 0.5, "crop_height": 0.6}},
+            {"hsl": {"hue": [101, 0, 0, 0, 0, 0, 0, 0], "saturation": [0]*8, "lightness": [0]*8}},
+        ]
+        for idx, adj in enumerate(bad_adjustments):
+            res = await adapter.sync_photo_edit(photo_path=str(self.input_path), adjustments=adj)
+            self.assertFalse(res.ok, f"Expected failure for adjustment {idx}: {adj}")
+            self.assertEqual(res.error.code, "invalid_argument")
+
+    async def test_sync_photo_edit_white_balance_raster_and_raw_contracts(self):
+        # Model-level state builder checks run on all OSes
+        raster_rel = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "relative", "temperature": 5400, "tint": 12},
+            is_raster=True,
+        )
+        self.assertEqual(raster_rel["settings"]["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raster_rel["settings"]["temperature"], 5400.0)
+        self.assertEqual(raster_rel["settings"]["tint"], 12.0)
+
+        for mode in ("camera", "none"):
+            raster_neutral = gui_sync._build_mac_photo_edit_state(
+                adjustments={"white_balance_mode": mode},
+                is_raster=True,
+            )
+            self.assertEqual(raster_neutral["settings"]["whiteBalanceMode"], "拍摄时设置")
+            self.assertEqual(raster_neutral["settings"]["temperature"], 6500.0)
+            self.assertEqual(raster_neutral["settings"]["tint"], 0.0)
+
+        raw_temp = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "temperature", "temperature": 5400, "tint": 12},
+            is_raster=False,
+        )
+        self.assertEqual(raw_temp["settings"]["whiteBalanceMode"], "自定义")
+        self.assertEqual(raw_temp["settings"]["temperature"], 5400.0)
+        self.assertEqual(raw_temp["settings"]["tint"], 12.0)
+
+        raw_recipe_cam = gui_sync._build_mac_photo_edit_state(
+            adjustments={"white_balance_mode": "camera", "tint": -8},
+            is_raster=False,
+            master_recipe_id="hamada_daylight_v2",
+        )
+        self.assertEqual(raw_recipe_cam["settings"]["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raw_recipe_cam["settings"]["temperature"], 6500.0)
+        self.assertEqual(raw_recipe_cam["settings"]["tint"], -8.0)
+
+        for bad_adj, is_raster_flag in (
+            ({"white_balance_mode": "temperature", "temperature": 5400, "tint": 12}, True),
+            ({"white_balance_mode": "camera", "temperature": 5400}, True),
+            ({"white_balance_mode": "none", "tint": 12}, True),
+            ({"temperature": 5400}, True),
+            ({"white_balance_mode": "relative", "temperature": 5400, "tint": 12}, False),
+            ({"white_balance_mode": "none"}, False),
+            ({"white_balance_mode": "camera", "temperature": 5400}, False),
+            ({"white_balance_mode": "camera", "tint": 12}, False),
+            ({"white_balance_mode": None}, True),
+        ):
+            with self.assertRaises(AdapterError):
+                gui_sync._build_mac_photo_edit_state(adjustments=bad_adj, is_raster=is_raster_flag)
+
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+
+        raster_path = self.recipe_dir / "raster.jpg"
+        raster_path.write_bytes(b"raster fixture")
+        data_dir = self.root / "appdata-wb"
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        ok_raster = await adapter.sync_photo_edit(
+            photo_path=str(raster_path),
+            adjustments={"white_balance_mode": "relative", "temperature": 5400, "tint": 12},
+        )
+        self.assertTrue(ok_raster.ok, str(ok_raster.error))
+
+        bad_raster = await adapter.sync_photo_edit(
+            photo_path=str(raster_path),
+            adjustments={"white_balance_mode": "temperature", "temperature": 5400, "tint": 12},
+        )
+        self.assertFalse(bad_raster.ok)
+        self.assertEqual(bad_raster.error.code, "invalid_argument")
+
+        ok_raw = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"white_balance_mode": "temperature", "temperature": 5200, "tint": -6},
+        )
+        self.assertTrue(ok_raw.ok, str(ok_raw.error))
+
+        bad_raw = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"white_balance_mode": "relative", "temperature": 5200, "tint": -6},
+        )
+        self.assertFalse(bad_raw.ok)
+        self.assertEqual(bad_raw.error.code, "invalid_argument")
+
+        edits_doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+        raster_settings = edits_doc["records"][ok_raster.result["photo_path"]]["state"]["settings"]
+        self.assertEqual(raster_settings["whiteBalanceMode"], "拍摄时设置")
+        self.assertEqual(raster_settings["temperature"], 5400.0)
+        self.assertEqual(raster_settings["tint"], 12.0)
+
+        raw_settings = edits_doc["records"][ok_raw.result["photo_path"]]["state"]["settings"]
+        self.assertEqual(raw_settings["whiteBalanceMode"], "自定义")
+        self.assertEqual(raw_settings["temperature"], 5200.0)
+        self.assertEqual(raw_settings["tint"], -6.0)
+
+    async def test_sync_photo_edit_heic_heif_raster_and_non_destructive_preserve(self):
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+        data_dir = self.root / "appdata-b3"
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        for ext in (".heic", ".HEIF", ".heif", ".Heic"):
+            heic_path = self.recipe_dir / f"sample_{ext.strip('.')}{ext}"
+            heic_path.write_bytes(b"heic fixture")
+            ok_heic = await adapter.sync_photo_edit(
+                photo_path=str(heic_path),
+                adjustments={"white_balance_mode": "relative", "temperature": 5800, "tint": -4},
+            )
+            self.assertTrue(ok_heic.ok, f"Expected raster classification for {ext}: {ok_heic.error}")
+            bad_heic_raw_wb = await adapter.sync_photo_edit(
+                photo_path=str(heic_path),
+                adjustments={"white_balance_mode": "temperature", "temperature": 5800, "tint": -4},
+            )
+            self.assertFalse(bad_heic_raw_wb.ok)
+            self.assertEqual(bad_heic_raw_wb.error.code, "invalid_argument")
+
+            edits_doc = json.loads((data_dir / "Edits" / "edits.json").read_text(encoding="utf-8"))
+            st = edits_doc["records"][ok_heic.result["photo_path"]]["state"]["settings"]
+            self.assertFalse(st["supportsRawNoiseReduction"])
+            self.assertEqual(st["exposureMode"], "传感器基准")
+            self.assertEqual(st["whiteBalanceMode"], "拍摄时设置")
+            self.assertEqual(st["temperature"], 5800.0)
+            self.assertEqual(st["tint"], -4.0)
+
+        # Seed existing edit record with HDR, AI denoise, output sharpening, filmID, and untouched fields
+        edits_file = data_dir / "Edits" / "edits.json"
+        existing_doc = json.loads(edits_file.read_text(encoding="utf-8"))
+        raw_path_canon = gui_sync._mac_foundation_canonical_path(self.input_path)
+        existing_doc["records"][raw_path_canon] = {
+            "identity": gui_sync._swift_identity_for_file(self.input_path),
+            "state": {
+                "filmID": "builtin:classic_chrome",
+                "masterRecipeID": "hamada_daylight_v2",
+                "settings": {
+                    "processing": {"family": "rawlab", "quality": "standard", "version": 3},
+                    "x3fMode": "normal-v1",
+                    "exposureMode": "匹配内嵌预览",
+                    "exposure": 0.4,
+                    "contrast": 22.0,
+                    "highlights": -15.0,
+                    "shadows": 10.0,
+                    "toneCurve": 0.0,
+                    "saturation": 8.0,
+                    "sharpening": 35.0,
+                    "temperature": 5500.0,
+                    "tint": 6.0,
+                    "whiteBalanceMode": "自定义",
+                    "strength": 1.0,
+                    "rawNoiseReduction": 0.0,
+                    "supportsRawNoiseReduction": True,
+                    "masterRecipeSettingsVersion": 4,
+                    "masterRecipeID": "hamada_daylight_v2",
+                    "aiDenoiseEnabled": True,
+                    "aiDenoiseBlend": 72.5,
+                    "hdrCameraAI": True,
+                    "proRAWDecodeVersion": 2,
+                    "outputSharpening": "standard",
+                    "asShotWhiteBalance": {"temperature": 5200.0, "tint": 3.0},
+                    "hdr": {"mode": "hdr", "peakLimitEV": 2.5},
+                    "colorGrading": {
+                        "shadows": {"hue": 210.0, "saturation": 20.0, "luminance": -5.0},
+                        "midtones": {"hue": 0.0, "saturation": 0.0, "luminance": 0.0},
+                        "highlights": {"hue": 45.0, "saturation": 12.0, "luminance": 3.0},
+                        "global": {"hue": 180.0, "saturation": 10.0, "luminance": 2.0},
+                        "blending": 65.0,
+                        "balance": -12.0,
+                    },
+                },
+            },
+        }
+        edits_file.write_text(json.dumps(existing_doc), encoding="utf-8")
+
+        # Update ONLY exposure via sync_photo_edit -> must preserve hdr, aiDenoiseEnabled, and untouched fields!
+        updated = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"exposure": 1.15},
+        )
+        self.assertTrue(updated.ok, str(updated.error))
+        self.assertEqual(updated.result["action"], "updated")
+        after_doc = json.loads(edits_file.read_text(encoding="utf-8"))
+        after_state = after_doc["records"][raw_path_canon]["state"]
+        after_settings = after_state["settings"]
+        self.assertEqual(after_settings["exposure"], 1.15)
+        self.assertEqual(after_settings["contrast"], 22.0)
+        self.assertEqual(after_settings["hdr"], {"mode": "hdr", "peakLimitEV": 2.5})
+        self.assertIs(after_settings["aiDenoiseEnabled"], True)
+        self.assertEqual(after_settings["aiDenoiseBlend"], 72.5)
+        self.assertIs(after_settings["hdrCameraAI"], True)
+        self.assertEqual(after_settings["proRAWDecodeVersion"], 2)
+        self.assertEqual(after_settings["outputSharpening"], "standard")
+        self.assertEqual(after_settings["asShotWhiteBalance"], {"temperature": 5200.0, "tint": 3.0})
+        self.assertEqual(after_settings["colorGrading"]["global"]["hue"], 180.0)
+        self.assertEqual(after_state["masterRecipeID"], "hamada_daylight_v2")
+        self.assertEqual(after_state["filmID"], "builtin:classic_chrome")
+
+    async def test_sync_photo_edit_preserves_other_raw_slices_and_cleans_stale_migration(self):
+        if sys.platform != "darwin":
+            self.skipTest("sync_photo_edit targets macOS Edits/edits.json")
+        data_dir = self.root / "appdata-slices"
+        edits_file = data_dir / "Edits" / "edits.json"
+        edits_file.parent.mkdir(parents=True, exist_ok=True)
+        other_path = "/tmp/other_photo_untouched.DNG"
+        other_raw_slice = (
+            '{  "identity" : { "path": "/tmp/other_photo_untouched.DNG", "size": 42, "modified": 1.000, "fileNumber": 99 }, '
+            '"state": { "filmID": "", "settings": { "exposure": 0.500, "futureField": [ 1, 2 ] } }  }'
+        )
+        other_mig_slice = '{ "status": "migrated", "marker": 1.000 }'
+        raw_path_canon = gui_sync._mac_foundation_canonical_path(self.input_path)
+        target_slice = json.dumps({
+            "identity": gui_sync._swift_identity_for_file(self.input_path),
+            "state": {
+                "filmID": "",
+                "settings": {
+                    "processing": {"family": "rawlab", "quality": "standard", "version": 2},
+                    "exposureMode": "匹配内嵌预览",
+                    "exposure": 0.25,
+                    "aiDenoiseEnabled": True,
+                    "aiDenoiseBlend": 60.0,
+                },
+            },
+        })
+        target_mig_slice = '{"status":"migrated","version":2}'
+        edits_file.write_text(
+            '{"records":{'
+            + json.dumps(other_path) + ':' + other_raw_slice + ','
+            + json.dumps(raw_path_canon) + ':' + target_slice
+            + '},"processingMigrations":{'
+            + json.dumps(other_path) + ':' + other_mig_slice + ','
+            + json.dumps(raw_path_canon) + ':' + target_mig_slice
+            + '},"version":1}',
+            encoding="utf-8",
+        )
+
+        adapter = CliAdapter(ServerConfig(
+            cli=self.cli, read_roots=(self.read_root,), write_roots=(self.write_root,),
+            timeout=2.0, enable_gui_sync=True, data_dir=data_dir,
+        ), environment={
+            "FAKE_ARGV_LOG": str(self.argv_log), "FAKE_RECIPE_LOG": str(self.recipe_log),
+            "RAWLAB_MCP_TEST_CLI_SCRIPT": str(self.cli),
+        })
+        await adapter.start()
+
+        res = await adapter.sync_photo_edit(
+            photo_path=str(self.input_path),
+            adjustments={"processing_version": 3, "exposure": 0.8, "ai_denoise_blend": 45.0},
+        )
+        self.assertTrue(res.ok, str(res.error))
+        updated_text = edits_file.read_text(encoding="utf-8")
+        # Byte-for-byte raw slice preservation for unrelated photo & its migration
+        self.assertIn(other_raw_slice, updated_text)
+        self.assertIn(other_mig_slice, updated_text)
+
+        updated_doc = json.loads(updated_text)
+        self.assertNotIn(raw_path_canon, updated_doc.get("processingMigrations", {}))
+        self.assertIn(other_path, updated_doc["processingMigrations"])
+        target_settings = updated_doc["records"][raw_path_canon]["state"]["settings"]
+        self.assertEqual(target_settings["processing"]["version"], 3)
+        self.assertEqual(target_settings["exposure"], 0.8)
+        self.assertIs(target_settings["aiDenoiseEnabled"], True)
+        self.assertEqual(target_settings["aiDenoiseBlend"], 45.0)
+
+    def test_store_lock_windows_open_retry_and_timeout(self):
+        lock_file = self.root / "Presets" / "presets.json.lock"
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file_str = os.fspath(lock_file)
+        attempts = {"count": 0}
+        real_open = open
+
+        class FakeMsvcrt:
+            LK_NBLCK = 1
+            LK_UNLCK = 2
+
+            def __init__(self):
+                self.locked = 0
+                self.unlocked = 0
+
+            def locking(self, fd, mode, nbytes):
+                if mode == self.LK_NBLCK:
+                    self.locked += 1
+                elif mode == self.LK_UNLCK:
+                    self.unlocked += 1
+
+        fake_msvcrt = FakeMsvcrt()
+
+        def flaky_open(file, *args, **kwargs):
+            if os.fspath(file) == lock_file_str:
+                attempts["count"] += 1
+                if attempts["count"] <= 2:
+                    err = PermissionError(errno.EACCES, "Sharing violation", str(file))
+                    err.winerror = 32
+                    raise err
+            return real_open(file, *args, **kwargs)
+
+        with patch.object(gui_sync.os, "name", "nt"), \
+             patch.object(gui_sync, "msvcrt", fake_msvcrt, create=True), \
+             patch("builtins.open", side_effect=flaky_open), \
+             patch.object(gui_sync.time, "sleep", return_value=None):
+            with gui_sync._store_lock(lock_file):
+                pass
+        self.assertEqual(attempts["count"], 3)
+        self.assertEqual(fake_msvcrt.locked, 1)
+        self.assertEqual(fake_msvcrt.unlocked, 1)
+
+        def always_locked_open(file, *args, **kwargs):
+            if os.fspath(file) == lock_file_str:
+                err = PermissionError(errno.EACCES, "Sharing violation", str(file))
+                err.winerror = 32
+                raise err
+            return real_open(file, *args, **kwargs)
+
+        ticks = iter([0.0, 0.01, 5.5])
+        with patch.object(gui_sync.os, "name", "nt"), \
+             patch.object(gui_sync, "msvcrt", fake_msvcrt, create=True), \
+             patch("builtins.open", side_effect=always_locked_open), \
+             patch.object(gui_sync.time, "monotonic", side_effect=lambda: next(ticks)), \
+             patch.object(gui_sync.time, "sleep", return_value=None):
+            with self.assertRaises(AdapterError) as ctx:
+                with gui_sync._store_lock(lock_file):
+                    pass
+            self.assertEqual(ctx.exception.code, "output_io_error")
+
+    async def test_cli_accepts_status_codes_7_and_8(self):
+        cli_78 = self.root / "fake_cli_78.py"
+        cli_78.write_text(textwrap.dedent("""
+            #!/usr/bin/env python3
+            import json, os, sys
+            args = sys.argv[1:]
+            if "--capabilities" in args:
+                print(json.dumps({
+                    "protocol_version": 1, "command": "capabilities", "ok": True,
+                    "result": {"recipe_versions": [4, 17], "commands": ["capabilities", "validate_recipe", "info", "preview", "export"]},
+                    "error": None,
+                }))
+                sys.exit(0)
+            mode = os.environ.get("FAKE_STATUS_MODE", "7")
+            if mode == "7":
+                print(json.dumps({
+                    "protocol_version": 1, "command": "info", "ok": False, "result": None,
+                    "error": {"code": "cancelled", "message": "Cancelled by caller", "status": 7},
+                }))
+                sys.exit(7)
+            print(json.dumps({
+                "protocol_version": 1, "command": "info", "ok": False, "result": None,
+                "error": {"code": "ai_not_ready", "message": "AI model not ready", "status": 8},
+            }))
+            sys.exit(8)
+        """).lstrip(), encoding="utf-8")
+        cli_78.chmod(0o755)
+
+        for status_str, expected_code, expected_status in (("7", "cancelled", 7), ("8", "ai_not_ready", 8)):
+            with python_cli_patch():
+                adapter = CliAdapter(ServerConfig(
+                    cli=cli_78, read_roots=(self.read_root,), write_roots=(self.write_root,), timeout=2.0,
+                ), environment={"FAKE_STATUS_MODE": status_str, "RAWLAB_MCP_TEST_CLI_SCRIPT": str(cli_78)})
+                await adapter.start()
+                res = await adapter.image_info(image_path=str(self.input_path))
+                self.assertFalse(res.ok)
+                self.assertIsNotNone(res.error)
+                self.assertEqual(res.error.code, expected_code)
+                self.assertEqual(res.error.status, expected_status)
 
 
 if __name__ == "__main__":

@@ -5,4 +5,7 @@
 /lutools/include/ @dancancer
 /Shared/specs/ @dancancer
 /Shared/fixtures/ @dancancer
+/Shared/version.json @dancancer
 /lutools/src/gpu/*shader* @dancancer
+/lutools/docs/edit-json-*.schema.json @dancancer
+/scripts/ci/ @dancancer

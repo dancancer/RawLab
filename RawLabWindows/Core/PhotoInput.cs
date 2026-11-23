@@ -59,7 +59,11 @@ internal static class PhotoInput
         prepared.ExposureMode=2;
         // HDR relative white balance is independent from the legacy raster WB;
         // preparing a raster input must not reset an active HDR record.
-        if (!prepared.IsHDREditing) { prepared.ResolveWhiteBalance(null); prepared.ResetWhiteBalance(); }
+        if (!prepared.IsHDREditing) {
+            var keepRasterRelativeWb = prepared.CameraWhiteBalance && prepared.AsShot == null && prepared.MasterRecipeID == null;
+            if (keepRasterRelativeWb) prepared.ClearAsShotWhiteBalance();
+            else { prepared.ResolveWhiteBalance(null); prepared.ResetWhiteBalance(); }
+        }
         prepared.Lens=new(false,false,false);
         return prepared;
     }

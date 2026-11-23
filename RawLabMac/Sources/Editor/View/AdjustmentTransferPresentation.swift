@@ -18,6 +18,7 @@ extension AdjustmentTransferField {
     }
     var displayTitle: String {
         if self == .hdrCameraDevelopment { return "HDR RAW" }
+        if self == .gradingGlobal { return L10n.text("颜色分级") + " · " + L10n.text("全局") }
         if let zone = gradingZone { return L10n.text("颜色分级") + " · " + zone.title }
         if let location = hslLocation {
             return L10n.text(HSLSettings.channelNames[location.channel]) + " · " + HSLAxis(rawValue: location.axis)!.title
@@ -26,6 +27,8 @@ extension AdjustmentTransferField {
             .look: "外观", .hdrLook: "外观", .strength: "强度", .exposure: "曝光", .exposureMode: "曝光模式",
             .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧",
             .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线", .curve: "曲线模式与控制点",
+            .curveApplyToLuminosity: "仅作用于明度", .curveParametric: "参数曲线",
+            .gradingBlending: "融合", .gradingBalance: "平衡",
             .whiteBalanceMode: "白平衡模式", .temperature: "色温", .tint: "色调", .saturation: "饱和度",
             .hdrTemperature: "色温", .hdrTint: "色调",
             .hdrPeakLimit: "HDR 亮度上限", .hdrSDRExposure: "SDR 底图曝光",

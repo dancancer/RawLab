@@ -98,4 +98,117 @@ final class CanonicalEditRecipeTests: XCTestCase {
         let lens = try XCTUnwrap(edits["lens_correction"] as? [String: Any])
         XCTAssertNil(lens["profile_id"])
     }
+
+    func testUnpinnedCurveEndpointsEmitSchemaVersion17WhilePinnedStaysLegacy() throws {
+        var pinned = RawSettings.default
+        pinned.toneCurveConfig = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0), .init(x: 0.5, y: 0.6), .init(x: 1, y: 1)]
+        )
+        let pinnedRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(pinned.canonicalParamsJSON(isRaster: false).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(pinnedRoot["schema_version"] as? Int, 7)
+
+        let pinnedRasterRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(pinned.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(pinnedRasterRoot["schema_version"] as? Int, 5)
+
+        var unpinnedMaster = RawSettings.default
+        unpinnedMaster.toneCurveConfig = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.2), .init(x: 1, y: 0.8)]
+        )
+        let unpinnedRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(unpinnedMaster.canonicalParamsJSON(isRaster: false).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(unpinnedRoot["schema_version"] as? Int, 17)
+
+        var unpinnedChannel = RawSettings.default
+        unpinnedChannel.toneCurveConfig = ToneCurveSettings(
+            channels: ToneCurveChannels(
+                red: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0.1), .init(x: 1, y: 1)])
+            )
+        )
+        let channelRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(unpinnedChannel.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
+    }
+
+    func testOutputSharpeningCanonicalJSONAndHDRRecipeAndSRGBICCProfile() throws {
+        let settings = RawSettings.default
+        let rawData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .standard).data(using: .utf8))
+        let rawRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: rawData) as? [String: Any])
+        let rawOutput = try XCTUnwrap(rawRoot["output"] as? [String: Any])
+        XCTAssertEqual(rawOutput["output_sharpening"] as? String, "standard")
+        XCTAssertGreaterThanOrEqual(rawRoot["schema_version"] as? Int ?? 0, 17)
+
+        let offData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .off).data(using: .utf8))
+        let offRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: offData) as? [String: Any])
+        let offOutput = offRoot["output"] as? [String: Any]
+        XCTAssertNil(offOutput?["output_sharpening"])
+
+        let adjustments = Adjustments()
+        let adjData = try XCTUnwrap(adjustments.canonicalParamsJSON(isRaster: true, outputSharpening: .low).data(using: .utf8))
+        let adjRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: adjData) as? [String: Any])
+        let adjOutput = try XCTUnwrap(adjRoot["output"] as? [String: Any])
+        XCTAssertEqual(adjOutput["output_sharpening"] as? String, "low")
+
+        let hdrData = try HDRRecipe.document(
+            settings: HDRSettings(),
+            input: URL(fileURLWithPath: "/tmp/source.heic"),
+            output: URL(fileURLWithPath: "/tmp/output.jpg"),
+            baseColor: .srgb,
+            outputSharpening: .high
+        )
+        let hdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: hdrData) as? [String: Any])
+        let hdrOutput = try XCTUnwrap(hdrRoot["output"] as? [String: Any])
+        let hdrProcessing = try XCTUnwrap(hdrRoot["processing"] as? [String: Any])
+        XCTAssertEqual(hdrProcessing["version"] as? Int, 9)
+        XCTAssertEqual(hdrOutput["output_sharpening"] as? String, "high")
+
+        // Verify ExportMetadata.ensureSRGBICCProfile injects APP2 ICC_PROFILE\0 on bare JPEG and preserves existing APP2
+        let minimalJPEG = Data([0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x02, 0xFF, 0xD9])
+        let tagged = ExportMetadata.ensureSRGBICCProfile(minimalJPEG)
+        let marker = Data([0xFF, 0xE2])
+        let iccSig = Data("ICC_PROFILE\0".utf8)
+        XCTAssertTrue(tagged.range(of: marker) != nil && tagged.range(of: iccSig) != nil)
+        let reTagged = ExportMetadata.ensureSRGBICCProfile(tagged)
+        XCTAssertEqual(reTagged, tagged)
+    }
+
+    func testRasterRelativeWhiteBalanceEmitsRelativeSchema17AndNoneSchema5() throws {
+        let neutralIos = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(RawSettings.default.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(neutralIos["schema_version"] as? Int, 5)
+        let neutralWb = try XCTUnwrap((neutralIos["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(neutralWb["mode"] as? String, "none")
+
+        var editedIos = RawSettings.default
+        editedIos.temperature = 5200
+        editedIos.tint = -15
+        let relativeIos = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(editedIos.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(relativeIos["schema_version"] as? Int, 17)
+        let relWb = try XCTUnwrap((relativeIos["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(relWb["mode"] as? String, "relative")
+        XCTAssertEqual(relWb["relative_temperature"] as? Double, 5200)
+        XCTAssertEqual(relWb["relative_tint"] as? Double, -15)
+
+        var editedMac = Adjustments()
+        editedMac.temperature = 7800
+        editedMac.tint = 22
+        let relativeMac = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(editedMac.canonicalParamsJSON(isRaster: true).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(relativeMac["schema_version"] as? Int, 17)
+        let macWb = try XCTUnwrap((relativeMac["edits"] as? [String: Any])?["white_balance"] as? [String: Any])
+        XCTAssertEqual(macWb["mode"] as? String, "relative")
+        XCTAssertEqual(macWb["relative_temperature"] as? Double, 7800)
+        XCTAssertEqual(macWb["relative_tint"] as? Double, 22)
+    }
 }

@@ -2171,6 +2171,10 @@
       "formats": [],
       "source": "无效的 HSL 参数"
     },
+    "无效的白平衡参数": {
+      "formats": [],
+      "source": "无效的白平衡参数"
+    },
     "无效的几何参数": {
       "formats": [],
       "source": "无效的几何参数"
@@ -4491,6 +4495,118 @@
     "当前状态下相机未接受对焦点设置。": {
       "formats": [],
       "source": "当前状态下相机未接受对焦点设置。"
+    },
+    "仅作用于明度": {
+      "formats": [],
+      "source": "仅作用于明度"
+    },
+    "点曲线": {
+      "formats": [],
+      "source": "点曲线"
+    },
+    "参数曲线": {
+      "formats": [],
+      "source": "参数曲线"
+    },
+    "亮部": {
+      "formats": [],
+      "source": "亮部"
+    },
+    "暗部": {
+      "formats": [],
+      "source": "暗部"
+    },
+    "拆分点": {
+      "formats": [],
+      "source": "拆分点"
+    },
+    "重置曲线": {
+      "formats": [],
+      "source": "重置曲线"
+    },
+    "明亮度": {
+      "formats": [],
+      "source": "明亮度"
+    },
+    "全局": {
+      "formats": [],
+      "source": "全局"
+    },
+    "融合": {
+      "formats": [],
+      "source": "融合"
+    },
+    "平衡": {
+      "formats": [],
+      "source": "平衡"
+    },
+    "白平衡吸管": {
+      "formats": [],
+      "source": "白平衡吸管"
+    },
+    "取样监视": {
+      "formats": [],
+      "source": "取样监视"
+    },
+    "添加锚点": {
+      "formats": [],
+      "source": "添加锚点"
+    },
+    "清除锚点": {
+      "formats": [],
+      "source": "清除锚点"
+    },
+    "观察层": {
+      "formats": [],
+      "source": "观察层"
+    },
+    "关闭观察层": {
+      "formats": [],
+      "source": "关闭观察层"
+    },
+    "素描明度": {
+      "formats": [],
+      "source": "素描明度"
+    },
+    "冷暖反差黑白": {
+      "formats": [],
+      "source": "冷暖反差黑白"
+    },
+    "过饱和熔断热力图": {
+      "formats": [],
+      "source": "过饱和熔断热力图"
+    },
+    "肤色色相放大": {
+      "formats": [],
+      "source": "肤色色相放大"
+    },
+    "50% 中性灰": {
+      "formats": [],
+      "source": "50% 中性灰"
+    },
+    "输出锐化": {
+      "formats": [],
+      "source": "输出锐化"
+    },
+    "关": {
+      "formats": [],
+      "source": "关"
+    },
+    "低": {
+      "formats": [],
+      "source": "低"
+    },
+    "标准": {
+      "formats": [],
+      "source": "标准"
+    },
+    "高": {
+      "formats": [],
+      "source": "高"
+    },
+    "16-bit PNG": {
+      "formats": [],
+      "source": "16-bit PNG"
     }
   },
   "overrides": {
@@ -5355,14 +5471,6 @@
       "ja": "以前の調整は写真ライブラリの識別子だけで保存されています。同じ元の写真であれば復元できます。",
       "zh-Hans": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
     },
-    "显示密码": {
-      "de": "Passwort anzeigen",
-      "en": "Show password",
-      "es": "Mostrar contraseña",
-      "fr": "Afficher le mot de passe",
-      "ja": "パスワードを表示",
-      "zh-Hans": "显示密码"
-    },
     "暂无可导出的错误日志。": {
       "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
       "en": "There is no error log to export.",
@@ -5930,14 +6038,6 @@
       "fr": "Paramètres de confidentialité",
       "ja": "プライバシー設定",
       "zh-Hans": "隐私设置"
-    },
-    "隐藏密码": {
-      "de": "Passwort ausblenden",
-      "en": "Hide password",
-      "es": "Ocultar contraseña",
-      "fr": "Masquer le mot de passe",
-      "ja": "パスワードを隠す",
-      "zh-Hans": "隐藏密码"
     },
     "高级参数": {
       "de": "Erweiterte Parameter",

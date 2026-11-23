@@ -13,6 +13,7 @@ public partial class DenoisePanel : UserControl
     public event Action<DenoiseSettings,bool>? Changed;
     internal event Action<double,bool>? HDRChanged;
     public event Action<bool>? AIChanged;
+    public event Action<double,bool>? AIStrengthChanged;
     public event Action? AICancelRequested,AIRetryRequested;
     public event Action? AIDiagnosticsRequested;
     public DenoisePanel()
@@ -21,6 +22,9 @@ public partial class DenoisePanel : UserControl
         System.Windows.Automation.AutomationProperties.SetAutomationId(HDRAmount.Number,"hdr.denoise.value");
         HDRAmount.Changed += (number, dragging) => {
             if (!syncing && IsEnabled && HDRAmount.IsVisible) HDRChanged?.Invoke(number / 100, dragging);
+        };
+        AIStrength.Changed += (number, dragging) => {
+            if (!syncing && IsEnabled && AIStrength.IsVisible) AIStrengthChanged?.Invoke(number, dragging);
         };
         for (var i = 0; i < rows.Length; i++) {
             var axis = i;
@@ -58,7 +62,7 @@ public partial class DenoisePanel : UserControl
     private void ResetClicked(object sender,RoutedEventArgs e){if(!syncing && IsEnabled)ResetRequested?.Invoke();}
     private void Set(int axis,double number,bool interactive)=>Publish(axis switch {
         0=>value with {Luma=number},1=>value with {Chroma=number},_=>value with {Coarse=number}},interactive);
-    internal void RefreshAI(bool visible,bool enabled,bool canStart,AIDenoiseState state,string? unavailableHint=null,bool cpuPreview=false)
+    internal void RefreshAI(bool visible,bool enabled,bool canStart,AIDenoiseState state,string? unavailableHint=null,bool cpuPreview=false,double aiStrength=100.0)
     {
         syncing=true;
         AISurface.Visibility=visible ? Visibility.Visible : Visibility.Collapsed;
@@ -69,6 +73,8 @@ public partial class DenoisePanel : UserControl
         AIExportDiagnostics.Visibility=state.Status==AIDenoiseStatus.Failed && state.DiagnosticPath!=null ? Visibility.Visible : Visibility.Collapsed;
         AIProgress.Visibility=state.IsRunning ? Visibility.Visible : Visibility.Collapsed;
         AIProgress.IsIndeterminate=state.Total==0;AIProgress.Value=state.Total==0 ? 0 : Math.Clamp((double)state.Done/state.Total,0,1);
+        AIStrength.Visibility=(visible && (enabled || state.IsRunning)) ? Visibility.Visible : Visibility.Collapsed;
+        AIStrength.Refresh(Loc.Text("AI 降噪强度"),new(0,100),aiStrength,100,"%",IsEnabled);
         OrdinaryDenoise.IsEnabled=!enabled && !state.IsRunning;
         AIStatus.SetResourceReference(TextBlock.ForegroundProperty,state.Status==AIDenoiseStatus.Failed ? "ErrorForeground" : "Muted");
         AIStatus.Text=state.Status switch {

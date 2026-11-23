@@ -46,6 +46,8 @@ internal class EditorDraftStateHolder(
     private val onSubmitPreview: (Work.Preview) -> Long,
     private val onPersist: (ImportedPhoto, EditSettings, (EditSaveResult) -> Unit) -> Unit,
     private val onEdit: (EditSettings, Boolean, Boolean) -> Unit,
+    private val onCancelWbProbe: () -> Unit = {},
+    private val onClearWbProbe: (Boolean) -> Unit = {},
 ) {
     var draftRevision: Long = 0L
         private set
@@ -104,7 +106,7 @@ internal class EditorDraftStateHolder(
         if (current.draft != null) {
             if (edge == requestedPreviewLongEdge) return
             requestedPreviewLongEdge = edge
-            if (current.draft?.group == AdjustmentGroup.HSL) onCancelHslTarget()
+            if (current.draft?.group == AdjustmentGroup.HSL || current.draft?.group == AdjustmentGroup.CURVE) onCancelHslTarget()
             return
         }
         if (edge == requestedPreviewLongEdge && (edge == getPreviewLongEdge() || previewResizeJob != null)) return
@@ -248,7 +250,8 @@ internal class EditorDraftStateHolder(
             } else {
                 failedDraftSave = false
                 draftSaveBaseline = null
-                if (current.draft.group == AdjustmentGroup.HSL) onClearHslTarget(true)
+                if (current.draft.group == AdjustmentGroup.HSL || current.draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
+                if (current.draft.group == AdjustmentGroup.WHITE_BALANCE) onClearWbProbe(true)
                 runCatching { draftStore.clear(photo.identity) }
                 onIncrementEditRevision()
                 draftRevision += 1
@@ -268,7 +271,8 @@ internal class EditorDraftStateHolder(
         if (mutable.value.committingAdjustments) return
         val current = mutable.value
         val draft = current.draft ?: return
-        if (draft.group == AdjustmentGroup.HSL) onClearHslTarget(true)
+        if (draft.group == AdjustmentGroup.HSL || draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
+        if (draft.group == AdjustmentGroup.WHITE_BALANCE) onClearWbProbe(true)
         current.photo?.let { runCatching { draftStore.clear(it.identity) } }
         val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false
@@ -289,6 +293,7 @@ internal class EditorDraftStateHolder(
 
     fun renderCommittedForNavigation() {
         onCancelHslTarget()
+        onCancelWbProbe()
         val current = mutable.value
         val photo = current.photo ?: return
         onClearDeferredMigrationPreview()

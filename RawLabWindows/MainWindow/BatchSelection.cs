@@ -27,7 +27,7 @@ public partial class MainWindow
     private void OpenCollectionClicked(object sender,RoutedEventArgs e)
     {
         if(CollectionBusy)return;
-        CancelHslTarget();
+        CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
         if(!CommitCollectionInputs())return;
         if(Collection.CurrentID!=null && (!ResolveTransformDraft() || !SaveEdits()))return;
         if(file!=null)Collection.Add([file],file);
@@ -57,7 +57,7 @@ public partial class MainWindow
             OpenFile(photos[0]);
         }
         else {
-            CancelHslTarget();
+            CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
             if(!CommitCollectionInputs())return true;
             if(!ResolveTransformDraft())return true;
             if(!SaveEdits())return false;
@@ -149,12 +149,12 @@ public partial class MainWindow
         dialog=new(owner,()=>TransferSession.Transactions.Where(transaction=>transaction.ID==id).ToArray(),
             (transaction,undo)=>RunAdjustmentHistory(transaction,null,undo,dialog!));dialog.ShowDialog();
     }
-    internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
+    internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory,OutputSharpening outputSharpening=OutputSharpening.Off)
     {
         editStore ??=new(appPaths.EditsDirectory);
-        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure);
+        return new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure,outputSharpening);
     }
-    internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory)
+    internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory,OutputSharpening outputSharpening=OutputSharpening.Off)
     {
         if(CollectionBusy)return null;
         editStore ??=new(appPaths.EditsDirectory);
@@ -165,7 +165,7 @@ public partial class MainWindow
         var exporter=new BatchSelectionExport(editStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
         transferPreparing=true;
         try {
-            var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id)));
+            var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id),outputSharpening));
             return !closing && generation==transferGeneration && opened==openRevision && revision==editRevision && file==current &&
                 photos.Select(photo=>photo.ID).SequenceEqual(Collection.SelectedPhotos.Select(photo=>photo.ID)) ? result : null;
         }finally{if(generation==transferGeneration)transferPreparing=false;}

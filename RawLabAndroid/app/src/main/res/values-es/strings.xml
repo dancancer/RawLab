@@ -29,6 +29,18 @@
     <string name="browser_unavailable">"No se puede abrir el enlace. Instala o habilita un navegador."</string>
     <string name="camera_all">"Todo"</string>
     <string name="camera_all_dates">"Todas las fechas"</string>
+    <string name="camera_auth_connecting">"Verificando credenciales de acceso…"</string>
+    <string name="camera_auth_failed">"Error de autenticación de acceso. Comprueba el nombre de usuario y la contraseña en la pantalla de la cámara."</string>
+    <string name="camera_auth_fingerprint">"Huella de clave de la cámara (compruébala en la pantalla)"</string>
+    <string name="camera_auth_fingerprint_changed">"La huella de clave de la cámara ha cambiado. Compruébala en la pantalla de la cámara antes de volver a introducir las credenciales."</string>
+    <string name="camera_auth_forget">"Olvidar credenciales guardadas"</string>
+    <string name="camera_auth_guide">"Consulta el nombre de usuario y la contraseña en el menú Información de autenticación de acceso de la cámara, comprueba la huella siguiente e inicia sesión."</string>
+    <string name="camera_auth_hide_password">"Ocultar contraseña"</string>
+    <string name="camera_auth_password">"Contraseña"</string>
+    <string name="camera_auth_show_password">"Mostrar contraseña"</string>
+    <string name="camera_auth_submit">"Verificar y conectar"</string>
+    <string name="camera_auth_title">"Autenticación de acceso a la cámara"</string>
+    <string name="camera_auth_user">"Nombre de usuario"</string>
     <string name="camera_auto">"Automático"</string>
     <string name="camera_back_photos">"Seguir seleccionando"</string>
     <string name="camera_bluetooth">"Conectando con la cámara…"</string>
@@ -235,6 +247,7 @@
     <string name="expand_vignette">"Mostrar ajustes de viñeta"</string>
     <string name="export">"Exportar"</string>
     <string name="export_done">"Foto guardada"</string>
+    <string name="export_output_sharpening">"Enfoque de salida"</string>
     <string name="exporting">"Exportando…"</string>
     <string name="exposure">"Exposición"</string>
     <string name="exposure_basis">"Referencia de exposición"</string>
@@ -438,6 +451,10 @@
     <string name="output_custom_size">"Personalizado"</string>
     <string name="output_long_edge">"Límite del lado largo (px)"</string>
     <string name="output_original_size">"Tamaño original"</string>
+    <string name="output_sharpening_high">"Alto"</string>
+    <string name="output_sharpening_low">"Bajo"</string>
+    <string name="output_sharpening_off">"Desactivado"</string>
+    <string name="output_sharpening_standard">"Estándar"</string>
     <string name="output_size">"Tamaño de exportación"</string>
     <string name="output_size_error">"El borde largo debe tener entre 1 y 65535 píxeles."</string>
     <string name="output_size_range">"1–65535 píxeles"</string>

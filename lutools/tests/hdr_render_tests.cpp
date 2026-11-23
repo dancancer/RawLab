@@ -185,6 +185,23 @@ void tone() {
         std::memcmp(identity.sdr.pixels.data(), original.sdr.pixels.data(), original.sdr.pixels.size() * sizeof(RGB)) == 0,
         "HDR channel identity is exact");
 
+    options = {};
+    options.processingVersion = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
+    source = fixture();
+    const auto v9Base = renderHDRPair(source, options);
+    options.tone.parametric = {0, 0, 0, 0, 0.15f, 0.40f, 0.85f};
+    const auto v9ZeroParam = renderHDRPair(source, options);
+    require(std::memcmp(v9ZeroParam.hdr.pixels.data(), v9Base.hdr.pixels.data(), v9Base.hdr.pixels.size() * sizeof(RGB)) == 0 &&
+        std::memcmp(v9ZeroParam.sdr.pixels.data(), v9Base.sdr.pixels.data(), v9Base.sdr.pixels.size() * sizeof(RGB)) == 0,
+        "HDR v9 zero-band parametric with custom splits is an exact bypass");
+    options.tone.parametric.shadows = 60.f;
+    const auto v9Param = renderHDRPair(source, options);
+    require(v9Param.hdr.pixels[1].r > v9Base.hdr.pixels[1].r, "HDR v9 parametric shadows lifted mid-dark luminance");
+    options.tone.parametric = {};
+    options.tone.curve = {ToneCurveMode::Custom, 3, {{{0, 0.1}, {.5, .5}, {1, 0.9}}}};
+    const auto v9Free = renderHDRPair(source, options);
+    require(v9Free.hdr.pixels[1].r != v9Base.hdr.pixels[1].r && v9Free.hdr.pixels[4].r < v9Base.hdr.pixels[4].r,
+        "HDR v9 unpinned endpoints affect HDR tone curve");
 }
 
 void color() {
@@ -234,6 +251,24 @@ void color() {
     near(luminance(next.hdr.pixels[4]), 4, "HDR grading changed luminance");
     require(next.hdr.pixels[3].b > next.hdr.pixels[2].b &&
         next.hdr.pixels[3].b - next.hdr.pixels[2].b < .001f, "HDR grading jumped at reference white");
+    // Color Grading v2 in HDR: per-zone luminance, Global wheel, blending/balance, validation
+    auto v2Source = source;
+    v2Source.hdr.pixels[0] = {0.01f, 0.01f, 0.01f};
+    v3.color = {};
+    v3.color.grading.wheels[2] = {0, 0, 60};
+    next = renderHDRPair(v2Source, v3);
+    require(luminance(next.hdr.pixels[4]) > luminance(v2Source.hdr.pixels[4]), "HDR v2 highlight luminance did not brighten highlights");
+    require(next.hdr.pixels[0].r == v2Source.hdr.pixels[0].r, "HDR v2 highlight luminance touched dark shadow pixel");
+    v3.color = {};
+    v3.color.grading.global = {35, 50, 25};
+    v3.color.grading.blending = 80;
+    v3.color.grading.balance = -20;
+    next = renderHDRPair(v2Source, v3);
+    require(next.hdr.pixels[2].r > next.hdr.pixels[2].b && luminance(next.hdr.pixels[2]) > luminance(v2Source.hdr.pixels[2]),
+        "HDR v2 global wheel did not tint/lift mid-tone/white");
+    v3.color.grading.wheels[0].luminance = 150;
+    rejects([&] { renderHDRPair(source, v3); }, "invalid v2 grading luminance was accepted");
+    v3.color = {};
     v3.color.vibrance = std::numeric_limits<float>::quiet_NaN();
     rejects([&] { renderHDRPair(source, v3); }, "invalid v3 color options were accepted");
 }
@@ -609,7 +644,7 @@ void geometry() {
 
 void validation() {
     auto source = fixture();
-    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION + 1;
+    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION + 1;
     rejects([&] { renderHDRPair(source, options); }, "unknown HDR processing version accepted");
     options = {}; options.exposureEV = 5;
     rejects([&] { renderHDRPair(source, options); }, "exposure range not enforced");

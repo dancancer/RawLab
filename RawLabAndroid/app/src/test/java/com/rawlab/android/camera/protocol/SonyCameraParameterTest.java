@@ -540,6 +540,87 @@ public class SonyCameraParameterTest {
         public void close() throws Exception { server.close();worker.join(6000); }
     }
 
+    @Test public void acceptsForwardCompatible0x9202DescriptorVersions() throws Exception {
+        for (byte[] descriptor : Arrays.asList(
+                cat(u16(0x12c), u32(0), u32(0), u16(0x9999), u32(1)),
+                cat(u16(0x190), u32(0), u32(0), u16(0x1234)))) {
+            try (DescriptorServer server = new DescriptorServer(descriptor);
+                 SonyTetherSession session = server.session()) {
+                SonyMobileSession.Device device = session.connectRemote();
+                assertEquals("ILCE-7M5", device.model);
+                server.check();
+            }
+        }
+
+        for (byte[] unsupported : Arrays.asList(
+                cat(u16(0x0064), u32(0), u32(0)),
+                cat(u16(0x00c8), u32(0), u32(0), u16(0x1)))) {
+            try (DescriptorServer server = new DescriptorServer(unsupported);
+                 SonyTetherSession session = server.session()) {
+                assertThrows(IOException.class, session::connectRemote);
+            }
+        }
+    }
+
+    private static final class DescriptorServer implements AutoCloseable {
+        final ServerSocket server = new ServerSocket(0, 2, InetAddress.getLoopbackAddress());
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+        final Thread worker;
+        DescriptorServer(byte[] descriptor) throws IOException {
+            worker = new Thread(() -> {
+                try (Socket command = server.accept()) {
+                    command.setSoTimeout(5000);
+                    assertEquals(1, SonyMobileSession.readPacket(command, 4096).type);
+                    SonyMobileSession.writePacket(command, 2, cat(u32(1), new byte[20]));
+                    try (Socket event = server.accept()) {
+                        assertEquals(3, SonyMobileSession.readPacket(event, 4096).type);
+                        SonyMobileSession.writePacket(event, 4, new byte[0]);
+                        while (true) {
+                            SonyMobileSession.Packet packet;
+                            try { packet = SonyMobileSession.readPacket(command, 4096); } catch (EOFException done) { break; }
+                            assertEquals(6, packet.type);
+                            SonyMobileSession.Reader r = new SonyMobileSession.Reader(packet.bytes);
+                            r.i32();
+                            int op = r.u16();
+                            int tid = r.i32();
+                            byte[] data = null;
+                            if (op == 0x1001) {
+                                int[] codes = new int[]{0x1001, 0x1002, 0x9201, 0x9202, 0x9209, 0x923c, 0x923d};
+                                ByteArrayOutputStream ops = new ByteArrayOutputStream();
+                                ops.write(u32(codes.length));
+                                for (int code : codes) ops.write(u16(code));
+                                data = cat(u16(100), u32(17), u16(100), text("Sony"), u16(0), ops.toByteArray(),
+                                    new byte[16], text("Sony Corporation"), text("ILCE-7M5"), text("1.00"), text("fixture"));
+                            } else if (op == 0x9202) {
+                                data = descriptor;
+                            }
+                            if (data != null) {
+                                SonyMobileSession.writePacket(command, 9, cat(u32(tid), u32(data.length), u32(0)));
+                                SonyMobileSession.writePacket(command, 12, cat(u32(tid), data));
+                            }
+                            SonyMobileSession.writePacket(command, 7, cat(u16(0x2001), u32(tid)));
+                        }
+                    }
+                } catch (Throwable error) {
+                    if (!(error instanceof IOException)) failure.set(error);
+                }
+            });
+            worker.start();
+        }
+        SonyTetherSession session() throws IOException {
+            SocketFactory factory = new SocketFactory() {
+                public Socket createSocket() { return new Socket() { @Override public void connect(SocketAddress ignored, int timeout) throws IOException { super.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), server.getLocalPort()), timeout); } }; }
+                public Socket createSocket(String h, int p) { throw new UnsupportedOperationException(); }
+                public Socket createSocket(String h, int p, InetAddress a, int ap) { throw new UnsupportedOperationException(); }
+                public Socket createSocket(InetAddress h, int p) { throw new UnsupportedOperationException(); }
+                public Socket createSocket(InetAddress h, int p, InetAddress a, int ap) { throw new UnsupportedOperationException(); }
+            };
+            return new SonyTetherSession(factory, InetAddress.getLoopbackAddress(), UUID.randomUUID(), m -> {}, SonyTetherSession.Purpose.TETHER);
+        }
+        void check() throws Exception { worker.join(6000); assertFalse(worker.isAlive()); if (failure.get() != null) throw new AssertionError(failure.get()); }
+        public void close() throws Exception { server.close(); worker.join(6000); }
+    }
+
     private static final class Responder implements AutoCloseable {
         final ServerSocket server=new ServerSocket(0,2,InetAddress.getLoopbackAddress());
         final AtomicReference<Throwable> failure=new AtomicReference<>();final Thread worker;

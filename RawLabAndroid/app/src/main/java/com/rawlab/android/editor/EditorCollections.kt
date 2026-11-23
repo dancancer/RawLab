@@ -145,7 +145,8 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
         }
     }
     fun prepare(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        completed: (CollectionExportReview?) -> Unit) {
+        completed: (CollectionExportReview?) -> Unit,
+        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF) {
         if (mutable.value.busy) { completed(null); return }
         val selection = mutable.value
         mutable.update { it.copy(busy = true, error = null) }
@@ -153,7 +154,7 @@ internal class EditorCollections(private val storage: PhotoStorage, parentScope:
             val review = try {
                 prepareCollectionReview(awaitPendingEdits, captureActiveValidation) { validateActive ->
                     withContext(Dispatchers.IO) { synchronized(storage) {
-                        exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), validateActive)
+                        exporter.prepare(selection, skipping, format, longEdge, destination?.toString(), outputSharpening, validateActive)
                     } }
                 }
             } catch (error: Exception) { failure(error.message); null }

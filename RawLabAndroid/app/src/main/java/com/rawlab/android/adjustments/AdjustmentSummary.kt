@@ -51,16 +51,30 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
             BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE, HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> number(number, signed = true) + "%"
             HDR_TEMPERATURE -> number(number) + " K（" + text("相对白平衡") + "）"
             HDR_TINT -> number(number, signed = true) + "（" + text("相对白平衡") + "）"
-            WHITE_BALANCE_MODE -> text(when (value.text) { "camera" -> "相机白平衡（按目标照片）"; "temperature" -> "自定义"; else -> "不适用" })
+            WHITE_BALANCE_MODE -> text(when (value.text) { "camera" -> "相机白平衡（按目标照片）"; "temperature" -> "自定义"; "relative" -> "相对白平衡"; else -> "不适用" })
             TEMPERATURE, TINT -> if (value == AdjustmentValue.Null) {
                 text(if (payload[WHITE_BALANCE_MODE]?.text == "camera") "相机白平衡（按目标照片）" else "不适用")
             } else number(number, signed = field == TINT) + if (field == TEMPERATURE) " K" else ""
             CURVE -> curveText(value)
-            GRADING_SHADOWS, GRADING_MIDTONES, GRADING_HIGHLIGHTS -> {
-                val wheel = value.objectValue!!
-                text("色相") + " " + number(wheel.getValue("hue").number!!) + "° · " +
-                    text("饱和度") + " " + number(wheel.getValue("saturation").number!!) + "%"
+            CURVE_APPLY_TO_LUMINOSITY -> text(if (value.boolean == true) "开启" else "停用")
+            CURVE_PARAMETRIC -> {
+                val p = value.objectValue!!
+                listOf(
+                    text("高光") + " " + number(p.getValue("highlights").number!!, signed = true),
+                    text("亮部") + " " + number(p.getValue("lights").number!!, signed = true),
+                    text("暗部") + " " + number(p.getValue("darks").number!!, signed = true),
+                    text("阴影") + " " + number(p.getValue("shadows").number!!, signed = true),
+                ).joinToString(" · ")
             }
+            GRADING_SHADOWS, GRADING_MIDTONES, GRADING_HIGHLIGHTS, GRADING_GLOBAL -> {
+                val wheel = value.objectValue!!
+                val base = text("色相") + " " + number(wheel.getValue("hue").number!!) + "° · " +
+                    text("饱和度") + " " + number(wheel.getValue("saturation").number!!) + "%"
+                val lum = wheel["luminance"]?.number ?: 0.0
+                if (lum != 0.0) base + " · " + text("明亮度") + " " + number(lum, signed = true) + "%" else base
+            }
+            GRADING_BLENDING -> number(number) + "%"
+            GRADING_BALANCE -> number(number, signed = true) + "%"
             VIGNETTE_AMOUNT, VIGNETTE_ROUNDNESS -> number(number, signed = true)
             PERSPECTIVE_HORIZONTAL, PERSPECTIVE_VERTICAL -> number(number * 100, signed = true)
             VIGNETTE_MIDPOINT, VIGNETTE_FEATHER, VIGNETTE_HIGHLIGHTS,

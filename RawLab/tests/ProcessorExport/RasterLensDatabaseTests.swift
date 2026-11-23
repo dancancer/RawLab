@@ -97,7 +97,9 @@ extension ProcessorExportTests {
         try processor.loadLensDatabase(session)
         let inputType = processor.semanticInputType(for: buffer)
         let effective = try processor.effectiveSettings(settings, session: session, url: nil, inputType: inputType)
-        try processor.configureSession(session, settings: effective, interactive: false)
+        try processor.configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: effective.lensSettings)
+        try processor.configureSession(session, settings: effective, interactive: false,
+                                       isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
         var request = processor.makeBaseRequest(settings: effective, inputType: inputType)
         request.input_type = inputType
         request.input_width = UInt32(buffer.width)

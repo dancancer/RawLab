@@ -205,7 +205,10 @@ class AdjustmentHistoryInstrumentedTest {
             val renderer = EditorViewModel::class.java.getDeclaredField("renderer").apply { isAccessible = true }.get(model)
             val processorField = renderer.javaClass.getDeclaredField("processor").apply { isAccessible = true }
             fun cachedBitmap(): Bitmap {
-                val processor = processorField.get(renderer)!!
+                val engine = processorField.get(renderer)!!
+                val processor = runCatching {
+                    engine.javaClass.getDeclaredField("native").apply { isAccessible = true }.get(engine)!!
+                }.getOrDefault(engine)
                 val decoded = processor.javaClass.getDeclaredField("raster").apply { isAccessible = true }.get(processor) as com.rawlab.android.raster.DecodedRaster
                 return decoded.bitmap
             }
@@ -724,7 +727,7 @@ class AdjustmentHistoryInstrumentedTest {
             main { model.addCollectionPhotos(listOf(model.state.value.photo!!.uri)) }
             waitFor { !model.collection.value.busy }
             val review = result<com.rawlab.android.batch.CollectionExportReview?> {
-                model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null, it)
+                model.prepareCollectionExport(emptySet(), com.rawlab.android.format.ExportFormat.JPEG, 128, null, completed = it)
             }!!
             main { model.releaseEditorRasterOperation = { throw IOException("release fixture") } }
             assertFalse(result<Boolean> { model.freezeCollectionExport(review, it) })

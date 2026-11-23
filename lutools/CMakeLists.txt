@@ -237,6 +237,7 @@ set(CORE_SOURCES
     src/core/image_header_probe.cpp
     src/core/photo_pipeline_stages.cpp
     src/core/hsl_probe.cpp
+    src/core/bsh_diagnostics.cpp
     src/core/pipeline.cpp
     src/core/pipeline_raw.cpp
     src/core/pipeline_lens.cpp
@@ -561,6 +562,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         ARGS "${CMAKE_CURRENT_SOURCE_DIR}/examples/DJI_20250602164503_0444_D.DNG"
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME bsh_diagnostics
+        SOURCES tests/bsh_diagnostics_tests.cpp
+        LIBRARIES sony2fuji_core
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(SONY2FUJI_ENABLE_X3F)
         rawlab_add_test(
             NAME x3f_bridge_contracts
@@ -601,7 +608,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             NAME metal_workspace
             SOURCES tests/metal_workspace_tests.mm
             LIBRARIES sony2fuji_core "-framework Metal" "-framework Foundation"
-            ENVIRONMENT "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
             LABELS gpu metal metal_arm64 ci_macos_arm64
         )
     endif()
@@ -1052,6 +1062,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME inspection_geometry_parity
+        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp
+        LIBRARIES ${geometry_libs}
+        LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME perspective_api
         SOURCES tests/perspective_api_tests.cpp
         LIBRARIES sony2fuji_core
@@ -1155,7 +1171,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         rawlab_add_test(
             NAME metal_edit_pixel_golden
             COMMAND edit_pixel_golden_tests --metal
-            ENVIRONMENT "MTL_SHADER_VALIDATION=1;MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1;MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
             LABELS gpu metal metal_arm64 ci_macos_arm64
         )
     endif()
@@ -1219,6 +1238,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                     --cli $<TARGET_FILE:sony2fuji_cli>
                     ${CLI_RAW_ARGS}
                 SKIP_RETURN_CODE 77
+                LABELS cli ci_macos_arm64 ci_macos_x86_64 ci_windows
+            )
+            rawlab_add_test(
+                NAME bsh_cli
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_bsh_cli.py"
+                    --cli $<TARGET_FILE:sony2fuji_cli>
+                    --fixtures "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
                 LABELS cli ci_macos_arm64 ci_macos_x86_64 ci_windows
             )
             rawlab_add_test(
@@ -1331,10 +1358,16 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         set(pipeline_ai_rollback_opts -Wall -Wextra -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_GLES -USONY2FUJI_ENABLE_D3D11)
         set(pipeline_ai_rollback_defs SONY2FUJI_ENABLE_AI_DENOISE)
     endif()
+    set(pipeline_ai_rollback_includes ${LIBRAW_INCLUDE_DIRS})
+    if(SONY2FUJI_LIBRAW_TARGET AND TARGET ${SONY2FUJI_LIBRAW_TARGET})
+        list(APPEND pipeline_ai_rollback_includes
+            "$<TARGET_PROPERTY:${SONY2FUJI_LIBRAW_TARGET},INTERFACE_INCLUDE_DIRECTORIES>")
+    endif()
     rawlab_add_test(
         NAME pipeline_ai_rollback
         SOURCES tests/pipeline_ai_rollback_tests.cpp src/core/pipeline_ai.cpp
         INCLUDES_BEFORE tests/ai_stub
+        INCLUDES ${pipeline_ai_rollback_includes}
         DEFINES ${pipeline_ai_rollback_defs}
         COMPILE_OPTIONS ${pipeline_ai_rollback_opts}
         LABELS ai core ci_macos_arm64 ci_macos_x86_64 ci_windows
@@ -1379,7 +1412,9 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
                 NAME abi_layout_fixture
                 COMMAND "${RAWLAB_SHADER_PYTHON}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/ci/test_abi_layout.py"
-                ENVIRONMENT "CXX=${RAWLAB_ABI_CLANGXX};RAWLAB_REQUIRE_ABI_CHECK=1"
+                ENVIRONMENT
+                    "CXX=${RAWLAB_ABI_CLANGXX}"
+                    "RAWLAB_REQUIRE_ABI_CHECK=1"
                 LABELS contracts abi ci_macos_arm64 ci_macos_x86_64
             )
         endif()
@@ -1464,7 +1499,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             src/gpu/denoise.cpp src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp
             src/core/chroma_denoise.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
             src/core/color_converter.cpp src/core/photo_color.cpp src/core/photo_effects.cpp
-            src/core/photo_tone_controls.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
+            src/core/photo_tone_controls.cpp src/core/photo_basic_controls_v3.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
         rawlab_add_test(
             NAME gpu_gles_photo_pixel
             TARGET gles_photo_pixel_tests
@@ -2096,6 +2131,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples"
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME export_color_delivery
+        SOURCES tests/export_color_delivery_tests.cpp
+        INCLUDES src
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(

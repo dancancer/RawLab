@@ -96,7 +96,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
     public PhotoCanvas()
     {
         SetResourceReference(CanvasBrushProperty,"CanvasSurface");
-        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay,hslTargetDrawing};
+        layers=new VisualCollection(this){referenceLayer,editedLayer,overlay,cropOverlay,hslTargetDrawing,inspectionDrawing};
         SetResourceReference(OverlayInkProperty,"OverlayInk");SetResourceReference(OverlayPaperProperty,"OverlayPaper");SetResourceReference(OverlayAccentProperty,"OverlayAccent");
         SetResourceReference(OverlayGridWidthProperty,"OverlayGridWidth");
         referenceLayer.Children.Add(referenceDrawing);editedLayer.Children.Add(editedDrawing);
@@ -115,6 +115,13 @@ public sealed partial class PhotoCanvas : FrameworkElement
             if(HslTargetEnabled) {
                 if(draggingDivider)CancelHslPointer();else {BeginHslPointer(point);e.Handled=true;return;}
             }
+            if(WbProbeEnabled) {
+                if(draggingDivider)WbProbeCancelled?.Invoke();
+                else if(HslCoordinates(point) is {} wbSample)WbProbeClicked?.Invoke(wbSample);
+                else WbProbeRejected?.Invoke();
+                e.Handled=true;return;
+            }
+            if(HandleInspectionDown(point)){e.Handled=true;return;}
             if(e.ClickCount==2 && !draggingDivider && image!=null)
             {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
             pressOrigin=point;panning=false;
@@ -125,7 +132,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
             var next=e.GetPosition(this);
             if(MoveHslPointer(next)){e.Handled=true;return;}
             if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
-            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : Cursors.Hand;
+            HandleInspectionMove(next);
+            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : (WbProbeEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand);
             if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
             if(drag is not {} point)return;
             if(!panning && (Math.Abs(next.X-pressOrigin.X)>SystemParameters.MinimumHorizontalDragDistance || Math.Abs(next.Y-pressOrigin.Y)>SystemParameters.MinimumVerticalDragDistance))
@@ -134,10 +142,11 @@ public sealed partial class PhotoCanvas : FrameworkElement
         };
         MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;EndPointer();};
         LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
+        MouseLeave+=(_,_)=>InspectionHoverChanged?.Invoke(null);
         LostKeyboardFocus+=(_,_)=>{CancelHslPointer();CancelHold();};
         TouchDown+=(_,_)=>{CancelHslPointer();CancelHold();};
         IsVisibleChanged+=(_,_)=>{if(!IsVisible)CancelPointer();else UpdateTransform();};
-        KeyDown+=(_,e)=> { if(HandleHslKey(e)){e.Handled=true;return;}if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
+        KeyDown+=(_,e)=> { if(HandleHslKey(e)){e.Handled=true;return;}if(WbProbeEnabled && e.Key==Key.Escape){WbProbeCancelled?.Invoke();e.Handled=true;return;}if(HandleCropKey(e)){CancelHold();e.Handled=true;return;}if(!ComparisonEnabled)return;if(e.Key is Key.Left or Key.Right){Divider+=e.Key==Key.Left ? -.025 : .025;e.Handled=true;}if(e.Key==Key.Home){Divider=.5;e.Handled=true;} };
         SizeChanged+=(_,_)=>{CancelPointer();UpdateTransform();};
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
@@ -161,8 +170,8 @@ public sealed partial class PhotoCanvas : FrameworkElement
             var unit=new Rect(0,0,1,1);dc.DrawImage(bitmap,unit);
             if(show && clipping!=null)dc.DrawImage(clipping,unit);
         }
-        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping && !HslTargetEnabled);
-        Draw(editedDrawing,image,mask,ShowClipping && !HslTargetEnabled);
+        Draw(referenceDrawing,comparison,comparisonMask,ShowClipping && !HslTargetEnabled && !WbProbeEnabled);
+        Draw(editedDrawing,image,mask,ShowClipping && !HslTargetEnabled && !WbProbeEnabled);
     }
     private void UpdateTransform()
     {
@@ -182,7 +191,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         var demand=PhotoMargin ? new Size(Math.Max(1,ActualWidth-margin*2),Math.Max(1,ActualHeight-margin*2)) : RenderSize;
         var edge=Viewport.PreviewLongEdge(demand,dpi,size);
         if(edge!=PreviewLongEdge){PreviewLongEdge=edge;PreviewSizeChanged?.Invoke(edge);}
-        DrawCrop();DrawHslTarget();UpdateComparison();ImageBoundsChanged?.Invoke();
+        DrawCrop();DrawHslTarget();DrawInspectionAnchors();UpdateComparison();ImageBoundsChanged?.Invoke();
     }
     private void UpdateComparison()
     {
@@ -226,6 +235,15 @@ public sealed class HistogramView : FrameworkElement
 {
     private uint[]? hdrBins;
     private float hdrHeadroom = 1;
+    internal double? LuminanceCursor { get; private set; }
+
+    internal void SetLuminanceCursor(double? value)
+    {
+        var next = value is { } v && double.IsFinite(v) ? Math.Clamp(v, 0.0, 1.0) : (double?)null;
+        if (LuminanceCursor == next) return;
+        LuminanceCursor = next;
+        InvalidateVisual();
+    }
 
     internal void SetHdrStatistics(uint[]? bins, float headroom)
     {
@@ -250,6 +268,7 @@ public sealed class HistogramView : FrameworkElement
             dc.DrawLine(new Pen(Brushes.White,2),new Point(reference,0),new Point(reference,ActualHeight));
             dc.DrawLine(new Pen(Brushes.Black,5),new Point(screen,0),new Point(screen,ActualHeight));
             dc.DrawLine(new Pen(Brushes.Yellow,2){DashStyle=DashStyles.Dash},new Point(screen,0),new Point(screen,ActualHeight));
+            DrawLuminanceCursor(dc);
             return;
         }
         if(Bins==null)return;
@@ -268,13 +287,33 @@ public sealed class HistogramView : FrameworkElement
             }
         }
         var outline=(Brush)GetValue(OutlineBrushProperty);
-        if(outline is SolidColorBrush { Color.A:0 })return;
-        var pen=new Pen(outline,2);
-        for(var x=0;x<256;x++)
+        if(outline is not SolidColorBrush { Color.A:0 })
         {
-            var envelope=ActualHeight*(1-Math.Max(Bins[x],Math.Max(Bins[256+x],Bins[512+x]))/(double)peak);
-            dc.DrawLine(pen,new Point(x*ActualWidth/256,envelope),new Point((x+1)*ActualWidth/256,envelope));
+            var pen=new Pen(outline,2);
+            for(var x=0;x<256;x++)
+            {
+                var envelope=ActualHeight*(1-Math.Max(Bins[x],Math.Max(Bins[256+x],Bins[512+x]))/(double)peak);
+                dc.DrawLine(pen,new Point(x*ActualWidth/256,envelope),new Point((x+1)*ActualWidth/256,envelope));
+            }
         }
+        DrawLuminanceCursor(dc);
+    }
+
+    private void DrawLuminanceCursor(DrawingContext dc)
+    {
+        if (LuminanceCursor is not { } cursor || ActualWidth <= 0 || ActualHeight <= 0) return;
+        var x = Math.Clamp(cursor, 0.0, 1.0) * ActualWidth;
+        dc.DrawLine(new Pen(Brushes.Black, 3.0), new Point(x, 0), new Point(x, ActualHeight));
+        dc.DrawLine(new Pen(Brushes.White, 1.2), new Point(x, 0), new Point(x, ActualHeight));
+        var triangle = new StreamGeometry();
+        using (var ctx = triangle.Open())
+        {
+            ctx.BeginFigure(new Point(x, 5), true, true);
+            ctx.LineTo(new Point(x - 4, 0), true, false);
+            ctx.LineTo(new Point(x + 4, 0), true, false);
+        }
+        triangle.Freeze();
+        dc.DrawGeometry(Brushes.Gold, null, triangle);
     }
 }
 

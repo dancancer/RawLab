@@ -30,11 +30,11 @@ internal static class CanonicalEditRecipe
                 Effects: null,
                 Denoise: null,
                 LensCorrection: null),
-            Output: new OutputPayload("session.png", "png", new SizePayload("native")));
+            Output: new OutputPayload("session.png", "png", new SizePayload("native"), null));
         return JsonSerializer.Serialize(payload, SerializerOptions);
     }
 
-    internal static string Encode(Adjustments settings, bool isRaster, bool includeDenoise = true)
+    internal static string Encode(Adjustments settings, bool isRaster, bool includeDenoise = true, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         var processingVersion = ProcessingIdentity.Require(settings.Processing).Version;
         if (!Enum.IsDefined(settings.X3fMode))
@@ -76,16 +76,25 @@ internal static class CanonicalEditRecipe
                 Green: ToCurveShapePayload(curve.Channels.Green),
                 Blue: ToCurveShapePayload(curve.Channels.Blue));
 
+        var rasterRelativeActive = isRaster && settings.MasterRecipeID == null &&
+            (settings[Parameter.Temperature] != 6500 || settings[Parameter.Tint] != 0);
+        if (rasterRelativeActive &&
+            (!double.IsFinite(settings[Parameter.Temperature]) || settings[Parameter.Temperature] is < 2000 or > 50000 ||
+             !double.IsFinite(settings[Parameter.Tint]) || settings[Parameter.Tint] is < -150 or > 150))
+            throw new ArgumentOutOfRangeException(nameof(settings), "Invalid raster relative white balance");
+        var hasV12Features = curve.HasV2Extensions || grading.HasV2Extensions || rasterRelativeActive || outputSharpening != OutputSharpening.Off;
         var profileId = string.IsNullOrEmpty(settings.Lens.CoreProfileId) ? null : settings.Lens.CoreProfileId;
 
         var payload = new Payload(
-            SchemaVersion: isRaster ? 5 : 7,
+            SchemaVersion: hasV12Features ? 17 : (isRaster ? 5 : 7),
             X3fMode: isRaster ? null : (settings.X3fMode == X3fMode.Normal ? "normal-v1" : "legacy"),
             Processing: new ProcessingPayload("rawlab", processingVersion, "standard"),
             Input: new InputPayload(isRaster ? "session.png" : "session.raw", isRaster ? "raster" : "raw"),
             Edits: new EditsPayload(
                 Exposure: new ExposurePayload(exposureMode, 0, 1),
-                WhiteBalance: new WhiteBalancePayload(isRaster ? "none" : "camera"),
+                WhiteBalance: rasterRelativeActive
+                    ? new WhiteBalancePayload("relative", settings[Parameter.Temperature], settings[Parameter.Tint])
+                    : new WhiteBalancePayload(isRaster ? "none" : "camera"),
                 Look: new LookPayload(null, 1),
                 Geometry: new GeometryPayload(
                     Crop: new CropPayload(geometry.CropX, geometry.CropY, geometry.CropWidth, geometry.CropHeight),
@@ -105,12 +114,17 @@ internal static class CanonicalEditRecipe
                     Curve: new CurvePayload(
                         Mode: curve.Mode == ToneCurveMode.Custom ? "custom" : "legacy",
                         Points: curve.Points.Select(p => new[] { p.X, p.Y }).ToArray(),
-                        Channels: channels)),
+                        Channels: channels,
+                        ApplyToLuminosity: curve.ApplyToLuminosity ? true : null,
+                        Parametric: curve.Parametric.IsDefault ? null : ToParametricPayload(curve.Parametric))),
                 Color: new ColorPayload(tone.Vibrance / 100.0),
                 ColorGrading: new ColorGradingPayload(
-                    Shadows: new WheelPayload(grading.Shadows.Hue, grading.Shadows.Saturation),
-                    Midtones: new WheelPayload(grading.Midtones.Hue, grading.Midtones.Saturation),
-                    Highlights: new WheelPayload(grading.Highlights.Hue, grading.Highlights.Saturation)),
+                    Shadows: ToWheelPayload(grading.Shadows),
+                    Midtones: ToWheelPayload(grading.Midtones),
+                    Highlights: ToWheelPayload(grading.Highlights),
+                    Global: grading.Global.IsDefault ? null : ToWheelPayload(grading.Global),
+                    Blending: grading.Blending == 50.0 ? null : grading.Blending,
+                    Balance: grading.Balance == 0.0 ? null : grading.Balance),
                 Detail: new DetailPayload(0),
                 Hsl: new HslPayload(
                     Hue: hslValues.Take(8).ToArray(),
@@ -139,10 +153,17 @@ internal static class CanonicalEditRecipe
                     Vignetting: settings.Lens.Vignetting,
                     AutoCrop: settings.Lens.AutoCrop,
                     ProfileId: profileId)),
-            Output: new OutputPayload("session.png", "png", new SizePayload("native")));
+            Output: new OutputPayload("session.png", "png", new SizePayload("native"),
+                outputSharpening == OutputSharpening.Off ? null : outputSharpening.WireValue()));
 
         return JsonSerializer.Serialize(payload, SerializerOptions);
     }
+
+    private static WheelPayload ToWheelPayload(ColorGradingWheel w) =>
+        new(w.Hue, w.Saturation, w.Luminance == 0.0 ? null : w.Luminance);
+
+    private static CurveParametricPayload ToParametricPayload(ToneCurveParametric p) =>
+        new(p.Highlights, p.Lights, p.Darks, p.Shadows, p.SplitShadow, p.SplitMidtone, p.SplitHighlight);
 
     private static CurveShapePayload ToCurveShapePayload(ToneCurveShape shape) =>
         new(shape.Mode == ToneCurveMode.Custom ? "custom" : "legacy",
@@ -168,7 +189,8 @@ internal static class CanonicalEditRecipe
     private sealed record OutputPayload(
         [property: JsonPropertyName("path")] string Path,
         [property: JsonPropertyName("format")] string Format,
-        [property: JsonPropertyName("size")] SizePayload Size);
+        [property: JsonPropertyName("size")] SizePayload Size,
+        [property: JsonPropertyName("output_sharpening")] string? OutputSharpening);
 
     private sealed record SizePayload(
         [property: JsonPropertyName("mode")] string Mode);
@@ -193,7 +215,9 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("brightness")] double Brightness);
 
     private sealed record WhiteBalancePayload(
-        [property: JsonPropertyName("mode")] string Mode);
+        [property: JsonPropertyName("mode")] string Mode,
+        [property: JsonPropertyName("relative_temperature")] double? RelativeTemperature = null,
+        [property: JsonPropertyName("relative_tint")] double? RelativeTint = null);
 
     private sealed record LookPayload(
         [property: JsonPropertyName("path"), JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? Path,
@@ -236,22 +260,37 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("green")] CurveShapePayload Green,
         [property: JsonPropertyName("blue")] CurveShapePayload Blue);
 
+    private sealed record CurveParametricPayload(
+        [property: JsonPropertyName("highlights")] double Highlights,
+        [property: JsonPropertyName("lights")] double Lights,
+        [property: JsonPropertyName("darks")] double Darks,
+        [property: JsonPropertyName("shadows")] double Shadows,
+        [property: JsonPropertyName("split_shadow")] double SplitShadow,
+        [property: JsonPropertyName("split_midtone")] double SplitMidtone,
+        [property: JsonPropertyName("split_highlight")] double SplitHighlight);
+
     private sealed record CurvePayload(
         [property: JsonPropertyName("mode")] string Mode,
         [property: JsonPropertyName("points")] double[][] Points,
-        [property: JsonPropertyName("channels")] CurveChannelsPayload? Channels);
+        [property: JsonPropertyName("channels")] CurveChannelsPayload? Channels,
+        [property: JsonPropertyName("apply_to_luminosity")] bool? ApplyToLuminosity,
+        [property: JsonPropertyName("parametric")] CurveParametricPayload? Parametric);
 
     private sealed record ColorPayload(
         [property: JsonPropertyName("vibrance")] double Vibrance);
 
     private sealed record WheelPayload(
         [property: JsonPropertyName("hue")] double Hue,
-        [property: JsonPropertyName("saturation")] double Saturation);
+        [property: JsonPropertyName("saturation")] double Saturation,
+        [property: JsonPropertyName("luminance")] double? Luminance);
 
     private sealed record ColorGradingPayload(
         [property: JsonPropertyName("shadows")] WheelPayload Shadows,
         [property: JsonPropertyName("midtones")] WheelPayload Midtones,
-        [property: JsonPropertyName("highlights")] WheelPayload Highlights);
+        [property: JsonPropertyName("highlights")] WheelPayload Highlights,
+        [property: JsonPropertyName("global")] WheelPayload? Global,
+        [property: JsonPropertyName("blending")] double? Blending,
+        [property: JsonPropertyName("balance")] double? Balance);
 
     private sealed record DetailPayload(
         [property: JsonPropertyName("sharpening")] double Sharpening);

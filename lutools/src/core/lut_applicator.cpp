@@ -6,6 +6,39 @@
 #include <iostream>
 
 namespace sony2fuji {
+namespace {
+
+inline float vltCoordinate(float x) {
+    const float code = x * 4095.f;
+    return (code <= 3840.f ? code / 256.f : 15.f + (code - 3840.f) / 255.f) / 16.f;
+}
+
+void applyLutBuffer(const RGB* table, int size, const RGB& low, const RGB& high,
+    bool isVlt, bool tetrahedral, const RGB* src, RGB* dst, size_t count) {
+    const float spanR = high.r - low.r;
+    const float spanG = high.g - low.g;
+    const float spanB = high.b - low.b;
+    const bool unitDomain = low.r == 0.0f && low.g == 0.0f && low.b == 0.0f &&
+        high.r == 1.0f && high.g == 1.0f && high.b == 1.0f;
+    parallelPixelRanges(count, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const RGB& input = src[i];
+            float r = std::clamp(unitDomain ? input.r : (input.r - low.r) / spanR, 0.0f, 1.0f);
+            float g = std::clamp(unitDomain ? input.g : (input.g - low.g) / spanG, 0.0f, 1.0f);
+            float b = std::clamp(unitDomain ? input.b : (input.b - low.b) / spanB, 0.0f, 1.0f);
+            if (isVlt) {
+                r = vltCoordinate(r);
+                g = vltCoordinate(g);
+                b = vltCoordinate(b);
+            }
+            dst[i] = tetrahedral
+                ? detail::tetrahedralLUT(table, size, r, g, b)
+                : detail::interpolateLUT(table, size, r, g, b);
+        }
+    });
+}
+
+} // namespace
 
 LUTApplicator::LUTApplicator(std::shared_ptr<LUT3D> lut)
     : lut_(std::move(lut)) {
@@ -25,9 +58,7 @@ RGB LUTApplicator::apply(const RGB& input) const {
 
     if (lut_->isVLT()) {
         // VLT 的最后一个间隔是 255 个码值；普通 CUBE 的等距坐标会造成偏差。
-        auto coordinate = [](float x) { const float code = x*4095.f;
-            return (code <= 3840.f ? code/256.f : 15.f+(code-3840.f)/255.f)/16.f; };
-        r = coordinate(r); g = coordinate(g); b = coordinate(b);
+        r = vltCoordinate(r); g = vltCoordinate(g); b = vltCoordinate(b);
     }
 
     if (lut_->hasColorContract() && lut_->colorContract().interpolation == LUTInterpolation::Tetrahedral)
@@ -45,13 +76,10 @@ ErrorCode LUTApplicator::applyToImage(ImageData& image) const {
         return ErrorCode::ProcessingError;
     }
 
-    // 对每个像素应用 LUT
-    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) {
-            image.pixels[i] = apply(image.pixels[i]);
-        }
-    });
-
+    const bool tetrahedral = lut_->hasColorContract() &&
+        lut_->colorContract().interpolation == LUTInterpolation::Tetrahedral;
+    applyLutBuffer(lut_->data_.data(), lut_->getSize(), lut_->domainMin(), lut_->domainMax(),
+        lut_->isVLT(), tetrahedral, image.pixels.data(), image.pixels.data(), image.pixels.size());
     return ErrorCode::Success;
 }
 
@@ -69,13 +97,10 @@ ErrorCode LUTApplicator::applyToImage(const ImageData& input, ImageData& output)
     output.height = input.height;
     output.pixels.resize(input.pixels.size());
 
-    // 应用 LUT
-    parallelPixelRanges(input.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) {
-            output.pixels[i] = apply(input.pixels[i]);
-        }
-    });
-
+    const bool tetrahedral = lut_->hasColorContract() &&
+        lut_->colorContract().interpolation == LUTInterpolation::Tetrahedral;
+    applyLutBuffer(lut_->data_.data(), lut_->getSize(), lut_->domainMin(), lut_->domainMax(),
+        lut_->isVLT(), tetrahedral, input.pixels.data(), output.pixels.data(), input.pixels.size());
     return ErrorCode::Success;
 }
 

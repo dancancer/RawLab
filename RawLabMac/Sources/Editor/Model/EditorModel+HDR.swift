@@ -60,7 +60,7 @@ extension EditorModel {
 
     private func activateHDRMode(_ snapshot: MacPhotoEditState) {
         guard commitAdjustment(snapshot) else { return }
-        resetAITask(); cancelHSLTarget()
+        resetAITask(); cancelHSLTarget(); cancelCurveTarget()
         restoreAdjustmentState(snapshot)
         dirty = false
         editRevision = UUID()

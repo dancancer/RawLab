@@ -656,11 +656,40 @@ void atomicStreamWrite(NSData* data, const char* path, const HDRExportConfig& co
         error(RenderStatus::OutputIoError, kHdrReasonOutputIo, "Cannot publish streamed JPEG output");
 }
 
+bool hasICCProfileMarker(const std::vector<uint8_t>& jpeg) {
+    if (jpeg.size() < 4 || jpeg[0] != 0xff || jpeg[1] != 0xd8) return false;
+    static constexpr uint8_t kIccHeader[12] = {'I','C','C','_','P','R','O','F','I','L','E',0};
+    size_t index = 2;
+    while (index + 1 < jpeg.size()) {
+        if (jpeg[index] != 0xff) {
+            ++index;
+            continue;
+        }
+        while (index < jpeg.size() && jpeg[index] == 0xff) ++index;
+        if (index >= jpeg.size()) break;
+        const uint8_t marker = jpeg[index++];
+        if (marker == 0xd9 || marker == 0xda) break;
+        if (marker == 0x01 || (marker >= 0xd0 && marker <= 0xd8)) continue;
+        if (index + 2 > jpeg.size()) break;
+        const size_t segmentLength = (size_t(jpeg[index]) << 8) | size_t(jpeg[index + 1]);
+        if (segmentLength < 2 || index + segmentLength > jpeg.size()) break;
+        if (marker == 0xe2 && segmentLength >= 16 &&
+            std::memcmp(jpeg.data() + index + 2, kIccHeader, sizeof(kIccHeader)) == 0) {
+            return true;
+        }
+        index += segmentLength;
+    }
+    return false;
+}
+
 std::vector<uint8_t> withSRGBProfile(const std::vector<uint8_t>& jpeg) {
+    if (jpeg.size() < 2 || jpeg[0] != 0xff || jpeg[1] != 0xd8)
+        throw std::runtime_error("Cannot attach SDR sRGB profile");
+    if (hasICCProfileMarker(jpeg)) return jpeg;
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
     NSData* profile = space ? CFBridgingRelease(CGColorSpaceCopyICCData(space)) : nil;
     if (space) CGColorSpaceRelease(space);
-    if (!profile.length || profile.length > 65519 || jpeg.size() < 2 || jpeg[0] != 0xff || jpeg[1] != 0xd8)
+    if (!profile.length || profile.length > 65519)
         throw std::runtime_error("Cannot attach SDR sRGB profile");
     const size_t length = profile.length + 16;
     std::vector<uint8_t> output{0xff, 0xd8, 0xff, 0xe2, uint8_t(length >> 8), uint8_t(length),
@@ -915,7 +944,7 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
             const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
             uint64_t sourceSize = 0;
             if (impl && impl->data) sourceSize = impl->data.length;
-            else {
+            else if (config.metadataSourcePath) {
                 NSNumber* sourceBytes = [[[NSFileManager defaultManager]
                     attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadataSourcePath] error:nil] objectForKey:NSFileSize];
                 if (!sourceBytes)
@@ -1209,9 +1238,16 @@ void exportSDR(const HDRImagePair& image,const HDRSdrExportConfig& config,const 
             CGImageDestinationAddImage(dest,pixels,(__bridge CFDictionaryRef)values);
             const bool success=CGImageDestinationFinalize(dest); CGImageRelease(pixels); CFRelease(dest);
             require(success, kHdrReasonOutputIo, "Cannot encode SDR rendition");
+            NSData* outputData = data;
+            if (config.outputFormat == kHdrSdrOutputJpeg) {
+                std::vector<uint8_t> jpeg(static_cast<const uint8_t*>(data.bytes),
+                                          static_cast<const uint8_t*>(data.bytes) + data.length);
+                jpeg = withSRGBProfile(jpeg);
+                outputData = [NSData dataWithBytes:jpeg.data() length:jpeg.size()];
+            }
             reportHdrProgress(900, 1000);
             checkProcessingCancellation();
-            atomicWrite(data,path);
+            atomicWrite(outputData,path);
             reportHdrProgress(1000, 1000);
             return;
         }

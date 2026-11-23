@@ -1,5 +1,6 @@
 package com.rawlab.android.adjustments
 
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.settings.*
 import org.json.JSONObject
@@ -17,7 +18,7 @@ class AdjustmentFieldsSpecTest {
         val root = loadSpecJSON()
         assertEquals(1, root.getInt("spec_version"))
         val fields = root.getJSONArray("fields")
-        assertEquals(83, fields.length())
+        assertEquals(89, fields.length())
 
         val transferIds = mutableListOf<String>()
         val localIds = mutableListOf<String>()
@@ -55,8 +56,8 @@ class AdjustmentFieldsSpecTest {
             }
         }
 
-        assertEquals(81, transferIds.size)
-        assertEquals(2, localIds.size)
+        assertEquals(86, transferIds.size)
+        assertEquals(3, localIds.size)
         assertEquals(transferIds.toSet(), AdjustmentField.entries.map { it.id }.toSet())
         assertEquals(AdjustmentField.entries.size, transferIds.size)
         assertEquals(localIds, AdjustmentFieldSpec.localOnlyFieldIds)
@@ -130,11 +131,18 @@ class AdjustmentFieldsSpecTest {
         assertThrows(IllegalArgumentException::class.java) { GeometrySettings(quarterTurns = 4) }
 
         // ColorGradingSettings, ToneCurveSettings, DenoiseSettings, HDRSettings
-        assertTrue(ColorGradingSettings().isDefault)
+        val grading = ColorGradingSettings()
+        assertTrue(grading.isDefault)
+        assertEquals(0f, grading.global.luminance, 0f)
+        assertEquals(androidModel("color.grading.blending").getDouble("default").toFloat(), grading.blending, 0f)
+        assertEquals(androidModel("color.grading.balance").getDouble("default").toFloat(), grading.balance, 0f)
         assertThrows(IllegalArgumentException::class.java) { ColorGradingWheel(hue = 360f, saturation = 0f) }
 
         val curve = ToneCurveSettings()
         assertTrue(curve.isDefault)
+        assertEquals(androidModel("light.curve.apply_to_luminosity").getBoolean("default"), curve.applyToLuminosity)
+        assertTrue(curve.parametric.isDefault)
+        assertEquals(OutputSharpening.OFF, OutputSharpening.fromWireValue(null))
         assertThrows(IllegalArgumentException::class.java) { ToneCurveShape(mode = ToneCurveMode.CUSTOM, points = emptyList()) }
 
         val denoise = DenoiseSettings()

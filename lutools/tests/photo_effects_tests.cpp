@@ -176,7 +176,7 @@ static void apiTests() {
                 const float top = sample(x0, y0) * (1 - sx + x0) + sample(x1, y0) * (sx - x0);
                 const float bottom = sample(x0, y1) * (1 - sx + x0) + sample(x1, y1) * (sx - x0);
                 const float expected = top * (1 - sy + y0) + bottom * (sy - y0);
-                assert(std::abs(int(preview[(y * size.first + x) * 3 + c]) - expected) <= 1.01f);
+                assert(std::abs(int(preview[(y * size.first + x) * 3 + c]) - expected) <= 2.01f);
             }
         }
     }

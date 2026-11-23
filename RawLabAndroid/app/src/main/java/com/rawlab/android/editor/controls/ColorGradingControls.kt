@@ -30,37 +30,61 @@ import com.rawlab.android.settings.*
 
 @Composable
 internal fun ColorGradingControls(settings: ColorGradingSettings, enabled: Boolean, zone: ColorGradingZone,
-    onZoneChange: (ColorGradingZone) -> Unit, onEdit: (ColorGradingSettings, Boolean) -> Unit) {
+    onZoneChange: (ColorGradingZone) -> Unit, globalSelected: Boolean = false, onGlobalSelectedChange: (Boolean) -> Unit = {},
+    onEdit: (ColorGradingSettings, Boolean) -> Unit) {
     val scope = LocalAdjustmentSession.current
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             ColorGradingZone.entries.indices.forEach { index ->
                 val target = ColorGradingZone.entries[index]
                 val status = stringResource(if (settings[target].isDefault) R.string.hsl_unadjusted else R.string.hsl_adjusted)
-                TextButton(onClick = { onZoneChange(target) }, enabled = enabled,
+                TextButton(onClick = { onGlobalSelectedChange(false); onZoneChange(target) }, enabled = enabled,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("grading-zone-${target.id}")
-                        .semantics { selected = target == zone; stateDescription = status }) {
-                    Text(stringResource(gradingZoneTitle(target)))
-                    Spacer(Modifier.width(5.dp))
+                        .semantics { selected = !globalSelected && target == zone; stateDescription = status }) {
+                    Text(stringResource(gradingZoneTitle(target)), maxLines = 1, softWrap = false)
+                    Spacer(Modifier.width(4.dp))
                     Box(Modifier.size(3.dp).background(if (settings[target].isDefault) Color.Transparent else MaterialTheme.colorScheme.primary, CircleShape))
                 }
             }
+            val globalStatus = stringResource(if (settings.global.isDefault) R.string.hsl_unadjusted else R.string.hsl_adjusted)
+            TextButton(onClick = { onGlobalSelectedChange(true) }, enabled = enabled,
+                contentPadding = PaddingValues(horizontal = 4.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("grading-zone-global")
+                    .semantics { selected = globalSelected; stateDescription = globalStatus }) {
+                Text(stringResource(R.string.grading_global), maxLines = 1, softWrap = false)
+                Spacer(Modifier.width(4.dp))
+                Box(Modifier.size(3.dp).background(if (settings.global.isDefault) Color.Transparent else MaterialTheme.colorScheme.primary, CircleShape))
+            }
         }
-        CompositionLocalProvider(LocalAdjustmentSession provides (scope to zone), LocalCompactAdjustmentRows provides true) {
-            val value = settings[zone]
-            val title = stringResource(R.string.color_grading) + " · " + stringResource(gradingZoneTitle(zone))
+        CompositionLocalProvider(LocalAdjustmentSession provides (scope to if (globalSelected) "global" else zone), LocalCompactAdjustmentRows provides true) {
+            val value = if (globalSelected) settings.global else settings[zone]
+            val title = stringResource(R.string.color_grading) + " · " + stringResource(
+                if (globalSelected) R.string.grading_global else gradingZoneTitle(zone))
+            val updateValue: (ColorGradingWheel, Boolean) -> Unit = { next, dragging ->
+                onEdit(if (globalSelected) settings.copy(global = next) else settings.with(zone, next), dragging)
+            }
             @Composable fun rows(modifier: Modifier) {
                 Column(modifier) {
                     NumericControl(R.string.hsl_hue, value.hue, 0f..360f, "°", enabled,
-                        { hue, dragging -> ColorGradingWheel.inputHue(hue)?.let { onEdit(settings.with(zone, value.copy(hue = it)), dragging) } },
-                        { onEdit(settings.with(zone, value.copy(hue = 0f)), false) }, compactNumber = false, stepOverride = .1f)
+                        { hue, dragging -> ColorGradingWheel.inputHue(hue)?.let { updateValue(value.copy(hue = it), dragging) } },
+                        { updateValue(value.copy(hue = 0f), false) }, compactNumber = false, stepOverride = .1f)
                     NumericControl(R.string.saturation, value.saturation, 0f..100f, "%", enabled,
-                        { saturation, dragging -> onEdit(settings.with(zone, value.copy(saturation = saturation)), dragging) },
-                        { onEdit(settings.with(zone, value.copy(saturation = 0f)), false) }, compactNumber = false, stepOverride = .1f)
+                        { saturation, dragging -> updateValue(value.copy(saturation = saturation), dragging) },
+                        { updateValue(value.copy(saturation = 0f), false) }, compactNumber = false, stepOverride = .1f)
+                    NumericControl(R.string.grading_luminance, value.luminance, -100f..100f, "", enabled,
+                        { luminance, dragging -> updateValue(value.copy(luminance = luminance), dragging) },
+                        { updateValue(value.copy(luminance = 0f), false) }, compactNumber = false, stepOverride = 1f)
+                    NumericControl(R.string.grading_blending, settings.blending, 0f..100f, "%", enabled,
+                        { blending, dragging -> onEdit(settings.copy(blending = blending), dragging) },
+                        { onEdit(settings.copy(blending = 50f), false) }, compactNumber = false, defaultValue = 50f, stepOverride = 1f)
+                    NumericControl(R.string.grading_balance, settings.balance, -100f..100f, "", enabled,
+                        { balance, dragging -> onEdit(settings.copy(balance = balance), dragging) },
+                        { onEdit(settings.copy(balance = 0f), false) }, compactNumber = false, stepOverride = 1f)
                 }
             }
             Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                GradingWheel(value, enabled, title, Modifier.size(130.dp)) { next, dragging -> onEdit(settings.with(zone, next), dragging) }
+                GradingWheel(value, enabled, title, Modifier.size(130.dp)) { next, dragging -> updateValue(next, dragging) }
                 rows(Modifier.fillMaxWidth())
             }
         }

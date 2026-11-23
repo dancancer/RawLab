@@ -99,14 +99,16 @@ extension Sony2FujiProcessor {
         case .invalidPhotoEffects: return L10n.text("无效的暗角或颗粒参数")
         case .invalidWaveletDenoise, .invalidChromaDenoise, .invalidRawNoiseReduction:
             return L10n.text("无效或不可用的降噪参数")
+        case .invalidWhiteBalance:
+            return L10n.text("无效的白平衡参数")
         }
     }
 
     func applySessionParams(_ session: OpaquePointer, settings: RawSettings,
-                            isRaster: Bool = false) throws {
+                            isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws {
         let recipeJSON: String
         do {
-            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster)
+            recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster, outputSharpening: outputSharpening)
         } catch let error as CanonicalEditRecipeError {
             throw ProcessorError.processFailed(validationMessage(for: error))
         }
@@ -115,8 +117,9 @@ extension Sony2FujiProcessor {
     }
 
     func configureSession(_ session: OpaquePointer, settings: RawSettings, interactive: Bool,
-                          viewportPreview: Bool = false) throws {
-        try applySessionParams(session, settings: settings, isRaster: false)
+                          viewportPreview: Bool = false, isRaster: Bool = false,
+                          outputSharpening: OutputSharpening = .off) throws {
+        try applySessionParams(session, settings: settings, isRaster: isRaster, outputSharpening: outputSharpening)
         var config = sony2fuji_gpu_config()
         config.version = SONY2FUJI_GPU_CONFIG_VERSION
         config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
@@ -178,9 +181,11 @@ extension Sony2FujiProcessor {
         var result = try prepareRecipe(settings, session: session, url: url)
         guard inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER else { return result }
         result.exposureMode = .sensor
-        result.whiteBalanceMode = .camera
-        result.temperature = 6500
-        result.tint = 0
+        if settings.masterRecipeID != nil || result.whiteBalanceMode != .camera {
+            result.whiteBalanceMode = .camera
+            result.temperature = 6500
+            result.tint = 0
+        }
         result.noiseReduction = 0
         return result
     }
@@ -201,12 +206,15 @@ extension Sony2FujiProcessor {
         request.brightness = 1
         request.contrast = Float(settings.contrast)
         request.saturation = Float(settings.saturation)
-        // RAW white balance is applied before demosaic. Display input stays
-        // neutral; legacy scene buffers retain their existing post-RGB path.
-        request.temperature = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
+        // Camera WB keeps baseline 6500/0 on the base request for both RAW
+        // (camera gains) and SDR display input (relative WB comes from
+        // applySessionParams / rasterRelativeWbActive_).
+        let neutralCameraWB = request.wb_mode == SONY2FUJI_WB_CAMERA &&
+            (inputType == SONY2FUJI_INPUT_RAW || displayInput)
+        request.temperature = neutralCameraWB
             ? 6500
             : Float(settings.temperature)
-        request.tint = displayInput || (request.wb_mode == SONY2FUJI_WB_CAMERA && inputType == SONY2FUJI_INPUT_RAW)
+        request.tint = neutralCameraWB
             ? 0
             : Float(settings.tint)
         request.highlights = Float(settings.highlights)
@@ -220,6 +228,11 @@ extension Sony2FujiProcessor {
     func configureDNGFile(_ request: inout sony2fuji_request) {
         request.output_target = SONY2FUJI_TARGET_FILE
         request.output_format = SONY2FUJI_OUTPUT_DNG
+    }
+
+    func configurePNGFile(_ request: inout sony2fuji_request) {
+        request.output_target = SONY2FUJI_TARGET_FILE
+        request.output_format = SONY2FUJI_OUTPUT_PNG
     }
 
     func applySize(

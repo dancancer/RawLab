@@ -6,6 +6,7 @@
 #include "core/photo_effects.h"
 #include "core/photo_tone_curve.h"
 #include "core/hdr_detail.h"
+#include "core/render_params.h"
 
 #include "sony2fuji/common.h"
 #include "core/photo_geometry.h"
@@ -38,6 +39,8 @@ struct HDRToneOptions {
     float blackPoint = 0, whitePoint = 0, curveStrength = 0;
     ToneCurveConfig curve{};
     std::array<ToneCurveConfig, 3> channels{};
+    bool applyToLuminosity = false;
+    ToneCurveParametricConfig parametric{};
 };
 
 struct HDRColorOptions {
@@ -72,6 +75,7 @@ struct HDRRenderOptions {
     HDRDetailOptions detail;
     std::shared_ptr<const HDRLook> look;
     float lookStrength = 0;
+    OutputSharpening outputSharpening = OutputSharpening::Off;
 
     bool hasPhotoEffects() const { return processingVersion >= kHdrProcessingEffectsVersion && effects.active(); }
     bool hasDetail() const { return processingVersion >= kHdrProcessingDetailVersion && detail.active(); }

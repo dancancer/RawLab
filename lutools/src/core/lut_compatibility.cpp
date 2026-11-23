@@ -15,7 +15,13 @@ public:
         lut.contractState_=contract.base==LUTBaseRendering::RawLabNeutral ?
             LUTContractState::ApproximateBase:LUTContractState::Compatibility;
     }
+    static const RGB* tableData(const LUT3D& lut) noexcept {
+        return lut.data_.data();
+    }
 };
+const RGB* lutTableData(const LUT3D& lut) noexcept {
+    return LUTCompatibilityAccess::tableData(lut);
+}
 namespace {
 using nlohmann::json;
 json candidates(const json& contract, bool fixed, const std::string& style, const json& hints) {

@@ -25,6 +25,9 @@ void printUsage(const char* programName) {
     std::cout << "  --json 输出结构化结果和错误 (与 --recipe 配合)\n";
     std::cout << "  " << programName << " --info <image> --json\n";
     std::cout << "  " << programName << " --recipe <JSON> --preview <PNG> [--long-edge <pixels>] --json\n";
+    std::cout << "  " << programName << " --recipe <JSON> --analyze [--sample x,y[,label]] [--long-edge <pixels>] --json\n";
+    std::cout << "  " << programName << " --input <image> --analyze [--sample x,y[,label]] [--long-edge <pixels>] --json\n";
+    std::cout << "  " << programName << " --recipe <JSON> --print-transfer [--json]\n";
     std::cout << "  --print-recipe 校验并输出补全默认值的配方，不处理图片\n\n";
     std::cout << "必需参数:\n";
     std::cout << "  <输入RAW文件>        Sony RAW 文件路径 (.ARW)\n";
@@ -204,7 +207,8 @@ static int runMain(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--json" || arg == "--capabilities" || arg == "--info" || arg == "--preview" ||
-            (i == 1 && (arg == "--recipe" || arg == "--lens-database" || arg == "--print-recipe")))
+            arg == "--analyze" || arg == "--print-transfer" || arg == "--sample" ||
+            (i == 1 && (arg == "--recipe" || arg == "--lens-database" || arg == "--print-recipe" || arg == "--input")))
             return runAgentCommands(argc, argv);
         // Legacy option values may themselves be filenames such as "--json".
         if (arg == "-o" || arg == "--output" || arg == "-l" || arg == "--lut" ||

@@ -73,5 +73,34 @@ internal static class ColorGradingRenderChecks
         using var pendingRecipe=JsonDocument.Parse(engine.AgentRecipe(input,pending,null,Path.Combine(output,"pending.png")));
         check(pendingRecipe.RootElement.GetProperty("edits").GetProperty("color_grading").GetProperty("shadows").GetProperty("hue").GetDouble()==231.25,
             "Agent preserves pending hue despite render identity");
+
+        var v2Settings = new Adjustments
+        {
+            ColorGrading = new()
+            {
+                Shadows = new(215, 25, -20),
+                Global = new(180, 35, 10),
+                Blending = 70,
+                Balance = -15
+            }
+        };
+        var v2Gui = Path.Combine(output, "grading-v2-gui.png");
+        var v2Agent = Path.Combine(output, "grading-v2-agent.png");
+        var v2RecipePath = v2Agent + ".json";
+        engine.Render(input, v2Settings, null, 0, output: v2Gui);
+        File.WriteAllText(v2RecipePath, engine.AgentRecipe(input, v2Settings, null, v2Agent));
+        var v2Psi = new ProcessStartInfo(cli) { UseShellExecute = false, RedirectStandardError = true };
+        v2Psi.ArgumentList.Add("--recipe");
+        v2Psi.ArgumentList.Add(v2RecipePath);
+        using (var v2Proc = Process.Start(v2Psi)!)
+        {
+            var v2Err = v2Proc.StandardError.ReadToEndAsync();
+            if (!v2Proc.WaitForExit(60000)) { v2Proc.Kill(true); throw new TimeoutException("Grading v2 CLI timeout"); }
+            check(v2Proc.ExitCode == 0, "Grading v2 CLI recipe succeeds: " + v2Err.GetAwaiter().GetResult());
+        }
+        var v2GuiImg = BitmapFrame.Create(new Uri(v2Gui), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var v2AgentImg = BitmapFrame.Create(new Uri(v2Agent), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        check(Bytes(v2GuiImg).SequenceEqual(Bytes(v2AgentImg)), "Color Grading v2 native and Agent FINAL pixels agree");
+        check(!Bytes(v2GuiImg).SequenceEqual(original), "Color Grading v2 visibly alters rendered pixels");
     }
 }

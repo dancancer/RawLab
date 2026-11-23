@@ -33,6 +33,7 @@ import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.format.*
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
+import com.rawlab.android.ui.OutputSharpeningControls
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -166,6 +167,7 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
     var format by remember { mutableStateOf(ExportFormat.JPEG) }
     var size by remember { mutableStateOf(ExportSizeChoice.ORIGINAL) }
     var custom by remember { mutableStateOf("") }
+    var outputSharpening by remember { mutableStateOf(OutputSharpening.OFF) }
     var destination by remember { mutableStateOf<Uri?>(null) }
     val review = flow.review
     val busy = collection.busy || flow.preparing || flow.freezing
@@ -183,7 +185,7 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
             destination = uri
         }
     }
-    LaunchedEffect(collection.selected, editor.adjustmentRevision, editor.photo?.identity, format, size, custom, destination, skipped) {
+    LaunchedEffect(collection.selected, editor.adjustmentRevision, editor.photo?.identity, format, size, custom, outputSharpening, destination, skipped) {
         model.cancelCollectionExport()
     }
     DisposableEffect(model) { onDispose { model.cancelCollectionExport() } }
@@ -196,6 +198,7 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
                     ExportFormatControls(format, { format = it },
                         hdrEditing = supportsHDR)
                     ExportSizeControls(size, custom, { size = it }, { custom = it })
+                    OutputSharpeningControls(outputSharpening, { outputSharpening = it }, enabled = format != ExportFormat.DNG)
                     TextButton(onClick = { directory.launch(destination) }) { Text(destination?.toString() ?: stringResource(R.string.collection_output_directory)) }
                     if (Build.VERSION.SDK_INT >= 29 && format.allowsGallery) TextButton(onClick = { destination = null }) { Text(stringResource(R.string.save_album)) }
                 }
@@ -234,7 +237,10 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
                 LinearProgressIndicator(Modifier.fillMaxWidth())
                 Text(stringResource(R.string.collection_preparing_export))
             }
-            Button(onClick = { model.startCollectionExport(skipped, format, edge, destination) { if (it) onClose() } },
+            Button(onClick = {
+                model.startCollectionExport(skipped, format, edge, destination,
+                    if (format == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening) { if (it) onClose() }
+            },
                 enabled = !busy && valid && count > 0, modifier = Modifier.fillMaxWidth().testTag("collection-export-start")) {
                 Text(stringResource(R.string.collection_start_export, count))
             }

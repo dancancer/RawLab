@@ -48,4 +48,39 @@ extension RawEditorViewModel {
             }
         }
     }
+
+    func sampleWBProbe(point: CGPoint, settings: RawSettings,
+                       completion: @escaping ((availability: sony2fuji_wb_probe_availability, temperature: Double, tint: Double)) -> Void) {
+        guard !isBusy, !previewRendering, !previewResizePending, !previewFailed, !hasAdjustmentDraft,
+              let request = acceptedPreviewRequest, request.settings == settings else {
+            completion((SONY2FUJI_WB_PROBE_UNAVAILABLE, 6500, 0)); return
+        }
+        let file = sourceFile, raw = sourceKind == .raw, input = draftBuffer ?? draftPreviewBuffer
+        let source = sourceRevision, look = lutURL(for: settings)
+        renderQueue.async { [weak self] in
+            guard let self else { return }
+            var outcome: (availability: sony2fuji_wb_probe_availability, temperature: Double, tint: Double) = (SONY2FUJI_WB_PROBE_UNAVAILABLE, 6500, 0)
+            do {
+                if raw, let file {
+                    try file.withReadAccess { url in
+                        outcome = try self.processor.sampleWBProbe(url: url, buffer: nil, settings: request.settings,
+                            previewLongEdge: CGFloat(request.longEdge), lutURL: look,
+                            interactive: request.quality == .interactive, point: point)
+                    }
+                } else if let input {
+                    outcome = try self.processor.sampleWBProbe(url: nil, buffer: input, settings: request.settings,
+                        previewLongEdge: CGFloat(request.longEdge), lutURL: look,
+                        interactive: request.quality == .interactive, point: point)
+                }
+            } catch {
+                outcome = (SONY2FUJI_WB_PROBE_UNAVAILABLE, 6500, 0)
+            }
+            self.resultDelivery {
+                guard self.sourceRevision == source else {
+                    completion((SONY2FUJI_WB_PROBE_UNAVAILABLE, 6500, 0)); return
+                }
+                completion(outcome)
+            }
+        }
+    }
 }

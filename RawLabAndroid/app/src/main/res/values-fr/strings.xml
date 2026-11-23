@@ -29,6 +29,18 @@
     <string name="browser_unavailable">"Impossible d\'ouvrir le lien. Installez ou activez un navigateur."</string>
     <string name="camera_all">"Tout"</string>
     <string name="camera_all_dates">"Toutes les dates"</string>
+    <string name="camera_auth_connecting">"Vérification des identifiants d\'accès…"</string>
+    <string name="camera_auth_failed">"Échec de l\'authentification d\'accès. Vérifiez le nom d\'utilisateur et le mot de passe affichés sur l\'appareil photo."</string>
+    <string name="camera_auth_fingerprint">"Empreinte de clé de l\'appareil photo (à vérifier sur l\'écran)"</string>
+    <string name="camera_auth_fingerprint_changed">"L\'empreinte de clé de l\'appareil photo a changé. Vérifiez l\'empreinte sur l\'écran de l\'appareil avant de saisir à nouveau les identifiants."</string>
+    <string name="camera_auth_forget">"Oublier les identifiants enregistrés"</string>
+    <string name="camera_auth_guide">"Consultez le nom d\'utilisateur et le mot de passe dans le menu Infos d\'authentification d\'accès de l\'appareil photo, vérifiez l\'empreinte ci-dessous, puis connectez-vous."</string>
+    <string name="camera_auth_hide_password">"Masquer le mot de passe"</string>
+    <string name="camera_auth_password">"Mot de passe"</string>
+    <string name="camera_auth_show_password">"Afficher le mot de passe"</string>
+    <string name="camera_auth_submit">"Vérifier et connecter"</string>
+    <string name="camera_auth_title">"Authentification d\'accès à l\'appareil photo"</string>
+    <string name="camera_auth_user">"Nom d\'utilisateur"</string>
     <string name="camera_auto">"Auto"</string>
     <string name="camera_back_photos">"Continuer la sélection"</string>
     <string name="camera_bluetooth">"Connexion à l’appareil photo…"</string>
@@ -235,6 +247,7 @@
     <string name="expand_vignette">"Afficher les réglages du vignettage"</string>
     <string name="export">"Exporter"</string>
     <string name="export_done">"Photo enregistrée"</string>
+    <string name="export_output_sharpening">"Netteté de sortie"</string>
     <string name="exporting">"Exportation…"</string>
     <string name="exposure">"Exposition"</string>
     <string name="exposure_basis">"Référence d\'exposition"</string>
@@ -438,6 +451,10 @@
     <string name="output_custom_size">"Personnalisé"</string>
     <string name="output_long_edge">"Limite du grand côté (px)"</string>
     <string name="output_original_size">"Taille d’origine"</string>
+    <string name="output_sharpening_high">"Élevé"</string>
+    <string name="output_sharpening_low">"Faible"</string>
+    <string name="output_sharpening_off">"Désactivé"</string>
+    <string name="output_sharpening_standard">"Standard"</string>
     <string name="output_size">"Taille d’exportation"</string>
     <string name="output_size_error">"Le bord long doit être compris entre 1 et 65535 pixels."</string>
     <string name="output_size_range">"1–65535 pixels"</string>

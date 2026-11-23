@@ -7,14 +7,18 @@ namespace RawLab.Windows;
 public sealed partial class PhotoCanvas
 {
     private readonly DrawingVisual hslTargetDrawing=new();
-    private bool hslTargetEnabled;
+    private bool hslTargetEnabled,wbProbeEnabled;
     private Point? hslTargetPoint,hslPointerOrigin;
     private double hslPointerScale;
-    internal event Action<Point>? HslTargetStarted;
+    internal event Action<Point>? HslTargetStarted,WbProbeClicked;
     internal event Action<double>? HslTargetMoved;
-    internal event Action? HslTargetEnded,HslTargetCancelled,HslTargetRejected;
+    internal event Action? HslTargetEnded,HslTargetCancelled,HslTargetRejected,WbProbeRejected,WbProbeCancelled;
     internal event Action<double>? HslTargetKey;
     internal Func<Point,bool>? HslTargetAllowed;
+    internal bool WbProbeEnabled {
+        get=>wbProbeEnabled;
+        set {if(wbProbeEnabled==value)return;wbProbeEnabled=value;if(wbProbeEnabled)CancelHold();Cursor=wbProbeEnabled ? Cursors.Cross : Cursors.Hand;DrawImages();}
+    }
     internal bool HslTargetEnabled {
         get=>hslTargetEnabled;
         set {if(hslTargetEnabled==value)return;hslTargetEnabled=value;ResetHslPointer();CancelHold();DrawImages();DrawHslTarget();}

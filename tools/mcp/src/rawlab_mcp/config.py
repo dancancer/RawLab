@@ -2,6 +2,41 @@ from dataclasses import dataclass
 from pathlib import Path
 import math
 import os
+import sys
+
+
+def default_data_dir() -> Path:
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "RawLab"
+    if os.name == "nt":
+        local_app_data = os.environ.get("LOCALAPPDATA")
+        base = Path(local_app_data) if local_app_data else (Path.home() / "AppData" / "Local")
+        return base / "RawLab"
+    xdg_data_home = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg_data_home) if xdg_data_home else (Path.home() / ".local" / "share")
+    return base / "RawLab"
+
+
+def _validate_data_dir(raw: Path) -> Path:
+    text = str(raw)
+    try:
+        text.encode("utf-8")
+        encoded = os.fsencode(text)
+    except (TypeError, UnicodeError, ValueError) as e:
+        raise ValueError("data_dir contains an invalid path") from e
+    if not text or b"\x00" in encoded:
+        raise ValueError("data_dir contains an invalid path")
+    path = Path(text)
+    if not path.is_absolute():
+        raise ValueError("data_dir must be an absolute path")
+    if ".." in path.parts:
+        raise ValueError("data_dir must not contain '..' segments")
+    resolved = Path(os.path.realpath(path))
+    if os.path.lexists(path) and path.is_symlink() and not resolved.is_dir():
+        raise ValueError("data_dir symlink target must be an existing directory")
+    if resolved.exists() and not resolved.is_dir():
+        raise ValueError("data_dir must be a directory path")
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -11,6 +46,8 @@ class ServerConfig:
     write_roots: tuple[Path, ...]
     timeout: float = 120.0
     lens_database: Path | None = None
+    enable_gui_sync: bool = False
+    data_dir: Path | None = None
 
     def __post_init__(self):
         if not Path(self.cli).is_absolute() or any(
@@ -37,3 +74,9 @@ class ServerConfig:
                     or not (path.is_file() or path.is_dir())):
                 raise ValueError("Lens database must be a file or directory within an allowed read root")
             object.__setattr__(self, "lens_database", path)
+        if type(self.enable_gui_sync) is not bool:
+            raise ValueError("enable_gui_sync must be a boolean")
+        if self.data_dir is not None:
+            object.__setattr__(self, "data_dir", _validate_data_dir(Path(self.data_dir)))
+        elif self.enable_gui_sync:
+            object.__setattr__(self, "data_dir", _validate_data_dir(default_data_dir()))

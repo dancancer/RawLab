@@ -37,5 +37,24 @@ extension ProcessorExportTests {
         settings.curveSettings = ToneCurveSettings()
         check(try render(settings) == legacy, "iOS legacy clears reused custom session")
         check(try render(.default) == baseline, "iOS reset clears curve state")
+
+        var v2 = RawSettings.default
+        v2.curveSettings = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0, y: 0.1), .init(x: 0.5, y: 0.55), .init(x: 1, y: 0.9)],
+            channels: ToneCurveChannels(red: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0.05), .init(x: 1, y: 0.95)])),
+            applyToLuminosity: false,
+            parametric: ToneCurveParametric(highlights: -10, lights: 15, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
+        )
+        let rgbSamples = v2.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        let redSamples = v2.curveSettings.sampledPoints(channel: .red, count: 256)
+        check(abs(rgbSamples[0].y - 0.1) < 1e-5 && abs(rgbSamples[255].y - 0.9) < 1e-5,
+            "iOS v2 RGB sampling reflects unpinned matte-fade endpoints")
+        check(abs(redSamples[0].y - 0.05) < 1e-5 && abs(redSamples[255].y - 0.95) < 1e-5,
+            "iOS v2 Red channel sampling reflects red unpinned endpoints without parametric")
+        let v2Rgb = try render(v2)
+        v2.curveSettings.applyToLuminosity = true
+        let v2Lum = try render(v2)
+        check(v2Rgb != v2Lum, "iOS applyToLuminosity produces distinct chrominance-preserving render")
     }
 }

@@ -49,6 +49,7 @@ public sealed class TestDiscoveryContractTests
         "grading-render",
         "curve-render",
         "hsl-target-render",
+        "inspection-suite",
         "x3f",
         "hdr-workflow",
         "first-preview",

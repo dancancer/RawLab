@@ -204,7 +204,7 @@ class EditRecipeSchema(unittest.TestCase):
     def test_v6_hdr_schema_and_strict_groups(self):
         schema=json.loads((ROOT / "docs/edit-json-v6.schema.json").read_text())
         document=json.loads((ROOT / "examples/edit-recipes/hdr-v6.json").read_text())
-        capabilities=subprocess.run([str(CLI),"--capabilities","--json"],capture_output=True,text=True,check=True)
+        capabilities=subprocess.run([str(CLI),"--capabilities","--json"],capture_output=True,text=True,encoding="utf-8",errors="replace",check=True)
         if 6 not in json.loads(capabilities.stdout)["result"]["recipe_versions"]:
             self.skipTest("CLI runtime has no HDR v6 capability")
         normalized=self.normalize(document)
@@ -326,6 +326,8 @@ class EditRecipeSchema(unittest.TestCase):
             cwd=self.root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
 
@@ -501,7 +503,7 @@ class EditRecipeSchema(unittest.TestCase):
             if jsonschema:
                 self.assertFalse(jsonschema.Draft202012Validator(schema).is_valid(document))
             process = subprocess.run([str(CLI), "--recipe", str(self.recipe), "--json"],
-                                     capture_output=True, text=True, timeout=120)
+                                     capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertNotEqual(process.returncode, 0)
             self.assertEqual(json.loads(process.stdout)["error"]["code"], "invalid_recipe")
             self.assertEqual(output.read_bytes(), b"existing output")
@@ -753,6 +755,74 @@ class EditRecipeSchema(unittest.TestCase):
         candidate["schema_version"] = 3
         candidate["edits"]["tone"] = {"contrast": 1}
         self.reject(candidate, "edits.tone")
+
+    def test_v16_v17_extensions_and_legacy_rejection(self):
+        hdr16 = self.hdr_v14()
+        hdr16["schema_version"] = 16
+        hdr16["processing"]["version"] = 9
+        hdr16["edits"]["tone"] = {
+            "curve": {
+                "mode": "custom",
+                "points": [[0.0, 0.05], [1.0, 0.95]],
+                "apply_to_luminosity": True,
+                "parametric": {
+                    "highlights": -10,
+                    "lights": 5,
+                    "darks": -5,
+                    "shadows": 15,
+                    "split_shadow": 0.2,
+                    "split_midtone": 0.5,
+                    "split_highlight": 0.8,
+                },
+            }
+        }
+        hdr16["edits"]["color_grading"] = {
+            "shadows": {"hue": 200, "saturation": 25, "luminance": -10},
+            "global": {"hue": 30, "saturation": 10, "luminance": 5},
+            "blending": 65,
+            "balance": -15,
+        }
+        hdr16["output"]["output_sharpening"] = "standard"
+        normalized16 = self.normalize(hdr16)
+        self.assertEqual(self.normalize(normalized16), normalized16)
+
+        sdr17 = copy.deepcopy(self.base())
+        sdr17["schema_version"] = 17
+        sdr17["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        sdr17["input"] = {"path": "photo.png", "type": "raster"}
+        sdr17["edits"]["exposure"] = {"mode": "sensor"}
+        sdr17["edits"]["white_balance"] = {"mode": "relative", "relative_temperature": 5400, "relative_tint": 8}
+        sdr17["edits"]["tone"] = copy.deepcopy(hdr16["edits"]["tone"])
+        sdr17["edits"]["color_grading"] = copy.deepcopy(hdr16["edits"]["color_grading"])
+        sdr17["output"]["output_sharpening"] = "high"
+        normalized17 = self.normalize(sdr17)
+        self.assertEqual(self.normalize(normalized17), normalized17)
+
+        if jsonschema is not None:
+            for ver, doc, norm in ((16, hdr16, normalized16), (17, sdr17, normalized17)):
+                schema = json.loads((ROOT / "docs" / f"edit-json-v{ver}.schema.json").read_text(encoding="utf-8"))
+                jsonschema.Draft202012Validator.check_schema(schema)
+                validator = jsonschema.Draft202012Validator(schema)
+                validator.validate(doc)
+                validator.validate(norm)
+
+        # Legacy v5 and v15 reject v17/v16 extensions
+        bad15 = copy.deepcopy(hdr16)
+        bad15["schema_version"] = 15
+        bad15["processing"]["version"] = 8
+        self.reject(bad15, "edits.color_grading.balance")
+
+        bad15_curve = copy.deepcopy(hdr16)
+        bad15_curve["schema_version"] = 15
+        bad15_curve["processing"]["version"] = 8
+        bad15_curve["edits"].pop("color_grading", None)
+        self.reject(bad15_curve, "edits.tone.curve")
+
+        bad5 = copy.deepcopy(sdr17)
+        bad5["schema_version"] = 5
+        bad5["edits"].pop("color_grading", None)
+        bad5["edits"].pop("tone", None)
+        self.reject(bad5, "white_balance")
 
 
 if __name__ == "__main__":

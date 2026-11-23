@@ -53,8 +53,11 @@ class Png16NativeInstrumentedTest {
             val frame = processor.preview(input, null, EditSettings(exposure = 1f), 1600, false, PhotoInputKind.RASTER)
             val bitmap = frame.bitmap()
             try {
-                assertEquals(57, Color.red(bitmap.getPixel(0, 0)))
-                assertEquals(58, Color.red(bitmap.getPixel(1, 0)))
+                // Track D applies ±0.5 LSB TPDF 8-bit dithering on preview buffers; 16-bit distinction is verified below on PNG16 export.
+                val r0 = Color.red(bitmap.getPixel(0, 0))
+                val r1 = Color.red(bitmap.getPixel(1, 0))
+                assertTrue("Expected +1 EV preview channel in 57..58, got $r0", r0 in 57..58)
+                assertTrue("Expected +1 EV preview channel in 57..58, got $r1", r1 in 57..58)
             } finally { bitmap.recycle() }
             assertTrue(processor.autoExposure(input, EditSettings(), PhotoInputKind.RASTER).isFinite())
             assertEquals(2, processor.previewCompatibility(input, PhotoInputKind.RASTER, null, null).width)

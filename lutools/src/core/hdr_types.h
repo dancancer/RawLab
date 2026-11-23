@@ -12,6 +12,7 @@ inline constexpr uint32_t kHdrProcessingEffectsVersion = 5u;
 inline constexpr uint32_t kHdrProcessingDetailVersion = 6u;
 inline constexpr uint32_t kHdrProcessingLookVersion = 7u;
 inline constexpr uint32_t kHdrProcessingChannelCurvesVersion = 8u;
+inline constexpr uint32_t kHdrProcessingV2GradingCurveVersion = 9u;
 
 inline constexpr uint32_t kHdrHeadroomUnknown = 0u;
 inline constexpr uint32_t kHdrHeadroomDeclared = 1u;

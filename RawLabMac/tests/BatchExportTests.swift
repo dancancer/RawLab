@@ -730,9 +730,14 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
 
     private static func verifyVersionManifestFailClosed(root: URL, sampleJob: MacBatchExportJob, sampleInput: URL) throws {
         var maxHDR = HDRSettings()
+        maxHDR.colorSettings.grading.blending = 75
         maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
+            mode: .custom,
             points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
         )
+        maxHDR.toneSettings.curve.applyToLuminosity = true
+        try check(maxHDR.processingVersion == 9 && maxHDR.recordVersion == 10,
+                  "v2 HDR settings exercise processingVersion 9 and recordVersion 10")
         let expectedMax: (BatchJournalVersionKey) -> Int = { key in
             switch key {
             case .job: return 3
@@ -784,7 +789,7 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
                 obj["settings"] = s
             case .hdrCameraDevelopment:
                 var s = obj["settings"] as! [String: Any]
-                s["hdr"] = ["hdr_processing_version": 8, "record_version": 9, "camera_development": ["version": bumped]]
+                s["hdr"] = ["hdr_processing_version": 9, "record_version": 10, "camera_development": ["version": bumped]]
                 obj["settings"] = s
             }
             let dir = root.appendingPathComponent("manifest-\(key.rawValue)")
@@ -800,6 +805,26 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
             try check(try Data(contentsOf: journalURL) == bytes,
                       "future \(key.rawValue)=\(bumped) journal remains intact without quarantine")
         }
+
+        var v9Settings = sampleJob.settings
+        v9Settings.hdr = maxHDR
+        var v9Job = MacBatchExportJob(source: sampleInput, settings: v9Settings, look: nil, lookName: "V9HDR")
+        v9Job.outputDirectory = sampleJob.outputDirectory
+        v9Job.items = [try MacBatchExportItem(url: sampleInput)]
+        v9Job.items[0].selected = true
+        let v9Dir = root.appendingPathComponent("corrupt-v9-hdr-journal")
+        let v9Journal = MacBatchJournal(directory: v9Dir)
+        try v9Journal.save(v9Job)
+        try check((try v9Journal.load())?.settings.hdr == maxHDR,
+                  "valid v9/v10 HDR job round-trips through MacBatchJournal")
+        let v9URL = v9Dir.appendingPathComponent("job.json")
+        var v9Corrupt = try JSONSerialization.jsonObject(with: Data(contentsOf: v9URL)) as! [String: Any]
+        v9Corrupt.removeValue(forKey: "lookName")
+        try JSONSerialization.data(withJSONObject: v9Corrupt).write(to: v9URL)
+        let v9Reloaded = try v9Journal.load()
+        try check(v9Reloaded == nil && v9Journal.lastQuarantinedURL != nil &&
+                  !FileManager.default.fileExists(atPath: v9URL.path),
+                  "corrupted v9/v10 HDR job is quarantined rather than misclassified as future journal")
         _ = sampleInput
     }
 }

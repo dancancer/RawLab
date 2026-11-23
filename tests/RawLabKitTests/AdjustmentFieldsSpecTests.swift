@@ -13,12 +13,12 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         let root = try loadSpecJSON()
         XCTAssertEqual(root["spec_version"] as? Int, 1)
         let fields = try XCTUnwrap(root["fields"] as? [[String: Any]])
-        XCTAssertEqual(fields.count, 83)
+        XCTAssertEqual(fields.count, 89)
 
         let transferFields = fields.filter { (($0["protocol"] as? [String: Any])?["transferable"] as? Bool) == true }
         let localFields = fields.filter { (($0["protocol"] as? [String: Any])?["transferable"] as? Bool) == false }
-        XCTAssertEqual(transferFields.count, 81)
-        XCTAssertEqual(localFields.count, 2)
+        XCTAssertEqual(transferFields.count, 86)
+        XCTAssertEqual(localFields.count, 3)
 
         // Canonical order & complete AdjustmentTransferField coverage
         XCTAssertEqual(
@@ -91,7 +91,11 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         XCTAssertNil(mac.chromaNoiseReduction)
         XCTAssertNil(mac.waveletNoiseReduction)
         XCTAssertEqual(mac.aiDenoiseEnabled, try XCTUnwrap(try model("local.ai_denoise_enabled", platform: "macos")["default"] as? Bool))
+        XCTAssertEqual(mac.aiDenoiseStrength, try XCTUnwrap((try model("local.ai_denoise_strength", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(mac.hdrCameraAIEnabled, try XCTUnwrap(try model("local.hdr_camera_ai_enabled", platform: "macos")["default"] as? Bool))
+        XCTAssertEqual(mac.curveSettings.applyToLuminosity, try XCTUnwrap(try model("light.curve.apply_to_luminosity", platform: "macos")["default"] as? Bool))
+        XCTAssertEqual(mac.gradingSettings.blending, try XCTUnwrap((try model("color.grading.blending", platform: "macos")["default"] as? NSNumber)?.doubleValue))
+        XCTAssertEqual(mac.gradingSettings.balance, try XCTUnwrap((try model("color.grading.balance", platform: "macos")["default"] as? NSNumber)?.doubleValue))
 
         // iOS RawSettings runtime object assertions
         let ios = RawSettings.default

@@ -11,13 +11,17 @@ public enum MacEditorAdjustmentRules {
             case .recipe: return snapshot.masterRecipeID != nil || settings.masterRecipeID != nil
             case .strength: return settings.strength != 1
             case .exposure: return settings.exposure != 0 || (context.isRaw && settings.exposureMode != context.defaultExposureMode)
-            case .whiteBalance: return (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) || (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
+            case .whiteBalance:
+                if context.isRaw {
+                    return (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance) || (settings.masterRecipe != nil && settings.tint != 0)
+                }
+                return settings.masterRecipe == nil && (!settings.isWhiteBalanceDefault || settings.whiteBalanceMode != .asShot)
             case .toneCurve: return settings.toneCurve != 0 || !settings.curveSettings.isDefault
             case .colorGrading: return !settings.gradingSettings.isDefault
             case .hsl: return !settings.hslSettings.isIdentity
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
             case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
-            case .denoise: return settings.aiDenoiseEnabled || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
+            case .denoise: return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.rawNoiseReduction != 0 || (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
             case .geometry: return !settings.geometrySettings.isIdentity
             case .lens: return settings.lensSettings != LensCorrectionSettings()
             case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation: return false
@@ -27,6 +31,7 @@ public enum MacEditorAdjustmentRules {
             return EditorAdjustmentGroup.allCases.contains { isModified(scope: .group($0), snapshot: snapshot, context: context) }
         case .allGrading: return !settings.gradingSettings.isDefault
         case .gradingZone(let zone): return !settings.gradingSettings[zone].isDefault
+        case .gradingGlobal: return !settings.gradingSettings.global.isDefault
         case .hslAll: return !settings.hslSettings.isIdentity
         case .hslColor(let channel):
             guard (0..<8).contains(channel), settings.hslSettings.isValid else { return true }
@@ -39,12 +44,13 @@ public enum MacEditorAdjustmentRules {
                 settings.contrast != 0 || settings.highlights != 0 || settings.shadows != 0 || settings.toneCurve != 0 || !settings.curveSettings.isDefault ||
                 settings.blackPoint != 0 || settings.whitePoint != 0
         case .group(.color):
-            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault ||
-                (context.isRaw && (!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance)) ||
-                (context.isRaw && settings.masterRecipe != nil && settings.tint != 0)
+            let wbModified = context.isRaw
+                ? ((!settings.isWhiteBalanceDefault || !settings.usesAsShotWhiteBalance) || (settings.masterRecipe != nil && settings.tint != 0))
+                : (settings.masterRecipe == nil && (!settings.isWhiteBalanceDefault || settings.whiteBalanceMode != .asShot))
+            return settings.saturation != 0 || settings.vibrance != 0 || !settings.hslSettings.isIdentity || !settings.gradingSettings.isDefault || wbModified
         case .group(.effects): return settings.effectSettings != PhotoEffectsSettings() || !settings.atmosphereSettings.isIdentity
         case .group(.detail):
-            return settings.aiDenoiseEnabled || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
+            return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.sharpening != 0 || settings.rawNoiseReduction != 0 ||
                 (settings.chromaNoiseReduction ?? 0) != 0 || settings.waveletSettings != WaveletDenoiseSettings()
         case .group(.geometry):
             return !settings.geometrySettings.isIdentity || settings.lensSettings != LensCorrectionSettings()
@@ -84,6 +90,7 @@ public enum MacEditorAdjustmentRules {
                 case .grain: result.settings.resetEffect(.grainAmount)
                 case .denoise:
                     result.settings.aiDenoiseEnabled = false
+                    result.settings.aiDenoiseStrength = 100
                     result.settings.rawNoiseReduction = 0; result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
                 case .geometry: result.settings.geometry = nil
                 case .lens: result.settings.lensCorrection = nil
@@ -115,12 +122,14 @@ public enum MacEditorAdjustmentRules {
             case .group(.effects): result.settings.photoEffects = nil; result.settings.atmosphere = nil
             case .group(.detail):
                 result.settings.aiDenoiseEnabled = false
+                result.settings.aiDenoiseStrength = 100
                 result.settings.sharpening = 0; result.settings.rawNoiseReduction = 0
                 result.settings.chromaNoiseReduction = nil; result.settings.waveletNoiseReduction = nil
             case .group(.geometry): result.settings.geometry = nil; result.settings.lensCorrection = nil
             case .group(.hdrRendition): break
             case .allGrading: result.settings.colorGrading = nil
             case .gradingZone(let zone): result.settings.gradingSettings[zone] = ColorGradingWheel()
+            case .gradingGlobal: result.settings.gradingSettings.global = ColorGradingWheel()
             case .hslAll: result.settings.hsl = nil
             case .hslColor(let channel):
                 var hsl = result.settings.hslSettings
@@ -155,6 +164,8 @@ public enum MacEditorAdjustmentRules {
             result.editingGradingSettings = ColorGradingSettings()
         case .gradingZone(let zone):
             result.editingGradingSettings[zone] = ColorGradingWheel()
+        case .gradingGlobal:
+            result.editingGradingSettings.global = ColorGradingWheel()
         case .tool(.hsl), .hslAll:
             result.editingHSLSettings = HSLSettings()
         case .hslColor(let channel):

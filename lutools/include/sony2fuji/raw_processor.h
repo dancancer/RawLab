@@ -45,6 +45,7 @@ struct RAWBayerOverride {
     // 未旋转 sensor 坐标；已白平衡并以绿色归一化的相机通道线性修正。
     std::vector<RGB> cameraCorrection;
     bool protectSensorHighlights = false;
+    float blend = 1.0f;
 };
 
 /**
@@ -139,6 +140,8 @@ public:
      * @return 错误码
      */
     ErrorCode process(const RAWProcessOptions& options, ImageData& output);
+    // Estimates scene/preview-matched baseline EV using fast half-size camera-WB demosaic without building a full ImageData.
+    ErrorCode estimatePreviewExposure(const RAWProcessOptions& options, float& outBaselineEV);
     ErrorCode readBayerSource(const RAWProcessOptions& options, RAWBayerSource& output);
     bool getBayerMetadata(RAWBayerSource& output) const;
 
@@ -157,6 +160,10 @@ public:
     float getBaselineExposureEV() const;
     float getMetadataExposureEV() const;
     bool getAsShotWhiteBalance(float& temperature, float& tint) const;
+    bool getAsShotWhiteBalanceMultipliers(float multipliers[3]) const;
+    bool computeTemperatureWhiteBalanceMultipliers(float temperature, float tint, float multipliers[3]) const;
+    bool getLastAppliedWhiteBalanceMultipliers(float multipliers[3]) const;
+    bool getCameraToSrgbMatrix(float matrix[3][3]) const;
     bool supportsNoiseReduction() const;
     bool isDisplayReferred() const;
     const std::string& getLastError() const;
@@ -168,6 +175,14 @@ public:
      * 用于色彩空间转换
      */
     bool getCameraColorMatrix(float matrix[3][3]) const;
+    bool getLastRgbCam(float matrix[3][3]) const;
+    bool getLastWbUsed(float multipliers[3]) const;
+    bool getWhiteBalanceCalibration(
+        double first[3][3],
+        double second[3][3],
+        double& firstTemperature,
+        double& secondTemperature
+    ) const;
 
 private:
     class Impl;

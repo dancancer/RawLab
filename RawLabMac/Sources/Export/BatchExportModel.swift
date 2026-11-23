@@ -26,7 +26,7 @@ final class MacHDRBatchPreparation {
         self.source=source; self.settings=settings; self.store=store; self.films=films
         self.probeHDRSource=probeHDRSource
     }
-    func prepare(_ item: MacBatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> MacBatchFrozenSettings {
+    func prepare(_ item: MacBatchExportItem,ordinal: Int,format: ExportFormat,longEdge: Int?,outputSharpening: OutputSharpening? = nil,sourceIsHDR: Bool? = nil,sdrFallback: Bool = false) throws -> MacBatchFrozenSettings {
         guard try OriginalFileIdentity(item.input)==item.identity else { throw BatchExportFailure.changedInput }
         let record=try store.readState(for:item.input)
         let raster=RenderEngine.isRasterInput(item.input)
@@ -61,7 +61,8 @@ final class MacHDRBatchPreparation {
             throw BatchExportFailure.missingLook
         }
         return MacBatchFrozenSettings(ordinal:ordinal,settings:prepared.settings,look:look,
-            lookSHA256:try look.map(MacBatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge)
+            lookSHA256:try look.map(MacBatchFrozenSettings.checksum),lookName:name,outputFormat:format,longEdge:longEdge,
+            outputSharpening:format == .renderedDNG ? nil : outputSharpening)
     }
 }
 
@@ -339,12 +340,19 @@ final class BatchExportModel: ObservableObject {
 
     func setFormat(_ value: ExportFormat) {
         guard job.mode == .uniformFrozen, !running, !job.started else { return }
-        job.format = value; saveDraft()
+        job.format = value
+        if value == .renderedDNG { job.outputSharpening = nil }
+        saveDraft()
     }
 
     func setLongEdge(_ value: Int?) {
         guard job.mode == .uniformFrozen, !running, !job.started, value == nil || (1...65535).contains(value!) else { return }
         job.longEdge = value; saveDraft()
+    }
+
+    func setOutputSharpening(_ value: OutputSharpening) {
+        guard job.mode == .uniformFrozen, !running, !job.started else { return }
+        job.outputSharpening = value == .off ? nil : value; saveDraft()
     }
 
     private static func quarantineNotice(for error: Error) -> String {
@@ -429,7 +437,8 @@ final class BatchExportModel: ObservableObject {
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: 32)
                     _ = try self.engine!.render(input, settings: settings, lut: look, edge: nil, output: output,
                         stageOutput: false,
-                        exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat)
+                        exportLongEdge:frozen.longEdge,exportFormat:frozen.outputFormat,
+                        outputSharpening: frozen.outputFormat == .renderedDNG ? .off : frozen.effectiveOutputSharpening)
                 }
             } catch {
                 failure = error.localizedDescription
@@ -468,11 +477,13 @@ final class BatchExportModel: ObservableObject {
         defer { if !published { for url in owned { try? FileManager.default.removeItem(at:url) } } }
         for index in result.items.indices {
             if shouldCancel() { throw RenderError.aiCancelled }
-            let prepared=try hdrPreparation.prepare(result.items[index],ordinal:index,format:draft.format,longEdge:draft.longEdge)
+            let draftSharpening = draft.format == .renderedDNG ? nil : draft.outputSharpening
+            let prepared=try hdrPreparation.prepare(result.items[index],ordinal:index,format:draft.format,longEdge:draft.longEdge,outputSharpening:draftSharpening)
             let look=try journal.snapshotLook(prepared.look,jobID:result.id,contentIdentifier:prepared.lookSHA256)
             if let look { owned.append(look) }
             result.items[index].frozen=MacBatchFrozenSettings(ordinal:index,settings:prepared.settings,look:look,
-                lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge)
+                lookSHA256:prepared.lookSHA256,lookName:prepared.lookName,outputFormat:prepared.outputFormat,longEdge:prepared.longEdge,
+                outputSharpening:prepared.outputSharpening)
         }
         result.settingsMode = .perTargetFrozen; result.version=3
         try result.validate()

@@ -245,6 +245,10 @@ if ($ReleasePackage) {
         '--mainExe','RawLab.exe','--channel','stable','--outputDir',$ReleaseOutput)
     if (!(Get-ChildItem -LiteralPath $ReleaseOutput -Filter '*Setup.exe')) { throw 'Velopack did not produce a current-user Setup.' }
     if (!(Get-ChildItem -LiteralPath $ReleaseOutput -Filter '*-full.nupkg')) { throw 'Velopack did not produce an update package.' }
+    $minZipUtc = New-Object System.DateTime 1980, 1, 2, 0, 0, 0, ([System.DateTimeKind]::Utc)
+    Get-ChildItem -LiteralPath $output -Recurse -File | Where-Object { $_.LastWriteTimeUtc -lt $minZipUtc } | ForEach-Object {
+        $_.LastWriteTimeUtc = $minZipUtc
+    }
     Compress-Archive -Path "$output/*" -DestinationPath "$ReleaseOutput/RawLab-Windows-$ReleaseVersion-x64.zip"
     Get-ChildItem -LiteralPath $ReleaseOutput -File | Get-FileHash -Algorithm SHA256
 }

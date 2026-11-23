@@ -376,9 +376,10 @@ final class HDRImage {
     }
 
     func rendered(session: OpaquePointer, settings: HDRSettings, intent: sony2fuji_intent,
-                  longEdge: Int? = nil, cancelled: (() -> Bool)? = nil,
+                  longEdge: Int? = nil, outputSharpening: OutputSharpening = .off,
+                  cancelled: (() -> Bool)? = nil,
                   progress: ((Double) -> Void)? = nil) throws -> HDRImage {
-        let request=try makeHDRRequest(settings:settings,intent:intent,longEdge:longEdge)
+        let request=try makeHDRRequest(settings:settings,intent:intent,longEdge:longEdge,outputSharpening:outputSharpening)
         var result=Self.emptyPair(); var diagnostic=Self.emptyDiagnostic()
         let status = try Self.withSessionCallbacks(session, cancelled: cancelled, progress: progress) {
             withPair { pair in
@@ -502,11 +503,11 @@ final class HDRImage {
 
     @discardableResult
     static func exportTiled(_ url: URL, info: HDRSourceInfo, settings: HDRSettings, output: URL,
-                           longEdge: Int?, format: UInt32, session: OpaquePointer,
+                           longEdge: Int?, outputSharpening: OutputSharpening = .off, format: UInt32, session: OpaquePointer,
                            cancelled: () -> Bool = { false },
                            progress: ((Double) -> Void)? = nil) throws -> sony2fuji_hdr_stream_result_v1 {
         guard info.proRAW == nil else { throw HDRRequestError.invalidSettings }
-        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
+        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge, outputSharpening: outputSharpening)
         return try withoutActuallyEscaping(cancelled) { predicate in
             if predicate() || Task.isCancelled { throw CancellationError() }
             let decodeWeight = info.isCameraRAW ? 0.35 : 0.0

@@ -4,7 +4,7 @@
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
 namespace sony2fuji {
-inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + kToneCurveShader + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
+inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + toneCurveShader("float3") + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
     uint4 control; // stage, HSL active, use LUT, LUT size
@@ -19,11 +19,20 @@ cbuffer Params : register(b0) {
     float4 hslHue[2], hslSaturation[2], hslLightness[2];
     float4 toneControls;
     float4 colorGrading[3];
-    float4 curveRanges[32], curveTangents[32];
+    float4 curveRanges[128], curveTangents[128];
+    uint4 curveCounts; // master, R, G, B
+    uint4 curveFlags;  // applyToLuminosity, parametricActive, 0, 0
+    float4 parametricAmps;
+    float4 parametricSplits;
+    float4 colorGradingGlobal;
+    float4 colorGradingMix;
     uint4 band; // source row, destination row, output rows, reserved
+    uint4 basicV3; // basicV3, basicToneActive, fieldWidth, fieldHeight
+    float4 basicTone; // highlights, shadows, reserved, reserved
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
+StructuredBuffer<float2> basicToneField : register(t2);
 RWStructuredBuffer<float3> destination : register(u0);
 float neutral(float x) {
     if (x <= 0) return 0;
@@ -49,13 +58,24 @@ float curve(float x) {
     if(x<=.75)return lerp(p.y,p.z,(x-.5)*4);
     return lerp(p.z,1,(x-.75)*4);
 }
-float customToneCurve(float x) {
-    if (x <= 0.0) return 0.0;
-    if (x >= 1.0) return 1.0;
-    uint i = 0;
-    while (i + 1 < uint(detail.w) && x > curveRanges[i].y) ++i;
-    float4 r = curveRanges[i];
-    return pchipSegment(x, r.x, r.y, r.z, r.w, curveTangents[i].x, curveTangents[i].y);
+float customToneCurve(float x, uint count, uint base) {
+    if (count == 0u) return x;
+    if (x <= 0.0) return curveRanges[base].z;
+    if (x >= 1.0) return curveRanges[base + count - 1u].w;
+    uint i = 0u;
+    while (i + 1u < count && x > curveRanges[base + i].y) ++i;
+    float4 r = curveRanges[base + i];
+    float4 t = curveTangents[base + i];
+    return pchipSegment(x, r.x, r.y, r.z, r.w, t.x, t.y);
+}
+float evalMasterTone(float x) {
+    if (curveFlags.y != 0u) {
+        x = tcParametric(x, parametricAmps.x, parametricAmps.y, parametricAmps.z, parametricAmps.w,
+            parametricSplits.x, parametricSplits.y, parametricSplits.z);
+    }
+    if (curveCounts.x != 0u) return customToneCurve(x, curveCounts.x, 0u);
+    if (detail.x != 0.0) return curve(x);
+    return x;
 }
 float3 applyHsl(float3 pixel) {
     if (control.y == 0) return pixel;
@@ -97,8 +117,25 @@ float3 applyHsl(float3 pixel) {
     return rgb + (lightness - chroma * 0.5) + residual;
 }
 
-float3 evaluate(float3 inputColor) {
+float2 sampleBasicToneField(uint2 coord, uint2 coordSize) {
+    uint fw = max(1u, basicV3.z);
+    uint fh = max(1u, basicV3.w);
+    float2 f = clamp((float2(coord) + 0.5) * float2(fw, fh) / float2(coordSize) - 0.5, float2(0.0, 0.0), float2(fw - 1u, fh - 1u));
+    uint2 low = (uint2)floor(f);
+    uint2 high = min(low + 1u, uint2(fw - 1u, fh - 1u));
+    float2 t = f - float2(low);
+    float2 v00 = basicToneField[low.y * fw + low.x];
+    float2 v10 = basicToneField[low.y * fw + high.x];
+    float2 v01 = basicToneField[high.y * fw + low.x];
+    float2 v11 = basicToneField[high.y * fw + high.x];
+    return lerp(lerp(v00, v10, t.x), lerp(v01, v11, t.x), t.y);
+}
+float3 evaluate(float3 inputColor, uint2 coord, uint2 coordSize) {
     float3 scene=float3(dot(toSrgb[0].xyz,inputColor),dot(toSrgb[1].xyz,inputColor),dot(toSrgb[2].xyz,inputColor))*exposureStrength.xyz;
+    if(basicV3.y!=0) {
+        float2 si=sampleBasicToneField(coord,coordSize);
+        scene*=tcBasicToneV3Gain(tcLuminance(scene),si.x,si.y,basicTone.x,basicTone.y);
+    }
     float3 pixel=float3(neutral(scene.r),neutral(scene.g),neutral(scene.b));
     if(control.z!=0) {
         float3 lutInput=pixel;
@@ -110,15 +147,42 @@ float3 evaluate(float3 inputColor) {
         if(logTransfer.y!=0)look=float3(neutral(decodePhotoLog(look.r,logTransfer.z!=0)),neutral(decodePhotoLog(look.g,logTransfer.z!=0)),neutral(decodePhotoLog(look.b,logTransfer.z!=0)));
         pixel=lerp(pixel,look,exposureStrength.w);
     }
-    pixel=tcBlackWhite(pixel,toneControls.x,toneControls.y);
-    pixel=hsApplyHighlightsShadows(pixel,tone.z,tone.w);
-    if(detail.w!=0)pixel=float3(customToneCurve(pixel.r),customToneCurve(pixel.g),customToneCurve(pixel.b));
-    else if(detail.x!=0)pixel=float3(curve(pixel.r),curve(pixel.g),curve(pixel.b));
-    if(tone.x!=1 || tone.y!=1) {
-        pixel=(pixel-.5)*tone.x+.5;float light=dot(pixel,float3(.2126,.7152,.0722));
+    pixel=basicV3.x!=0 ? tcBasicBlackWhiteV3(pixel,toneControls.x,toneControls.y)
+        : tcBlackWhite(pixel,toneControls.x,toneControls.y);
+    if(basicV3.x==0) {
+        pixel=hsApplyHighlightsShadows(pixel,tone.z,tone.w);
+    }
+    bool masterActive=curveFlags.y!=0u || curveCounts.x!=0u || detail.x!=0.0;
+    if(masterActive) {
+        if(curveFlags.x!=0u) {
+            float3 pL=float3(tcSrgbToLinear(pixel.r),tcSrgbToLinear(pixel.g),tcSrgbToLinear(pixel.b));
+            float Y=tcLuminosityLinearY(pL);
+            float u=tcLinearToSrgb(max(0.0,Y));
+            float uPrime=evalMasterTone(u);
+            float Y0=tcSrgbToLinear(evalMasterTone(0.0));
+            pixel=tcLuminosityFinish(pL,Y,uPrime,Y0);
+        } else {
+            pixel=float3(evalMasterTone(pixel.r),evalMasterTone(pixel.g),evalMasterTone(pixel.b));
+        }
+    }
+    pixel.r=customToneCurve(pixel.r,curveCounts.y,32u);
+    pixel.g=customToneCurve(pixel.g,curveCounts.z,64u);
+    pixel.b=customToneCurve(pixel.b,curveCounts.w,96u);
+    if(basicV3.x!=0 && tone.x!=1) {
+        pixel=float3(tcBasicContrastV3(pixel.r,tone.x-1.0),tcBasicContrastV3(pixel.g,tone.x-1.0),tcBasicContrastV3(pixel.b,tone.x-1.0));
+    }
+    if((basicV3.x==0 && tone.x!=1) || tone.y!=1) {
+        if(basicV3.x==0)pixel=(pixel-.5)*tone.x+.5;
+        float light=dot(pixel,float3(.2126,.7152,.0722));
         pixel=light+(pixel-light)*tone.y;
     }
-    return cgApply(applyHsl(tcVibrance(pixel,toneControls.z)),colorGrading[0].xyz,colorGrading[1].xyz,colorGrading[2].xyz);
+    float3 vibranced=basicV3.x!=0 ? tcBasicVibranceV3(pixel,toneControls.z) : tcVibrance(pixel,toneControls.z);
+    return cgApply(applyHsl(vibranced),
+        colorGrading[0].xyz,colorGrading[0].w,
+        colorGrading[1].xyz,colorGrading[1].w,
+        colorGrading[2].xyz,colorGrading[2].w,
+        colorGradingGlobal.xyz,colorGradingGlobal.w,
+        colorGradingMix.x,colorGradingMix.y);
 }
 float3 readPixel(uint2 p) { return source[(p.y-band.x)*dimensions.x+p.x]; }
 float3 resize(uint2 xy) {
@@ -127,7 +191,7 @@ float3 resize(uint2 xy) {
     float2 p=min(xy*scale,float2(dimensions.xy-1));uint2 low=(uint2)floor(p),high=min(low+1,dimensions.xy-1);float2 t=p-low;
     float3 a=readPixel(low), b=readPixel(uint2(high.x,low.y)), c=readPixel(uint2(low.x,high.y)), d=readPixel(high);
     // FINAL 对显示输出缩放；PREVIEW 先缩放线性输入，保持既有处理顺序。
-    if(control.x==4) { a=evaluate(a);b=evaluate(b);c=evaluate(c);d=evaluate(d); }
+    if(control.x==4) { a=evaluate(a,low,dimensions.xy);b=evaluate(b,uint2(high.x,low.y),dimensions.xy);c=evaluate(c,uint2(low.x,high.y),dimensions.xy);d=evaluate(d,high,dimensions.xy); }
     return lerp(lerp(a,b,t.x),lerp(c,d,t.x),t.y);
 }
 [numthreads(16,16,1)]
@@ -135,9 +199,9 @@ void main(uint3 id : SV_DispatchThreadID) {
     if(id.x>=dimensions.z || id.y>=band.z)return;
     uint2 xy=uint2(id.x,id.y+band.y);
     float3 pixel;
-    if(control.x==0)pixel=evaluate(all(dimensions.xy==dimensions.zw) ? readPixel(xy) : resize(xy));
+    if(control.x==0)pixel=evaluate(all(dimensions.xy==dimensions.zw) ? readPixel(xy) : resize(xy), xy, dimensions.zw);
     else if(control.x==1)pixel=resize(xy);
-    else if(control.x==4)pixel=all(dimensions.xy==dimensions.zw) ? evaluate(readPixel(xy)) : resize(xy);
+    else if(control.x==4)pixel=all(dimensions.xy==dimensions.zw) ? evaluate(readPixel(xy), xy, dimensions.xy) : resize(xy);
     else {
         float3 sum=0; float weight=0;
         [unroll] for(int y=-1;y<=1;y++) [unroll] for(int x=-1;x<=1;x++) {

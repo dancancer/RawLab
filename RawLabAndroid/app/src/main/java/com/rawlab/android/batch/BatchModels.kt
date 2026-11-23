@@ -7,6 +7,7 @@ import com.rawlab.android.R
 import com.rawlab.android.engine.NativeProcessingException
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.photo.BatchGlobalFailure
@@ -50,7 +51,10 @@ data class BatchFrozenSettings(
     val lookSHA256: String? = null,
     val outputFormat: ExportFormat,
     val longEdge: Int? = null,
+    val outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ) {
+    val effectiveOutputSharpening: OutputSharpening
+        get() = if (outputFormat == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
     fun validate() {
         require(version == 1 && settingsVersion == 1 && ordinal >= 0 &&
             com.rawlab.android.format.ExportSize.isValid(longEdge)) { "Unsupported frozen batch item" }
@@ -143,7 +147,11 @@ data class BatchJob(
     val rows: List<BatchRow> = uniqueRows(targets, outputFormat),
     val globalError: String? = null,
     val settingsMode: BatchSettingsMode = BatchSettingsMode.UNIFORM_FROZEN,
+    val outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ) {
+    val effectiveOutputSharpening: OutputSharpening
+        get() = if (outputFormat == ExportFormat.DNG) OutputSharpening.OFF else outputSharpening
+
     fun validate() {
         if (settingsMode == BatchSettingsMode.UNIFORM_FROZEN) {
             require(rows.all { it.target.frozen == null } && targets.all { it.frozen == null }) { "Frozen items require per-target mode" }
@@ -153,7 +161,8 @@ data class BatchJob(
         rows.forEachIndexed { index, row ->
             val frozen = requireNotNull(row.target.frozen) { "Missing frozen batch item" }
             frozen.validate()
-            require(frozen.ordinal == index && frozen.outputFormat == outputFormat && frozen.longEdge == outputLongEdge) {
+            require(frozen.ordinal == index && frozen.outputFormat == outputFormat &&
+                frozen.longEdge == outputLongEdge && frozen.effectiveOutputSharpening == effectiveOutputSharpening) {
                 "Frozen batch order or output settings changed"
             }
         }
@@ -173,6 +182,9 @@ data class BatchJob(
 
     fun longEdgeFor(target: BatchTarget): Int? = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
         requireNotNull(target.frozen).longEdge else outputLongEdge
+
+    fun outputSharpeningFor(target: BatchTarget): OutputSharpening = if (settingsMode == BatchSettingsMode.PER_TARGET_FROZEN)
+        requireNotNull(target.frozen).effectiveOutputSharpening else effectiveOutputSharpening
 
     companion object {
         fun x3fModeResolver(

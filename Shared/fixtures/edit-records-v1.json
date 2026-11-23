@@ -1,7 +1,7 @@
 {
   "fixture_version": 1,
   "spec_version": 1,
-  "notes": "P2-01 (S1): Shared persisted editing-record golden fixture across macOS, iOS, Android, and Windows. Unlike adjustment-transfer vectors (portable cross-photo paste payloads), this fixture pins local store/record persistence semantics: full 83-field round-trip anchored to Shared/specs/adjustment-fields-v1.json, X1 read-side unknown-field tolerance, cross-version compatibility & per-record isolation, and spec boundary validation.",
+  "notes": "P2-01 (S1): Shared persisted editing-record golden fixture across macOS, iOS, Android, and Windows. Unlike adjustment-transfer vectors (portable cross-photo paste payloads), this fixture pins local store/record persistence semantics: full 89-field round-trip anchored to Shared/specs/adjustment-fields-v1.json, X1 read-side unknown-field tolerance, cross-version compatibility & per-record isolation, and spec boundary validation.",
   "roundtrip_records": [
     {
       "id": "full-sdr-raw-dormant-hdr",
@@ -78,21 +78,41 @@
             }
           }
         },
+        "light.curve.apply_to_luminosity": true,
+        "light.curve.parametric": {
+          "highlights": -15.0,
+          "lights": 20.0,
+          "darks": -10.0,
+          "shadows": 25.0,
+          "split_shadow": 0.2,
+          "split_midtone": 0.5,
+          "split_highlight": 0.8
+        },
         "tone.black_point": -18.25,
         "tone.white_point": 24.5,
         "color.vibrance": 32.75,
         "color.grading.shadows": {
           "hue": 215.5,
-          "saturation": 35.0
+          "saturation": 35.0,
+          "luminance": -12.5
         },
         "color.grading.midtones": {
           "hue": 42.25,
-          "saturation": 22.5
+          "saturation": 22.5,
+          "luminance": 8.0
         },
         "color.grading.highlights": {
           "hue": 14.0,
-          "saturation": 18.0
+          "saturation": 18.0,
+          "luminance": 15.0
         },
+        "color.grading.global": {
+          "hue": 180.0,
+          "saturation": 10.0,
+          "luminance": 5.0
+        },
+        "color.grading.blending": 65.0,
+        "color.grading.balance": -20.0,
         "color.white_balance.mode": "temperature",
         "color.white_balance.temperature_kelvin": 6150.0,
         "color.white_balance.tint": -12.5,
@@ -170,6 +190,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": true,
+        "local.ai_denoise_strength": 65.0,
         "local.hdr_camera_ai_enabled": false
       }
     },
@@ -240,13 +261,24 @@
             }
           }
         },
+        "light.curve.apply_to_luminosity": false,
+        "light.curve.parametric": {
+          "highlights": 10.0,
+          "lights": -5.0,
+          "darks": 8.0,
+          "shadows": -12.0,
+          "split_shadow": 0.25,
+          "split_midtone": 0.55,
+          "split_highlight": 0.78
+        },
         "tone.black_point": -12.25,
         "tone.white_point": 16.5,
         "color.vibrance": 18.75,
         "color.saturation": 1.1,
         "color.grading.shadows": {
           "hue": 195.5,
-          "saturation": 28.25
+          "saturation": 28.25,
+          "luminance": 6.5
         },
         "color.grading.midtones": {
           "hue": 35.25,
@@ -256,6 +288,13 @@
           "hue": 310.75,
           "saturation": 20.5
         },
+        "color.grading.global": {
+          "hue": 240.0,
+          "saturation": 12.0,
+          "luminance": -4.0
+        },
+        "color.grading.blending": 45.0,
+        "color.grading.balance": 15.0,
         "color.hsl.hue.red": 6.5,
         "color.hsl.hue.orange": -4.25,
         "color.hsl.hue.yellow": 8.5,
@@ -324,6 +363,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": false,
+        "local.ai_denoise_strength": 100.0,
         "local.hdr_camera_ai_enabled": false
       }
     },
@@ -437,6 +477,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": false,
+        "local.ai_denoise_strength": 100.0,
         "local.hdr_camera_ai_enabled": false
       }
     },
@@ -515,6 +556,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": false,
+        "local.ai_denoise_strength": 100.0,
         "local.hdr_camera_ai_enabled": false
       }
     },
@@ -817,6 +859,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": false,
+        "local.ai_denoise_strength": 100.0,
         "local.hdr_camera_ai_enabled": false
       }
     },
@@ -856,6 +899,7 @@
       },
       "local_values": {
         "local.ai_denoise_enabled": false,
+        "local.ai_denoise_strength": 100.0,
         "local.hdr_camera_ai_enabled": false
       }
     }
@@ -939,7 +983,7 @@
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "color_grading",
       "policy_tier": "version_bound_render_block",
-      "inject_key": "balance",
+      "inject_key": "future_balance",
       "inject_value": 0.25,
       "preserve_raw_disk_entry": true,
       "expect": "reject_isolating_record"
@@ -950,7 +994,7 @@
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "target_scope": "color_grading_zone",
       "policy_tier": "version_bound_render_block",
-      "inject_key": "luminance",
+      "inject_key": "future_luminance",
       "inject_value": 5.0,
       "preserve_raw_disk_entry": true,
       "expect": "reject_isolating_record"

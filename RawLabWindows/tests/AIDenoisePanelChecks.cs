@@ -54,5 +54,18 @@ internal static class AIDenoisePanelChecks
         }
         panel.RefreshAI(false,false,false,new(AIDenoiseStatus.Idle));
         check(((StackPanel)panel.FindName("AISurface")).Visibility==Visibility.Collapsed,"AI-off build hides unused experimental controls");
+
+        var aiStrengthRow = (ParameterRow)panel.FindName("AIStrength");
+        double? observedBlend = null;
+        panel.AIStrengthChanged += (v, _) => observedBlend = v;
+        panel.Refresh(DenoiseSettings.Clean);
+        panel.RefreshAI(true, true, true, new(AIDenoiseStatus.Ready), aiStrength: 62.5);
+        check(aiStrengthRow.Visibility == Visibility.Visible && aiStrengthRow.Number.Text == "62.5",
+            "AI strength slider is visible in SDR when AI is enabled and shows current blend percentage");
+        aiStrengthRow.Slider.Value = 35;
+        check(observedBlend == 35, "AI strength slider dispatches updated DualDn blend percentage");
+        panel.Refresh(DenoiseSettings.Clean, hdrStrength: 0.4);
+        check(((StackPanel)panel.FindName("AISurface")).Visibility == Visibility.Collapsed,
+            "AI strength slider stays hidden inside HDR mode");
     }
 }

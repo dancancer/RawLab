@@ -11,6 +11,7 @@ public enum CanonicalEditRecipeError: Error, Equatable {
     case invalidWaveletDenoise
     case invalidChromaDenoise
     case invalidRawNoiseReduction
+    case invalidWhiteBalance
 }
 
 public enum CanonicalEditRecipe {
@@ -19,6 +20,8 @@ public enum CanonicalEditRecipe {
         public var x3fMode: X3fMode
         public var exposureMode: String
         public var isRaster: Bool
+        public var relativeTemperature: Double
+        public var relativeTint: Double
         public var toneControls: ToneControlsSettings
         public var atmosphere: AtmosphereSettings
         public var toneCurve: ToneCurveSettings
@@ -30,12 +33,15 @@ public enum CanonicalEditRecipe {
         public var waveletDenoise: WaveletDenoiseSettings?
         public var chromaDenoise: Int
         public var rawNoiseReduction: Int
+        public var outputSharpening: OutputSharpening
 
         public init(
             processing: ProcessingIdentity = .current,
             x3fMode: X3fMode = .normal,
             exposureMode: String = "preview",
             isRaster: Bool = false,
+            relativeTemperature: Double = 6500,
+            relativeTint: Double = 0,
             toneControls: ToneControlsSettings = .init(),
             atmosphere: AtmosphereSettings = .init(),
             toneCurve: ToneCurveSettings = .init(),
@@ -46,12 +52,15 @@ public enum CanonicalEditRecipe {
             photoEffects: PhotoEffectsSettings = .init(),
             waveletDenoise: WaveletDenoiseSettings? = nil,
             chromaDenoise: Int = 0,
-            rawNoiseReduction: Int = 0
+            rawNoiseReduction: Int = 0,
+            outputSharpening: OutputSharpening = .off
         ) {
             self.processing = processing
             self.x3fMode = x3fMode
             self.exposureMode = exposureMode
             self.isRaster = isRaster
+            self.relativeTemperature = relativeTemperature
+            self.relativeTint = relativeTint
             self.toneControls = toneControls
             self.atmosphere = atmosphere
             self.toneCurve = toneCurve
@@ -63,6 +72,7 @@ public enum CanonicalEditRecipe {
             self.waveletDenoise = waveletDenoise
             self.chromaDenoise = chromaDenoise
             self.rawNoiseReduction = rawNoiseReduction
+            self.outputSharpening = outputSharpening
         }
     }
 
@@ -87,7 +97,7 @@ public enum CanonicalEditRecipe {
                 denoise: nil,
                 lensCorrection: nil
             ),
-            output: .init(path: "session.png", format: "png", size: .init(mode: "native"))
+            output: .init(path: "session.png", format: "png", size: .init(mode: "native"), outputSharpening: nil)
         )
         let data = try! encoder.encode(payload)
         return String(decoding: data, as: UTF8.self)
@@ -119,15 +129,26 @@ public enum CanonicalEditRecipe {
             green: CurveShapePayload(state.toneCurve.channels.green),
             blue: CurveShapePayload(state.toneCurve.channels.blue)
         )
+        let rasterRelativeActive = state.isRaster && (state.relativeTemperature != 6500 || state.relativeTint != 0)
+        if rasterRelativeActive {
+            guard state.relativeTemperature.isFinite, (2000...50000).contains(state.relativeTemperature),
+                  state.relativeTint.isFinite, (-150...150).contains(state.relativeTint) else {
+                throw CanonicalEditRecipeError.invalidWhiteBalance
+            }
+        }
+        let hasV12Features = state.toneCurve.hasV2Extensions || state.colorGrading.hasV2Extensions ||
+            state.outputSharpening != .off || rasterRelativeActive
 
         let payload = Payload(
-            schemaVersion: state.isRaster ? 5 : 7,
+            schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: state.isRaster ? "session.png" : "session.raw", type: state.isRaster ? "raster" : "raw"),
             edits: .init(
                 exposure: .init(mode: effectiveExposureMode, ev: 0, brightness: 1),
-                whiteBalance: .init(mode: state.isRaster ? "none" : "camera"),
+                whiteBalance: rasterRelativeActive
+                    ? .init(mode: "relative", relativeTemperature: state.relativeTemperature, relativeTint: state.relativeTint)
+                    : .init(mode: state.isRaster ? "none" : "camera"),
                 look: .init(path: nil, strength: 1),
                 geometry: .init(
                     crop: .init(
@@ -156,14 +177,19 @@ public enum CanonicalEditRecipe {
                     curve: .init(
                         mode: state.toneCurve.mode.rawValue,
                         points: state.toneCurve.points.map { [$0.x, $0.y] },
-                        channels: channels
+                        channels: channels,
+                        applyToLuminosity: state.toneCurve.applyToLuminosity ? true : nil,
+                        parametric: state.toneCurve.parametric.isDefault ? nil : CurveParametricPayload(state.toneCurve.parametric)
                     )
                 ),
                 color: .init(vibrance: state.toneControls.vibrance / 100.0),
                 colorGrading: .init(
-                    shadows: .init(hue: state.colorGrading.shadows.hue, saturation: state.colorGrading.shadows.saturation),
-                    midtones: .init(hue: state.colorGrading.midtones.hue, saturation: state.colorGrading.midtones.saturation),
-                    highlights: .init(hue: state.colorGrading.highlights.hue, saturation: state.colorGrading.highlights.saturation)
+                    shadows: WheelPayload(state.colorGrading.shadows),
+                    midtones: WheelPayload(state.colorGrading.midtones),
+                    highlights: WheelPayload(state.colorGrading.highlights),
+                    global: state.colorGrading.global.isDefault ? nil : WheelPayload(state.colorGrading.global),
+                    blending: state.colorGrading.blending == 50.0 ? nil : state.colorGrading.blending,
+                    balance: state.colorGrading.balance == 0.0 ? nil : state.colorGrading.balance
                 ),
                 detail: .init(sharpening: 0),
                 hsl: .init(
@@ -198,7 +224,12 @@ public enum CanonicalEditRecipe {
                     profileId: profileID
                 )
             ),
-            output: .init(path: "session.png", format: "png", size: .init(mode: "native"))
+            output: .init(
+                path: "session.png",
+                format: "png",
+                size: .init(mode: "native"),
+                outputSharpening: state.outputSharpening == .off ? nil : state.outputSharpening.rawValue
+            )
         )
 
         let data = try encoder.encode(payload)
@@ -207,6 +238,7 @@ public enum CanonicalEditRecipe {
 
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
         return encoder
     }()
 
@@ -240,6 +272,12 @@ public enum CanonicalEditRecipe {
         let path: String
         let format: String
         let size: SizePayload
+        let outputSharpening: String?
+
+        enum CodingKeys: String, CodingKey {
+            case path, format, size
+            case outputSharpening = "output_sharpening"
+        }
     }
 
     private struct SizePayload: Encodable {
@@ -278,6 +316,20 @@ public enum CanonicalEditRecipe {
 
     private struct WhiteBalancePayload: Encodable {
         let mode: String
+        let relativeTemperature: Double?
+        let relativeTint: Double?
+
+        init(mode: String, relativeTemperature: Double? = nil, relativeTint: Double? = nil) {
+            self.mode = mode
+            self.relativeTemperature = relativeTemperature
+            self.relativeTint = relativeTint
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case mode
+            case relativeTemperature = "relative_temperature"
+            case relativeTint = "relative_tint"
+        }
     }
 
     private struct LookPayload: Encodable {
@@ -355,10 +407,45 @@ public enum CanonicalEditRecipe {
         let blue: CurveShapePayload
     }
 
+    private struct CurveParametricPayload: Encodable {
+        let highlights: Double
+        let lights: Double
+        let darks: Double
+        let shadows: Double
+        let splitShadow: Double
+        let splitMidtone: Double
+        let splitHighlight: Double
+
+        init(_ p: ToneCurveParametric) {
+            highlights = p.highlights
+            lights = p.lights
+            darks = p.darks
+            shadows = p.shadows
+            splitShadow = p.splitShadow
+            splitMidtone = p.splitMidtone
+            splitHighlight = p.splitHighlight
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case highlights, lights, darks, shadows
+            case splitShadow = "split_shadow"
+            case splitMidtone = "split_midtone"
+            case splitHighlight = "split_highlight"
+        }
+    }
+
     private struct CurvePayload: Encodable {
         let mode: String
         let points: [[Double]]
         let channels: CurveChannelsPayload?
+        let applyToLuminosity: Bool?
+        let parametric: CurveParametricPayload?
+
+        enum CodingKeys: String, CodingKey {
+            case mode, points, channels
+            case applyToLuminosity = "apply_to_luminosity"
+            case parametric
+        }
     }
 
     private struct ColorPayload: Encodable {
@@ -368,12 +455,22 @@ public enum CanonicalEditRecipe {
     private struct WheelPayload: Encodable {
         let hue: Double
         let saturation: Double
+        let luminance: Double?
+
+        init(_ wheel: ColorGradingWheel) {
+            hue = wheel.hue
+            saturation = wheel.saturation
+            luminance = wheel.luminance == 0.0 ? nil : wheel.luminance
+        }
     }
 
     private struct ColorGradingPayload: Encodable {
         let shadows: WheelPayload
         let midtones: WheelPayload
         let highlights: WheelPayload
+        let global: WheelPayload?
+        let blending: Double?
+        let balance: Double?
     }
 
     private struct DetailPayload: Encodable {
@@ -446,7 +543,7 @@ public enum CanonicalEditRecipe {
 }
 
 public extension RawSettings {
-    func canonicalEditState(isRaster: Bool = false) -> CanonicalEditRecipe.State {
+    func canonicalEditState(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
         let exposureString: String
         switch exposureMode {
         case .scene: exposureString = "scene"
@@ -458,6 +555,8 @@ public extension RawSettings {
             x3fMode: x3fMode,
             exposureMode: isRaster ? "sensor" : exposureString,
             isRaster: isRaster,
+            relativeTemperature: isRaster && masterRecipeID == nil ? temperature : 6500,
+            relativeTint: isRaster && masterRecipeID == nil ? tint : 0,
             toneControls: toneSettings,
             atmosphere: atmosphereSettings,
             toneCurve: curveSettings,
@@ -473,17 +572,18 @@ public extension RawSettings {
                 coarse: denoise.coarse
             ),
             chromaDenoise: displayChromaDenoise,
-            rawNoiseReduction: 0
+            rawNoiseReduction: 0,
+            outputSharpening: outputSharpening
         )
     }
 
-    func canonicalParamsJSON(isRaster: Bool = false) throws -> String {
-        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster))
+    func canonicalParamsJSON(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws -> String {
+        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, outputSharpening: outputSharpening))
     }
 }
 
 public extension Adjustments {
-    func canonicalEditState(isRaster: Bool = false, includeDenoise: Bool = true) -> CanonicalEditRecipe.State {
+    func canonicalEditState(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
         let exposureString: String
         switch exposureMode {
         case .scene: exposureString = "scene"
@@ -498,6 +598,8 @@ public extension Adjustments {
             x3fMode: x3fMode,
             exposureMode: isRaster ? "sensor" : exposureString,
             isRaster: isRaster,
+            relativeTemperature: isRaster && masterRecipe == nil ? temperature : 6500,
+            relativeTint: isRaster && masterRecipe == nil ? tint : 0,
             toneControls: renderToneSettings,
             atmosphere: renderAtmosphereSettings,
             toneCurve: renderCurveSettings,
@@ -508,11 +610,12 @@ public extension Adjustments {
             photoEffects: effectSettings,
             waveletDenoise: wavelet,
             chromaDenoise: chromaMode,
-            rawNoiseReduction: legacyLevel
+            rawNoiseReduction: legacyLevel,
+            outputSharpening: outputSharpening
         )
     }
 
-    func canonicalParamsJSON(isRaster: Bool = false, includeDenoise: Bool = true) throws -> String {
-        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise))
+    func canonicalParamsJSON(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) throws -> String {
+        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise, outputSharpening: outputSharpening))
     }
 }

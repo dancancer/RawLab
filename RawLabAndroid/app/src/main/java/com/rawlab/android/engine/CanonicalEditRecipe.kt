@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.ToneCurveShape
@@ -36,6 +37,7 @@ internal object CanonicalEditRecipe {
 internal fun EditSettings.toCanonicalRecipeJson(
     isRaster: Boolean = false,
     includeDenoise: Boolean = true,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
 ): String {
     val exposureString = if (isRaster) {
         "sensor"
@@ -54,6 +56,12 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("green", curveShapeJson(renderCurve.channels.green))
             .put("blue", curveShapeJson(renderCurve.channels.blue)))
     }
+    if (renderCurve.applyToLuminosity) {
+        curveObject.put("apply_to_luminosity", true)
+    }
+    if (!renderCurve.parametric.isDefault) {
+        curveObject.put("parametric", renderCurve.parametric.json())
+    }
 
     val hslValues = renderHsl.packed()
     fun hslAxisJson(offset: Int): JSONArray {
@@ -66,6 +74,21 @@ internal fun EditSettings.toCanonicalRecipeJson(
     fun wheelJson(wheel: ColorGradingWheel): JSONObject = JSONObject()
         .put("hue", wheel.hue.toDouble())
         .put("saturation", wheel.saturation.toDouble())
+        .also { if (wheel.luminance != 0f) it.put("luminance", wheel.luminance.toDouble()) }
+
+    val colorGradingObj = JSONObject()
+        .put("shadows", wheelJson(grading.shadows))
+        .put("midtones", wheelJson(grading.midtones))
+        .put("highlights", wheelJson(grading.highlights))
+    if (!grading.global.isDefault) {
+        colorGradingObj.put("global", wheelJson(grading.global))
+    }
+    if (grading.blending != 50f) {
+        colorGradingObj.put("blending", grading.blending.toDouble())
+    }
+    if (grading.balance != 0f) {
+        colorGradingObj.put("balance", grading.balance.toDouble())
+    }
 
     val lensObj = JSONObject()
         .put("distortion", lens.distortion)
@@ -87,12 +110,27 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("coarse", denoise.coarse.toDouble()))
     }
 
+    val rasterRelativeWb = isRaster && recipeID == null && (temperature != 6500f || tint != 0f)
+    if (rasterRelativeWb) {
+        require(temperature.isFinite() && temperature in 2000f..50000f && tint.isFinite() && tint in -150f..150f) {
+            "Invalid raster relative white balance"
+        }
+    }
+    val wbObj = when {
+        rasterRelativeWb -> JSONObject()
+            .put("mode", "relative")
+            .put("relative_temperature", temperature.toDouble())
+            .put("relative_tint", tint.toDouble())
+        isRaster -> JSONObject().put("mode", "none")
+        else -> JSONObject().put("mode", "camera")
+    }
+
     val edits = JSONObject()
         .put("exposure", JSONObject()
             .put("mode", exposureString)
             .put("ev", 0.0)
             .put("brightness", 1.0))
-        .put("white_balance", JSONObject().put("mode", if (isRaster) "none" else "camera"))
+        .put("white_balance", wbObj)
         .put("look", JSONObject().put("path", JSONObject.NULL).put("strength", 1.0))
         .put("geometry", JSONObject()
             .put("crop", JSONObject()
@@ -117,10 +155,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("white_point", renderWhitePoint.toDouble() / 100.0)
             .put("curve", curveObject))
         .put("color", JSONObject().put("vibrance", renderVibrance.toDouble() / 100.0))
-        .put("color_grading", JSONObject()
-            .put("shadows", wheelJson(grading.shadows))
-            .put("midtones", wheelJson(grading.midtones))
-            .put("highlights", wheelJson(grading.highlights)))
+        .put("color_grading", colorGradingObj)
         .put("detail", JSONObject().put("sharpening", 0.0))
         .put("hsl", JSONObject()
             .put("hue", hslAxisJson(0))
@@ -140,8 +175,17 @@ internal fun EditSettings.toCanonicalRecipeJson(
         .put("denoise", denoiseObj)
         .put("lens_correction", lensObj)
 
+    val activeV012 = renderCurve.hasV2Extensions || grading.hasV2Extensions || rasterRelativeWb || outputSharpening != OutputSharpening.OFF
+    val outputObj = JSONObject()
+        .put("path", "session.png")
+        .put("format", "png")
+        .put("size", JSONObject().put("mode", "native"))
+    if (outputSharpening != OutputSharpening.OFF) {
+        outputObj.put("output_sharpening", outputSharpening.wireValue)
+    }
+
     val root = JSONObject()
-        .put("schema_version", if (isRaster) 5 else 7)
+        .put("schema_version", if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)
@@ -150,10 +194,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
             .put("path", if (isRaster) "session.png" else "session.raw")
             .put("type", if (isRaster) "raster" else "raw"))
         .put("edits", edits)
-        .put("output", JSONObject()
-            .put("path", "session.png")
-            .put("format", "png")
-            .put("size", JSONObject().put("mode", "native")))
+        .put("output", outputObj)
     if (!isRaster) {
         root.put("x3f_mode", x3fMode.id)
     }

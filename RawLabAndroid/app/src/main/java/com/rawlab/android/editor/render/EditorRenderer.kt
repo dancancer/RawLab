@@ -15,6 +15,7 @@ import com.rawlab.android.settings.withHDRMode
 import com.rawlab.android.settings.requireProRAWDecoder
 import com.rawlab.android.settings.requireHDRDecodeVersion
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.format.PhotoInputKind
 import com.rawlab.android.geometry.GeometrySettings
 import com.rawlab.android.engine.NativeFrame
@@ -98,6 +99,16 @@ internal class EditorRenderer(
             y: Float,
             cancellationGeneration: Long = -1L,
         ): HslTargetSample
+        fun sampleWhiteBalance(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            inputKind: PhotoInputKind,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long = -1L,
+        ): NativeProcessor.WbProbeSample = error("unused")
         fun export(
             input: File,
             lut: File?,
@@ -108,6 +119,17 @@ internal class EditorRenderer(
             inputKind: PhotoInputKind,
             cancellationGeneration: Long = -1L,
         ): Int
+        fun export(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            output: File,
+            format: ExportFormat,
+            longEdge: Int?,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long,
+            outputSharpening: OutputSharpening,
+        ): Int = export(input, lut, settings, output, format, longEdge, inputKind, cancellationGeneration)
         fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind): Float
         fun decodeHDRCamera(
             file: File,
@@ -141,6 +163,15 @@ internal class EditorRenderer(
             lookDirectory: File?,
             progress: HDRProgressListener?,
         ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory)
+        fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+            outputSharpening: OutputSharpening,
+        ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory, progress)
         fun renderHDRRoi(
             source: HdrImageHandle,
             settings: HDRSettings,
@@ -213,6 +244,18 @@ internal class EditorRenderer(
             lookDirectory: File?,
             progress: HDRProgressListener?,
         ) = exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory)
+        fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+            outputSharpening: OutputSharpening,
+        ) = exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
         fun sessionHandle(): Long = 0L
     }
 
@@ -311,6 +354,16 @@ internal class EditorRenderer(
             y: Float,
             cancellationGeneration: Long,
         ): HslTargetSample = native.sampleHsl(input, lut, settings, edge, interactive, inputKind, revision, x, y, cancellationGeneration)
+        override fun sampleWhiteBalance(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            edge: Int,
+            inputKind: PhotoInputKind,
+            x: Float,
+            y: Float,
+            cancellationGeneration: Long,
+        ): NativeProcessor.WbProbeSample = native.sampleWhiteBalance(input, lut, settings, edge, inputKind, x, y, cancellationGeneration = cancellationGeneration)
         override fun export(
             input: File,
             lut: File?,
@@ -320,8 +373,19 @@ internal class EditorRenderer(
             longEdge: Int?,
             inputKind: PhotoInputKind,
             cancellationGeneration: Long,
+        ): Int = export(input, lut, settings, output, format, longEdge, inputKind, cancellationGeneration, OutputSharpening.OFF)
+        override fun export(
+            input: File,
+            lut: File?,
+            settings: EditSettings,
+            output: File,
+            format: ExportFormat,
+            longEdge: Int?,
+            inputKind: PhotoInputKind,
+            cancellationGeneration: Long,
+            outputSharpening: OutputSharpening,
         ): Int {
-            return native.export(input, lut, settings, output, format, longEdge, inputKind, cancellationGeneration)
+            return native.export(input, lut, settings, output, format, longEdge, inputKind, cancellationGeneration, outputSharpening)
         }
         override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind): Float =
             native.autoExposure(input, settings, inputKind)
@@ -358,8 +422,17 @@ internal class EditorRenderer(
             cancellationGeneration: Long,
             lookDirectory: File?,
             progress: HDRProgressListener?,
+        ): HdrImageHandle = renderHDR(source, settings, edge, cancellationGeneration, lookDirectory, progress, OutputSharpening.OFF)
+        override fun renderHDR(
+            source: HdrImageHandle,
+            settings: HDRSettings,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+            outputSharpening: OutputSharpening,
         ): HdrImageHandle = NativeHdrImageHandle(
-            native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory, progress)
+            native.renderHDR((source as NativeHdrImageHandle).underlying, settings, edge, cancellationGeneration, lookDirectory, progress, outputSharpening)
         )
         override fun renderHDRRoi(
             source: HdrImageHandle,
@@ -444,7 +517,19 @@ internal class EditorRenderer(
             cancellationGeneration: Long,
             lookDirectory: File?,
             progress: HDRProgressListener?,
-        ) = native.exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, progress)
+        ) = exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, progress, OutputSharpening.OFF)
+        override fun exportProRAW(
+            file: File,
+            info: HDRSourceInfo,
+            edits: EditSettings,
+            output: File,
+            keepHDR: Boolean,
+            edge: Int,
+            cancellationGeneration: Long,
+            lookDirectory: File?,
+            progress: HDRProgressListener?,
+            outputSharpening: OutputSharpening,
+        ) = native.exportProRAW(file, info, edits, output, keepHDR, edge, cancellationGeneration, lookDirectory, progress, outputSharpening)
         override fun sessionHandle(): Long = native.sessionHandle()
         override fun close() = native.close()
     }
@@ -588,7 +673,7 @@ internal class EditorRenderer(
 
     fun perform(work: Work, cancellation: RenderCancellation): WorkResult = synchronized(storage) {
         runGuardedExportWork(work, destinationDeleter) {
-            if (work !is Work.Preview && work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.Import &&
+            if (work !is Work.Preview && work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe && work !is Work.Import &&
                 work !is Work.CameraHDRPreflight && work !is Work.Export && work !is Work.AutoExposure)
                 return@runGuardedExportWork perform(work)
             cancellation.check()
@@ -659,6 +744,16 @@ internal class EditorRenderer(
             }.getOrElse { HslTargetSample.unavailable(work.revision, HslTargetAvailability.FAILED) }
             WorkResult.HslProbe(work, sample)
         }
+        is Work.WbProbe -> {
+            val preview = work.preview
+            val sample = runCatching {
+                engine().sampleWhiteBalance(preview.photo.file, storage.lookPath(preview.edits), preview.edits,
+                    preview.edge, preview.photo.inputKind, work.x, work.y, generation)
+            }.getOrElse {
+                NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.UNAVAILABLE, 6500f, 0f, 0, 0)
+            }
+            WorkResult.WbProbe(work, sample)
+        }
         is Work.CameraHDRPreflight -> performCameraHDRPreflight(work, generation)
         is Work.Export -> {
             if (work.photo.hdrSource != null && work.edits.isHDREditing) return performHDRExport(work, generation)
@@ -667,7 +762,7 @@ internal class EditorRenderer(
             try {
                 native.setGpuMode(work.gpuMode)
                 native.export(work.photo.file, storage.lookPath(work.edits), work.edits, output,
-                    work.format, work.longEdge, work.photo.inputKind, generation)
+                    work.format, work.longEdge, work.photo.inputKind, generation, work.outputSharpening)
                 // Q12: native.export 正常返回即已过提交点（提交点前的取消在 export 内抛 CANCELLED）。
                 // 提交点之后迟到的取消不删已渲染文件，继续入库/写文档并按「已完成」收尾。
                 if (work.destination == null) storage.saveAlbum(output, work.format)
@@ -695,9 +790,12 @@ internal class EditorRenderer(
         val lut = if (hdr) null else storage.lookPath(work.edits)
         val source = FileStamp.read(work.photo.file)
         val lutStamp = lut?.let { FileStamp.read(it) }
-        // 拍摄白平衡的显示值会随首帧回填；配方的相对色调仍是渲染输入。
-        val edits = if (work.edits.customWb) work.edits else work.edits.copy(temperature = 6500f,
-            tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
+        // 拍摄白平衡的显示值会随首帧回填；配方的相对色调与普通照片的相对白平衡仍是渲染输入。
+        val edits = when {
+            work.edits.customWb -> work.edits
+            work.photo.inputKind == PhotoInputKind.RASTER && work.edits.recipeID == null -> work.edits
+            else -> work.edits.copy(temperature = 6500f, tint = if (work.edits.recipeID == null) 0f else work.edits.tint)
+        }
         val scope = if (work.interactive || work.draft || !work.includeNeutral || source == null || (lut != null && lutStamp == null)) null
             else PreviewScope(work.photo, source, lutStamp, edits, work.gpuMode)
         if (previewScope != scope) {
@@ -910,6 +1008,7 @@ internal class EditorRenderer(
                     generation,
                     storage.hdrLookDirectory,
                     hdrProgressAdapter(work, 0f, 0.96f),
+                    work.outputSharpening,
                 )
                 onExportProgress(work, 0.96f)
                 // Q12: exportProRAW 返回 ⇒ 输出文件已过提交点；迟到的取消不删文件，按「已完成」收尾。
@@ -928,7 +1027,7 @@ internal class EditorRenderer(
         onExportProgress(work, 0.45f)
         val rendered = try {
             native.renderHDR(source, settings, work.longEdge ?: 0, generation, storage.hdrLookDirectory,
-                hdrProgressAdapter(work, 0.45f, 0.72f))
+                hdrProgressAdapter(work, 0.45f, 0.72f), work.outputSharpening)
         } finally { source.close() }
         onExportProgress(work, 0.72f)
         val output = storage.temporaryOutput(work.format)

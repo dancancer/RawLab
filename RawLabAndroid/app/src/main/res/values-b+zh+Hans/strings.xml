@@ -29,6 +29,18 @@
     <string name="browser_unavailable">"无法打开链接，请安装或启用浏览器。"</string>
     <string name="camera_all">"全部"</string>
     <string name="camera_all_dates">"全部日期"</string>
+    <string name="camera_auth_connecting">"正在验证访问凭据…"</string>
+    <string name="camera_auth_failed">"访问验证失败，请核对相机屏幕中的用户名与密码。"</string>
+    <string name="camera_auth_fingerprint">"相机密钥指纹（请与相机屏幕核对）"</string>
+    <string name="camera_auth_fingerprint_changed">"相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"</string>
+    <string name="camera_auth_forget">"忘记已保存凭据"</string>
+    <string name="camera_auth_guide">"请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"</string>
+    <string name="camera_auth_hide_password">"隐藏密码"</string>
+    <string name="camera_auth_password">"密码"</string>
+    <string name="camera_auth_show_password">"显示密码"</string>
+    <string name="camera_auth_submit">"验证并连接"</string>
+    <string name="camera_auth_title">"相机访问验证"</string>
+    <string name="camera_auth_user">"用户名"</string>
     <string name="camera_auto">"自动"</string>
     <string name="camera_back_photos">"继续挑选"</string>
     <string name="camera_bluetooth">"正在连接相机…"</string>
@@ -235,6 +247,7 @@
     <string name="expand_vignette">"展开暗角参数"</string>
     <string name="export">"导出"</string>
     <string name="export_done">"照片已保存"</string>
+    <string name="export_output_sharpening">"输出锐化"</string>
     <string name="exporting">"正在导出…"</string>
     <string name="exposure">"曝光"</string>
     <string name="exposure_basis">"曝光基准"</string>
@@ -438,6 +451,10 @@
     <string name="output_custom_size">"自定义"</string>
     <string name="output_long_edge">"长边上限（px）"</string>
     <string name="output_original_size">"原尺寸"</string>
+    <string name="output_sharpening_high">"高"</string>
+    <string name="output_sharpening_low">"低"</string>
+    <string name="output_sharpening_off">"关"</string>
+    <string name="output_sharpening_standard">"标准"</string>
     <string name="output_size">"导出尺寸"</string>
     <string name="output_size_error">"导出长边必须为 1-65535 像素。"</string>
     <string name="output_size_range">"1–65535 像素"</string>

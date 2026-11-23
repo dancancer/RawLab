@@ -167,26 +167,51 @@ extension CameraTransferJob {
 }
 
 extension CameraAssetSnapshot {
-    private static let legacyDateFormat: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.timeZone = .gmt
-        formatter.dateFormat = "yyyyMMdd'T'HHmmss"
-        return formatter
-    }()
-
     var captureDate: Date? {
         if format == 0 && storage == 0 {
             guard let milliseconds = Int64(created), (946_684_800_000..<4_102_444_800_000).contains(milliseconds) else { return nil }
             return Date(timeIntervalSince1970: Double(milliseconds) / 1000)
         }
         // 旧协议按相机钟面时间比较，避免手机跨时区使已确认的日期边界移动。
-        let datePart = String(created.prefix(15))
-        guard datePart.count == 15, let date = Self.legacyDateFormat.date(from: datePart),
-              Self.legacyDateFormat.string(from: date) == datePart,
-              (946_684_800.0..<4_102_444_800.0).contains(date.timeIntervalSince1970) else { return nil }
-        return date
+        // 格式为 yyyyMMdd'T'HHmmss（15 字节 ASCII），GMT 公历有效日期且在 [2000-01-01, 2100-01-01)。
+        let utf8 = Array(created.utf8.prefix(15))
+        guard utf8.count == 15, utf8[8] == 0x54 else { return nil }
+        @inline(__always) func digit(_ byte: UInt8) -> Int? {
+            byte >= 0x30 && byte <= 0x39 ? Int(byte - 0x30) : nil
+        }
+        @inline(__always) func twoDigits(_ i: Int) -> Int? {
+            guard let a = digit(utf8[i]), let b = digit(utf8[i + 1]) else { return nil }
+            return a * 10 + b
+        }
+        guard let yHi = twoDigits(0), let yLo = twoDigits(2),
+              let month = twoDigits(4), let day = twoDigits(6),
+              let hour = twoDigits(9), let minute = twoDigits(11), let second = twoDigits(13) else { return nil }
+        let year = yHi * 100 + yLo
+        guard (2000...2099).contains(year),
+              (1...12).contains(month),
+              (0...23).contains(hour),
+              (0...59).contains(minute),
+              (0...59).contains(second) else { return nil }
+        let maxDay: Int
+        switch month {
+        case 2:
+            let isLeap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+            maxDay = isLeap ? 29 : 28
+        case 4, 6, 9, 11:
+            maxDay = 30
+        default:
+            maxDay = 31
+        }
+        guard (1...maxDay).contains(day) else { return nil }
+        let y = year - (month <= 2 ? 1 : 0)
+        let era = y / 400
+        let yoe = y - era * 400
+        let doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        let days = era * 146_097 + doe - 719_468
+        let seconds = Int64(days) * 86_400 + Int64(hour) * 3_600 + Int64(minute) * 60 + Int64(second)
+        guard (946_684_800..<4_102_444_800).contains(seconds) else { return nil }
+        return Date(timeIntervalSince1970: Double(seconds))
     }
 
     var anchorKey: String {

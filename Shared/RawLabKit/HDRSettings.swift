@@ -9,7 +9,7 @@ public struct HDRToneSettings: Equatable, Codable {
 
     public var isDefault: Bool { blackPoint == 0 && whitePoint == 0 && curveStrength == 0 && curve.isDefault }
     public var isIdentity: Bool {
-        blackPoint == 0 && whitePoint == 0 && (curve.mode == .custom ? curve.master.isIdentity : curveStrength == 0) && curve.channels.isIdentity
+        blackPoint == 0 && whitePoint == 0 && (curve.mode == .custom ? curve.master.isIdentity : curveStrength == 0) && curve.channels.isIdentity && curve.parametric.isIdentity
     }
     public var isValid: Bool { [blackPoint, whitePoint, curveStrength].allSatisfy { (-100...100).contains($0) } && curve.isValid }
 
@@ -408,8 +408,12 @@ public struct HDRSettings: Equatable, Codable {
     public enum Mode: String, Codable { case sdr, hdr }
     public enum ModeError: Error, Equatable { case unsupportedSource, invalidSettings }
 
-    public var recordVersion: Int { processingVersion == 8 ? 9 : cameraDevelopment == nil ? processingVersion : 8 }
+    public var recordVersion: Int {
+        if processingVersion == 9 { return 10 }
+        return processingVersion == 8 ? 9 : cameraDevelopment == nil ? processingVersion : 8
+    }
     public var processingVersion: Int {
+        if tone?.curve.hasV2Extensions == true || color?.grading.hasV2Extensions == true { return 9 }
         if tone?.curve.hasChannelCurves == true { return 8 }
         if look != nil { return 7 }
         if detail != nil { return 6 }
@@ -440,7 +444,7 @@ public struct HDRSettings: Equatable, Codable {
         set {
             guard tone != nil || !newValue.isDefault else { return }
             tone = newValue
-            if newValue.curve.hasChannelCurves {
+            if newValue.curve.hasChannelCurves || newValue.curve.hasV2Extensions {
                 color = color ?? HDRColorSettings(); rendition = rendition ?? HDRRenditionSettings()
                 effects = effects ?? HDRPhotoEffectsSettings(); detail = detail ?? HDRDetailSettings(); look = look ?? HDRLookSettings()
             }
@@ -452,6 +456,10 @@ public struct HDRSettings: Equatable, Codable {
             guard color != nil || !newValue.isDefault else { return }
             color = newValue
             if tone == nil { tone = HDRToneSettings() }
+            if newValue.grading.hasV2Extensions {
+                rendition = rendition ?? HDRRenditionSettings()
+                effects = effects ?? HDRPhotoEffectsSettings(); detail = detail ?? HDRDetailSettings(); look = look ?? HDRLookSettings()
+            }
         }
     }
     public var renditionSettings: HDRRenditionSettings {
@@ -577,7 +585,8 @@ public struct HDRSettings: Equatable, Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let version = try values.decode(Int.self, forKey: .recordVersion)
         let processing = try values.decode(Int.self, forKey: .processingVersion)
-        guard (1...8).contains(processing), version == (processing == 8 ? 9 : values.contains(.cameraDevelopment) ? 8 : processing),
+        guard (1...9).contains(processing),
+              version == (processing == 9 ? 10 : processing == 8 ? 9 : values.contains(.cameraDevelopment) ? 8 : processing),
               values.contains(.tone) == (processing >= 2), values.contains(.color) == (processing >= 3),
               values.contains(.rendition) == (processing >= 4), values.contains(.effects) == (processing >= 5),
               values.contains(.detail) == (processing >= 6), values.contains(.look) == (processing >= 7) else {

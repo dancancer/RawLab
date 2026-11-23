@@ -47,6 +47,7 @@ public partial class MainWindow
         if (batchJournal.LastQuarantinedPath is { } quarantinedBatch) Report(new IOException(Loc.Format("已将损坏的上次批量任务记录移出为：{0}", Path.GetFileName(quarantinedBatch))));
         RefreshBatchNotice(); UpdateBusy();
         InitializeAdjustmentHistory();
+        StartExternalStoreWatcher();
     }
 
     private void MarkEdited() => MarkEditedCore(false);
@@ -184,12 +185,14 @@ public partial class MainWindow
             if (Volatile.Read(ref commit.ClearReceipt)) ClearProcessingMigrationReceiptState();
             SetSaveNotice("调整已保存", "", false);
         }
+        FlushDeferredExternalEditsCheckIfNeeded();
     }
 
     private void OnEditSaveFailed(PendingEditSaveCommit commit, Exception error, bool shouldShowNotice)
     {
         if (shouldShowNotice)
             SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);
+        FlushDeferredExternalEditsCheckIfNeeded();
     }
 
     private async Task<bool> FlushSaveEditsAsync()

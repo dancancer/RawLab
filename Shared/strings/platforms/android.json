@@ -6933,6 +6933,240 @@
       "formats": [],
       "source": "当前状态下相机未接受对焦点设置。",
       "types": []
+    },
+    "curve_luminosity_only": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "仅作用于明度",
+      "types": []
+    },
+    "curve_point_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "点曲线",
+      "types": []
+    },
+    "curve_parametric_mode": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "参数曲线",
+      "types": []
+    },
+    "curve_lights": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "亮部",
+      "types": []
+    },
+    "curve_darks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "暗部",
+      "types": []
+    },
+    "curve_split_points": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "拆分点",
+      "types": []
+    },
+    "curve_reset": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "重置曲线",
+      "types": []
+    },
+    "grading_luminance": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明亮度",
+      "types": []
+    },
+    "grading_global": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "全局",
+      "types": []
+    },
+    "grading_blending": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "融合",
+      "types": []
+    },
+    "grading_balance": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "平衡",
+      "types": []
+    },
+    "wb_eyedropper": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "白平衡吸管",
+      "types": []
+    },
+    "sampling_monitor": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "取样监视",
+      "types": []
+    },
+    "sampling_pin_anchor": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加锚点",
+      "types": []
+    },
+    "sampling_clear_anchors": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "清除锚点",
+      "types": []
+    },
+    "overlay_section": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "观察层",
+      "types": []
+    },
+    "overlay_none": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "关闭观察层",
+      "types": []
+    },
+    "overlay_sketch_luminance": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "素描明度",
+      "types": []
+    },
+    "overlay_warm_cool_bw": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "冷暖反差黑白",
+      "types": []
+    },
+    "overlay_oversaturation_heatmap": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "过饱和熔断热力图",
+      "types": []
+    },
+    "overlay_skin_hue_boost": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "肤色色相放大",
+      "types": []
+    },
+    "overlay_gray_50": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "50% 中性灰",
+      "types": []
+    },
+    "export_output_sharpening": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "输出锐化",
+      "types": []
+    },
+    "output_sharpening_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "关",
+      "types": []
+    },
+    "output_sharpening_low": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "低",
+      "types": []
+    },
+    "output_sharpening_standard": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "标准",
+      "types": []
+    },
+    "output_sharpening_high": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "高",
+      "types": []
+    },
+    "camera_auth_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机访问验证",
+      "types": []
+    },
+    "camera_auth_guide": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。",
+      "types": []
+    },
+    "camera_auth_fingerprint": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机密钥指纹（请与相机屏幕核对）",
+      "types": []
+    },
+    "camera_auth_fingerprint_changed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。",
+      "types": []
+    },
+    "camera_auth_user": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "用户名",
+      "types": []
+    },
+    "camera_auth_password": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "密码",
+      "types": []
+    },
+    "camera_auth_show_password": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "显示密码",
+      "types": []
+    },
+    "camera_auth_hide_password": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "隐藏密码",
+      "types": []
+    },
+    "camera_auth_submit": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "验证并连接",
+      "types": []
+    },
+    "camera_auth_connecting": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在验证访问凭据…",
+      "types": []
+    },
+    "camera_auth_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "访问验证失败，请核对相机屏幕中的用户名与密码。",
+      "types": []
+    },
+    "camera_auth_forget": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "忘记已保存凭据",
+      "types": []
     }
   },
   "overrides": {
@@ -8506,6 +8740,86 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
+    },
+    "相机访问验证": {
+      "de": "Kamera-Zugriffsauthentifizierung",
+      "en": "Camera Access Authentication",
+      "es": "Autenticación de acceso a la cámara",
+      "fr": "Authentification d'accès à l'appareil photo",
+      "ja": "カメラのアクセス認証",
+      "zh-Hans": "相机访问验证"
+    },
+    "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。": {
+      "de": "Prüfen Sie Benutzername und Passwort im Menü „Zugriffsaut.-Info“ der Kamera, vergleichen Sie den Fingerabdruck unten und melden Sie sich an.",
+      "en": "Check the username and password in the camera's Access Authen. Info menu, verify the fingerprint below, then sign in.",
+      "es": "Consulta el nombre de usuario y la contraseña en el menú Información de autenticación de acceso de la cámara, comprueba la huella siguiente e inicia sesión.",
+      "fr": "Consultez le nom d'utilisateur et le mot de passe dans le menu Infos d'authentification d'accès de l'appareil photo, vérifiez l'empreinte ci-dessous, puis connectez-vous.",
+      "ja": "カメラの「アクセス認証情報」メニューでユーザー名とパスワードを確認し、下のフィンガープリントと一致していることを確認してから入力してください。",
+      "zh-Hans": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"
+    },
+    "相机密钥指纹（请与相机屏幕核对）": {
+      "de": "Kameraschlüssel-Fingerabdruck (mit Kamerabildschirm abgleichen)",
+      "en": "Camera key fingerprint (verify against the camera screen)",
+      "es": "Huella de clave de la cámara (compruébala en la pantalla)",
+      "fr": "Empreinte de clé de l'appareil photo (à vérifier sur l'écran)",
+      "ja": "カメラ鍵フィンガープリント（カメラ画面と照合）",
+      "zh-Hans": "相机密钥指纹（请与相机屏幕核对）"
+    },
+    "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。": {
+      "de": "Der Schlüssel-Fingerabdruck der Kamera hat sich geändert. Prüfen Sie den Fingerabdruck auf dem Kamerabildschirm, bevor Sie die Zugangsdaten erneut eingeben.",
+      "en": "The camera's key fingerprint changed. Verify the fingerprint on the camera screen before re-entering credentials.",
+      "es": "La huella de clave de la cámara ha cambiado. Compruébala en la pantalla de la cámara antes de volver a introducir las credenciales.",
+      "fr": "L'empreinte de clé de l'appareil photo a changé. Vérifiez l'empreinte sur l'écran de l'appareil avant de saisir à nouveau les identifiants.",
+      "ja": "カメラの鍵フィンガープリントが変更されました。カメラ画面で照合してから認証情報を再入力してください。",
+      "zh-Hans": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
+    },
+    "用户名": {
+      "de": "Benutzername",
+      "en": "Username",
+      "es": "Nombre de usuario",
+      "fr": "Nom d'utilisateur",
+      "ja": "ユーザー名",
+      "zh-Hans": "用户名"
+    },
+    "密码": {
+      "de": "Passwort",
+      "en": "Password",
+      "es": "Contraseña",
+      "fr": "Mot de passe",
+      "ja": "パスワード",
+      "zh-Hans": "密码"
+    },
+    "验证并连接": {
+      "de": "Prüfen & verbinden",
+      "en": "Verify & Connect",
+      "es": "Verificar y conectar",
+      "fr": "Vérifier et connecter",
+      "ja": "認証して接続",
+      "zh-Hans": "验证并连接"
+    },
+    "正在验证访问凭据…": {
+      "de": "Zugangsdaten werden geprüft…",
+      "en": "Verifying access credentials…",
+      "es": "Verificando credenciales de acceso…",
+      "fr": "Vérification des identifiants d'accès…",
+      "ja": "アクセス認証情報を確認中…",
+      "zh-Hans": "正在验证访问凭据…"
+    },
+    "访问验证失败，请核对相机屏幕中的用户名与密码。": {
+      "de": "Zugriffsauthentifizierung fehlgeschlagen. Prüfen Sie Benutzername und Passwort auf dem Kamerabildschirm.",
+      "en": "Access authentication failed. Check the username and password shown on the camera screen.",
+      "es": "Error de autenticación de acceso. Comprueba el nombre de usuario y la contraseña en la pantalla de la cámara.",
+      "fr": "Échec de l'authentification d'accès. Vérifiez le nom d'utilisateur et le mot de passe affichés sur l'appareil photo.",
+      "ja": "アクセス認証に失敗しました。カメラ画面に表示されたユーザー名とパスワードを確認してください。",
+      "zh-Hans": "访问验证失败，请核对相机屏幕中的用户名与密码。"
+    },
+    "忘记已保存凭据": {
+      "de": "Gespeicherte Zugangsdaten löschen",
+      "en": "Forget saved credentials",
+      "es": "Olvidar credenciales guardadas",
+      "fr": "Oublier les identifiants enregistrés",
+      "ja": "保存済みの認証情報を削除",
+      "zh-Hans": "忘记已保存凭据"
     }
   }
 }

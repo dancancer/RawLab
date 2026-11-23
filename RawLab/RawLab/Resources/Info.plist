@@ -11,9 +11,9 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
     <key>CFBundleShortVersionString</key>
-	<string>0.11.2</string>
+	<string>0.12.0</string>
 	<key>CFBundleVersion</key>
-	<string>22</string>
+	<string>23</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key><false/>
 <key>CFBundleDocumentTypes</key><array><dict>
     <key>CFBundleTypeName</key><string>RAW/JPEG/PNG/TIFF/HEIF</string>

@@ -393,7 +393,11 @@ public extension RawSettings {
     // 只用于候选的等价校验：先消费现有配方转换，再按 processor 的输入限制捕获 core Float。
     func editorEffectiveValues(isRaw: Bool, cameraTemperature: Double, cameraTint: Double) -> [Float] {
         var effective = renderedRecipe(cameraTemperature: cameraTemperature, cameraTint: cameraTint)
-        if !isRaw || effective.whiteBalanceMode == .camera {
+        if !isRaw {
+            if masterRecipeID != nil || effective.whiteBalanceMode != .camera {
+                effective.temperature = 6500; effective.tint = 0
+            }
+        } else if effective.whiteBalanceMode == .camera {
             effective.temperature = 6500; effective.tint = 0
         }
         let noise = !isRaw || effective.denoise.enabled ? 0 : effective.noiseReduction

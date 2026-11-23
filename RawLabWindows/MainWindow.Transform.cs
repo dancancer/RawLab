@@ -78,6 +78,7 @@ public partial class MainWindow
         if(!transform.Active)return;
         if(transformSaveFailed)SetSaveNotice("已放弃未保存的修改","",false);
         transform.Cancel();EndTransform();ClearTransferNoticesOnUserEdit();RefreshControls();Schedule();
+        if (!HasUnsavedManualDraft) HandleExternalEditsFileChange();
     }
     private void EndTransform()
     {

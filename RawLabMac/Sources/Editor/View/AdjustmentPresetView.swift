@@ -67,6 +67,7 @@ struct AdjustmentPresetView: View {
             }
         }
         .onAppear { reload(); if startSaving && libraryError == nil { startEditor() } }
+        .onChange(of: model.presetLibraryRevision) { _, _ in reload() }
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }

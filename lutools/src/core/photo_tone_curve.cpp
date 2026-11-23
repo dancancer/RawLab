@@ -38,7 +38,28 @@ double endTangent(double h0, double h1, double dy0, double dy1) {
 
 } // namespace
 
-bool validToneCurve(const ToneCurveConfig& config) {
+bool ToneCurveParametricConfig::valid() const noexcept {
+    const float bands[] = {highlights, lights, darks, shadows};
+    for (float v : bands) {
+        if (!std::isfinite(v) || v < -100.0f || v > 100.0f) return false;
+    }
+    if (!std::isfinite(splitShadow) || !std::isfinite(splitMidtone) || !std::isfinite(splitHighlight)) {
+        return false;
+    }
+    if (splitShadow < 0.05f || splitShadow > 0.45f ||
+        splitMidtone < 0.25f || splitMidtone > 0.75f ||
+        splitHighlight < 0.55f || splitHighlight > 0.95f) {
+        return false;
+    }
+    return (splitShadow + 0.02f <= splitMidtone + 1e-6f) &&
+           (splitMidtone + 0.02f <= splitHighlight + 1e-6f);
+}
+
+bool ToneCurveParametricConfig::active() const noexcept {
+    return highlights != 0.0f || lights != 0.0f || darks != 0.0f || shadows != 0.0f;
+}
+
+bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
     if (config.mode == ToneCurveMode::Legacy) return config.count == 0;
     if (config.mode != ToneCurveMode::Custom || config.count < 2 || config.count > kToneCurveMaxPoints) return false;
     for (uint32_t i = 0; i < config.count; ++i) {
@@ -47,11 +68,14 @@ bool validToneCurve(const ToneCurveConfig& config) {
         if (i && (p.x <= config.points[i - 1].x || p.y < config.points[i - 1].y)) return false;
     }
     const auto first = config.points[0], last = config.points[config.count - 1];
+    if (allowFreeEndpoints) {
+        return first.x == 0 && last.x == 1;
+    }
     return first.x == 0 && first.y == 0 && last.x == 1 && last.y == 1;
 }
 
-ToneCurve::ToneCurve(const ToneCurveConfig& config) {
-    if (!validToneCurve(config)) throw std::invalid_argument("invalid tone curve");
+ToneCurve::ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
+    if (!validToneCurve(config, allowFreeEndpoints)) throw std::invalid_argument("invalid tone curve");
     custom_ = config.mode == ToneCurveMode::Custom;
     if (!custom_) return;
     count_ = config.count - 1;
@@ -61,6 +85,7 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config) {
         dy[i] = config.points[i + 1].y - config.points[i].y;
         active_ |= config.points[i].x != config.points[i].y;
     }
+    active_ |= config.points[count_].x != config.points[count_].y;
     if (!active_) return;
     for (uint32_t i = 0; i < count_; ++i) {
         auto& s = segments_[i];
@@ -80,8 +105,8 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config) {
 
 double ToneCurve::evaluate(double value) const {
     if (!active_) return value;
-    if (value <= 0) return 0;
-    if (value >= 1) return 1;
+    if (value <= 0) return segments_[0].y0;
+    if (value >= 1) return segments_[count_ - 1].y1;
     uint32_t index = 0;
     while (index + 1 < count_ && value > segments_[index].x1) ++index;
     const auto& s = segments_[index];
@@ -89,6 +114,101 @@ double ToneCurve::evaluate(double value) const {
     const double result = (1 + 2 * t) * u * u * s.y0 + t * u * u * s.tangent0
         + t * t * (3 - 2 * t) * s.y1 - t * t * u * s.tangent1;
     return std::clamp(result, s.y0, s.y1);
+}
+
+namespace {
+
+double smoothstepBump(double x, double left, double center, double right) noexcept {
+    if (x <= left || x >= right) return 0.0;
+    const double t = x < center
+        ? (x - left) / (center - left)
+        : (right - x) / (right - center);
+    return t * t * (3.0 - 2.0 * t);
+}
+
+} // namespace
+
+ToneCurveParametric::ToneCurveParametric(const ToneCurveParametricConfig& config) {
+    if (!config.valid()) throw std::invalid_argument("invalid parametric tone curve");
+    splits_ = {
+        static_cast<double>(config.splitShadow),
+        static_cast<double>(config.splitMidtone),
+        static_cast<double>(config.splitHighlight)
+    };
+    if (!config.active()) return;
+
+    active_ = true;
+    const double s0 = splits_[0];
+    const double s1 = splits_[1];
+    const double s2 = splits_[2];
+    const double c0 = 0.5 * s0;
+    const double c1 = 0.5 * (s0 + s1);
+    const double c2 = 0.5 * (s1 + s2);
+    const double c3 = 0.5 * (s2 + 1.0);
+
+    const std::array<double, 4> lefts{0.0, 0.0, s0, s1};
+    const std::array<double, 4> centers{c0, c1, c2, c3};
+    const std::array<double, 4> rights{s1, s2, 1.0, 1.0};
+    constexpr std::array<double, 4> kNominal{0.12, 0.15, 0.15, 0.12};
+    const std::array<double, 4> desired{
+        (static_cast<double>(config.shadows) / 100.0) * kNominal[0],
+        (static_cast<double>(config.darks) / 100.0) * kNominal[1],
+        (static_cast<double>(config.lights) / 100.0) * kNominal[2],
+        (static_cast<double>(config.highlights) / 100.0) * kNominal[3]
+    };
+
+    const std::array<double, 9> knots{0.0, c0, s0, c1, s1, c2, s2, c3, 1.0};
+    double minDeriv = 0.0;
+    for (size_t m = 0; m < 8; ++m) {
+        const double x0 = knots[m];
+        const double x1 = knots[m + 1];
+        const double mid = 0.5 * (x0 + x1);
+        double A = 0.0, B = 0.0, C = 0.0;
+        for (size_t i = 0; i < 4; ++i) {
+            if (desired[i] == 0.0) continue;
+            if (lefts[i] < mid && mid < centers[i]) {
+                const double w = centers[i] - lefts[i];
+                const double k = desired[i] * 6.0 / (w * w * w);
+                A += -k;
+                B += k * (lefts[i] + centers[i]);
+                C += -k * (lefts[i] * centers[i]);
+            } else if (centers[i] < mid && mid < rights[i]) {
+                const double w = rights[i] - centers[i];
+                const double k = -desired[i] * 6.0 / (w * w * w);
+                A += -k;
+                B += k * (centers[i] + rights[i]);
+                C += -k * (centers[i] * rights[i]);
+            }
+        }
+        auto evalQ = [&](double x) { return (A * x + B) * x + C; };
+        minDeriv = std::min(minDeriv, evalQ(x0));
+        minDeriv = std::min(minDeriv, evalQ(x1));
+        if (A > 0.0) {
+            const double xv = -B / (2.0 * A);
+            if (xv > x0 && xv < x1) {
+                minDeriv = std::min(minDeriv, evalQ(xv));
+            }
+        }
+    }
+
+    const double scale = minDeriv < -0.95 ? 0.95 / (-minDeriv) : 1.0;
+    for (size_t i = 0; i < 4; ++i) {
+        amps_[i] = desired[i] * scale;
+    }
+}
+
+double ToneCurveParametric::evaluate(double value) const noexcept {
+    if (!active_) return value;
+    const double x = std::clamp(value, 0.0, 1.0);
+    const double s0 = splits_[0];
+    const double s1 = splits_[1];
+    const double s2 = splits_[2];
+    const double dx =
+        amps_[0] * smoothstepBump(x, 0.0, 0.5 * s0, s1) +
+        amps_[1] * smoothstepBump(x, 0.0, 0.5 * (s0 + s1), s2) +
+        amps_[2] * smoothstepBump(x, s0, 0.5 * (s1 + s2), 1.0) +
+        amps_[3] * smoothstepBump(x, s1, 0.5 * (s2 + 1.0), 1.0);
+    return std::clamp(x + dx, 0.0, 1.0);
 }
 
 } // namespace sony2fuji

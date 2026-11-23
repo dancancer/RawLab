@@ -33,8 +33,8 @@ public enum HDRAdjustmentTransfer {
         if !targetIsHDR && settings.temperature==6500 && settings.tint==0 {
             fields.subtract([.hdrTemperature,.hdrTint])
         }
-        if !targetIsHDR && settings.toneSettings.isDefault { fields.subtract(Field.hdrTone) }
-        if !targetIsHDR && settings.colorSettings.isDefault { fields.subtract(Field.hdrColor) }
+        if !targetIsHDR && settings.toneSettings.isDefault { fields.subtract(Field.hdrTone.union(Field.hdrV9ToneExtensions)) }
+        if !targetIsHDR && settings.colorSettings.isDefault { fields.subtract(Field.hdrColor.union(Field.hdrV9ColorExtensions)) }
         if !targetIsHDR && settings.renditionSettings.isDefault { fields.subtract(Field.hdrRendition) }
         if !targetIsHDR && settings.effectsSettings.isDefault { fields.subtract(Field.hdrEffects) }
         if !targetIsHDR && settings.detailSettings.isDefault { fields.subtract(Field.hdrDetail) }
@@ -68,7 +68,12 @@ public enum HDRAdjustmentTransfer {
             selected = fields
         }
         let requiredVersion: Int
-        if selected.contains(.hdrLook) { requiredVersion = 7 }
+        if !selected.isDisjoint(with: Field.hdrV9ToneExtensions) ||
+            !selected.isDisjoint(with: Field.hdrV9ColorExtensions) ||
+            ColorGradingZone.allCases.contains(where: { selected.contains($0 == .shadows ? .gradingShadows : $0 == .midtones ? .gradingMidtones : .gradingHighlights) && settings.colorSettings.grading[$0].luminance != 0.0 }) {
+            requiredVersion = 9
+        }
+        else if selected.contains(.hdrLook) { requiredVersion = 7 }
         else if !selected.isDisjoint(with: Field.hdrDetail) { requiredVersion = 6 }
         else if !selected.isDisjoint(with: Field.hdrEffects) { requiredVersion = 5 }
         else if !selected.isDisjoint(with: Field.hdrRendition) { requiredVersion = 4 }
@@ -87,10 +92,10 @@ public enum HDRAdjustmentTransfer {
         guard payload.fields.isSubset(of: allowed) else {
             throw AdjustmentTransferError.incompatible(payload.fields.subtracting(allowed).map(\.rawValue).sorted().joined(separator: ","))
         }
-        guard payload.source.isHDR || payload.fields.isDisjoint(with: Field.hdrTone) else {
+        guard payload.source.isHDR || payload.fields.isDisjoint(with: Field.hdrTone.union(Field.hdrV9ToneExtensions)) else {
             throw AdjustmentTransferError.incompatible("hdr.tone")
         }
-        guard payload.source.isHDR || payload.fields.isDisjoint(with: Field.hdrColor) else {
+        guard payload.source.isHDR || payload.fields.isDisjoint(with: Field.hdrColor.union(Field.hdrV9ColorExtensions)) else {
             throw AdjustmentTransferError.incompatible("hdr.color")
         }
         guard payload.source.isHDR || payload.fields.isDisjoint(with: Field.hdrEffects) else {
@@ -128,7 +133,12 @@ public enum HDRAdjustmentTransfer {
         if let value = payload[.sCurve]?.number, payload[.sCurve] != previous[Field.sCurve.rawValue] {
             tone.curveStrength = value * 100
         }
-        if let value = payload[.curve]?.curve { tone.curve = value }
+        if let value = payload[.curve]?.curve {
+            tone.curve.master = value.master
+            tone.curve.channels = value.channels
+        }
+        if let value = payload[.curveApplyToLuminosity]?.boolean { tone.curve.applyToLuminosity = value }
+        if let value = payload[.curveParametric]?.parametricCurve { tone.curve.parametric = value }
         result.toneSettings = tone
         var color = result.colorSettings
         if let value = payload[.vibrance]?.number { color.vibrance = value }
@@ -137,11 +147,13 @@ public enum HDRAdjustmentTransfer {
                let value = payload[field]?.number {
                 color.hsl.setExact(axis, channel: location.channel, value: value)
             }
-            if let zone = field.gradingZone, let wheel = payload[field]?.object,
-               let hue = wheel["hue"]?.number, let saturation = wheel["saturation"]?.number {
-                color.grading[zone] = ColorGradingWheel(hue: hue, saturation: saturation)
+            if let zone = field.gradingZone, let wheel = payload[field]?.gradingWheel {
+                color.grading[zone] = wheel
             }
         }
+        if let global = payload[.gradingGlobal]?.gradingWheel { color.grading.global = global }
+        if let blending = payload[.gradingBlending]?.number { color.grading.blending = blending }
+        if let balance = payload[.gradingBalance]?.number { color.grading.balance = balance }
         result.colorSettings = color
         var rendition = result.renditionSettings
         for (field, key) in renditionKeys {
@@ -178,10 +190,10 @@ public enum HDRAdjustmentTransfer {
         guard !payload.fields.contains(where: \.isHDRRelative) else {
             throw AdjustmentTransferError.incompatible("hdr.relative_white_balance")
         }
-        guard payload.fields.isDisjoint(with: Field.hdrTone) else {
+        guard payload.fields.isDisjoint(with: Field.hdrTone.union(Field.hdrV9ToneExtensions)) else {
             throw AdjustmentTransferError.incompatible("hdr.tone")
         }
-        guard payload.fields.isDisjoint(with: Field.hdrColor) else {
+        guard payload.fields.isDisjoint(with: Field.hdrColor.union(Field.hdrV9ColorExtensions)) else {
             throw AdjustmentTransferError.incompatible("hdr.color")
         }
         guard payload.fields.isDisjoint(with: Field.hdrRendition) else {
@@ -227,6 +239,8 @@ public enum HDRAdjustmentTransfer {
         result[Field.whitePoint.rawValue] = .number(tone.whitePoint)
         result[Field.sCurve.rawValue] = .number(tone.curveStrength / 100)
         result[Field.curve.rawValue] = tone.curve.transferValue
+        result[Field.curveApplyToLuminosity.rawValue] = .boolean(tone.curve.applyToLuminosity)
+        result[Field.curveParametric.rawValue] = tone.curve.parametric.transferValue
         let color = settings.colorSettings
         result[Field.vibrance.rawValue] = .number(color.vibrance)
         for field in Field.hdrColor {
@@ -235,6 +249,9 @@ public enum HDRAdjustmentTransfer {
             }
             if let zone = field.gradingZone { result[field.rawValue] = color.grading[zone].transferValue }
         }
+        result[Field.gradingGlobal.rawValue] = color.grading.global.transferValue
+        result[Field.gradingBlending.rawValue] = .number(color.grading.blending)
+        result[Field.gradingBalance.rawValue] = .number(color.grading.balance)
         for (field, key) in renditionKeys { result[field.rawValue] = .number(settings.renditionSettings[keyPath: key]) }
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectsSettings[keyPath: key]) }
         for (field, key) in detailKeys {

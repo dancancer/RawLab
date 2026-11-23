@@ -4,18 +4,21 @@ import Foundation
 enum HDRRequestError: Error { case invalidSettings }
 
 struct HDRRenderRequest {
-    let native: sony2fuji_hdr_request_v8
+    let native: sony2fuji_hdr_request_v9
     let lookURL: URL?
 }
 
 func makeHDRRequest(settings: HDRSettings, intent: sony2fuji_intent,
-                    longEdge: Int? = nil, lookDirectory: URL = HDRLookSettings.directory) throws -> HDRRenderRequest {
+                    longEdge: Int? = nil, outputSharpening: OutputSharpening = .off,
+                    lookDirectory: URL = HDRLookSettings.directory) throws -> HDRRenderRequest {
     guard settings.mode == .hdr, settings.isValid,
           intent == SONY2FUJI_INTENT_PREVIEW || intent == SONY2FUJI_INTENT_FINAL,
           longEdge.map({ (1...65535).contains($0) }) ?? true else { throw HDRRequestError.invalidSettings }
+    let effectiveVersion = max(settings.processingVersion,
+                               outputSharpening != .off ? Int(SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION) : 0)
     var request=sony2fuji_hdr_request_v1()
     request.version=1; request.struct_size=UInt32(MemoryLayout<sony2fuji_hdr_request_v1>.size)
-    request.hdr_processing_version=UInt32(settings.processingVersion); request.intent=UInt32(intent.rawValue)
+    request.hdr_processing_version=UInt32(effectiveVersion); request.intent=UInt32(intent.rawValue)
     request.exposure_ev=Float(settings.exposure); request.temperature=Float(settings.temperature); request.tint=Float(settings.tint)
     request.contrast=Float(settings.contrast); request.highlights=Float(settings.highlights)
     request.shadows=Float(settings.shadows); request.saturation=Float(settings.saturation)
@@ -96,14 +99,31 @@ func makeHDRRequest(settings: HDRSettings, intent: sony2fuji_intent,
         let channels = settings.toneSettings.curve.channels
         channelsRequest.channels = (channels.red.nativeConfig, channels.green.nativeConfig, channels.blue.nativeConfig)
     }
-    return HDRRenderRequest(native: channelsRequest, lookURL: settings.lookSettings.asset(in: lookDirectory))
+    var v9Request = sony2fuji_hdr_request_v9()
+    v9Request.base = channelsRequest
+    if request.hdr_processing_version >= SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION {
+        v9Request.base.base.base.base.base.base.base.base.struct_size = UInt32(MemoryLayout<sony2fuji_hdr_request_v9>.size)
+        v9Request.curve_apply_to_luminosity = settings.toneSettings.curve.applyToLuminosity ? 1 : 0
+        switch outputSharpening {
+        case .off: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_OFF.rawValue)
+        case .low: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_LOW.rawValue)
+        case .standard: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_STANDARD.rawValue)
+        case .high: v9Request.output_sharpening = UInt32(SONY2FUJI_OUTPUT_SHARPENING_HIGH.rawValue)
+        }
+        v9Request.parametric_curve = settings.toneSettings.curve.parametric.nativeConfig
+        v9Request.grading_v2 = settings.colorSettings.grading.nativeV2Config
+    } else {
+        v9Request.parametric_curve = ToneCurveParametric().nativeConfig
+        v9Request.grading_v2 = ColorGradingSettings().nativeV2Config
+    }
+    return HDRRenderRequest(native: v9Request, lookURL: settings.lookSettings.asset(in: lookDirectory))
 }
 
 func withHDRRequestPrefix<T>(_ request: HDRRenderRequest,
                              _ body: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
     var native = request.native
     func call(_ path: UnsafePointer<CChar>?, _ invoke: (UnsafePointer<sony2fuji_hdr_request_v1>) throws -> T) rethrows -> T {
-        native.base.look_path = path
+        native.base.base.look_path = path
         return try withUnsafePointer(to: &native) { full in
             try full.withMemoryRebound(to: sony2fuji_hdr_request_v1.self, capacity: 1, invoke)
         }

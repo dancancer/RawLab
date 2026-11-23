@@ -1,4 +1,5 @@
 #include "core/hdr_rendering.h"
+#include "core/hdr_detail.h"
 #include "core/hdr_look.h"
 #include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
@@ -102,8 +103,8 @@ RGB toneSDR(RGB p, const HDRRenderOptions& o) {
     return {decodeSRGB(p.r), decodeSRGB(p.g), decodeSRGB(p.b)};
 }
 
-ToneCurve hdrCurve(const HDRToneOptions& tone) {
-    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve);
+ToneCurve hdrCurve(const HDRToneOptions& tone, bool allowFreeEndpoints) {
+    if (tone.curve.mode == ToneCurveMode::Custom) return ToneCurve(tone.curve, allowFreeEndpoints);
     if (tone.curveStrength == 0) return {};
     auto config = tone.curve;
     const double offset = tone.curveStrength / 1600.0;
@@ -117,14 +118,18 @@ ToneCurve hdrCurve(const HDRToneOptions& tone) {
     return ToneCurve(config);
 }
 
-RGB editToneV2(RGB pixel, const HDRToneOptions& tone, const ToneCurve& curve) {
+RGB editToneV2(RGB pixel, const HDRToneOptions& tone, const ToneCurve& curve, const ToneCurveParametric& parametric) {
     const float y = luminance(pixel);
     if (y <= 0) return pixel;
     const float stops = std::log2(y);
     float target = stops + (tone.blackPoint * (1 - smooth(stops, -7, -3)) +
         tone.whitePoint * smooth(stops, -1, 3)) / 50;
-    if (curve.active() && target > -8 && target < 8)
-        target = float(curve.evaluate((double(target) + 8) / 16) * 16 - 8);
+    if ((curve.active() || parametric.active()) && target > -8 && target < 8) {
+        double u = (double(target) + 8) / 16;
+        if (parametric.active()) u = parametric.evaluate(u);
+        if (curve.active()) u = curve.evaluate(u);
+        target = float(u * 16 - 8);
+    }
     if (target == stops) return pixel;
     const float gain = std::exp2(target - stops);
     return {pixel.r * gain, pixel.g * gain, pixel.b * gain};
@@ -172,19 +177,43 @@ RGB hdrHsl(const RGB& pixel, const HslOptions& settings) {
     return {channel(direction.r), channel(direction.g), channel(direction.b)};
 }
 
-RGB hdrGrade(const RGB& pixel, const std::array<RGB, 3>& coefficients) {
+RGB hdrGrade(const RGB& pixel, const ColorGradingOptions& options, const ColorGradingShaderParams& params) {
     const float y = luminance(pixel);
     if (y <= 0) return pixel;
     const float stops = std::log2(y);
-    const float shadows = 1 - smooth(stops, -5, -2.5f);
-    const float highlights = smooth(stops, -1, 1);
-    const float middle = 1 - shadows - highlights;
-    const auto channel = [=](float value, float shadow, float midtone, float highlight) {
-        return float(value + .25 * y * (shadows * shadow + middle * midtone + highlights * highlight));
+    float shadows = 0.0f;
+    float middle = 0.0f;
+    float highlights = 0.0f;
+    if (options.blending == 50.0f && options.balance == 0.0f) {
+        shadows = 1 - smooth(stops, -5, -2.5f);
+        highlights = smooth(stops, -1, 1);
+        middle = 1 - shadows - highlights;
+    } else {
+        const float shift = 1.5f * (options.balance / 100.0f);
+        const float scale = 0.10f + 1.80f * (options.blending / 100.0f);
+        const float s = stops + shift;
+        shadows = 1 - smooth(s, -3.75f - 1.25f * scale, -3.75f + 1.25f * scale);
+        highlights = smooth(s, -1.0f * scale, 1.0f * scale);
+        middle = std::max(0.0f, 1.0f - shadows - highlights);
+        const float total = shadows + middle + highlights;
+        if (total > 0.0f) {
+            shadows /= total;
+            middle /= total;
+            highlights /= total;
+        }
+    }
+    const float lumStops = 0.5f * (shadows * params.luminance[0] + middle * params.luminance[1] +
+                                   highlights * params.luminance[2] + params.luminance[3]);
+    const float lumScale = (lumStops == 0.0f) ? 1.0f : std::exp2(lumStops);
+    const float yScaled = y * lumScale;
+    const auto channel = [=](float value, float shadow, float midtone, float highlight, float global) {
+        return float(value * lumScale + .25 * yScaled * (shadows * shadow + middle * midtone + highlights * highlight + global));
     };
-    return {channel(pixel.r, coefficients[0].r, coefficients[1].r, coefficients[2].r),
-        channel(pixel.g, coefficients[0].g, coefficients[1].g, coefficients[2].g),
-        channel(pixel.b, coefficients[0].b, coefficients[1].b, coefficients[2].b)};
+    return {
+        channel(pixel.r, params.coefficients[0].r, params.coefficients[1].r, params.coefficients[2].r, params.coefficients[3].r),
+        channel(pixel.g, params.coefficients[0].g, params.coefficients[1].g, params.coefficients[2].g, params.coefficients[3].g),
+        channel(pixel.b, params.coefficients[0].b, params.coefficients[1].b, params.coefficients[2].b, params.coefficients[3].b)
+    };
 }
 
 RGB limitHDRLuminance(const RGB& pixel, double knee, double span) {
@@ -203,17 +232,20 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
     const bool colorActive = o.exposureEV != 0 || o.temperature != 6500 || o.tint != 0;
     const bool toneActive = o.contrast != 0 || o.highlights != 0 || o.shadows != 0 || o.saturation != 0;
     const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
-    const auto curve = useToneV2 ? hdrCurve(o.tone) : ToneCurve();
+    const bool allowFreeEndpoints = o.processingVersion >= kHdrProcessingV2GradingCurveVersion;
+    const auto curve = useToneV2 ? hdrCurve(o.tone, allowFreeEndpoints) : ToneCurve();
+    const auto parametric = allowFreeEndpoints ? ToneCurveParametric(o.tone.parametric) : ToneCurveParametric();
     std::array<ToneCurve, 3> channels;
     if (o.processingVersion >= kHdrProcessingChannelCurvesVersion)
-        for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i]);
+        for (size_t i = 0; i < channels.size(); ++i) channels[i] = ToneCurve(o.tone.channels[i], allowFreeEndpoints);
     const bool channelsActive = std::any_of(channels.begin(), channels.end(), [](const auto& value) { return value.active(); });
-    const bool advancedToneActive = useToneV2 && (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active());
+    const bool advancedToneActive = useToneV2 &&
+        (o.tone.blackPoint != 0 || o.tone.whitePoint != 0 || curve.active() || parametric.active());
     const bool useColor = o.processingVersion >= kHdrProcessingColorVersion;
     const bool vibranceActive = useColor && o.color.vibrance != 0;
     const bool hslActive = useColor && o.color.hsl.active();
     const bool gradingActive = useColor && o.color.grading.active();
-    const auto grading = gradingActive ? colorGradingCoefficients(o.color.grading) : std::array<RGB, 3>{};
+    const auto grading = gradingActive ? colorGradingParameters(o.color.grading) : ColorGradingShaderParams{};
     const bool lookActive = o.processingVersion >= kHdrProcessingLookVersion && o.look && o.lookStrength != 0;
     const bool useRendition = o.processingVersion >= kHdrProcessingRenditionVersion;
     const auto& rendition = o.rendition;
@@ -237,11 +269,11 @@ bool edit(ImageData& image, const HDRRenderOptions& o, bool hdr, float* contentM
             auto& p = image.pixels[i];
             if (colorActive) p = {p.r * gain.r * exposure, p.g * gain.g * exposure, p.b * gain.b * exposure};
             if (toneActive) p = hdr ? toneHDR(p, o) : toneSDR(p, o);
-            if (advancedToneActive) p = editToneV2(p, o.tone, curve);
+            if (advancedToneActive) p = editToneV2(p, o.tone, curve, parametric);
             if (channelsActive) p = {editChannelCurve(p.r, channels[0]), editChannelCurve(p.g, channels[1]), editChannelCurve(p.b, channels[2])};
             if (vibranceActive) p = hdrVibrance(p, o.color.vibrance);
             if (hslActive) p = hdrHsl(p, o.color.hsl);
-            if (gradingActive) p = hdrGrade(p, grading);
+            if (gradingActive) p = hdrGrade(p, o.color.grading, grading);
             if (lookActive) p = o.look->apply(p, o.lookStrength);
             if (limitHDR) p = limitHDRLuminance(p, knee, peak - knee);
             if (adjustBase) p = toneSDR({p.r * baseExposure, p.g * baseExposure, p.b * baseExposure}, baseTone);
@@ -309,6 +341,22 @@ void finishDetail(ImageData& image, const HDRRenderOptions& options, bool hdr) {
     image = std::move(output);
 }
 
+void finishOutputSharpening(ImageData& image, const HDRRenderOptions& options, bool hdr) {
+    if (options.outputSharpening == OutputSharpening::Off || image.width <= 1 || image.height <= 1 || image.pixels.empty())
+        return;
+    const double peak = hdr && options.rendition.peakLimitEV > 0 ? std::exp2(double(options.rendition.peakLimitEV)) : 0;
+    ImageData output(image.width, image.height);
+    for (int first = 0; first < image.height; first += hdrDetailBandHeight) {
+        const int end = std::min(first + hdrDetailBandHeight, image.height);
+        const int top = std::max(0, first - 1);
+        const int bottom = std::min(image.height, end + 1);
+        renderHDROutputSharpeningBand(options.outputSharpening, image.width, image.height, peak,
+            image.pixels.data() + size_t(top) * image.width, top, bottom - top,
+            output.pixels.data() + size_t(first) * image.width, first, end - first);
+    }
+    image = std::move(output);
+}
+
 void validateRenderInput(const HDRImagePair& source, const HDRRenderOptions& o) {
     validateImage(source.hdr); validateImage(source.sdr);
     validateHDRRenderOptions(o);
@@ -329,6 +377,7 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     // 省掉循环后对双平面的独立全图扫描；任一尾段活跃则回退原逐像素扫描，语义逐位不变。
     const uint32_t canvasEdge = uint32_t(std::max(result.hdr.width, result.hdr.height));
     const bool inertLater = !o.geometry.active() && !o.hasDetail() && !o.hasPhotoEffects() &&
+        o.outputSharpening == OutputSharpening::Off &&
         (o.longEdge == 0 || o.longEdge >= canvasEdge);
     float hdrContentMax = 0, sdrContentMax = 0;
     reportHdrProgress(50, 1000);
@@ -343,6 +392,8 @@ HDRImagePair renderHDRPairOwned(HDRImagePair source, const HDRRenderOptions& o) 
     reportHdrProgress(850, 1000);
     finishEffects(result.hdr, o, true);
     finishEffects(result.sdr, o, false);
+    finishOutputSharpening(result.hdr, o, true);
+    finishOutputSharpening(result.sdr, o, false);
     reportHdrProgress(950, 1000);
     result.renderQuality = o.intent;
     result.isProxy = result.isProxy || o.intent == HDRQuality::Preview;
@@ -736,7 +787,8 @@ RGB hdrRelativeWhiteBalance(float temperature, float tint) {
 
 void validateHDRRenderOptions(const HDRRenderOptions& o) {
     const bool useToneV2 = o.processingVersion >= kHdrProcessingToneVersion;
-    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingChannelCurvesVersion ||
+    const bool allowFreeEndpoints = o.processingVersion >= kHdrProcessingV2GradingCurveVersion;
+    if (o.processingVersion < kHdrProcessingVersion || o.processingVersion > kHdrProcessingV2GradingCurveVersion ||
         !inRange(o.exposureEV, -4, 4) || !inRange(o.temperature, 2000, 50000) ||
         !inRange(o.tint, -150, 150) || !inRange(o.contrast, -100, 100) || !inRange(o.highlights, -100, 100) ||
         !inRange(o.shadows, -100, 100) || !inRange(o.saturation, -100, 100) ||
@@ -744,11 +796,16 @@ void validateHDRRenderOptions(const HDRRenderOptions& o) {
         (o.intent != HDRQuality::Preview && o.intent != HDRQuality::Final))
         throw std::invalid_argument("Invalid HDR render settings");
     if (useToneV2 && (!inRange(o.tone.blackPoint, -100, 100) || !inRange(o.tone.whitePoint, -100, 100) ||
-        !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve)))
+        !inRange(o.tone.curveStrength, -100, 100) || !validToneCurve(o.tone.curve, allowFreeEndpoints)))
         throw std::invalid_argument("Invalid HDR tone settings");
     if (o.processingVersion >= kHdrProcessingChannelCurvesVersion &&
-        !std::all_of(o.tone.channels.begin(), o.tone.channels.end(), validToneCurve))
+        !std::all_of(o.tone.channels.begin(), o.tone.channels.end(),
+            [allowFreeEndpoints](const auto& c) { return validToneCurve(c, allowFreeEndpoints); }))
         throw std::invalid_argument("Invalid HDR channel curves");
+    if (o.processingVersion >= kHdrProcessingV2GradingCurveVersion &&
+        (!o.tone.parametric.valid() ||
+         o.outputSharpening < OutputSharpening::Off || o.outputSharpening > OutputSharpening::High))
+        throw std::invalid_argument("Invalid HDR v9 tone parametric or output sharpening settings");
     if (o.processingVersion >= kHdrProcessingColorVersion &&
         (!inRange(o.color.vibrance, -100, 100) || !o.color.hsl.valid() || !o.color.grading.valid()))
         throw std::invalid_argument("Invalid HDR color settings");

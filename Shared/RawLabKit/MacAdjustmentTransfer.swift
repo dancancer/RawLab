@@ -199,11 +199,29 @@ public enum MacAdjustmentTransfer {
         let refinements = try AdjustmentTransferRefinement.applying(payload,
             original: AdjustmentTransferRefinement.values(curve: target.settings.curveSettings, grading: target.settings.gradingSettings),
             previousScale: target.settings.refinementScale, targetScale: result.settings.refinementScale, fullRecipe: fullRecipe)
-        result.settings.curveSettings = refinements[.curve]!.curve!
+        if let updatedCurve = refinements[.curve]?.curve {
+            result.settings.curveSettings.master = updatedCurve.master
+            result.settings.curveSettings.channels = updatedCurve.channels
+        }
+        if let applyToLuminosity = payload[.curveApplyToLuminosity]?.boolean {
+            result.settings.curveSettings.applyToLuminosity = applyToLuminosity
+        }
+        if let parametric = refinements[.curveParametric]?.parametricCurve {
+            result.settings.curveSettings.parametric = parametric
+        }
         for field in Field.refinementObjects {
-            if let zone = field.gradingZone, let wheel = refinements[field]?.object {
-                result.settings.gradingSettings[zone] = ColorGradingWheel(hue: wheel["hue"]!.number!, saturation: wheel["saturation"]!.number!)
+            if let zone = field.gradingZone, let wheel = refinements[field]?.gradingWheel {
+                result.settings.gradingSettings[zone] = wheel
             }
+        }
+        if let global = payload[.gradingGlobal]?.gradingWheel {
+            result.settings.gradingSettings.global = global
+        }
+        if let blending = payload[.gradingBlending]?.number {
+            result.settings.gradingSettings.blending = blending
+        }
+        if let balance = payload[.gradingBalance]?.number {
+            result.settings.gradingSettings.balance = balance
         }
         do { try result.settings.validateResetValues() }
         catch { throw AdjustmentTransferError.unrepresentable("native range") }
@@ -330,6 +348,8 @@ public enum MacAdjustmentTransfer {
         let settings = snapshot.settings
         var result = [String: Value]()
         result[Field.curve.rawValue] = settings.curveSettings.transferValue
+        result[Field.curveApplyToLuminosity.rawValue] = .boolean(settings.curveSettings.applyToLuminosity)
+        result[Field.curveParametric.rawValue] = settings.curveSettings.parametric.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(logical(settings[keyPath: key], field: field)) }
         let look: [String: Value]
         if let recipe = settings.masterRecipeID { look = ["kind": .string("recipe"), "id": .string(recipe)] }
@@ -341,9 +361,10 @@ public enum MacAdjustmentTransfer {
         result[Field.exposureMode.rawValue] = .string(!isRaw ? "sensor" : settings.exposureMode == .scene ? "scene" : settings.exposureMode == .preview ? "preview" : "sensor")
         let camera = !isRaw || settings.usesAsShotWhiteBalance
         let recipe = settings.masterRecipe != nil
-        result[Field.whiteBalanceMode.rawValue] = .string(!isRaw ? "none" : camera ? "camera" : "temperature")
-        result[Field.temperature.rawValue] = !isRaw || camera ? .null : .number(settings.temperature)
-        result[Field.tint.rawValue] = recipe ? .number(settings.tint) : !isRaw || camera ? .null : .number(settings.tint)
+        let rasterRelative = !isRaw && !recipe && (settings.temperature != 6500 || settings.tint != 0)
+        result[Field.whiteBalanceMode.rawValue] = .string(!isRaw ? (rasterRelative ? "relative" : "none") : camera ? "camera" : "temperature")
+        result[Field.temperature.rawValue] = rasterRelative ? .number(settings.temperature) : (!isRaw || camera ? .null : .number(settings.temperature))
+        result[Field.tint.rawValue] = recipe ? .number(settings.tint) : rasterRelative ? .number(settings.tint) : (!isRaw || camera ? .null : .number(settings.tint))
         for field in Field.allCases {
             if let location = field.hslLocation {
                 result[field.rawValue] = .number(settings.hslSettings.value(HSLAxis(rawValue: location.axis)!, channel: location.channel))
@@ -351,10 +372,12 @@ public enum MacAdjustmentTransfer {
         }
         for field in Field.allCases {
             if let zone = field.gradingZone {
-                let wheel = settings.gradingSettings[zone]
-                result[field.rawValue] = .object(["hue": .number(wheel.hue), "saturation": .number(wheel.saturation)])
+                result[field.rawValue] = settings.gradingSettings[zone].transferValue
             }
         }
+        result[Field.gradingGlobal.rawValue] = settings.gradingSettings.global.transferValue
+        result[Field.gradingBlending.rawValue] = .number(settings.gradingSettings.blending)
+        result[Field.gradingBalance.rawValue] = .number(settings.gradingSettings.balance)
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectSettings[keyPath: key]) }
         let wavelet = settings.waveletSettings
         let waveletValue: Value = .object([
@@ -500,6 +523,16 @@ public enum MacAdjustmentTransfer {
             && selected.allSatisfy({ payload[$0] == targetValues[$0.rawValue] }) { return }
         if selected == Field.whiteBalanceFields {
             let mode = payload[.whiteBalanceMode]!.string!
+            if !context.isRaw && !payload.source.isRaw {
+                if mode == "relative", let temp = payload[.temperature]?.number, let tint = payload[.tint]?.number {
+                    result.whiteBalanceMode = .asShot
+                    result.temperature = temp
+                    result.tint = tint
+                } else {
+                    result.resetWhiteBalance()
+                }
+                return
+            }
             let balance: [String: Value] = [
                 "mode": .string(mode == "none" && payload.source.recipe != nil ? "camera" : mode),
                 "temperature": payload[.temperature]!, "tint": .number(payload[.tint]?.number ?? 0),
@@ -511,7 +544,20 @@ public enum MacAdjustmentTransfer {
             else if context.isRaw { try applyResolvedWB(desired, to: &result) }
             return
         }
-        guard context.isRaw else { return }
+        if !context.isRaw {
+            guard !payload.source.isRaw else { return }
+            let selectedMode = payload[.whiteBalanceMode]?.string
+            if selectedMode == "none" {
+                if payload[.temperature]?.number != nil || payload[.tint]?.number != nil {
+                    throw AdjustmentTransferError.incompatible("select white balance mode with temperature/tint")
+                }
+                result.resetWhiteBalance()
+                return
+            }
+            if let temp = payload[.temperature]?.number { result.whiteBalanceMode = .asShot; result.temperature = temp }
+            if let tint = payload[.tint]?.number { result.whiteBalanceMode = .asShot; result.tint = tint }
+            return
+        }
         try applyPartialWhiteBalance(payload, target: target, to: &result, contextChanged: contextChanged)
     }
 

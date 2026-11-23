@@ -5,6 +5,7 @@
 #include "sony2fuji/dcp_look.h"
 #include "sony2fuji/lut_parser.h"
 #include "core/pixel_buffer.h"
+#include "core/photo_basic_controls_v3.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
 #include "core/photo_effects.h"
@@ -29,7 +30,15 @@ enum class RenderWhiteBalanceMode : int32_t {
     Camera = 0,
     Auto = 1,
     Custom = 2,
-    Temperature = 3
+    Temperature = 3,
+    Relative = 4
+};
+
+enum class OutputSharpening : int32_t {
+    Off = 0,
+    Low = 1,
+    Standard = 2,
+    High = 3
 };
 
 enum class RenderOutputTarget : int32_t {
@@ -96,6 +105,16 @@ struct RenderParams {
     ToneControlsOptions toneControls{};
     ColorGradingOptions colorGrading{};
     ToneCurve customCurve{};
+    std::array<ToneCurve, 3> channelCurves{};
+    bool curveApplyToLuminosity = false;
+    ToneCurveParametricConfig parametricCurve{};
+    float aiDenoiseBlend = 1.0f;
+    OutputSharpening outputSharpening = OutputSharpening::Off;
+    bool basicV3 = false;
+    BasicToneV3 basicTone{};
+    std::shared_ptr<const BasicToneV3Field> basicToneField;
+    bool hasCustomToSrgb = false;
+    ColorConverter::Matrix3x3 customToSrgb{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
 
     RenderOutputTarget outputTarget = RenderOutputTarget::Buffer;
     RenderOutputFormat outputFormat = RenderOutputFormat::RGB8;
@@ -115,12 +134,32 @@ struct RenderParams {
                contrast != 1.0f || saturation != 1.0f ||
                temperature != 6500.0f || tint != 0.0f ||
                wbMode == RenderWhiteBalanceMode::Custom ||
+               wbMode == RenderWhiteBalanceMode::Relative ||
                relativeWB.r != 1.0f || relativeWB.g != 1.0f || relativeWB.b != 1.0f ||
                highlights != 0.0f || shadows != 0.0f ||
-               toneCurve != 0.0f || customCurve.active();
+               toneCurve != 0.0f || customCurve.active() ||
+               parametricCurve.active() ||
+               channelCurves[0].active() || channelCurves[1].active() || channelCurves[2].active();
     }
 
     bool validForGpu() const noexcept {
+        if (basicTone.active()) {
+            if (!std::isfinite(basicTone.highlights) || !std::isfinite(basicTone.shadows) ||
+                !basicToneField || basicToneField->empty()) {
+                return false;
+            }
+            const size_t fieldCount = static_cast<size_t>(basicToneField->width) * basicToneField->height;
+            if (basicToneField->slope.size() != fieldCount || basicToneField->intercept.size() != fieldCount) {
+                return false;
+            }
+        }
+        if (hasCustomToSrgb) {
+            for (const auto& row : customToSrgb) {
+                for (float v : row) {
+                    if (!std::isfinite(v)) return false;
+                }
+            }
+        }
         return std::isfinite(exposureEV) && std::isfinite(brightness) &&
                std::isfinite(contrast) && std::isfinite(saturation) &&
                std::isfinite(temperature) && std::isfinite(tint) &&
@@ -130,6 +169,10 @@ struct RenderParams {
                std::isfinite(relativeWB.r) && std::isfinite(relativeWB.g) && std::isfinite(relativeWB.b) &&
                effects.valid() && hsl.valid() && toneControls.valid() && colorGrading.valid() &&
                customCurve.gpuSupported() && !(customCurve.custom() && toneCurve != 0.0f) &&
+               channelCurves[0].gpuSupported() && channelCurves[1].gpuSupported() && channelCurves[2].gpuSupported() &&
+               parametricCurve.valid() &&
+               std::isfinite(aiDenoiseBlend) && aiDenoiseBlend >= 0.0f && aiDenoiseBlend <= 1.0f &&
+               outputSharpening >= OutputSharpening::Off && outputSharpening <= OutputSharpening::High &&
                chromaDenoise >= 0 && chromaDenoise <= 2;
     }
 };

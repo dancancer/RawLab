@@ -32,8 +32,10 @@ public partial class MainWindow
             CancelViewingInput();
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ClearTransferNoticesOnSourceChange();
-            ResetAITask();CancelProcessingMigration();RestoreEdits(path); hdrSource = openedHDR;
+            ClearExternalReloadOnSourceChange();
+            ResetAITask();CancelProcessingMigration();CancelWbProbe();CancelCurveTarget();CancelHslTarget();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
+            inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
             previewResize.Stop();previewLongEdge=requestedPreviewLongEdge=2000;previewDeferred=false;
             file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;
@@ -138,7 +140,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
-        CancelHslTarget();
+        CancelHslTarget();CancelCurveTarget();CancelWbProbe();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}
@@ -180,7 +182,7 @@ public partial class MainWindow
         var referenceKey = source == null ? null : new NeutralReferenceKey(source,PhotoInput.IsRaster(file),previewSettings.Processing,previewSettings.Geometry,previewSettings.Lens,RenderEdge(proxy),previewSettings.IsHDREditing,previewSettings.X3fMode,NeutralReference.HDRCameraSettings(previewSettings.IsHDREditing ? previewSettings.HDR : null));
         if(referenceKey == null ? acceptedReference != null : acceptedReference!=referenceKey){neutralResult=null;acceptedReference=null;RefreshViewingFrames();}
         var quiet=viewportOnly && exactReady && !scheduler.Busy && !proxy && !transform.Active;
-        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
+        scheduler.Submit(new(file,previewSettings,lut,RenderEdge(proxy),proxy,RequestedGpuMode,view.NeedsReference || inspection.NeedsReference,initialPreview,transformGeneration,openRevision,source,settings.ActiveAIDenoise ? aiJob.Identity : null,SourceGeneration:sourceGeneration,LookGeneration:lookGeneration));
         quietViewportRevision=quiet ? scheduler.Revision : -1;
         exactReady=false;
         if(!quiet)SetStatus(() => interacting ? Loc.Text("正在生成交互预览…") : Loc.Text("正在显影…"));
@@ -190,7 +192,7 @@ public partial class MainWindow
     private async void Pump()
     {
         var ticket=scheduler.Start(); if(ticket==null)return;
-        RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null;Exception? failure=null;
+        RenderedImage? neutral=null,rendered=null; HslTargetSample? hslSample=null; RenderEngine.WbProbeSample? wbSample=null; Exception? failure=null;
         string? thumbnailResources=null;var thumbnailAIBackend=RequestedAIBackend;var thumbnailAIDevice=aiPreference.DeviceID;
         OriginalIdentity? beforeRenderSource = null, afterRenderSource = null;
         var workerLookAvailable = true;
@@ -211,6 +213,11 @@ public partial class MainWindow
                 if(w.Probe is {} probe) {
                     engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
+                    return ((RenderedImage?)null,(RenderedImage?)null);
+                }
+                if(w.WbProbe is {} wbProbe) {
+                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    wbSample=engine.SampleWhiteBalance(w.File,w.Settings,w.Lut,w.Edge,wbProbe.Point.X,wbProbe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
                 beforeRenderSource = ViewSourceState.TryReadIdentity(w.File);
@@ -238,7 +245,15 @@ public partial class MainWindow
         if(closing) { FinishClose(); return; }
         var work=ticket.Value;
         if(work.Probe is {} probeWork) {
-            AcceptHslTarget(work,hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed),current);
+            var sample=hslSample ?? HslTargetSample.Unavailable(probeWork.Revision,HslTargetAvailability.Failed);
+            if(curveTarget.Matches(probeWork.Token)) AcceptCurveTarget(work,sample,current);
+            else AcceptHslTarget(work,sample,current);
+            if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
+                HandleAIFailure(failure);
+            UpdateBusy();Pump();QueuePendingReset();return;
+        }
+        if(work.WbProbe is not null) {
+            AcceptWbProbe(work,wbSample,current);
             if(current && failure!=null && work.OpenRevision==openRevision && work.File==file && work.AIIdentity==aiJob.Identity)
                 HandleAIFailure(failure);
             UpdateBusy();Pump();QueuePendingReset();return;
@@ -265,7 +280,7 @@ public partial class MainWindow
                 work.Settings.Geometry == PreviewGeometry &&
                 work.Settings.Lens == PreviewLens &&
                 work.TransformGeneration == transformGeneration &&
-                (!view.NeedsReference || work.Compare) &&
+                (!(view.NeedsReference || inspection.NeedsReference) || work.Compare) &&
                 (current || (work.Interactive && interacting && work.Edge == RenderEdge(true)));
             var aiRunning = settings.ActiveAIDenoise && aiJob.State.IsRunning;
             var disposition = PreviewFallback.ResolveMainPreviewDisposition(
@@ -311,6 +326,9 @@ public partial class MainWindow
                         syncing=true;
                         try { viewport.SetSourceSize(rendered.NativeWidth,rendered.NativeHeight); }
                         finally { syncing=false; }
+                        if (work.Settings.Geometry.IsIdentity)
+                            sourceNativeSize = (rendered.NativeWidth > 0 ? rendered.NativeWidth : rendered.Image.PixelWidth,
+                                                rendered.NativeHeight > 0 ? rendered.NativeHeight : rendered.Image.PixelHeight);
                         renderedGpuMode=work.GpuMode;
                         if(work.Compare) {
                             neutralResult=neutral;neutralRevision=openRevision;acceptedReference=new(frameSource,PhotoInput.IsRaster(work.File),work.Settings.Processing,work.Settings.Geometry,work.Settings.Lens,work.Edge,work.Settings.IsHDREditing,work.Settings.X3fMode,NeutralReference.HDRCameraSettings(work.Settings.IsHDREditing ? work.Settings.HDR : null));

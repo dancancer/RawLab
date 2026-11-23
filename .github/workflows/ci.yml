@@ -260,6 +260,7 @@ jobs:
           cli="$PWD/lutools/build-macos/sony2fuji"
           if in_suite agent; then
             ci_timed agent-recipe-render bash RawLabMac/tests/agent-recipe-render.sh "$raw" "$cli"
+            ci_timed agent-transfer-hot-reload bash RawLabMac/tests/agent-transfer-hot-reload.sh
           fi
           if in_suite render; then
             ci_timed raster-render bash RawLabMac/tests/raster-render.sh "$raw" "$cli"

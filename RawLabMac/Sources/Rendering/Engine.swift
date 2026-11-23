@@ -278,6 +278,7 @@ final class RenderEngine {
         case .invalidWaveletDenoise: return L10n.text("无效或不可用的降噪参数")
         case .invalidChromaDenoise: return L10n.text("无效或不可用的色度降噪模式")
         case .invalidRawNoiseReduction: return L10n.text("无效的 RAW 降噪档位")
+        case .invalidWhiteBalance: return L10n.text("无效的白平衡参数")
         }
     }
 
@@ -288,10 +289,12 @@ final class RenderEngine {
         }
     }
 
-    private func applyParams(_ settings: Adjustments, isRaster: Bool, includeDenoise: Bool) throws {
+    private func applyParams(_ settings: Adjustments, isRaster: Bool, includeDenoise: Bool,
+                             outputSharpening: OutputSharpening = .off) throws {
         let json: String
         do {
-            json = try settings.canonicalParamsJSON(isRaster: isRaster, includeDenoise: includeDenoise)
+            json = try settings.canonicalParamsJSON(isRaster: isRaster, includeDenoise: includeDenoise,
+                                                    outputSharpening: outputSharpening)
         } catch let error as CanonicalEditRecipeError {
             throw RenderError.failed(validationMessage(for: error))
         }
@@ -321,7 +324,7 @@ final class RenderEngine {
             settings.hdr?.cameraDevelopmentSettings.fbddLevel == 0 && settings.hdr?.cameraDevelopmentSettings.cameraProfile == nil
     }
 
-    private func configureAI(enabled: Bool) throws {
+    private func configureAI(enabled: Bool, strength: Double = 100) throws {
         if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
             throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
         }
@@ -337,6 +340,9 @@ final class RenderEngine {
             }
         }
         guard status == SONY2FUJI_STATUS_OK else { throw aiError(status) }
+        let clampedBlend = Float(min(100, max(0, strength)) / 100.0)
+        let blendStatus = sony2fuji_session_set_ai_denoise_blend(session, enabled ? clampedBlend : 1.0)
+        guard blendStatus == SONY2FUJI_STATUS_OK else { throw aiError(blendStatus) }
     }
 
     private func aiError(_ status: sony2fuji_status) -> RenderError {
@@ -431,7 +437,7 @@ final class RenderEngine {
         let resolved = try resolvedRenderSettings(url, settings: settings)
         let settings = resolved.settings
         try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: false)
-        try configureAI(enabled: settings.aiDenoiseEnabled)
+        try configureAI(enabled: settings.aiDenoiseEnabled, strength: settings.aiDenoiseStrength)
         var request = sony2fuji_request()
         request.version = SONY2FUJI_REQUEST_VERSION
         request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
@@ -508,7 +514,8 @@ final class RenderEngine {
 
     private func photoRequest(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL?,
                               interactive: Bool, exportLongEdge: Int?, viewportPreview: Bool,
-                              referenceLongEdge: Int? = nil) throws -> (Adjustments, sony2fuji_request) {
+                              referenceLongEdge: Int? = nil,
+                              outputSharpening: OutputSharpening = .off) throws -> (Adjustments, sony2fuji_request) {
         if let exportLongEdge, !(1...65535).contains(exportLongEdge) {
             throw RenderError.failed(L10n.text("导出长边必须为 1-65535 像素。"))
         }
@@ -520,8 +527,11 @@ final class RenderEngine {
         if settings.aiDenoiseEnabled && Self.isNormalX3f(url, settings: settings) {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
-        try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: true)
-        try configureAI(enabled: settings.aiDenoiseEnabled)
+        let effectiveSharpening: OutputSharpening = (output != nil && ExportFormat.forOutput(output!) != .renderedDNG)
+            ? outputSharpening : .off
+        try applyParams(settings, isRaster: Self.isRasterInput(url), includeDenoise: true,
+                        outputSharpening: effectiveSharpening)
+        try configureAI(enabled: settings.aiDenoiseEnabled, strength: settings.aiDenoiseStrength)
         let allowsProxy = settings.geometrySettings.isIdentity
         guard sony2fuji_session_set_interactive_preview(session, interactive && allowsProxy && output == nil ? 1 : 0) == SONY2FUJI_STATUS_OK else {
             throw RenderError.failed(L10n.text("无效的预览模式"))
@@ -607,6 +617,47 @@ final class RenderEngine {
         return sample
     }
 
+    struct WBProbeSample {
+        let availability: sony2fuji_wb_probe_availability
+        let temperature: Double
+        let tint: Double
+        let validPixelCount: Int
+    }
+
+    func sampleWBProbe(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, interactive: Bool,
+                       point: CGPoint) throws -> WBProbeSample {
+        let (_, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: nil,
+            interactive: interactive, exportLongEdge: nil, viewportPreview: edge != nil)
+        var request = prepared
+        var query = sony2fuji_wb_probe_query()
+        query.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+        query.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_query>.size)
+        query.norm_x = Float(point.x)
+        query.norm_y = Float(point.y)
+        query.window_size = 3
+        query.reserved = 0
+        var result = sony2fuji_wb_probe_result()
+        result.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+        result.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_result>.size)
+        let status = try withInput(url, request: &request) { input in
+            (lut?.path ?? "").withCString { path in
+                input.lut_path = lut == nil ? nil : path
+                guard let session else { return SONY2FUJI_STATUS_INVALID_ARGUMENT }
+                return sony2fuji_session_sample_wb_probe(session, &input, &query, &result)
+            }
+        }
+        if status == SONY2FUJI_STATUS_AI_NOT_READY { throw aiError(status) }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw RenderError.processing(status, input: url, look: lut, output: nil, session: session)
+        }
+        return WBProbeSample(
+            availability: result.availability,
+            temperature: Double(result.temperature),
+            tint: Double(result.tint),
+            validPixelCount: Int(result.valid_pixel_count)
+        )
+    }
+
     func migrateProcessing(_ url: URL, settings: Adjustments, lut: URL?,
                            cancellation: ProcessingMigrationCancellation) throws -> ProcessingMigrationOutcome {
         guard !settings.isHDREditing, !settings.activeAIDenoise, settings.masterRecipeID == nil else {
@@ -640,16 +691,18 @@ final class RenderEngine {
 
     /// `referenceLongEdge` 仅用于 `edge == nil` 的中性基准帧：FINAL 质量路径加
     /// 「只降不放大」的长边封顶（Q8）；`edge != nil` 的按需预览不受影响。
-    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, stageOutput: Bool = true, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, referenceLongEdge: Int? = nil, exportFormat: ExportFormat? = nil) throws -> RenderedImage? {
+    func render(_ url: URL, settings: Adjustments, lut: URL?, edge: Int?, output: URL? = nil, stageOutput: Bool = true, interactive: Bool = false, exportLongEdge: Int? = nil, viewportPreview: Bool = false, referenceLongEdge: Int? = nil, exportFormat: ExportFormat? = nil, outputSharpening: OutputSharpening = .off) throws -> RenderedImage? {
         if settings.isHDREditing {
-            return try renderHDR(url,settings:settings,edge:edge,output:output,longEdge:exportLongEdge,format:exportFormat)
+            return try renderHDR(url, settings: settings, edge: edge, output: output, longEdge: exportLongEdge,
+                                 format: exportFormat, outputSharpening: outputSharpening)
         }
         if let exportFormat, exportFormat.requiresHDR {
             throw RenderError.failed(exportFormat.hdrRequiredMessage)
         }
+        let effectiveSharpening: OutputSharpening = (output != nil && exportFormat != .renderedDNG) ? outputSharpening : .off
         let (settings, prepared) = try photoRequest(url, settings: settings, lut: lut, edge: edge, output: output,
             interactive: interactive, exportLongEdge: exportLongEdge, viewportPreview: viewportPreview,
-            referenceLongEdge: referenceLongEdge)
+            referenceLongEdge: referenceLongEdge, outputSharpening: effectiveSharpening)
         var request = prepared
         var buffer = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&buffer) }
@@ -747,7 +800,7 @@ final class RenderEngine {
             nativeWidth: Int(nativeWidth), nativeHeight: Int(nativeHeight))
     }
 
-    private func renderHDR(_ url: URL,settings: Adjustments,edge: Int?,output: URL?,longEdge: Int?,format: ExportFormat?) throws -> RenderedImage? {
+    private func renderHDR(_ url: URL,settings: Adjustments,edge: Int?,output: URL?,longEdge: Int?,format: ExportFormat?,outputSharpening: OutputSharpening = .off) throws -> RenderedImage? {
         guard gpuMode != SONY2FUJI_GPU_FORCE else {
             throw HDRNativeError(status:SONY2FUJI_STATUS_UNSUPPORTED,reason:UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU),field:UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
@@ -761,13 +814,15 @@ final class RenderEngine {
         let final = previewEdge == nil
         if final && info.isDevelopedRAW { hdrSources.clear() }
         let selected = output.map { format ?? (ExportFormat.forOutput($0) == .jpeg ? .hdrJPEG : ExportFormat.forOutput($0)) }
+        let effectiveSharpening: OutputSharpening = (output != nil && selected != .renderedDNG) ? outputSharpening : .off
         if selected == .hdrHEIF && !HDRImage.heifExportAvailable {
             throw RenderError.failed(L10n.text("不支持此 HDR 格式或颜色描述。"))
         }
         if info.proRAW != nil, !settings.hdrCameraAIEnabled, let output, let selected {
             if selected == .hdrJPEG || selected == .jpeg {
                 try ProRAWExporter.export(url: url, info: info, settings: record, output: output,
-                    longEdge: longEdge, keepHDR: selected == .hdrJPEG, session: session)
+                    longEdge: longEdge, outputSharpening: effectiveSharpening,
+                    keepHDR: selected == .hdrJPEG, session: session)
                 return nil
             }
         }
@@ -780,11 +835,13 @@ final class RenderEngine {
                 camera: record.cameraDevelopmentSettings, lensDatabase: lensDatabaseURL, cameraAIKey: key)
         }
         let rendered: HDRImage
-        if record==HDRSettings() && longEdge==nil {
+        if record==HDRSettings() && longEdge==nil && effectiveSharpening == .off {
             rendered=source
         } else {
             rendered=try source.rendered(session:session,settings:record,
-                intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,longEdge:final ? longEdge : previewEdge)
+                intent:final ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,
+                longEdge:final ? longEdge : previewEdge,
+                outputSharpening: effectiveSharpening)
         }
         if let output, let selected {
             switch selected {

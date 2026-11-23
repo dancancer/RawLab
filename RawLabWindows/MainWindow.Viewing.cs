@@ -113,7 +113,7 @@ public partial class MainWindow
     private void BeginHoldingBefore()=>BeginHoldingBeforeCore(false);
     private void BeginHoldingBeforeCore(bool semanticAction)
     {
-        if(hslTargetEnabled || file==null || exporting || closing || !semanticAction && ViewInputBlocked || !view.BeginHold(transform.Active))return;
+        if(hslTargetEnabled || curveTargetEnabled || file==null || exporting || closing || !semanticAction && ViewInputBlocked || !view.BeginHold(transform.Active))return;
         RefreshViewingFrames();RefreshComparisonSelection();
         if(!ReferenceCurrent)Schedule();
     }
@@ -143,16 +143,23 @@ public partial class MainWindow
         // 占位图只属于当前打开过程，不能充当显影结果或对比参考；主预览失败且无已成片时可作为降级画面保留。
         if(PreviewFallback.ShouldClearOpeningPreview(result!=null,file!=null,closing))openingPreview=null;
         var reference=ReferenceCurrent ? neutralResult : null;
-        NeutralCanvas.SetImage(HDRPresentationBitmap(reference) ?? (PreviewFallback.ShouldShowOpeningPlaceholderOnNeutral(renderFailed) ? openingPreview : null),reference?.Clipping);
+        var needReferenceOverlay = compare || view.HoldingBefore;
+        var rawNeutral = HDRPresentationBitmap(reference) ?? (PreviewFallback.ShouldShowOpeningPlaceholderOnNeutral(renderFailed) ? openingPreview : null);
+        var neutralDisplay = needReferenceOverlay ? EnsureInspectionOverlayBitmap(rawNeutral) : rawNeutral;
+        NeutralCanvas.SetImage(neutralDisplay, reference?.Clipping);
         if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
-        ResultCanvas.SetImage(HDRPresentationBitmap(result) ?? openingPreview,clippingOverlay?.Mask);
-        ResultCanvas.SetComparison(HDRPresentationBitmap(reference),reference?.Clipping);
+        var resultDisplay = EnsureInspectionOverlayBitmap(HDRPresentationBitmap(result) ?? openingPreview);
+        ResultCanvas.SetImage(resultDisplay, clippingOverlay?.Mask);
+        var rawComparison = HDRPresentationBitmap(reference);
+        var comparisonDisplay = needReferenceOverlay ? EnsureInspectionOverlayBitmap(rawComparison) : rawComparison;
+        ResultCanvas.SetComparison(comparisonDisplay, reference?.Clipping);
         ResultCanvas.ShowingBefore=view.HoldingBefore && reference!=null;
         var shown=view.HoldingBefore ? reference : result;
         Histogram.Bins=shown?.Histogram is { Length:768 } bins ? bins : null;Histogram.InvalidateVisual();
         HistogramSource.Text=Loc.Text(view.HoldingBefore ? "调整前" : "调整后");
         ClipStats.Text=shown?.Histogram.Length==768 ? Loc.Format("暗部 {0:P1}   高光 {1:P1} · 显示图统计",shown.Shadows,shown.Highlights) : Loc.Text("统计不可用");
         RefreshPhotoLabels();
+        RefreshInspection();
         RefreshHDRPresentation();
         RefreshClippingMask();
     }

@@ -138,7 +138,67 @@ static void referenceVectors() {
     std::cout<<"Binary64 reference max="<<maximum<<'\n';
 }
 
+static void v2LuminanceGlobalBlendingBalance() {
+    using sony2fuji::ColorGradingWheel;
+    // 1. Zero-value bypass: non-zero hues + non-default blending/balance, all sat=0 & lum=0 -> bit-exact identity
+    ColorGradingOptions zeroBypass;
+    zeroBypass.wheels={ColorGradingWheel{223,0,0},ColorGradingWheel{111,0,0},ColorGradingWheel{35,0,0}};
+    zeroBypass.global=ColorGradingWheel{180,0,0};
+    zeroBypass.blending=88;
+    zeroBypass.balance=-73;
+    for (const auto p : {RGB(0,0,0),RGB(.15f,.25f,.4f),RGB(.9f,.6f,.2f),RGB(1,1,1)}) {
+        require(exact(applyColorGrading(p,zeroBypass),p),"v2 zero bypass must leave pixels bit-identical");
+    }
+
+    // 2. Neutral v2 fields preserve v1 output bit-exact
+    const auto v1=split();
+    for (const auto p : {RGB(.12f,.22f,.38f),RGB(.45f,.5f,.55f),RGB(.85f,.75f,.6f)}) {
+        auto v2Neutral=v1;
+        v2Neutral.global={120,0,0};
+        v2Neutral.blending=50;
+        v2Neutral.balance=0;
+        require(exact(applyColorGrading(p,v2Neutral),applyColorGrading(p,v1)),"default blending=50/balance=0/global=0 must match v1 bit-for-bit");
+    }
+
+    // 3. Per-zone luminance affects target zone direction monotonically while leaving untouched zero-weight zone unchanged
+    const float dark=encoded(.1),bright=encoded(.9),middle=encoded(.5);
+    ColorGradingOptions shadowBright; shadowBright.wheels[0]={0,0,70};
+    ColorGradingOptions shadowDark; shadowDark.wheels[0]={0,0,-70};
+    require(luminance(applyColorGrading(RGB(dark,dark,dark),shadowBright)) > luminance(RGB(dark,dark,dark)),"positive shadow luminance brightens darks");
+    require(luminance(applyColorGrading(RGB(dark,dark,dark),shadowDark)) < luminance(RGB(dark,dark,dark)),"negative shadow luminance darkens darks");
+    require(exact(applyColorGrading(RGB(bright,bright,bright),shadowBright),RGB(bright,bright,bright)),"shadow luminance leaves zero-weight brights untouched");
+
+    ColorGradingOptions highlightBright; highlightBright.wheels[2]={0,0,60};
+    require(luminance(applyColorGrading(RGB(bright,bright,bright),highlightBright)) > luminance(RGB(bright,bright,bright)),"positive highlight luminance brightens highlights");
+    require(exact(applyColorGrading(RGB(dark,dark,dark),highlightBright),RGB(dark,dark,dark)),"highlight luminance leaves zero-weight darks untouched");
+
+    // 4. Global wheel applies hue/saturation/luminance across shadows, midtones, and highlights smoothly
+    ColorGradingOptions globalWarm; globalWarm.global={35,55,25};
+    for (const float v : {dark,middle,bright}) {
+        const auto out=applyColorGrading(RGB(v,v,v),globalWarm);
+        require(out.r > out.b && luminance(out) > luminance(RGB(v,v,v)),"global wheel tints and shifts luminance across all regions");
+    }
+
+    // 5. Blending & Balance shift zone weights while summing to 1
+    auto previous=colorGradingWeights(0,20,0);
+    for (int i=0;i<=1000;++i) {
+        const auto wTight=colorGradingWeights(i/1000.f,10,-40);
+        const auto wWide=colorGradingWeights(i/1000.f,90,40);
+        require(std::abs(wTight[0]+wTight[1]+wTight[2]-1)<2e-6f,"v2 tight weights sum to 1");
+        require(std::abs(wWide[0]+wWide[1]+wWide[2]-1)<2e-6f,"v2 wide weights sum to 1");
+        for (int z=0;z<3;++z) require(wTight[z]>=0 && wTight[z]<=1 && wWide[z]>=0 && wWide[z]<=1,"v2 weights remain in [0,1]");
+        require(std::abs(colorGradingWeights(i/1000.f,20,0)[1]-previous[1])<.01f,"v2 weights stay continuous");
+        previous=colorGradingWeights(i/1000.f,20,0);
+    }
+    const auto wNegBal=colorGradingWeights(.5f,50,-80);
+    const auto wPosBal=colorGradingWeights(.5f,50,80);
+    require(wNegBal[0] > wPosBal[0] && wPosBal[2] > wNegBal[2],"balance shifts shadow/highlight transition point");
+    const auto wLowBlend=colorGradingWeights(.28f,0,0);
+    const auto wHighBlend=colorGradingWeights(.28f,100,0);
+    require(wHighBlend[1] > wLowBlend[1] || wHighBlend[0] != wLowBlend[0],"blending changes zone overlap width");
+}
+
 int main() {
-    try {identityAndValidity();weightsAndRegions();gamutAndContinuity();referenceVectors();std::cout<<"PASS color grading CPU contract\n";return 0;}
+    try {identityAndValidity();weightsAndRegions();gamutAndContinuity();referenceVectors();v2LuminanceGlobalBlendingBalance();std::cout<<"PASS color grading CPU contract\n";return 0;}
     catch(const std::exception& e) {std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -91,6 +91,12 @@ internal static class AdjustmentTransferWB
         if(!changed && context.IsRaw==p.Source.IsRaw && AdjustmentTransfer.Recipe(target)==p.Source.Recipe && selected.All(f=>Same(p[f],previousValues[f])))return s;
         var mode=Text(p[F.WhiteBalanceMode]);var temperature=p[F.Temperature];var tint=p[F.Tint];
         if(selected.SetEquals(AdjustmentFields.WhiteBalance)) {
+            if (!context.IsRaw && !p.Source.IsRaw) {
+                if (mode == "relative" && Number(temperature) is {} temp && Number(tint) is {} t) {
+                    return Set(s, true, temp, t);
+                }
+                return Set(s, true, 6500, 0);
+            }
             var camera=mode=="camera" || mode=="none" && p.Source.Recipe!=null;
             var desired=Resolve(camera,Number(temperature),Number(tint) ?? 0,p.Source.Recipe!=null || mode=="camera",p.Source.Recipe,p.Source.IsRaw,context.IsRaw,target);
             if(fullRecipe) {
@@ -102,7 +108,17 @@ internal static class AdjustmentTransferWB
             } else if(context.IsRaw)s=ApplyResolved(desired,s);
             return s;
         }
-        if(!context.IsRaw)return s;
+        if(!context.IsRaw) {
+            if (p.Source.IsRaw) return s;
+            if (mode == "none") {
+                if (Number(temperature) != null || Number(tint) != null)
+                    throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "select white balance mode with temperature/tint");
+                return Set(s, true, 6500, 0);
+            }
+            var nextTemp = Number(temperature) ?? s.Values[(int)Parameter.Temperature];
+            var nextTint = Number(tint) ?? s.Values[(int)Parameter.Tint];
+            return Set(s, true, nextTemp, nextTint);
+        }
         var cameraMode=mode!=null ? mode!="temperature" : target.CameraWhiteBalance;
         if(temperature!=null && (cameraMode ? !Null(temperature) : Number(temperature)==null))
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"select white balance mode with temperature");

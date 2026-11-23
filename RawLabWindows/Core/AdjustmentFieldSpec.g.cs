@@ -87,7 +87,24 @@ public static class AdjustmentFieldSpec
             public const int CustomMaxPoints = 33;
             public const double CoordMin = 0.0;
             public const double CoordMax = 1.0;
+            public const bool EndpointsYUnpinned = true;
             public static readonly IReadOnlyList<string> AllowedChannels = ["red", "green", "blue"];
+        }
+        public static class LightCurveParametric
+        {
+            public const double BandMin = -100.0;
+            public const double BandMax = 100.0;
+            public const double BandDefault = 0.0;
+            public const double SplitShadowMin = 0.05;
+            public const double SplitShadowMax = 0.45;
+            public const double SplitShadowDefault = 0.25;
+            public const double SplitMidtoneMin = 0.25;
+            public const double SplitMidtoneMax = 0.75;
+            public const double SplitMidtoneDefault = 0.5;
+            public const double SplitHighlightMin = 0.55;
+            public const double SplitHighlightMax = 0.95;
+            public const double SplitHighlightDefault = 0.75;
+            public const double SplitMinGap = 0.02;
         }
         public static class ColorGradingWheel
         {
@@ -96,6 +113,9 @@ public static class AdjustmentFieldSpec
             public const bool HueExclusiveMax = true;
             public const double SaturationMin = 0.0;
             public const double SaturationMax = 100.0;
+            public const double LuminanceMin = -100.0;
+            public const double LuminanceMax = 100.0;
+            public const double LuminanceDefault = 0.0;
         }
         public static class HDRLook
         {
@@ -177,6 +197,16 @@ public static class AdjustmentFieldSpec
             "light",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["mode", "points"], ["channels"], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition LightCurveApplyToLuminosity = new(
+            "light.curve.apply_to_luminosity",
+            "light",
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Boolean, AdjustmentWirePrecision.Boolean, false, null, null, false, false, [], [], [], [], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "bool", false, null, null, AdjustmentModelDefault.FromBoolean(false), "p", AdjustmentModelQuantization.Discrete, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition LightCurveParametric = new(
+            "light.curve.parametric",
+            "light",
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["highlights", "lights", "darks", "shadows", "split_shadow", "split_midtone", "split_highlight"], [], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition ToneBlackPoint = new(
             "tone.black_point",
             "light",
@@ -195,22 +225,37 @@ public static class AdjustmentFieldSpec
         public static readonly AdjustmentFieldDefinition ColorGradingShadows = new(
             "color.grading.shadows",
             "color",
-            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], [], false, false, false),
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], ["luminance"], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition ColorGradingMidtones = new(
             "color.grading.midtones",
             "color",
-            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], [], false, false, false),
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], ["luminance"], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition ColorGradingHighlights = new(
             "color.grading.highlights",
             "color",
-            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], [], false, false, false),
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], ["luminance"], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition ColorGradingGlobal = new(
+            "color.grading.global",
+            "color",
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Object, AdjustmentWirePrecision.Object, false, null, null, false, false, [], [], ["hue", "saturation"], ["luminance"], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "object", false, null, null, AdjustmentModelDefault.Object, "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition ColorGradingBlending = new(
+            "color.grading.blending",
+            "color",
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 100.0, false, false, [], [], [], [], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, 0.0, 100.0, AdjustmentModelDefault.FromNumber(50.0), "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition ColorGradingBalance = new(
+            "color.grading.balance",
+            "color",
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, -100.0, 100.0, false, false, [], [], [], [], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition ColorWhiteBalanceMode = new(
             "color.white_balance.mode",
             "color",
-            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.String, AdjustmentWirePrecision.EnumString, false, null, null, false, false, ["camera", "temperature", "none"], [], [], [], false, false, false),
+            new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.String, AdjustmentWirePrecision.EnumString, false, null, null, false, false, ["camera", "temperature", "relative", "none"], [], [], [], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr"], "bool", false, null, null, AdjustmentModelDefault.FromString("camera"), "p", AdjustmentModelQuantization.Discrete, null, null, null, null));
         public static readonly AdjustmentFieldDefinition ColorWhiteBalanceTemperatureKelvin = new(
             "color.white_balance.temperature_kelvin",
@@ -542,6 +587,11 @@ public static class AdjustmentFieldSpec
             "detail",
             new AdjustmentProtocolSpec(false, AdjustmentProtocolValueType.Boolean, AdjustmentWirePrecision.Boolean, false, null, null, false, false, [], [], [], [], false, false, false),
             new AdjustmentFieldModelSpec(true, ["sdr"], "bool", false, null, null, AdjustmentModelDefault.FromBoolean(false), "none", AdjustmentModelQuantization.Discrete, null, null, null, null));
+        public static readonly AdjustmentFieldDefinition LocalAiDenoiseStrength = new(
+            "local.ai_denoise_strength",
+            "detail",
+            new AdjustmentProtocolSpec(false, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 100.0, false, false, [], [], [], [], false, false, false),
+            new AdjustmentFieldModelSpec(true, ["sdr"], "double", false, 0.0, 100.0, AdjustmentModelDefault.FromNumber(100.0), "none", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition LocalHdrCameraAiEnabled = new(
             "local.hdr_camera_ai_enabled",
             "detail",
@@ -550,10 +600,10 @@ public static class AdjustmentFieldSpec
     }
 
     public static readonly IReadOnlyList<AdjustmentFieldDefinition> AllFields = [
-        Fields.LooksReference, Fields.LooksStrength, Fields.LightExposure, Fields.LightExposureMode, Fields.LightContrast, Fields.LightHighlights, Fields.LightShadows, Fields.LightSCurve, Fields.LightCurve, Fields.ToneBlackPoint, Fields.ToneWhitePoint, Fields.ColorVibrance, Fields.ColorGradingShadows, Fields.ColorGradingMidtones, Fields.ColorGradingHighlights, Fields.ColorWhiteBalanceMode, Fields.ColorWhiteBalanceTemperatureKelvin, Fields.ColorWhiteBalanceTint, Fields.ColorSaturation, Fields.HdrRelativeTemperature, Fields.HdrRelativeTint, Fields.HdrPeakLimitEv, Fields.HdrSdrExposureEv, Fields.HdrSdrContrast, Fields.HdrSdrSaturation, Fields.HdrLook, Fields.HdrCameraDevelopment, Fields.ColorHslHueRed, Fields.ColorHslHueOrange, Fields.ColorHslHueYellow, Fields.ColorHslHueGreen, Fields.ColorHslHueAqua, Fields.ColorHslHueBlue, Fields.ColorHslHuePurple, Fields.ColorHslHueMagenta, Fields.ColorHslSaturationRed, Fields.ColorHslSaturationOrange, Fields.ColorHslSaturationYellow, Fields.ColorHslSaturationGreen, Fields.ColorHslSaturationAqua, Fields.ColorHslSaturationBlue, Fields.ColorHslSaturationPurple, Fields.ColorHslSaturationMagenta, Fields.ColorHslLightnessRed, Fields.ColorHslLightnessOrange, Fields.ColorHslLightnessYellow, Fields.ColorHslLightnessGreen, Fields.ColorHslLightnessAqua, Fields.ColorHslLightnessBlue, Fields.ColorHslLightnessPurple, Fields.ColorHslLightnessMagenta, Fields.EffectsVignetteAmount, Fields.EffectsVignetteMidpoint, Fields.EffectsVignetteRoundness, Fields.EffectsVignetteFeather, Fields.EffectsVignetteHighlights, Fields.EffectsGrainAmount, Fields.EffectsClarity, Fields.EffectsDehaze, Fields.EffectsGrainSize, Fields.EffectsGrainRoughness, Fields.DetailSharpening, Fields.DetailDenoiseRawLevel, Fields.DetailDenoisePostRgb, Fields.DetailDenoiseChromaMode, Fields.DetailDenoiseWavelet, Fields.GeometryCropX, Fields.GeometryCropY, Fields.GeometryCropWidth, Fields.GeometryCropHeight, Fields.GeometryQuarterTurns, Fields.GeometryFlipHorizontal, Fields.GeometryFlipVertical, Fields.GeometryStraightenDegrees, Fields.GeometryPerspectiveHorizontal, Fields.GeometryPerspectiveVertical, Fields.GeometryLensDistortion, Fields.GeometryLensTca, Fields.GeometryLensVignetting, Fields.GeometryLensAutoCrop, Fields.GeometryLensProfileId, Fields.LocalAiDenoiseEnabled, Fields.LocalHdrCameraAiEnabled
+        Fields.LooksReference, Fields.LooksStrength, Fields.LightExposure, Fields.LightExposureMode, Fields.LightContrast, Fields.LightHighlights, Fields.LightShadows, Fields.LightSCurve, Fields.LightCurve, Fields.LightCurveApplyToLuminosity, Fields.LightCurveParametric, Fields.ToneBlackPoint, Fields.ToneWhitePoint, Fields.ColorVibrance, Fields.ColorGradingShadows, Fields.ColorGradingMidtones, Fields.ColorGradingHighlights, Fields.ColorGradingGlobal, Fields.ColorGradingBlending, Fields.ColorGradingBalance, Fields.ColorWhiteBalanceMode, Fields.ColorWhiteBalanceTemperatureKelvin, Fields.ColorWhiteBalanceTint, Fields.ColorSaturation, Fields.HdrRelativeTemperature, Fields.HdrRelativeTint, Fields.HdrPeakLimitEv, Fields.HdrSdrExposureEv, Fields.HdrSdrContrast, Fields.HdrSdrSaturation, Fields.HdrLook, Fields.HdrCameraDevelopment, Fields.ColorHslHueRed, Fields.ColorHslHueOrange, Fields.ColorHslHueYellow, Fields.ColorHslHueGreen, Fields.ColorHslHueAqua, Fields.ColorHslHueBlue, Fields.ColorHslHuePurple, Fields.ColorHslHueMagenta, Fields.ColorHslSaturationRed, Fields.ColorHslSaturationOrange, Fields.ColorHslSaturationYellow, Fields.ColorHslSaturationGreen, Fields.ColorHslSaturationAqua, Fields.ColorHslSaturationBlue, Fields.ColorHslSaturationPurple, Fields.ColorHslSaturationMagenta, Fields.ColorHslLightnessRed, Fields.ColorHslLightnessOrange, Fields.ColorHslLightnessYellow, Fields.ColorHslLightnessGreen, Fields.ColorHslLightnessAqua, Fields.ColorHslLightnessBlue, Fields.ColorHslLightnessPurple, Fields.ColorHslLightnessMagenta, Fields.EffectsVignetteAmount, Fields.EffectsVignetteMidpoint, Fields.EffectsVignetteRoundness, Fields.EffectsVignetteFeather, Fields.EffectsVignetteHighlights, Fields.EffectsGrainAmount, Fields.EffectsClarity, Fields.EffectsDehaze, Fields.EffectsGrainSize, Fields.EffectsGrainRoughness, Fields.DetailSharpening, Fields.DetailDenoiseRawLevel, Fields.DetailDenoisePostRgb, Fields.DetailDenoiseChromaMode, Fields.DetailDenoiseWavelet, Fields.GeometryCropX, Fields.GeometryCropY, Fields.GeometryCropWidth, Fields.GeometryCropHeight, Fields.GeometryQuarterTurns, Fields.GeometryFlipHorizontal, Fields.GeometryFlipVertical, Fields.GeometryStraightenDegrees, Fields.GeometryPerspectiveHorizontal, Fields.GeometryPerspectiveVertical, Fields.GeometryLensDistortion, Fields.GeometryLensTca, Fields.GeometryLensVignetting, Fields.GeometryLensAutoCrop, Fields.GeometryLensProfileId, Fields.LocalAiDenoiseEnabled, Fields.LocalAiDenoiseStrength, Fields.LocalHdrCameraAiEnabled
     ];
-    public static readonly IReadOnlyList<string> TransferFieldIds = ["looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.grain.size", "effects.grain.roughness", "detail.sharpening", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id"];
-    public static readonly IReadOnlyList<string> LocalOnlyFieldIds = ["local.ai_denoise_enabled", "local.hdr_camera_ai_enabled"];
+    public static readonly IReadOnlyList<string> TransferFieldIds = ["looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "light.curve.apply_to_luminosity", "light.curve.parametric", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.grading.global", "color.grading.blending", "color.grading.balance", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.grain.size", "effects.grain.roughness", "detail.sharpening", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id"];
+    public static readonly IReadOnlyList<string> LocalOnlyFieldIds = ["local.ai_denoise_enabled", "local.ai_denoise_strength", "local.hdr_camera_ai_enabled"];
     public static readonly IReadOnlyDictionary<string, AdjustmentFieldDefinition> ById = AllFields.ToDictionary(f => f.Id);
 
     public static AdjustmentFieldDefinition? ForId(string id) => ById.GetValueOrDefault(id);

@@ -77,3 +77,5 @@ experiments/rum-local/windows/obj/
 /lutools/F-Log2/*.cube
 /Shared/BundledLooks/*.cube
 /lutools/examples/DJI_20250602164503_0444_D.DNG
+
+/release-artifacts/

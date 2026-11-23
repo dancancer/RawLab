@@ -2,6 +2,35 @@ using System.IO;
 
 namespace RawLab.Windows;
 
+public enum OutputSharpening
+{
+    Off = 0,
+    Low = 1,
+    Standard = 2,
+    High = 3
+}
+
+public static class OutputSharpeningExtensions
+{
+    public static string WireValue(this OutputSharpening sharpening) => sharpening switch
+    {
+        OutputSharpening.Off => "off",
+        OutputSharpening.Low => "low",
+        OutputSharpening.Standard => "standard",
+        OutputSharpening.High => "high",
+        _ => throw new ArgumentOutOfRangeException(nameof(sharpening))
+    };
+
+    public static string Title(this OutputSharpening sharpening) => sharpening switch
+    {
+        OutputSharpening.Off => Loc.Text("关"),
+        OutputSharpening.Low => Loc.Text("低"),
+        OutputSharpening.Standard => Loc.Text("标准"),
+        OutputSharpening.High => Loc.Text("高"),
+        _ => throw new ArgumentOutOfRangeException(nameof(sharpening))
+    };
+}
+
 public enum ExportFormat
 {
     Jpeg = 0,

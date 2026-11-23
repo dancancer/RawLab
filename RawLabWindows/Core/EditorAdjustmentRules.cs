@@ -2,7 +2,7 @@ namespace RawLab.Windows;
 
 public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry, HdrRendition }
 public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze, HdrPeakLimit, HdrSdrExposure, HdrSdrContrast, HdrSdrSaturation }
-public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, AllGrading }
+public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, GradingGlobal, AllGrading }
 public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film, ColorGradingZone Zone = ColorGradingZone.Shadows);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
 public sealed record EditorResetCandidate(EditorResetStatus Status, SavedEdit? Candidate = null,
@@ -134,6 +134,7 @@ public static class EditorAdjustmentRules
         var detached = false;
         if (scope.Kind == EditorResetKind.All) { candidate = defaults.Settings.Copy(); look = null; }
         else if (scope.Kind == EditorResetKind.AllGrading) candidate = candidate with { ColorGrading = null };
+        else if (scope.Kind == EditorResetKind.GradingGlobal) candidate = candidate with { ColorGrading = (candidate.ColorGrading ?? new()) with { Global = new() } };
         else if (scope.Kind == EditorResetKind.GradingZone) candidate = candidate with { ColorGrading = (candidate.ColorGrading ?? new()).With(scope.Zone, new()) };
         else if (scope.Kind == EditorResetKind.AllHsl) candidate = candidate with { Hsl = new() };
         else if (scope.Kind == EditorResetKind.HslChannel) {
@@ -215,7 +216,7 @@ public static class EditorAdjustmentRules
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
             EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects, Atmosphere = null },
-            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false },
+            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null },
             EditorAdjustmentGroup.Geometry => value with { Geometry = defaults.Geometry, Lens = defaults.Lens },
             _ => value
         };
@@ -243,7 +244,7 @@ public static class EditorAdjustmentRules
                 foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == (tool == EditorAdjustmentTool.Vignette)))
                     effects = SetEffectDefault(effects, spec.Id);
                 return value with { Effects = effects };
-            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false };
+            case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null };
             case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
             case EditorAdjustmentTool.Lens: return value with { Lens = defaults.Lens };
             default:
@@ -266,19 +267,23 @@ public static class EditorAdjustmentRules
     {
         if (value.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, value.Settings) == value.Settings;
         if (PhotoInput.IsRaster(value.Identity.Path)) {
-            // 普通图片的 RAW 专属元数据不参与标记；配方 tint 仍是待用的逻辑贡献。
+            // 普通图片的 RAW 专属元数据不参与标记；配方 tint 与自主相对白平衡（CameraWhiteBalance && AsShotTemperature == null）仍是有效贡献。
+            var hasDormantRawWb = !value.Settings.CameraWhiteBalance || value.Settings.AsShotTemperature != null;
             var comparable = value.Settings.Copy() with {
                 ExposureMode = defaults.Settings.ExposureMode,
                 CameraWhiteBalance = defaults.Settings.CameraWhiteBalance,
                 AsShotTemperature = defaults.Settings.AsShotTemperature,
                 AsShotTint = defaults.Settings.AsShotTint
             };
-            comparable.Values[(int)Parameter.Temperature] = defaults.Settings.Values[(int)Parameter.Temperature];
-            if (comparable.MasterRecipeID == null) comparable.Values[(int)Parameter.Tint] = defaults.Settings.Values[(int)Parameter.Tint];
+            if (hasDormantRawWb || comparable.MasterRecipeID != null)
+                comparable.Values[(int)Parameter.Temperature] = defaults.Settings.Values[(int)Parameter.Temperature];
+            if (hasDormantRawWb && comparable.MasterRecipeID == null)
+                comparable.Values[(int)Parameter.Tint] = defaults.Settings.Values[(int)Parameter.Tint];
             value = value with { Settings = comparable };
         }
         if (scope.Kind == EditorResetKind.All) return value.Look == null && value.Settings.SameAs(defaults.Settings);
         if (scope.Kind == EditorResetKind.AllGrading) return (value.Settings.ColorGrading ?? new()).IsDefault;
+        if (scope.Kind == EditorResetKind.GradingGlobal) return (value.Settings.ColorGrading ?? new()).Global.IsDefault;
         if (scope.Kind == EditorResetKind.GradingZone) return (value.Settings.ColorGrading ?? new())[scope.Zone].IsDefault;
         if (scope.Kind == EditorResetKind.AllHsl) return (value.Settings.Hsl ?? new()).IsIdentity;
         if (scope.Kind == EditorResetKind.HslChannel) return Enumerable.Range(0, 3).All(axis => (value.Settings.Hsl ?? new()).Value(axis, scope.Channel) == 0);
@@ -323,6 +328,8 @@ public static class EditorAdjustmentRules
         }
         var color = value.ColorSettings;
         if (scope.Kind == EditorResetKind.AllGrading) return value.WithColor(color with { Grading = new() });
+        if (scope.Kind == EditorResetKind.GradingGlobal)
+            return value.WithColor(color with { Grading = color.Grading with { Global = new() } });
         if (scope.Kind == EditorResetKind.GradingZone)
             return value.WithColor(color with { Grading = color.Grading.With(scope.Zone, new()) });
         if (scope.Kind == EditorResetKind.AllHsl) return value.WithColor(color with { Hsl = new() });
@@ -378,8 +385,8 @@ public static class EditorAdjustmentRules
     private static Native.Request EffectiveRequest(string path, Adjustments state)
     {
         var request = PhotoInput.PrepareInputSettings(path, state).Request(path, null, 64, null);
-        // DisplayInput.PrepareRequest 使用普通图片的固定 WB；不要求 WPF 解码器参与纯模型校验。
-        if (PhotoInput.IsRaster(path)) { request.WbMode = 0; request.Temperature = 6500; request.Tint = 0; }
+        // DisplayInput.PrepareRequest 使用普通图片的相对或中性 WB；不要求 WPF 解码器参与纯模型校验。
+        if (PhotoInput.IsRaster(path) && state.MasterRecipeID != null) { request.WbMode = 0; request.Temperature = 6500; request.Tint = 0; }
         return request;
     }
     private static bool SameEffective(SavedEdit before, SavedEdit after)
@@ -390,6 +397,6 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.RenderToneControls == b.RenderToneControls && a.RenderAtmosphere == b.RenderAtmosphere && a.RenderGrading == b.RenderGrading && a.RenderCurve == b.RenderCurve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.RenderToneControls == b.RenderToneControls && a.RenderAtmosphere == b.RenderAtmosphere && a.RenderGrading == b.RenderGrading && a.RenderCurve == b.RenderCurve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.AIDenoiseStrength == b.AIDenoiseStrength && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
     }
 }

@@ -38,19 +38,38 @@ struct alignas(16) Parameters {
     float hslHue[2][4], hslSaturation[2][4], hslLightness[2][4];
     float toneControls[4];
     float colorGrading[3][4];
-    float curveRanges[32][4], curveTangents[32][4];
+    float curveRanges[128][4], curveTangents[128][4];
+    uint32_t curveCounts[4];
+    uint32_t curveFlags[4];
+    float parametricAmps[4];
+    float parametricSplits[4];
+    float colorGradingGlobal[4];
+    float colorGradingMix[4];
     uint32_t band[4]; // source row, destination row, output rows, reserved
+    uint32_t basicV3[4];
+    float basicTone[4];
 };
-static_assert(sizeof(Parameters) == 1424);
+static_assert(sizeof(Parameters) == 4624);
 static_assert(offsetof(Parameters, hslHue) == 224);
 static_assert(offsetof(Parameters, colorGrading) == 336);
 static_assert(offsetof(Parameters, curveRanges) == 384);
+static_assert(offsetof(Parameters, curveTangents) == 2432);
+static_assert(offsetof(Parameters, curveCounts) == 4480);
+static_assert(offsetof(Parameters, curveFlags) == 4496);
+static_assert(offsetof(Parameters, parametricAmps) == 4512);
+static_assert(offsetof(Parameters, parametricSplits) == 4528);
+static_assert(offsetof(Parameters, colorGradingGlobal) == 4544);
+static_assert(offsetof(Parameters, colorGradingMix) == 4560);
+static_assert(offsetof(Parameters, band) == 4576);
+static_assert(offsetof(Parameters, basicV3) == 4592);
+static_assert(offsetof(Parameters, basicTone) == 4608);
 static_assert(sizeof(RGB) == 12);
 struct Buffer {
     ComPtr<ID3D11Buffer> data;
     ComPtr<ID3D11ShaderResourceView> srv;
     ComPtr<ID3D11UnorderedAccessView> uav;
     size_t bytes = 0;
+    size_t stride = 0;
 };
 }
 struct D3D11PhotoRenderer::Impl {
@@ -58,7 +77,7 @@ struct D3D11PhotoRenderer::Impl {
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11ComputeShader> shader;
     ComPtr<ID3D11Buffer> constants, staging;
-    Buffer source, processing[2], resized, film;
+    Buffer source, processing[2], resized, film, basicField;
     uint64_t revision = 0;
     int sourceWidth = 0, sourceHeight = 0;
     size_t stagingBytes = 0;
@@ -98,15 +117,15 @@ struct D3D11PhotoRenderer::Impl {
         desc.ByteWidth = sizeof(Parameters); desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         checked(device->CreateBuffer(&desc, nullptr, &constants));
     }
-    void allocate(Buffer& buffer, size_t count, bool writable) {
-        if (!count || count > std::numeric_limits<UINT>::max() / sizeof(RGB)) throw GpuCapabilityLimitError("GPU buffer too large");
-        const auto bytes = count * sizeof(RGB);
-        if (buffer.bytes >= bytes) return;
+    void allocateTyped(Buffer& buffer, size_t count, size_t stride, bool writable) {
+        if (!count || count > std::numeric_limits<UINT>::max() / stride) throw GpuCapabilityLimitError("GPU buffer too large");
+        const auto bytes = count * stride;
+        if (buffer.bytes >= bytes && buffer.stride == stride) return;
         buffer = {};
         D3D11_BUFFER_DESC desc{};
         desc.ByteWidth = static_cast<UINT>(bytes); desc.Usage = D3D11_USAGE_DEFAULT;
         desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (writable ? D3D11_BIND_UNORDERED_ACCESS : 0);
-        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = sizeof(RGB);
+        desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_STRUCTURED; desc.StructureByteStride = static_cast<UINT>(stride);
         checked(device->CreateBuffer(&desc, nullptr, &buffer.data));
 #if defined(RAWLAB_D3D11_TESTING)
         d3d11_test::largestPhotoBuffer = std::max(d3d11_test::largestPhotoBuffer, bytes);
@@ -114,12 +133,36 @@ struct D3D11PhotoRenderer::Impl {
         checked(device->CreateShaderResourceView(buffer.data.Get(), nullptr, &buffer.srv));
         if (writable) checked(device->CreateUnorderedAccessView(buffer.data.Get(), nullptr, &buffer.uav));
         buffer.bytes = bytes;
+        buffer.stride = stride;
+    }
+    void allocate(Buffer& buffer, size_t count, bool writable) {
+        allocateTyped(buffer, count, sizeof(RGB), writable);
+    }
+    void writeBytes(Buffer& buffer, const void* data, size_t bytes) {
+        D3D11_BOX box{};
+        box.right = static_cast<UINT>(bytes);
+        box.bottom = box.back = 1;
+        context->UpdateSubresource(buffer.data.Get(), 0, &box, data, 0, 0);
     }
     void write(Buffer& buffer, const RGB* pixels, size_t count) {
-        D3D11_BOX box{};
-        box.right = static_cast<UINT>(count * sizeof(RGB));
-        box.bottom = box.back = 1;
-        context->UpdateSubresource(buffer.data.Get(), 0, &box, pixels, 0, 0);
+        writeBytes(buffer, pixels, count * sizeof(RGB));
+    }
+    void setBasicToneField(const RenderParams& params) {
+        if (params.basicV3 && params.basicTone.active() && params.basicToneField && !params.basicToneField->empty()) {
+            const auto& f = *params.basicToneField;
+            const size_t n = f.slope.size();
+            std::vector<float> packed(n * 2);
+            for (size_t i = 0; i < n; ++i) {
+                packed[i * 2] = f.slope[i];
+                packed[i * 2 + 1] = f.intercept[i];
+            }
+            allocateTyped(basicField, n, sizeof(float) * 2, false);
+            writeBytes(basicField, packed.data(), packed.size() * sizeof(float));
+        } else if (basicField.bytes == 0) {
+            const float dummy[2]{0.0f, 0.0f};
+            allocateTyped(basicField, 1, sizeof(float) * 2, false);
+            writeBytes(basicField, dummy, sizeof(dummy));
+        }
     }
     void setLut(const std::shared_ptr<LUT3D>& lut) {
         if (!lut || cachedLut == lut) return;
@@ -147,13 +190,13 @@ struct D3D11PhotoRenderer::Impl {
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
         context->CSSetShader(shader.Get(),nullptr,0);
         auto cb=constants.Get(); context->CSSetConstantBuffers(0,1,&cb);
-        ID3D11ShaderResourceView* views[]={input.srv.Get(),params.control[2] ? film.srv.Get() : nullptr};
-        context->CSSetShaderResources(0,2,views);
+        ID3D11ShaderResourceView* views[]={input.srv.Get(),params.control[2] ? film.srv.Get() : nullptr,basicField.srv.Get()};
+        context->CSSetShaderResources(0,3,views);
         auto uav=output.uav.Get();context->CSSetUnorderedAccessViews(0,1,&uav,nullptr);
         context->Dispatch((dw+15)/16,(rows+15)/16,1);
         // Unbind before ping-pong: the next pass may read the previous UAV.
-        ID3D11ShaderResourceView* emptyViews[2]{}; ID3D11UnorderedAccessView* emptyUav=nullptr;
-        context->CSSetShaderResources(0,2,emptyViews);context->CSSetUnorderedAccessViews(0,1,&emptyUav,nullptr);
+        ID3D11ShaderResourceView* emptyViews[3]{}; ID3D11UnorderedAccessView* emptyUav=nullptr;
+        context->CSSetShaderResources(0,3,emptyViews);context->CSSetUnorderedAccessViews(0,1,&emptyUav,nullptr);
         checked(d3d11DeviceStatus(*device.Get()));
     }
     void read(Buffer& buffer, RGB* output, size_t count) {
@@ -261,7 +304,9 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         initializing = false;
         auto& c=*impl_;
         Parameters p{};
-        const auto toSrgb=ColorConverter::getConversionMatrix(inputSpace,ColorSpace::sRGB);
+        const auto toSrgb = params.hasCustomToSrgb
+            ? params.customToSrgb
+            : ColorConverter::getConversionMatrix(inputSpace,ColorSpace::sRGB);
         const auto toFilm=photoLUTInputMatrix(params.lut ? params.lut->inputTransfer() : LUTTransfer::FLog2);
         for (int row=0;row<3;++row) for (int col=0;col<3;++col) {
             p.toSrgb[row][col]=toSrgb[row][col];p.toFilm[row][col]=toFilm[row][col];
@@ -276,15 +321,50 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         p.detail[0]=params.toneCurve;p.detail[1]=params.noiseReduction;p.detail[2]=params.sharpening;
         const auto custom = toneCurveGpuParameters(params.customCurve);
         p.detail[3] = static_cast<float>(custom.count);
-        std::memcpy(p.curveRanges, custom.ranges, sizeof(custom.ranges));
-        std::memcpy(p.curveTangents, custom.tangents, sizeof(custom.tangents));
+        p.curveCounts[0] = custom.count;
+        if (custom.count) {
+            std::memcpy(&p.curveRanges[0], custom.ranges, sizeof(custom.ranges));
+            std::memcpy(&p.curveTangents[0], custom.tangents, sizeof(custom.tangents));
+        }
+        for (size_t ch = 0; ch < 3; ++ch) {
+            const auto chParams = toneCurveGpuParameters(params.channelCurves[ch]);
+            p.curveCounts[ch + 1] = chParams.count;
+            if (chParams.count) {
+                const size_t base = (ch + 1) * 32;
+                std::memcpy(&p.curveRanges[base], chParams.ranges, sizeof(chParams.ranges));
+                std::memcpy(&p.curveTangents[base], chParams.tangents, sizeof(chParams.tangents));
+            }
+        }
+        p.curveFlags[0] = params.curveApplyToLuminosity ? 1u : 0u;
+        const auto parametric = toneCurveParametricGpuParameters(params.parametricCurve);
+        p.curveFlags[1] = parametric.active;
+        std::memcpy(p.parametricAmps, parametric.amps, sizeof(parametric.amps));
+        std::memcpy(p.parametricSplits, parametric.splits, sizeof(parametric.splits));
         p.control[1]=params.hsl.active();
         p.toneControls[0]=params.toneControls.blackPoint; p.toneControls[1]=params.toneControls.whitePoint;
         p.toneControls[2]=params.toneControls.vibrance;
-        const auto grading=colorGradingCoefficients(params.colorGrading);
+        const bool bt = params.basicV3 && params.basicTone.active() &&
+            params.basicToneField && !params.basicToneField->empty();
+        p.basicV3[0] = params.basicV3 ? 1u : 0u;
+        p.basicV3[1] = bt ? 1u : 0u;
+        p.basicV3[2] = bt ? static_cast<uint32_t>(params.basicToneField->width) : 1u;
+        p.basicV3[3] = bt ? static_cast<uint32_t>(params.basicToneField->height) : 1u;
+        p.basicTone[0] = bt ? std::clamp(params.basicTone.highlights, -1.0f, 1.0f) : 0.0f;
+        p.basicTone[1] = bt ? std::clamp(params.basicTone.shadows, -1.0f, 1.0f) : 0.0f;
+        c.setBasicToneField(params);
+        const auto grading=colorGradingParameters(params.colorGrading);
         for (size_t zone=0;zone<3;++zone) {
-            p.colorGrading[zone][0]=grading[zone].r;p.colorGrading[zone][1]=grading[zone].g;p.colorGrading[zone][2]=grading[zone].b;
+            p.colorGrading[zone][0]=grading.coefficients[zone].r;
+            p.colorGrading[zone][1]=grading.coefficients[zone].g;
+            p.colorGrading[zone][2]=grading.coefficients[zone].b;
+            p.colorGrading[zone][3]=grading.luminance[zone];
         }
+        p.colorGradingGlobal[0]=grading.coefficients[3].r;
+        p.colorGradingGlobal[1]=grading.coefficients[3].g;
+        p.colorGradingGlobal[2]=grading.coefficients[3].b;
+        p.colorGradingGlobal[3]=grading.luminance[3];
+        p.colorGradingMix[0]=grading.blending;
+        p.colorGradingMix[1]=grading.balance;
         for (size_t index=0;index<8;++index) {
             p.hslHue[index/4][index%4]=params.hsl.hue[index];
             p.hslSaturation[index/4][index%4]=params.hsl.saturation[index];

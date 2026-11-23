@@ -22,7 +22,7 @@ public partial class BatchExportWindow : Window
     private readonly BatchHDRPreparation? hdrPreparation;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
-    private bool ready, refreshingSize, editingCustomSize,preflighting,closed;
+    private bool ready, refreshingSize, refreshingSharpening, editingCustomSize,preflighting,closed;
     private volatile bool closeRequested;
     private Task? thumbnailLoading;
     private AIDenoiseState? aiProgress;
@@ -118,6 +118,8 @@ public partial class BatchExportWindow : Window
         FormatOptions.IsEnabled = !Frozen && !job.Started && !Running && !preflighting; ChooseFolder.IsEnabled = !Frozen && !Running && !preflighting;
         SizeSelection.IsEnabled = CustomLongEdge.IsEnabled = !Frozen && !job.Started && !Running && !preflighting;
         RefreshSizeControls();
+        SharpeningSelection.IsEnabled = !Frozen && !job.Started && !Running && !preflighting && job.Format != ExportFormat.RenderedDng;
+        RefreshSharpeningControls();
         Destination.Text = job.OutputDirectory == null ? Loc.Text("未选择") : Path.GetFileName(job.OutputDirectory.TrimEnd(Path.DirectorySeparatorChar));
         Destination.ToolTip = job.OutputDirectory;
         EmptyState.Visibility = job.Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -260,6 +262,7 @@ public partial class BatchExportWindow : Window
         if (job.Items.All(item => item.HDRJpegIncompatible != null) ||
             job.Format != ExportFormat.HdrJpeg && format != ExportFormat.HdrJpeg) {
             job.Format=format;
+            if (format == ExportFormat.RenderedDng) job.OutputSharpening = OutputSharpening.Off;
             job.Items=job.Items.Select(item => ApplyFormatValidation(item,format)).ToList();
             SaveDraft();
             return;
@@ -270,6 +273,7 @@ public partial class BatchExportWindow : Window
         Refresh();
         var snapshot=job.Copy();
         snapshot.Format=format;
+        if (format == ExportFormat.RenderedDng) snapshot.OutputSharpening = OutputSharpening.Off;
         try {
             var checkedItems=await Task.Run(() => {
                 using var validator=new RenderEngine(0,aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths);
@@ -282,6 +286,7 @@ public partial class BatchExportWindow : Window
             });
             if (closed || closeRequested) return;
             job.Format=format;
+            if (format == ExportFormat.RenderedDng) job.OutputSharpening = OutputSharpening.Off;
             job.Items=checkedItems;
             SaveDraft();
         } catch (Exception error) {
@@ -314,6 +319,26 @@ public partial class BatchExportWindow : Window
             CustomLongEdge.Visibility=editingCustomSize ? Visibility.Visible : Visibility.Collapsed;
         }
         finally { refreshingSize=false; }
+    }
+    private void RefreshSharpeningControls()
+    {
+        refreshingSharpening = true;
+        try
+        {
+            var effective = job.Format == ExportFormat.RenderedDng ? OutputSharpening.Off : job.EffectiveOutputSharpening;
+            SharpeningSelection.SelectedIndex = Math.Clamp((int)effective, 0, 3);
+        }
+        finally { refreshingSharpening = false; }
+    }
+    private void SharpeningChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (Frozen || !ready || refreshingSharpening || job.Started || Running || preflighting || closed) return;
+        if (job.Format == ExportFormat.RenderedDng) return;
+        if (SharpeningSelection.SelectedItem is not ComboBoxItem { Tag: string tag } || !int.TryParse(tag, out var raw)) return;
+        var selected = Enum.IsDefined((OutputSharpening)raw) ? (OutputSharpening)raw : OutputSharpening.Off;
+        if (job.EffectiveOutputSharpening == selected) return;
+        job.OutputSharpening = selected;
+        SaveDraft();
     }
     private void ExportSizeChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -404,7 +429,7 @@ public partial class BatchExportWindow : Window
                         }
                         Dispatcher.BeginInvoke(new Action(() => SetRunJob(updated)));
                     },
-                    (input, settings, look, destination, longEdge) => {
+                    (input, settings, look, destination, longEdge, outputSharpening) => {
                         if(settings.ActiveAIDenoise) {
                             using var progress=new AIPreparation((phase,done,total)=>
                                 Dispatcher.BeginInvoke(new Action(()=>{aiProgress=new(AIDenoiseStatus.Running,phase,done,total);Refresh();})));
@@ -418,7 +443,7 @@ public partial class BatchExportWindow : Window
                             }
                         }
                         engine.Render(input, settings, look, 32, statistics: false, clipping: false);
-                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format);
+                        engine.Render(input, settings, look, 0, output: destination, longEdge: longEdge, formatOverride: work.Format, outputSharpening: outputSharpening);
                     });
             });
         }

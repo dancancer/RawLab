@@ -13,6 +13,8 @@ internal static class AdjustmentTransferPresentation
         [F.Shadows]="阴影",
         [F.SCurve]="S 曲线",
         [F.Curve]="曲线模式与控制点",
+        [F.CurveApplyToLuminosity]="仅作用于明度",
+        [F.CurveParametric]="参数曲线",
         [F.WhiteBalanceMode]="白平衡模式",
         [F.Temperature]="色温",
         [F.Tint]="色调",
@@ -21,6 +23,8 @@ internal static class AdjustmentTransferPresentation
         [F.HdrSDRContrast]="SDR 底图对比度", [F.HdrSDRSaturation]="SDR 底图饱和度",
         [F.HdrTint]="色调",
         [F.Saturation]="饱和度",
+        [F.GradingBlending]="融合",
+        [F.GradingBalance]="平衡",
         [F.BlackPoint]="黑场", [F.WhitePoint]="白场", [F.Vibrance]="鲜艳度", [F.Clarity]="清晰度", [F.Dehaze]="去朦胧",
         [F.VignetteAmount]="暗角",
         [F.VignetteMidpoint]="中点",
@@ -54,6 +58,7 @@ internal static class AdjustmentTransferPresentation
     internal static string Title(F field)
     {
         if (field == F.HdrCameraDevelopment) return "HDR RAW";
+        if (field == F.GradingGlobal) return Loc.Text("颜色分级") + " · " + Loc.Text("全局");
         if(field.GradingZone() is {} zone)return Loc.Text("颜色分级")+" · "+Loc.Text(new[]{"阴影","中间调","高光"}[(int)zone]);
         if(field.HslIndex() is {} index)return Loc.Text(new[]{"红","橙","黄","绿","青","蓝","紫","洋红"}[index%8])+" · "+Loc.Text(new[]{"色相","饱和度","明度"}[index/8]);
         return Loc.Text(labels[field]);

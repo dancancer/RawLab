@@ -1,4 +1,5 @@
 #include "core/hdr_stream.h"
+#include "core/hdr_detail.h"
 #include "core/hdr_progress.h"
 #include "core/hdr_resample.h"
 #include "core/hdr_storage.h"
@@ -29,7 +30,8 @@ bool isDirectStripEligible(const HDRRowSource& source, const HDRRenderOptions& o
     return !options.geometry.active() &&
         result.width == source.width &&
         result.height == source.height &&
-        !options.hasDetail();
+        !options.hasDetail() &&
+        options.outputSharpening == OutputSharpening::Off;
 }
 
 // 128x128 物理分块平面：总字节严格等于 width*height*sizeof(RGB)（无尾部浪费），
@@ -183,6 +185,7 @@ class RenderedRows {
     GeometryOptions geometryOptions_;
     GeometryPixelSampler geometry_;
     std::optional<HDRDetailPlan> detail_;
+    OutputSharpening outputSharpening_ = OutputSharpening::Off;
     std::pair<int, int> nativeSize_;
     uint32_t width_, height_, first_ = std::numeric_limits<uint32_t>::max(), currentEnd_ = 0;
     std::vector<RGB> rows_;
@@ -280,34 +283,103 @@ class RenderedRows {
     void prepareBand(uint32_t first) {
         const uint32_t end = std::min(first + tileEdge, height_);
         const uint32_t bandRows = end - first;
-        if (detail_) {
-            const uint32_t halo = detail_->halo;
-            const uint32_t top = first > halo ? first - halo : 0;
-            const uint32_t bottom = std::min(height_, end + halo);
-            std::vector<RGB> input(size_t(width_) * (bottom - top));
-            sampleBand(top, bottom, [&](uint32_t x, uint32_t y, RGB p) {
-                input[size_t(y - top) * width_ + x] = p;
-            });
-            renderHDRDetailBand(*detail_, input.data(), int(top), int(bottom - top), rows_.data(), int(first), int(bandRows));
-            std::vector<float> rowMax(bandRows, 0.0f);
-            std::atomic<bool> overflow{false};
-            parallelRowRanges(int(bandRows), int(width_), [&](int r0, int r1) {
-                bool localOverflow = false;
-                for (int r = r0; r < r1; ++r) {
-                    const uint32_t row = first + uint32_t(r);
-                    float maxLum = 0.0f;
-                    RGB* dst = rows_.data() + size_t(r) * width_;
-                    for (uint32_t x = 0; x < width_; ++x) {
-                        dst[x] = finishPixel(dst[x], int(x), int(row), maxLum, localOverflow);
-                    }
-                    rowMax[size_t(r)] = maxLum;
+        if (detail_ || outputSharpening_ != OutputSharpening::Off) {
+            const uint32_t sharpHalo = outputSharpening_ != OutputSharpening::Off ? 1u : 0u;
+            const uint32_t midTop = first > sharpHalo ? first - sharpHalo : 0;
+            const uint32_t midBottom = std::min(height_, end + sharpHalo);
+            const uint32_t midRows = midBottom - midTop;
+            std::vector<RGB> sharpenedInput;
+            RGB* midDst = rows_.data();
+            if (sharpHalo > 0) {
+                sharpenedInput.resize(size_t(width_) * midRows);
+                midDst = sharpenedInput.data();
+            }
+            if (detail_) {
+                const uint32_t halo = detail_->halo;
+                const uint32_t top = midTop > halo ? midTop - halo : 0;
+                const uint32_t bottom = std::min(height_, midBottom + halo);
+                std::vector<RGB> input(size_t(width_) * (bottom - top));
+                sampleBand(top, bottom, [&](uint32_t x, uint32_t y, RGB p) {
+                    input[size_t(y - top) * width_ + x] = p;
+                });
+                renderHDRDetailBand(*detail_, input.data(), int(top), int(bottom - top), midDst, int(midTop), int(midRows));
+            } else {
+                sampleBand(midTop, midBottom, [&](uint32_t x, uint32_t y, RGB p) {
+                    midDst[size_t(y - midTop) * width_ + x] = p;
+                });
+            }
+            if (sharpHalo > 0) {
+                if (effects_) {
+                    std::atomic<bool> overflow{false};
+                    parallelRowRanges(int(midRows), int(width_), [&](int r0, int r1) {
+                        bool localOverflow = false;
+                        for (int r = r0; r < r1; ++r) {
+                            const uint32_t row = midTop + uint32_t(r);
+                            RGB* dst = midDst + size_t(r) * width_;
+                            for (uint32_t x = 0; x < width_; ++x) {
+                                RGB p = effects_->applyExtendedLinear(dst[x], int(x), int(row), peak_);
+                                if (!std::isfinite(p.r) || !std::isfinite(p.g) || !std::isfinite(p.b)) {
+                                    localOverflow = true;
+                                    break;
+                                }
+                                dst[x] = p;
+                            }
+                            if (localOverflow) break;
+                        }
+                        if (localOverflow) overflow.store(true, std::memory_order_relaxed);
+                    });
+                    if (overflow.load(std::memory_order_relaxed))
+                        throw std::overflow_error("HDR streamed canvas exceeded finite float range");
                 }
-                if (localOverflow) overflow.store(true, std::memory_order_relaxed);
-            });
-            if (overflow.load(std::memory_order_relaxed))
-                throw std::overflow_error("HDR streamed canvas exceeded finite float range");
-            if (headroom_) {
-                for (float v : rowMax) *headroom_ = std::max(*headroom_, v);
+                renderHDROutputSharpeningBand(outputSharpening_, int(width_), int(height_),
+                    headroom_ ? peak_ : 0.0, midDst, int(midTop), int(midRows),
+                    rows_.data(), int(first), int(bandRows));
+                std::vector<float> rowMax(bandRows, 0.0f);
+                std::atomic<bool> overflow{false};
+                parallelRowRanges(int(bandRows), int(width_), [&](int r0, int r1) {
+                    bool localOverflow = false;
+                    for (int r = r0; r < r1; ++r) {
+                        float maxLum = 0.0f;
+                        const RGB* dst = rows_.data() + size_t(r) * width_;
+                        for (uint32_t x = 0; x < width_; ++x) {
+                            const float luminance = .2126f * dst[x].r + .7152f * dst[x].g + .0722f * dst[x].b;
+                            if (!std::isfinite(dst[x].r) || !std::isfinite(dst[x].g) || !std::isfinite(dst[x].b) || !std::isfinite(luminance)) {
+                                localOverflow = true;
+                                break;
+                            }
+                            maxLum = std::max(maxLum, luminance);
+                        }
+                        if (localOverflow) break;
+                        rowMax[size_t(r)] = maxLum;
+                    }
+                    if (localOverflow) overflow.store(true, std::memory_order_relaxed);
+                });
+                if (overflow.load(std::memory_order_relaxed))
+                    throw std::overflow_error("HDR streamed canvas exceeded finite float range");
+                if (headroom_) {
+                    for (float v : rowMax) *headroom_ = std::max(*headroom_, v);
+                }
+            } else {
+                std::vector<float> rowMax(bandRows, 0.0f);
+                std::atomic<bool> overflow{false};
+                parallelRowRanges(int(bandRows), int(width_), [&](int r0, int r1) {
+                    bool localOverflow = false;
+                    for (int r = r0; r < r1; ++r) {
+                        const uint32_t row = first + uint32_t(r);
+                        float maxLum = 0.0f;
+                        RGB* dst = rows_.data() + size_t(r) * width_;
+                        for (uint32_t x = 0; x < width_; ++x) {
+                            dst[x] = finishPixel(dst[x], int(x), int(row), maxLum, localOverflow);
+                        }
+                        rowMax[size_t(r)] = maxLum;
+                    }
+                    if (localOverflow) overflow.store(true, std::memory_order_relaxed);
+                });
+                if (overflow.load(std::memory_order_relaxed))
+                    throw std::overflow_error("HDR streamed canvas exceeded finite float range");
+                if (headroom_) {
+                    for (float v : rowMax) *headroom_ = std::max(*headroom_, v);
+                }
             }
         } else {
             std::vector<float> rowMax(bandRows, 0.0f);
@@ -368,6 +440,7 @@ public:
         cropTop_(integerGeometry_ ? static_cast<int>(std::floor(double(options.geometry.crop_y) * rotatedHeight_)) : 0),
         geometryOptions_(options.geometry),
         geometry_(hasGeometry_ && !integerGeometry_ ? makeGeometrySampler(source.width, source.height, options.geometry) : GeometryPixelSampler{}),
+        outputSharpening_(options.outputSharpening),
         nativeSize_(geometryOutputSize(source.width, source.height, options.geometry)),
         width_(width), height_(height), rows_(size_t(width) * std::min(tileEdge, height)), headroom_(headroom) {
         if (headroom_ && options.rendition.peakLimitEV > 0) peak_ = std::exp2(double(options.rendition.peakLimitEV));
@@ -462,8 +535,9 @@ void stageSource(const HDRRowSource& source, const HDRRenderOptions& options,
     }
     source.finish(); checkProcessingCancellation();
     uint64_t extra = 0;
-    if (options.hasDetail()) {
-        const uint32_t halo = options.detail.halo(result.width, result.height);
+    if (options.hasDetail() || options.outputSharpening != OutputSharpening::Off) {
+        const uint32_t sharpHalo = options.outputSharpening != OutputSharpening::Off ? 1u : 0u;
+        const uint32_t halo = (options.hasDetail() ? options.detail.halo(result.width, result.height) : 0u) + sharpHalo;
         extra = uint64_t(result.width) * std::min(result.height, tileEdge + 2 * halo) * (sizeof(RGB) + sizeof(float));
     }
     admitMemory(uint64_t(result.width) * tileEdge * 20 + (32ull << 20) + extra);
@@ -606,23 +680,25 @@ HDRStreamResult encodeStream(const HDRRowSource& source, const HDRRenderOptions&
 
         if (!highDynamicRange) {
             const auto stagedLow = scratch->path / "sdr.rgb32f";
-            File lowFile(stagedLow, true);
-            for (bool hdr : {true, false}) {
-                for (uint32_t row = 0; row < source.height; row += decodeRows) {
-                    checkProcessingCancellation();
-                    ImageData strip(source.width, std::min(decodeRows, source.height - row));
-                    const float missing = std::numeric_limits<float>::quiet_NaN();
-                    std::fill(strip.pixels.begin(), strip.pixels.end(), RGB(missing, missing, missing));
-                    source.read(hdr, row, strip.height, strip.pixels.data());
-                    checkProcessingCancellation();
-                    if (hdr) {
-                        validateAndUpdateSourceHeadroom(strip, result.sourceHeadroom);
-                        continue;
+            {
+                File lowFile(stagedLow, true);
+                for (bool hdr : {true, false}) {
+                    for (uint32_t row = 0; row < source.height; row += decodeRows) {
+                        checkProcessingCancellation();
+                        ImageData strip(source.width, std::min(decodeRows, source.height - row));
+                        const float missing = std::numeric_limits<float>::quiet_NaN();
+                        std::fill(strip.pixels.begin(), strip.pixels.end(), RGB(missing, missing, missing));
+                        source.read(hdr, row, strip.height, strip.pixels.data());
+                        checkProcessingCancellation();
+                        if (hdr) {
+                            validateAndUpdateSourceHeadroom(strip, result.sourceHeadroom);
+                            continue;
+                        }
+                        editHDRPixels(strip, options, false);
+                        applyStripEffects(strip, row, effects, 0);
+                        lowFile.append(strip.pixels.data(), strip.pixels.size() * sizeof(RGB));
+                        reportHdrProgress(150 + uint32_t((uint64_t(row + strip.height) * 300) / source.height), 1000);
                     }
-                    editHDRPixels(strip, options, false);
-                    applyStripEffects(strip, row, effects, 0);
-                    lowFile.append(strip.pixels.data(), strip.pixels.size() * sizeof(RGB));
-                    reportHdrProgress(150 + uint32_t((uint64_t(row + strip.height) * 300) / source.height), 1000);
                 }
             }
             source.finish(); checkProcessingCancellation();

@@ -167,13 +167,38 @@ final class EditorModel: ObservableObject {
     }
     var previewLongEdge = 2000
     var renderPreviewLongEdge = 2000
-    @Published var hslTargetEnabled = false
+    @Published var hslTargetEnabled = false { didSet {
+        if hslTargetEnabled { inspection.pinModeEnabled = false }
+    } }
     @Published var hslTargetAxis: HSLAxis = .hue
     @Published var hslTargetInteraction = HSLTargetInteraction()
     @Published var hslTargetPoint: CGPoint?
     @Published var hslTargetNotice: HSLTargetAvailability?
+    @Published var inspection = InspectionSessionState() { didSet {
+        if !oldValue.pinModeEnabled && inspection.pinModeEnabled {
+            cancelHSLTarget(); hslTargetEnabled = false
+            cancelCurveTarget(); curveTargetEnabled = false
+            cancelWBProbe(); wbEyedropperEnabled = false
+        }
+    } }
+    var sourceNativeSize: CGSize?
+    enum WBProbeNotice: Equatable { case overexposed, outside, stale, unavailable, failed }
+    @Published var wbEyedropperEnabled = false { didSet {
+        if wbEyedropperEnabled { inspection.pinModeEnabled = false }
+    } }
+    @Published var wbProbeSampling = false
+    @Published var wbProbeNotice: WBProbeNotice?
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
+    @Published var curveTargetEnabled = false { didSet {
+        if curveTargetEnabled { inspection.pinModeEnabled = false }
+    } }
+    @Published var curveTargetChannel: ToneCurveChannel = .rgb
+    @Published var curveTargetInteraction = CurveTargetInteraction()
+    @Published var curveTargetPoint: CGPoint?
+    @Published var curveTargetNotice: HSLTargetAvailability?
+    var curveTargetHistoryActive = false
+    var curvePendingKeyDelta: Double = 0
     var hslAcceptedRequest: RenderRequest<RenderWork>?
     var hslAcceptedSettings: Adjustments?
     var hslSourceRevision: UInt64 = 1
@@ -182,7 +207,14 @@ final class EditorModel: ObservableObject {
         processingMigrationReceipt = nil
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
+        pendingExternalReload = nil
+        dismissedExternalReloadFingerprints.removeAll()
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
+        inspection.resetForNewSource()
+        InspectionSamplerCache.shared.clear()
+        InspectionOverlayRenderer.shared.clear()
+        sourceNativeSize = nil
+        wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
     } }
@@ -273,6 +305,7 @@ final class EditorModel: ObservableObject {
     var prepareCollectionExportOperation: (MacCollectionExportPreparation) throws -> MacCollectionExportReview = { try $0.prepare() }
     @Published var collectionError: String?
     @Published var exportLongEdge: Int?
+    @Published var exportOutputSharpening: OutputSharpening = .off
     let queue = DispatchQueue(label: "rawlab.render", qos: .userInitiated)
     let debounceQueue = DispatchQueue(label: "rawlab.render.debounce", qos: .userInitiated)
     var scheduler = RenderScheduler<RenderWork>()
@@ -340,10 +373,16 @@ final class EditorModel: ObservableObject {
     }
     var confirmUnusableRecordReset: ((URL, String) -> Bool)?
     let editDirectory: URL
+    let presetDirectory: URL
     let batchJournal: MacBatchJournal
     var updateJournalLoadFailed = false
     var saveWork: DispatchWorkItem?
     var dirty = false
+    @Published var pendingExternalReload: PendingExternalReload?
+    @Published var presetLibraryRevision: UInt64 = 0
+    var dismissedExternalReloadFingerprints: Set<FileStatFingerprint> = []
+    var deferredExternalEditsCheck = false
+    var externalStoreWatcher: ExternalStoreFileWatcher?
     var lookLibrary: LookLibrary?
     let onUsage: (UsageEvent) -> Void
     var pendingImportEvent = false
@@ -376,6 +415,7 @@ final class EditorModel: ObservableObject {
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
+        self.presetDirectory = presetDirectory
         presetStore = AdjustmentPresetStore(directory: presetDirectory)
         batchJournal = MacBatchJournal(directory: batchDirectory)
         recentLooks = RecentLooks.load(from: recentLooksURL)
@@ -405,8 +445,9 @@ final class EditorModel: ObservableObject {
         }
         timer.resume()
         debounceTimer = timer
+        startExternalStoreWatcher()
     }
-    deinit { debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel() }
+    deinit { externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel() }
 }
 
 extension EditorModel {

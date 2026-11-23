@@ -184,6 +184,7 @@ extension ContentView {
                 Toggle(L10n.text("精细"), isOn: $coordinator.adjustmentFine).accessibilityIdentifier("editor.fine")
                     .modifier(OptionalGeometryObserver(action: testHooks.onFineToggleFrame))
                 if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $coordinator.hslTargetEnabled) }
+                if currentEditorTool == .adjustment(.toneCurve) { Toggle(L10n.text("目标调整"), isOn: $coordinator.curveTargetEnabled) }
                 Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
                     .accessibilityIdentifier("editor.compare.mode")
                 Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
@@ -207,6 +208,7 @@ extension ContentView {
             currentTool: currentEditorTool,
             hslChannel: hslChannel,
             gradingZone: coordinator.gradingZone,
+            gradingGlobalSelected: coordinator.gradingGlobalSelected,
             isAvailable: available,
             isModified: resetModified
         )

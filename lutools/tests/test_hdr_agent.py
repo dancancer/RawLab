@@ -111,14 +111,14 @@ class HDRAgent(unittest.TestCase):
                             self.assertEqual(max(info["result"]["identified_size"][axis] for axis in ("width", "height")), 32)
 
     def run_cli(self, *arguments):
-        process = subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, timeout=120)
+        process = subprocess.run([str(CLI), *map(str, arguments)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         return process, json.loads(process.stdout)
 
     def test_hdr_recipe_export_preview_info_and_atomic_failure(self):
         with tempfile.TemporaryDirectory(prefix="rawlab-hdr-agent-") as temporary:
             root=Path(temporary)
             source=root / "phone.jpg"
-            generated=subprocess.run([str(FIXTURE), "--fixture", str(source)], capture_output=True, text=True)
+            generated=subprocess.run([str(FIXTURE), "--fixture", str(source)], capture_output=True, text=True, encoding="utf-8", errors="replace")
             if generated.returncode==77:
                 self.skipTest("native HDR fixture requires macOS15/iOS18")
             self.assertEqual(generated.returncode,0,generated.stderr)
@@ -285,6 +285,83 @@ class HDRAgent(unittest.TestCase):
             self.assertIn("edits.look",invalid["error"]["message"])
             self.assertEqual(output.read_bytes(),protected)
             self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(),original)
+
+    def test_v16_combined_curve_v2_grading_v2_and_output_sharpening(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-hdr-v16-combined-") as temporary:
+            root = Path(temporary)
+            source = Path(__file__).parent / "fixtures/bayer-demosaic.dng"
+            hdr_high = root / "v16-high.jpg"
+            hdr_off = root / "v16-off.jpg"
+            doc = {
+                "schema_version": 16,
+                "processing": {"family": "rawlab_hdr", "version": 9, "quality": "standard"},
+                "input": {"path": str(source), "type": "raw"},
+                "edits": {
+                    "exposure": {"ev": 0.4},
+                    "white_balance": {"mode": "relative", "relative_temperature": 6200, "relative_tint": 8},
+                    "tone": {
+                        "contrast": 1.15,
+                        "highlights": -0.2,
+                        "shadows": 0.25,
+                        "saturation": 1.05,
+                        "black_point": -0.1,
+                        "white_point": 0.1,
+                        "s_curve": 0.0,
+                        "curve": {
+                            "mode": "custom",
+                            "points": [[0.0, 0.05], [0.5, 0.58], [1.0, 0.94]],
+                            "apply_to_luminosity": True,
+                            "parametric": {
+                                "shadows": 22.0, "darks": -10.0, "lights": 15.0, "highlights": -12.0,
+                                "split_shadow": 0.22, "split_midtone": 0.50, "split_highlight": 0.78,
+                            },
+                            "channels": {
+                                "red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]]},
+                                "green": {"mode": "legacy", "points": []},
+                                "blue": {"mode": "custom", "points": [[0.0, 0.03], [0.5, 0.46], [1.0, 0.97]]},
+                            },
+                        },
+                    },
+                    "color": {"vibrance": 0.18},
+                    "color_grading": {
+                        "shadows": {"hue": 210.0, "saturation": 25.0, "luminance": -12.0},
+                        "midtones": {"hue": 45.0, "saturation": 14.0, "luminance": 6.0},
+                        "highlights": {"hue": 320.0, "saturation": 18.0, "luminance": -9.0},
+                        "global": {"hue": 170.0, "saturation": 12.0, "luminance": 7.0},
+                        "blending": 72.0,
+                        "balance": -18.0,
+                    },
+                },
+                "output": {
+                    "path": str(hdr_high),
+                    "format": "hdr_jpeg",
+                    "base_color": "display_p3",
+                    "jpeg_quality": 95,
+                    "output_sharpening": "high",
+                    "size": {"mode": "limit_long_edge", "long_edge": 64},
+                },
+            }
+            recipe = root / "v16.json"
+            recipe.write_text(json.dumps(doc), encoding="utf-8")
+            _, capabilities = self.run_cli("--capabilities", "--json")
+            extra_args = []
+            if capabilities["result"]["optional_features"]["lens_correction"]:
+                extra_args += ["--lens-database", Path(__file__).parent / "fixtures/lenses.xml"]
+            p1, r1 = self.run_cli("--recipe", recipe, "--analyze", "--sample", "0.5,0.5,center", "--json", *extra_args)
+            self.assertEqual(p1.returncode, 0, r1)
+            self.assertIn("samples", r1["result"])
+            self.assertEqual(r1["result"]["samples"][0]["label"], "center")
+            p_exp, r_exp = self.run_cli("--recipe", recipe, "--json", *extra_args)
+            self.assertEqual(p_exp.returncode, 0, r_exp)
+            high_bytes = hdr_high.read_bytes()
+            self.assertIn(b"urn:iso:std:iso:ts:21496:-1", high_bytes)
+
+            doc["output"]["path"] = str(hdr_off)
+            doc["output"]["output_sharpening"] = "off"
+            recipe.write_text(json.dumps(doc), encoding="utf-8")
+            p2, r2 = self.run_cli("--recipe", recipe, "--json", *extra_args)
+            self.assertEqual(p2.returncode, 0, r2)
+            self.assertNotEqual(high_bytes, hdr_off.read_bytes())
 
 
 if __name__=="__main__":

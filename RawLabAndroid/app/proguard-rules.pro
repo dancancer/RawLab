@@ -42,7 +42,9 @@
 -keep class com.rawlab.android.engine.NativeProcessRequest { <fields>; }
 -keep class com.rawlab.android.engine.NativeGeometry { <fields>; }
 -keep class com.rawlab.android.engine.NativeToneCurve { <fields>; }
+-keep class com.rawlab.android.engine.NativeToneCurveParametric { <fields>; }
 -keep class com.rawlab.android.engine.NativeColorGrading { <fields>; }
+-keep class com.rawlab.android.engine.NativeColorGradingV2 { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRTone { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRColor { <fields>; }
 -keep class com.rawlab.android.engine.NativeHDRRendition { <fields>; }
@@ -59,3 +61,20 @@
     java.lang.Object writeReplace();
     java.lang.Object readResolve();
 }
+
+# Keep mwiede/jsch classes loaded via reflection for Sony Access Authentication (SSH).
+-keep class com.jcraft.jsch.** { *; }
+-keep interface com.jcraft.jsch.** { *; }
+-keepclassmembers class * implements com.jcraft.jsch.UserInfo { *; }
+-keepclassmembers class * implements com.jcraft.jsch.UIKeyboardInteractive { *; }
+-keepclassmembers class * implements com.jcraft.jsch.HostKeyRepository { *; }
+-keepclassmembers class * implements com.jcraft.jsch.SocketFactory { *; }
+-keepclassmembers class * implements com.jcraft.jsch.Logger { *; }
+
+# Optional desktop/agent/logging/BouncyCastle adapters probed reflectively by JSch at runtime.
+-dontwarn com.sun.jna.**
+-dontwarn org.apache.logging.log4j.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.newsclub.net.unix.**
+-dontwarn org.slf4j.**

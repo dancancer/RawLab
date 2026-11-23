@@ -17,6 +17,9 @@
      或许可证兼容的主流成熟开源库与标准工具，不手搓通用容器/格式编解码、语法解析、加密哈希、网络协议栈或测试/构建框架；
   3. **最后才考虑最小必要自研**：仅当上述两者在跨端色彩/持久化契约、许可证合规、包体积或性能约束上确实无法满足时，
      才自研最小必要实现，并收敛到单一共享模块供调用方复用。
+  4. **禁止规避接缝的跨语言复刻**：
+     - 几何坐标正逆变换、色彩空间/白平衡/曲线数学、区域像素取样、图像分析与逐像素视觉叠加，单一真源必须在 `lutools` 核心；缺少入口时应向核心提炼窄接口，严禁为避开 `/lutools/include/` 评审而在 Swift / Kotlin / C# / Python 中手抄核心公式或像素循环。
+     - CLI、MCP（`tools/mcp/`）及脚本不得在外部语言中手写客户端 `Codable` 私有结构或独立文件锁协议；跨进程读写 `edits.json` / `presets.json` 必须遵循「读取-增量合并-保留未知与正交字段（如 `hdr`、`aiDenoise*`）+ 字节切片保留」契约，且同平台跨进程锁必须采用同一种 OS 锁原语。
 - **主轴把关（Review 与复核）**：以“核心用户痛点与工程风险是否被真实、有效闭环”作为
   判定主轴，剥离不影响主目标的极低概率理论边界或细枝末节，不让过度苛责的边角细节掩盖
   已真正解决的问题，同时也不放过真正导致功能不可用或契约失真的实质缺陷。
@@ -28,6 +31,10 @@
   平台、UI 或硬件门禁不得表述为已验证，也不因当前环境缺少物理硬件而否定已闭环的代码逻辑。
   推送远端（`push`）、创建 PR、合并分支、打标签、上传安装包、创建 Release、签名与部署，
   均须事先获得用户明确授权。
+- **门禁阈值与豁免变更授权**：修改 `Shared/specs/` 的 `divergence_policy`（含顺延 `expires_wave`、
+  新增豁免类别、调整 `max_divergent_fields`）、放宽复杂度/行数上限或删改 `scripts/ci/` 契约断言，
+  均视同保护规则变更，须事先获得用户明确授权；任何随包分发的规格/目录副本（如 `tools/mcp/src/rawlab_mcp/*.json`）
+  必须由脚本生成并纳入 CI 无遮蔽一致性 `--check` 门禁，禁止手维护静态副本。
 
 ## 长期分支
 
@@ -69,11 +76,14 @@
 ## 版本发布
 
 1. 从已验证的 `origin/development` 创建 `release/<version>`，例如 `release/0.5.1`。
-2. 发布分支只做版本号、打包、发布文档和必要的发布修复，不混入新功能。
-3. 完成目标平台构建、测试和发布验收；**所有待发布成品必须在本机执行真实启动冒烟**（Android 签名且经 R8 混淆的 Release APK 须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` DEX JNI 检查、16 KB 对齐、`apksigner verify`，并在本地模拟器上运行 `bash RawLabAndroid/scripts/smoke-release-apk.sh <apk> --avd <avd-name>` 完成 2 次干净冷启动校验），**不得以“无真机 / 真机验收记录未覆盖边界”免除对实际待发安装包（macOS 签名包、Android 正式 APK 模拟器冷启动、Windows 发布包）的本地启动验证**；仅未覆盖的物理设备/真机硬件能力边界必须明确记录。
-4. 经用户明确授权后通过 PR 合入 `main`，为发布提交创建 `v<version>` 标签（不得覆盖已有标签），
+2. **发布分支血统与构建号单调门禁**：切出 `release/<version>` 前须先刷新 `origin/main` 与 `origin/development`，
+   核实全部已发布热修复（`v*` tags）与本轮集成提交均已合入 `origin/development`（`git merge-base --is-ancestor origin/main HEAD`）；
+   `Shared/version.json` 的 `build` 必须**严格大于**所有既有 `v*` 标签及 `origin/main` 上的最大 `build`。
+3. 发布分支只做版本号、打包、发布文档和必要的发布修复，不混入新功能。
+4. 完成目标平台构建、测试和发布验收；**所有待发布成品必须在本机执行真实启动冒烟**（Android 签名且经 R8 混淆的 Release APK 须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` DEX JNI 检查、16 KB 对齐、`apksigner verify`，并在本地模拟器上运行 `bash RawLabAndroid/scripts/smoke-release-apk.sh <apk> --avd <avd-name>` 完成 2 次干净冷启动校验），**不得以“无真机 / 真机验收记录未覆盖边界”免除对实际待发安装包（macOS 签名包、Android 正式 APK 模拟器冷启动、Windows 发布包）的本地启动验证**；仅未覆盖的物理设备/真机硬件能力边界必须明确记录。
+5. 经用户明确授权后通过 PR 合入 `main`，为发布提交创建 `v<version>` 标签（不得覆盖已有标签），
    并将发布修复回合到 `development`。
-5. 上传安装包、创建 Release、签名或部署均需要相应授权；采用 Gitflow 本身不代表授权发布。
+6. 上传安装包、创建 Release、签名或部署均需要相应授权；采用 Gitflow 本身不代表授权发布。
 
 ## 紧急修复
 
@@ -100,6 +110,10 @@
 - GPU `Auto` 保留 CPU 回退，`Force` 不伪装 GPU 成功。
 - **AI 降噪例外**：只在硬件 GPU 后端（Mac Core ML、Windows DirectML）运行，不可用时明确提示，
   不回退到 CPU 神经网络推理；普通显影的 CPU 路径不受影响。
+- **UI 线程、缓存与状态生命周期不变量**：
+  - 严禁在 SwiftUI `body`、UIKit `configure`/`layoutSubviews`、Compose 重组函数或 WPF `LayoutUpdated` 中同步执行整图或瓦片级逐像素 CPU 计算。
+  - 所有预览、分块与观察层像素缓存必须绑定切图清理与系统内存压力回收（如 iOS `didReceiveMemoryWarningNotification`），禁止无清理入口的常驻全局缓存。
+  - Android 用户会话态（含锚点、工具模式、草稿）必须驻留 `ViewModel` 或 `rememberSaveable`，禁止放在裸 `remember` 中；桌面外部文件热重载必须与本地异步保存队列串行排空或通过递增纪元作废在途旧写盘。
 
 ### 分层门禁与平台入口
 

@@ -221,6 +221,14 @@ class AdjustmentTransferTest {
             F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT))
         assertEquals(4200f, fixed.temperature); assertEquals(12.1f, fixed.tint)
         assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.TEMPERATURE to AdjustmentValue.Number(4200.0))) }
+
+        val rasterCtx = context.copy(isRaw = false, cameraTemperature = null, cameraTint = null)
+        val rasterSource = EditSettings(customWb = false, temperature = 5800f, tint = 12f)
+        val rasterPayload = AdjustmentTransfer.capture(AdjustmentScope.Custom(F.WHITE_BALANCE), rasterSource, rasterCtx)
+        val rasterTarget = prepare(rasterPayload, EditSettings(), rasterCtx)
+        assertFalse(rasterTarget.customWb)
+        assertEquals(5800f, rasterTarget.temperature)
+        assertEquals(12f, rasterTarget.tint)
     }
 
     @Test fun nullLegacyDenoiseMapsToTheExistingDisabledPathButUnsupportedRequestsNotify() {

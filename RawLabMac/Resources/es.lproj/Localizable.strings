@@ -16,12 +16,14 @@
 "1:1" = "1:1";
 "3:2" = "3:2";
 "4:3" = "4:3";
+"50% 中性灰" = "Gris neutro 50 %";
 "AI 已接管降噪，普通降噪参数会保留。白平衡变化需要重新处理。" = "La reducción de ruido con IA está activa. Los ajustes normales se conservan. Cambiar el balance de blancos requiere volver a procesar.";
 "AI 降噪" = "Reducción de ruido con IA";
 "AI 降噪仅支持 RAW 照片。" = "La reducción de ruido con IA solo admite fotos RAW.";
 "AI 降噪失败" = "La reducción de ruido con IA falló";
 "AI 降噪失败：%@" = "Error en la reducción de ruido con IA: %@";
 "AI 降噪已取消。" = "Reducción de ruido con IA cancelada.";
+"AI 降噪强度" = "Intensidad de reducción de ruido IA";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "La reducción de ruido con IA aún no se puede copiar. Elige Personalizado para copiar otros ajustes.";
 "AI 降噪结果连续未就绪，请重试。" = "El resultado de la reducción de ruido con IA sigue sin estar disponible. Inténtalo de nuevo.";
 "AI 降噪（实验）" = "Reducción de ruido con IA (experimental)";
@@ -115,7 +117,9 @@
 "交互预览… %@ × %@ · sRGB" = "Vista previa interactiva… %@ × %@ · sRGB";
 "交换横纵比例" = "Intercambiar la orientación del formato";
 "亮度降噪" = "Reducción de ruido de luminancia";
+"亮部" = "Claros";
 "仅 RAW 照片支持镜头校正。" = "La corrección de lente solo está disponible para fotos RAW.";
+"仅作用于明度" = "Solo luminancia";
 "仅包含此目录中的 RAW，不包含子目录。" = "Solo se incluyen los RAW de esta carpeta, no los de subcarpetas.";
 "仅包含此目录中的照片，不包含子目录。" = "Solo se incluyen las fotos de esta carpeta, no las subcarpetas.";
 "仅在暗角强度为负值时可用。" = "Disponible solo cuando la intensidad de la viñeta es negativa.";
@@ -137,6 +141,7 @@
 "传感器基准" = "Referencia del sensor";
 "伪红外（旧版）" = "Falso infrarrojo (anterior)";
 "位置与尺寸" = "Posición y tamaño";
+"低" = "Bajo";
 "作者的小红书主页" = "El autor en Xiaohongshu (RED)";
 "使用 RawLab 中性显影作为基础，不代表还原了相机的标准风格。" = "Usa el revelado neutro de RawLab como base. No reproduce el estilo estándar de la cámara.";
 "使用可调降噪" = "Usar reducción de ruido ajustable";
@@ -154,6 +159,7 @@
 "保存所选调整，之后可应用到其他照片。" = "Guarda los ajustes seleccionados para aplicarlos después a otras fotos.";
 "保存预设" = "Guardar ajuste preestablecido";
 "保留任务" = "Conservar tarea";
+"保留当前手动草稿" = "Conservar borrador manual actual";
 "保留损坏文件并重建更新设置。重启后会检查数据，自动更新保持关闭。" = "Se conservará el archivo dañado y se restablecerán los ajustes. Los datos se comprobarán al reiniciar; las actualizaciones automáticas seguirán desactivadas.";
 "保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留旧编辑记录的降噪算法" = "Conserva la reducción de ruido de ediciones anteriores";
@@ -170,17 +176,20 @@
 "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。" = "Compara los resultados candidatos antes de importarlos. Incluyen hipótesis y no demuestran que se haya reproducido el aspecto del autor.";
 "光线" = "Luz";
 "全不选" = "Deseleccionar todo";
+"全局" = "Global";
 "全选" = "Seleccionar todo";
 "全部" = "Todo";
 "全部外观" = "Todos los aspectos";
 "全部调整" = "Todos los ajustes";
 "八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。" = "El tono, la saturación y la luminosidad de los ocho colores volverán a 0. Los demás ajustes no cambiarán.";
+"关" = "Desactivado";
 "关于 RawLab" = "Acerca de RawLab";
 "关于 RawLab…" = "Acerca de RawLab...";
 "关闭" = "Cerrar";
 "关闭 AI 降噪" = "Desactivar reducción de ruido con IA";
 "关闭对比" = "Desactivar comparación";
 "关闭提示" = "Cerrar mensaje";
+"关闭观察层" = "Sin capa";
 "关闭镜头选择" = "Cerrar la selección de objetivo";
 "其他" = "Otros";
 "兼容导入" = "Importación compatible";
@@ -189,6 +198,7 @@
 "内存不足，无法解码普通图片。" = "No hay memoria suficiente para decodificar la imagen.";
 "内容容量 %@ EV" = "Margen de la imagen %@ EV";
 "内置" = "Integrado";
+"冷暖反差黑白" = "B/N cálido/frío";
 "减少边缘彩色条纹" = "Reducir los bordes de color";
 "几何" = "Geometría";
 "几何与镜头" = "Geometría y objetivo";
@@ -222,6 +232,7 @@
 "去噪优先" = "Prioridad a la reducción de ruido";
 "去朦胧" = "Borrar neblina";
 "参数或输出路径无效。" = "Parámetros o ruta de salida no válidos.";
+"参数曲线" = "Curva paramétrica";
 "参考图" = "Imagen de referencia";
 "参考图与预览的比例或尺寸不一致，仅可目视比较。" = "La referencia y la vista previa tienen proporciones o dimensiones distintas; solo es posible una comparación visual.";
 "参考图来自同一张原图" = "La imagen de referencia procede del mismo original";
@@ -231,6 +242,7 @@
 "参考输出为 sRGB，或已按正确配置转换为 sRGB" = "La salida de referencia es sRGB o se convirtió a sRGB con la configuración correcta";
 "双击名称或轨道恢复默认值。" = "Haz doble clic en el nombre o la pista para restablecer el valor predeterminado.";
 "发现新版本 %@" = "Nueva versión disponible: %@";
+"取样监视" = "Monitor de muestreo";
 "取消" = "Cancelar";
 "取消几何和镜头编辑" = "Cancelar la edición de geometría y objetivo";
 "取消导出" = "Cancelar exportación";
@@ -302,6 +314,7 @@
 "导入外观…" = "Importar look…";
 "导入相机配置…" = "Importar perfil de cámara…";
 "导入结果" = "Resultado de la importación";
+"导入调整参数 JSON…" = "Importar ajustes JSON…";
 "导出" = "Exportar";
 "导出 %@ 张" = "Exportar fotos (%@)";
 "导出 JPEG…" = "Exportar JPEG…";
@@ -315,6 +328,7 @@
 "导出已完成的 DNG 到文件…" = "Exportar DNG completados a Archivos…";
 "导出渲染型 DNG" = "Exportar DNG revelado";
 "导出渲染型 DNG…" = "Exportar DNG revelado…";
+"导出调整参数 JSON…" = "Exportar ajustes JSON…";
 "导出长边像素" = "Borde largo al exportar (píxeles)";
 "导出长边必须为 1-65535 像素。" = "El borde largo debe tener entre 1 y 65535 píxeles.";
 "将以下项目转为独立调整，以保留其他分组的当前效果：%@" = "Los siguientes valores se convertirán en ajustes independientes para conservar el aspecto actual de los demás grupos: %@";
@@ -389,6 +403,7 @@
 "常用导出尺寸" = "Tamaños de exportación más utilizados";
 "常用尺寸" = "Tamaños comunes";
 "平均差异 %@/255 · 最大差异 %@/255" = "Diferencia media %@/255 · Diferencia máxima %@/255";
+"平衡" = "Equilibrio";
 "并排" = "En paralelo";
 "应用" = "Aplicar";
 "应用几何和镜头编辑" = "Aplicar cambios de geometría y objetivo";
@@ -445,6 +460,7 @@
 "批量编辑" = "Edición por lotes";
 "批量编辑…" = "Edición por lotes…";
 "找不到 HDR 相机配置，请重新导入。" = "Falta el perfil de cámara HDR. Impórtalo de nuevo.";
+"拆分点" = "Puntos de división";
 "拉直" = "Enderezar";
 "拍摄参数" = "Parámetros de captura";
 "拍摄时设置" = "Ajuste según la toma";
@@ -510,6 +526,7 @@
 "无效的曝光基准" = "Punto de referencia de exposición no válido";
 "无效的曲线参数" = "Valores de curva no válidos";
 "无效的清晰度或去朦胧参数" = "Valores de claridad o borrado de neblina no válidos";
+"无效的白平衡参数" = "Parámetros de balance de blancos no válidos";
 "无效的视口预览模式" = "Modo de vista previa del área visible no válido";
 "无效的透视参数" = "Los parámetros de perspectiva no son válidos";
 "无效的降噪参数" = "Ajustes de reducción de ruido no válidos";
@@ -552,6 +569,7 @@
 "旧版色度降噪" = "Reducción de ruido cromático heredada";
 "旧版降噪" = "Reducción de ruido anterior";
 "旧版：%@" = "Heredado: %@";
+"明亮度" = "Luminancia";
 "明度" = "Luminosidad";
 "明度：从暗到亮。" = "Luminosidad: de oscuro a claro.";
 "明暗" = "Tono";
@@ -569,6 +587,7 @@
 "暖金光影 · 质感人像" = "Luz dorada cálida · retrato con textura";
 "暗角" = "Viñeta";
 "暗角校正" = "Corrección de viñeteo";
+"暗部" = "Oscuros";
 "暮色黄昏 · 相邻色过渡" = "Crepúsculo · transición de colores adyacentes";
 "曝光" = "Exposición";
 "曝光基准" = "Referencia de exposición";
@@ -621,6 +640,7 @@
 "查看目标" = "Revisar destinos";
 "查看调整前" = "Ver antes";
 "查看调整范围" = "Ver alcance de los ajustes";
+"标准" = "Estándar";
 "标准显影" = "Revelado estándar";
 "校正后裁去空白边缘" = "Recortar los bordes vacíos tras la corrección";
 "核对 DNG 文件" = "Verificar archivos DNG";
@@ -633,6 +653,7 @@
 "检查最终调整" = "Revisar ajustes finales";
 "检查目标" = "Comprobar fotos";
 "检查目标…" = "Comprobar fotos de destino…";
+"检测到外部调色方案更新" = "Actualización externa de ajustes detectada";
 "横向色差" = "Aberración cromática lateral";
 "横向色差未应用" = "Aberración cromática lateral no corregida";
 "横向色差标定" = "Calibración de aberración cromática lateral";
@@ -718,15 +739,18 @@
 "添加照片目录" = "Añadir carpeta de fotos";
 "添加目录" = "Añadir carpeta";
 "添加目录…" = "Añadir carpeta…";
+"添加锚点" = "Fijar ancla";
 "清晰度" = "Claridad";
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
 "清除相机配置" = "Quitar perfil de cámara";
+"清除锚点" = "Borrar anclas";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Rueda: %@; Mayús: %@; Rango: %@ a %@ %@";
 "滨田英明" = "Hideaki Hamada";
 "点击曲线区域添加控制点，拖动中间点调整。" = "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.";
+"点曲线" = "Curva de puntos";
 "照片" = "Foto";
 "照片信息" = "Información de la foto";
 "照片四周留白" = "Espacio alrededor de la foto";
@@ -753,6 +777,7 @@
 "畸变矫正" = "Corrección de distorsión";
 "白场" = "Punto blanco";
 "白平衡" = "Balance de blancos";
+"白平衡吸管" = "Cuentagotas de balance de blancos";
 "白平衡模式" = "Modo de balance de blancos";
 "目标已启用 AI 降噪。请先关闭 AI，或取消选择普通降噪字段。" = "La reducción de ruido con IA está activada en el destino. Desactívala primero o desmarca los campos de reducción de ruido normal.";
 "目标所需的外观不可用，请先导入外观。" = "El aspecto necesario no está disponible. Impórtalo primero.";
@@ -787,6 +812,7 @@
 "粘贴调整…" = "Pegar ajustes…";
 "精确调整" = "Ajuste preciso";
 "精细调整" = "Ajustes finos";
+"素描明度" = "Luminancia boceto";
 "紫" = "Morado";
 "红" = "Rojo";
 "纯预览" = "Vista previa";
@@ -812,6 +838,7 @@
 "缩放与显示" = "Zoom y visualización";
 "缺少拍摄时白平衡数据，无法保留配方效果。" = "Faltan los datos del balance de blancos de la toma, por lo que no se puede conservar el aspecto de la receta.";
 "羽化" = "Desvanecimiento";
+"肤色色相放大" = "Amplificación de tono de piel";
 "胶片" = "Película";
 "胶片、导入外观和大师配方共用" = "Se aplica a simulaciones de película, looks importados y recetas maestras";
 "胶片模拟" = "Simulación de película";
@@ -847,6 +874,7 @@
 "草稿已处理，请重新检查最终调整。" = "Se ha resuelto el borrador. Revisa de nuevo los ajustes finales.";
 "草稿未应用，无法导出或复制设置。" = "Aplica el borrador antes de exportar o copiar ajustes.";
 "蓝" = "Azul";
+"融合" = "Fusión";
 "裁切" = "Recorte";
 "裁切、旋转、翻转和拉直" = "Recortar, girar, voltear y enderezar";
 "裁切上边" = "Borde superior";
@@ -865,6 +893,7 @@
 "裁边 %@%%" = "Recorte %@%%";
 "覆盖" = "Sobrescribir";
 "覆盖预设？" = "¿Sobrescribir el ajuste?";
+"观察层" = "Capa de inspección";
 "视频范围（10 位 64–940）" = "Rango de vídeo (10 bits 64–940)";
 "计算与参考的差异" = "Calcular la diferencia con la referencia";
 "试用方案 · 无颜色依据" = "Opción de prueba · Sin base de color";
@@ -929,8 +958,10 @@
 "输出参考" = "Referencia de salida";
 "输出坐标" = "Salida";
 "输出范围" = "Rango de salida";
+"输出锐化" = "Enfoque de salida";
 "输出颜色" = "Espacio de color de salida";
 "边界比例仅供观察，不能据此判定配置或风格错误。" = "Las proporciones de borde son solo informativas; no permiten concluir que la configuración o el aspecto sean incorrectos.";
+"过饱和熔断热力图" = "Mapa térmico de sobresaturación";
 "近似基础 · 未验证" = "Base aproximada · Sin verificar";
 "返回调整后" = "Volver a después";
 "返回选片集合" = "Volver a la colección de fotos";
@@ -991,6 +1022,7 @@
 "重置当前分区" = "Restablecer el rango actual";
 "重置当前颜色" = "Restablecer color actual";
 "重置当前颜色（%@）" = "Restablecer el color actual (%@)";
+"重置曲线" = "Restablecer curva";
 "重置本工具" = "Restablecer esta herramienta";
 "重置调整" = "Restablecer ajustes";
 "重置镜头校正" = "Restablecer corrección de lente";
@@ -999,6 +1031,7 @@
 "重试" = "Reintentar";
 "重试失败的 %@ 张" = "Reintentar las fotos fallidas (%@)";
 "重试未完成项" = "Reintentar pendientes";
+"重载滑块" = "Recargar controles";
 "钨丝电影 · 红灯冷青" = "Cine de tungsteno · luces rojas y cian frío";
 "锁定当前比例" = "Bloquear la proporción actual";
 "锐化" = "Enfoque";
@@ -1050,6 +1083,7 @@
 "饱和度" = "Saturación";
 "饱和度：从灰色到彩色。" = "Saturación: de gris a color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Noche urbana de neón en Seúl, base cian fría contra altas luces rosa-púrpura y reflejos de calles mojadas";
+"高" = "Alto";
 "高光" = "Altas luces";
 "高光 %@" = "Altas luces %@";
 "高光保护" = "Protección de altas luces";

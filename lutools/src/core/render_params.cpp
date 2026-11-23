@@ -115,16 +115,24 @@ RenderStatus validateRenderParams(const RenderParams& params, bool hasOutputBuff
     const float controls[] = {params.exposureEV, params.brightness, params.contrast,
         params.saturation, params.temperature, params.tint, params.lutStrength,
         params.highlights, params.shadows, params.toneCurve, params.noiseReduction,
-        params.sharpening};
+        params.sharpening, params.aiDenoiseBlend};
     for (float value : controls) {
         if (!std::isfinite(value)) return RenderStatus::InvalidArgument;
     }
-    if (std::abs(params.exposureEV) > 20 || params.brightness <= 0) {
+    if (std::abs(params.exposureEV) > 20 || params.brightness <= 0 ||
+        params.aiDenoiseBlend < 0.0f || params.aiDenoiseBlend > 1.0f ||
+        !params.parametricCurve.valid() ||
+        params.outputSharpening < OutputSharpening::Off ||
+        params.outputSharpening > OutputSharpening::High) {
         return RenderStatus::InvalidArgument;
     }
     if (params.wbMode == RenderWhiteBalanceMode::Temperature &&
         (params.inputType != RenderInputType::Raw || params.temperature < 2000 ||
          params.temperature > 50000 || std::abs(params.tint) > 150)) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (params.wbMode == RenderWhiteBalanceMode::Relative &&
+        (params.temperature < 2000 || params.temperature > 50000 || std::abs(params.tint) > 150)) {
         return RenderStatus::InvalidArgument;
     }
     if (params.wbMode == RenderWhiteBalanceMode::Custom) {
@@ -145,11 +153,14 @@ RenderStatus validateRenderParams(const RenderParams& params, bool hasOutputBuff
             exceedsOutputPixelCap(params.inputWidth, params.inputHeight)) {
             return RenderStatus::InvalidArgument;
         }
-        if (params.inputType == RenderInputType::DisplayBuffer &&
-            (params.inputColorSpace != ColorSpace::sRGB || params.inputIsLinear ||
-             params.wbMode != RenderWhiteBalanceMode::Camera ||
-             params.temperature != 6500.0f || params.tint != 0.0f)) {
-            return RenderStatus::Unsupported;
+        if (params.inputType == RenderInputType::DisplayBuffer) {
+            const bool validDisplayWb =
+                (params.wbMode == RenderWhiteBalanceMode::Camera &&
+                 params.temperature == 6500.0f && params.tint == 0.0f) ||
+                params.wbMode == RenderWhiteBalanceMode::Relative;
+            if (params.inputColorSpace != ColorSpace::sRGB || params.inputIsLinear || !validDisplayWb) {
+                return RenderStatus::Unsupported;
+            }
         }
     } else {
         return RenderStatus::Unsupported;

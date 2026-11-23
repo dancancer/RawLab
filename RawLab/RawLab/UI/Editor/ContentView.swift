@@ -315,7 +315,7 @@ struct ContentView: View {
         .onChange(of: coordinator.photoViewing.holdingBefore) { _, _ in
             testHooks.onHoldingBeforeChange?(self)
         }
-        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore, initial: true) { _, needed in
+        .onChange(of: coordinator.photoViewing.enabled || coordinator.photoViewing.holdingBefore || coordinator.inspection.monitorEnabled || !coordinator.inspection.anchors.isEmpty, initial: true) { _, needed in
             viewModel.setDetailNeedsBefore(needed)
         }
     }
@@ -324,7 +324,7 @@ struct ContentView: View {
         content
         .onChange(of: coordinator.adjustmentsExpanded) { _, expanded in
             if !expanded { closeQuickPresets() }
-            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled { setSliderEditing(false) }
+            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled && !coordinator.curveTargetEnabled { setSliderEditing(false) }
             if expanded, let tool = coordinator.collapsedEditorTool { activateEditorTool(tool) }
         }
         .onChange(of: coordinator.geometrySelected) { _, active in
@@ -342,21 +342,32 @@ struct ContentView: View {
         .onChange(of: coordinator.selectedAdjustment) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.cancelCurveTarget()
+            coordinator.curveTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.selectedHDRRenditionTool) { _, _ in
             coordinator.cancelHSLTarget()
             coordinator.hslTargetEnabled = false
+            coordinator.cancelCurveTarget()
+            coordinator.curveTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
         .onChange(of: coordinator.gradingZone) { _, _ in cancelSliderInteraction() }
+        .onChange(of: coordinator.gradingGlobalSelected) { _, _ in cancelSliderInteraction() }
         .onChange(of: coordinator.hslChannel) { _, _ in
             coordinator.cancelHSLTarget()
             cancelSliderInteraction()
         }
         .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.curveTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.wbEyedropperEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()
@@ -420,13 +431,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $coordinator.showingExportSize) {
             ExportSizeSheet(longEdge: $coordinator.exportLongEdge,
+                            outputSharpening: $coordinator.exportOutputSharpening,
+                            showOutputSharpening: coordinator.singleExportFormat != .renderedDNG,
                             title: coordinator.singleExportFormat == .renderedDNG ? "导出渲染型 DNG" :
-                                coordinator.singleExportFormat == .hdrHEIF ? coordinator.singleExportFormat.title : "保存当前照片") {
+                                coordinator.singleExportFormat == .hdrHEIF ? coordinator.singleExportFormat.title :
+                                coordinator.singleExportFormat == .png ? BatchOutputFormat.png.title : "保存当前照片") {
                 coordinator.showingExportSize = false
                 if coordinator.singleExportFormat == .renderedDNG {
                     exportDNG(longEdge: coordinator.exportLongEdge)
                 } else {
-                    exportPhoto(longEdge: coordinator.exportLongEdge, format: coordinator.singleExportFormat)
+                    exportPhoto(longEdge: coordinator.exportLongEdge,
+                                format: coordinator.singleExportFormat,
+                                outputSharpening: coordinator.exportOutputSharpening)
                 }
             }
         }
@@ -464,6 +480,8 @@ struct ContentView: View {
             _ = viewModel.saveCurrentSettings(settings)
             coordinator.photoViewing.endTemporaryViewing()
             cancelPhotoImport()
+            InspectionSamplerCache.shared.clear()
+            InspectionOverlayRenderer.shared.clear()
             testHooks.onDisappear?()
         }
     }

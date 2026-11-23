@@ -18,9 +18,10 @@ struct Sony2FujiProcessor {
     private let previewSession = PreviewSession()
     private let hdrSources=HDRSourceCache.shared
 
-    enum HDRPhotoFormat { case sdrJPEG, hdrJPEG, hdrHEIF }
+    enum HDRPhotoFormat { case sdrJPEG, sdrPNG, hdrJPEG, hdrHEIF }
 
     func exportHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int? = nil,
+                   outputSharpening: OutputSharpening = .off,
                    processing: ProcessingIdentity = .current,
                    proRAWDecodeVersion: Int? = nil, format: HDRPhotoFormat,
                    progress: ((Double) -> Void)? = nil,
@@ -31,18 +32,20 @@ struct Sony2FujiProcessor {
                 reason: UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_GPU), field: UInt32(SONY2FUJI_HDR_FIELD_SESSION))
         }
         if format == .hdrHEIF {
-            try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge, processing: processing,
+            try exportTiledHDR(url: url, settings: settings, output: output, longEdge: longEdge,
+                outputSharpening: outputSharpening, processing: processing,
                 proRAWDecodeVersion: proRAWDecodeVersion, format: UInt32(SONY2FUJI_HDR_TILED_HEIF),
                 progress: progress, cancelled: cancelled)
             return
         }
-        if format != .hdrHEIF, url.pathExtension.lowercased() == "dng",
+        if (format == .sdrJPEG || format == .hdrJPEG), url.pathExtension.lowercased() == "dng",
            let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil {
             try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
             hdrSources.clear()
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
                 _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
-                    longEdge: longEdge, keepHDR: format == .hdrJPEG, session: session,
+                    longEdge: longEdge, outputSharpening: outputSharpening,
+                    keepHDR: format == .hdrJPEG, session: session,
                     cancelled: cancelled, progress: progress)
             }
             return
@@ -50,6 +53,7 @@ struct Sony2FujiProcessor {
         try withoutActuallyEscaping(cancelled) { cancelled in
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
                 let pair = try processHDR(url: url, settings: settings, previewLongEdge: nil, exportLongEdge: longEdge,
+                                          outputSharpening: outputSharpening,
                                           processing: processing, proRAWDecodeVersion: proRAWDecodeVersion,
                                           sessionOverride: session,
                                           progress: progress.map { report in { report($0 * 0.75) } },
@@ -59,6 +63,9 @@ struct Sony2FujiProcessor {
                 switch format {
                 case .sdrJPEG:
                     try pair.exportSDR(to: output, format: SONY2FUJI_OUTPUT_JPEG,
+                                       session: session, cancelled: cancelled, progress: encodeProgress)
+                case .sdrPNG:
+                    try pair.exportSDR(to: output, format: SONY2FUJI_OUTPUT_PNG,
                                        session: session, cancelled: cancelled, progress: encodeProgress)
                 case .hdrJPEG:
                     try pair.exportJPEG(to: output, session: session, cancelled: cancelled, progress: encodeProgress)
@@ -84,6 +91,7 @@ struct Sony2FujiProcessor {
     }
 
     private func exportTiledHDR(url: URL, settings: HDRSettings, output: URL, longEdge: Int?,
+                                outputSharpening: OutputSharpening = .off,
                                 processing: ProcessingIdentity, proRAWDecodeVersion: Int?, format: UInt32,
                                 progress: ((Double) -> Void)? = nil,
                                 cancelled: () -> Bool) throws {
@@ -92,15 +100,18 @@ struct Sony2FujiProcessor {
         }
         let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
         try withRawSession(reuse: false, inputType: inputType) { session in
+            let effectiveSharpening: OutputSharpening = format == UInt32(SONY2FUJI_HDR_TILED_SDR_DNG) ? .off : outputSharpening
             if info.proRAW != nil {
                 try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
                 hdrSources.clear()
                 _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
+                    outputSharpening: effectiveSharpening,
                     format: format == UInt32(SONY2FUJI_HDR_TILED_HEIF) ? .hdrHEIF : .renderedDNG,
                     session: session, cancelled: cancelled, progress: progress)
             } else {
                 _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
-                    longEdge: longEdge, format: format, session: session, cancelled: cancelled, progress: progress)
+                    longEdge: longEdge, outputSharpening: effectiveSharpening, format: format,
+                    session: session, cancelled: cancelled, progress: progress)
             }
         }
     }
@@ -141,6 +152,7 @@ struct Sony2FujiProcessor {
     }
 
     func processHDR(url: URL,settings: HDRSettings,previewLongEdge: Int?, exportLongEdge: Int? = nil,
+                    outputSharpening: OutputSharpening = .off,
                     processing: ProcessingIdentity = .current,
                     proRAWDecodeVersion: Int? = nil,
                     sessionOverride: OpaquePointer? = nil,
@@ -157,6 +169,7 @@ struct Sony2FujiProcessor {
             if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
             if previewLongEdge == nil, info.proRAW != nil { hdrSources.clear() }
             let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
+            let effectiveSharpening: OutputSharpening = previewLongEdge == nil ? outputSharpening : .off
             let run: (OpaquePointer) throws -> HDRImage = { session in
                 let decodeWeight = 0.4
                 let source = try previewLongEdge.map {
@@ -166,7 +179,7 @@ struct Sony2FujiProcessor {
                                      progress: progress.map { report in { report($0 * decodeWeight) } },
                                      cancelled:cancelled)
                 if cancelled() { throw CancellationError() }
-                if settings.isIdentity && exportLongEdge==nil &&
+                if settings.isIdentity && exportLongEdge==nil && effectiveSharpening == .off &&
                     (previewLongEdge == nil || max(source.width, source.height) <= previewLongEdge!) {
                     progress?(1.0)
                     return source
@@ -175,6 +188,7 @@ struct Sony2FujiProcessor {
                     session:session, settings:settings,
                     intent:previewLongEdge==nil ? SONY2FUJI_INTENT_FINAL : SONY2FUJI_INTENT_PREVIEW,
                     longEdge:previewLongEdge ?? exportLongEdge,
+                    outputSharpening: effectiveSharpening,
                     cancelled: cancelled,
                     progress: progress.map { report in { report(decodeWeight + $0 * (1.0 - decodeWeight)) } })
                 if cancelled() { throw CancellationError() }
@@ -514,7 +528,8 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: url != nil, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: effective.lensSettings)
-            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true)
+            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
             applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
@@ -540,6 +555,58 @@ struct Sony2FujiProcessor {
         }
     }
 
+    func sampleWBProbe(url: URL?, buffer: Buffer?, settings: RawSettings, previewLongEdge: CGFloat,
+                       lutURL: URL?, interactive: Bool, point: CGPoint) throws -> (availability: sony2fuji_wb_probe_availability, temperature: Double, tint: Double) {
+        let inputType: sony2fuji_input_type
+        let width: UInt32, height: UInt32
+        if let url {
+            _ = try url.checkResourceIsReachable()
+            inputType = SONY2FUJI_INPUT_RAW
+            width = 0; height = 0
+        } else if let buffer {
+            inputType = semanticInputType(for: buffer)
+            width = UInt32(buffer.width); height = UInt32(buffer.height)
+        } else { throw ProcessorError.rasterDecodeFailed }
+        return try withRawSession(reuse: url != nil, inputType: inputType) { session in
+            let effective = try effectiveSettings(settings, session: session, url: url, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer?.sourceLensMetadata, settings: effective.lensSettings)
+            try configureSession(session, settings: effective, interactive: interactive, viewportPreview: true,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
+            var request = makeBaseRequest(settings: effective, inputType: inputType)
+            request.input_type = inputType
+            applySize(&request, width: width, height: height, previewLongEdge: previewLongEdge, exportLongEdge: nil)
+            request.lut_strength = lutURL == nil ? 0 : effective.clampedLUTStrength
+            var query = sony2fuji_wb_probe_query()
+            query.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+            query.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_query>.size)
+            query.norm_x = Float(point.x)
+            query.norm_y = Float(point.y)
+            query.window_size = 3
+            query.reserved = 0
+            var result = sony2fuji_wb_probe_result()
+            result.version = UInt32(SONY2FUJI_WB_PROBE_VERSION)
+            result.struct_size = UInt32(MemoryLayout<sony2fuji_wb_probe_result>.size)
+            let status: sony2fuji_status = (lutURL?.path ?? "").withCString { look in
+                request.lut_path = lutURL == nil ? nil : look
+                if let url {
+                    return url.path.withCString { path in
+                        request.input_path = path
+                        return sony2fuji_session_sample_wb_probe(session, &request, &query, &result)
+                    }
+                }
+                guard let buffer else { return SONY2FUJI_STATUS_INVALID_ARGUMENT }
+                request.input_width = UInt32(buffer.width); request.input_height = UInt32(buffer.height)
+                request.input_pixel_format = buffer.pixelFormat; request.input_color_space = SONY2FUJI_COLOR_SRGB
+                return buffer.data.withUnsafeBytes { bytes in
+                    request.input_pixels = bytes.baseAddress
+                    return sony2fuji_session_sample_wb_probe(session, &request, &query, &result)
+                }
+            }
+            guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }
+            return (result.availability, Double(result.temperature), Double(result.tint))
+        }
+    }
+
     func migrateProcessing(url: URL, isRaw: Bool, settings: RawSettings, lutURL: URL?,
                            cancellation: ProcessingMigrationCancellation) throws -> ProcessingMigrationOutcome {
         guard !settings.isHDREditing, settings.masterRecipeID == nil, (1...2).contains(settings.processing.version) else {
@@ -550,7 +617,8 @@ struct Sony2FujiProcessor {
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let effective = try effectiveSettings(settings, session: session, url: isRaw ? url : nil, inputType: inputType)
             try configureDisplayLens(session, metadata: raster?.sourceLensMetadata, settings: effective.lensSettings)
-            try configureSession(session, settings: effective, interactive: false, viewportPreview: false)
+            try configureSession(session, settings: effective, interactive: false, viewportPreview: false,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
             var request = makeBaseRequest(settings: effective, inputType: inputType)
             request.input_type = inputType
             request.intent = SONY2FUJI_INTENT_FINAL
@@ -593,6 +661,7 @@ struct Sony2FujiProcessor {
         interactive: Bool = false,
         viewportPreview: Bool = false,
         exportLongEdge: Int? = nil,
+        outputSharpening: OutputSharpening = .off,
         cancelled: () -> Bool = { false }
     ) throws -> ProcessResult {
         guard ExportSize.isValid(exportLongEdge) else {
@@ -621,7 +690,8 @@ struct Sony2FujiProcessor {
                     if box.check() { throw CancellationError() }
                     try configureSession(session, settings: settings,
                                          interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
-                                         viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
+                                         viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil,
+                                         outputSharpening: (previewLongEdge == nil || exportLongEdge != nil) ? outputSharpening : .off)
 
                     var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
                     request.input_type = SONY2FUJI_INPUT_RAW
@@ -680,6 +750,22 @@ struct Sony2FujiProcessor {
         }
     }
 
+    private static func isCustomCurveGpuSupported(_ curve: ToneCurveShape) -> Bool {
+        guard curve.mode == .custom && !curve.isIdentity else { return true }
+        guard curve.isValid else { return false }
+        for index in 0..<(curve.points.count - 1) {
+            let p0 = curve.points[index]
+            let p1 = curve.points[index + 1]
+            let gpuWidth = Float(p1.x) - Float(p0.x)
+            let dx = p1.x - p0.x
+            let dy = p1.y - p0.y
+            if gpuWidth < Float.leastNormalMagnitude || 3.0 * dy / dx > 16.0 {
+                return false
+            }
+        }
+        return true
+    }
+
     func canFastMetalFullRes(url: URL, settings: RawSettings, lutURL: URL?) -> Bool {
         guard gpuMode != SONY2FUJI_GPU_OFF,
               !settings.isHDREditing,
@@ -693,9 +779,10 @@ struct Sony2FujiProcessor {
         guard resolved.geometrySettings.isIdentity,
               resolved.atmosphereSettings.isIdentity,
               resolved.curveSettings.channels.isIdentity,
-              (resolved.curveSettings.mode != .custom || resolved.curveSettings.master.isIdentity),
-              !(resolved.processing.core == SONY2FUJI_PROCESSING_BASIC_V3 &&
-                (resolved.highlights != 0 || resolved.shadows != 0 || resolved.contrast != 1 || !resolved.toneSettings.isIdentity)),
+              resolved.curveSettings.parametric.isIdentity,
+              (!resolved.curveSettings.applyToLuminosity ||
+                (resolved.toneCurve == 0 && resolved.curveSettings.master.isIdentity)),
+              Self.isCustomCurveGpuSupported(resolved.curveSettings.master),
               !isNormalX3f(url, settings: resolved) else {
             return false
         }
@@ -819,7 +906,8 @@ struct Sony2FujiProcessor {
         lutURL: URL?,
         interactive: Bool = false,
         viewportPreview: Bool = false,
-        exportLongEdge: Int? = nil
+        exportLongEdge: Int? = nil,
+        outputSharpening: OutputSharpening = .off
     ) throws -> Buffer {
         if buffer.isProxy && (exportLongEdge != nil || (previewLongEdge.map({ $0 <= 0 }) ?? true)) {
             throw HDRNativeError(status:SONY2FUJI_STATUS_INVALID_ARGUMENT,
@@ -834,7 +922,9 @@ struct Sony2FujiProcessor {
             try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
             try configureSession(session, settings: settings,
                                  interactive: interactive && previewLongEdge != nil && exportLongEdge == nil,
-                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil)
+                                 viewportPreview: viewportPreview && previewLongEdge != nil && exportLongEdge == nil,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER,
+                                 outputSharpening: (previewLongEdge == nil || exportLongEdge != nil) ? outputSharpening : .off)
 
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType
@@ -892,7 +982,8 @@ struct Sony2FujiProcessor {
                 if isCancelled() { throw CancellationError() }
                 let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
                 try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true,
+                                     isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
                 let roiStatus = applyViewportROI(session: session, roi: nil)
                 guard roiStatus == SONY2FUJI_STATUS_OK else {
                     throw processingFailure(roiStatus, session: session)
@@ -951,7 +1042,8 @@ struct Sony2FujiProcessor {
             try withSessionCancellation(session, cancelled: cancelled) { isCancelled in
                 let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
                 try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-                try configureSession(session, settings: settings, interactive: false, viewportPreview: true)
+                try configureSession(session, settings: settings, interactive: false, viewportPreview: true,
+                                     isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
                 let roiStatus = applyViewportROI(session: session, roi: roi)
                 guard roiStatus == SONY2FUJI_STATUS_OK else {
                     throw processingFailure(roiStatus, session: session)
@@ -1043,7 +1135,8 @@ struct Sony2FujiProcessor {
         try withRawSession(reuse: false, inputType: inputType) { session in
             let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
             try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
-            try configureSession(session, settings: settings, interactive: false)
+            try configureSession(session, settings: settings, interactive: false,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER)
 
             var request = makeBaseRequest(settings: settings, inputType: inputType)
             request.input_type = inputType
@@ -1063,6 +1156,82 @@ struct Sony2FujiProcessor {
                 throw processingFailure(status, look: lutURL, output: outputURL, session: session)
             }
         }
+    }
+
+    func exportPNG(
+        url: URL,
+        settings: RawSettings,
+        lutURL: URL?,
+        outputURL: URL,
+        exportLongEdge: Int? = nil,
+        outputSharpening: OutputSharpening = .off
+    ) throws {
+        guard ExportSize.isValid(exportLongEdge) else {
+            throw ProcessorError.invalidExportSize
+        }
+        _ = try url.checkResourceIsReachable()
+        try withRawSession(reuse: false) { session in
+            let settings = try prepareRecipe(settings, session: session, url: url)
+            try configureSession(session, settings: settings, interactive: false, outputSharpening: outputSharpening)
+
+            var request = makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_RAW)
+            request.input_type = SONY2FUJI_INPUT_RAW
+            applySize(&request, width: 0, height: 0, previewLongEdge: nil, exportLongEdge: exportLongEdge)
+            request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+            configurePNGFile(&request)
+            let status = processRawToFile(session: session, request: &request,
+                                          inputPath: url.path, lutPath: lutURL?.path, outputPath: outputURL.path)
+            if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, input: url, look: lutURL, output: outputURL, session: session)
+            }
+        }
+        try ExportMetadata.preserve(from: url, in: outputURL, fallbackSourceProperties: [:])
+    }
+
+    func exportPNG(
+        buffer: Buffer,
+        settings: RawSettings,
+        lutURL: URL?,
+        sourceURL: URL,
+        outputURL: URL,
+        exportLongEdge: Int? = nil,
+        outputSharpening: OutputSharpening = .off
+    ) throws {
+        guard !buffer.isProxy else {
+            throw HDRNativeError(status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                reason: UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE), field: UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+        }
+        guard ExportSize.isValid(exportLongEdge) else {
+            throw ProcessorError.invalidExportSize
+        }
+        let inputType = semanticInputType(for: buffer)
+        try withRawSession(reuse: false, inputType: inputType) { session in
+            let settings = try effectiveSettings(settings, session: session, url: nil, inputType: inputType)
+            try configureDisplayLens(session, metadata: buffer.sourceLensMetadata, settings: settings.lensSettings)
+            try configureSession(session, settings: settings, interactive: false,
+                                 isRaster: inputType == SONY2FUJI_INPUT_DISPLAY_BUFFER,
+                                 outputSharpening: outputSharpening)
+
+            var request = makeBaseRequest(settings: settings, inputType: inputType)
+            request.input_type = inputType
+            request.input_width = UInt32(buffer.width)
+            request.input_height = UInt32(buffer.height)
+            request.input_pixel_format = buffer.pixelFormat
+            request.input_color_space = SONY2FUJI_COLOR_SRGB
+            request.input_is_linear = 0
+            applySize(&request, width: UInt32(buffer.width), height: UInt32(buffer.height),
+                      previewLongEdge: nil, exportLongEdge: exportLongEdge)
+            request.lut_strength = lutURL == nil ? 0 : settings.clampedLUTStrength
+            configurePNGFile(&request)
+            let status = processBufferToFile(session: session, request: &request, buffer: buffer,
+                                             lutPath: lutURL?.path, outputPath: outputURL.path)
+            if status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR { throw ProcessorError.outputIO }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw processingFailure(status, look: lutURL, output: outputURL, session: session)
+            }
+        }
+        try ExportMetadata.preserve(from: sourceURL, in: outputURL, fallbackSourceProperties: nil)
     }
 
     func loadRasterBuffer(url: URL, applyingOrientation: Bool = true, previewLongEdge: Int? = nil) throws -> ProcessResult {

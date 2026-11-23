@@ -102,6 +102,8 @@ internal sealed class AdjustmentPresetLibraryDialog : Window
         var close = AdjustmentPresetPresentation.Button("关闭", "preset.close", Close); close.IsCancel = true; actions.Children.Add(close);
         Grid.SetRow(actions, 2); root.Children.Add(actions); Reload();
     }
+    internal void ReloadFromExternalChange() => Reload();
+
     private void Reload()
     {
         rows.Children.Clear(); error.Text = "";

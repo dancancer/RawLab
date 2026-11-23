@@ -27,7 +27,7 @@ class GeometryCLI(unittest.TestCase):
 
     def run_cli(self, *arguments):
         process = subprocess.run([str(CLI), *map(str, arguments)], cwd=self.root,
-                                 capture_output=True, text=True, timeout=120)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         value = json.loads(process.stdout)
         self.assertEqual(value["protocol_version"], 1)
         return process, value

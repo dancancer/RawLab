@@ -343,6 +343,33 @@ internal static class HDRChecks
               System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV7>(nameof(Native.HDRRequestV7.LookPath)).ToInt32() == 864 &&
               System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRLookInfo>() == 108,
             "HDR v7 preserves the detail prefix and look probe layout");
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() == 2696 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.ParametricCurve)).ToInt32() == 2592 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.GradingV2)).ToInt32() == 2632,
+            "HDR v9 preserves the channel-curve prefix and v2 grading/parametric curve tail");
+        var hdrV9 = new HDRSettings
+        {
+            Color = new HDRColorSettings
+            {
+                Grading = new ColorGradingSettings
+                {
+                    Shadows = new(200, 25, -10),
+                    Global = new(45, 20, -15),
+                    Blending = 80,
+                    Balance = 30
+                }
+            }
+        };
+        Check(hdrV9.ProcessingVersion == 9, "Grading v2 extensions promote HDR ProcessingVersion to 9");
+        var v9Native = hdrV9.NativeRenderRequest(HDRIntent.Preview);
+        Check(v9Native.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == 2696 &&
+              v9Native.ParametricCurve.Version == 1 && v9Native.ParametricCurve.StructSize == 40 &&
+              v9Native.ParametricCurve.SplitShadow == 0.25f &&
+              v9Native.GradingV2.Version == 2 && v9Native.GradingV2.StructSize == 64 &&
+              v9Native.GradingV2.ShadowsLuminance == -10f &&
+              v9Native.GradingV2.GlobalHue == 45f && v9Native.GradingV2.GlobalLuminance == -15f &&
+              v9Native.GradingV2.Blending == 80f && v9Native.GradingV2.Balance == 30f,
+            "HDR v9 native request marshals parametric defaults and Color Grading v2 fields");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRCameraDevelopment>() == 40,
             "Camera development has a stable ABI");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRSourceInfo>() == 76 &&
@@ -366,7 +393,7 @@ internal static class HDRChecks
         var neutral = new SavedEdit(identity, adjustments.Capture(), null);
         var rendition = new HDRRenditionSettings { PeakLimitEV=2, SdrExposureEV=-.75, SdrContrast=25, SdrSaturation=-15 };
         adjustments.HDR = adjustments.HDR.WithRendition(rendition);
-        var native = adjustments.HDR.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base;
+        var native = adjustments.HDR.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base.Base;
         Check(native.Base.Base.Base.StructSize == 808 && native.PeakLimitEV == 2 && native.SdrExposureEV == -.75 &&
               native.SdrContrast == 25 && native.SdrSaturation == -15, "Native HDR v4 values");
         var context = new AdjustmentTransferContext("hdr.jpg", false);
@@ -398,7 +425,7 @@ internal static class HDRChecks
         Check(restored.SameAs(snapshot) && restored.Effects == sdr &&
               restored.HDR!.ProcessingVersion == 5 && restored.HDR.EffectSettings.GrainAmount == 40,
             "HDR effects round-trip independently of the ordinary SDR effect");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base;
+        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base;
         Check(native.Base.Base.Base.Base.StructSize == 848 && native.Effects.GrainAmount == 40 &&
               native.Effects.VignetteAmount == -55,"Native HDR v5 effects match the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
@@ -426,7 +453,7 @@ internal static class HDRChecks
         Check(restored.SameAs(snapshot) && restored.HDR!.ProcessingVersion == 6 &&
             restored.Values[(int)Parameter.Sharpening] == 25 && restored.Atmosphere!.Clarity == -15,
             "HDR detail persists independently of dormant SDR settings");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base;
+        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base;
         Check(native.Base.Base.Base.Base.Base.StructSize == 864 && native.Sharpening == 1.3f && native.Clarity == .5f &&
             native.Dehaze == -.25f && native.Denoise == .75f,"Native HDR v6 detail matches the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
@@ -454,7 +481,7 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.HDR is { ProcessingVersion: 7 } &&
             restored.HDR.LookSettings == look, "HDR look round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base;
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base;
         Check(request.Base.Base.Base.Base.Base.Base.StructSize == 952 && request.LookPath == look.AssetPath() &&
             request.LookStrength == .65f && System.Text.Encoding.ASCII.GetString(request.LookSha256, 0, 64) == look.Sha256,
             "HDR look maps to the v7 request");
@@ -508,7 +535,7 @@ internal static class HDRChecks
         var settings = new Adjustments { Curve = sdrCurve, ToneControls = new(-8, 9) };
         settings.Set(Parameter.ToneCurve, 12);
         settings.HDR = new();
-        Check(settings.HDR.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.StructSize == 88,
+        Check(settings.HDR.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.Base.StructSize == 88,
             "Unedited HDR stays on request v1");
         settings.SetTone(ToneControlParameter.BlackPoint, -25);
         settings.SetTone(ToneControlParameter.WhitePoint, 50);
@@ -522,7 +549,7 @@ internal static class HDRChecks
             "HDR tone edits preserve the dormant SDR record");
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!.Restore();
         Check(restored.Capture().SameAs(snapshot), "Windows HDR tone settings round-trip");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final, 512).Base.Base.Base.Base.Base.Base;
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final, 512).Base.Base.Base.Base.Base.Base.Base;
         Check(request.Base.Version == 1 && request.Base.HDRProcessingVersion == 2 && request.Base.StructSize == 648 &&
               request.BlackPoint == -25 && request.WhitePoint == 50 && request.CurveStrength == 30 &&
               request.Curve.Count == 3 && request.Curve.Points[3] == .625, "Windows maps HDR tone to the C ABI");
@@ -556,7 +583,7 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.Hsl!.Equals(sdrHsl) && (restored.ToneControls?.Vibrance ?? 0) == 0 &&
               restored.HDR!.ProcessingVersion == 3 && restored.HDR.ToneSettings.IsDefault, "HDR color round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base;
+        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base;
         Check(request.Base.Base.StructSize == 792 && request.Vibrance == 35 && request.Hsl.Saturation[5] == -12.5 &&
               request.Grading.HighlightsHue == 215 && request.Grading.HighlightsSaturation == 30, "HDR colors map to ABI");
         var source = new SavedEdit(new OriginalIdentity("hdr.jpg", 1, 2, 3), snapshot, null);

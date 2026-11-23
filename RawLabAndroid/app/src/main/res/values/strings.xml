@@ -29,6 +29,18 @@
     <string name="browser_unavailable">"Unable to open the link. Install or enable a browser."</string>
     <string name="camera_all">"All"</string>
     <string name="camera_all_dates">"All dates"</string>
+    <string name="camera_auth_connecting">"Verifying access credentials…"</string>
+    <string name="camera_auth_failed">"Access authentication failed. Check the username and password shown on the camera screen."</string>
+    <string name="camera_auth_fingerprint">"Camera key fingerprint (verify against the camera screen)"</string>
+    <string name="camera_auth_fingerprint_changed">"The camera\'s key fingerprint changed. Verify the fingerprint on the camera screen before re-entering credentials."</string>
+    <string name="camera_auth_forget">"Forget saved credentials"</string>
+    <string name="camera_auth_guide">"Check the username and password in the camera\'s Access Authen. Info menu, verify the fingerprint below, then sign in."</string>
+    <string name="camera_auth_hide_password">"Hide password"</string>
+    <string name="camera_auth_password">"Password"</string>
+    <string name="camera_auth_show_password">"Show password"</string>
+    <string name="camera_auth_submit">"Verify &amp; Connect"</string>
+    <string name="camera_auth_title">"Camera Access Authentication"</string>
+    <string name="camera_auth_user">"Username"</string>
     <string name="camera_auto">"Auto"</string>
     <string name="camera_back_photos">"Continue selecting"</string>
     <string name="camera_bluetooth">"Connecting to camera…"</string>
@@ -235,6 +247,7 @@
     <string name="expand_vignette">"Show Vignette Settings"</string>
     <string name="export">"Export"</string>
     <string name="export_done">"Photo saved"</string>
+    <string name="export_output_sharpening">"Output Sharpening"</string>
     <string name="exporting">"Exporting…"</string>
     <string name="exposure">"Exposure"</string>
     <string name="exposure_basis">"Exposure reference"</string>
@@ -438,6 +451,10 @@
     <string name="output_custom_size">"Custom"</string>
     <string name="output_long_edge">"Long-edge limit (px)"</string>
     <string name="output_original_size">"Original size"</string>
+    <string name="output_sharpening_high">"High"</string>
+    <string name="output_sharpening_low">"Low"</string>
+    <string name="output_sharpening_off">"Off"</string>
+    <string name="output_sharpening_standard">"Standard"</string>
     <string name="output_size">"Export Size"</string>
     <string name="output_size_error">"The long edge must be 1-65535 pixels."</string>
     <string name="output_size_range">"1–65535 pixels"</string>

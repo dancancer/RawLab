@@ -16,6 +16,7 @@ public sealed class ColorGradingWheelControl : FrameworkElement
     private ColorGradingDrag? drag;
     private bool changed;
     private object? source;
+    private object? zoneScope;
     private ColorGradingZone zone;
     public ColorGradingWheel Value => value;
     public Func<bool>? PrepareEditing { get; set; }
@@ -28,11 +29,15 @@ public sealed class ColorGradingWheelControl : FrameworkElement
         IsEnabledChanged += (_, _) => { if (!IsEnabled) CancelGesture(); InvalidateVisual(); };
         Unloaded += (_, _) => CancelGesture();
     }
-    public void Refresh(ColorGradingWheel next, object? sourceIdentity, ColorGradingZone selected)
+    public void Refresh(ColorGradingWheel next, object? sourceIdentity, ColorGradingZone selected) =>
+        Refresh(next, sourceIdentity, selected, Loc.Text(ColorGradingPanel.ZoneKeys[(int)selected]));
+    internal void Refresh(ColorGradingWheel next, object? sourceIdentity, object selectedScope, string zoneTitle)
     {
-        if (!Equals(source, sourceIdentity) || zone != selected) CancelGesture();
-        source = sourceIdentity; zone = selected; value = next;
-        AutomationProperties.SetName(this, Loc.Text("颜色分级") + " · " + Loc.Text(ColorGradingPanel.ZoneKeys[(int)zone]));
+        if (!Equals(source, sourceIdentity) || !Equals(zoneScope, selectedScope)) CancelGesture();
+        source = sourceIdentity; zoneScope = selectedScope;
+        if (selectedScope is ColorGradingZone z) zone = z;
+        value = next;
+        AutomationProperties.SetName(this, Loc.Text("颜色分级") + " · " + zoneTitle);
         AutomationProperties.SetItemStatus(this, Loc.Text("色相") + " " + value.Hue.ToString("0.0", CultureInfo.GetCultureInfo(Loc.Language)) + "°, "
             + Loc.Text("饱和度") + " " + value.Saturation.ToString("0.0", CultureInfo.GetCultureInfo(Loc.Language)) + "%");
         InvalidateVisual();
