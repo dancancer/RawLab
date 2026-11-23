@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="https://github.com/dancancer/RawLab/releases/latest"><b>Download</b></a> ·
-  <a href="docs/releases/v0.11/v0.11.0.md">What's new in 0.11</a> ·
+  <a href="docs/releases/v0.12/v0.12.0.md">What's new in 0.12</a> ·
   <a href="docs/README.md">Documentation</a> ·
   <a href="CHANGELOG.md">Changelog</a> ·
   <a href="docs/README.zh-CN.md">简体中文</a>

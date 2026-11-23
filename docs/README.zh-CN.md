@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="https://github.com/dancancer/RawLab/releases/latest"><b>下载</b></a> ·
-  <a href="releases/v0.11/v0.11.0.md">0.11.0 发布说明</a> ·
+  <a href="releases/v0.12/v0.12.0.md">0.12.0 发布说明</a> ·
   <a href="README.md">文档索引</a> ·
   <a href="../CHANGELOG.md">更新日志</a> ·
   <a href="../README.md">English</a>
@@ -178,7 +178,7 @@ bash lutools/build.sh ios
 
 ## 相关文档与架构资料
 
-- [总文档索引](README.md) · [v0.11.0 发布说明（构建 20）](releases/v0.11/v0.11.0.md) · [更新日志](../CHANGELOG.md)
+- [总文档索引](README.md) · [v0.12.0 发布说明（构建 23）](releases/v0.12/v0.12.0.md) · [更新日志](../CHANGELOG.md)
 - [RAW 格式支持清单](reference/raw-format-support.md) · [格式契约](reference/formats/) · [镜头校正](reference/platforms/lens-correction.md) · [LUT 来源审计](luts/README.md)
 - [产品路线图](architecture/roadmap.md) · [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md) · [跨相机路线图](architecture/cross-camera-presets-roadmap.md)
 - [编辑迭代总需求](design/editing-iteration/requirements.md)与[技术方案](design/editing-iteration/technical-design.md) · [四端设计资产](design/README.md)
@@ -187,7 +187,7 @@ bash lutools/build.sh ios
 
 ## 参与贡献
 
-欢迎提交 Issue 与 Pull Request。仓库采用 Gitflow 工作流：请从最新 `development` 创建特性分支并将 PR 提交至 `development`。提交前请阅读[仓库规范](../AGENTS.md)、[CI 与验证 SOP](process/ci.md)、[迭代协作规范](process/integration-workflow.md)和[多语言维护指南](process/localization.md)。
+欢迎提交 Issue 与 Pull Request。仓库采用 Gitflow 工作流：请从最新 `development` 创建特性分支并将 PR 提交至 `development`。提交前请阅读[仓库规范](../AGENTS.md)、[CI 与验证 SOP](process/ci.md)、[统一发版打包指南](process/release-packaging-guide.md)、[迭代协作规范](process/integration-workflow.md)和[多语言维护指南](process/localization.md)。
 
 ## 隐私声明
 
