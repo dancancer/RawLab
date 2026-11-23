@@ -109,13 +109,7 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"
-        "$ROOT/Shared/HSLNative.swift"
         "$ROOT/Shared/HSLTargetNative.swift"
-        "$ROOT/Shared/ToneControlsNative.swift"
-        "$ROOT/Shared/AtmosphereNative.swift"
-        "$ROOT/Shared/ColorGradingNative.swift"
-        "$ROOT/Shared/ToneCurveNative.swift"
-        "$ROOT/Shared/ToneCurveSampling.swift"
         "$ROOT/RawLabMac/Sources/Export/BatchExportModel.swift"
         "$ROOT/RawLabMac/Sources/Export/BatchSelection.swift"
         "$ROOT/RawLabMac/Sources/Export/ExportSizePicker.swift"
@@ -133,8 +127,6 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+ExternalReload.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
-        "$ROOT/Shared/DCPCompiler.swift"
-        "$ROOT/Shared/LookLibrary.swift"
         "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift"
         "$ROOT/RawLabMac/Sources/Library/FileBrowser.swift"
         "$ROOT/RawLabMac/Sources/Looks/LUTCompatibilityDialog.swift"
@@ -159,13 +151,7 @@ rawlab_mac_render_engine_sources() {
         "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"
-        "$ROOT/Shared/HSLNative.swift"
         "$ROOT/Shared/HSLTargetNative.swift"
-        "$ROOT/Shared/ToneControlsNative.swift"
-        "$ROOT/Shared/AtmosphereNative.swift"
-        "$ROOT/Shared/ColorGradingNative.swift"
-        "$ROOT/Shared/ToneCurveNative.swift"
-        "$ROOT/Shared/ToneCurveSampling.swift"
     )
     RAWLAB_MAC_BRIDGING_HEADER="$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h"
     _rawlab_mac_assign_array "$out_var" "${_sources[@]}"
@@ -176,11 +162,6 @@ rawlab_mac_adjustment_native_sources() {
     _rawlab_mac_validate_ident "$out_var"
     local _sources=(
         "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
-        "$ROOT/Shared/HSLNative.swift"
-        "$ROOT/Shared/ToneControlsNative.swift"
-        "$ROOT/Shared/AtmosphereNative.swift"
-        "$ROOT/Shared/ColorGradingNative.swift"
-        "$ROOT/Shared/ToneCurveNative.swift"
     )
     RAWLAB_MAC_BRIDGING_HEADER="$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h"
     _rawlab_mac_assign_array "$out_var" "${_sources[@]}"
@@ -233,10 +214,14 @@ rawlab_mac_compile_native() {
             return 2
             ;;
     esac
-    rawlabkit_flags link "$scratch_dir" macos 0
+    local _native_mode="all"
+    if [ "$profile" = "adjustment-native" ]; then
+        _native_mode="types_only"
+    fi
+    rawlabnative_flags link "$scratch_dir" macos 0 "$_native_mode"
     local _native_link=()
     rawlab_mac_native_link_flags _native_link
-    rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
+    rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" \
         -import-objc-header "$RAWLAB_MAC_BRIDGING_HEADER" \
         "${_profile_sources[@]}" "$@" "${_native_link[@]}" -o "$output_bin"
 }

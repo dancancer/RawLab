@@ -17,12 +17,12 @@ TEST_SOURCES=("$ROOT/RawLab/tests/ProcessorExport/"*.swift)
 if [[ -n "${RAWLAB_PROCESSOR_TEST_SOURCE:-}" ]]; then TEST_SOURCES=("$RAWLAB_PROCESSOR_TEST_SOURCE"); fi
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
 rawlab_ios_processor_export_sources SOURCES full
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "${SOURCES[@]}" "$ROOT/Shared/ToneCurveSampling.swift" \
+    "${SOURCES[@]}" \
     "${TEST_SOURCES[@]}" "$OUT/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/processor-export"

@@ -1,0 +1,4 @@
+module CSony2Fuji {
+    header "sony2fuji_c.h"
+    export *
+}

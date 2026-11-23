@@ -1,7 +1,9 @@
+@_exported import CSony2Fuji
+@_exported import RawLabNativeTypes
 import RawLabKit
 import Foundation
 
-extension ToneCurveSettings {
+public extension ToneCurveSettings {
     // 画布和渲染共用核心求值，四端不各自实现一份插值算法。
     func sampledPoints(channel: ToneCurveChannel = .rgb, includeParametric: Bool? = nil, count: Int = 257) -> [ToneCurvePoint] {
         guard isValid, count >= 2, count <= 4097 else { return [] }

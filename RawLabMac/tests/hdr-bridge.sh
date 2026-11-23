@@ -6,10 +6,9 @@ rawlab_mac_native_env
 BUILD="${RAWLAB_BUILD_DIR:-$ROOT/lutools/build-macos}"
 rawlab_mac_make_temp_dir TEMP rawlab-hdr-bridge
 "$BUILD/hdr_image_tests" --fixture "$TEMP/source.jpg"
-rawlabkit_flags link "$BUILD/swiftpm" macos 0
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
+rawlabnative_flags link "$BUILD/swiftpm" macos 0 types_only
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
-    "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
     "$ROOT/Shared/Native/HDRPresentation.swift" \
     "$ROOT/Shared/Native/ProRAWSource.swift" "$ROOT/Shared/Native/ProRAWExport.swift" "$ROOT/Shared/Native/HDRRequest.swift" "$ROOT/Shared/Native/HDRSource.swift" "$ROOT/Shared/Native/HDRImage.swift" \
     "$ROOT/RawLabMac/tests/HDRBridgeTests.swift" "${CORE_LINK[@]}" \

@@ -39,12 +39,12 @@ rawlab_ios_make_temp_dir TEMP rawlab-preview-performance
 HARNESS="$TEMP/PreviewPerformanceTests.app"
 rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.preview-performance preview-performance "$FRAMEWORK"
 rawlab_ios_compile_metadata_bridge "$TEMP/bridge.o"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 types_only
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -parse-as-library -O \
     ${DEFINES[@]+"${DEFINES[@]}"} -module-cache-path "$TEMP/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \
-    "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "$ROOT/Shared/HSLNative.swift" "$ROOT/Shared/HSLTargetNative.swift" "$ROOT/Shared/ToneControlsNative.swift" "$ROOT/Shared/AtmosphereNative.swift" "$ROOT/Shared/ColorGradingNative.swift" "$ROOT/Shared/ToneCurveNative.swift" \
+    "$ROOT/Shared/Native/ProcessingMigrationNative.swift" "$ROOT/Shared/HSLTargetNative.swift" \
     "${PROCESSOR_SOURCES[@]}" "$ROOT/RawLab/tests/PreviewPerformanceTests.swift" "$TEMP/bridge.o" \
     -F "$HARNESS/Frameworks" -framework sony2fuji -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$HARNESS/preview-performance"

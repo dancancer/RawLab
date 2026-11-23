@@ -104,7 +104,7 @@ rawlab_ios_core_shared_sources() {
     local _src
     while IFS= read -r -d '' _src; do
         _sources+=("$_src")
-    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' -print0 | LC_ALL=C sort -z)
+    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' ! -path '*/RawLabNative/*' ! -path '*/RawLabNativeTypes/*' -print0 | LC_ALL=C sort -z)
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
 }
 
@@ -116,12 +116,7 @@ rawlab_ios_processor_export_sources() {
     source "$ROOT/Shared/tests/hdr-native-sources.sh"
     local _sources=(
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
-        "$ROOT/Shared/HSLNative.swift"
         "$ROOT/Shared/HSLTargetNative.swift"
-        "$ROOT/Shared/ToneControlsNative.swift"
-        "$ROOT/Shared/AtmosphereNative.swift"
-        "$ROOT/Shared/ColorGradingNative.swift"
-        "$ROOT/Shared/ToneCurveNative.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift"

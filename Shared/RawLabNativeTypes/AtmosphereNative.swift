@@ -1,7 +1,8 @@
+@_exported import CSony2Fuji
 import RawLabKit
 import Foundation
 
-extension AtmosphereSettings {
+public extension AtmosphereSettings {
     var nativeConfig: sony2fuji_atmosphere_config {
         var config = sony2fuji_atmosphere_config()
         config.version = UInt32(SONY2FUJI_ATMOSPHERE_CONFIG_VERSION)

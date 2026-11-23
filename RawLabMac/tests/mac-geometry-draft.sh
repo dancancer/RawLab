@@ -20,7 +20,7 @@ for name in MacNeutralReference Engine RenderError Adjustments+Native BatchSelec
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCurveNative ToneCurveSampling ColorGradingNative DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView; do
+for name in HSLTargetNative LUTCompatibilityPreview LUTCompatibilityView; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
@@ -28,9 +28,9 @@ TRANSFER_SOURCES=(
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
 )
-rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlabnative_flags link "$OUT/swiftpm" macos 0 all
 rawlab_mac_native_link_flags NATIVE_LINK
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" "${TRANSFER_SOURCES[@]}" -parse-as-library \
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" "${TRANSFER_SOURCES[@]}" -parse-as-library \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_NATIVE_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
     "${NATIVE_LINK[@]}" -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" -o "$OUT/test"

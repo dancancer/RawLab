@@ -1,7 +1,8 @@
+@_exported import CSony2Fuji
 import RawLabKit
 import Foundation
 
-extension HSLSettings {
+public extension HSLSettings {
     var nativeConfig: sony2fuji_hsl_config {
         var config = sony2fuji_hsl_config()
         config.version = UInt32(SONY2FUJI_HSL_CONFIG_VERSION)
