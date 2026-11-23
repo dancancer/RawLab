@@ -3,6 +3,36 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.12.1]
+
+Mobile-only release for Android and iOS (macOS and Windows desktop packages
+remain at `0.12.0`, build `23`).
+
+### Changed
+
+- **iOS & Android Editor**: Polished mobile editor workspace hierarchy with
+  shared bottom tool rail, tonal surface cards, collapsible adjustment
+  controls, and cleaner Apply/Cancel tool flow.
+- **iOS & Android Camera & Tethering**: Refined Sony camera import and
+  wireless tethering UI with simplified manual JPEG size options, adaptive
+  3/4/5-column photo grids, bottom-sheet tethering parameter pickers, and clear
+  manual Wi-Fi back-navigation copy.
+
+### Fixed
+
+- **iOS & Android**: Prevented distracting RAW loading banners while actively
+  dragging adjustment sliders (`isAdjustingSlider` / editor interaction
+  tracking).
+- **iOS**: Deleting an imported look now removes only the look library entry
+  without mutating photo settings outside an active tool draft, matching macOS
+  and blocking deletion while a tool panel is open.
+- **Android**: Used index-based keys in tether parameter option lists to avoid
+  duplicate-value crashes and restored accessibility status semantics on the
+  tether busy progress bar.
+
+Version `0.12.1`, build `24`. See the
+[release notes](docs/releases/v0.12/v0.12.1.md) for compatibility and coverage.
+
 ## [0.12.0]
 
 ### Added
