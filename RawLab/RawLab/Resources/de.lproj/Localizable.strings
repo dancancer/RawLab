@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Lassen Sie die Kamera eingeschaltet und öffnen Sie die Smartphone-Verbindung im Kameramenü. Menünamen variieren je nach Modell. Schließen Sie andere Apps, die die Kameraverbindung verwenden.";
 "保留旧版的特殊色彩。" = "Behält die besonderen Farben der früheren Entwicklung bei.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Speichert bis zu 100 zuletzt geöffnete Fotos und etwa 2 GB lokale Kopien. Beim Entfernen eines Eintrags bleiben Original und Anpassungen erhalten.";
-"保留这次几何或镜头修改？" = "Diese Geometrie- oder Objektivänderungen behalten?";
 "候选效果" = "Kandidatenergebnisse";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Falschfarben: Blau für Schatten, Bernstein über Referenzweiß, Pink über der Displaykapazität.";
 "停止导入" = "Import stoppen";
@@ -673,6 +672,7 @@
 "正在取色…" = "Farbe wird erfasst…";
 "正在处理" = "Wird verarbeitet";
 "正在导入" = "Wird importiert";
+"正在导入外观" = "Look wird importiert…";
 "正在导入照片…" = "Fotos werden importiert…";
 "正在导出" = "Wird exportiert";
 "正在开启相机 Wi-Fi…" = "Kamera-WLAN wird aktiviert …";
@@ -804,6 +804,7 @@
 "确认兼容导入" = "Mit diesen Einstellungen importieren";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "Exportierte Kamera-Originale bereinigen? Danach lassen sich diese Originale nicht mehr in der App öffnen. Exportierte Fotos bleiben erhalten.";
+"离开前应用更改？" = "Änderungen vor dem Verlassen anwenden?";
 "移除" = "Entfernen";
 "移除 %@" = "%@ entfernen";
 "移除“%@”？" = "„%@“ entfernen?";

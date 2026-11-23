@@ -204,11 +204,6 @@ extension ContentView {
 
     func previewEditorDraft() { coordinator.previewEditorDraft() }
 
-    func selectedScalarBadge(_ adjustment: AdjustmentKind) -> String? {
-        guard selectedAdjustment == adjustment, !geometrySelected, !lensSelected else { return nil }
-        return adjustment.badge(for: adjustment.value(from: settings))
-    }
-
     func selectEditorGroup(_ group: EditorAdjustmentGroup) { coordinator.selectEditorGroup(group) }
     func normalizeHDRNavigation(isHDREditing: Bool) { coordinator.normalizeHDRNavigation(isHDREditing: isHDREditing) }
     func requestToolWorkspaceExit() { coordinator.requestToolWorkspaceExit() }

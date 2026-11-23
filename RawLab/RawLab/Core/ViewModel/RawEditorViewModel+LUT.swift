@@ -144,6 +144,30 @@ extension RawEditorViewModel {
         }
     }
 
+    func removeLook(id: String, completion: ((Bool) -> Void)? = nil) {
+        guard !isImportingLooks, !isLoadingLUTs, lutMap[id]?.isCustom == true else {
+            completion?(false)
+            return
+        }
+        isImportingLooks = true
+        lookImportCoordinator.remove(id: id) { [weak self] result in
+            guard let self else { return }
+            self.resultDelivery {
+                self.isImportingLooks = false
+                switch result {
+                case .success:
+                    self.availableLUTs.removeAll { $0.id == id }
+                    self.lutMap.removeValue(forKey: id)
+                    self.pruneRecentLooks()
+                    completion?(true)
+                case .failure(let error):
+                    self.reportError(error, operation: .lookImport, stage: "removeLook", message: error.localizedDescription)
+                    completion?(false)
+                }
+            }
+        }
+    }
+
     func includeIndependentRecipeLook(_ settings: RawSettings) {
         guard let id = settings.lutID, id.hasPrefix("recipe-lut:"),
               let recipe = MasterRecipe.recipe(for: String(id.dropFirst("recipe-lut:".count))),

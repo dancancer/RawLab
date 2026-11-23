@@ -88,6 +88,18 @@ internal fun editorGridHeight(fontScale: Float): Float =
 internal fun editorGridColumns(fontScale: Float): Int =
     if (fontScale > 1.3f) 3 else 4
 
+internal fun editorAdaptiveGridHeight(itemCount: Int, fontScale: Float): Float {
+    val columns = editorGridColumns(fontScale)
+    val rows = ((itemCount + columns - 1) / columns).coerceIn(1, 2)
+    return if (rows == 1) (if (fontScale > 1.3f) 76f else 60f) else editorGridHeight(fontScale)
+}
+
+internal fun editorAdaptiveHomeDockHeight(itemCount: Int, fontScale: Float): Float {
+    val columns = editorGridColumns(fontScale)
+    val rows = ((itemCount + columns - 1) / columns).coerceIn(1, 2)
+    return if (rows == 1) editorAdaptiveGridHeight(itemCount, fontScale) + 48f else editorHomeDockHeight(fontScale)
+}
+
 internal data class EditorDockLayout(val height: Float, val compactNavigation: Boolean)
 
 internal fun editorDockLayout(availableHeight: Float, fontScale: Float, sideDock: Boolean, expanded: Boolean): EditorDockLayout {

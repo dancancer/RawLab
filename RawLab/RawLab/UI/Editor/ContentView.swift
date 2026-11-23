@@ -44,12 +44,10 @@ struct ContentView: View {
     @StateObject var coordinator: EditorCoordinator
     let testHooks: EditorTestHooks
     @State var photoComparisonControlBounds = CGRect.zero
-    @ScaledMetric(relativeTo: .caption) var toolWidth = 62.0
     @ScaledMetric(relativeTo: .caption) var toolHeight = 44.0
     @ScaledMetric(relativeTo: .caption) var filmSize = 72.0
-    @ScaledMetric(relativeTo: .body) var panelHeight = 220.0
-    @ScaledMetric(relativeTo: .subheadline) var panelHeaderHeight = 44.0
     @State var parameterContentHeight: CGFloat = 0
+    @State var delayedActivityBannerVisible = false
 
     @MainActor
     init(
@@ -145,10 +143,10 @@ struct ContentView: View {
                     }.background(Color(.secondarySystemBackground)).accessibilityIdentifier("batch.resume")
                 }
             }
-            .navigationTitle(toolWorkspaceOpen ? currentEditorTool.title : viewModel.sourceDisplayName ?? "RawLab")
+            .navigationTitle(toolWorkspaceOpen ? (settings.isHDREditing && currentEditorTool == .film ? L10n.text("外观") : currentEditorTool.title) : viewModel.sourceDisplayName ?? "RawLab")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { editorToolbar }
-            .toolbar(photoViewing.previewOnly ? .hidden : .visible, for: .navigationBar)
+            .toolbar((photoViewing.previewOnly || toolWorkspaceOpen) ? .hidden : .visible, for: .navigationBar)
             .toolbarBackground(Color(.secondarySystemBackground), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
@@ -212,6 +210,28 @@ struct ContentView: View {
             Button(L10n.text("保存")) { coordinator.completeLookRename() }
                 .disabled(coordinator.renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                           coordinator.renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
+        }
+        .alert(L10n.format("移除“%@”？", coordinator.deletingLook?.name ?? ""),
+               isPresented: Binding(get: { coordinator.deletingLook != nil }, set: { if !$0 { coordinator.deletingLook = nil } }),
+               presenting: coordinator.deletingLook) { target in
+            Button(L10n.text("删除"), role: .destructive) {
+                viewModel.removeLook(id: target.id) { removed in
+                    guard removed else { return }
+                    if settings.lutID == target.id {
+                        var committed = settings
+                        committed.lutID = nil
+                        settings = committed
+                    }
+                    if workingSettings.lutID == target.id {
+                        var updated = workingSettings
+                        updated.lutID = nil
+                        applySettingsChange(updated)
+                    }
+                }
+            }
+            Button(L10n.text("取消"), role: .cancel) {}
+        } message: { _ in
+            Text(L10n.text("将移除 RawLab 保存的外观副本，原始文件不会被删除。"))
         }
         .alert("RawLab", isPresented: Binding(
             get: { viewModel.statusMessage != nil },
@@ -461,7 +481,7 @@ struct ContentView: View {
             }
             .interactiveDismissDisabled(!request.recordsPhotoExport)
         }
-        .alert(L10n.text("保留这次几何或镜头修改？"), isPresented: $coordinator.draftExitPresented) {
+        .alert(L10n.text("离开前应用更改？"), isPresented: $coordinator.draftExitPresented) {
             Button(L10n.text("应用")) { finishDraftNavigation(apply: true) }
                 .disabled(editorBusy || viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || coordinator.isAdjustingSlider)
             Button(L10n.text("放弃修改"), role: .destructive) { finishDraftNavigation(apply: false) }

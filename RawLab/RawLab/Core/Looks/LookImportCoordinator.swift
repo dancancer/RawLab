@@ -258,6 +258,16 @@ final class LookImportCoordinator {
         }
     }
 
+    func remove(id: String, completion: @escaping (Result<Void, LookImportFailureReason>) -> Void) {
+        queue.async {
+            do {
+                let library = try self.ensureLibrary()
+                try library.remove(id: id)
+                self.deliver { completion(.success(())) }
+            } catch { self.deliver { completion(.failure(Self.reason(for: error))) } }
+        }
+    }
+
     private func deliver(_ work: @escaping () -> Void) {
         delivery(work)
     }

@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Keep the camera on and open Smartphone Connection in its menu. Menu names vary by model. Close other apps using the camera connection.";
 "保留旧版的特殊色彩。" = "Preserves the distinctive colors of the legacy renderer.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Keeps up to 100 recent photos and about 2 GB of local copies. Removing an entry keeps the original photo and its edits.";
-"保留这次几何或镜头修改？" = "Keep these geometry or lens changes?";
 "候选效果" = "Candidate results";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "False color: blue for shadows, amber above reference white, pink beyond display capacity.";
 "停止导入" = "Stop import";
@@ -673,6 +672,7 @@
 "正在取色…" = "Sampling…";
 "正在处理" = "Processing";
 "正在导入" = "Importing";
+"正在导入外观" = "Importing look…";
 "正在导入照片…" = "Importing photos…";
 "正在导出" = "Exporting";
 "正在开启相机 Wi-Fi…" = "Starting camera Wi-Fi…";
@@ -804,6 +804,7 @@
 "确认兼容导入" = "Import with these settings";
 "确认并冻结任务" = "Confirm and freeze task";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "Clear exported camera originals? Afterwards these originals can no longer be opened in the app; exported photos are unaffected.";
+"离开前应用更改？" = "Apply changes before leaving?";
 "移除" = "Remove";
 "移除 %@" = "Remove %@";
 "移除“%@”？" = "Remove \"%@\"?";

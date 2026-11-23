@@ -2,17 +2,17 @@ package com.rawlab.android.editor.ui
 
 import com.rawlab.android.ui.AppIcons
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -90,7 +90,6 @@ import com.rawlab.android.settings.withEditingSharpening
 import com.rawlab.android.settings.withEditingClarity
 import com.rawlab.android.settings.withEditingDehaze
 import com.rawlab.android.settings.withHDRDenoise
-import com.rawlab.android.ui.EditorSheetSystemBars
 import com.rawlab.android.ui.ToolIcon
 import com.rawlab.android.ui.assetBitmap
 import com.rawlab.android.looks.applyRecipe
@@ -121,6 +120,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
     processingContext: Boolean = false, onDismissProcessingContext: () -> Unit = {},
+    onToolUnavailable: (String) -> Unit = {},
+    hdrProcessingContent: @Composable () -> Unit = {},
     workspaceIsCurrent: () -> Boolean = { true }) {
     val edits = state.visibleEdits
     val workspaceGroup = AdjustmentGroup.forTool(tool)
@@ -164,13 +165,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     var renameLookId by remember { mutableStateOf<String?>(null) }
     var deleteLookId by remember { mutableStateOf<String?>(null) }
     var renameText by remember { mutableStateOf("") }
-    var allTools by rememberSaveable { mutableStateOf(false) }
-    var more by remember { mutableStateOf(false) }
     var confirmProcessingRollback by remember { mutableStateOf(false) }
     var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var rotation by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     val groupList = rememberLazyListState()
-    val toolList = rememberLazyListState()
     val parameterScroll = rememberScrollState()
     val parameterSession = listOf(state.photo?.identity, state.photo?.file?.absolutePath, tool, tool == 17 && perspective, tool == 17 && rotation,
         quickPresetsVisible, edits.isHDREditing)
@@ -180,34 +178,54 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     else recipes.firstOrNull { it.id == edits.recipeID }?.localizedName
         ?: if (edits.film == "neutral") stringResource(R.string.neutral_look)
         else state.looks.firstOrNull { it.id == edits.film }?.name ?: edits.film
-    @Composable fun toolStrip(modifier: Modifier = Modifier) {
-        EditorToolStrip(state, if (quickPresetsVisible) -2 else tool, EditorAdjustmentRules.tools(if (quickPresetsVisible) EditorAdjustmentGroup.LOOKS else EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS),
-            toolList, navigationEnabled, true, modifier, perspective = perspective,
-            onPerspective = { perspective = true; selectTool(17) }, trailing = if (quickPresetsVisible || EditorAdjustmentRules.groupFor(tool) == EditorAdjustmentGroup.LOOKS) ({
-                TextButton(onClick = onPresets, enabled = navigationEnabled && state.controlsEnabled,
-                    colors = ButtonDefaults.textButtonColors(contentColor = if (quickPresetsVisible) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant),
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("preset-dock").semantics { selected = quickPresetsVisible }) {
-                    Icon(AppIcons.Outlined.Bookmarks, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.preset_library))
-                }
-            }) else null, select = { if (it == 17) perspective = false; selectTool(it) })
-    }
     @Composable fun groupStrip() {
         EditorGroupStrip(state, expanded, if (quickPresetsVisible) 0 else tool, sideDock, groupList, navigationEnabled, true, select = selectGroup)
     }
-    val showFine = tool !in listOf(0, 9, 15, 16)
-    val scrollTools = compactNavigation && !sideDock
     Column(modifier.background(MaterialTheme.colorScheme.surface).testTag("adjustment-dock")) {
         if (!toolOpen && !quickPresetsVisible) {
             val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
             val columns = com.rawlab.android.editor.controls.editorGridColumns(fontScale)
-            Column(Modifier.fillMaxWidth().height(com.rawlab.android.editor.controls.editorGridHeight(fontScale).dp).verticalScroll(parameterScroll).padding(vertical = 4.dp),
+            val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
+            val gridItems = mobileEditorTools(group) + if (group == EditorAdjustmentGroup.LOOKS) listOf(-2) else emptyList()
+            val gridHeight by animateDpAsState(
+                com.rawlab.android.editor.controls.editorAdaptiveGridHeight(gridItems.size, fontScale).dp,
+                tween(160),
+                label = "home-grid-height",
+            )
+            Column(Modifier.fillMaxWidth().height(gridHeight).verticalScroll(parameterScroll).padding(vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                val group = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
-                mobileEditorTools(group).chunked(columns).forEach { row ->
+                gridItems.chunked(columns).forEach { row ->
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         row.forEach { index ->
-                            Box(Modifier.weight(1f)) { EditorTool(state, index, false, navigationEnabled, false) { selectTool(index) } }
+                            Box(Modifier.weight(1f)) {
+                                if (index == -2) {
+                                    val presetEnabled = navigationEnabled && state.controlsEnabled
+                                    val presetColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Column(
+                                        Modifier.fillMaxWidth()
+                                            .heightIn(min = if (fontScale > 1.3f) 68.dp else 52.dp)
+                                            .clickable(enabled = presetEnabled, role = Role.Button, onClick = onPresets)
+                                            .alpha(if (presetEnabled) 1f else 0.38f)
+                                            .padding(horizontal = 1.dp, vertical = 2.dp)
+                                            .testTag("editor-tool-presets"),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(3.dp),
+                                    ) {
+                                        Icon(AppIcons.Outlined.Bookmarks, null, Modifier.size(22.dp), tint = presetColor)
+                                        Text(
+                                            stringResource(R.string.preset_library),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = presetColor,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        )
+                                        Box(Modifier.size(3.dp).background(Color.Transparent, CircleShape))
+                                    }
+                                } else {
+                                    EditorTool(state, index, false, navigationEnabled, false, onUnavailableClick = onToolUnavailable) {
+                                        selectTool(index)
+                                    }
+                                }
+                            }
                         }
                         repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
@@ -401,14 +419,14 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 NumericControl(R.string.denoise, requireNotNull(edits.hdr).detailSettings.denoise * 100, 0f..100f, "%", parameterEnabled,
                     { value, dragging -> editParameter(edits.withHDRDenoise(value / 100), dragging) }, { resetParameter(EditorResetScope.Tool(11)) })
             } else {
-                DenoiseControls(edits.denoise, parameterEnabled, { resetParameter(EditorResetScope.Tool(11)) }) { value, dragging ->
+                DenoiseControls(edits.denoise, parameterEnabled) { value, dragging ->
                     editParameter(edits.copy(denoise = value), dragging)
                 }
             }
-            12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = parameterEnabled, onReset = { resetParameter(EditorResetScope.Tool(12)) }) { value, dragging ->
+            12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = parameterEnabled) { value, dragging ->
                 editParameter(edits.withEditingEffects(value), dragging)
             }
-            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled, onReset = { resetParameter(EditorResetScope.Tool(13)) }) { value, dragging ->
+            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled) { value, dragging ->
                 editParameter(edits.withEditingEffects(value), dragging)
             }
             21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange,
@@ -484,11 +502,19 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 HorizontalDivider()
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onDiscardDraft, enabled = !state.committingAdjustments,
-                        modifier = Modifier.size(48.dp).testTag("draft.cancel")) { Icon(Icons.Outlined.Close, stringResource(R.string.cancel)) }
+                        modifier = Modifier.size(48.dp).testTag("draft.cancel")) {
+                        Icon(Icons.Outlined.Close, stringResource(R.string.cancel), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     Text(stringResource(editorToolTitles[tool]), Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         style = MaterialTheme.typography.titleSmall)
                     IconButton(onClick = onApplyDraft, enabled = state.draftReady,
-                        modifier = Modifier.size(48.dp).testTag("draft.apply")) { Icon(Icons.Outlined.Check, stringResource(R.string.adjustment_apply)) }
+                        modifier = Modifier.size(48.dp).testTag("draft.apply")) {
+                        Icon(
+                            Icons.Outlined.Check,
+                            stringResource(R.string.adjustment_apply),
+                            tint = if (state.draft?.changed == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
@@ -498,7 +524,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     if (processingContext) AlertDialog(onDismissRequest = onDismissProcessingContext,
         title = { Text(stringResource(R.string.photo_processing_settings)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(displayLook)
                 val migrationText = if (state.matchingProcessing) R.string.processing_migration_matching else when (state.processingMigration?.status) {
                     com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED -> R.string.processing_migration_completed
@@ -506,8 +532,8 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                     com.rawlab.android.settings.ProcessingMigrationStatus.ROLLED_BACK -> R.string.processing_migration_rolled_back
                     null -> null
                 }
-                migrationText?.let { Text(stringResource(it), Modifier.padding(top = 12.dp).testTag("processing.migration.status"),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                migrationText?.let { Text(stringResource(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("processing.migration.status")) }
                 if (state.processingMigration?.status == com.rawlab.android.settings.ProcessingMigrationStatus.MIGRATED) {
                     TextButton(onClick = { confirmProcessingRollback = true },
                         enabled = state.controlsEnabled && state.draft == null && !state.matchingProcessing,
@@ -515,9 +541,10 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                         Text(stringResource(R.string.processing_migration_rollback))
                     }
                 }
+                hdrProcessingContent()
                 if (x3fInput) {
                     val available = remember { NativeProcessor.nativeX3fAvailable() }
-                    Text(stringResource(R.string.x3f_rendering), Modifier.padding(top = 16.dp), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.x3f_rendering), style = MaterialTheme.typography.titleSmall)
                     X3fMode.entries.forEach { mode ->
                         val enabled = state.controlsEnabled && state.draft == null && (mode != X3fMode.NORMAL || available)
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -540,15 +567,6 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         confirmButton = { TextButton(onClick = { confirmProcessingRollback = false; onDismissProcessingContext(); onRollbackProcessing() }) {
             Text(stringResource(R.string.processing_migration_rollback))
         } }, dismissButton = { TextButton(onClick = { confirmProcessingRollback = false }) { Text(stringResource(R.string.cancel)) } })
-    if (allTools) ModalBottomSheet(onDismissRequest = { allTools = false },
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        EditorSheetSystemBars()
-        Text(stringResource(R.string.all_tools), Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
-        LazyVerticalGrid(columns = GridCells.Adaptive(96.dp), modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
-            contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(editorToolOrder) { index -> EditorTool(state, index, index == tool, navigationEnabled) { allTools = false; selectTool(index) } }
-        }
-    }
     renameLookId?.let { id ->
         AlertDialog(onDismissRequest = { renameLookId = null }, title = { Text(stringResource(R.string.rename_look)) },
             text = { OutlinedTextField(value = renameText, onValueChange = { renameText = it }, singleLine = true,

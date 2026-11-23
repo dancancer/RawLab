@@ -283,7 +283,20 @@ final class EditorCoordinator: ObservableObject {
     @Published var renamingLook: EditorRenamingLook?
     @Published var renamedLUTName = ""
     @Published var showingLookRename = false
+    @Published var deletingLook: EditorRenamingLook?
     @Published var showingUnreadableLooks = false
+    @Published var toolNoticeMessage: String?
+    private var toolNoticeTask: Task<Void, Never>?
+
+    func showToolNotice(_ message: String) {
+        toolNoticeTask?.cancel()
+        toolNoticeMessage = message
+        toolNoticeTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            guard !Task.isCancelled else { return }
+            toolNoticeMessage = nil
+        }
+    }
 
     // MARK: - Processing context, adjustment transfer, presets, batch & export modals
     @Published var showingProcessingContext = false
@@ -1335,5 +1348,118 @@ final class EditorCoordinator: ObservableObject {
             cancelRulerFocus()
             photoViewing.endTemporaryViewing()
         }
+    }
+}
+
+enum IndeterminateProgressMath {
+    static let cycleDuration: TimeInterval = 1.25
+
+    static func segment(elapsed: TimeInterval) -> ClosedRange<Double> {
+        guard elapsed.isFinite else { return segment(forPhase: 0) }
+        let wrapped = elapsed.truncatingRemainder(dividingBy: cycleDuration)
+        let normalizedElapsed = wrapped >= 0 ? wrapped : wrapped + cycleDuration
+        return segment(forPhase: normalizedElapsed / cycleDuration)
+    }
+
+    static func segment(forPhase phase: Double) -> ClosedRange<Double> {
+        let p = phase.isFinite ? min(max(phase, 0), 1) : 0
+        let front = min(1.0, pow(p, 0.72) * 1.28)
+        let tail = max(0.0, pow(p, 1.55) * 1.28 - 0.28)
+        return min(tail, front)...front
+    }
+}
+
+struct EditorLoadingPresentation: Equatable {
+    let showsTopProgressLine: Bool
+    let showsEmptyCanvasLoading: Bool
+    let topBannerMessageKey: String?
+    let showsTopBannerImmediately: Bool
+    let progressAccessibilityKey: String
+
+    var delayedBannerKey: String? {
+        showsTopBannerImmediately ? nil : topBannerMessageKey
+    }
+
+    static func resolve(
+        hasImage: Bool,
+        isImporting: Bool,
+        isViewModelBusy: Bool,
+        isSaving: Bool,
+        isExportingHDR: Bool,
+        cameraHDRPreflight: Bool,
+        isImportingLooks: Bool,
+        isLoadingLUTs: Bool,
+        previewRendering: Bool,
+        previewResizePending: Bool,
+        matchingProcessing: Bool,
+        autoExposing: Bool,
+        isBatchExportRunning: Bool,
+        isAdjustingSlider: Bool
+    ) -> EditorLoadingPresentation {
+        let isOpeningPhoto = isImporting || (isViewModelBusy && !isSaving && !isExportingHDR && !cameraHDRPreflight)
+        let isRendering = previewRendering || previewResizePending
+        let showsTopProgressLine = isOpeningPhoto || isExportingHDR || isSaving || cameraHDRPreflight ||
+            isImportingLooks || isLoadingLUTs || isRendering || matchingProcessing || autoExposing || isBatchExportRunning
+        let showsEmptyCanvasLoading = !hasImage && isOpeningPhoto
+
+        let topBannerMessageKey: String?
+        let showsTopBannerImmediately: Bool
+        if isExportingHDR || isSaving {
+            topBannerMessageKey = nil
+            showsTopBannerImmediately = false
+        } else if isOpeningPhoto {
+            if showsEmptyCanvasLoading {
+                topBannerMessageKey = nil
+                showsTopBannerImmediately = false
+            } else {
+                topBannerMessageKey = "正在导入照片…"
+                showsTopBannerImmediately = true
+            }
+        } else if cameraHDRPreflight {
+            topBannerMessageKey = "正在显影…"
+            showsTopBannerImmediately = true
+        } else if isImportingLooks {
+            topBannerMessageKey = "正在导入外观"
+            showsTopBannerImmediately = true
+        } else if matchingProcessing {
+            topBannerMessageKey = "正在匹配原画面…"
+            showsTopBannerImmediately = true
+        } else if autoExposing {
+            topBannerMessageKey = "正在处理"
+            showsTopBannerImmediately = false
+        } else if isRendering && !isAdjustingSlider {
+            topBannerMessageKey = "正在显影…"
+            showsTopBannerImmediately = false
+        } else {
+            topBannerMessageKey = nil
+            showsTopBannerImmediately = false
+        }
+
+        let progressAccessibilityKey: String
+        if isOpeningPhoto {
+            progressAccessibilityKey = "正在导入照片…"
+        } else if isExportingHDR {
+            progressAccessibilityKey = "正在导出"
+        } else if isSaving {
+            progressAccessibilityKey = "正在保存"
+        } else if isImportingLooks {
+            progressAccessibilityKey = "正在导入外观"
+        } else if matchingProcessing {
+            progressAccessibilityKey = "正在匹配原画面…"
+        } else if isLoadingLUTs {
+            progressAccessibilityKey = "正在加载胶片"
+        } else if autoExposing {
+            progressAccessibilityKey = "正在处理"
+        } else {
+            progressAccessibilityKey = "正在显影…"
+        }
+
+        return EditorLoadingPresentation(
+            showsTopProgressLine: showsTopProgressLine,
+            showsEmptyCanvasLoading: showsEmptyCanvasLoading,
+            topBannerMessageKey: topBannerMessageKey,
+            showsTopBannerImmediately: showsTopBannerImmediately,
+            progressAccessibilityKey: progressAccessibilityKey
+        )
     }
 }

@@ -64,6 +64,9 @@ extension ContentView {
                                             Button(L10n.text("重命名外观"), systemImage: "pencil") {
                                                 coordinator.beginLookRename(id: lut.id, name: lut.name)
                                             }.disabled(editingLocked || viewModel.isImportingLooks)
+                                            Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) {
+                                                coordinator.deletingLook = EditorRenamingLook(id: lut.id, name: lut.name)
+                                            }.disabled(editingLocked || viewModel.isImportingLooks)
                                         }
                                     }
                             }
@@ -73,13 +76,12 @@ extension ContentView {
                         .onChange(of: workingSettings.lutID) { _, id in proxy.scrollTo(id ?? "neutral", anchor: .center) }
                 }
             }
-            if workingSettings.hasLook {
-                AdjustmentControl(title: L10n.text("强度"), value: adjustmentBinding(.strength),
-                    range: RawSettings.lutStrengthRange, step: 0.01, defaultValue: 1, unit: "%",
-                    formatter: { String(format: "%.0f", locale: L10n.locale, $0 * 100) }, displayScale: 100,
-                    identifier: "film.strength", onEditingChanged: setSliderEditing)
-                    .environment(\.compactAdjustmentRows, true).padding(.horizontal, 16)
-            }
+            AdjustmentControl(title: L10n.text("强度"), value: adjustmentBinding(.strength),
+                range: RawSettings.lutStrengthRange, step: 0.01, defaultValue: 1, unit: "%",
+                formatter: { String(format: "%.0f", locale: L10n.locale, $0 * 100) }, displayScale: 100,
+                identifier: "film.strength", onEditingChanged: setSliderEditing)
+                .environment(\.compactAdjustmentRows, true).padding(.horizontal, 16)
+                .disabled(!workingSettings.hasLook)
         }
         .sheet(isPresented: $coordinator.showingUnreadableLooks) {
             IOSUnreadableLooksView(model: viewModel)
@@ -95,7 +97,7 @@ extension ContentView {
     var masterRecipePanel: some View {
         let recipes = MasterRecipe.allRecipes
         let tileWidth = max(120, filmSize + 40)
-        return VStack(alignment: .leading, spacing: 12) {
+        return VStack(alignment: .leading, spacing: 8) {
             // 当前配方名已在面板标题行显示，这里只补一句说明
             if workingSettings.masterRecipe != nil {
                 Text(L10n.text("配方会调整多个参数。"))
@@ -119,19 +121,19 @@ extension ContentView {
             .buttonStyle(.plain)
             .accessibilityIdentifier("masterRecipe.choices")
             .opacity(rulerFocusOpacity)
-            if workingSettings.masterRecipeID != nil {
-                AdjustmentControl(title: L10n.text("强度"), value: adjustmentBinding(.strength),
-                                  range: RawSettings.lutStrengthRange, step: 0.01, defaultValue: 1,
-                                  unit: "%", formatter: { String(format: "%.0f", locale: L10n.locale, $0 * 100) },
-                                  displayScale: 100, identifier: "masterRecipe.strength", onEditingChanged: setSliderEditing)
-                    .padding(.horizontal, 16)
-                    .disabled(!viewModel.hasImage || editingLocked)
-            }
+            AdjustmentControl(title: L10n.text("强度"), value: adjustmentBinding(.strength),
+                              range: RawSettings.lutStrengthRange, step: 0.01, defaultValue: 1,
+                              unit: "%", formatter: { String(format: "%.0f", locale: L10n.locale, $0 * 100) },
+                              displayScale: 100, identifier: "masterRecipe.strength", onEditingChanged: setSliderEditing)
+                .environment(\.compactAdjustmentRows, true)
+                .padding(.horizontal, 16)
+                .disabled(!viewModel.hasImage || editingLocked || workingSettings.masterRecipeID == nil)
         }
     }
 
     func masterRecipeButton(_ recipe: MasterRecipe?, width: CGFloat) -> some View {
-        Button {
+        let selected = workingSettings.masterRecipeID == recipe?.id
+        return Button {
             var updated = workingSettings
             if let recipe { updated.applyMasterRecipe(recipe) }
             else {
@@ -152,29 +154,26 @@ extension ContentView {
                     }
                 }
                 .frame(width: filmSize, height: filmSize)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
                 .accessibilityHidden(true)
                 Text(recipe?.title ?? L10n.text("无配方"))
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(minHeight: 44)
                 Text(L10n.text(recipe?.subtitle ?? "中性直出"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(6)
             .frame(width: width)
-            .padding(.vertical, 6)
-            .foregroundStyle(workingSettings.masterRecipeID == recipe?.id ? Color.yellow : Color.primary)
-            .overlay(alignment: .topTrailing) {
-                if workingSettings.masterRecipeID == recipe?.id {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.yellow).padding(4).accessibilityHidden(true)
-                }
-            }
+            .foregroundStyle(selected ? Color.yellow : Color.primary)
+            .background(selected ? Color.yellow.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(selected ? Color.yellow : .clear, lineWidth: 1) }
         }.disabled(!viewModel.hasImage || editingLocked)
             .accessibilityLabel(recipe?.title ?? L10n.text("无配方")).accessibilityIdentifier("recipe.\(recipe?.id ?? "neutral")")
-            .accessibilityAddTraits(workingSettings.masterRecipeID == recipe?.id ? .isSelected : [])
+            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     func filmButton(name: String, id: String?, imageSize: CGFloat, colorNotice: String? = nil, isCompatibility: Bool = false) -> some View {

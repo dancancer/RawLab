@@ -56,18 +56,14 @@ extension ContentView {
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
             IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, value: { parameter in
                 Binding(get: { workingSettings.editingEffectValue(parameter) }, set: { workingSettings.setEditingEffect(parameter, to: $0) })
-            }, onEditingChanged: setSliderEditing,
-                onReset: { requestEditorReset(.tool(currentEditorTool)) },
-                resetEnabled: resetModified(.tool(currentEditorTool)))
+            }, onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing {
             IOSDenoiseControls(settings: Binding(
                 get: { workingSettings.denoise },
                 set: { workingSettings.denoise = $0; workingSettings.noiseReduction = 0 }
-            ), onEditingChanged: setSliderEditing,
-                onReset: { requestEditorReset(.tool(currentEditorTool)) },
-                resetEnabled: resetModified(.tool(currentEditorTool)))
+            ), onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {
@@ -98,12 +94,25 @@ extension ContentView {
     }
 
     var editorDraftActions: some View {
-        HStack(spacing: 8) {
-            Button(action: cancelEditorDraft) { Image(systemName: "xmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
+        let changed = isEditorDraftChanged
+        let title = settings.isHDREditing && currentEditorTool == .film ? L10n.text("外观") : currentEditorTool.title
+        return HStack(spacing: 8) {
+            Button(action: cancelEditorDraft) {
+                Image(systemName: "xmark")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
+            }
                 .accessibilityLabel(L10n.text("取消"))
                 .accessibilityIdentifier("editor.draft.cancel")
-            Text(currentEditorTool.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
-            Button(action: applyEditorDraft) { Image(systemName: "checkmark").frame(width: 48, height: 48).contentShape(Rectangle()) }
+            Text(title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity)
+            Button(action: applyEditorDraft) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 18, weight: changed ? .semibold : .regular))
+                    .foregroundStyle(changed ? Color.yellow : Color.secondary)
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
+            }
                 .accessibilityLabel(L10n.text("应用"))
                 .disabled(viewModel.previewRendering || viewModel.previewResizePending || viewModel.previewFailed || isAdjustingSlider || editorBusy)
                 .accessibilityIdentifier("editor.draft.apply")
