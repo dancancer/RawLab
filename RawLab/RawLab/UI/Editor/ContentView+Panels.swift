@@ -110,7 +110,7 @@ extension ContentView {
                     Button(action: requestLookImport) {
                         Label(L10n.text("导入外观"), systemImage: "camera.filters")
                     }
-                    .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
+                    .disabled(editorBusy || isEditorDraftChanged || viewModel.isLookLibraryBusy)
                     .accessibilityIdentifier("editor.import.look")
                     Button(L10n.text("批量编辑"), action: openBatchSelection)
                         .disabled(editorBusy).accessibilityIdentifier("collection.open")
@@ -199,6 +199,7 @@ extension ContentView {
             isExportingHDR: viewModel.isExportingHDR,
             cameraHDRPreflight: viewModel.cameraHDRPreflight,
             isImportingLooks: viewModel.isImportingLooks,
+            isUpdatingLooks: viewModel.isUpdatingLooks,
             isLoadingLUTs: viewModel.isLoadingLUTs,
             previewRendering: viewModel.previewRendering,
             previewResizePending: viewModel.previewResizePending,
@@ -223,17 +224,6 @@ extension ContentView {
                     })
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .overlay(alignment: .bottom) {
-                            if !adjustmentsExpanded && hslTargetActive {
-                                HSLTargetCanvasControls(axis: coordinator.hslTargetAxis) {
-                                    cancelHSLTarget(); coordinator.hslTargetEnabled = false
-                                }.padding(8)
-                            } else if !adjustmentsExpanded && curveTargetActive {
-                                CurveTargetCanvasControls(channel: coordinator.curveTargetChannel) {
-                                    cancelCurveTarget(); coordinator.curveTargetEnabled = false
-                                }.padding(8)
-                            }
-                        }
                 } else {
                     ZStack {
                         ScrollView {
@@ -645,7 +635,7 @@ extension ContentView {
         let perspective = coordinator.geometryPerspective, rotation = coordinator.geometryRotation
         let hdr = settings.isHDREditing
         return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(gradingGlobal).\(perspective).\(rotation).\(hdr)", isCurrent: {
-            viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
+            viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
                 (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation)
@@ -695,32 +685,17 @@ extension ContentView {
     func groupNavigation(side: Bool, singleLine: Bool = false, availableWidth: CGFloat = 0) -> some View {
         let buttonWidth = groupNavigationButtonWidth
         let buttonHeight: CGFloat = singleLine ? 48 : groupNavigationButtonHeight
-        let rows = stride(from: 0, to: mobileEditorGroups.count, by: 3).map {
-            Array(mobileEditorGroups[$0..<min($0 + 3, mobileEditorGroups.count)])
-        }
         return ScrollView(.horizontal, showsIndicators: false) {
-            let layout = side && !adjustmentsExpanded
-                ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
-            layout {
-                if side && !adjustmentsExpanded {
-                    ForEach(rows.indices, id: \.self) { row in
-                        HStack(spacing: 0) {
-                            ForEach(rows[row], id: \.rawValue) { group in
-                                groupNavigationButton(group, width: buttonWidth, height: buttonHeight)
-                            }
-                        }
-                    }
-                } else {
-                    ForEach(mobileEditorGroups, id: \.rawValue) { group in
-                        let width = singleLine ? max(max(44, (availableWidth - 16) / CGFloat(max(mobileEditorGroups.count, 1))), ceil((group.title as NSString).size(withAttributes:
-                            [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width) + 16) : buttonWidth
-                        groupNavigationButton(group, width: width, height: buttonHeight, singleLine: singleLine)
-                    }
+            HStack(spacing: 0) {
+                ForEach(mobileEditorGroups, id: \.rawValue) { group in
+                    let width = singleLine ? max(max(44, (availableWidth - 16) / CGFloat(max(mobileEditorGroups.count, 1))), ceil((group.title as NSString).size(withAttributes:
+                        [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width) + 16) : buttonWidth
+                    groupNavigationButton(group, width: width, height: buttonHeight, singleLine: singleLine)
                 }
             }
             .padding(.horizontal, 8)
         }
-        .frame(height: buttonHeight * (side && !adjustmentsExpanded ? CGFloat(max(rows.count, 1)) : 1))
+        .frame(height: buttonHeight)
         .disabled(editorBusy)
         .accessibilityIdentifier("editor.groups")
     }
@@ -747,7 +722,7 @@ extension ContentView {
         }
         .buttonStyle(.plain)
         .disabled(settings.isHDREditing && group != .looks && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
-        .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
+        .accessibilityLabel(group.title)
         .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
         .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
         .accessibilityIdentifier("editor.group.\(group.rawValue)")

@@ -28,7 +28,6 @@
     <string name="adjustment_summary_recipe_note">"Dies sind logische Rezeptwerte; die Stärke beträgt %1$s. Einige Bereiche werden mit dieser Stärke skaliert."</string>
     <string name="adjustment_summary_relative_white_balance">"Relativer Weißabgleich"</string>
     <string name="adjustment_toggle_sign">"Vorzeichen wechseln"</string>
-    <string name="all_tools">"Alle Werkzeuge"</string>
     <string name="batch_confirmation_count">"%1$d Ausgaben müssen überprüft werden"</string>
     <string name="black_point">"Schwarzpunkt"</string>
     <string name="camera_choose_connection">"Verbindungsart wählen"</string>

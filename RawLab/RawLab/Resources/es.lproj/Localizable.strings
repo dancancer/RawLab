@@ -351,9 +351,7 @@
 "尝试应用内自动加入（需 Hotspot 权限）" = "Unirse automáticamente desde la app (requiere permiso Hotspot)";
 "尺寸" = "Tamaño";
 "屏幕容量 %@ EV" = "Margen de pantalla %@ EV";
-"展开%@组" = "Expandir el grupo %@";
 "展开直方图" = "Expandir histograma";
-"展开调整栏" = "Expandir ajustes";
 "已保存" = "Guardado";
 "已保存 %@ / %@ 个文件" = "%@ de %@ archivos guardados";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Guardadas %@ · Sin cambios %@ · Omitidas %@ · Deshechas %@ · Pendientes %@";
@@ -495,10 +493,8 @@
 "撤销 %@ 张" = "Deshacer fotos: %@";
 "操作已失效" = "Operación no válida";
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
-"收起%@组" = "Contraer el grupo %@";
 "收起其他方案" = "Ocultar otras opciones";
 "收起直方图" = "Contraer histograma";
-"收起调整栏" = "Contraer ajustes";
 "放大 · 点按还原" = "Ampliada · Toca para ajustar";
 "放大预览" = "Vista previa ampliada";
 "放弃任务" = "Descartar tarea";

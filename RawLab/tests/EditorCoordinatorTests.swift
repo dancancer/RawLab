@@ -43,6 +43,7 @@ private final class MockCoordinatorBackend: EditorCoordinatorBackend {
     var isBusy = false
     var isLoadingLUTs = false
     var isImportingLooks = false
+    var isUpdatingLooks = false
     var previewRendering = false
     var previewResizePending = false
     var previewFailed = false
@@ -74,6 +75,7 @@ private final class MockCoordinatorBackend: EditorCoordinatorBackend {
     var historyActionOutcomes: [IOSAdjustmentTransferOutcome] = []
     var historyUndoCalls: [Bool] = []
     var renamedLooks: [(id: String, name: String)] = []
+    var removedLookIDs: [String] = []
     var appendedBatchSelectionCount = 0
     var returnedToCollectionCount = 0
     var cancelImageImportCount = 0
@@ -236,6 +238,7 @@ private final class MockCoordinatorBackend: EditorCoordinatorBackend {
     func returnBatchSelectionToCollection() { returnedToCollectionCount += 1 }
     func appendCurrentBatchSelectionPhoto() { appendedBatchSelectionCount += 1 }
     func renameLook(id: String, name: String) { renamedLooks.append((id, name)) }
+    func removeLook(id: String) { removedLookIDs.append(id) }
 }
 
 @MainActor
@@ -280,8 +283,8 @@ struct EditorCoordinatorTests {
 
         // 1. Group navigation in overview vs active draft
         coordinator.selectEditorGroup(.color)
-        check(coordinator.selectedGroup == .color && coordinator.adjustmentsExpanded && !coordinator.isEditorDraftActive,
-              "selectEditorGroup switches group and expands overview")
+        check(coordinator.selectedGroup == .color && !coordinator.isEditorDraftActive,
+              "selectEditorGroup switches group in overview")
 
         // 2. Selecting geometry initializes draft and clears aspect state
         coordinator.geometryAspectPreset = .square
@@ -365,38 +368,17 @@ struct EditorCoordinatorTests {
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let coordinator = EditorCoordinator(backend: backend, draftStoreProvider: { EditorToolDraftStore(directory: tempDir) })
 
-        // Collapsing in overview must NOT record collapsedEditorTool
-        coordinator.requestAdjustmentExpansion(false)
-        check(!coordinator.adjustmentsExpanded && coordinator.collapsedEditorTool == nil && !coordinator.toolWorkspaceOpen,
-              "Overview collapse leaves collapsedEditorTool nil")
         coordinator.selectEditorGroup(.color)
-        coordinator.requestAdjustmentExpansion(true)
-        check(coordinator.selectedGroup == .color && coordinator.adjustmentsExpanded && !coordinator.toolWorkspaceOpen,
-              "Overview re-expand stays in overview without hijacking into a tool workspace")
+        check(coordinator.selectedGroup == .color && !coordinator.toolWorkspaceOpen,
+              "selectEditorGroup stays in overview without opening a tool workspace")
 
-        // Collapsing dirty tool workspace prompts and remembers collapsedEditorTool on discard
-        coordinator.selectEditorTool(.adjustment(.exposure))
-        coordinator.workingSettings.exposure = 2.0
-        coordinator.requestAdjustmentExpansion(false)
-        check(coordinator.draftExitPresented && coordinator.pendingAdjustmentExpansion == false && coordinator.adjustmentsExpanded,
-              "Collapsing dirty tool prompts draftExitPresented")
-        coordinator.finishDraftNavigation(apply: false)
-        check(!coordinator.adjustmentsExpanded && coordinator.collapsedEditorTool == .adjustment(.exposure) &&
-              !coordinator.toolWorkspaceOpen && coordinator.settings.exposure == 0,
-              "Discarding collapse closes workspace and remembers collapsedEditorTool")
-        coordinator.requestAdjustmentExpansion(true)
-        check(coordinator.adjustmentsExpanded && coordinator.toolWorkspaceOpen &&
-              coordinator.selectedAdjustment == .exposure && coordinator.collapsedEditorTool == nil,
-              "Re-expanding restores the remembered collapsedEditorTool")
-
-        // New source clears collapsed tool, recipe picker, sheets, and viewport
+        // New source clears recipe picker, active workspace, and pending modal state
         coordinator.selectEditorTool(.recipe)
         coordinator.gradingGlobalSelected = true
         coordinator.draftExitPresented = true
         coordinator.resetForNewSource()
         check(!coordinator.choosingMasterRecipe && !coordinator.toolWorkspaceOpen && !coordinator.draftExitPresented &&
-              !coordinator.gradingGlobalSelected &&
-              coordinator.collapsedEditorTool == nil && coordinator.pendingToolSelection == nil,
+              !coordinator.gradingGlobalSelected && coordinator.pendingToolSelection == nil,
               "resetForNewSource clears active workspace, gradingGlobalSelected, recipe picker, and pending modal state")
     }
 
@@ -510,6 +492,36 @@ struct EditorCoordinatorTests {
         check(!coordinator.showingLookRename && coordinator.renamingLook == nil &&
               backend.renamedLooks.count == 1 && backend.renamedLooks[0].name == "New Name",
               "completeLookRename delegates renameLook and dismisses alert")
+
+        // 5b. Look deletion preserves committed and draft photo settings (matches Mac)
+        let deleteBackend = MockCoordinatorBackend()
+        let deleteTempDir = FileManager.default.temporaryDirectory.appendingPathComponent("coord-del-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: deleteTempDir) }
+        let deleteCoordinator = EditorCoordinator(backend: deleteBackend, draftStoreProvider: { EditorToolDraftStore(directory: deleteTempDir) })
+        deleteCoordinator.settings.lutID = "custom-look"
+        deleteCoordinator.selectEditorTool(.film)
+        deleteCoordinator.beginLookDeletion(id: "custom-look", name: "My Look")
+        check(deleteCoordinator.deletingLook == EditorRenamingLook(id: "custom-look", name: "My Look"),
+              "beginLookDeletion presents confirmation target")
+        deleteCoordinator.cancelLookDeletion()
+        check(deleteCoordinator.deletingLook == nil && deleteBackend.removedLookIDs.isEmpty,
+              "cancelLookDeletion dismisses target without removing look")
+        deleteCoordinator.beginLookDeletion(id: "custom-look", name: "My Look")
+        deleteCoordinator.completeLookDeletion()
+        check(deleteCoordinator.deletingLook == nil &&
+              deleteBackend.removedLookIDs == ["custom-look"] &&
+              deleteCoordinator.settings.lutID == "custom-look" &&
+              deleteCoordinator.workingSettings.lutID == "custom-look" &&
+              !deleteCoordinator.isEditorDraftChanged &&
+              deleteBackend.savedSettingsHistory.isEmpty &&
+              deleteBackend.queuedSettingsHistory.isEmpty,
+              "completeLookDeletion delegates removeLook without mutating photo settings or saving")
+        deleteCoordinator.cancelEditorDraft()
+        check(deleteCoordinator.settings.lutID == "custom-look",
+              "cancelling film workspace keeps committed look ID intact after look removal")
+        deleteBackend.isUpdatingLooks = true
+        check(deleteCoordinator.editorBusy, "isUpdatingLooks marks editorBusy true")
+        deleteBackend.isUpdatingLooks = false
 
         // 6. Recent photos, camera, processing context, privacy modals
         coordinator.showRecentPhotos()
@@ -634,6 +646,7 @@ struct EditorCoordinatorTests {
         isExportingHDR: Bool = false,
         cameraHDRPreflight: Bool = false,
         isImportingLooks: Bool = false,
+        isUpdatingLooks: Bool = false,
         isLoadingLUTs: Bool = false,
         previewRendering: Bool = false,
         previewResizePending: Bool = false,
@@ -650,6 +663,7 @@ struct EditorCoordinatorTests {
             isExportingHDR: isExportingHDR,
             cameraHDRPreflight: cameraHDRPreflight,
             isImportingLooks: isImportingLooks,
+            isUpdatingLooks: isUpdatingLooks,
             isLoadingLUTs: isLoadingLUTs,
             previewRendering: previewRendering,
             previewResizePending: previewResizePending,
@@ -741,6 +755,11 @@ struct EditorCoordinatorTests {
         check(lookImport.showsTopProgressLine && lookImport.topBannerMessageKey == "正在导入外观" &&
               lookImport.showsTopBannerImmediately && lookImport.progressAccessibilityKey == "正在导入外观",
               "isImportingLooks shows immediate look import banner")
+
+        let lookUpdate = resolveLoading(hasImage: true, isUpdatingLooks: true)
+        check(lookUpdate.showsTopProgressLine && lookUpdate.topBannerMessageKey == nil &&
+              lookUpdate.delayedBannerKey == nil && lookUpdate.progressAccessibilityKey == "正在处理",
+              "isUpdatingLooks animates top bar without showing importing-look banner")
 
         let matching = resolveLoading(hasImage: true, matchingProcessing: true)
         check(matching.showsTopProgressLine && matching.topBannerMessageKey == "正在匹配原画面…" &&

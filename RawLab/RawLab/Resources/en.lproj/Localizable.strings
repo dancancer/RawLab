@@ -351,9 +351,7 @@
 "尝试应用内自动加入（需 Hotspot 权限）" = "Try In-App Auto-Join (Requires Hotspot Entitlement)";
 "尺寸" = "Size";
 "屏幕容量 %@ EV" = "Display Headroom %@ EV";
-"展开%@组" = "Expand %@ group";
 "展开直方图" = "Expand histogram";
-"展开调整栏" = "Expand Adjustments";
 "已保存" = "Saved";
 "已保存 %@ / %@ 个文件" = "%@ / %@ files saved";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Saved %@ · Unchanged %@ · Skipped %@ · Undone %@ · Incomplete %@";
@@ -495,10 +493,8 @@
 "撤销 %@ 张" = "Undo photos: %@";
 "操作已失效" = "Operation no longer valid";
 "操作未完成，请重试。" = "The operation is incomplete. Try again.";
-"收起%@组" = "Collapse %@ group";
 "收起其他方案" = "Hide other options";
 "收起直方图" = "Collapse histogram";
-"收起调整栏" = "Collapse Adjustments";
 "放大 · 点按还原" = "Zoomed · Tap to fit";
 "放大预览" = "Zoom preview";
 "放弃任务" = "Discard Task";

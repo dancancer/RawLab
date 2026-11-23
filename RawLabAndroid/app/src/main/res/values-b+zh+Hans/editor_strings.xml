@@ -28,7 +28,6 @@
     <string name="adjustment_summary_recipe_note">"以下为配方逻辑值；强度为 %1$s。部分范围会按此强度换算。"</string>
     <string name="adjustment_summary_relative_white_balance">"相对白平衡"</string>
     <string name="adjustment_toggle_sign">"切换正负号"</string>
-    <string name="all_tools">"全部工具"</string>
     <string name="batch_confirmation_count">"%1$d 项输出待核对"</string>
     <string name="black_point">"黑场"</string>
     <string name="camera_choose_connection">"选择连接方式"</string>

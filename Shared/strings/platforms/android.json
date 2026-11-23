@@ -276,12 +276,6 @@
       "source": "全部相册",
       "types": []
     },
-    "all_tools": {
-      "file": "editor_strings.xml",
-      "formats": [],
-      "source": "全部工具",
-      "types": []
-    },
     "app_name": {
       "file": "strings.xml",
       "formats": [],
@@ -5440,12 +5434,6 @@
       "source": "重置所有调整？",
       "types": []
     },
-    "reset_denoise": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置降噪",
-      "types": []
-    },
     "reset_effect": {
       "file": "editor_strings.xml",
       "formats": [
@@ -7420,14 +7408,6 @@
       "es": "Seleccionar todo",
       "fr": "Tout sélectionner",
       "ja": "すべて選択"
-    },
-    "全部工具": {
-      "de": "Alle Werkzeuge",
-      "en": "All tools",
-      "es": "Todas las herramientas",
-      "fr": "Tous les outils",
-      "ja": "すべてのツール",
-      "zh-Hans": "全部工具"
     },
     "全部相册": {
       "de": "Alle Alben",

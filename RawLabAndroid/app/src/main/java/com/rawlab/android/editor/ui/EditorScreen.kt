@@ -801,7 +801,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 inspection = inspection,
                                 onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                                 onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe)
+                                wbProbe = canvasWbProbe,
+                                isAdjustingSlider = adjusting)
                             if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
                                 state.preview?.let { p ->
                                     InspectionSamplingHud(
@@ -839,7 +840,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 inspection = inspection,
                                 onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                                 onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe)
+                                wbProbe = canvasWbProbe,
+                                isAdjustingSlider = adjusting)
                     if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
                         state.preview?.let { p ->
                             InspectionSamplingHud(

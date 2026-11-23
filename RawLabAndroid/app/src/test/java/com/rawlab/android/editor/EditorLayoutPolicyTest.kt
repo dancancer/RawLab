@@ -140,10 +140,26 @@ class EditorLayoutPolicyTest {
         assertNull(slowRender.immediateBannerRes)
         assertEquals(R.string.rendering, slowRender.delayedBannerRes)
 
+        val scrubbingRender = resolveEditorLoadingPresentation(
+            EditorState(photo = photo, preview = preview, rendering = true),
+            isAdjustingSlider = true,
+        )
+        assertTrue(scrubbingRender.showsTopProgressLine)
+        assertFalse(scrubbingRender.showsEmptyCanvasLoading)
+        assertNull(scrubbingRender.immediateBannerRes)
+        assertNull(scrubbingRender.delayedBannerRes)
+
         val resizePending = resolveEditorLoadingPresentation(
             EditorState(photo = photo, preview = preview, previewResizePending = true),
         )
         assertTrue(resizePending.showsTopProgressLine)
         assertEquals(R.string.rendering, resizePending.delayedBannerRes)
+
+        val scrubbingResizePending = resolveEditorLoadingPresentation(
+            EditorState(photo = photo, preview = preview, previewResizePending = true),
+            isAdjustingSlider = true,
+        )
+        assertTrue(scrubbingResizePending.showsTopProgressLine)
+        assertNull(scrubbingResizePending.delayedBannerRes)
     }
 }
