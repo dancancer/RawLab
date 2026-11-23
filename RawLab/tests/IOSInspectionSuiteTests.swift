@@ -150,7 +150,7 @@ func runIOSInspectionSuite() throws {
     // 3. Zero PhotoEditState / Export Byte-Identity across all 5 Overlays
     var raw = RawSettings.default
     raw.exposure = 0.35
-    raw.geometry = geom
+    raw.geometrySettings = geom
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
     let state = PhotoEditState(settings: raw, filmID: "VELVIA", updatedAt: fixedDate)
     let encoder = JSONEncoder()

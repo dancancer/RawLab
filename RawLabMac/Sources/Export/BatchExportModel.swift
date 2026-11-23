@@ -51,8 +51,8 @@ final class MacHDRBatchPreparation {
         let look: URL?,name: String
         if prepared.settings.isHDREditing { look=nil; name="HDR" }
         else if let recipe=prepared.settings.masterRecipe { look=recipe.lutURL(); name=recipe.title }
-        else if !prepared.filmID.isEmpty {
-            guard let film=Film.independentRecipe(prepared.filmID) ?? films.first(where:{ $0.id==prepared.filmID || "builtin:\($0.url.lastPathComponent)"==prepared.filmID }) else {
+        else if let filmID = prepared.filmID, !filmID.isEmpty {
+            guard let film=Film.independentRecipe(filmID) ?? films.first(where:{ $0.id==filmID || "builtin:\($0.url.lastPathComponent)"==filmID }) else {
                 throw BatchExportFailure.missingLook
             }
             look=film.url; name=film.name

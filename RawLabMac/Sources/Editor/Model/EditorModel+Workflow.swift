@@ -301,7 +301,7 @@ extension EditorModel {
 
     func recordSavedLookChange(from previous: MacPhotoEditState?, to saved: MacPhotoEditState) {
         guard saved.settings.masterRecipeID == nil, saved.filmID != previous?.filmID else { return }
-        recentLooks.record(saved.filmID, available: readableLookBrowserIDs)
+        recentLooks.record(saved.filmID ?? "", available: readableLookBrowserIDs)
         // 最近使用是界面偏好；偏好写入失败不能把已保存的照片报告为失败。
         try? recentLooks.save(to: recentLooksURL)
     }

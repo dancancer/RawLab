@@ -12,6 +12,7 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "50% 中性灰" = "50 % Neutralgrau";
+"AI 降噪" = "KI-Entrauschen";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Das DCP enthält nicht unterstützte räumliche Verstärkungen, HDR- oder RGB-Tabellenverarbeitung und kann nicht konvertiert werden.";
 "DCP 导入选项" = "DCP-Importoptionen";
@@ -97,6 +98,7 @@
 "下一张" = "Nächstes Foto";
 "不可读外观" = "Nicht lesbare Looks";
 "不支持此 HDR 格式或颜色描述。" = "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.";
+"不支持此处理版本，原有记录未被覆盖。" = "Diese Verarbeitungsversion wird nicht unterstützt. Die gespeicherten Bearbeitungen wurden nicht überschrieben.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Dieses Foto, dieser Look oder diese Verarbeitungsart wird nicht unterstützt. Prüfen Sie die Dateikompatibilität und Verarbeitungseinstellungen.";
 "不能覆盖原始文件。" = "Die Originaldatei kann nicht überschrieben werden.";
 "不适用" = "Nicht anwendbar";
@@ -200,6 +202,7 @@
 "几何" = "Geometrie";
 "几何与镜头" = "Geometrie und Objektiv";
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometrie und Objektiv werden nur mit „Alle“ oder bei ausdrücklicher Auswahl übernommen.";
+"几何编辑" = "Geometrie bearbeiten";
 "分割位置" = "Position der Trennlinie";
 "分割线" = "Trennlinie";
 "切换" = "Wechseln";
@@ -375,6 +378,7 @@
 "已复制" = "Kopiert";
 "已导入" = "Importiert";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Importierte Looks: %@; nicht importierte Dateien: %@\n";
+"已导出" = "Exportiert";
 "已导出 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien exportiert: %@";
 "已导出渲染型 DNG。" = "Entwickeltes DNG exportiert.";
 "已展开" = "Aufgeklappt";
@@ -539,6 +543,7 @@
 "无法保存编辑草稿。" = "Der Bearbeitungsentwurf konnte nicht gespeichert werden.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Der HDR-Export kann nicht geschrieben werden. Prüfen Sie freien Speicher und Zielberechtigungen.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Das exportierte Foto kann nicht geschrieben werden. Überprüfen Sie den Ausgabeort und den freien Speicherplatz.";
+"无法写入输出目录，请检查访问权限和剩余空间。" = "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.";
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法加入最近打开：%@" = "Konnte nicht zu den zuletzt geöffneten Fotos hinzugefügt werden: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
@@ -565,6 +570,7 @@
 "无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "Die Wi-Fi-Informationen der Kamera konnten nicht gelesen werden. Verbinden Sie manuell.";
 "无法读取统计设置，已保持关闭。" = "Die Analyseeinstellung konnte nicht gelesen werden. Die Analyse bleibt deaktiviert.";
+"无法读取调整记录：%@" = "Anpassungsdatensatz konnte nicht gelesen werden: %@";
 "无法读取镜头校正状态" = "Status der Objektivkorrektur konnte nicht gelesen werden";
 "无法读取镜头配置列表" = "Objektivprofile konnten nicht gelesen werden";
 "无法重新打开照片" = "Foto konnte nicht erneut geöffnet werden";
@@ -574,11 +580,14 @@
 "日光" = "Tageslicht";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
+"旧版 FBDD" = "Älteres FBDD";
 "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Die früheren Anpassungen wurden nur mit der Fotos-ID gespeichert. Stellen Sie sie wieder her, wenn dies dasselbe Originalfoto ist.";
 "旧版降噪" = "Frühere Rauschreduzierung";
+"旧版：%@" = "Älteres Verfahren: %@";
 "明亮度" = "Luminanz";
 "明度" = "Helligkeit";
 "明度：从暗到亮。" = "Helligkeit: von dunkel zu hell.";
+"明暗" = "Tonwert";
 "显示图像" = "Anzeigebild";
 "显示密码" = "Passwort anzeigen";
 "暂停联机" = "Tether-Aufnahme pausieren";
@@ -849,6 +858,7 @@
 "联机拍摄设置" = "Einstellungen für Tether-Aufnahmen";
 "肤色色相放大" = "Hautton-Verstärkung";
 "胶片" = "Film";
+"胶片模拟" = "Filmsimulation";
 "自动" = "Automatisch";
 "自动 HDR" = "Automatisches HDR";
 "自动匹配" = "Automatische Zuordnung";
@@ -859,6 +869,7 @@
 "自由" = "Frei";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Dichte urbane Textur, markante S-Kurve, kräftiger Orange-Cyan- und Violett-Gold-Kontrast";
 "色度降噪" = "Reduzierung des Chroma-Rauschens";
+"色彩" = "Farbe";
 "色彩降噪" = "Chrominanz-Rauschreduzierung";
 "色温" = "Temperatur";
 "色相" = "Farbton";
@@ -922,6 +933,7 @@
 "请核对手机和相机的配对数字" = "Prüfen Sie die Kopplungsnummer auf dem Smartphone und der Kamera";
 "请等待当前任务完成。" = "Warten Sie, bis der aktuelle Auftrag abgeschlossen ist.";
 "请等待预览完成后导出。" = "Warten Sie vor dem Export, bis die Vorschau fertig ist.";
+"请至少选择一张照片。" = "Bitte wählen Sie mindestens ein Foto aus.";
 "请输入 1–65535 之间的像素数" = "Geben Sie eine Pixelzahl zwischen 1 und 65.535 ein";
 "请输入不同的预设名称。" = "Geben Sie einen anderen Namen für die Vorgabe ein.";
 "请输入相机显示的 Wi-Fi 名称和密码。" = "Geben Sie den Wi-Fi-Namen und das Passwort der Kamera ein.";
@@ -948,10 +960,12 @@
 "跟随系统" = "Systemsprache verwenden";
 "跳过" = "Überspringen";
 "跳过以上目标后重试" = "Aufgeführte Fotos überspringen und erneut versuchen";
+"轻度" = "Mild";
 "输入 Wi-Fi 名称与密码" = "WLAN-Name & Passwort eingeben";
 "输入参考" = "Eingangsreferenz";
 "输入坐标" = "Eingabe";
 "输入范围" = "Eingangsbereich";
+"输入调整" = "Eingangsanpassung";
 "输入颜色" = "Eingangsfarbraum";
 "输出" = "Ausgabe";
 "输出参考" = "Ausgangsreferenz";
@@ -1056,7 +1070,10 @@
 "阴影" = "Schatten";
 "阿里云隐私政策" = "Datenschutzerklärung von Aliyun";
 "降噪" = "Rauschreduzierung";
+"降噪亮度" = "Luminanz";
 "降噪参数" = "Rauschminderungseinstellungen";
+"降噪粗色斑" = "Farbflecken";
+"降噪色彩" = "Farbe";
 "隐私设置" = "Datenschutzeinstellungen";
 "隐藏密码" = "Passwort ausblenden";
 "隐藏照片信息" = "Fotoinformationen ausblenden";

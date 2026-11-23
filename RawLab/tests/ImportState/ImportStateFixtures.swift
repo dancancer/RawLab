@@ -91,13 +91,13 @@ struct Fixture {
         bIdentity = PhotoIdentity(resourceIdentifier: "import-state-b-\(UUID().uuidString)")
         var a = RawSettings.default
         a.exposure = 0.25
-        a.geometry.cropX = 0.1; a.geometry.cropY = 0.1
-        a.geometry.cropWidth = 0.8; a.geometry.cropHeight = 0.8
+        a.geometrySettings.cropX = 0.1; a.geometrySettings.cropY = 0.1
+        a.geometrySettings.cropWidth = 0.8; a.geometrySettings.cropHeight = 0.8
         aSettings = a
         var b = RawSettings.default
         b.exposure = -0.35
-        b.geometry.cropX = 0.2; b.geometry.cropY = 0.125
-        b.geometry.cropWidth = 0.6; b.geometry.cropHeight = 0.75
+        b.geometrySettings.cropX = 0.2; b.geometrySettings.cropY = 0.125
+        b.geometrySettings.cropWidth = 0.6; b.geometrySettings.cropHeight = 0.75
         bSettings = b
         let persistence = try EditPersistence(directory: directory.appendingPathComponent("edits"))
         try persistence.save(aIdentity, state: PhotoEditState(settings: a))

@@ -233,7 +233,7 @@ extension EditorModel {
             settings.resolveRawNoiseReductionSupport(support)
         }
         selectedFilmID = snapshot.settings.masterRecipeID != nil ? "" :
-            films.first(where: { $0.id == snapshot.filmID || "builtin:\($0.url.lastPathComponent)" == snapshot.filmID })?.id ?? snapshot.filmID
+            films.first(where: { $0.id == snapshot.filmID || "builtin:\($0.url.lastPathComponent)" == snapshot.filmID })?.id ?? (snapshot.filmID ?? "")
         updatingMetadata = false
         normalizeAdjustmentNavigation()
     }

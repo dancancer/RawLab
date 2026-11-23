@@ -139,7 +139,7 @@ struct BatchExportView: View {
                 Text(L10n.text("任务已冻结。之后的照片编辑不会改变本次导出。")).foregroundStyle(.secondary)
                 ForEach(model.job.items) { item in
                     if let frozen = item.frozen {
-                        DisclosureGroup(item.input.lastPathComponent + " · " + L10n.text(frozen.lookName)) {
+                        DisclosureGroup(item.input.lastPathComponent + " · " + L10n.text(frozen.lookName ?? "中性")) {
                             MacBatchSettingsSummaryView(settings: frozen.settings)
                         }
                     }

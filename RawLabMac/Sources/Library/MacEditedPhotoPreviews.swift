@@ -59,9 +59,9 @@ struct MacPhotoPreviewPlan {
         else if let recipeID = state.settings.masterRecipeID ?? state.masterRecipeID {
             guard let url = MasterRecipe.recipe(for: recipeID)?.lutURL() else { throw CocoaError(.fileNoSuchFile) }
             look = url
-        } else if !state.filmID.isEmpty {
-            guard let film = Film.independentRecipe(state.filmID) ?? films.first(where: {
-                $0.id == state.filmID || $0.browserID == state.filmID
+        } else if let filmID = state.filmID, !filmID.isEmpty {
+            guard let film = Film.independentRecipe(filmID) ?? films.first(where: {
+                $0.id == filmID || $0.browserID == filmID
             }) else { throw CocoaError(.fileNoSuchFile) }
             look = film.url
         } else { look = nil }
@@ -782,9 +782,11 @@ private struct MacAcceptedPhotoPreview {
         var candidates = resources
         if resources.isEmpty, let state = record.state, edited {
             // 资源暂时缺失时仍监听其目录，恢复文件后继续更新可见缩略图。
-            if let film = films.first(where: { $0.id == state.filmID || $0.browserID == state.filmID }) {
-                candidates.append(film.url)
-            } else if state.filmID.hasPrefix("/") { candidates.append(URL(fileURLWithPath: state.filmID)) }
+            if let filmID = state.filmID {
+                if let film = films.first(where: { $0.id == filmID || $0.browserID == filmID }) {
+                    candidates.append(film.url)
+                } else if filmID.hasPrefix("/") { candidates.append(URL(fileURLWithPath: filmID)) }
+            }
             if let hdr = state.settings.hdr, state.settings.isHDREditing {
                 if let asset = hdr.lookSettings.asset() { candidates.append(asset) }
                 if hdr.cameraDevelopmentSettings.cameraProfile != nil { candidates.append(HDRCameraProfileAssetStore.directory) }

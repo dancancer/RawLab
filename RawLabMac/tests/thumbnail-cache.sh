@@ -10,6 +10,7 @@ rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -whole-module-optimization \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$RAWLAB_MAC_BRIDGING_HEADER" \
     "${SOURCES[@]}" \
+    "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowserState.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" \

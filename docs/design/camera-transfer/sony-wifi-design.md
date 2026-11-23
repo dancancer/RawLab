@@ -391,7 +391,7 @@ FTP 首版只在前台提供受限接收目录、随机凭据和有限被动端�
 | 平台 | 已有接入点（上述基线） | 本次应增加的边界 |
 | --- | --- | --- |
 | iOS | [RawEditorViewModel+IO.swift](../../../RawLab/RawLab/Core/ViewModel/IO/RawEditorViewModel+IO.swift) 的 `importImage`（121 行起）；[PhotoImportTypes.swift](../../../RawLab/RawLab/Core/Models/PhotoImportTypes.swift) 的 `PhotoImportSource` | 完整下载保存到独立的 Application Support 源目录，再创建本地 `PhotoImportSource`。允许编辑器继续生成自己的 working copy，但导入记录持有持久原件 |
-| macOS | [EditorModel+Workflow.swift](../../../RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift) 的 `open(_:)`（365 行起）；[MacBatchExport.swift](../../../Shared/RawLabKit/MacBatchExport.swift) 的路径输入 | 将持久文件路径交给打开/批量选择。桌面批量不会替下载器保管原片，不可交付临时路径 |
+| macOS | [EditorModel+Workflow.swift](../../../RawLabMac/Sources/Editor/Model/EditorModel+Workflow.swift) 的 `open(_:)`（365 行起）；[BatchExport.swift](../../../Shared/RawLabKit/BatchExport.swift) 的路径输入 | 将持久文件路径交给打开/批量选择。桌面批量不会替下载器保管原片，不可交付临时路径 |
 | Android | [PhotoStorage.kt](../../../RawLabAndroid/app/src/main/java/com/rawlab/android/photo/PhotoStorage.kt) 的 `import(uri)`；[WorkingCopy.kt](../../../RawLabAndroid/app/src/main/java/com/rawlab/android/photo/WorkingCopy.kt) 的流式副本 | 新相机原件发布到系统媒体库，登记摘要并统一媒体 URI；经既有草稿门禁进入编辑/集合，也可从相册重开。已登记媒体不再复制到私有原件目录；其他来源的既有身份和持久输入行为不迁移 |
 | Windows | [Rendering.cs](../../../RawLabWindows/MainWindow/Rendering.cs) 的 `OpenFile`（18 行起）；[BatchExport.cs](../../../RawLabWindows/Core/BatchExport.cs) 的本地输入 | 下载到持久目录后调用现有文件打开流程。原片路径在编辑/批量存续期间保持稳定 |
 
@@ -399,12 +399,12 @@ FTP 首版只在前台提供受限接收目录、随机凭据和有限被动端�
 
 - iOS [PhotoSourceFile.swift](../../../Shared/RawLabKit/PhotoSourceFile.swift)（`CachedPhotoFile` 第 4–34 行）在首次使用时回收旧缓存、owner 释放时删除副本；
   [PhotoImportTypes.swift](../../../RawLab/RawLab/Core/Models/PhotoImportTypes.swift) 的暂存释放也不能覆盖相机持久目录。
-  [PhotoEditPersistence.swift](../../../Shared/RawLabKit/PhotoEditPersistence.swift) 优先 Photos 身份，否则以内容摘要识别；
+  [EditPersistence.swift](../../../Shared/RawLabKit/EditPersistence.swift) 优先 Photos 身份，否则以内容摘要识别；
   相机文件没有 Photos ID 时复用现有内容身份，不假造 `PHAsset`。
 - Android [WorkingCopyCleanup.kt](../../../RawLabAndroid/app/src/main/java/com/rawlab/android/photo/WorkingCopyCleanup.kt)
   会清除未被批量任务保护的旧 working copy；系统媒体库中的完整相机原件不属于该清理范围。
   现有 `PhotoStorage.import` 以 URI 字符串作编辑身份：导入记录必须将已保存的文件映射到稳定 URI，重开沿用同一 URI。
-- macOS [EditPersistenceCodec.swift](../../../Shared/RawLabKit/EditPersistenceCodec.swift)（`OriginalFileIdentity` 第 66–95 行，供 [MacEditPersistence.swift](../../../Shared/RawLabKit/MacEditPersistence.swift) 使用）及
+- macOS [EditPersistenceCodec.swift](../../../Shared/RawLabKit/EditPersistenceCodec.swift)（`OriginalFileIdentity` 第 66–95 行，供 [EditPersistence.swift](../../../Shared/RawLabKit/EditPersistence.swift) 使用）及
   Windows [EditPersistence.cs](../../../RawLabWindows/Core/EditPersistence.cs)（`OriginalIdentity` 第 90–109 行）依据路径和文件属性识别原件。
   内容去重命中后应复用已有持久文件路径，不每次生成新路径后期待自动恢复旧编辑；也不覆盖已有路径来制造相同身份。
 - iOS/Android 批量任务已有输入复制机制，但任务清理会释放这些副本，不能让它们成为“相机导入记录”的唯一存储。

@@ -375,8 +375,8 @@ private struct ResetControlHostView: View {
         // 3. 非草稿态下 .group(.geometry) 可执行，且保留 .tool(.geometry)/.tool(.lens) 草稿态约束
         var geoEdited = neutral
         geoEdited.exposure = 0.4
-        geoEdited.geometry.quarterTurns = 1
-        geoEdited.geometry.cropWidth = 0.8
+        geoEdited.geometrySettings.quarterTurns = 1
+        geoEdited.geometrySettings.cropWidth = 0.8
         geoEdited.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false)
         hostModel.toolWorkspaceOpen = false
         hostModel.draft = nil
@@ -407,15 +407,15 @@ private struct ResetControlHostView: View {
                                                    revision: geoRev, draft: noDraft) else {
             throw Failure.assertion("Non-draft .group(.geometry) reset failed to prepare and commit")
         }
-        try check(afterGeo.settings.geometry.isIdentity &&
+        try check(afterGeo.settings.geometrySettings.isIdentity &&
                   afterGeo.settings.lensSettings == LensCorrectionSettings() &&
                   afterGeo.settings.exposure == 0.4,
                   "Non-draft .group(.geometry) resets both geometry and lens while preserving other groups")
 
         // 4. 二级工具态 HSL 与颜色分级：单色/单分区与全部 HSL/全部分级双项菜单可用且能正确执行
         var hslEdited = neutral
-        hslEdited.hsl.set(.hue, channel: 0, value: 25)
-        hslEdited.hsl.set(.saturation, channel: 4, value: -30)
+        hslEdited.hslSettings.set(.hue, channel: 0, value: 25)
+        hslEdited.hslSettings.set(.saturation, channel: 4, value: -30)
         var hslDraft = EditorToolDraft(tool: .adjustment(.hsl), original: neutral)
         hslDraft.update(hslEdited)
 
@@ -456,8 +456,8 @@ private struct ResetControlHostView: View {
                                                        revision: hslRev, draft: hslSnap) else {
             throw Failure.assertion("HSL single-channel reset failed")
         }
-        try check(afterChannel.settings.hsl.value(.hue, channel: 0) == 0 &&
-                  afterChannel.settings.hsl.value(.saturation, channel: 4) == -30,
+        try check(afterChannel.settings.hslSettings.value(.hue, channel: 0) == 0 &&
+                  afterChannel.settings.hslSettings.value(.saturation, channel: 4) == -30,
                   "HSL single-channel reset clears only the selected color channel")
 
         hslDraft.update(afterChannel.settings)
@@ -467,7 +467,7 @@ private struct ResetControlHostView: View {
               preparedAllHSL.requiresConfirmation, preparedAllHSL.updatesDraft,
               let afterAllHSL = viewModel.commitReset(preparedAllHSL, settings: neutral,
                                                       revision: hslRev, draft: hslSnap2),
-              afterAllHSL.settings.hsl.isIdentity else {
+              afterAllHSL.settings.hslSettings.isIdentity else {
             throw Failure.assertion("HSL full reset failed")
         }
         print("PASS: All-HSL reset clears remaining modified channels in draft")

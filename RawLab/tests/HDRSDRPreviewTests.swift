@@ -28,8 +28,8 @@ import UIKit
         } catch let error as HDRNativeError {
             guard error.reason==UInt32(SONY2FUJI_HDR_REASON_PREVIEW_SOURCE) else { throw error }
         }
-        var cropped=RawSettings.default; cropped.geometry=GeometrySettings()
-        cropped.geometry.quarterTurns=1; cropped.geometry.cropWidth=0.5
+        var cropped=RawSettings.default; cropped.geometrySettings=GeometrySettings()
+        cropped.geometrySettings.quarterTurns=1; cropped.geometrySettings.cropWidth=0.5
         let crop=try processor.processBuffer(buffer:preview.buffer,settings:cropped,previewLongEdge:256,lutURL:nil)
         guard crop.nativeSize==CGSize(width:Int(native.height)/2,height:Int(native.width)) else {
             fatalError("SDR proxy inferred native crop bounds from preview pixels")

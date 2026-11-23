@@ -83,7 +83,7 @@ enum ExportCacheLifetimeTests {
         defer { if suspended { f.model.renderQueue.resume() } }
         var settings = RawSettings.default
         settings.exposure = 0.75
-        settings.geometry.quarterTurns = 1
+        settings.geometrySettings.quarterTurns = 1
         f.model.committedPreviewSettings = settings
         f.model.updatePreview(settings: settings, includeHistogram: false)
         f.model.sourceFile = nil

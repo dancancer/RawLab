@@ -14,6 +14,7 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
     "$ROOT/RawLab/RawLab/Core/ViewModel/EditorResetTransaction.swift" \
+    "$ROOT/RawLab/RawLab/UI/EditorState/EditorToolDraft.swift" \
     "$ROOT/RawLab/RawLab/UI/EditorState/EditorWorkspaceResetControl.swift" \
     "$ROOT/RawLab/tests/IOSResetEntryUITests.swift" \
     -framework SwiftUI -framework AppKit -framework ApplicationServices -o "$OUT/test"

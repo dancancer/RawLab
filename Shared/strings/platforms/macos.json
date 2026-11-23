@@ -4613,6 +4613,49 @@
     "保留当前手动草稿": {
       "formats": [],
       "source": "保留当前手动草稿"
+    },
+    "正在保存": {
+      "formats": [],
+      "source": "正在保存"
+    },
+    "拍摄时：%.0f K · 色调 %+.0f": {
+      "formats": [
+        "%.0f",
+        "%+.0f"
+      ],
+      "source": "拍摄时：{0} K · 色调 {1}"
+    },
+    "无法识别原始照片，调整尚未保存。": {
+      "formats": [],
+      "source": "无法识别原始照片，调整尚未保存。"
+    },
+    "无法读取已保存的调整，原有记录未被覆盖。": {
+      "formats": [],
+      "source": "无法读取已保存的调整，原有记录未被覆盖。"
+    },
+    "请先打开这张照片，确认是否恢复旧调整。": {
+      "formats": [],
+      "source": "请先打开这张照片，确认是否恢复旧调整。"
+    },
+    "保存时发生中断，请先核对照片图库，避免重复生成。": {
+      "formats": [],
+      "source": "保存时发生中断，请先核对照片图库，避免重复生成。"
+    },
+    "保存结果待确认": {
+      "formats": [],
+      "source": "保存结果待确认"
+    },
+    "所选外观不可用，请重新选择外观。": {
+      "formats": [],
+      "source": "所选外观不可用，请重新选择外观。"
+    },
+    "未处理": {
+      "formats": [],
+      "source": "未处理"
+    },
+    "正在显影": {
+      "formats": [],
+      "source": "正在显影"
     }
   },
   "overrides": {},
@@ -4864,14 +4907,6 @@
       "fr": "Brouillon de géométrie et d’objectif",
       "ja": "ジオメトリとレンズの下書き",
       "zh-Hans": "几何与镜头草稿"
-    },
-    "几何编辑": {
-      "de": "Geometrie bearbeiten",
-      "en": "Geometry edits",
-      "es": "Edición de geometría",
-      "fr": "Réglages géométriques",
-      "ja": "ジオメトリ編集",
-      "zh-Hans": "几何编辑"
     },
     "原图与调整后对比": {
       "de": "Vergleich zwischen Originalbild und angepasstem Bild",
@@ -5169,14 +5204,6 @@
       "ja": "基本露出を読み取ることができません",
       "zh-Hans": "无法读取基础曝光"
     },
-    "旧版 FBDD": {
-      "de": "Älteres FBDD",
-      "en": "Legacy FBDD",
-      "es": "FBDD heredado",
-      "fr": "Ancien FBDD",
-      "ja": "旧方式 FBDD",
-      "zh-Hans": "旧版 FBDD"
-    },
     "旧版色度降噪": {
       "de": "Ältere Chroma-Rauschreduzierung",
       "en": "Legacy Chroma Noise Reduction",
@@ -5184,14 +5211,6 @@
       "fr": "Ancienne réduction du bruit chroma",
       "ja": "旧方式のクロマノイズ低減",
       "zh-Hans": "旧版色度降噪"
-    },
-    "旧版：{0}": {
-      "de": "Älteres Verfahren: {0}",
-      "en": "Legacy: {0}",
-      "es": "Heredado: {0}",
-      "fr": "Ancien : {0}",
-      "ja": "旧方式: {0}",
-      "zh-Hans": "旧版：{0}"
     },
     "显示 {0}": {
       "de": "Zeigt {0}",
@@ -5345,14 +5364,6 @@
       "ja": "精密調整",
       "zh-Hans": "精确调整"
     },
-    "胶片模拟": {
-      "de": "Filmsimulation",
-      "en": "Film simulation",
-      "es": "Simulación de película",
-      "fr": "Simulation de film",
-      "ja": "フィルムシミュレーション",
-      "zh-Hans": "胶片模拟"
-    },
     "色相、饱和度和明度": {
       "de": "Farbton, Sättigung und Helligkeit",
       "en": "Hue, saturation, and lightness",
@@ -5433,14 +5444,6 @@
       "ja": "調整パネルの高さ",
       "zh-Hans": "调整栏高度"
     },
-    "轻度": {
-      "de": "Mild",
-      "en": "Mild",
-      "es": "Leve",
-      "fr": "Doux",
-      "ja": "マイルド",
-      "zh-Hans": "轻度"
-    },
     "选择 {0}": {
       "de": "{0} auswählen",
       "en": "Select {0}",
@@ -5465,14 +5468,6 @@
       "ja": "名前を変更…",
       "zh-Hans": "重命名…"
     },
-    "降噪亮度": {
-      "de": "Luminanz",
-      "en": "Luminance",
-      "es": "Luminancia",
-      "fr": "Luminance",
-      "ja": "輝度",
-      "zh-Hans": "亮度"
-    },
     "降噪已停用，参数会保留。": {
       "de": "Rauschreduzierung ist deaktiviert. Die Einstellungen bleiben erhalten.",
       "en": "Noise reduction is off. Settings are retained.",
@@ -5480,22 +5475,6 @@
       "fr": "La réduction du bruit est désactivée. Les réglages sont conservés.",
       "ja": "ノイズ低減はオフです。設定値は保持されます。",
       "zh-Hans": "降噪已停用，参数会保留。"
-    },
-    "降噪粗色斑": {
-      "de": "Farbflecken",
-      "en": "Blotches",
-      "es": "Manchas",
-      "fr": "Taches",
-      "ja": "色斑",
-      "zh-Hans": "粗色斑"
-    },
-    "降噪色彩": {
-      "de": "Farbe",
-      "en": "Color",
-      "es": "Color",
-      "fr": "Chrominance",
-      "ja": "カラー",
-      "zh-Hans": "色彩"
     },
     "高光 {0}": {
       "de": "Lichter {0}",

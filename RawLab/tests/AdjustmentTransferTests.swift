@@ -365,8 +365,8 @@ import Foundation
     }
     static func scopes() throws {
         var source = RawSettings.default
-        source.exposure = 1.25; source.contrast = 1.2; source.geometry.cropWidth = 0.8
-        check(source.hsl.setExact(.hue, channel: 0, value: 12.375), "Fractional HSL fixture is valid")
+        source.exposure = 1.25; source.contrast = 1.2; source.geometrySettings.cropWidth = 0.8
+        check(source.hslSettings.setExact(.hue, channel: 0, value: 12.375), "Fractional HSL fixture is valid")
         let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
         check(!standard.fields.contains(.cropWidth), "Default copy excludes geometry")
         let all = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
@@ -377,7 +377,7 @@ import Foundation
         var target = RawSettings.default; target.processing = .legacy; target.sharpening = 0.47; target.lutID = "PROVIA"
         let original = state(target).replacing(settings: target, preservingFilmID: nil)
         let result = try IOSAdjustmentTransfer.prepare(payload: modified, target: original, context: raw)
-        check(result.settings.exposure == 1.25 && result.settings.contrast == 1.2 && result.settings.hsl.hue[0] == 12.375,
+        check(result.settings.exposure == 1.25 && result.settings.contrast == 1.2 && result.settings.hslSettings.hue[0] == 12.375,
             "Core multipliers and exact HSL copy without UI quantization")
         check(result.settings.sharpening == 0.47 && result.settings.processing == .legacy && result.filmID == nil
             && result.updatedAt == original.updatedAt && result.settings.lutID == "PROVIA", "Unselected values and explicit nil metadata survive")
@@ -392,18 +392,18 @@ import Foundation
         }
     }
     static func allTarget() -> RawSettings {
-        var s = RawSettings.default; s.exposure = 1.25; s.contrast = 1.2; s.geometry.cropWidth = 0.8
-        _ = s.hsl.setExact(.hue, channel: 0, value: 12.375); return s
+        var s = RawSettings.default; s.exposure = 1.25; s.contrast = 1.2; s.geometrySettings.cropWidth = 0.8
+        _ = s.hslSettings.setExact(.hue, channel: 0, value: 12.375); return s
     }
     static func recipes() throws {
         var source = RawSettings.default; source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
         source.lutStrength = 0.5; source.exposure = 1.4; source.contrast = 1.4; source.tint = 0
-        _ = source.hsl.setExact(.hue, channel: 0, value: 12.375)
+        _ = source.hslSettings.setExact(.hue, channel: 0, value: 12.375)
         let copy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast, .hslHueRed]), snapshot: state(source), context: raw)
         var target = RawSettings.default; target.saturation = 1.3
         let result = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(target), context: raw)
         check(result.settings.exposure == 0.7 && Float(result.settings.contrast) == Float(1.2)
-            && result.settings.hsl.hue[0] == 6.1875 && result.settings.masterRecipeID == nil, "Source recipe strength is applied once")
+            && result.settings.hslSettings.hue[0] == 6.1875 && result.settings.masterRecipeID == nil, "Source recipe strength is applied once")
         target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.lutStrength = 0.5
         let inverted = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(target), context: raw)
         check(inverted.settings.exposure == 1.4 && inverted.settings.lutStrength == 0.5, "Selected contribution is inverted into target recipe")
@@ -413,7 +413,7 @@ import Foundation
             "Partial recipe look becomes an independent LUT")
         let full = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
         let copied = try IOSAdjustmentTransfer.prepare(payload: full, target: state(), context: raw)
-        check(copied.settings.masterRecipeID == source.masterRecipeID && copied.settings.hsl == source.hsl,
+        check(copied.settings.masterRecipeID == source.masterRecipeID && copied.settings.hslSettings == source.hslSettings,
             "Complete current recipe retains logical values and identity")
         source.lutStrength = 0.7
         let fractional = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
@@ -426,11 +426,11 @@ import Foundation
         let fullLegacy = try payload(legacyValues, recipe: .init(id: "hamada_daylight_v2", strength: 0.5, settingsVersion: 2))
         let legacyRecipe = try IOSAdjustmentTransfer.prepare(payload: fullLegacy, target: state(), context: raw)
         check(legacyRecipe.settings.masterRecipeID == source.masterRecipeID
-            && legacyRecipe.settings.renderedRecipe(cameraTemperature: 5200, cameraTint: 10).hsl.hue[0] == 37.25,
+            && legacyRecipe.settings.renderedRecipe(cameraTemperature: 5200, cameraTint: 10).hslSettings.hue[0] == 37.25,
             "Full legacy HSL is represented without changing its effective contribution")
         let legacy = try payload(["color.hsl.hue.red": .number(37.25)],
             recipe: .init(id: "hamada_daylight_v2", strength: 0.5, settingsVersion: 2))
-        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(), context: raw).settings.hsl.hue[0] == 37.25,
+        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(), context: raw).settings.hslSettings.hue[0] == 37.25,
             "Legacy HSL does not acquire current recipe strength")
         var zero = target; zero.lutStrength = 0
         rejects("Nonzero contribution cannot be hidden in zero-strength target recipe") {
@@ -650,16 +650,16 @@ import Foundation
                 "enabled": .boolean(true), "luma": .number(0), "chroma": .number(46), "coarse": .number(50), "preset": .string("clean")])]),
                 target: state(), context: raw)
         }
-        target = .default; target.geometry.cropX = 0.2; target.geometry.cropWidth = 0.5
+        target = .default; target.geometrySettings.cropX = 0.2; target.geometrySettings.cropWidth = 0.5
         let cropped = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.6)]), target: state(target), context: raw)
-        check(cropped.settings.geometry.cropWidth == 0.6 && cropped.settings.geometry.cropX == 0.2, "Crop width keeps unselected position")
+        check(cropped.settings.geometrySettings.cropWidth == 0.6 && cropped.settings.geometrySettings.cropX == 0.2, "Crop width keeps unselected position")
         rejects("Merged crop must fit the canvas") {
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.9)]), target: state(target), context: raw)
         }
         let fractionalEffect = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
-        check(fractionalEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect preserves exact decimal without silent rounding")
+        check(fractionalEffect.settings.effectSettings.grainAmount == 2.5, "Fractional effect preserves exact decimal without silent rounding")
         let persistedEffect = try JSONDecoder().decode(PhotoEditState.self, from: JSONEncoder().encode(fractionalEffect))
-        check(persistedEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect decimal survives persistence round trip")
+        check(persistedEffect.settings.effectSettings.grainAmount == 2.5, "Fractional effect decimal survives persistence round trip")
         var rasterContext = raw; rasterContext.isRaw = false
         let selectedProfile = try IOSAdjustmentTransfer.prepare(payload: payload([
             "geometry.lens.profile_id": .string("fixture-profile")]), target: state(), context: rasterContext)
@@ -695,7 +695,7 @@ import Foundation
                 check(try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(value)) == value, "Shared accepted vector: \(id)")
                 if let expected = vector["neutral_effective"] as? [String: Double] {
                     let prepared = try IOSAdjustmentTransfer.prepare(payload: value, target: state(), context: raw)
-                    let actual = IOSAdjustmentTransfer.effectiveNumbers(prepared.settings)
+                    let actual = AdjustmentTransfer.effectiveNumbers(prepared.settings)
                     check(expected.allSatisfy { Float(actual[AdjustmentTransferField(rawValue: $0.key)!]!) == Float($0.value) }, "Shared effective vector: \(id)")
                 }
             } else { rejects("Shared rejected vector: \(id)") { _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data) } }
@@ -836,7 +836,7 @@ import Foundation
                 }
             }
             if let effectiveObj = expectSpec["effective"] as? [String: NSNumber] {
-                let actualEffective = IOSAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                let actualEffective = AdjustmentTransfer.effectiveNumbers(candidate.settings)
                 for key in effectiveObj.keys.sorted() {
                     let field = AdjustmentTransferField(rawValue: key)!
                     check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")

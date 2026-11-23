@@ -132,7 +132,9 @@ struct MasterRecipeTests {
         legacyBase.contrast = 1.1; legacyBase.saturation = 1.03
         legacyBase.setHSL(.hue, channel: 0, value: 25)
         legacyBase.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 10))
-        var legacyPayload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyBase)) as! [String: Any]
+        let legacyEncoder = JSONEncoder()
+        legacyEncoder.userInfo[Adjustments.legacyV1EncodingKey] = true
+        var legacyPayload = try JSONSerialization.jsonObject(with: legacyEncoder.encode(legacyBase)) as! [String: Any]
         legacyPayload.removeValue(forKey: "masterRecipeSettingsVersion")
         legacyPayload["tint"] = 10
         let migrated = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: legacyPayload))

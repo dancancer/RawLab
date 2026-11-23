@@ -470,7 +470,7 @@ struct Harness {
         }
 
         let expFilm = metadata["film_id"] as? String ?? ""
-        verify(actual.filmID == expFilm, "filmID(exp=\(expFilm),got=\(actual.filmID))")
+        verify((actual.filmID ?? "") == expFilm, "filmID(exp=\(expFilm),got=\(actual.filmID ?? "<nil>"))")
         verify(actual.masterRecipeID == (metadata["master_recipe_id"] as? String), "PhotoEditState.masterRecipeID")
         verify(s.masterRecipeID == (metadata["master_recipe_id"] as? String), "Adjustments.masterRecipeID")
         if let lookRef = sdrValues["looks.reference"] as? [String: Any], let kind = lookRef["kind"] as? String {
@@ -478,9 +478,9 @@ struct Harness {
             case "recipe":
                 verify(actual.masterRecipeID == (lookRef["id"] as? String), "looks.reference.recipe")
             case "builtin", "managed":
-                verify(!actual.filmID.isEmpty && actual.filmID == expFilm, "looks.reference.\(kind)")
+                verify(!(actual.filmID ?? "").isEmpty && (actual.filmID ?? "") == expFilm, "looks.reference.\(kind)")
             case "neutral":
-                verify(actual.filmID.isEmpty && actual.masterRecipeID == nil, "looks.reference.neutral")
+                verify((actual.filmID ?? "").isEmpty && actual.masterRecipeID == nil, "looks.reference.neutral")
             default: break
             }
         }
@@ -977,7 +977,7 @@ struct Harness {
                         let wireLoaded = try wireStore.state(for: legacyURL)
                         try check(wireLoaded != nil, "\(id): frozen macos_json legacy wire sample must decode")
                         if let w = wireLoaded {
-                            try check(w.filmID == (wireExpect["film_id"] as! String), "\(id): wire filmID")
+                            try check((w.filmID ?? "") == (wireExpect["film_id"] as! String), "\(id): wire filmID")
                             try check(approx(w.settings.exposure, num(wireExpect["exposure"])!), "\(id): wire exposure")
                             try check(approx(w.settings.temperature, num(wireExpect["temperature"])!), "\(id): wire temperature")
                             try check(approx(w.settings.tint, num(wireExpect["tint"])!), "\(id): wire tint")

@@ -76,7 +76,7 @@ import Foundation
         AdjustmentKind.vibrance.setValue(35, in: &hdrColor)
         hdrColor.editingHSLSettings.set(.hue, channel: 2, value: 18)
         hdrColor.editingGradingSettings.midtones = .init(hue: 180, saturation: 21)
-        check(hdrColor.hdr?.processingVersion == 3 && hdrColor.vibrance == 0 && hdrColor.hsl.isIdentity &&
+        check(hdrColor.hdr?.processingVersion == 3 && hdrColor.vibrance == 0 && hdrColor.hslSettings.isIdentity &&
               hdrColor.gradingSettings.isDefault && AdjustmentKind.hsl.progress(in: hdrColor) != 0,
               "HDR color controls changed dormant SDR state or progress used its values")
         let resetColor = resetAll(hdrColor)
@@ -92,10 +92,10 @@ import Foundation
         check(hdrFromSharpened.isHDREditing && hdrFromSharpened.hdr?.detailSettings.sharpening == 0 &&
               restoredSharpened.sharpening == 0.1, "HDR switch did not preserve the SDR sharpening")
         check(AdjustmentKind.temperature.progress(in:active) != 0,"HDR WB progress used inactive SDR values")
-        var effect=RawSettings.default; effect.photoEffects.vignetteMidpoint=60
+        var effect=RawSettings.default; effect.effectSettings.vignetteMidpoint=60
         let hdrFromEffect = try effect.withHDRMode(true, sourceIsHDR: true)
         let restoredEffect = try hdrFromEffect.withHDRMode(false, sourceIsHDR: true)
-        check(hdrFromEffect.isHDREditing && restoredEffect.photoEffects.vignetteMidpoint == 60,
+        check(hdrFromEffect.isHDREditing && restoredEffect.effectSettings.vignetteMidpoint == 60,
               "HDR switch did not preserve the SDR effect")
         let context = EditorAdjustmentContext(isRaw: false, defaultExposureMode: .sensor)
         var modeSource = RawSettings.default; modeSource.exposure = 1; modeSource.proRAWDecodeVersion = 2

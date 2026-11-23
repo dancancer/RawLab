@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import RawLabKit
 
 public struct IOSAdjustmentPhoto: Identifiable {
     public let identity: PhotoIdentity

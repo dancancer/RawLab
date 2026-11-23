@@ -20,7 +20,7 @@ extension ProcessorExportTests {
         check(original.isUsable && original.revision == revision && abs(original.rgb[0] - 0.8) < 0.01,
             "iOS native probe binds revision and returns pre-HSL RGB with normalized weights")
         var downstream = RawSettings.default
-        downstream.hsl.setExact(.hue, channel: 0, value: 80)
+        downstream.hslSettings.setExact(.hue, channel: 0, value: 80)
         downstream.gradingSettings.shadows = ColorGradingWheel(hue: 230, saturation: 70)
         let unchanged = try sample(downstream)
         check(original.rgb == unchanged.rgb && original.weights == unchanged.weights,

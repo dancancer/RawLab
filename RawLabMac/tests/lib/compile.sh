@@ -106,6 +106,9 @@ rawlab_mac_editor_model_sources() {
     local _sources=(
         "$ROOT/RawLabMac/Sources/Rendering/Engine.swift"
         "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift"
+        "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift"
+        "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift"
+        "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift"
         "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"
@@ -148,6 +151,9 @@ rawlab_mac_render_engine_sources() {
     local _sources=(
         "$ROOT/RawLabMac/Sources/Rendering/Engine.swift"
         "$ROOT/RawLabMac/Sources/Rendering/RenderError.swift"
+        "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift"
+        "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift"
+        "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift"
         "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"

@@ -12,6 +12,7 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "50% 中性灰" = "Gris neutre 50 %";
+"AI 降噪" = "Débruitage IA";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "Le DCP contient des gains spatiaux, un traitement HDR ou des tables RGB non pris en charge et ne peut pas être converti.";
 "DCP 导入选项" = "Options d’importation DCP";
@@ -97,6 +98,7 @@
 "下一张" = "Photo suivante";
 "不可读外观" = "Looks illisibles";
 "不支持此 HDR 格式或颜色描述。" = "Ce format HDR ou cette description colorimétrique n’est pas pris en charge.";
+"不支持此处理版本，原有记录未被覆盖。" = "Cette version de traitement n'est pas prise en charge. Les réglages enregistrés n'ont pas été écrasés.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Cette photo, ce look ou ce mode de traitement n’est pas pris en charge. Vérifiez la compatibilité des fichiers et les réglages de traitement.";
 "不能覆盖原始文件。" = "Le fichier d’origine ne peut pas être écrasé.";
 "不适用" = "Sans objet";
@@ -200,6 +202,7 @@
 "几何" = "Géométrie";
 "几何与镜头" = "Géométrie et objectif";
 "几何与镜头仅在“全部”或显式选择时包含。" = "La géométrie et l’objectif sont inclus uniquement avec « Tout » ou une sélection explicite.";
+"几何编辑" = "Réglages géométriques";
 "分割位置" = "Position de la séparation";
 "分割线" = "Ligne de séparation";
 "切换" = "Changer";
@@ -375,6 +378,7 @@
 "已复制" = "Copié";
 "已导入" = "Importée";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importés : %@ ; fichiers non importés : %@\n";
+"已导出" = "Exporté";
 "已导出 %@ 个渲染型 DNG" = "Fichiers DNG développés exportés : %@";
 "已导出渲染型 DNG。" = "DNG développé exporté.";
 "已展开" = "Développé";
@@ -539,6 +543,7 @@
 "无法保存编辑草稿。" = "Impossible d’enregistrer le brouillon de modification.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Impossible d’écrire l’export HDR. Vérifiez l’espace disponible et les autorisations.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Impossible d’écrire la photo exportée. Vérifiez l’emplacement de sortie et l’espace disponible.";
+"无法写入输出目录，请检查访问权限和剩余空间。" = "Impossible d’écrire dans le dossier de sortie. Vérifiez les autorisations d’accès et l’espace disponible.";
 "无法创建新的预设标识，请重试。" = "Impossible de créer un nouvel identifiant de préréglage. Réessayez.";
 "无法加入最近打开：%@" = "Impossible d’ajouter aux photos récentes : %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Impossible de récupérer le RAW original. Autorisez l’accès à cette photo dans les réglages système, puis réessayez.";
@@ -565,6 +570,7 @@
 "无法读取照片，请检查文件和访问权限。" = "Impossible de lire la photo. Vérifiez le fichier et les autorisations d’accès.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "Impossible de lire les informations Wi-Fi de l’appareil. Connectez-vous manuellement.";
 "无法读取统计设置，已保持关闭。" = "Le réglage d’analyse n’a pas pu être lu. L’analyse reste désactivée.";
+"无法读取调整记录：%@" = "Impossible de lire l'enregistrement d'ajustement : %@";
 "无法读取镜头校正状态" = "Impossible de lire l’état de la correction de l’objectif";
 "无法读取镜头配置列表" = "Impossible de lire les profils d’objectifs";
 "无法重新打开照片" = "Impossible de rouvrir la photo";
@@ -574,11 +580,14 @@
 "日光" = "Lumière du jour";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Peau lumineuse japonaise, bleu cyan transparent et aérien, ombres ouvertes et hautes lumières douces";
 "日系青空 · 高调日光" = "Ciel bleu japonais · lumière du jour high-key";
+"旧版 FBDD" = "Ancien FBDD";
 "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Les anciens réglages ont été enregistrés avec le seul identifiant Photos. Restaurez-les si la photo d’origine est la même.";
 "旧版降噪" = "Ancienne réduction du bruit";
+"旧版：%@" = "Ancien : %@";
 "明亮度" = "Luminance";
 "明度" = "Luminosité";
 "明度：从暗到亮。" = "Luminosité : du sombre au clair.";
+"明暗" = "Tons";
 "显示图像" = "Image affichée";
 "显示密码" = "Afficher le mot de passe";
 "暂停联机" = "Mettre la prise de vue connectée en pause";
@@ -849,6 +858,7 @@
 "联机拍摄设置" = "Réglages de prise de vue connectée";
 "肤色色相放大" = "Amplification teinte peau";
 "胶片" = "Film";
+"胶片模拟" = "Simulation de film";
 "自动" = "Auto";
 "自动 HDR" = "HDR automatique";
 "自动匹配" = "Correspondance automatique";
@@ -859,6 +869,7 @@
 "自由" = "Libre";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Texture urbaine dense, courbe en S marquée, affrontement orange-cyan et violet-or saturés";
 "色度降噪" = "Réduction du bruit chroma";
+"色彩" = "Couleur";
 "色彩降噪" = "Réduction du bruit de chrominance";
 "色温" = "Température";
 "色相" = "Teinte";
@@ -922,6 +933,7 @@
 "请核对手机和相机的配对数字" = "Vérifiez le numéro d’association sur le téléphone et l’appareil photo";
 "请等待当前任务完成。" = "Attendez la fin de la tâche actuelle.";
 "请等待预览完成后导出。" = "Attendez la fin de l’aperçu avant d’exporter.";
+"请至少选择一张照片。" = "Veuillez sélectionner au moins une photo.";
 "请输入 1–65535 之间的像素数" = "Entrez un nombre de pixels compris entre 1 et 65 535";
 "请输入不同的预设名称。" = "Saisissez un autre nom pour le préréglage.";
 "请输入相机显示的 Wi-Fi 名称和密码。" = "Saisissez le nom Wi-Fi et le mot de passe affichés par l’appareil.";
@@ -948,10 +960,12 @@
 "跟随系统" = "Suivre le système";
 "跳过" = "Ignorer";
 "跳过以上目标后重试" = "Ignorer les photos ci-dessus et réessayer";
+"轻度" = "Doux";
 "输入 Wi-Fi 名称与密码" = "Saisir le nom et le mot de passe Wi-Fi";
 "输入参考" = "Référence en entrée";
 "输入坐标" = "Entrée";
 "输入范围" = "Plage en entrée";
+"输入调整" = "Réglages d’entrée";
 "输入颜色" = "Espace couleur en entrée";
 "输出" = "Sortie";
 "输出参考" = "Référence en sortie";
@@ -1056,7 +1070,10 @@
 "阴影" = "Ombres";
 "阿里云隐私政策" = "Politique de confidentialité d’Aliyun";
 "降噪" = "Réduction du bruit";
+"降噪亮度" = "Luminance";
 "降噪参数" = "Réglages de réduction du bruit";
+"降噪粗色斑" = "Taches";
+"降噪色彩" = "Chrominance";
 "隐私设置" = "Paramètres de confidentialité";
 "隐藏密码" = "Masquer le mot de passe";
 "隐藏照片信息" = "Masquer les informations de la photo";
