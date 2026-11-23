@@ -234,7 +234,12 @@ private fun TetherParameterBar(state: CameraTetherState, onSetParameter: (Int, L
                         available = state.phase == CameraTetherPhase.READY && !state.focusBusy, focusBusy = state.focusBusy)
                 }
             }
-            if (state.parameters.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+            if (state.parameters.busy) {
+                val busyLabel = stringResource(R.string.camera_param_busy)
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth().height(2.dp).semantics { contentDescription = busyLabel },
+                )
+            }
             state.parameters.failure?.let { failure ->
                 val message = when (failure) {
                     CameraParameterFailure.UNAVAILABLE -> R.string.camera_param_unavailable
@@ -294,7 +299,7 @@ private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraT
             ) {
                 Text(stringResource(kind.title), style = MaterialTheme.typography.titleLarge)
                 LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
-                    items(sheetOptions, key = { it }) { option ->
+                    items(sheetOptions) { option ->
                         val isCurrent = option == parameter.current
                         Row(
                             Modifier

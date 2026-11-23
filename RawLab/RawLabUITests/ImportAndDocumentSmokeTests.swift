@@ -198,6 +198,8 @@ final class ImportAndDocumentSmokeTests: XCTestCase {
         XCTAssertTrue(robot.app.secureTextFields["camera.wifi.password"].exists)
         XCTAssertTrue(robot.app.buttons["camera.wifi.join"].exists)
         XCTAssertFalse(robot.app.buttons["camera.wifi.continue"].exists)
+        XCTAssertTrue(robot.app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "返回上一页")).firstMatch.exists)
+        XCTAssertFalse(robot.app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "上方系统 Wi-Fi")).firstMatch.exists)
         capture("03-ios-camera-manual-wifi")
         navigateBack()
 

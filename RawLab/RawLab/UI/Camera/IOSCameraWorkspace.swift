@@ -423,8 +423,8 @@ private struct IOSCameraManualWiFi: View {
         Form {
             Section(L10n.text("输入 Wi-Fi 名称与密码")) {
                 Text(connection.hotspotAutoJoinUnavailable
-                     ? L10n.text("当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。")
-                     : L10n.text("应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"))
+                     ? L10n.text("当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。")
+                     : L10n.text("应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。"))
                 .font(.footnote).foregroundStyle(.secondary)
                 TextField(L10n.text("Wi-Fi 名称"), text: $ssid).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("camera.wifi.ssid")
