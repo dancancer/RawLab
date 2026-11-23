@@ -37,7 +37,9 @@ public sealed record LensInfo(int State, string DetectedLens, string SelectedLen
 }
 public sealed record ParameterSpec(Parameter Id, string Title, string Group, double Min, double Max, double Step, string Unit, int Decimals = 0, double UiScale = 1, double UiOffset = 0)
 {
-    public double ToDisplay(double model) => (model - UiOffset) * UiScale;
+    public double ToDisplay(double model) => UiScale == 1
+        ? model - UiOffset
+        : Math.Round((model - UiOffset) * UiScale, 10, MidpointRounding.AwayFromZero);
     public double ToCanonical(double display) => UiOffset + display / UiScale;
     public double DisplayMin => Math.Min(ToDisplay(Min), ToDisplay(Max));
     public double DisplayMax => Math.Max(ToDisplay(Min), ToDisplay(Max));

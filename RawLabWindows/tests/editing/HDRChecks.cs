@@ -63,6 +63,21 @@ internal static class HDRChecks
               Math.Abs(ParameterSpec.All[(int)Parameter.Saturation].ToDisplay(parity[Parameter.Saturation]) - (-15)) < 1e-9 &&
               Math.Abs(ParameterSpec.All[(int)Parameter.Sharpening].ToDisplay(parity[Parameter.Sharpening]) - 65) < 1e-9,
             "HDR and SDR share canonical model units and ParameterSpec display conversions");
+
+        var contrastSpec = ParameterSpec.All[(int)Parameter.Contrast];
+        var saturationSpec = ParameterSpec.All[(int)Parameter.Saturation];
+        Check(contrastSpec.ToDisplay(1.4) == 40 &&
+              contrastSpec.ToDisplay(contrastSpec.ToCanonical(1.1)) == 1.1 &&
+              saturationSpec.ToDisplay(0.9) == -10 &&
+              saturationSpec.ToDisplay(saturationSpec.ToCanonical(-10)) == -10,
+            "ParameterSpec display conversion avoids IEEE 754 binary64 1-ULP drift");
+
+        var precisionHdr = new HDRSettings { Mode = HDRMode.Hdr }
+            .Set(Parameter.Contrast, 1.4)
+            .Set(Parameter.Saturation, 0.9)
+            .Set(Parameter.ToneCurve, 0.14);
+        Check(precisionHdr.Contrast == 40 && precisionHdr.Saturation == -10 && precisionHdr.ToneSettings.CurveStrength == 14,
+            "HDRSettings.Set avoids IEEE 754 binary64 1-ULP percentage drift");
     }
 
     private static void NeutralReferenceKeepsOnlyCameraLensSettings()
@@ -247,8 +262,14 @@ internal static class HDRChecks
         recipe.Set(Parameter.Contrast, 1.4); recipe.Set(Parameter.Highlights, .6);
         recipe.Set(Parameter.Shadows, .8); recipe.Set(Parameter.Saturation, .8);
         var effective = HDRSettings.FromSdr(recipe);
-        Check(effective.Exposure == .5 && effective.Contrast == 20 && effective.Highlights == -30 &&
-              effective.Shadows == 40 && effective.Saturation == -10, "Gain-map HDR uses effective recipe values");
+        Check(Math.Abs(effective.Exposure - .5) < 1e-9 &&
+              Math.Abs(effective.Contrast - 20) < 1e-9 &&
+              Math.Abs(effective.Highlights - (-30)) < 1e-9 &&
+              Math.Abs(effective.Shadows - 40) < 1e-9 &&
+              Math.Abs(effective.Saturation - (-10)) < 1e-9,
+            "Gain-map HDR uses effective recipe values");
+        Check(effective.Contrast == 20 && effective.Saturation == -10,
+            "Gain-map HDR FromSdr rounds percentage conversions cleanly without IEEE 754 1-ULP drift");
         recipe.Set(Parameter.Strength, 2); recipe.Set(Parameter.Exposure, 4);
         recipe.Set(Parameter.Contrast, 2); recipe.Set(Parameter.Highlights, 1);
         recipe.Set(Parameter.Shadows, 1); recipe.Set(Parameter.Saturation, 0);
