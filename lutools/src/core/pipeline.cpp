@@ -1768,6 +1768,8 @@ RenderStatus Pipeline::processImpl(
             rawNativeSize_.first > 0 && rawNativeSize_.second > 0) {
             std::string baseSourceKey, fileKey, wbBaseKey, previewExposureKey;
             const bool keysOk = buildRawCacheWbKeys(local, baseSourceKey, fileKey, wbBaseKey, previewExposureKey);
+            const bool cachedHalfSize = std::pair{rawCache_.width, rawCache_.height} != rawNativeSize_;
+            previewExposureKey += cachedHalfSize ? ":half" : ":full";
             const bool exposureOk = rawExposureMode_ != RawExposureMode::Preview ||
                 (rawCacheAnchoredPreview_ &&
                  (local.wbMode == RenderWhiteBalanceMode::Camera || local.wbMode == RenderWhiteBalanceMode::Temperature) &&

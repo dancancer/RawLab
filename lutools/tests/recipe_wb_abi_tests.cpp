@@ -650,6 +650,68 @@ void testInteractiveWbMatrixShortcut(const fs::path& dngPath) {
             "interactive 7500K WB must closely match settled LibRaw WB on unclipped pixels");
 }
 
+void testFinalPreviewExposureHalfFullParity(const fs::path& dngPath) {
+    const std::string pathStr = dngPath.string();
+    auto makeFinalRequest = [&](sony2fuji_wb_mode wbMode) {
+        sony2fuji_request req{};
+        req.version = SONY2FUJI_REQUEST_VERSION;
+        req.struct_size = sizeof(req);
+        req.input_type = SONY2FUJI_INPUT_RAW;
+        req.input_path = pathStr.c_str();
+        req.wb_mode = wbMode;
+        req.temperature = 6500.0f;
+        req.tint = 2.5f;
+        std::fill(std::begin(req.wb_mul), std::end(req.wb_mul), 1.0f);
+        req.brightness = req.contrast = req.saturation = 1.0f;
+        req.lut_strength = 1.0f;
+        req.output_target = SONY2FUJI_TARGET_BUFFER;
+        req.output_format = SONY2FUJI_OUTPUT_RGB8;
+        req.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE;
+        req.long_edge = 257;
+        req.intent = SONY2FUJI_INTENT_FINAL;
+        return req;
+    };
+
+    auto configureSession = []() {
+        auto session = createSession(SONY2FUJI_GPU_OFF);
+        require(sony2fuji_session_set_processing_version(session.get(), SONY2FUJI_PROCESSING_BASIC_V3) == SONY2FUJI_STATUS_OK,
+                "v3 for final preview EV parity");
+        require(sony2fuji_session_set_raw_exposure_mode(session.get(), SONY2FUJI_EXPOSURE_PREVIEW) == SONY2FUJI_STATUS_OK,
+                "preview exposure mode for final preview EV parity");
+        return session;
+    };
+
+    auto renderBuffer = [](sony2fuji_session* session, const sony2fuji_request& req) {
+        sony2fuji_buffer out{};
+        require(sony2fuji_process(session, &req, &out) == SONY2FUJI_STATUS_OK, "final preview EV parity render");
+        require(out.data != nullptr && out.size_bytes > 0, "final preview EV parity non-empty buffer");
+        const auto* bytes = static_cast<const uint8_t*>(out.data);
+        std::vector<uint8_t> pixels(bytes, bytes + out.size_bytes);
+        sony2fuji_release_buffer(&out);
+        return pixels;
+    };
+
+    // Session A mirrors GUI recipe-0 (Camera WB, FINAL) -> recipe-50 (Temperature WB, FINAL).
+    auto sessionA = configureSession();
+    (void)renderBuffer(sessionA.get(), makeFinalRequest(SONY2FUJI_WB_CAMERA));
+    const auto pixelsA = renderBuffer(sessionA.get(), makeFinalRequest(SONY2FUJI_WB_TEMPERATURE));
+    float evA = 0.0f, metaA = 0.0f;
+    require(sony2fuji_session_get_raw_exposure(sessionA.get(), &evA, &metaA) == SONY2FUJI_STATUS_OK,
+            "get sessionA raw exposure");
+
+    // Session B mirrors a fresh CLI process rendering Temperature WB in FINAL directly.
+    auto sessionB = configureSession();
+    const auto pixelsB = renderBuffer(sessionB.get(), makeFinalRequest(SONY2FUJI_WB_TEMPERATURE));
+    float evB = 0.0f, metaB = 0.0f;
+    require(sony2fuji_session_get_raw_exposure(sessionB.get(), &evB, &metaB) == SONY2FUJI_STATUS_OK,
+            "get sessionB raw exposure");
+
+    require(evA == evB,
+            "FINAL Preview baseline EV must not mix full-size and half-size estimates across sessions");
+    require(pixelsA == pixelsB,
+            "FINAL Temperature WB after Camera WB must match fresh session pixels byte-for-byte");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -663,6 +725,7 @@ int main(int argc, char** argv) {
         testEffectiveRawWhiteBalance(dngPath);
         testResolveRecipeWb(dir, dngPath);
         testInteractiveWbMatrixShortcut(dngPath);
+        testFinalPreviewExposureHalfFullParity(dngPath);
         std::cout << "recipe_wb_abi_tests passed\n";
         return 0;
     } catch (const std::exception& error) {

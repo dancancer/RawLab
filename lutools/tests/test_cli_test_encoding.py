@@ -14,7 +14,8 @@ class ProtocolEncodingTests(unittest.TestCase):
         script = f"import sys; sys.stdout.buffer.write(bytes.fromhex('{payload.encode().hex()}'))"
         for filename, name in (("test_agent_commands.py", "AgentCommands"),
                                ("test_agent_preview.py", "AgentPreview"),
-                               ("test_raw_info_cli.py", "RawInfoCLI")):
+                               ("test_raw_info_cli.py", "RawInfoCLI"),
+                               ("test_edit_recipe_cli.py", "RecipeCLI")):
             with self.subTest(client=filename):
                 spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
                 module = importlib.util.module_from_spec(spec)

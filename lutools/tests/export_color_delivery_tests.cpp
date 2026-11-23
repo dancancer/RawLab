@@ -225,7 +225,18 @@ void testJpegApp2IccProfile(const std::filesystem::path& dir) {
     sdrCfg.outputFormat = sony2fuji::kHdrSdrOutputJpeg;
     sdrCfg.quality = 92;
     sony2fuji::hdr::exportSDR(pair, sdrCfg, hdrSdrPath.u8string().c_str());
-    (void)extractSingleSrgbIccProfile(readBytes(hdrSdrPath));
+    const auto hdrSdrIcc = extractSingleSrgbIccProfile(readBytes(hdrSdrPath));
+    const auto hdrSdrPath2 = dir / "hdr_sdr_repeat.jpg";
+    sony2fuji::hdr::exportSDR(pair, sdrCfg, hdrSdrPath2.u8string().c_str());
+    const auto hdrSdrIcc2 = extractSingleSrgbIccProfile(readBytes(hdrSdrPath2));
+    assert(hdrSdrIcc == hdrSdrIcc2);
+#if !defined(__APPLE__)
+    static constexpr uint8_t kExpectedUtcDate[12] = {
+        0x07, 0xEA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    assert(std::memcmp(directIcc.data() + 24, kExpectedUtcDate, sizeof(kExpectedUtcDate)) == 0);
+    assert(hdrSdrIcc == directIcc);
+#endif
 
     std::cout << "PASS testJpegApp2IccProfile\n";
 }

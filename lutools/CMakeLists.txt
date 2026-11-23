@@ -1358,10 +1358,16 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         set(pipeline_ai_rollback_opts -Wall -Wextra -USONY2FUJI_ENABLE_METAL -USONY2FUJI_ENABLE_GLES -USONY2FUJI_ENABLE_D3D11)
         set(pipeline_ai_rollback_defs SONY2FUJI_ENABLE_AI_DENOISE)
     endif()
+    set(pipeline_ai_rollback_includes ${LIBRAW_INCLUDE_DIRS})
+    if(SONY2FUJI_LIBRAW_TARGET AND TARGET ${SONY2FUJI_LIBRAW_TARGET})
+        list(APPEND pipeline_ai_rollback_includes
+            "$<TARGET_PROPERTY:${SONY2FUJI_LIBRAW_TARGET},INTERFACE_INCLUDE_DIRECTORIES>")
+    endif()
     rawlab_add_test(
         NAME pipeline_ai_rollback
         SOURCES tests/pipeline_ai_rollback_tests.cpp src/core/pipeline_ai.cpp
         INCLUDES_BEFORE tests/ai_stub
+        INCLUDES ${pipeline_ai_rollback_includes}
         DEFINES ${pipeline_ai_rollback_defs}
         COMPILE_OPTIONS ${pipeline_ai_rollback_opts}
         LABELS ai core ci_macos_arm64 ci_macos_x86_64 ci_windows

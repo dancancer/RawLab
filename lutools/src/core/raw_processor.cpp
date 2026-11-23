@@ -451,7 +451,7 @@ public:
         float green = 0.0f;
         const float unusedMul[4]{};
         const ErrorCode runResult = runDcrawProcess(options, /*cameraWB=*/true, /*autoWB=*/false, /*customWB=*/false,
-            unusedMul, /*halfSize=*/bayerSource_ && options.rawNoiseReduction == 0, /*rawNoiseReduction=*/0,
+            unusedMul, /*halfSize=*/options.halfSize && bayerSource_ && options.rawNoiseReduction == 0, /*rawNoiseReduction=*/0,
             nullptr, nullptr, width, height, channels, green);
         if (runResult != ErrorCode::Success) return runResult;
 
@@ -1469,6 +1469,14 @@ const std::vector<uint8_t>& srgbIccProfileBytes() {
             }
         }
         cmsCloseProfile(profile);
+        // LittleCMS stamps Header.date (bytes 24..35) with time(NULL),
+        // making cross-process JPEG outputs non-deterministic across seconds.
+        if (bytes.size() >= 128 && std::memcmp(bytes.data() + 36, "acsp", 4) == 0) {
+            static constexpr uint8_t kFixedUtcDate[12] = {
+                0x07, 0xEA, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+            };
+            std::memcpy(bytes.data() + 24, kFixedUtcDate, sizeof(kFixedUtcDate));
+        }
         return bytes;
 #endif
     }();

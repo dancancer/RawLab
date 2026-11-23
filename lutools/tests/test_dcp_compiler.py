@@ -32,7 +32,7 @@ class NativeDCPCompilerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
 
     def run_compiler(self, source, output, ok=True):
-        result = subprocess.run([COMPILER, str(source), str(output)], capture_output=True, text=True)
+        result = subprocess.run([COMPILER, str(source), str(output)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(result.returncode, 0 if ok else 2, result.stderr)
         return result
 
