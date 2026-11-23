@@ -3,6 +3,49 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.12.0]
+
+### Added
+
+- Tone Curve v2 across CPU, Metal, GLES, and D3D11 backends and all four clients:
+  unrestricted endpoint Y coordinates (`y0` matte fade / `y1` highlight compression),
+  Luminosity curve mode, 4-band Parametric Curves with 3 adjustable split points,
+  `R/G/B` channel tabs on macOS/Windows, and on-canvas targeted curve dragging.
+- Color Grading v2: independent zone Luminance sliders (Shadows, Midtones, Highlights),
+  Global color wheel, Blending, and Balance controls across core, 3 GPU backends, and
+  all four clients.
+- On-canvas White Balance Eyedropper (`sony2fuji_session_sample_wb_probe` with
+  blown-channel protection) and SDR raster relative White Balance across all four
+  clients.
+- Continuous desktop DualDn AI denoise blend (`0–100%`) reusing cached linear
+  residuals with zero neural re-inference cost.
+- Quantitative Sampling & Non-Destructive Inspection Suite on all four clients:
+  live `RGB + HSB` probe, histogram luminance cursor, up to 4 geometry-tracked
+  pinned anchors (Neutral vs Current), and 5 pure-view non-destructive inspection
+  layers.
+- Real `sRGB IEC61966-2.1` `APP2 ICC_PROFILE` JPEG embedding, deterministic
+  coordinate-hashed 8-bit dithering, post-resize Output Sharpening
+  (`Off / Low / Standard / High`), and lossless 16-bit PNG export on iOS (single
+  and batch).
+- Native memory-buffer B→S→H diagnostics (`sony2fuji_diagnose_image`,
+  `sony2fuji_sample_region_bsh`), CLI `--analyze` / `--sample` / `--print-transfer`,
+  desktop `rawlab-transfer-v1.json` import/export and draft-safe hot-reload banner
+  with single-step Undo, plus expanded `rawlab_mcp` read-only and gated GUI-sync
+  tools (`--enable-gui-sync`).
+- Unified release packaging guide (`docs/process/release-packaging-guide.md`) and
+  monotonic release-branch ancestry/build gates.
+
+### Changed
+
+- Master Recipe rendering performance optimization across RAW decode/unpack reuse,
+  full BasicV3 GPU parity, half-size interactive proxies, fast LUTs, and parallel
+  VNG fallback; Android Sony Wi-Fi access authentication, dual-slot import, and
+  MagicOS 9 compatibility.
+- Downgrading to `0.11.x` or earlier is not supported for edits saved with `0.12.0`.
+
+Version `0.12.0`, build `23`. See the
+[release notes](docs/releases/v0.12/v0.12.0.md) for compatibility and coverage.
+
 ## [0.11.2]
 
 ### Fixed
