@@ -15,6 +15,8 @@
 		W34U00000000000000000006 /* BatchWorkflowSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000016 /* BatchWorkflowSmokeTests.swift */; };
 		W34U00000000000000000007 /* HdrAndX3fSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W34U00000000000000000017 /* HdrAndX3fSmokeTests.swift */; };
 		AA1100000000000000000003 /* RawLabKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000002 /* RawLabKit */; };
+		AA1100000000000000000005 /* RawLabNativeTypes in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000004 /* RawLabNativeTypes */; };
+		AA1100000000000000000007 /* RawLabNative in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000006 /* RawLabNative */; };
 		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
 		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
@@ -43,8 +45,6 @@
         A8D1A6000000000000000001 /* ErrorDiagnostics+iOS.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8D1A6000000000000000002; };
         A8CACE000000000000000003 /* ContentView+AutoExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8CACE000000000000000004; };
         D01800000000000000000001 /* ProcessorError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01800000000000000000011; };
-        D12000000000000000000001 /* DCPCompiler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000011; };
-        D12000000000000000000002 /* LookLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000012; };
         D12000000000000000000003 /* LUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000013; };
         D12000000000000000000004 /* LUTCompatibilityPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12000000000000000000014; };
         D12100000000000000000001 /* LookImportCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12100000000000000000011; };
@@ -116,10 +116,6 @@
         AB2000000000000000000002 /* MasterRecipes in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000012; };
         AB2000000000000000000003 /* MasterRecipeIcons in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000013; };
         AB1900000000000000000002 /* HSLMixer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000012; };
-        AB1900000000000000000003 /* HSLNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1900000000000000000013; };
-        D00500000000000000000002 /* ToneControlsNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00500000000000000000012; };
-        41C5E5C8C1BF433C837BBFA1 /* AtmosphereNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEBF5C6C72A477B93B716E6; };
-        D00600000000000000000002 /* ColorGradingNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000012; };
 		AB2100000000000000000003 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000004; };
 		AB2100000000000000000005 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = AB2100000000000000000006; };
 		AB3900000000000000000005 /* RUMUsageTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB3900000000000000000006 /* RUMUsageTransport.swift */; };
@@ -199,8 +195,6 @@
 			isa = PBXBuildFile;
 			fileRef = CE718EBE66711A945E3F2F52;
 		};
-        2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD125F07D1C4D65DADBADB20; };
-        2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00A3E4C709437DACC0D1D46F; };
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
         B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
         591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
@@ -269,8 +263,6 @@
         A8D1A6000000000000000002 /* ErrorDiagnostics+iOS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Persistence/ErrorDiagnostics+iOS.swift"; sourceTree = SOURCE_ROOT; };
         A8CACE000000000000000004 /* ContentView+AutoExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Editor/ContentView+AutoExposure.swift"; sourceTree = SOURCE_ROOT; };
         D01800000000000000000011 /* ProcessorError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Errors/ProcessorError.swift"; sourceTree = "<group>"; };
-        D12000000000000000000011 /* DCPCompiler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DCPCompiler.swift; path = "../Shared/DCPCompiler.swift"; sourceTree = SOURCE_ROOT; };
-        D12000000000000000000012 /* LookLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LookLibrary.swift; path = "../Shared/LookLibrary.swift"; sourceTree = SOURCE_ROOT; };
         D12000000000000000000013 /* LUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityView.swift; path = "../Shared/LUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
         D12000000000000000000014 /* LUTCompatibilityPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LUTCompatibilityPreview.swift; path = "../Shared/LUTCompatibilityPreview.swift"; sourceTree = SOURCE_ROOT; };
         D12100000000000000000011 /* LookImportCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/LookImportCoordinator.swift"; sourceTree = SOURCE_ROOT; };
@@ -352,10 +344,6 @@
         AB2000000000000000000012 /* MasterRecipes */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipes"; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000013 /* MasterRecipeIcons */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "../RawLabMac/Resources/MasterRecipeIcons"; sourceTree = SOURCE_ROOT; };
         AB1900000000000000000012 /* HSLMixer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLMixer.swift; path = "../Shared/HSLMixer.swift"; sourceTree = SOURCE_ROOT; };
-        AB1900000000000000000013 /* HSLNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLNative.swift; path = "../Shared/HSLNative.swift"; sourceTree = SOURCE_ROOT; };
-        D00500000000000000000012 /* ToneControlsNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneControlsNative.swift; path = "../Shared/ToneControlsNative.swift"; sourceTree = SOURCE_ROOT; };
-        AEEBF5C6C72A477B93B716E6 /* AtmosphereNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AtmosphereNative.swift; path = "../Shared/AtmosphereNative.swift"; sourceTree = SOURCE_ROOT; };
-        D00600000000000000000012 /* ColorGradingNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingNative.swift; path = "../Shared/ColorGradingNative.swift"; sourceTree = SOURCE_ROOT; };
 		AB210000000000000000000A /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		AB210000000000000000000B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "en"; path = "en.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		AB210000000000000000000C /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
@@ -526,8 +514,6 @@
 			path = "RawLab/UI/Export/ContentView+FileExport.swift";
 			sourceTree = SOURCE_ROOT;
 		};
-        DD125F07D1C4D65DADBADB20 /* ToneCurveNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveNative.swift; path = "../Shared/ToneCurveNative.swift"; sourceTree = SOURCE_ROOT; };
-        00A3E4C709437DACC0D1D46F /* ToneCurveSampling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveSampling.swift; path = "../Shared/ToneCurveSampling.swift"; sourceTree = SOURCE_ROOT; };
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
         8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
         4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
@@ -568,6 +554,8 @@
 				5925D383E992E267E84A557D /* Foundation.framework in Frameworks */,
 				8F3A1B2C3D4E5F678901234B /* sony2fuji.xcframework in Frameworks */,
 				AA1100000000000000000003 /* RawLabKit in Frameworks */,
+				AA1100000000000000000005 /* RawLabNativeTypes in Frameworks */,
+				AA1100000000000000000007 /* RawLabNative in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -751,10 +739,6 @@
 				D00600000000000000000014,
 				D00600000000000000000013,
 				AB1900000000000000000012,
-				AB1900000000000000000013,
-				D00500000000000000000012,
-				AEEBF5C6C72A477B93B716E6,
-				D00600000000000000000012,
 				8F3A1B2C3D4E5F6789012346,
 				8F3A1B2C3D4E5F6789012350,
 				D00200000000000000000011,
@@ -1158,6 +1142,8 @@
 			name = RawLab;
 			packageProductDependencies = (
 				AA1100000000000000000002 /* RawLabKit */,
+				AA1100000000000000000004 /* RawLabNativeTypes */,
+				AA1100000000000000000006 /* RawLabNative */,
 			);
 			productName = RawLab;
 			productReference = ED52E5E1D6C957F64808BB11 /* RawLab.app */;
@@ -1433,18 +1419,10 @@
 				D00600000000000000000004,
 				D00600000000000000000003,
 				D00300000000000000000002,
-				D12000000000000000000001,
-				D12000000000000000000002,
 				D12000000000000000000003,
 				D12000000000000000000004,
 				D12100000000000000000001,
 				AB1900000000000000000002,
-				AB1900000000000000000003,
-				D00500000000000000000002,
-				41C5E5C8C1BF433C837BBFA1,
-				D00600000000000000000002,
-				2413F38498878607A82822FF /* ToneCurveNative.swift in Sources */,
-				2DA4DF4798D881C25F72C798 /* ToneCurveSampling.swift in Sources */,
 				2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */,
 				B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */,
 				591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */,
@@ -1605,6 +1583,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/../lutools/include/sony2fuji/ffi/module.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
 				PRODUCT_NAME = RawLab;
 				SDKROOT = iphoneos;
@@ -1628,6 +1607,7 @@
 				CODE_SIGN_ENTITLEMENTS = "";
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				OTHER_SWIFT_FLAGS = "$(inherited) -Xcc -fmodule-map-file=$(SRCROOT)/../lutools/include/sony2fuji/ffi/module.modulemap";
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.RawLab;
 				PRODUCT_NAME = RawLab;
 				SDKROOT = iphoneos;
@@ -1712,6 +1692,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */;
 			productName = RawLabKit;
+		};
+		AA1100000000000000000004 /* RawLabNativeTypes */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */;
+			productName = RawLabNativeTypes;
+		};
+		AA1100000000000000000006 /* RawLabNative */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */;
+			productName = RawLabNative;
 		};
 /* End XCSwiftPackageProductDependency section */
 

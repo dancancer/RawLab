@@ -251,7 +251,10 @@ class AppleShellHygieneTests(unittest.TestCase):
                 '#!/bin/bash\nset -euo pipefail\nscratch=""\nshow_bin=0\n'
                 'while [ "$#" -gt 0 ]; do case "$1" in --scratch-path) scratch="$2"; shift 2 ;; --show-bin-path) show_bin=1; shift ;; *) shift ;; esac; done\n'
                 'bin="$scratch/fake-bin"\nif [ "$show_bin" = 1 ]; then printf "%s\\n" "$bin"; exit 0; fi\n'
-                'mkdir -p "$bin/Modules"\ntouch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a"\n'
+                'mkdir -p "$bin/Modules"\n'
+                'touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a" '
+                '"$bin/Modules/RawLabNativeTypes.swiftmodule" "$bin/libRawLabNativeTypes.a" '
+                '"$bin/Modules/RawLabNative.swiftmodule" "$bin/libRawLabNative.a"\n'
             )
             for p in tools.iterdir():
                 p.chmod(0o755)

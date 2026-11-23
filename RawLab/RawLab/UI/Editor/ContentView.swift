@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import Photos
 import PhotosUI
 import SwiftUI

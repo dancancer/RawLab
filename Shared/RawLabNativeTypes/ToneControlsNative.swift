@@ -1,7 +1,8 @@
+@_exported import CSony2Fuji
 import RawLabKit
 import Foundation
 
-extension ToneControlsSettings {
+public extension ToneControlsSettings {
     var nativeConfig: sony2fuji_tone_controls_config {
         var config = sony2fuji_tone_controls_config()
         config.version = UInt32(SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION)

@@ -1,7 +1,8 @@
+@_exported import CSony2Fuji
 import RawLabKit
 import Foundation
 
-extension ToneCurveShape {
+public extension ToneCurveShape {
     var nativeConfig: sony2fuji_tone_curve_config {
         var config = sony2fuji_tone_curve_config()
         config.version = UInt32(SONY2FUJI_TONE_CURVE_CONFIG_VERSION)
@@ -18,7 +19,7 @@ extension ToneCurveShape {
     }
 }
 
-extension ToneCurveParametric {
+public extension ToneCurveParametric {
     var nativeConfig: sony2fuji_tone_curve_parametric_config {
         var config = sony2fuji_tone_curve_parametric_config()
         config.version = UInt32(SONY2FUJI_TONE_CURVE_PARAMETRIC_CONFIG_VERSION)
@@ -35,7 +36,7 @@ extension ToneCurveParametric {
     }
 }
 
-extension ToneCurveSettings {
+public extension ToneCurveSettings {
     var nativeConfig: sony2fuji_tone_curve_config { master.nativeConfig }
     var nativeSetConfig: sony2fuji_tone_curve_set_config {
         var config = sony2fuji_tone_curve_set_config()

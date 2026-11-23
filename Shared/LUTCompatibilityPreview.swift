@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNativeTypes
 import Foundation
 import CoreGraphics
 import Combine

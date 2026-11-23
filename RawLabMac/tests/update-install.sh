@@ -14,10 +14,9 @@ rawlab_mac_swiftc -whole-module-optimization "$ROOT/RawLabMac/Sources/System/Upd
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateStore.swift" \
     "$ROOT/RawLabMac/tests/UpdateStoreTests.swift" -o "$OUT/store"
 "$OUT/store"
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization \
+rawlabnative_flags link "$OUT/swiftpm" macos 0 all
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -whole-module-optimization \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/Shared/DCPCompiler.swift" "$ROOT/Shared/LookLibrary.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateState.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateAdapter.swift" "$ROOT/RawLabMac/Sources/System/Updates/UpdateStore.swift" \
     "$ROOT/RawLabMac/Sources/System/Updates/UpdateInstallGate.swift" "$ROOT/RawLabMac/Sources/System/Updates/DesktopUpdateController.swift" \

@@ -1,4 +1,12 @@
+import RawLabNative
 import Foundation
+
+@_cdecl("sony2fuji_validate_look") func stubValidateLook(_: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_look_format>?, _: UnsafeMutablePointer<UInt32>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_inspect_lut_color") func stubInspectLUTColor(_: UnsafePointer<CChar>?) -> sony2fuji_lut_color_state { sony2fuji_lut_color_state(rawValue: 0) }
+@_cdecl("sony2fuji_inspect_lut_compatibility") func stubInspectLUTCompatibility(_: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_blob>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_prepare_lut_compatibility") func stubPrepareLUTCompatibility(_: UnsafePointer<CChar>?, _: UnsafePointer<CChar>?, _: UnsafeMutablePointer<sony2fuji_blob>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_sample_tone_curve_v2") func stubSampleToneCurveV2(_: UnsafePointer<sony2fuji_tone_curve_config>?, _: UnsafePointer<sony2fuji_tone_curve_parametric_config>?, _: UnsafePointer<Double>?, _: UnsafeMutablePointer<Double>?, _: UInt32) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_session_set_tone_curves_v2") func stubSessionSetToneCurvesV2(_: OpaquePointer?, _: UnsafePointer<sony2fuji_tone_curve_set_v2_config>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
 
 @main
 struct DCPCompilerTests {
