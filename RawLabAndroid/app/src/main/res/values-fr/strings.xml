@@ -51,6 +51,7 @@
     <string name="camera_change">"Changer d’appareil photo"</string>
     <string name="camera_choose">"Choisir un appareil photo"</string>
     <string name="camera_clear">"Effacer la sélection"</string>
+    <string name="camera_clear_filter">"Effacer les filtres"</string>
     <string name="camera_collection">"Ajouter à la sélection"</string>
     <string name="camera_complete">"Importation terminée"</string>
     <string name="camera_connect_action">"Connecter l’appareil photo"</string>
@@ -146,6 +147,7 @@
     <string name="camera_not_found">"Aucun appareil photo trouvé. Laissez l’appareil sur l’écran d’attente de connexion."</string>
     <string name="camera_open">"Ouvrir dans l’éditeur"</string>
     <string name="camera_open_saved">"Voir les photos importées"</string>
+    <string name="camera_open_settings">"Ouvrir les réglages système"</string>
     <string name="camera_original_changed">"Original modifié"</string>
     <string name="camera_original_missing">"Original inaccessible"</string>
     <string name="camera_original_unavailable">"Originaux indisponibles"</string>

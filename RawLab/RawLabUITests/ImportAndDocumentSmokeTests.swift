@@ -143,4 +143,97 @@ final class ImportAndDocumentSmokeTests: XCTestCase {
         robot.app.segmentedControls["recents.filter"].buttons["Unedited"].tap()
         robot.waitForCondition(timeout: 10) { rows.count == 1 }
     }
+
+    func testOfflineCameraWorkspaceSmoke() throws {
+        let robot = LibraryImportRobot.launch(language: "zh-Hans")
+        robot.assertEmptyEditor()
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        func dismissSystemAlertIfNeeded() {
+            for label in ["允许", "好", "OK", "Allow"] {
+                let button = springboard.alerts.buttons[label].firstMatch
+                if button.exists { button.tap() }
+            }
+        }
+        func capture(_ name: String) {
+            let shot = XCUIScreen.main.screenshot()
+            let attachment = XCTAttachment(screenshot: shot)
+            attachment.name = name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            if let dir = ProcessInfo.processInfo.environment["RAWLAB_CAMERA_SHOT_DIR"], !dir.isEmpty {
+                try? shot.pngRepresentation.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+            }
+        }
+        func navigateBack() {
+            let back = robot.app.navigationBars.buttons.element(boundBy: 0)
+            XCTAssertTrue(back.waitForExistence(timeout: 5), robot.app.debugDescription)
+            back.tap()
+        }
+
+        let openCamera = robot.app.buttons["editor.camera.empty"]
+        XCTAssertTrue(openCamera.waitForExistence(timeout: 10), robot.app.debugDescription)
+        openCamera.tap()
+        dismissSystemAlertIfNeeded()
+
+        XCTAssertTrue(robot.app.descendants(matching: .any)["camera.home"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        XCTAssertTrue(robot.app.buttons["camera.entry.import"].exists)
+        XCTAssertTrue(robot.app.buttons["camera.entry.tether"].exists)
+        XCTAssertTrue(robot.app.buttons["camera.history"].exists)
+        capture("01-ios-camera-home")
+
+        robot.app.buttons["camera.entry.import"].tap()
+        dismissSystemAlertIfNeeded()
+        XCTAssertTrue(robot.app.descendants(matching: .any)["camera.connect"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        let connectContinue = robot.app.buttons["camera.connect.continue"]
+        XCTAssertTrue(connectContinue.waitForExistence(timeout: 5), robot.app.debugDescription)
+        XCTAssertTrue(connectContinue.isEnabled)
+        XCTAssertTrue(robot.app.buttons["camera.manual"].exists)
+        XCTAssertTrue(robot.app.buttons["camera.help"].exists)
+        capture("02-ios-camera-connect-import")
+
+        robot.app.buttons["camera.manual"].tap()
+        XCTAssertTrue(robot.app.descendants(matching: .any)["camera.manual.page"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        XCTAssertTrue(robot.app.textFields["camera.wifi.ssid"].exists)
+        XCTAssertTrue(robot.app.secureTextFields["camera.wifi.password"].exists)
+        XCTAssertTrue(robot.app.buttons["camera.wifi.join"].exists)
+        XCTAssertFalse(robot.app.buttons["camera.wifi.continue"].exists)
+        XCTAssertTrue(robot.app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "返回上一页")).firstMatch.exists)
+        XCTAssertFalse(robot.app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "上方系统 Wi-Fi")).firstMatch.exists)
+        capture("03-ios-camera-manual-wifi")
+        navigateBack()
+
+        XCTAssertTrue(robot.app.buttons["camera.help"].waitForExistence(timeout: 5), robot.app.debugDescription)
+        robot.app.buttons["camera.help"].tap()
+        XCTAssertTrue(robot.app.descendants(matching: .any)["camera.help.page"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        capture("04-ios-camera-help")
+        navigateBack()
+        navigateBack()
+
+        XCTAssertTrue(robot.app.buttons["camera.entry.tether"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        robot.app.buttons["camera.entry.tether"].tap()
+        dismissSystemAlertIfNeeded()
+        let cardConfirm = robot.app.switches["camera.card.confirm"]
+        XCTAssertTrue(cardConfirm.waitForExistence(timeout: 10), robot.app.debugDescription)
+        let tetherContinue = robot.app.buttons["camera.connect.continue"]
+        XCTAssertTrue(tetherContinue.waitForExistence(timeout: 5), robot.app.debugDescription)
+        XCTAssertFalse(tetherContinue.isEnabled)
+        capture("05-ios-camera-connect-tether-locked")
+
+        cardConfirm.tap()
+        robot.waitForCondition(timeout: 5) { tetherContinue.isEnabled }
+        capture("06-ios-camera-connect-tether-confirmed")
+        navigateBack()
+
+        XCTAssertTrue(robot.app.buttons["camera.history"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        robot.app.buttons["camera.history"].tap()
+        capture("07-ios-camera-history")
+        navigateBack()
+
+        let storage = robot.app.buttons["保存位置"]
+        XCTAssertTrue(storage.waitForExistence(timeout: 10), robot.app.debugDescription)
+        storage.tap()
+        XCTAssertTrue(robot.app.descendants(matching: .any)["camera.originals.summary"].waitForExistence(timeout: 10), robot.app.debugDescription)
+        capture("08-ios-camera-storage")
+    }
 }

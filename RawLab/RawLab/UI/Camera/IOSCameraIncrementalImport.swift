@@ -81,74 +81,84 @@ struct IOSCameraIncrementalImport: View {
     }
 
     private func overview(_ scan: CameraIncrementalScan) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Button {
-                cutoffDraft = scan.start; showCutoff = true
-            } label: {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.text("增量起点")).foregroundStyle(.primary)
-                        Text(L10n.format("从 %@ 开始（相机时间）", formatted(scan.start)))
-                            .font(.subheadline).foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 12)
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                }.frame(minHeight: 44).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityIdentifier("camera.incremental.cutoff")
-            if scan.needsCutoffConfirmation {
-                Text(L10n.text("无法确认上次的存储卡或拍摄时间，请选择新的起点。")).font(.callout).foregroundStyle(.orange)
-                    .accessibilityIdentifier("camera.incremental.cutoff-required")
-            } else {
-                let count = scan.assets.count
-                Text(count == 0 ? L10n.text(model.listingLimitExceeded ? "已到上限" : "没有新的照片") : L10n.format("待导入 %@ 个文件", String(count)))
-                    .font(.headline).accessibilityIdentifier("camera.incremental.count")
-                if count > 0 {
-                    let raw = scan.assets.filter { $0.snapshot.kind == "RAW" }.count
-                    let formats = [raw > 0 ? "\(raw) RAW" : nil, count > raw ? "\(count - raw) JPEG" : nil]
-                    Text(formats.compactMap { $0 }.joined(separator: " · "))
-                        .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
-                    if count > CameraIncrementalScan.maximumAssets || !scan.assets.allSatisfy({ $0.snapshot.transferable }) {
-                        Text(L10n.text("有文件超出相机导入上限，请调整起点或格式。")).font(.callout).foregroundStyle(.orange)
-                    }
-                }
-            }
-
-            Divider()
-            Group {
-                if dynamicTypeSize.isAccessibilitySize { formatPicker.pickerStyle(.menu) }
-                else {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.text("传输格式")).font(.subheadline)
-                        formatPicker.pickerStyle(.segmented).frame(minHeight: 44)
-                    }
-                }
-            }.accessibilityIdentifier("camera.incremental.format")
-            if model.importPreferences.format != .raw {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 Button {
-                    showJPEG = true
+                    cutoffDraft = scan.start; showCutoff = true
                 } label: {
                     HStack {
-                        ViewThatFits(in: .horizontal) {
-                            HStack { Text(L10n.text("JPEG 保存")); Spacer(minLength: 12); jpegSummary }
-                            VStack(alignment: .leading, spacing: 4) { Text(L10n.text("JPEG 保存")); jpegSummary }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.text("增量起点")).font(.subheadline).foregroundStyle(.primary)
+                            Text(L10n.format("从 %@ 开始（相机时间）", formatted(scan.start)))
+                                .font(.caption).foregroundStyle(.secondary)
                         }
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        Spacer(minLength: 12)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                     }.frame(minHeight: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("camera.jpeg.settings")
-            }
-            if scan.undatedCount > 0 {
-                Toggle(L10n.format("一并导入 %@ 个日期未知的文件", String(scan.undatedCount)), isOn: $model.includeUndated)
-                    .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.undated")
-            }
-            HStack {
-                Button(L10n.text("重新扫描"), action: model.refreshImport)
-                    .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.refresh")
-                if model.customCutoff != nil {
-                    Spacer(minLength: 12)
-                    Button(L10n.text("使用默认起点")) { model.customCutoff = nil }.frame(minHeight: 44)
+                }.buttonStyle(.plain).accessibilityIdentifier("camera.incremental.cutoff")
+                Divider()
+                if scan.needsCutoffConfirmation {
+                    Text(L10n.text("无法确认上次的存储卡或拍摄时间，请选择新的起点。")).font(.callout).foregroundStyle(.orange)
+                        .accessibilityIdentifier("camera.incremental.cutoff-required")
+                } else {
+                    let count = scan.assets.count
+                    Text(count == 0 ? L10n.text(model.listingLimitExceeded ? "已到上限" : "没有新的照片") : L10n.format("待导入 %@ 个文件", String(count)))
+                        .font(.headline).accessibilityIdentifier("camera.incremental.count")
+                    if count > 0 {
+                        let raw = scan.assets.filter { $0.snapshot.kind == "RAW" }.count
+                        let formats = [raw > 0 ? "\(raw) RAW" : nil, count > raw ? "\(count - raw) JPEG" : nil]
+                        Text(formats.compactMap { $0 }.joined(separator: " · "))
+                            .font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                        if count > CameraIncrementalScan.maximumAssets || !scan.assets.allSatisfy({ $0.snapshot.transferable }) {
+                            Text(L10n.text("有文件超出相机导入上限，请调整起点或格式。")).font(.callout).foregroundStyle(.orange)
+                        }
+                    }
                 }
-            }.font(.callout)
+                HStack {
+                    Button(L10n.text("重新扫描"), action: model.refreshImport)
+                        .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.refresh")
+                    if model.customCutoff != nil {
+                        Spacer(minLength: 12)
+                        Button(L10n.text("使用默认起点")) { model.customCutoff = nil }.frame(minHeight: 44)
+                    }
+                }.font(.callout)
+            }
+            .padding(14)
+            .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Group {
+                    if dynamicTypeSize.isAccessibilitySize { formatPicker.pickerStyle(.menu) }
+                    else {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(L10n.text("传输格式")).font(.subheadline)
+                            formatPicker.pickerStyle(.segmented).frame(minHeight: 40)
+                        }
+                    }
+                }.accessibilityIdentifier("camera.incremental.format")
+                if model.importPreferences.format != .raw {
+                    Divider()
+                    Button {
+                        showJPEG = true
+                    } label: {
+                        HStack {
+                            ViewThatFits(in: .horizontal) {
+                                HStack { Text(L10n.text("JPEG 保存")); Spacer(minLength: 12); jpegSummary }
+                                VStack(alignment: .leading, spacing: 4) { Text(L10n.text("JPEG 保存")); jpegSummary }
+                            }
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }.frame(minHeight: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("camera.jpeg.settings")
+                }
+                if scan.undatedCount > 0 {
+                    Divider()
+                    Toggle(L10n.format("一并导入 %@ 个日期未知的文件", String(scan.undatedCount)), isOn: $model.includeUndated)
+                        .frame(minHeight: 44).accessibilityIdentifier("camera.incremental.undated")
+                }
+            }
+            .padding(14)
+            .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
         }
     }
 

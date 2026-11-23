@@ -9158,5 +9158,37 @@
     "fr": "Masquer le mot de passe",
     "ja": "パスワードを隠す",
     "zh-Hans": "隐藏密码"
+  },
+  "打开系统设置": {
+    "de": "Systemeinstellungen öffnen",
+    "en": "Open System Settings",
+    "es": "Abrir ajustes del sistema",
+    "fr": "Ouvrir les réglages système",
+    "ja": "システム設定を開く",
+    "zh-Hans": "打开系统设置"
+  },
+  "选中": {
+    "de": "Auswählen",
+    "en": "Select",
+    "es": "Seleccionar",
+    "fr": "Sélectionner",
+    "ja": "選択",
+    "zh-Hans": "选中"
+  },
+  "取消选中": {
+    "de": "Auswahl aufheben",
+    "en": "Deselect",
+    "es": "Deseleccionar",
+    "fr": "Désélectionner",
+    "ja": "選択を解除",
+    "zh-Hans": "取消选中"
+  },
+  "清除筛选": {
+    "de": "Filter zurücksetzen",
+    "en": "Clear Filters",
+    "es": "Borrar filtros",
+    "fr": "Effacer les filtres",
+    "ja": "フィルタを解除",
+    "zh-Hans": "清除筛选"
   }
 }
