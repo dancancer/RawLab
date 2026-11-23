@@ -85,10 +85,20 @@ struct IOSCameraTether: View {
                 }.navigationTitle(L10n.text("拍摄参数")).navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { parameters = false } } }
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
-        .sheet(item: $parameter) { item in IOSCameraParameterPicker(model: model, parameter: item) }
+        .sheet(item: $parameter) { item in
+            IOSCameraParameterPicker(model: model, parameter: item)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $previewOriginal) { original in
-            IOSCameraPreview(model: model, name: original.name) {
+            let index = model.recentTetherOriginals.firstIndex(where: { $0.id == original.id })
+            let sizeText = ByteCountFormatter.string(fromByteCount: Int64(original.size), countStyle: .file)
+            let countText = index.map { "\($0 + 1) / \(model.recentTetherOriginals.count)" }
+            let detail = [sizeText, countText].compactMap { $0 }.joined(separator: " · ")
+            IOSCameraPreview(model: model, name: original.name, detail: detail) {
                 HStack {
                     Button { reviewNeighbor(original, offset: 1) } label: { Image(systemName: "chevron.left") }
                         .disabled(!hasNeighbor(original, offset: 1)).accessibilityLabel(L10n.text("上一张"))
@@ -203,18 +213,32 @@ struct IOSCameraTether: View {
                 .overlay {
                     if !model.connected {
                         VStack(spacing: 10) {
-                            Text(L10n.text("联机已暂停"))
-                            Text(L10n.format("已保存 %d 张", model.recentTetherOriginals.count)).font(.caption)
-                            Button(L10n.text("重新连接"), action: reconnect).frame(minHeight: 44)
+                            Text(L10n.text("联机已暂停")).font(.headline)
+                            Text(L10n.format("已保存 %d 张", model.recentTetherOriginals.count))
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button(L10n.text("重新连接"), action: reconnect)
+                                .buttonStyle(.borderedProminent)
+                                .foregroundStyle(.black)
+                                .frame(minHeight: 44)
                                 .accessibilityIdentifier("camera.tether.reconnect")
-                        }.padding(20).background(.black.opacity(0.75))
+                        }
+                        .padding(20)
+                        .background(Color(white: 0.12).opacity(0.9), in: RoundedRectangle(cornerRadius: 12))
+                        .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
                     }
                 }
                 .overlay(alignment: .topLeading) {
                     if model.connected {
-                        Text(live ? "LIVE" : L10n.text("取景已暂停")).font(.caption2)
-                            .padding(6).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 4)).padding(10)
-                            .allowsHitTesting(false)
+                        HStack(spacing: 5) {
+                            Circle()
+                                .fill(live ? Color(red: 0.20, green: 0.84, blue: 0.35) : Color.secondary)
+                                .frame(width: 6, height: 6)
+                            Text(live ? "LIVE" : L10n.text("取景已暂停")).font(.caption2.weight(.medium))
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 5)
+                        .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5))
+                        .padding(10)
+                        .allowsHitTesting(false)
                     }
                 }
                 .overlay(alignment: .topTrailing) {
@@ -255,21 +279,38 @@ struct IOSCameraTether: View {
     }
 
     private var parameterBar: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(IOSCameraParameter.allCases.prefix(4))) { item in
-                let descriptor = item.descriptor(in: model.properties)
-                Button { parameter = item } label: {
-                    Text(descriptor?.number.map { compactValue(item, $0) } ?? "—")
-                        .font(.system(size: 16)).monospacedDigit().foregroundStyle(.primary).lineLimit(1).minimumScaleFactor(0.75)
-                        .frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
-                }.buttonStyle(.plain).disabled(model.parameterBusy || model.focusBusy).accessibilityIdentifier("camera.parameter.\(item.code)")
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 0) {
+                ForEach(Array(IOSCameraParameter.allCases.prefix(4))) { item in
+                    let descriptor = item.descriptor(in: model.properties)
+                    let isEditable = model.writable && descriptor?.writable == true && descriptor?.enabled == 1 && descriptor?.selectableValues.isEmpty == false
+                    Button { parameter = item } label: {
+                        Text(descriptor?.number.map { compactValue(item, $0) } ?? "—")
+                            .font(.system(size: 16)).monospacedDigit()
+                            .foregroundStyle(isEditable ? Color.primary : Color.secondary.opacity(0.65))
+                            .lineLimit(1).minimumScaleFactor(0.75)
+                            .frame(maxWidth: .infinity, minHeight: 56).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(model.parameterBusy || model.focusBusy).accessibilityIdentifier("camera.parameter.\(item.code)")
+                }
             }
+            .overlay(alignment: .topTrailing) {
+                if model.parameterBusy {
+                    ProgressView().controlSize(.mini).padding(6)
+                }
+            }
+            Divider()
         }
+        .background(Color(white: 0.11))
     }
     private var shutter: some View {
-        Button { model.capture() } label: {
+        let capturing = model.phase == .capturing || model.phase == .waiting
+        return Button { model.capture() } label: {
             Circle().stroke(model.canCapture ? Color.white : Color.gray, lineWidth: 2)
                 .overlay(Circle().fill(model.canCapture ? Color.white : Color.gray.opacity(0.4)).padding(6))
+                .overlay {
+                    if capturing { ProgressView().tint(.white) }
+                }
                 .frame(width: 68, height: 68)
         }.buttonStyle(.plain).disabled(!model.canCapture)
             .accessibilityLabel(L10n.text("拍摄一张")).accessibilityIdentifier("camera.shutter")
@@ -358,26 +399,43 @@ private struct IOSCameraParameterPicker: View {
     private var values: [Int64] { descriptor?.selectableValues.filter { parameter != .shutter || $0 != 0 } ?? [] }
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    HStack {
-                        Text(parameter.title); Spacer()
-                        Text(descriptor?.number.map(parameter.display) ?? "—").monospacedDigit()
+            ScrollViewReader { proxy in
+                List {
+                    Section {
+                        HStack {
+                            Text(parameter.title); Spacer()
+                            Text(descriptor?.number.map(parameter.display) ?? "—").monospacedDigit()
+                        }
+                    }
+                    if !model.writable || descriptor?.writable != true || values.isEmpty || descriptor?.enabled != 1 {
+                        Section { Text(L10n.text(values.isEmpty ? "相机未提供可调整选项" : "当前拍摄模式下不可调整")).foregroundStyle(.secondary) }
+                    } else {
+                        Section {
+                            ForEach(values, id: \.self) { value in
+                                let isCurrent = descriptor?.number == value
+                                Button {
+                                    guard let descriptor else { return }
+                                    model.setParameter(descriptor, value: value); dismiss()
+                                } label: {
+                                    HStack {
+                                        Text(parameter.display(value))
+                                            .monospacedDigit()
+                                            .foregroundStyle(isCurrent ? Color.yellow : Color.primary)
+                                        Spacer()
+                                        if isCurrent {
+                                            Image(systemName: "checkmark").foregroundStyle(.yellow)
+                                        }
+                                    }
+                                    .frame(minHeight: 44)
+                                }.disabled(model.busy || model.phase != .ready)
+                                    .id(value)
+                            }
+                        }
                     }
                 }
-                if !model.writable || descriptor?.writable != true || values.isEmpty || descriptor?.enabled != 1 {
-                    Section { Text(L10n.text(values.isEmpty ? "相机未提供可调整选项" : "当前拍摄模式下不可调整")).foregroundStyle(.secondary) }
-                } else {
-                    Section {
-                        ForEach(values, id: \.self) { value in
-                            Button {
-                                guard let descriptor else { return }
-                                model.setParameter(descriptor, value: value); dismiss()
-                            } label: {
-                                HStack { Text(parameter.display(value)); Spacer(); if descriptor?.number == value { Image(systemName: "checkmark") } }
-                                    .frame(minHeight: 44)
-                            }.disabled(model.busy || model.phase != .ready)
-                        }
+                .onAppear {
+                    if let current = descriptor?.number, values.contains(current) {
+                        DispatchQueue.main.async { proxy.scrollTo(current, anchor: .center) }
                     }
                 }
             }.navigationTitle(parameter.title).navigationBarTitleDisplayMode(.inline)

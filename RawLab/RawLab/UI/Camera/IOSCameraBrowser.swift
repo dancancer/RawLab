@@ -40,6 +40,10 @@ struct IOSCameraBrowser: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button(L10n.text("重新扫描"), action: model.refreshImport).disabled(!model.connected || model.busy)
+                    Button(L10n.text("JPEG 保存")) { showJPEG = true }
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("camera.jpeg.settings")
+                    Divider()
                     Button(L10n.text("导入记录"), action: history)
                     Button(L10n.text("保存位置"), action: storage)
                     Button(L10n.text("更换相机"), action: reconnect)
@@ -55,13 +59,57 @@ struct IOSCameraBrowser: View {
             IOSCameraJPEGSettings(draft: model.importPreferences.jpeg, apply: model.setJPEGOptions)
         }
         .sheet(item: $previewAsset) { asset in
-            IOSCameraPreview(model: model, name: asset.snapshot.name) {
-                if let original = model.original(for: asset) {
-                    Button(L10n.text("打开编辑")) { previewAsset = nil; openOriginal(original) }
-                } else {
-                    Button(L10n.text("从相机导入")) {
-                        model.selection = [asset.id]; previewAsset = nil; model.importSelected()
-                    }.disabled(!model.connected || model.busy || !asset.snapshot.transferable)
+            let currentIndex = visible.firstIndex(where: { $0.id == asset.id })
+            let sizeText = ByteCountFormatter.string(fromByteCount: Int64(asset.snapshot.size), countStyle: .file)
+            let indexText = currentIndex.map { "\($0 + 1) / \(visible.count)" }
+            let detail = [asset.snapshot.kind, sizeText, indexText].compactMap { $0 }.joined(separator: " · ")
+            let isSelected = model.selection.contains(asset.id)
+            IOSCameraPreview(model: model, name: asset.snapshot.name, detail: detail) {
+                HStack(spacing: 12) {
+                    Button {
+                        if let idx = currentIndex, idx > 0 {
+                            let prev = visible[idx - 1]
+                            model.showPreview(prev)
+                            previewAsset = prev
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left").frame(width: 44, height: 44)
+                    }
+                    .disabled(currentIndex == nil || currentIndex == 0)
+                    .accessibilityLabel(L10n.text("上一张"))
+
+                    Spacer(minLength: 4)
+
+                    if let original = model.original(for: asset) {
+                        Button(L10n.text("打开编辑")) { previewAsset = nil; openOriginal(original) }
+                            .frame(minHeight: 44)
+                    }
+                    if isSelected {
+                        Button(L10n.text("取消选中")) { model.selection.remove(asset.id) }
+                            .buttonStyle(.bordered)
+                            .frame(minHeight: 44)
+                            .disabled(model.busy)
+                    } else {
+                        Button(L10n.text("选中")) { model.selection.insert(asset.id) }
+                            .buttonStyle(.borderedProminent)
+                            .foregroundStyle(.black)
+                            .frame(minHeight: 44)
+                            .disabled(model.busy)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    Button {
+                        if let idx = currentIndex, idx + 1 < visible.count {
+                            let next = visible[idx + 1]
+                            model.showPreview(next)
+                            previewAsset = next
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right").frame(width: 44, height: 44)
+                    }
+                    .disabled(currentIndex.map { $0 + 1 >= visible.count } ?? true)
+                    .accessibilityLabel(L10n.text("下一张"))
                 }
             }
         }
@@ -73,39 +121,68 @@ struct IOSCameraBrowser: View {
         }
     }
     private var manualBrowser: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("\(visible.count)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
-                Spacer()
-                Button { filters = true } label: { Label(L10n.text("筛选照片"), systemImage: "line.3.horizontal.decrease") }
-                    .accessibilityIdentifier("camera.filter")
-                Button(L10n.text("全选")) {
-                    let ids = Set(visible.map(\.id))
-                    if ids.isSubset(of: model.selection) { model.selection.subtract(ids) }
-                    else { model.selection.formUnion(ids) }
-                }.disabled(visible.isEmpty || model.busy).accessibilityIdentifier("camera.select.all")
-            }.font(.callout).frame(minHeight: 44).padding(.horizontal, 14)
-            Button {
-                showJPEG = true
-            } label: {
-                HStack {
-                    ViewThatFits(in: .horizontal) {
-                        HStack {
-                            Text(L10n.text("JPEG 保存"))
-                            Spacer(minLength: 12)
-                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
-                                .font(.subheadline).foregroundStyle(.secondary)
+        let visibleIDs = visible.map(\.id)
+        let allSelected = IOSCameraLayoutPolicy.allVisibleSelected(visibleIDs: visibleIDs, selection: model.selection)
+        let filterTokens = IOSCameraLayoutPolicy.activeFilterTokens(
+            format: format, day: day, onlySelected: onlySelected, selectedLabel: L10n.text("查看已选")
+        )
+        let hasActiveFilters = !filterTokens.isEmpty
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Text("\(visible.count)").font(.subheadline.weight(.medium)).monospacedDigit().foregroundStyle(.secondary)
+                if hasActiveFilters {
+                    Button {
+                        format = "all"; day = nil; onlySelected = false
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(filterTokens.joined(separator: " · "))
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                            Image(systemName: "xmark")
+                                .font(.caption2.weight(.semibold))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(L10n.text("JPEG 保存"))
-                            Text(IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
-                                .font(.subheadline).foregroundStyle(.secondary)
-                        }
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .foregroundStyle(.yellow)
+                        .background(Color.yellow.opacity(0.14), in: Capsule())
+                        .overlay { Capsule().strokeBorder(Color.yellow.opacity(0.45), lineWidth: 1) }
                     }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right").foregroundStyle(.secondary)
-                }.frame(minHeight: 44).padding(.horizontal, 14).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(model.busy).accessibilityIdentifier("camera.jpeg.settings")
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 36)
+                    .accessibilityLabel(L10n.text("清除筛选"))
+                }
+                Spacer(minLength: 4)
+                Button { filters = true } label: {
+                    Label(L10n.text("筛选照片"), systemImage: "line.3.horizontal.decrease")
+                        .foregroundStyle(hasActiveFilters ? Color.yellow : Color.primary)
+                        .frame(minHeight: 40)
+                }.accessibilityIdentifier("camera.filter")
+                Button(L10n.text(allSelected ? "取消全选" : "全选")) {
+                    IOSCameraLayoutPolicy.toggleVisibleSelection(visibleIDs: visibleIDs, selection: &model.selection)
+                }
+                .frame(minHeight: 40)
+                .disabled(visible.isEmpty || model.busy)
+                .accessibilityIdentifier("camera.select.all")
+            }.font(.callout).padding(.horizontal, 14)
+            if model.importPreferences.jpeg.adjust {
+                Button { showJPEG = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "slider.horizontal.3").font(.caption)
+                        Text(L10n.text("JPEG 保存") + " · " + IOSCameraJPEGSettings.summary(for: model.importPreferences.jpeg))
+                            .font(.caption.weight(.medium)).lineLimit(1)
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").font(.caption2)
+                    }
+                    .foregroundStyle(.yellow)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.yellow.opacity(0.10), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay { RoundedRectangle(cornerRadius: 6).strokeBorder(Color.yellow.opacity(0.35), lineWidth: 1) }
+                }
+                .buttonStyle(.plain)
+                .disabled(model.busy)
+                .padding(.horizontal, 14).padding(.bottom, 6)
+                .accessibilityIdentifier("camera.jpeg.adjusted")
+            }
             Divider()
             if !model.connected {
                 HStack {
@@ -125,54 +202,109 @@ struct IOSCameraBrowser: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14).padding(.vertical, 6)
-            } else if model.lastSavedToPhotoLibraryCount > 0 {
+            } else if model.lastSavedToPhotoLibraryCount > 0 || !model.lastManualImportOriginals.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(L10n.format("已保存 %d 张照片到手机相册", model.lastSavedToPhotoLibraryCount)).font(.caption)
+                    Text(model.lastSavedToPhotoLibraryCount > 0
+                         ? L10n.format("已保存 %d 张照片到手机相册", model.lastSavedToPhotoLibraryCount)
+                         : L10n.format("已保存 %d 张", model.lastManualImportOriginals.count))
+                        .font(.caption)
                     Spacer()
+                    if model.lastManualImportOriginals.count == 1, let single = model.lastManualImportOriginals.first {
+                        Button(L10n.text("打开编辑")) { openOriginal(single) }
+                            .font(.caption.weight(.semibold))
+                    } else {
+                        Button(L10n.text("导入记录"), action: history)
+                            .font(.caption.weight(.semibold))
+                    }
                     Button { model.dismissPhotoLibraryBanner() } label: { Image(systemName: "xmark") }
+                        .frame(minWidth: 32, minHeight: 32)
                         .accessibilityLabel(L10n.text("关闭"))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 6)
                 .background(Color(white: 0.16))
             }
-            ScrollView {
-                if model.assets.isEmpty {
-                    ContentUnavailableView(L10n.text(model.listingLimitExceeded ? "已到上限" : "相机中没有可导入的 RAW 或 JPEG 照片。"),
-                                           systemImage: "photo.on.rectangle")
-                } else if visible.isEmpty {
-                    ContentUnavailableView(L10n.text("没有符合筛选条件的照片。"), systemImage: "line.3.horizontal.decrease")
-                } else {
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: dynamicTypeSize.isAccessibilitySize ? 2 : 3), spacing: 10) {
-                        ForEach(visible) { asset in tile(asset) }
-                    }.padding(.horizontal, 6).padding(.bottom, 12)
-                }
-            }.accessibilityIdentifier("camera.photo.grid")
+            GeometryReader { geometry in
+                let columns = IOSCameraLayoutPolicy.gridColumns(forWidth: geometry.size.width)
+                ScrollView {
+                    if model.assets.isEmpty {
+                        ContentUnavailableView(L10n.text(model.listingLimitExceeded ? "已到上限" : "相机中没有可导入的 RAW 或 JPEG 照片。"),
+                                               systemImage: "photo.on.rectangle")
+                            .frame(minHeight: geometry.size.height)
+                    } else if visible.isEmpty {
+                        ContentUnavailableView(L10n.text("没有符合筛选条件的照片。"), systemImage: "line.3.horizontal.decrease")
+                            .frame(minHeight: geometry.size.height)
+                    } else {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: columns), spacing: 10) {
+                            ForEach(visible) { asset in tile(asset) }
+                        }.padding(.horizontal, 10).padding(.vertical, 8)
+                    }
+                }.accessibilityIdentifier("camera.photo.grid")
+            }
             if model.phase == .receiving { transferProgress }
             else if !model.selection.isEmpty { selectionBar }
         }
     }
     private func tile(_ asset: CameraRemoteAsset) -> some View {
         let selected = model.selection.contains(asset.id)
+        let saved = model.original(for: asset) != nil
         return Button {
             if selected { model.selection.remove(asset.id) } else { model.selection.insert(asset.id) }
         } label: {
-            VStack(alignment: .leading, spacing: 3) {
-                ZStack(alignment: .topTrailing) {
-                    Rectangle().fill(Color(white: 0.05)).aspectRatio(1, contentMode: .fit)
+            VStack(alignment: .leading, spacing: 4) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.06))
+                        .aspectRatio(1.5, contentMode: .fit)
                         .overlay {
-                            if let image = model.thumbnails[asset.id] { Image(uiImage: image).resizable().scaledToFit() }
-                            else { Image(systemName: "photo").foregroundStyle(.secondary) }
+                            if let image = model.thumbnails[asset.id] {
+                                Image(uiImage: image).resizable().scaledToFit()
+                            } else {
+                                Image(systemName: "photo").foregroundStyle(.secondary.opacity(0.6))
+                            }
                         }
-                    Image(systemName: selected ? "checkmark.square.fill" : "square")
-                        .font(.title3).foregroundStyle(selected ? .yellow : .white)
-                        .background(Color.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 3)).padding(6)
-                }.overlay(Rectangle().stroke(selected ? Color.yellow : Color.clear, lineWidth: 2))
-                Text(asset.snapshot.name).font(.caption).lineLimit(1).foregroundStyle(.primary)
-                HStack(spacing: 4) {
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                }
+                .overlay(alignment: .topTrailing) {
+                    ZStack {
+                        Circle()
+                            .fill(selected ? Color.yellow : Color.black.opacity(0.55))
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.black)
+                        } else {
+                            Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 1.5)
+                        }
+                    }
+                    .frame(width: 22, height: 22)
+                    .padding(5)
+                }
+                .overlay(alignment: .bottomLeading) {
                     Text(asset.snapshot.kind)
-                    if model.original(for: asset) != nil { Text("· " + L10n.text("已导入")) }
-                }.font(.caption2).foregroundStyle(.secondary)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Color.black.opacity(0.68), in: RoundedRectangle(cornerRadius: 3))
+                        .padding(5)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if saved {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.subheadline)
+                            .foregroundStyle(.yellow)
+                            .background(Color.black.opacity(0.6), in: Circle())
+                            .padding(5)
+                    }
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(selected ? Color.yellow : Color.clear, lineWidth: 2)
+                }
+                Text(asset.snapshot.name)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .foregroundStyle(.primary)
             }.contentShape(Rectangle())
         }.buttonStyle(.plain).disabled(model.busy)
             .accessibilityLabel(asset.snapshot.name + " · " + asset.snapshot.kind)
@@ -280,6 +412,7 @@ struct IOSCameraPreview<Actions: View>: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var model: IOSCameraController
     let name: String
+    var detail: String? = nil
     @ViewBuilder let actions: () -> Actions
     @State private var viewing = PhotoViewingState()
     @State private var viewport = PhotoViewport()
@@ -292,7 +425,12 @@ struct IOSCameraPreview<Actions: View>: View {
                         .accessibilityIdentifier("camera.preview.image")
                 } else if model.previewLoading { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
                 else { ContentUnavailableView(L10n.text("预览不可用"), systemImage: "photo") }
-                Text(L10n.text("预览图，可双指缩放")).font(.caption).foregroundStyle(.secondary).padding(8)
+                VStack(spacing: 2) {
+                    if let detail, !detail.isEmpty {
+                        Text(detail).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Text(L10n.text("预览图，可双指缩放")).font(.caption2).foregroundStyle(.secondary)
+                }.padding(.vertical, 6).padding(.horizontal, 12)
                 HStack { actions() }.frame(maxWidth: .infinity, minHeight: 48).padding(.horizontal)
             }.navigationTitle(name).navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button(L10n.text("关闭")) { dismiss() } } }
@@ -324,10 +462,10 @@ struct IOSCameraHistory: View {
                     HStack(spacing: 12) {
                         Button { model.showPreview(original); previewOriginal = original } label: {
                             ZStack {
-                                Rectangle().fill(Color(white: 0.07))
+                                RoundedRectangle(cornerRadius: 4).fill(Color(white: 0.07))
                                 if let image = model.thumbnails[original.id.uuidString] { Image(uiImage: image).resizable().scaledToFit() }
                                 else { Image(systemName: "photo").foregroundStyle(.secondary) }
-                            }.frame(width: 66, height: 66)
+                            }.frame(width: 66, height: 66).clipShape(RoundedRectangle(cornerRadius: 4))
                         }.buttonStyle(.plain).accessibilityLabel(L10n.text("放大预览"))
                         VStack(alignment: .leading, spacing: 4) {
                             Text(original.name).font(.callout).lineLimit(2)
@@ -352,7 +490,8 @@ struct IOSCameraHistory: View {
             if let notice = model.notice { Section { Text(notice).foregroundStyle(.orange).font(.callout) } }
         }.navigationTitle(L10n.text("导入记录")).navigationBarTitleDisplayMode(.inline)
             .sheet(item: $previewOriginal) { original in
-                IOSCameraPreview(model: model, name: original.name) {
+                IOSCameraPreview(model: model, name: original.name,
+                                 detail: ByteCountFormatter.string(fromByteCount: Int64(original.size), countStyle: .file)) {
                     Button(L10n.text("打开编辑")) { previewOriginal = nil; openOriginal(original) }
                         .disabled(original.availability != .available)
                 }

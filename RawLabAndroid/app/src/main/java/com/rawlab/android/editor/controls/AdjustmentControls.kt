@@ -40,6 +40,9 @@ import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import java.math.BigDecimal
+import java.math.RoundingMode
+import java.text.DecimalFormatSymbols
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -86,6 +89,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
     var input by remember(session) { mutableStateOf("") }
     val locale = LocalConfiguration.current.locales[0]
     val formatted = if (compactNumber) formatCropPercent(value, locale) else formatAdjustment(value, step, locale)
+    val readout = if (compactNumber) formatCropPercent(value, locale) else formatAdjustmentReadout(value, step, range, locale)
     val title = stringResource(label)
     val parsed = scale.parse(input, locale, value)
     val raw = parseAdjustmentNumber(input, locale)
@@ -113,7 +117,7 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
         // 经过默认值时只停用重置识别，不能移除节点并取消同一标尺正在进行的拖动。
         if (!touchExploration && canReset) detectTapGestures(onDoubleTap = { reset() })
     }
-    val color = if (modified) Color(0xffffc107) else MaterialTheme.colorScheme.onSurface
+    val color = if (modified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
     val large = LocalDensity.current.fontScale > 1.3f
     val inline = LocalCompactAdjustmentRows.current && !large
     @Composable fun name(modifier: Modifier) {
@@ -138,9 +142,9 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
                         }
                     }
                 }) {
-            val readoutWidth = if (inline) Modifier.widthIn(min = 48.dp, max = 76.dp) else if (compactNumber) Modifier.widthIn(max = 104.dp) else Modifier.width(104.dp)
+            val readoutWidth = if (inline) Modifier.width(if (range.endInclusive >= 1000f) 68.dp else 56.dp) else if (compactNumber) Modifier.widthIn(max = 104.dp) else Modifier.width(104.dp)
             Box(readoutWidth.horizontalScroll(rememberScrollState()), contentAlignment = Alignment.CenterEnd) {
-                Text(formatted, color = color, fontFamily = FontFamily.Monospace)
+                Text(readout, color = color, fontFamily = FontFamily.Monospace)
             }
             if (modified || !compactNumber) {
                 Text(" ·", color = color, modifier = Modifier.alpha(if (modified) 1f else 0f).clearAndSetSemantics { })
@@ -199,6 +203,25 @@ internal fun NumericControl(label: Int, value: Float, range: ClosedFloatingPoint
 
 internal fun formatAdjustment(value: Float, step: Float, locale: Locale = Locale.ROOT): String =
     formatAdjustmentNumber(value.toString().toDouble(), locale)
+
+internal fun formatAdjustmentReadout(
+    value: Float,
+    step: Float,
+    range: ClosedFloatingPointRange<Float>,
+    locale: Locale = Locale.ROOT,
+): String {
+    if (!value.isFinite()) return formatAdjustment(value, step, locale)
+    val decimals = when {
+        step < .1f -> 2
+        step < 1f -> 1
+        else -> 0
+    }
+    val rounded = BigDecimal.valueOf(value.toString().toDouble()).setScale(decimals, RoundingMode.HALF_UP)
+    val normalized = if (rounded.compareTo(BigDecimal.ZERO) == 0) BigDecimal.ZERO.setScale(decimals) else rounded
+    val sign = if (range.start < 0f && normalized.signum() > 0) "+" else ""
+    val text = normalized.toPlainString().replace('.', DecimalFormatSymbols.getInstance(locale).decimalSeparator)
+    return sign + text
+}
 
 @Composable
 private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale, unit: String, fine: Boolean,
@@ -312,7 +335,7 @@ private fun AdjustmentRuler(title: String, value: Float, scale: AdjustmentScale,
             val growth = if (reduceMotion) 0f else (1f - abs(x - finger) / 24.dp.toPx()).coerceAtLeast(0f) * pulse * 4.dp.toPx()
             drawLine(foreground, Offset(x, y - height - growth), Offset(x, y - 5.dp.toPx()), 1.dp.toPx())
         }
-        drawCircle(primary, 3.dp.toPx(), Offset(start, y + 8.dp.toPx()))
+        drawCircle(foreground, 3.dp.toPx(), Offset(start, y + 8.dp.toPx()))
         drawLine(primary, Offset(end, y - 17.dp.toPx()), Offset(end, y + 5.dp.toPx()), 2.dp.toPx())
     }
 }

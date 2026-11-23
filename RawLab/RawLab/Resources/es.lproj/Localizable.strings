@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Mantén la cámara encendida y abre la conexión con el smartphone en su menú. El nombre depende del modelo. Cierra otras apps que estén usando la conexión de la cámara.";
 "保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Conserva hasta 100 fotos recientes y unos 2 GB de copias locales. Quitar una entrada conserva la foto original y sus ajustes.";
-"保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "候选效果" = "Resultados candidatos";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.";
 "停止导入" = "Detener la importación";
@@ -240,10 +239,12 @@
 "取景已暂停" = "Vista en directo pausada";
 "取样监视" = "Monitor de muestreo";
 "取消" = "Cancelar";
+"取消全选" = "Deseleccionar todo";
 "取消对焦" = "Cancelar enfoque";
 "取消导出" = "Cancelar exportación";
 "取消检查" = "Cancelar comprobación";
 "取消连接" = "Cancelar conexión";
+"取消选中" = "Deseleccionar";
 "取色失败，请重试。" = "No se pudo tomar la muestra. Inténtalo de nuevo.";
 "受影响色域：%@" = "Gamas afectadas: %@";
 "另存" = "Guardar como";
@@ -352,9 +353,7 @@
 "尝试应用内自动加入（需 Hotspot 权限）" = "Unirse automáticamente desde la app (requiere permiso Hotspot)";
 "尺寸" = "Tamaño";
 "屏幕容量 %@ EV" = "Margen de pantalla %@ EV";
-"展开%@组" = "Expandir el grupo %@";
 "展开直方图" = "Expandir histograma";
-"展开调整栏" = "Expandir ajustes";
 "已保存" = "Guardado";
 "已保存 %@ / %@ 个文件" = "%@ de %@ archivos guardados";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Guardadas %@ · Sin cambios %@ · Omitidas %@ · Deshechas %@ · Pendientes %@";
@@ -409,7 +408,7 @@
 "平衡" = "Equilibrio";
 "并排" = "En paralelo";
 "应用" = "Aplicar";
-"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。" = "Unirse desde la app requiere el permiso Hotspot de una cuenta Apple Developer de pago. Con firma gratuita personal, usa el Wi-Fi del sistema arriba.";
+"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。" = "Unirse desde la app requiere el permiso Hotspot de una cuenta Apple Developer de pago. Con firma gratuita personal, vuelve atrás y usa el Wi-Fi del sistema.";
 "应用到多张照片" = "Aplicar a varias fotos";
 "应用到当前照片" = "Aplicar a la foto actual";
 "应用并保存" = "Aplicar y guardar";
@@ -435,7 +434,7 @@
 "当前状态下相机未接受对焦点设置。" = "La cámara no aceptó el punto de enfoque en su estado actual.";
 "当前相机模式不支持远程选择对焦点。" = "Este modo de cámara no admite la selección remota del punto de enfoque.";
 "当前相机模式未提供此功能。" = "Esta función no está disponible en el modo actual de la cámara.";
-"当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。" = "Esta firma no admite la unión automática al Wi-Fi. Conéctate usando el método de Ajustes de Wi-Fi arriba.";
+"当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "Esta firma no admite la unión automática al Wi-Fi. Vuelve atrás y conéctate usando el método de Ajustes de Wi-Fi.";
 "当前配方不可用，无法安全重置外观。" = "La receta actual no está disponible, por lo que su aspecto no se puede restablecer de forma segura.";
 "待处理" = "Requiere atención";
 "待导入 %@ 个文件" = "%@ archivos por importar";
@@ -496,10 +495,8 @@
 "撤销 %@ 张" = "Deshacer fotos: %@";
 "操作已失效" = "Operación no válida";
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
-"收起%@组" = "Contraer el grupo %@";
 "收起其他方案" = "Ocultar otras opciones";
 "收起直方图" = "Contraer histograma";
-"收起调整栏" = "Contraer ajustes";
 "放大 · 点按还原" = "Ampliada · Toca para ajustar";
 "放大预览" = "Vista previa ampliada";
 "放弃任务" = "Descartar tarea";
@@ -673,6 +670,7 @@
 "正在取色…" = "Muestreando…";
 "正在处理" = "Procesando";
 "正在导入" = "Importando";
+"正在导入外观" = "Importando look…";
 "正在导入照片…" = "Importando fotos…";
 "正在导出" = "Exportando";
 "正在开启相机 Wi-Fi…" = "Activando la red Wi-Fi de la cámara…";
@@ -741,6 +739,7 @@
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
 "清除相机配置" = "Quitar perfil de cámara";
+"清除筛选" = "Borrar filtros";
 "清除锚点" = "Borrar anclas";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";
@@ -804,6 +803,7 @@
 "确认兼容导入" = "Importar con estos ajustes";
 "确认并冻结任务" = "Confirmar y fijar tarea";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "¿Limpiar los originales exportados de la cámara? Después, estos originales ya no podrán abrirse en la app; las fotos exportadas no se ven afectadas.";
+"离开前应用更改？" = "¿Aplicar cambios antes de salir?";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
 "移除“%@”？" = "¿Eliminar \"%@\"?";
@@ -908,6 +908,7 @@
 "请先应用或放弃未完成的输入和几何草稿。" = "Aplica o descarta primero las entradas y los borradores de geometría pendientes.";
 "请先打开这张照片，确认是否恢复旧调整。" = "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Comprueba primero el resultado en la cámara. Una sesión nueva no volverá a disparar. Continúa las transferencias incompletas desde el historial.";
+"请先确认上方存储卡保存选项" = "Confirma primero el guardado en tarjeta arriba";
 "请先确认同源图片、处理条件和参考来源。" = "Confirma primero la misma imagen de origen, las condiciones de procesamiento y la fuente de referencia.";
 "请先选择外观或配方。" = "Selecciona primero un look o una receta.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Permite a RawLab usar Bluetooth en los ajustes del sistema.";
@@ -947,6 +948,7 @@
 "跟随系统" = "Seguir el sistema";
 "跳过" = "Omitir";
 "跳过以上目标后重试" = "Omitir las fotos indicadas y reintentar";
+"输入 Wi-Fi 名称与密码" = "Introducir nombre y contraseña Wi-Fi";
 "输入参考" = "Referencia de entrada";
 "输入坐标" = "Entrada";
 "输入范围" = "Rango de entrada";
@@ -974,6 +976,7 @@
 "退出目标调整" = "Salir del ajuste dirigido";
 "退出纯预览" = "Salir de vista previa inmersiva";
 "适合窗口" = "Ajustar a la ventana";
+"选中" = "Seleccionar";
 "选择" = "Seleccionar";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Elige una foto para comparar las opciones o abre los ajustes avanzados para configurarlas manualmente.";
 "选择参考图" = "Elegir imagen de referencia";

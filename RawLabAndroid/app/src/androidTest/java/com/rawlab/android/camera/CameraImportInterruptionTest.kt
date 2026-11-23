@@ -179,6 +179,71 @@ class CameraImportInterruptionTest {
         }
     }
 
+    @Test fun offlineCameraHomeConnectAndManualBrowserRenderCleanly() {
+        compose.waitUntil(10_000) { !compose.activity.camera.state.value.preparing }
+        val model = compose.activity.camera
+        compose.onNodeWithTag("editor-camera").performClick()
+        compose.onNodeWithTag("camera-home").assertIsDisplayed()
+        compose.onNodeWithTag("camera-menu").assertDoesNotExist()
+        compose.onNodeWithTag("camera-mode-IMPORT").assertIsDisplayed()
+        compose.onNodeWithTag("camera-mode-TETHER").assertIsDisplayed()
+        compose.onNodeWithTag("camera-history").assertIsDisplayed()
+        compose.onNodeWithTag("camera-destination-settings").assertIsDisplayed()
+        capture("camera-home.png")
+
+        compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.onNodeWithTag("camera-connection-help").assertIsDisplayed()
+        capture("camera-connect-import.png")
+
+        compose.onNodeWithTag("camera-connection-help").performClick()
+        compose.onNodeWithTag("camera-connect-help").assertIsDisplayed()
+        capture("camera-connect-help.png")
+
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("camera-connect-screen").assertIsDisplayed()
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.onNodeWithTag("camera-home").assertIsDisplayed()
+
+        compose.onNodeWithTag("camera-mode-TETHER").performClick()
+        compose.onNodeWithTag("camera-legacy-connect").performClick()
+        compose.onNodeWithTag("tether-card-confirm").assertIsDisplayed()
+        compose.onNodeWithTag("camera-use-wifi").assertIsNotEnabled()
+        capture("camera-connect-tether-locked.png")
+
+        compose.onNodeWithTag("tether-card-confirm").performClick()
+        compose.onNodeWithTag("camera-use-wifi").assertIsEnabled()
+        capture("camera-connect-tether-confirmed.png")
+        compose.onNodeWithTag("camera-back").performClick()
+        compose.waitUntil(10_000) { !model.state.value.closing }
+        compose.runOnUiThread { model.setMode(CameraMode.IMPORT) }
+        compose.waitUntil(10_000) { !model.state.value.closing }
+
+        CameraSessionFixture().use { fixture ->
+            try {
+                val photo = connectFixture(fixture)
+                compose.onNodeWithTag("camera-mode-IMPORT").performClick()
+                compose.onNodeWithTag("camera-grid").assertIsDisplayed()
+                compose.onNodeWithTag("camera-item-${photo.key}").assertIsDisplayed()
+                compose.onNodeWithTag("camera-select-all").performClick()
+                assertTrue(model.state.value.selected.isEmpty())
+                compose.onNodeWithTag("camera-select-all").performClick()
+                assertEquals(setOf(photo.key), model.state.value.selected)
+                compose.onNodeWithTag("camera-menu").performClick()
+                compose.onNodeWithTag("camera-jpeg-settings").performClick()
+                compose.onNodeWithTag("camera-jpeg-adjust").performClick()
+                androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
+                    .sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                compose.waitForIdle()
+                compose.onNodeWithTag("camera-jpeg-adjusted").assertIsDisplayed()
+                capture("camera-manual-browser-jpeg-pill.png")
+            } finally {
+                compose.runOnUiThread { model.disconnect() }
+                compose.waitUntil(10_000) { !model.state.value.closing }
+            }
+        }
+    }
+
     private fun connectFixture(fixture: CameraSessionFixture): CameraPhoto {
         val asset = fixture.asset
         val photo = CameraPhoto(asset.key(), asset.name, asset.size, asset.created)

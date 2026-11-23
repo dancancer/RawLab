@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-The current release is [v0.11.0, build 20](releases/v0.11/v0.11.0.md).
+The current mobile release is [v0.12.1, build 24](releases/v0.12/v0.12.1.md) (desktop packages remain at [v0.12.0, build 23](releases/v0.12/v0.12.0.md)).
 The [GitHub release record](https://github.com/dancancer/RawLab/releases) owns
 published packages, checksums and package provenance.
 
@@ -16,6 +16,7 @@ published packages, checksums and package provenance.
 ## Process
 
 - [Repository instructions: Gitflow, release authority and documentation policy](../AGENTS.md)
+- [Unified release packaging guide](process/release-packaging-guide.md) and [desktop release packaging](process/desktop-release.md)
 - [Multi-PR integration workflow](process/integration-workflow.md)
 - [Hosted CI policy and coverage boundaries](process/ci.md)
 - [Localization](process/localization.md)
@@ -54,6 +55,7 @@ deliverables.
 
 | Release line | Notes and source instructions |
 | --- | --- |
+| 0.12 | [0.12.1](releases/v0.12/v0.12.1.md); [0.12.0](releases/v0.12/v0.12.0.md) |
 | 0.11 | [0.11.0](releases/v0.11/v0.11.0.md) |
 | 0.10 | [0.10.0](releases/v0.10/v0.10.0.md) |
 | 0.9 | [0.9.3](releases/v0.9/v0.9.3.md); [0.9.2](releases/v0.9/v0.9.2.md); [0.9.1](releases/v0.9/v0.9.1.md); [0.9.0](releases/v0.9/v0.9.0.md) |

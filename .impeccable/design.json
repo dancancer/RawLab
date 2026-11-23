@@ -1,13 +1,85 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-21T08:41:05Z",
-  "title": "RawLab iOS / iPadOS design extension",
+  "generatedAt": "2026-11-23T09:17:00Z",
+  "title": "Design System: RawLab",
   "extensions": {
+    "colorMeta": {
+      "canvas-dark": {
+        "role": "neutral",
+        "displayName": "Canvas Dark",
+        "canonical": "#1c1c1e"
+      },
+      "surface-low": {
+        "role": "neutral",
+        "displayName": "Low Input Surface",
+        "canonical": "#212124"
+      },
+      "surface-base": {
+        "role": "neutral",
+        "displayName": "Inspector / Dock Surface",
+        "canonical": "#272729"
+      },
+      "surface-high": {
+        "role": "neutral",
+        "displayName": "Raised Bar / Container",
+        "canonical": "#303033"
+      },
+      "win-window-surface": {
+        "role": "neutral",
+        "displayName": "Windows Shell Surface",
+        "canonical": "#181a1e"
+      },
+      "win-tree-surface": {
+        "role": "neutral",
+        "displayName": "Windows Library Tree Surface",
+        "canonical": "#232326"
+      },
+      "win-selected-surface": {
+        "role": "neutral",
+        "displayName": "Windows Warm Selected Tint",
+        "canonical": "#34332d"
+      },
+      "accent-yellow": {
+        "role": "primary",
+        "displayName": "Functional Yellow",
+        "canonical": "#f2ce48"
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Accent Dark Ink",
+        "canonical": "#252110"
+      },
+      "accent-cyan": {
+        "role": "secondary",
+        "displayName": "Brand Cyan",
+        "canonical": "#63cdd6"
+      },
+      "outline-subtle": {
+        "role": "neutral",
+        "displayName": "Subtle Panel Outline",
+        "canonical": "#444449"
+      },
+      "text-primary": {
+        "role": "neutral",
+        "displayName": "Primary Label Text",
+        "canonical": "#eeeef2"
+      },
+      "text-secondary": {
+        "role": "neutral",
+        "displayName": "Secondary Muted Text",
+        "canonical": "#b9b9c3"
+      },
+      "error-soft": {
+        "role": "semantic",
+        "displayName": "Soft Validation Error",
+        "canonical": "#ffb09b"
+      }
+    },
     "motion": [
       {
         "name": "ios-ruler-tick-height",
-        "value": "minor 13pt / major 22pt → peak 28pt; shared baseline",
-        "purpose": "Local upward growth of ruler strokes; reading anchors stay fixed."
+        "value": "minor 13pt / major 22pt -> peak 28pt; shared bottom edge",
+        "purpose": "Local upward growth of iOS ruler strokes while horizontal tape moves."
       },
       {
         "name": "ios-ruler-tick-pulse",
@@ -22,294 +94,547 @@
       {
         "name": "ios-ruler-settlement",
         "value": "120ms; 1 - (1 - progress)^2",
-        "purpose": "Settle tape to the already committed grid value without changing parameters."
+        "purpose": "Settle iOS tape to the already committed legal value without inertia."
       },
       {
         "name": "ios-ruler-focus",
-        "value": "100ms easeOut",
-        "purpose": "Fade surroundings when horizontal adjustment begins."
+        "value": "100ms easeOut; opacity 0.08 phone / 0.42 iPad",
+        "purpose": "Fade surrounding chrome when horizontal ruler drag begins."
       },
       {
         "name": "ios-ruler-release-hold",
         "value": "160ms",
-        "purpose": "Keep peripheral focus during the short release hold."
+        "purpose": "Keep peripheral focus briefly after finger lift."
       },
       {
         "name": "ios-ruler-return",
         "value": "180ms easeOut",
-        "purpose": "Restore surroundings; new input cancels the pending return."
-      },
-      {
-        "name": "ios-ruler-focus-opacity-phone",
-        "value": "0.08",
-        "purpose": "Keep iPhone peripheral control slots and accessibility names present."
-      },
-      {
-        "name": "ios-ruler-focus-opacity-pad",
-        "value": "0.42",
-        "purpose": "Retain more iPad peripheral context."
+        "purpose": "Restore surrounding chrome; new drag cancels pending return."
       },
       {
         "name": "ios-ruler-reduce-motion",
         "value": "static 13/22pt strokes; immediate release restore; no settlement/hold/return animation",
-        "purpose": "Preserve current value, arc, fixed marker and default without extra spatial motion."
+        "purpose": "Honor Reduce Motion while retaining value, marker, and default state."
+      },
+      {
+        "name": "android-ruler-reduce-motion",
+        "value": "tick proximity growth (+4dp) and progress spinners disabled when ANIMATOR_DURATION_SCALE == 0",
+        "purpose": "Respect Android global animator scale without losing progress visibility."
+      },
+      {
+        "name": "windows-reduce-motion",
+        "value": "static BusyStill top strip when SystemParameters.ClientAreaAnimation is false",
+        "purpose": "Replace indeterminate progress animation when OS client animations are off."
       }
     ],
     "breakpoints": [
       {
+        "name": "mac-compact-drawer",
+        "value": "width < 1180pt"
+      },
+      {
+        "name": "win-compact-drawer",
+        "value": "width < 1180px"
+      },
+      {
         "name": "ios-editor-side-panel",
-        "value": "available width >= 600pt && width > height && !accessibilitySize"
+        "value": "available width >= 600pt && width > height"
       },
       {
         "name": "ios-wheel-wide-short-content",
         "value": "content width > 480pt && content height < 400pt"
+      },
+      {
+        "name": "android-editor-side-dock",
+        "value": "maxWidth >= 600dp && maxWidth > maxHeight"
+      },
+      {
+        "name": "mobile-tether-landscape",
+        "value": "width > height"
+      },
+      {
+        "name": "mobile-camera-grid-columns",
+        "value": "<600pt/dp: 3 cols; 600..899pt/dp: 4 cols; >=900pt/dp: 5 cols"
       }
     ],
     "native": {
       "platforms": [
-        "iOS",
-        "iPadOS"
+        "macOS",
+        "Windows",
+        "iOS / iPadOS",
+        "Android"
       ],
-      "authority": "Implemented SwiftUI/UIKit source; desktop DESIGN.md prose is preserved and excluded from this extraction.",
-      "measurements": "Frontmatter lengths are native points at base size. ScaledMetric and preferredFont determine actual Dynamic Type dimensions.",
-      "webPreview": "Native component descriptions and source excerpts are recorded without HTML/CSS substitutes. They do not render a native control in a web panel.",
-      "colorSources": [
-        {
-          "name": "ios-photo-canvas",
-          "source": "Color(white: 0.12)",
-          "purpose": "Dark neutral photographic workspace."
+      "audiencePolicy": "Sighted photography enthusiasts at standard OS text sizes; low-vision large-text reflow and screen-reader (VoiceOver/TalkBack/UIA) optimizations are out of design scope.",
+      "webPreview": "Native SwiftUI/AppKit/UIKit, WPF, and Jetpack Compose components are recorded via nativeSource paths without HTML/CSS approximations.",
+      "macos": {
+        "colorSources": [
+          {
+            "name": "mac-canvas",
+            "source": "Color(nsColor: NSColor(white: 0.12, alpha: 1))",
+            "purpose": "Photo editing and Select contact-sheet neutral canvas."
+          },
+          {
+            "name": "mac-sidebar-surface",
+            "source": "Color(nsColor: .windowBackgroundColor)",
+            "purpose": "Left file browser, right adjustment inspector, and Select action bar."
+          },
+          {
+            "name": "mac-status-bar",
+            "source": ".background(.bar)",
+            "purpose": "30pt fixed bottom window status strip."
+          },
+          {
+            "name": "mac-numeric-field",
+            "source": "NSColor(calibratedWhite: 0.13, alpha: 1)",
+            "purpose": "Inline numeric readout input with yellow active/step border and red invalid border."
+          },
+          {
+            "name": "mac-functional-yellow",
+            "source": ".tint(.yellow) / NSColor.systemYellow",
+            "purpose": "Slider fill, modified dots, selected film/tile borders, and primary draft apply."
+          }
+        ],
+        "typographySources": [
+          {
+            "name": "mac-section-header",
+            "source": ".system(size: 13, weight: .semibold)",
+            "purpose": "Browser and inspector section titles."
+          },
+          {
+            "name": "mac-tab-and-accordion",
+            "source": ".system(size: 12, weight: .medium / .semibold)",
+            "purpose": "Toolbar workspace tabs, folder rows, group tabs, and accordion headers."
+          },
+          {
+            "name": "mac-numeric-field",
+            "source": "NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)",
+            "purpose": "Stable right-aligned numeric input readouts."
+          },
+          {
+            "name": "mac-film-caption",
+            "source": ".system(size: 11)",
+            "purpose": "Film names (29pt two-line slot), master recipe titles, and status bar."
+          }
+        ],
+        "layout": {
+          "minimumContent": "950x620pt (default 1320x850pt)",
+          "browserWidth": "default 232pt; resizable 200..288pt; 264pt overlay drawer below 1180pt",
+          "inspectorWidth": "default 304pt; resizable 280..360pt; locked 280pt below 1180pt",
+          "folderTreeMaxHeight": "min(area.height * 0.34, 220pt) in Edit; full height in Select",
+          "canvasMargin": "12pt default (toggleable in Zoom menu)",
+          "statusBarHeight": "30pt",
+          "processingPopoverWidth": "320pt"
         },
-        {
-          "name": "ios-workspace",
-          "source": "Color(.systemBackground)",
-          "purpose": "Native workspace background."
+        "behaviors": {
+          "workspaces": "Edit, Select (contact sheet + folder tree + bottom batch bar), and Preview (Escape restores prior mode).",
+          "adjustmentGroups": "6 SDR groups / 7 HDR groups (adds HDR Rendition); Look Strength pinned above SDR Looks; HDR replaces Looks pane with HDRLookControls + QuickPresetView.",
+          "processingSettings": "Lives inside 320pt footer popover (processing version, auto-migration progress & rollback, X3F mode, exposure baseline, HDR toggle/monitoring/rendition/HDR RAW dev).",
+          "toneCurve": "Master RGB curve UI only (S-curve & multi-point); preserves and renders stored R/G/B channel curves.",
+          "lensAndGeometry": "Explicit Geometry/Lens draft footer; SDR Lens is RAW-only without a vignetting switch, whereas Bayer HDR RAW camera dev exposes all 4 lens switches including vignetting."
         },
-        {
-          "name": "ios-controls",
-          "source": "Color(.secondarySystemBackground)",
-          "purpose": "Continuous tool, parameter and toolbar surfaces."
-        },
-        {
-          "name": "ios-primary-text",
-          "source": "Color.primary / UIColor.label",
-          "purpose": "Readable primary control text."
-        },
-        {
-          "name": "ios-secondary-text",
-          "source": "Color.secondary / UIColor.secondaryLabel",
-          "purpose": "References, ruler ticks and separate default dot."
-        },
-        {
-          "name": "ios-state-accent",
-          "source": "Color.yellow / UIColor.systemYellow",
-          "purpose": "Selected tools, signed scalar badge, fixed indicator and primary actions."
-        }
-      ],
-      "typographySources": [
-        {
-          "name": "ios-parameter-name",
-          "source": "Font.subheadline",
-          "purpose": "Complete parameter labels."
-        },
-        {
-          "name": "ios-parameter-value",
-          "source": "Font.body.weight(.semibold).monospacedDigit()",
-          "purpose": "Complete tappable value and unit."
-        },
-        {
-          "name": "ios-tool-caption",
-          "source": "Font.caption; UIFont.preferredFont(forTextStyle: .caption1)",
-          "purpose": "Two-line tool title and measured supplementary scalar badge."
-        },
-        {
-          "name": "ios-accessibility-tool-title",
-          "source": "Font.body",
-          "purpose": "Complete title beside a 44pt glyph circle."
-        },
-        {
-          "name": "ios-reference",
-          "source": "Font.caption",
-          "purpose": "Default, range and status explanation."
-        },
-        {
-          "name": "ios-ruler-label",
-          "source": "UIFont.preferredFont(forTextStyle: .caption2)",
-          "purpose": "Sparse legal major-tick labels."
-        },
-        {
-          "name": "ios-wheel-title",
-          "source": "Font.headline",
-          "purpose": "Persistent parameter context in the native value task."
-        },
-        {
-          "name": "ios-wheel-value",
-          "source": "Font.body.monospacedDigit(); UIFont.preferredFont(forTextStyle: .body)",
-          "purpose": "Complete temporary value and Dynamic Type picker rows."
-        }
-      ],
-      "layout": {
-        "touchTargetMinimum": "44×44pt",
-        "accessibilityToolCircle": "44pt",
-        "accessibilityToolRowHeight": "max(44pt, preferred body lineHeight + 16pt)",
-        "sidePanelWidth": "min(336pt, available width × 0.48)",
-        "stackedPanelBudget": "measures content and contracts up to a body-scaled 220pt maximum, further bounded by window and text size",
-        "accessibilityPhotoReservation": "up to 96pt in ordinary stacked windows, or 68pt when tools scroll with parameters in a short accessibility window",
-        "mobilePhotoCanvasInset": "0pt by default; fit photo proportionally to available canvas filling at least one edge",
-        "wheelRegularPopoverHeight": "min(440pt, presenting-window available height)",
-        "wheelAccessibilityPopoverHeight": "min(600pt, presenting-window available height)",
-        "wheelAvailableHeight": "max(0, window height - safeArea.top - safeArea.bottom - 40pt)",
-        "wheelRegularWidth": "min 280pt / ideal 360pt / max 480pt",
-        "wheelPickerHeight": "ordinary 200…220pt; accessibility 100…264pt",
-        "wheelRowHeight": "max(44pt, preferred body lineHeight + 16pt)",
-        "wheelWideContextWidth": "44% of content width",
-        "wheelContext": "Persistent title, complete temporary value/unit and range; no automatic scroll-to-picker."
-      },
-      "behaviors": {
-        "nativeValuePresentation": "Explicit iPhone sheet, including landscape regular horizontal size class; iPad anchored popover with compact system adaptation to a large sheet. Wide/short content reflow is available in a genuinely wide sheet.",
-        "nativeValueDraft": "Picker selection changes local draft only. Changed draft disables interactive dismissal; Cancel preserves entering value; Apply commits; focus returns to the original value button.",
-        "nativeValueCandidates": "Sorted, deduplicated legal grid and endpoints plus valid current/default extras. One complete-value UIPickerView column.",
-        "exposureRange": "Ordinary SDR exposure uses -5…+5 EV in 0.05 EV steps; HDR exposure retains -4…+4 EV.",
-        "fineAction": "Compact selected button beside Reset with a 32pt visible body, 44pt touch target and explicit accessibility state; shares style with Auto.",
-        "editorDraft": "Geometry/lens draft preview stays staged. Fixed Apply/Cancel commit/discard and return to Exposure. Dirty navigation asks Apply/Discard/Continue. Lens editing is RAW-only; raster UI evidence does not demonstrate a RAW lens draft.",
-        "exportGuard": "isEditorDraftActive covers unchanged and changed geometry/lens drafts. Export actions also guard previewRendering, previewResizePending, editor busy state and look availability.",
-        "importGuard": "Single-photo import guards isEditorDraftChanged.",
-        "sourceSupport": "Single JPEG/rendered DNG and batch export support compatible RAW and raster photos. Resolve camera-only settings for each target without changing the frozen source snapshot.",
-        "hapticEventPolicy": "Shared >=125ms gate; default > endpoint > major tick; one accepted feedback per change, no queue; app feedback suppressed for VoiceOver and omitted for native picker selection.",
-        "hapticVerification": "Source policy is recorded. Physical hardware feedback and comfort are unverified.",
-        "verificationLimits": [
-          "Physical haptics",
-          "Performance improvement",
-          "RAW export correctness"
+        "sources": [
+          "RawLabMac/Sources/Editor/View/EditorView.swift",
+          "RawLabMac/Sources/Editor/View/AdjustmentDock.swift",
+          "RawLabMac/Sources/Editor/View/AdjustmentRow.swift",
+          "RawLabMac/Sources/Editor/View/MacWorkspaceComponents.swift",
+          "RawLabMac/Sources/Library/MacWorkspaceBrowser.swift",
+          "RawLabMac/Sources/Presentation/PhotoCanvas.swift",
+          "RawLabMac/Sources/Geometry/MacGeometryWorkspace.swift",
+          "RawLabMac/Sources/Export/BatchSelectionView.swift",
+          "RawLabMac/Sources/Export/BatchExportView.swift"
         ]
       },
-      "sources": [
-        "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
-        "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift",
-        "RawLab/RawLab/UI/Adjustments/AdjustmentScale.swift",
-        "RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift",
-        "RawLab/RawLab/UI/EditorState/EditorLayout.swift",
-        "RawLab/RawLab/UI/EditorState/EditorDrafts.swift",
-        "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
-        "RawLab/RawLab/UI/Panels/LookPanels.swift",
-        "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
-        "RawLab/RawLab/UI/Editor/ContentView.swift",
-        "RawLab/RawLab/UI/Editor/ContentView+Panels.swift",
-        "RawLab/RawLab/UI/Editor/ContentView+Helpers.swift",
-        "RawLab/RawLab/UI/Controls/EditorComponents.swift",
-        "Shared/RawLabKit/FilmPresentation.swift"
+      "windows": {
+        "colorSources": [
+          {
+            "name": "win-window-surface",
+            "source": "WindowSurface (#181A1E)",
+            "purpose": "Outer window chrome behind menu and workspace."
+          },
+          {
+            "name": "win-canvas-surface",
+            "source": "CanvasSurface (#1C1C1E)",
+            "purpose": "Central photo area and Selection contact-sheet background."
+          },
+          {
+            "name": "win-tree-surface",
+            "source": "TreeSurface (#232326)",
+            "purpose": "Left LibraryPanel and folder TreeView."
+          },
+          {
+            "name": "win-inspector-surface",
+            "source": "Surface (#272729) / RaisedSurface (#303033)",
+            "purpose": "Right AdjustmentPanel, menu bar, toolbar, and status bar."
+          },
+          {
+            "name": "win-accent-yellow",
+            "source": "Accent / Indicator (#F2CE48) + AccentText (#252110)",
+            "purpose": "Selected controls, modified values, slider fills, and primary buttons."
+          }
+        ],
+        "typographySources": [
+          {
+            "name": "win-family",
+            "source": "Segoe UI, Microsoft YaHei UI (Display formatting)",
+            "purpose": "Global WPF UI typography across menus, panels, and dialogs."
+          },
+          {
+            "name": "win-body-caption",
+            "source": "EditorBodySize 13px / EditorCaptionSize 11px",
+            "purpose": "Body labels, inspector tools, film/recipe captions, and tile filenames."
+          },
+          {
+            "name": "win-tabular-numbers",
+            "source": "FontNumeralAlignment.Tabular",
+            "purpose": "Jitter-free numeric inputs in ParameterNumberBox without a monospace font."
+          }
+        ],
+        "layout": {
+          "minimumWindow": "1000x680px (default 1440x920px)",
+          "shellRows": "Menu 28px / Toolbar 48px / WorkspaceBody * / StatusBar 40px",
+          "libraryWidth": "default 232px; resizable 200..288px; 264px LibraryOverlay below 1180px",
+          "inspectorWidth": "default 304px; resizable 280..360px via 5px GridSplitter; locked 280px below 1180px",
+          "histogram": "92px inline; reparents to 280px HistogramPopup when hidden or height < 400px",
+          "processingPopup": "330px wide, maxHeight 380px"
+        },
+        "behaviors": {
+          "hdrDisplay": "D3D11 + DXGI 1.6 R16G16B16A16_FLOAT FLIP_DISCARD linear scRGB HwndHost with up to 32 overlay cutouts and SDR fallback.",
+          "toneCurve": "Master RGB curve UI only; preserves and renders stored R/G/B channel curves.",
+          "lensAndDenoise": "SDR LensPanel is RAW-only without a vignetting toggle (HDR RAW dialog exposes vignetting); DirectML hardware-GPU AI denoise with VRAM picker and diagnostics export.",
+          "batchCancel": "Cancelling mid-render lets the active photo finish and publish cleanly before stopping; BatchJournal supports interrupted-task resume.",
+          "singleInstanceAndUpdates": "Named-pipe Open With forwarding and Velopack 1.2.161 update workflow with UpdateLockBanner."
+        },
+        "sources": [
+          "RawLabWindows/MainWindow.xaml",
+          "RawLabWindows/Controls.xaml",
+          "RawLabWindows/EditorAppearance.cs",
+          "RawLabWindows/Core/WorkspaceLayout.cs",
+          "RawLabWindows/PhotoCanvas.cs",
+          "RawLabWindows/ParameterSlider.cs",
+          "RawLabWindows/ParameterRow.cs",
+          "RawLabWindows/MainWindow/Tools.cs",
+          "RawLabWindows/MainWindow.HDR.cs",
+          "RawLabWindows/BatchSelectionWindow.cs",
+          "RawLabWindows/BatchExportWindow.xaml",
+          "RawLabWindows/Updates/SoftwareUpdateWindow.cs"
+        ]
+      },
+      "ios": {
+        "colorSources": [
+          {
+            "name": "ios-photo-canvas",
+            "source": "Color(white: 0.12)",
+            "purpose": "Dark neutral photographic workspace."
+          },
+          {
+            "name": "ios-workspace",
+            "source": "Color(.systemBackground) / Color(.secondarySystemBackground) / Color(.tertiarySystemBackground)",
+            "purpose": "Forced-dark editor docks, parameter surfaces, and compact number tiles."
+          },
+          {
+            "name": "ios-primary-secondary-text",
+            "source": "Color.primary / Color.secondary / UIColor.label / UIColor.secondaryLabel",
+            "purpose": "Readable control labels, captions, and moving ruler default dot."
+          },
+          {
+            "name": "ios-state-accent",
+            "source": "Color.yellow / UIColor.systemYellow",
+            "purpose": "Active selections, modified dots, fixed ruler needle, and primary actions."
+          }
+        ],
+        "typographySources": [
+          {
+            "name": "ios-parameter-name",
+            "source": "Font.subheadline",
+            "purpose": "Complete parameter labels."
+          },
+          {
+            "name": "ios-parameter-value",
+            "source": "Font.body.weight(.semibold).monospacedDigit()",
+            "purpose": "Complete tappable numeric value and unit."
+          },
+          {
+            "name": "ios-tool-and-film-caption",
+            "source": "Font.caption",
+            "purpose": "Tool grid labels, two-line film titles, and range/default references."
+          },
+          {
+            "name": "ios-wheel-and-tether",
+            "source": "Font.headline / Font.body.monospacedDigit() / 16pt monospaced",
+            "purpose": "Native Value Wheel titles/rows and tether 4-parameter strip."
+          }
+        ],
+        "layout": {
+          "touchTargetMinimum": "44x44pt (48x48pt draft Apply/Cancel)",
+          "sidePanelWidth": "min(336pt, availableWidth * 0.48) when width >= 600pt && width > height",
+          "stackedParameterBudget": "min(measuredHeight or 240pt, min(52% height, height - 140pt photo reservation))",
+          "toolGrid": "4 columns, 4pt spacing, 52pt min row height, adaptive 60pt 1-row / 116pt 2-row height (Looks includes My Presets), 48pt single-line group bar",
+          "mobilePhotoCanvasInset": "0pt default (16pt optional margin toggle); fit proportionally filling >= 1 edge",
+          "wheelPresentation": "Explicit iPhone sheet (incl. landscape); iPad popover 280..480pt (ideal 360pt, height min(440pt, windowHeight - safeArea - 40))",
+          "wheelWideShortLayout": "44% context beside 200..220pt picker when content width > 480pt && height < 400pt",
+          "cameraWorkspace": "home/connect/incremental <= 680pt centered width with 10pt tonal cards; adaptive 3/4/5 manual import grid (<600 / 600..899 / >=900pt) with 22pt circle selection badges",
+          "tetherControls": "108pt portrait bottom shutter bar / 96pt landscape right rail"
+        },
+        "behaviors": {
+          "dedicatedToolWorkspaces": "Every tool opens a dedicated workspace (top navigation bar hidden) with EditorToolDraft (up to 100 undo/redo steps), dark translucent workspaceActions capsules + clickable yellow Fine badge, 48x48pt Apply/Cancel bar returning to tool grid overview, left-edge UIScreenEdgePanGestureRecognizer exit, and EditorWorkspaceResetControl.",
+          "dualAdjustmentControls": "Standard moving-tape AdjustmentRulerView for single-parameter tools; compact single-row inline sliders (72pt label + 14pt thumb + fixed worst-case stableValueWidth) for multi-parameter tools; Fine (0.25x) inside workspace More menu.",
+          "nativeValueWheel": "Single-column UIPickerView via SizingPickerView + PickerContainerView (width-change reload > 0.5pt keeps values centered on resize/rotation); changed draft blocks interactive dismissal.",
+          "richToolsAndLens": "Full RGB/R/G/B Tone Curves (194pt canvas), Color Grading (130pt wheel), 8-ch HSL (19pt swatches + 88pt 3x loupe), RAW+JPEG Lens with Vignetting toggle & DisplayLensMetadata editor, HDR suite + cancellable HDR HEIF/JPEG export, 1:1 1024px ROI tiled zoom.",
+          "recentsAndCameraPreview": "Recently Opened (up to 100 photos / ~2 GiB) with All/Edited/Unedited filters and pencil badge; Sony wireless camera workspace groups Import/Tether & History/Storage, highlights card-save confirmation, hides manual JPEG settings into overflow menu (surfacing a yellow summary pill when active), supports pinch-zoomable prev/next manual preview and auto-scrolled medium/large tether parameter pickers (unverified real-camera hardware preview)."
+        },
+        "sources": [
+          "RawLab/RawLab/UI/Editor/ContentView.swift",
+          "RawLab/RawLab/UI/EditorState/EditorLayout.swift",
+          "RawLab/RawLab/UI/Editor/ContentView+Panels.swift",
+          "RawLab/RawLab/UI/EditorState/EditorDrafts.swift",
+          "RawLab/RawLab/UI/Editor/EditorToolBackGesture.swift",
+          "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
+          "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift",
+          "RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift",
+          "RawLab/RawLab/UI/Panels/ToneCurveControls.swift",
+          "RawLab/RawLab/UI/Panels/ColorGradingControls.swift",
+          "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
+          "RawLab/RawLab/UI/Controls/LensControls.swift",
+          "RawLab/RawLab/UI/Preview/ZoomablePhoto.swift",
+          "RawLab/RawLab/UI/Library/RecentPhotosView.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraController.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraBrowser.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraIncrementalImport.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraTether.swift",
+          "Shared/RawLabKit/FilmPresentation.swift",
+          "Shared/Native/HDRCanvas.swift",
+          "Shared/Native/HDRMonitoring.swift"
+        ]
+      },
+      "android": {
+        "colorSources": [
+          {
+            "name": "android-dark-scheme",
+            "source": "MainActivity.RawLabTheme darkColorScheme (static dark-only, no Material You)",
+            "purpose": "Root Material 3 palette (#1C1C1E background, #272729 surface, #F2CE48 primary, #63CDD6 secondary)."
+          },
+          {
+            "name": "android-black-surfaces",
+            "source": "Color.Black (#000000)",
+            "purpose": "Tether viewfinder, fullscreen review, HSL 3x loupe, and RGB histogram plot."
+          },
+          {
+            "name": "android-tether-focus-locked",
+            "source": "#34D759",
+            "purpose": "Locked AF frame indicator vs translucent white searching frame."
+          }
+        ],
+        "typographySources": [
+          {
+            "name": "android-m3-type-scale",
+            "source": "Default Material 3 Typography (system sans)",
+            "purpose": "Screen titles, labels, captions, and dialogs across editor, album, and camera."
+          },
+          {
+            "name": "android-monospace-readouts",
+            "source": "FontFamily.Monospace in fixed-width boxes (104dp / 56dp or 68dp inline)",
+            "purpose": "Stable fixed-decimal signed numeric readouts in NumericControl (formatAdjustmentReadout)."
+          },
+          {
+            "name": "android-tether-strip",
+            "source": "16.sp",
+            "purpose": "Live camera shooting parameter strip readouts."
+          }
+        ],
+        "layout": {
+          "touchTargetMinimum": "48x48dp (HSL cells >= 44dp wide x 48dp tall; shutter 68dp)",
+          "sideDockWidth": "336dp fixed when maxWidth >= 600dp && maxWidth > maxHeight",
+          "bottomDock": "Adaptive home dock 108dp 1-row / 164dp 2-row height (Looks includes My Presets); tool workspace min(332dp, availableHeight - 96dp); 48dp Close/Title/Check footer",
+          "mobilePhotoCanvasInset": "0dp default (8dp optional toggle)",
+          "edgeBackGuard": "24dp horizontal inset exclusion on standard AdjustmentRuler",
+          "cameraWorkspace": "home/connect/help/incremental <= 680dp centered width with 10dp tonal cards; adaptive 3/4/5 manual import grid (<600 / 600..899 / >=900dp) with 22dp circle selection badges",
+          "tetherControls": "108dp portrait bottom shutter bar / 96dp landscape right rail"
+        },
+        "behaviors": {
+          "dedicatedToolWorkspaces": "2-level tool workspaces with per-tool AdjustmentDraft (100 steps), dark translucent workspaceActions capsules with focus fade + clickable yellow Fine badge, 48dp Apply/Cancel bar returning to tool grid, per-photo HDR controls in Processing Settings, and predictive Back (enableOnBackInvokedCallback=true).",
+          "dualAdjustmentControls": "48dp fixed-track AdjustmentRuler with onSurfaceVariant baseline dot, #F2CE48 needle/bar, 21 ticks & +4dp proximity pulse on single-param tools; compact inline rows (14dp thumb) on multi-param tools; validated Material numeric AlertDialog on readout tap.",
+          "richToolsAndHdr": "Full RGB/R/G/B Tone Curves (194dp), Color Grading (130dp), 8-ch HSL (19dp swatches + 88dp loupe), RAW+JPEG Lens with Vignetting toggle, API 34+ FP16/scRGB HDR display + HDRMonitoring + cancellable HDR JPEG export, 1:1 1024px ROI tiled zoom.",
+          "albumAndCamera": "Square/Staggered Album (1..6 cols) with All/Edited/Unedited filter & pencil badge; Sony BLE/Wi-Fi camera import (segmented Manual/Incremental switch, adaptive 3/4/5 grid, Select All/Clear Filter bar, Option A overflow JPEG Settings + active yellow summary pill, pinch-zoom preview) & tether (status-dot LIVE HUD, auto-scrolled ModalBottomSheet parameter pickers, 640x480 tap-to-focus, verified on a7C II fw 2.00)."
+        },
+        "sources": [
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/MainActivity.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/EditorScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/AdjustmentControls.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/ToneCurveControls.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/ColorGradingControls.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/HslControls.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/geometry/GeometryCropCanvas.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/canvas/PhotoCanvas.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/canvas/HDRMonitoring.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/canvas/RgbHistogramOverlay.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/album/AlbumScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraConnectionPanel.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraImportScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraTetherScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/batch/ui/BatchSelectionScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/batch/ui/BatchExportScreen.kt"
+        ]
+      },
+      "knownDiscrepancies": [
+        "macOS and Windows Tone Curve UI edits only the master RGB curve (no R/G/B channel selector), whereas iOS and Android expose RGB/R/G/B editing.",
+        "macOS and Windows SDR Lens panels enforce RAW-only editing and omit a Vignetting toggle (Vignetting is exposed in desktop Bayer HDR RAW camera development and mobile RAW+JPEG Lens workspaces).",
+        "Dead legacy UI symbols remain in desktop source: macOS HorizontalPicker / MacRotationRuler / ToolCaption, Windows StraightenRuler.cs."
+      ],
+      "verificationLimits": [
+        "Physical haptics",
+        "Physical HDR peak display brightness",
+        "iOS camera hardware import/tethering (preview)",
+        "RAW numerical export accuracy from screenshots alone"
       ]
     }
   },
   "components": [
     {
-      "name": "iOS Adjustment Tool",
-      "kind": "nav",
-      "refersTo": "ios-adjustment-circle-base",
-      "description": "Scaled circle, supplementary fitting scalar badge, signed arc and two-line caption; accessibility uses a glyph/body-title row.",
+      "name": "macOS Adjustment Inspector & RoundParameterSlider",
+      "kind": "input",
+      "refersTo": "mac-slider-thumb",
+      "description": "Right inspector with 6 SDR / 7 HDR group tabs, accordion tools, 14pt circular slider thumb, default origin tick, yellow active fill, and monospaced numeric field.",
       "nativeSource": {
-        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
-        "symbol": "AdjustmentToolLabel"
+        "path": "RawLabMac/Sources/Editor/View/AdjustmentDock.swift",
+        "symbol": "AdjustmentDock / RoundParameterSlider"
       }
     },
     {
-      "name": "iOS Parameter Control",
+      "name": "macOS Workspace Browser & Histogram",
+      "kind": "nav",
+      "refersTo": "mac-histogram-plot",
+      "description": "Separated folder tree and 3pt-radius thumbnail tiles with per-folder scroll memory, plus collapsible 68pt RGB / HDR luminance histogram.",
+      "nativeSource": {
+        "path": "RawLabMac/Sources/Library/MacWorkspaceBrowser.swift",
+        "symbol": "MacWorkspaceLibrary / WorkspaceHistogram"
+      }
+    },
+    {
+      "name": "Windows ParameterSlider & ParameterRow",
       "kind": "input",
-      "description": "Name and complete tappable value in a stable numeric slot above a full-width ruler, named reset, compact Fine action (32pt body / 44pt target) and readable default/range.",
+      "refersTo": "win-slider-thumb",
+      "description": "WPF slider with 14px circular thumb, Muted default tick, Indicator active fill, double-click reset, and tabular-digit ParameterNumberBox.",
+      "nativeSource": {
+        "path": "RawLabWindows/ParameterRow.cs",
+        "symbol": "ParameterRow / ParameterSlider"
+      }
+    },
+    {
+      "name": "Windows Workspace Shell & HDR Surface",
+      "kind": "custom",
+      "refersTo": "win-histogram-plot",
+      "description": "Edit/Select/Preview WPF workspace shell pairing D3D11 FP16 scRGB HwndHost rendering with a 92px inline or 280px popup histogram.",
+      "nativeSource": {
+        "path": "RawLabWindows/MainWindow.xaml",
+        "symbol": "EditorShell / HDRSurface / HistogramView"
+      }
+    },
+    {
+      "name": "iOS Dedicated Tool Grid & Workspace",
+      "kind": "nav",
+      "refersTo": "ios-tool-grid-row",
+      "description": "Two-level mobile editor: 4-column flat tool grid above a 48pt group bar transitioning into a scrollable tool workspace with fixed 48x48pt Cancel/Apply bar.",
+      "nativeSource": {
+        "path": "RawLab/RawLab/UI/EditorState/EditorLayout.swift",
+        "symbol": "EditorLayout / editorWorkspace"
+      }
+    },
+    {
+      "name": "iOS Adjustment Control & Ruler",
+      "kind": "input",
+      "refersTo": "ios-draft-bar",
+      "description": "Dual-mode control: moving-tape AdjustmentRulerView with 13/22->28pt local tick pulse on single-param tools and compact inline linear row on multi-param tools.",
       "nativeSource": {
         "path": "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift",
-        "symbol": "AdjustmentControl"
-      }
-    },
-    {
-      "name": "iOS Adjustment Ruler",
-      "kind": "input",
-      "description": "UIKit adjustable ruler with fixed indicator, moving tape/default, local tick residuals and legal discrete commits.",
-      "nativeSource": {
-        "path": "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift",
-        "symbol": "AdjustmentRulerView"
+        "symbol": "AdjustmentControl / AdjustmentRulerView"
       }
     },
     {
       "name": "iOS Native Value Wheel",
       "kind": "input",
-      "description": "One complete-value UIPickerView column, protected local draft, persistent context and fixed Cancel/Apply.",
+      "description": "Single-column UIPickerView with width-change re-centering, protected local draft, persistent context, and fixed Cancel/Apply.",
       "nativeSource": {
         "path": "RawLab/RawLab/UI/Adjustments/NativeValueWheel.swift",
-        "symbol": "NativeValueWheel / WholeValuePicker"
+        "symbol": "NativeValueWheel / WholeValuePicker / SizingPickerView"
       }
     },
     {
-      "name": "iOS Film Choice",
-      "kind": "custom",
-      "refersTo": "ios-film-selection",
-      "description": "Bundled square artwork, complete two-line name, yellow selected fill and outline.",
-      "nativeSource": {
-        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
-        "symbol": "FilmLabel"
-      }
-    },
-    {
-      "name": "iOS HSL Channel",
+      "name": "Mobile HSL Channel & 3x Target Loupe",
       "kind": "chip",
       "refersTo": "ios-hsl-swatch",
-      "description": "Named channel swatch inside a 44pt action target, selected outline and three independent axes.",
+      "description": "Eight 19pt circular channel swatches paired with vertical photo-drag targeting and an 88pt 3x circular magnification loupe.",
       "nativeSource": {
         "path": "RawLab/RawLab/UI/Panels/PhotoEffectPanels.swift",
-        "symbol": "IOSHSLMixer"
+        "symbol": "IOSHSLMixer / HslControls"
       }
     },
     {
-      "name": "iOS RGB / HDR Histogram",
+      "name": "Android Dedicated Tool Dock & AdjustmentRuler",
+      "kind": "input",
+      "refersTo": "android-touch-target",
+      "description": "Material 3 dark tool workspace with 48dp touch targets, fixed-track 21-tick AdjustmentRuler (24dp edge-back guard), compact inline rows, and predictive Back.",
+      "nativeSource": {
+        "path": "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/ui/AdjustmentDock.kt",
+        "symbol": "AdjustmentDock / AdjustmentRuler"
+      }
+    },
+    {
+      "name": "Mobile Sony Camera Import & Tether Viewfinder",
       "kind": "custom",
-      "refersTo": "ios-histogram-header",
-      "description": "Collapsible edge overlay with a 44pt header, 256-bin RGB (or HDR luminance) distribution, explicit title and before/after source, and a scrollable popover with a 44pt close target for short canvases or accessibility text sizes.",
+      "refersTo": "android-shutter-button",
+      "description": "Wireless Sony camera workspace pairing tonal home/connect/incremental cards, an adaptive 3/4/5 manual import grid (with 22pt/dp circle badges and Option A overflow JPEG Settings + active yellow summary pill), and a tether viewfinder with status-dot LIVE badge, 68pt/dp shutter, 4-slot live parameter strip, auto-scrolled parameter picker sheets, 640x480 tap-to-focus, and green/white focus frames.",
       "nativeSource": {
-        "path": "RawLab/RawLab/UI/Controls/EditorComponents.swift",
-        "symbol": "FloatingHistogram"
-      }
-    },
-    {
-      "name": "iOS Editor Draft Actions",
-      "kind": "button",
-      "description": "Fixed Cancel/Apply actions for staged geometry and lens changes; both return to Exposure.",
-      "nativeSource": {
-        "path": "RawLab/RawLab/UI/Panels/AdjustmentPanels.swift",
-        "symbol": "editorDraftActions"
+        "path": "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraTetherScreen.kt",
+        "symbol": "CameraTetherScreen / IOSCameraTether"
       }
     }
   ],
   "narrative": {
     "northStar": "RawLab photo-first editor",
-    "overview": "The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.\n\nThis extension is scoped to `RawLab/RawLab/UI/Editor/ContentView.swift`, its Adjustments, EditorState and Panels, and `RawLab/RawLab/UI/Controls/EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.",
+    "overview": "RawLab is an Operate-mode native RAW and photo editor spanning four native clients: **macOS** (SwiftUI/AppKit), **Windows** (WPF), **iOS / iPadOS** (SwiftUI/UIKit), and **Android** (Jetpack Compose / Material 3). Across every screen size and operating system, the photograph leads: restrained dark neutral-gray surfaces eliminate viewing glare, functional yellow marks active controls and adjusted values without decorative competition, and native platform ergonomics shape each workspace while preserving shared color and parameter semantics.\n\nRawLab targets **sighted photographers working at standard OS text sizes**; low-vision extreme large-text reflow and screen-reader-first (VoiceOver/TalkBack/UIA) flows are outside active design scope. Controls support Simplified Chinese, English, German, French, Japanese, and Spanish while preserving proper film simulation names.\n\nRelated interaction specifications and asset registries live in [compact controls](docs/design/editor-workspace/compact-controls.md), [dedicated mobile workspaces](docs/design/editor-workspace/mobile-workspaces.md), [mobile camera workspaces](docs/design/camera-transfer/android-camera-ui.md), [edited-photo previews](docs/design/editor-workspace/edited-photo-previews.md), and the [design asset registry](docs/design/README.md). Clickable design prototypes remain reference expressions and do not replace implemented source behavior or device acceptance.",
     "keyCharacteristics": [
-      "A dark photo workspace with yellow functional selection.",
-      "Continuous control surfaces, a scrollable tool strip and complete numeric readouts.",
-      "Window-dependent iPhone/iPad composition and a stacked accessibility layout.",
-      "A moving horizontal ruler, a single-column system value wheel and explicit local drafts."
+      "A dark neutral photo workspace with functional yellow for active selection, modified values, and adjustment fills.",
+      "Desktop three-column Edit / Select / Preview workspaces (macOS & Windows) paired with mobile two-level dedicated tool workspaces (iOS & Android).",
+      "Native platform controls, monospaced/tabular numeric readouts, and explicit draft transactions without decorative card stacks.",
+      "Cross-client HDR editing, monitoring, and luminance histograms alongside mobile wireless Sony camera import and tethering."
     ],
     "rules": [
       {
-        "name": "The iOS State Color Rule",
-        "body": "Preserve semantic text colors and express selection with a visible shape or label as well as tint.",
+        "name": "The Functional Yellow Rule",
+        "body": "Yellow signals active selection, modified state, and adjustment progress — never decorative chrome. Pair tint with a visible dot, outline, or label.",
         "section": "colors"
       },
       {
-        "name": "The iOS Photo Budget Rule",
-        "body": "Reflow and scroll controls as the window and reading size change; keep the photograph available for evaluating the adjustment.",
+        "name": "The Stable Readout Rule",
+        "body": "Numeric readouts reserve stable width with monospaced or tabular digits so sign and precision changes never shift adjacent sliders or controls.",
+        "section": "typography"
+      },
+      {
+        "name": "The Photo Budget Rule",
+        "body": "Keep the photograph visible and unobstructed at center stage; scroll complex parameters within bounded panels or drawers rather than squeezing controls over the image.",
         "section": "layout"
+      },
+      {
+        "name": "The Flat-By-Default Rule",
+        "body": "Separate regions through tonal steps and hairline dividers; reserve translucency or structural elevation for transient overlays, drawers, and popups.",
+        "section": "elevation"
       }
     ],
     "dos": [
-      "**Do** preserve the shared processing contract, semantic system colors, system text styles and native navigation/task presentations.",
-      "**Do** keep complete values and units visible, provide 44-point action targets and retain named defaults, ranges and explicit draft actions.",
-      "**Do** preserve the fixed indicator, moving tape, local residual decay and static Reduce Motion state.",
-      "**Do** reflow by the available window and Dynamic Type; keep the selected tool and wheel draft stable across layout changes."
+      "**Do** keep the photograph central and unobstructed; keep default mobile photo margin at 0 and desktop full-height canvas between toolbar and status bar.",
+      "**Do** preserve dark neutral surfaces, functional yellow for active/modified states, native system controls, and monospaced/tabular readouts.",
+      "**Do** enforce explicit scoped draft Apply/Cancel and export/import guards; never export an active draft or present an unfinished preview as current.",
+      "**Do** preserve shared color, HDR, v3 migration/rollback, and RAW/raster compatibility semantics across all four clients; keep camera-only controls honest per source type.",
+      "**Do** design and evaluate layouts at standard OS text sizes for sighted photographers, keeping all 6 localized languages crisp and untruncated."
     ],
     "donts": [
-      "**Don't** invent aggregate values for multi-parameter tools, shrink text into a badge, split numeric signs/decimals into separate wheels or introduce a custom numeric keyboard.",
-      "**Don't** export an active geometry/lens draft or label an unfinished preview as current.",
-      "**Don't** turn the custom ruler's lack of inertia into a change to the native picker's system behavior.",
-      "**Don't** describe authored timing as an Apple measurement, or claim Simulator images prove physical haptics, performance improvement or RAW output correctness."
+      "**Don't** introduce decorative drop shadows, nested card stacks, custom display fonts, or non-functional accent color washes.",
+      "**Don't** invent aggregate badges for multi-parameter tools, reintroduce retired circular tool progress rings, or obscure the photo center with processing spinners.",
+      "**Don't** optimize layouts, inflate controls, or file review issues around low-vision Accessibility Dynamic Type / large-text modes or VoiceOver / TalkBack screen-reader flows.",
+      "**Don't** claim Simulator/Emulator screenshots prove physical haptics, physical HDR peak brightness, iOS camera hardware compatibility, or RAW export numerical accuracy."
     ]
   }
 }

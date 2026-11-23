@@ -11,8 +11,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.PointerEventPass
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -28,8 +30,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.alpha
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.semantics.*
@@ -157,6 +161,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     var workspaceHistogram by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var fine by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var toolMenu by remember { mutableStateOf(false) }
+    var workspaceCompareMenu by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var processingContext by remember { mutableStateOf(false) }
     var tool by rememberSaveable { mutableIntStateOf(0) }
@@ -337,32 +342,6 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 Text(stringResource(R.string.gpu_auto), Modifier.weight(1f))
                 Switch(state.gpuEnabled, onGpuChange, enabled = state.operation == Operation.NONE)
             }
-            if (state.photo?.isHDRSource == true) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.hdr_editing), Modifier.weight(1f))
-                Switch(state.edits.isHDREditing, onHDRChange, enabled = state.controlsEnabled && state.draft == null,
-                    modifier = Modifier.testTag("hdr-editing"))
-            }
-            state.edits.hdr?.takeIf { state.edits.isHDREditing }?.let { hdr ->
-                var expanded by remember(sourceKey) { mutableStateOf(false) }
-                TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("hdr-rendition")) {
-                    Text(stringResource(R.string.hdr_rendition))
-                }
-                if (expanded) CompositionLocalProvider(LocalAdjustmentSession provides sourceKey,
-                    LocalAdjustmentCancellation provides { _ -> if (liveSourceKey == sourceKey) onCancelAdjustment() }) {
-                    HDRRenditionRows(hdr.renditionSettings, state.controlsEnabled && state.draft == null) { next, dragging ->
-                        if (liveSourceKey == sourceKey) onEdit(state.edits.copy(hdr = hdr.withRendition(next)), dragging)
-                    }
-                }
-                if (state.photo?.isCameraRawHDR == true && state.photo.hdrSource?.isProRAW != true) {
-                    var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
-                    TextButton(onClick = { cameraOpen = !cameraOpen }, enabled = !state.importingHDRCameraProfile,
-                        modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
-                    if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings,
-                        state.controlsEnabled && state.draft == null && !state.rendering && !state.importingHDRCameraProfile,
-                        state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile,
-                        state.hdrCameraDraftSettings ?: hdr.cameraSettings, onHDRCameraDraftChange)
-                }
-            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.adjustment_haptics), Modifier.weight(1f))
                 Switch(haptics, { haptics = it; preferences.edit().putBoolean("haptics", it).apply() })
@@ -467,6 +446,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
         }
     }
     val snackbar = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     LaunchedEffect(state.message) {
         state.message?.let { snackbar.showSnackbar(it); onMessageDismiss() }
     }
@@ -497,6 +477,42 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
             processingContext = processingContext, onDismissProcessingContext = { processingContext = false },
+            onToolUnavailable = { reason ->
+                snackbarScope.launch {
+                    snackbar.currentSnackbarData?.dismiss()
+                    snackbar.showSnackbar(reason)
+                }
+            },
+            hdrProcessingContent = {
+                if (state.photo?.isHDRSource == true) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.hdr_editing), Modifier.weight(1f))
+                        Switch(state.edits.isHDREditing, onHDRChange, enabled = state.controlsEnabled && state.draft == null,
+                            modifier = Modifier.testTag("hdr-editing"))
+                    }
+                }
+                state.edits.hdr?.takeIf { state.edits.isHDREditing }?.let { hdr ->
+                    var hdrExpanded by remember(sourceKey) { mutableStateOf(false) }
+                    TextButton(onClick = { hdrExpanded = !hdrExpanded }, modifier = Modifier.testTag("hdr-rendition")) {
+                        Text(stringResource(R.string.hdr_rendition))
+                    }
+                    if (hdrExpanded) CompositionLocalProvider(LocalAdjustmentSession provides sourceKey,
+                        LocalAdjustmentCancellation provides { _ -> if (liveSourceKey == sourceKey) onCancelAdjustment() }) {
+                        HDRRenditionRows(hdr.renditionSettings, state.controlsEnabled && state.draft == null) { next, dragging ->
+                            if (liveSourceKey == sourceKey) onEdit(state.edits.copy(hdr = hdr.withRendition(next)), dragging)
+                        }
+                    }
+                    if (state.photo?.isCameraRawHDR == true && state.photo.hdrSource?.isProRAW != true) {
+                        var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
+                        TextButton(onClick = { cameraOpen = !cameraOpen }, enabled = !state.importingHDRCameraProfile,
+                            modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
+                        if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings,
+                            state.controlsEnabled && state.draft == null && !state.rendering && !state.importingHDRCameraProfile,
+                            state.photo.hdrSource?.supportsBayerDevelopment == true, onHDRCameraDevelopment, onImportHDRCameraProfile,
+                            state.hdrCameraDraftSettings ?: hdr.cameraSettings, onHDRCameraDraftChange)
+                    }
+                }
+            },
             workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll })
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
@@ -505,73 +521,137 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     ) else null
     LaunchedEffect(resetPresentation?.isEnabled) { if (resetPresentation?.isEnabled != true) resetMenu = false }
     @Composable fun workspaceActions(modifier: Modifier) {
-        if (state.photo != null && !view.purePreview) Row(modifier.fillMaxWidth().padding(horizontal = 8.dp),
-            verticalAlignment = Alignment.CenterVertically) {
-            ToolIcon(AppIcons.Outlined.Undo, R.string.transfer_undo, (if (toolOpen) state.draft?.canUndo == true else canUndoAdjustment) && state.controlsEnabled, if (toolOpen) onUndoDraft else onUndoAdjustment)
-            ToolIcon(AppIcons.Outlined.Redo, R.string.transfer_redo, (if (toolOpen) state.draft?.canRedo == true else canRedoAdjustment) && state.controlsEnabled, if (toolOpen) onRedoDraft else onRedoAdjustment)
-            resetPresentation?.let { presentation ->
-                Box {
-                    ToolIcon(AppIcons.Outlined.SettingsBackupRestore, R.string.reset, presentation.isEnabled) {
-                        resetMenu = true
+        if (state.photo != null && !view.purePreview) Row(
+            modifier.fillMaxWidth().alpha(surroundingAlpha).padding(horizontal = 8.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.62f),
+                contentColor = Color.White,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+            ) {
+                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ToolIcon(AppIcons.Outlined.Undo, R.string.transfer_undo,
+                        (if (toolOpen) state.draft?.canUndo == true else canUndoAdjustment) && state.controlsEnabled,
+                        Modifier.testTag("workspace-undo")) {
+                        if (toolOpen) onUndoDraft() else onUndoAdjustment()
                     }
-                    if (resetMenu) EditorResetMenu(presentation, onDismiss = { resetMenu = false }) { scope ->
-                        resetMenu = false
-                        requestReset(scope)
+                    ToolIcon(AppIcons.Outlined.Redo, R.string.transfer_redo,
+                        (if (toolOpen) state.draft?.canRedo == true else canRedoAdjustment) && state.controlsEnabled,
+                        Modifier.testTag("workspace-redo")) {
+                        if (toolOpen) onRedoDraft() else onRedoAdjustment()
+                    }
+                    resetPresentation?.let { presentation ->
+                        Box {
+                            ToolIcon(AppIcons.Outlined.SettingsBackupRestore, R.string.reset, presentation.isEnabled) {
+                                resetMenu = true
+                            }
+                            if (resetMenu) EditorResetMenu(presentation, onDismiss = { resetMenu = false }) { scope ->
+                                resetMenu = false
+                                requestReset(scope)
+                            }
+                        }
                     }
                 }
             }
             Spacer(Modifier.weight(1f))
-            ToolIcon(AppIcons.Outlined.Compare, R.string.editor_compare_enable, state.draft?.group != AdjustmentGroup.GEOMETRY) {
-                view = view.toggleComparison()
-            }
-            if (toolOpen) Box(Modifier.testTag("workspace-more")) {
-                ToolIcon(AppIcons.Outlined.MoreHoriz, R.string.more) { toolMenu = true }
-                DropdownMenu(toolMenu, { toolMenu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_title)) },
-                        modifier = Modifier.testTag("workspace-camera"), enabled = state.operation == Operation.NONE,
-                        onClick = { toolMenu = false; onCancelAdjustment(); onCamera() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
-                        modifier = Modifier.testTag("workspace-presets"), onClick = { toolMenu = false; openQuickPresets() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) },
-                        onClick = { view = view.copy(infoMode = (view.infoMode + 1) % 3); toolMenu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
-                        modifier = Modifier.testTag("workspace-histogram"),
-                        leadingIcon = { if (workspaceHistogram) Icon(Icons.Outlined.Check, null) },
-                        onClick = { workspaceHistogram = !workspaceHistogram; toolMenu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.sampling_monitor)) },
-                        modifier = Modifier.testTag("inspection-sampling-toggle"),
-                        leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
-                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
-                        onClick = {
-                            val next = !inspection.monitorEnabled
-                            if (next) { hslTarget.enabled(false); wbProbe.enabled(false) }
-                            inspection = inspection.copy(monitorEnabled = next)
-                            toolMenu = false
-                        })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_gray_50)) },
-                        modifier = Modifier.testTag("inspection-gray50-menu"),
-                        leadingIcon = { if (inspection.overlay == InspectionOverlayMode.NEUTRAL_GRAY_50) Icon(Icons.Outlined.Check, null) },
-                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
-                        onClick = { inspection = inspection.toggleNeutralGray50(); toolMenu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.overlay_section)) },
-                        modifier = Modifier.testTag("inspection-overlay-menu"),
-                        enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
-                        onClick = { toolMenu = false; workspaceOverlaySubmenuOpen = true })
-                    if (targetWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
-                        onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
-                        leadingIcon = { if (fine) Icon(Icons.Outlined.Check, null) },
-                        modifier = Modifier.testTag("adjustment-fine").semantics { selected = fine }, onClick = { fine = !fine; toolMenu = false })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_preview_enter)) },
-                        onClick = { toolMenu = false; togglePure() })
+            if (toolOpen && fine) {
+                Surface(
+                    onClick = { fine = false },
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.65f)),
+                    modifier = Modifier.heightIn(min = 32.dp).testTag("adjustment-fine-badge"),
+                ) {
+                    Text(
+                        stringResource(R.string.adjustment_fine),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
                 }
-                InspectionOverlayDropdownMenu(
-                    expanded = workspaceOverlaySubmenuOpen,
-                    selected = inspection.overlay,
-                    onDismissRequest = { workspaceOverlaySubmenuOpen = false },
-                ) { mode ->
-                    inspection = inspection.selectOverlay(mode)
-                    workspaceOverlaySubmenuOpen = false
+            }
+            Spacer(Modifier.weight(1f))
+            Surface(
+                shape = CircleShape,
+                color = Color.Black.copy(alpha = 0.62f),
+                contentColor = Color.White,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+            ) {
+                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ToolIcon(AppIcons.Outlined.Compare, R.string.editor_compare_enable, state.draft?.group != AdjustmentGroup.GEOMETRY) {
+                        view = view.toggleComparison()
+                    }
+                    if (toolOpen) Box(Modifier.testTag("workspace-more")) {
+                        ToolIcon(AppIcons.Outlined.MoreHoriz, R.string.more) { toolMenu = true }
+                        DropdownMenu(toolMenu, { toolMenu = false }) {
+                            DropdownMenuItem(text = { Text(stringResource(R.string.camera_title)) },
+                                modifier = Modifier.testTag("workspace-camera"), enabled = state.operation == Operation.NONE,
+                                onClick = { toolMenu = false; onCancelAdjustment(); onCamera() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
+                                modifier = Modifier.testTag("workspace-presets"), onClick = { toolMenu = false; openQuickPresets() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) },
+                                onClick = { view = view.copy(infoMode = (view.infoMode + 1) % 3); toolMenu = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
+                                modifier = Modifier.testTag("workspace-histogram"),
+                                leadingIcon = { if (workspaceHistogram) Icon(Icons.Outlined.Check, null) },
+                                onClick = { workspaceHistogram = !workspaceHistogram; toolMenu = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.sampling_monitor)) },
+                                modifier = Modifier.testTag("inspection-sampling-toggle"),
+                                leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
+                                enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                                onClick = {
+                                    val next = !inspection.monitorEnabled
+                                    if (next) { hslTarget.enabled(false); wbProbe.enabled(false) }
+                                    inspection = inspection.copy(monitorEnabled = next)
+                                    toolMenu = false
+                                })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.overlay_gray_50)) },
+                                modifier = Modifier.testTag("inspection-gray50-menu"),
+                                leadingIcon = { if (inspection.overlay == InspectionOverlayMode.NEUTRAL_GRAY_50) Icon(Icons.Outlined.Check, null) },
+                                enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                                onClick = { inspection = inspection.toggleNeutralGray50(); toolMenu = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.overlay_section)) },
+                                modifier = Modifier.testTag("inspection-overlay-menu"),
+                                enabled = state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY,
+                                onClick = { toolMenu = false; workspaceOverlaySubmenuOpen = true })
+                            if (targetWorkspace) DropdownMenuItem(text = { Text(stringResource(R.string.hsl_target)) },
+                                onClick = { hslTarget.enabled(!hslTarget.state.enabled); toolMenu = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.adjustment_fine)) },
+                                leadingIcon = { if (fine) Icon(Icons.Outlined.Check, null) },
+                                modifier = Modifier.testTag("adjustment-fine").semantics { selected = fine }, onClick = { fine = !fine; toolMenu = false })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.editor_compare_mode)) },
+                                enabled = state.draft?.group != AdjustmentGroup.GEOMETRY,
+                                onClick = { toolMenu = false; workspaceCompareMenu = true })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.editor_preview_enter)) },
+                                onClick = { toolMenu = false; togglePure() })
+                            DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
+                                modifier = Modifier.testTag("processing-settings"),
+                                onClick = { toolMenu = false; processingContext = true })
+                        }
+                        DropdownMenu(workspaceCompareMenu, { workspaceCompareMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_compare_side_by_side)) },
+                                leadingIcon = { if (view.preferredMode == ComparisonMode.SIDE_BY_SIDE) Icon(Icons.Outlined.Check, null) },
+                                onClick = { view = view.selectComparison(ComparisonMode.SIDE_BY_SIDE); workspaceCompareMenu = false },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_compare_wipe)) },
+                                leadingIcon = { if (view.preferredMode == ComparisonMode.WIPE) Icon(Icons.Outlined.Check, null) },
+                                onClick = { view = view.selectComparison(ComparisonMode.WIPE); workspaceCompareMenu = false },
+                            )
+                        }
+                        InspectionOverlayDropdownMenu(
+                            expanded = workspaceOverlaySubmenuOpen,
+                            selected = inspection.overlay,
+                            onDismissRequest = { workspaceOverlaySubmenuOpen = false },
+                        ) { mode ->
+                            inspection = inspection.selectOverlay(mode)
+                            workspaceOverlaySubmenuOpen = false
+                        }
+                    }
                 }
             }
         }
@@ -595,15 +675,20 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                 modifier = Modifier.testTag("editor-camera")) {
                 Icon(AppIcons.Outlined.CameraAlt, stringResource(R.string.camera_title))
             }
-            ToolIcon(AppIcons.Outlined.SaveAlt, R.string.export, state.canExport, onExport)
+            ToolIcon(AppIcons.Outlined.SaveAlt, R.string.export, state.canExport, onClick = onExport)
             Box(Modifier.testTag("editor-menu")) {
                 ToolIcon(Icons.Outlined.MoreVert, R.string.more) { menu = true }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.open_file)) }, enabled = state.operation == Operation.NONE,
                         leadingIcon = { Icon(AppIcons.Outlined.FolderOpen, null) }, onClick = { menu = false; leave(onFile) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.camera_import)) },
-                        modifier = Modifier.testTag("camera-entry"), enabled = state.operation == Operation.NONE,
-                        onClick = { menu = false; onCancelAdjustment(); onCamera() })
+                    DropdownMenuItem(text = { Text(if (collectionEditing) stringResource(R.string.collection_return) else stringResource(R.string.collection_title)) },
+                        enabled = state.operation == Operation.NONE, modifier = Modifier.testTag("collection-menu"),
+                        leadingIcon = { Icon(AppIcons.Outlined.Collections, null) }, onClick = {
+                            menu = false
+                            if (collectionEditing) leave(onCollection) else { onCancelAdjustment(); onCollection() }
+                        })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
+                        leadingIcon = { Icon(AppIcons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
                     HorizontalDivider()
                     DropdownMenuItem(text = { Text(stringResource(R.string.preset_library)) },
                         modifier = Modifier.testTag("preset-menu"), onClick = { menu = false; openQuickPresets() })
@@ -613,28 +698,17 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_paste)) }, enabled = state.controlsEnabled && canPasteAdjustment,
                         modifier = Modifier.testTag("adjustment-menu-paste"), leadingIcon = { Icon(AppIcons.Outlined.ContentPaste, null) },
                         onClick = { menu = false; leave(onPasteAdjustments) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_undo)) }, enabled = canUndoAdjustment && state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-undo"), leadingIcon = { Icon(AppIcons.Outlined.Undo, null) },
-                        onClick = { menu = false; leave(onUndoAdjustment) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.transfer_redo)) }, enabled = canRedoAdjustment && state.controlsEnabled,
-                        modifier = Modifier.testTag("adjustment-menu-redo"), leadingIcon = { Icon(AppIcons.Outlined.Redo, null) },
-                        onClick = { menu = false; leave(onRedoAdjustment) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.transfer_history)) }, enabled = state.controlsEnabled,
                         modifier = Modifier.testTag("adjustment-menu-history"), leadingIcon = { Icon(AppIcons.Outlined.History, null) },
                         onClick = { menu = false; leave(onAdjustmentHistory) })
                     HorizontalDivider()
-                    DropdownMenuItem(text = { Text(if (collectionEditing) stringResource(R.string.collection_return) else stringResource(R.string.collection_title)) },
-                        enabled = state.operation == Operation.NONE, modifier = Modifier.testTag("collection-menu"),
-                        leadingIcon = { Icon(AppIcons.Outlined.Collections, null) }, onClick = {
-                            menu = false
-                            if (collectionEditing) leave(onCollection) else { onCancelAdjustment(); onCollection() }
-                        })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.batch_export)) }, enabled = state.canExport,
-                        leadingIcon = { Icon(AppIcons.Outlined.Layers, null) }, onClick = { menu = false; onBatchExport() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,
-                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; view = view.copy(infoMode = (view.infoMode + 1) % 3) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
+                        enabled = state.photo != null, modifier = Modifier.testTag("processing-settings"),
+                        onClick = { menu = false; processingContext = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_rgb_histogram)) },
                         onClick = { workspaceHistogram = !workspaceHistogram; menu = false })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.editor_photo_info)) }, enabled = state.preview != null,
+                        leadingIcon = { Icon(Icons.Outlined.Info, null) }, onClick = { menu = false; view = view.copy(infoMode = (view.infoMode + 1) % 3) })
                     DropdownMenuItem(text = { Text(stringResource(R.string.sampling_monitor)) },
                         modifier = Modifier.testTag("inspection-sampling-toggle"),
                         leadingIcon = { if (inspection.monitorEnabled) Icon(Icons.Outlined.Check, null) },
@@ -656,9 +730,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         onClick = { menu = false; overlaySubmenuOpen = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_zoom_display)) }, enabled = state.preview != null && state.draft == null,
                         leadingIcon = { Icon(AppIcons.Outlined.ZoomIn, null) }, onClick = { menu = false; zoomMenu = true })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.photo_processing_settings)) },
-                        enabled = state.photo != null, modifier = Modifier.testTag("processing-settings"),
-                        onClick = { menu = false; processingContext = true })
+                    HorizontalDivider()
                     DropdownMenuItem(text = { Text(stringResource(R.string.editor_settings)) },
                         leadingIcon = { Icon(Icons.Outlined.Settings, null) }, onClick = { menu = false; settings = true })
                     DropdownMenuItem(text = { Text(stringResource(R.string.licenses)) },
@@ -690,7 +762,14 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             val wide = editorUsesSideDock(maxWidth.value, maxHeight.value, density.fontScale)
             // 顶部进度区与底部分隔线不属于照片/面板可分配高度。
             val dockLayout = editorDockLayout(maxHeight.value - if (wide) 4f else 5f, density.fontScale, wide, expanded)
-            val dockHeight = if (!toolOpen && !quickPresetsVisible) com.rawlab.android.editor.controls.editorHomeDockHeight(density.fontScale).dp else dockLayout.height.dp
+            val homeGroup = EditorAdjustmentRules.groupFor(tool) ?: EditorAdjustmentGroup.LOOKS
+            val homeItemCount = mobileEditorTools(homeGroup).size + if (homeGroup == EditorAdjustmentGroup.LOOKS) 1 else 0
+            val adaptiveHomeDockHeight by animateDpAsState(
+                com.rawlab.android.editor.controls.editorAdaptiveHomeDockHeight(homeItemCount, density.fontScale).dp,
+                tween(160),
+                label = "home-dock-height",
+            )
+            val dockHeight = if (!toolOpen && !quickPresetsVisible) adaptiveHomeDockHeight else dockLayout.height.dp
             val sideDockWidth = com.rawlab.android.editor.controls.EDITOR_SIDE_DOCK_WIDTH.dp
             LaunchedEffect(compare || view.holdingBefore || inspection.monitorEnabled || inspection.anchors.isNotEmpty()) {
                 onDetailNeedsBeforeChange(compare || view.holdingBefore || inspection.monitorEnabled || inspection.anchors.isNotEmpty())
@@ -722,7 +801,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 inspection = inspection,
                                 onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                                 onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe)
+                                wbProbe = canvasWbProbe,
+                                isAdjustingSlider = adjusting)
                             if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
                                 state.preview?.let { p ->
                                     InspectionSamplingHud(
@@ -737,7 +817,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                         onClearAnchors = { inspection = inspection.clearAnchors() },
                                         onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
                                         onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
-                                        modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
+                                        modifier = Modifier.align(Alignment.BottomStart)
+                                            .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = if (state.photo != null) 60.dp else 10.dp)
                                     )
                                 }
                             }
@@ -759,7 +840,8 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 inspection = inspection,
                                 onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                                 onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe)
+                                wbProbe = canvasWbProbe,
+                                isAdjustingSlider = adjusting)
                     if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
                         state.preview?.let { p ->
                             InspectionSamplingHud(

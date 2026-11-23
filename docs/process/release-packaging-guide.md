@@ -1,0 +1,131 @@
+# RawLab 统一发版与四端打包规范（Release Packaging Guide）
+
+> 本文档是 RawLab **全平台正式发布打包、签名、验证与 GitHub Release 上架的唯一权威执行入口**。后续任何智能体或发布人员执行正式发版时，只需先向用户取得**发布与签名授权**，即可直接依据本手册与本机私有环境配置自动完成全流程，**不得再次向用户重复索要证书路径、Sparkle 公私钥位置、AI 模型缓存或远端构建主机连接方式**。
+
+---
+
+## 一、本机私有配置约定（不入库）
+
+发布主机本机的私有路径、证书指纹、AI/工具链缓存位置以及远端构建/验证主机清单统一维护在用户主目录受保护文件中（权限 `600`，严禁提交进 Git）：
+
+1. **环境变量配置**：`"$HOME/.config/rawlab/release-env.sh"`
+   - 发布启动时直接执行 `source "$HOME/.config/rawlab/release-env.sh"` 加载（仅导出路径与公开身份/SHA-256 指纹，不含私钥或口令明文）。
+   - 涵盖标准变量：`RAWLAB_CODESIGN_IDENTITY`、`RAWLAB_CODESIGN_KEYCHAIN`、`RAWLAB_CODESIGN_KEYCHAIN_PW_FILE`、`RAWLAB_UPDATE_CERTIFICATE_SHA256`、`RAWLAB_SPARKLE_PUBLIC_KEY`、`RAWLAB_SPARKLE_CACHE`、`SPARKLE_BIN`、`SPARKLE_PRIVATE_KEY_FILE`、`RAWLAB_DUALDN_MANIFEST_SHA256`、`RAWLAB_DUALDN_MODEL_DIR`、`RAWLAB_ONNXRUNTIME_ROOT`、`RAWLAB_RELEASE_KEYSTORE`、`RAWLAB_RELEASE_PASSWORD_FILE`、`RAWLAB_RELEASE_KEY_ALIAS`、`RAWLAB_ANDROID_CERT_SHA256`、`WINDOWS_TRUST_JSON`、`WINDOWS_PRIVATE_PEM`。
+2. **远端主机与设备指南**：`"$HOME/.config/rawlab/release-hosts.md"`
+   - 记录 Windows 打包/签名机（`Paul-dev`）、Windows 物理独显测试机（`DESKTOP-216`）、macOS 二机验签机（`Mac-mini.lan`）、完整 Xcode `DEVELOPER_DIR`、Android AVD/物理设备与局域网缓存绕行细节。
+
+**安全红线**：
+- **严禁读取、打印或复制**任何密码文件与私钥文件（`keychain-password.txt`、`p12-password.txt`、`codesign-key.pem`、`ed25519-private-key.txt`、`update-p256-private.pem`、`store-password.txt` 等）的明文内容。
+- 仅通过文件路径参数传递，或在 `set +x` 静默模式下通过 `"$(cat "$RAWLAB_CODESIGN_KEYCHAIN_PW_FILE")"` 解锁钥匙串；Windows 私钥仅可在签名瞬间临时传输并在 `try { ... } finally { Remove-Item ... -Force }` 中销毁，且必须校验 `Test-Path` 为 `False`。
+- GitHub CLI 操作统一使用授权发布账号令牌：`GH_TOKEN="$(gh auth token --user dancancer)"`。
+
+---
+
+## 二、标准产物清单（13 个文件，不多不少）
+
+每个全平台稳定版本 `<version>`（如 `0.12.0`）对应的 GitHub Release 必须严格包含以下 **13 个资产**：
+
+| 序号 | 文件名 | 说明 |
+| :---: | :--- | :--- |
+| 1 | `RawLab-Mac-<version>-arm64.zip` | Apple Silicon macOS 应用包（启用 DualDn Core ML + RUM + Sparkle） |
+| 2 | `RawLab-Mac-<version>-x86_64.zip` | Intel macOS 应用包（禁用 AI + 含 RUM + Sparkle） |
+| 3 | `RawLab.Desktop-stable-Setup.exe` | Windows x64 当前用户安装器（支持自动更新） |
+| 4 | `RawLab.Desktop-<version>-stable-full.nupkg` | Velopack 更新包（供 `windows-stable.json` 校验与增量拉取） |
+| 5 | `RawLab-Windows-<version>-x64.zip` | Windows x64 免安装手动压缩包 |
+| 6 | `RawLab-Android-<version>.apk` | Android 正式签名 APK（`arm64-v8a` + `x86_64`，16 KiB 对齐，含 RUM） |
+| 7 | `RawLab-iOS-<version>-unsigned.ipa` | iOS 未签名正式包（内含 `sony2fuji.framework` 与 RUM SDK） |
+| 8 | `RawLab-<version>-source.tar.gz` | 对应正式 Tag 提交的纯净源码归档（`git archive`） |
+| 9 | `appcast-arm64.xml` | 已签名 macOS Apple Silicon Sparkle 更新源 |
+| 10 | `appcast-x86_64.xml` | 已签名 macOS Intel Sparkle 更新源 |
+| 11 | `windows-stable.json` | 已 P-256 签名 Windows 更新描述文件 |
+| 12 | `BUILD-PROVENANCE.json` | 完整构建来源、SHA-256、CI 记录与验证边界证明 |
+| 13 | `SHA256SUMS.txt` | 涵盖上述 1–12 共 12 个文件的 `shasum -a 256` 清单（不含自身） |
+
+> **禁止上传的文件**：Velopack 附带生成的 `RawLab.Desktop-stable-Portable.zip`、`RELEASES-stable`、`releases.stable.json`、`assets.stable.json` 严禁上传至 GitHub Release；仅在确认仅更新部分平台的热修复发布中，按 [桌面端发布 SOP](desktop-release.md#acceptance-and-publication) 完整保留并校验 `appcast-arm64.xml`、`appcast-x86_64.xml` 与 `windows-stable.json`。
+
+---
+
+## 三、发版前准备与独立工作区隔离
+
+1. **前置核查**：
+   - 确认目标版本已在 `main` 合入并打好附注标签 `v<version>`（不得修改主工作区本地未跟踪宣发目录如 `release-artifacts/`）。
+   - 使用独立工作区检出目标 tag 提交：
+     ```bash
+     git fetch origin --tags
+     COMMIT_SHA="$(git rev-parse "v$VERSION^{commit}")"
+     git worktree add --detach ../rawtools-worktrees/v"$VERSION"-pkg "$COMMIT_SHA"
+     python3 ../rawtools-worktrees/v"$VERSION"-pkg/scripts/version/generate.py --check
+     ```
+2. **生成源码归档与发布说明**：
+   - 使用 `git archive --format=tar.gz --prefix="RawLab-$VERSION/" "$COMMIT_SHA" -o "$DIST/RawLab-$VERSION-source.tar.gz"`，并用 `tar -tzf` 核对不含私钥或外部 RAW 样片。
+   - 准备 UTF-8 格式的发布说明文本（同时传给 `macos_appcast.py --notes`、Windows `update-manifest sign` 与 `gh release create --notes-file`）。
+
+---
+
+## 四、四端分平台打包、签名与验收步骤
+
+### 4.1 macOS（`arm64` + `x86_64`）
+详细架构与签名细节见 [桌面端发布 SOP](desktop-release.md#macos) 与 [macOS 文档](../../RawLabMac/README.md)。
+1. 在 `set +x` 下加载 `"$HOME/.config/rawlab/release-env.sh"`，解锁 `$RAWLAB_CODESIGN_KEYCHAIN` 并将其加入当前用户钥匙串搜索列表。
+2. **构建 `arm64`**（独立 `RAWLAB_BUILD_DIR`）：
+   - 设置 `RAWLAB_RELEASE=1 RAWLAB_ARCH=arm64 RAWLAB_DUALDN=1 RAWLAB_RELEASE_ZIP="$DIST/RawLab-Mac-$VERSION-arm64.zip"`，执行 `bash RawLabMac/build.sh`。
+   - 运行 `python3 scripts/release/macos_appcast.py` 生成 `$DIST/appcast-arm64.xml`，随后用 `swift scripts/release/verify-sparkle.swift "$RAWLAB_SPARKLE_PUBLIC_KEY" "$DIST/appcast-arm64.xml" feed` 验签。
+3. **构建 `x86_64`**（独立 `RAWLAB_BUILD_DIR`，**必须显式清除 AI 环境变量**）：
+   - 使用 `env -u RAWLAB_DUALDN_MODEL_DIR -u RAWLAB_DUALDN_MANIFEST_SHA256 -u RAWLAB_ONNXRUNTIME_ROOT RAWLAB_RELEASE=1 RAWLAB_ARCH=x86_64 RAWLAB_DUALDN=0` 执行 `bash RawLabMac/build.sh`。
+   - 生成并验签 `$DIST/appcast-x86_64.xml`。
+4. **验收**：
+   - 本机运行 `RawLabMac/tests/smoke.sh`（双架构）、`RawLabMac/tests/update-trust.sh`、`RawLabMac/tests/sparkle-adapter.sh`。
+   - 传输至 `release-hosts.md` 中的二机验签 Mac mini 执行 `codesign --verify --deep --strict --all-architectures` 及 `DYLD_PRINT_LIBRARIES=1 "<app>/Contents/MacOS/RawLabMac" --smoke missing.raw /tmp/dyld-smoke` 检查动态库闭包（注意：**不要传 `--help`**，GUI 主程序不会退出）。
+
+### 4.2 Windows（`x64`）与 `windows-stable.json`
+1. 将 `RawLab-$VERSION-source.tar.gz`、`UpdateTrust.release.json` 与发布说明文本传至 `release-hosts.md` 中的 Windows 发布机（`Paul-dev`），解压到干净目录。
+2. 调用 `RawLabWindows/build.ps1 -ReleasePackage`（传入 `-DotNet`、`-UpdateTrustFile`、`-DualDnModel`、`-DualDnManifestSha256`、`-OnnxRuntimeRoot`、`-ReleaseOutput`）。
+3. 校验 `out\publish\RawLab.exe` 的 `FileVersion` / `ProductVersion` 与 `Shared/version.json` 一致，并从构建树运行 `dualdn_probe.exe --validate out\publish\AI\DualDn`。
+4. 在 Windows 上签名并校验 `windows-stable.json`（因 `UpdatePackageVerifier` 需读取 PE `FileVersionInfo`，必须在 Windows 主机执行）：
+   - 仅在签名命令的 `try { ... } finally { Remove-Item ... -Force }` 内临时传入 `$WINDOWS_PRIVATE_PEM`，有效期设 `365` 天、`MinimumVersion` 按兼容基线设置（当前 `0.9.0`）；完成后核实 `Test-Path` 为 `False`，再运行 `update-manifest verify`。
+5. 仅将 `Setup.exe`、`*-full.nupkg`、`RawLab-Windows-$VERSION-x64.zip` 与 `windows-stable.json` 传回本机 `$DIST/`；可在物理独显测试机（`DESKTOP-216`）解压临时副本执行 `dualdn_probe.exe` / DirectML C ABI 无损冒烟后立即清理，严禁触碰 `%LOCALAPPDATA%\RawLab`。
+
+### 4.3 Android（`.apk`）
+1. 在打包 worktree 执行 `bash RawLabAndroid/scripts/fetch-rum-sdk.sh` 拉取并校验 RUM AAR。
+2. 如当前网络环境存在 Android SDK CMake 3.22.1 访问外网 TLS 拦截（参见 `release-hosts.md`）：
+   - 将共享缓存 `.cache/shared/macos-sources/` 与 `.cache/shared/hdr-codecs/` 中已校验归档解压至临时源码目录；
+   - 创建临时 `GRADLE_USER_HOME`（软链 `~/.gradle/{caches,wrapper,native,android}`）并通过 `init.d/*.gradle` 向 `android.defaultConfig.externalNativeBuild.cmake.arguments` 注入各 `-DFETCHCONTENT_SOURCE_DIR_*` 与 `-DRAWLAB_*_CACHE`；同时导出 `RAWLAB_ANDROID_SOURCE_CACHE`、`RAWLAB_SOURCE_ARCHIVE_CACHE`、`RAWLAB_HDR_SOURCE_CACHE`、`RAWLAB_LENS_SOURCE_CACHE`。
+3. 导出 `JAVA_HOME`、`ANDROID_HOME`、`RAWLAB_RELEASE_KEYSTORE`、`RAWLAB_RELEASE_PASSWORD_FILE` 后运行 `bash RawLabAndroid/scripts/build-release.sh`，确认：
+   - Release APK DEX 包含全部 RawLab 与 RUM JNI 类定义；
+   - `apksigner` 证书 SHA-256 严格匹配 `$RAWLAB_ANDROID_CERT_SHA256`；
+   - 全部 `.so` 通过 16 KiB 对齐检查。
+4. 运行正式包模拟器冷启动冒烟（**严禁对真机运行以免卸载用户数据**）：
+   ```bash
+   ANDROID_HOME="$HOME/Library/Android/sdk" \
+     bash RawLabAndroid/scripts/smoke-release-apk.sh "$DIST/RawLab-Android-$VERSION.apk" --avd rawlab-v0111-triage-android15
+   ```
+   （如使用默认 ADB `5037` 端口，可避免 `emulator` 未注册到自定义 ADB 端口导致等待超时。）
+
+### 4.4 iOS（未签名 `.ipa`）
+1. 导出 `DEVELOPER_DIR` 指向完整 Xcode（`iOS 27.1+ SDK`），运行 `bash scripts/ci/check-ios-sdk.sh` 与 `bash scripts/rum/prepare-ios.sh`。
+2. 构建并校验三切片 `sony2fuji.xcframework`：`bash lutools/platform/ios/build-framework.sh` + `bash lutools/platform/ios/verify-framework.sh`（需要时可传本地 `-DFETCHCONTENT_SOURCE_DIR_*`）。
+3. 使用 `xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build` 构建未签名应用。
+4. 校验 `RawLab.app` 内 `Info.plist` 版本号、构建号、`MinimumOSVersion`、`arm64` 架构及内嵌 `Frameworks/{sony2fuji,AlibabaCloudRUMSDK}.framework`，放入 `Payload/RawLab.app` 后用 `ditto -c -k --keepParent Payload "$DIST/RawLab-iOS-$VERSION-unsigned.ipa"` 打包，并校验 `unzip -Z1` 顶层目录为 `Payload/RawLab.app/`。
+
+---
+
+## 五、清单生成、Draft 上架与发布后线上验签
+
+1. 生成 `$DIST/BUILD-PROVENANCE.json`（对标历史 Release 结构，如实区分本机/远端已验证项、Hosted CI 结果与未覆盖物理硬件项）。
+2. 在 `$DIST/` 下生成并校验 `$DIST/SHA256SUMS.txt`（包含其余 12 个资产的 `shasum -a 256`，不含自身；运行 `shasum -a 256 -c SHA256SUMS.txt` 须 12/12 `OK`）。
+3. **先创建 Draft Release 上传全部 13 个资产**（Draft 不会影响线上 `releases/latest` 自动更新）：
+   ```bash
+   GH_TOKEN="$(gh auth token --user dancancer)" gh release create "v$VERSION" \
+     --repo dancancer/RawLab --verify-tag --draft \
+     --title "RawLab $VERSION" --notes-file "$NOTES_FILE" "$DIST"/*
+   ```
+4. 核对 GitHub API 返回的 Draft 资产数量为 `13`，且每个资产的 `size` 与 `digest` 与本地 `SHA256SUMS.txt` 逐字节一致；**任何不一致严禁转正**。
+5. 全部核验一致后正式发布：
+   ```bash
+   GH_TOKEN="$(gh auth token --user dancancer)" gh release edit "v$VERSION" \
+     --repo dancancer/RawLab --draft=false --latest
+   ```
+6. **发布后必须立即执行线上拉取验签**（依据 [桌面端发布 SOP](desktop-release.md#acceptance-and-publication)）：
+   - 从 `https://github.com/dancancer/RawLab/releases/latest/download/{appcast-arm64.xml,appcast-x86_64.xml,windows-stable.json}` 真实下载三份更新元数据，分别运行 `verify-sparkle.swift` 与 Windows `update-manifest verify`（校验绑定刚上传的 `.nupkg`）；
+   - 使用 `curl -fsSLI` 检查全部版本化包下载链接返回 HTTP `200` 且 `content-length` 与 `BUILD-PROVENANCE.json` 匹配。
+7. 全部验收完成后清理本地与远端临时构建树/目录，保留 `"$HOME/.config/rawlab/"` 与主工作区本地素材完整。

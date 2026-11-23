@@ -51,6 +51,7 @@
     <string name="camera_change">"Change camera"</string>
     <string name="camera_choose">"Choose camera"</string>
     <string name="camera_clear">"Clear Selection"</string>
+    <string name="camera_clear_filter">"Clear Filters"</string>
     <string name="camera_collection">"Add to Photo Selection"</string>
     <string name="camera_complete">"Import complete"</string>
     <string name="camera_connect_action">"Connect camera"</string>
@@ -146,6 +147,7 @@
     <string name="camera_not_found">"No camera found. Keep the camera on its connection-waiting screen."</string>
     <string name="camera_open">"Open in editor"</string>
     <string name="camera_open_saved">"View imported"</string>
+    <string name="camera_open_settings">"Open System Settings"</string>
     <string name="camera_original_changed">"Original changed"</string>
     <string name="camera_original_missing">"Original unavailable"</string>
     <string name="camera_original_unavailable">"Originals unavailable"</string>
@@ -485,7 +487,6 @@
     <string name="rename_look">"Rename Look"</string>
     <string name="rendering">"Developing…"</string>
     <string name="reset">"Reset Adjustments"</string>
-    <string name="reset_denoise">"Reset Noise Reduction"</string>
     <string name="reset_value">"Reset this item"</string>
     <string name="result">"After"</string>
     <string name="retry">"Try again"</string>

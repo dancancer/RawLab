@@ -689,10 +689,6 @@
       "formats": [],
       "source": "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。"
     },
-    "保留这次几何或镜头修改？": {
-      "formats": [],
-      "source": "保留这次几何或镜头修改？"
-    },
     "候选效果": {
       "formats": [],
       "source": "候选效果"
@@ -963,6 +959,14 @@
     "取消": {
       "formats": [],
       "source": "取消"
+    },
+    "取消全选": {
+      "formats": [],
+      "source": "取消全选"
+    },
+    "取消选中": {
+      "formats": [],
+      "source": "取消选中"
     },
     "取消导出": {
       "formats": [],
@@ -1422,19 +1426,9 @@
       ],
       "source": "屏幕容量 {0} EV"
     },
-    "展开%@组": {
-      "formats": [
-        "%@"
-      ],
-      "source": "展开{0}组"
-    },
     "展开直方图": {
       "source": "展开直方图",
       "formats": []
-    },
-    "展开调整栏": {
-      "formats": [],
-      "source": "展开调整栏"
     },
     "已保存": {
       "formats": [],
@@ -1693,9 +1687,9 @@
       "formats": [],
       "source": "应用"
     },
-    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。": {
+    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。": {
       "formats": [],
-      "source": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"
+      "source": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。"
     },
     "应用到多张照片": {
       "formats": [],
@@ -1787,9 +1781,9 @@
       "formats": [],
       "source": "当前相机模式未提供此功能。"
     },
-    "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。": {
+    "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。": {
       "formats": [],
-      "source": "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。"
+      "source": "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。"
     },
     "当前配方不可用，无法安全重置外观。": {
       "formats": [],
@@ -2044,12 +2038,6 @@
       "formats": [],
       "source": "操作未完成，请重试。"
     },
-    "收起%@组": {
-      "formats": [
-        "%@"
-      ],
-      "source": "收起{0}组"
-    },
     "收起其他方案": {
       "formats": [],
       "source": "收起其他方案"
@@ -2057,10 +2045,6 @@
     "收起直方图": {
       "source": "收起直方图",
       "formats": []
-    },
-    "收起调整栏": {
-      "formats": [],
-      "source": "收起调整栏"
     },
     "放大 · 点按还原": {
       "source": "放大 · 点按还原",
@@ -2762,6 +2746,10 @@
       "formats": [],
       "source": "正在导入"
     },
+    "正在导入外观": {
+      "formats": [],
+      "source": "正在导入外观"
+    },
     "正在导入照片…": {
       "formats": [],
       "source": "正在导入照片…"
@@ -3297,6 +3285,10 @@
     "移除外观…": {
       "formats": [],
       "source": "移除外观…"
+    },
+    "离开前应用更改？": {
+      "formats": [],
+      "source": "离开前应用更改？"
     },
     "空气清透 · 少女淡蓝": {
       "formats": [],
@@ -3853,6 +3845,22 @@
     "输入范围": {
       "formats": [],
       "source": "输入范围"
+    },
+    "输入 Wi-Fi 名称与密码": {
+      "formats": [],
+      "source": "输入 Wi-Fi 名称与密码"
+    },
+    "清除筛选": {
+      "formats": [],
+      "source": "清除筛选"
+    },
+    "请先确认上方存储卡保存选项": {
+      "formats": [],
+      "source": "请先确认上方存储卡保存选项"
+    },
+    "选中": {
+      "formats": [],
+      "source": "选中"
     },
     "输入颜色": {
       "formats": [],
@@ -5167,13 +5175,13 @@
       "ja": "カメラの Wi-Fi 情報を取得しました",
       "zh-Hans": "已获取相机 Wi-Fi 信息"
     },
-    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。": {
-      "de": "Automatisches Beitreten in der App erfordert die Hotspot-Berechtigung eines kostenpflichtigen Apple-Entwicklerkontos. Nutzen Sie bei kostenloser Signierung bitte die System-Wi-Fi-Methode oben.",
-      "en": "In-app auto-join requires the Hotspot entitlement from a paid Apple Developer account. With a free Personal Team build, use System Wi-Fi above.",
-      "es": "Unirse desde la app requiere el permiso Hotspot de una cuenta Apple Developer de pago. Con firma gratuita personal, usa el Wi-Fi del sistema arriba.",
-      "fr": "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, utilisez les Réglages Wi-Fi ci-dessus.",
-      "ja": "アプリ内での自動接続には有料 Apple Developer アカウントの Hotspot 権限が必要です。無料の個人署名では上のシステム Wi-Fi 手順をご利用ください。",
-      "zh-Hans": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"
+    "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。": {
+      "de": "Automatisches Beitreten in der App erfordert die Hotspot-Berechtigung eines kostenpflichtigen Apple-Entwicklerkontos. Gehen Sie bei kostenloser Signierung zurück und nutzen Sie die System-Wi-Fi-Methode.",
+      "en": "In-app auto-join requires the Hotspot entitlement from a paid Apple Developer account. With a free Personal Team build, go back and use System Wi-Fi.",
+      "es": "Unirse desde la app requiere el permiso Hotspot de una cuenta Apple Developer de pago. Con firma gratuita personal, vuelve atrás y usa el Wi-Fi del sistema.",
+      "fr": "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, revenez à l’écran précédent et utilisez les Réglages Wi-Fi.",
+      "ja": "アプリ内での自動接続には有料 Apple Developer アカウントの Hotspot 権限が必要です。無料の個人署名では前の画面に戻り、システム Wi-Fi 手順をご利用ください。",
+      "zh-Hans": "应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。"
     },
     "应用草稿并继续": {
       "de": "Entwurf übernehmen und fortfahren",
@@ -5191,13 +5199,13 @@
       "ja": "現在のカメラモードでは、この機能を利用できません。",
       "zh-Hans": "当前相机模式未提供此功能。"
     },
-    "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。": {
-      "de": "Diese Signierung unterstützt kein automatisches Wi-Fi-Beitreten. Bitte nutzen Sie die System-Wi-Fi-Methode oben.",
-      "en": "This build signing cannot auto-join Wi-Fi. Please connect using System Wi-Fi above.",
-      "es": "Esta firma no admite la unión automática al Wi-Fi. Conéctate usando el método de Ajustes de Wi-Fi arriba.",
-      "fr": "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Veuillez utiliser les Réglages Wi-Fi ci-dessus.",
-      "ja": "この署名ではシステムによる Wi-Fi 自動接続が有効になっていません。上のシステム Wi-Fi 手順で接続してください。",
-      "zh-Hans": "当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。"
+    "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。": {
+      "de": "Diese Signierung unterstützt kein automatisches Wi-Fi-Beitreten. Gehen Sie zurück und verbinden Sie sich über die System-Wi-Fi-Methode.",
+      "en": "This build signing cannot auto-join Wi-Fi. Go back and connect using System Wi-Fi.",
+      "es": "Esta firma no admite la unión automática al Wi-Fi. Vuelve atrás y conéctate usando el método de Ajustes de Wi-Fi.",
+      "fr": "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Revenez à l’écran précédent et utilisez les Réglages Wi-Fi.",
+      "ja": "この署名ではシステムによる Wi-Fi 自動接続が有効になっていません。前の画面に戻り、システム Wi-Fi 手順で接続してください。",
+      "zh-Hans": "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。"
     },
     "恢复旧调整": {
       "en": "Restore Previous Adjustments",
@@ -5254,14 +5262,6 @@
       "fr": "Ouvrez la connexion smartphone sur l’appareil, rejoignez son réseau dans « Réglages → Wi-Fi » (sans accès Internet est normal), puis revenez toucher « Connecté, continuer ».",
       "ja": "カメラでスマートフォン接続を開き、「設定 → Wi-Fi」でカメラの Wi-Fi に接続してから（インターネット未接続は正常）、戻り「接続済み、続ける」をタップしてください。",
       "zh-Hans": "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。"
-    },
-    "打开系统设置": {
-      "de": "Systemeinstellungen öffnen",
-      "en": "Open System Settings",
-      "es": "Abrir ajustes del sistema",
-      "fr": "Ouvrir les réglages système",
-      "ja": "システム設定を開く",
-      "zh-Hans": "打开系统设置"
     },
     "拍摄日期": {
       "en": "Capture date",
@@ -6054,6 +6054,22 @@
       "fr": "Par défaut",
       "ja": "デフォルト",
       "zh-Hans": "默认"
+    },
+    "输入 Wi-Fi 名称与密码": {
+      "de": "WLAN-Name & Passwort eingeben",
+      "en": "Enter Wi-Fi Name & Password",
+      "es": "Introducir nombre y contraseña Wi-Fi",
+      "fr": "Saisir le nom et le mot de passe Wi-Fi",
+      "ja": "Wi-Fi 名とパスワードを入力",
+      "zh-Hans": "输入 Wi-Fi 名称与密码"
+    },
+    "请先确认上方存储卡保存选项": {
+      "de": "Speicherung auf Kamerakarte oben bestätigen",
+      "en": "Confirm camera card saving above first",
+      "es": "Confirma primero el guardado en tarjeta arriba",
+      "fr": "Confirmez d’abord l’enregistrement sur carte ci-dessus",
+      "ja": "上のカメラカード保存を先に確認してください",
+      "zh-Hans": "请先确认上方存储卡保存选项"
     }
   }
 }

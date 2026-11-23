@@ -4,6 +4,8 @@ import com.rawlab.android.ui.AppIcons
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
@@ -16,8 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -81,32 +83,15 @@ internal fun mobileEditorTools(group: EditorAdjustmentGroup): List<Int> = when (
 }
 
 @Composable
-internal fun EditorToolStrip(state: EditorState, selected: Int, tools: List<Int> = editorToolOrder, list: LazyListState = rememberLazyListState(),
-    navigationEnabled: Boolean = true, inlineLabels: Boolean = true, modifier: Modifier = Modifier,
-    perspective: Boolean = false, onPerspective: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null, select: (Int) -> Unit) {
-    val entries = tools.flatMap { if (it == 17 && onPerspective != null) listOf(it, -1) else listOf(it) }
-    val active = if (selected == 17 && perspective) -1 else selected
-    LaunchedEffect(active) {
-        val index = if (active == -2 && trailing != null) entries.size else entries.indexOf(active).coerceAtLeast(0)
-        if (list.layoutInfo.visibleItemsInfo.none { it.index == index && it.offset >= 0 &&
-            it.offset + it.size <= list.layoutInfo.viewportEndOffset }) list.scrollToItem(index)
-    }
-    LazyRow(modifier.fillMaxWidth().clipToBounds().testTag("editor-tools"), state = list, contentPadding = PaddingValues(horizontal = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        items(entries, key = { it }) { index ->
-            if (index == -1) TextButton(onClick = { onPerspective?.invoke() }, enabled = navigationEnabled && state.controlsEnabled,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("editor-tool-perspective").semantics { this.selected = active == -1 }) {
-                Icon(AppIcons.Outlined.Transform, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.geometry_perspective_tool))
-            } else EditorTool(state, index, active == index, navigationEnabled, true) { select(index) }
-        }
-        if (trailing != null) item(key = "trailing") { trailing() }
-    }
-
-}
-
-@Composable
-internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navigationEnabled: Boolean = true, inlineLabels: Boolean = false, onClick: () -> Unit) {
+internal fun EditorTool(
+    state: EditorState,
+    index: Int,
+    selected: Boolean,
+    navigationEnabled: Boolean = true,
+    inlineLabels: Boolean = false,
+    onUnavailableClick: ((String) -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val edits = state.visibleEdits
     val rawOnly = state.photo?.inputKind == PhotoInputKind.RAW
     val scalar = when (index) {
@@ -147,30 +132,40 @@ internal fun EditorTool(state: EditorState, index: Int, selected: Boolean, navig
         index == 8 && !state.edits.isHDREditing && rawOnly && state.preview?.temperature?.isFinite() != true -> stringResource(R.string.tool_white_balance_unavailable)
         else -> null
     }
+    val toolAvailable = (!state.edits.isHDREditing || EditorAdjustmentRules.supportsHDR(index)) &&
+        (index != 16 || !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL))
     val selectable = Modifier.selectable(selected,
-        enabled = navigationEnabled && state.controlsEnabled && (!state.edits.isHDREditing || EditorAdjustmentRules.supportsHDR(index)) &&
-            (index != 16 || !(state.photo?.isX3f == true && edits.x3fMode == com.rawlab.android.settings.X3fMode.NORMAL)),
+        enabled = navigationEnabled && state.controlsEnabled && toolAvailable,
         role = Role.Tab, onClick = onClick).testTag("editor-tool-$index").semantics(mergeDescendants = true) {
         contentDescription = title
         stateDescription = listOfNotNull(unavailableReason, valueDescription, status).joinToString(" · ")
     }
+    val dimAlpha = if (navigationEnabled && state.controlsEnabled && !toolAvailable) 0.38f else 1f
+    val showUnavailableOverlay = !toolAvailable && navigationEnabled && state.controlsEnabled &&
+        unavailableReason != null && onUnavailableClick != null
     @Composable fun marker() {
         Box(Modifier.size(3.dp).testTag("editor-tool-marker-$index").background(if (changed) primary else Color.Transparent, CircleShape))
     }
-    if (inlineLabels) Row(selectable.heightIn(min = 48.dp).padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Icon(editorToolIcons[index], null, Modifier.size(18.dp).testTag("editor-tool-ring-$index"), tint = color)
-        Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelMedium, color = color)
-        marker()
-    } else Column(selectable.fillMaxWidth().heightIn(min = if (LocalDensity.current.fontScale > 1.3f) 68.dp else 52.dp).padding(horizontal = 1.dp, vertical = 2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Icon(editorToolIcons[index], null, Modifier.size(22.dp).testTag("editor-tool-ring-$index"), tint = color)
-        Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelSmall,
-            color = color, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-        marker()
+    Box(Modifier.fillMaxWidth()) {
+        if (inlineLabels) Row(selectable.alpha(dimAlpha).heightIn(min = 48.dp).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(editorToolIcons[index], null, Modifier.size(18.dp).testTag("editor-tool-ring-$index"), tint = color)
+            Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelMedium, color = color)
+            marker()
+        } else Column(selectable.alpha(dimAlpha).fillMaxWidth().heightIn(min = if (LocalDensity.current.fontScale > 1.3f) 68.dp else 52.dp).padding(horizontal = 1.dp, vertical = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Icon(editorToolIcons[index], null, Modifier.size(22.dp).testTag("editor-tool-ring-$index"), tint = color)
+            Text(title, Modifier.testTag("editor-tool-label-$index"), style = MaterialTheme.typography.labelSmall,
+                color = color, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            marker()
+        }
+        if (showUnavailableOverlay) {
+            Box(Modifier.matchParentSize().clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onUnavailableClick!!(unavailableReason!!) }.clearAndSetSemantics { })
+        }
     }
-
-
 }
 
 internal fun groupTitle(group: EditorAdjustmentGroup): Int = when (group) {

@@ -96,6 +96,8 @@ final class RawEditorViewModel: ObservableObject {
     var recentLooksURL: URL?
     @Published var isLoadingLUTs = false
     @Published var isImportingLooks = false
+    @Published var isUpdatingLooks = false
+    var isLookLibraryBusy: Bool { isImportingLooks || isUpdatingLooks }
     @Published var rawWhiteBalance: Sony2FujiProcessor.RawWhiteBalance?
     @Published var lensInfo: LensInfo?
     @Published var editSaveState: EditSaveState = .idle

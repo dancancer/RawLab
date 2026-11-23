@@ -155,8 +155,9 @@ struct AdjustmentControl: View {
             valueFocused = false; wheelOriginal = value; wheelID = UUID(); showingWheel = true
         } label: {
             Text(number(value)).font(.body.weight(.semibold)).monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false).frame(minWidth: 44, minHeight: 44)
-                .frame(width: compactNumber || inline ? nil : stableValueWidth)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minWidth: 44, minHeight: 44, alignment: inline ? .trailing : .center)
+                .frame(width: compactNumber ? nil : stableValueWidth, alignment: inline ? .trailing : .center)
                 .foregroundStyle(modified ? Color.yellow : Color.primary)
                 .overlay(alignment: .bottom) { if modified { Circle().fill(.yellow).frame(width: 4, height: 4) } }
         }
@@ -179,6 +180,12 @@ struct AdjustmentControl: View {
 
     private var stableValueWidth: CGFloat {
         let font = UIFont.monospacedDigitSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .body).pointSize, weight: .semibold)
+        if step >= 1 && displayScale == 1 {
+            let widths = [range.lowerBound, range.upperBound, defaultValue].map { bound in
+                (number(bound) as NSString).size(withAttributes: [.font: font]).width
+            }
+            return max(44, ceil(widths.max() ?? 0))
+        }
         let format = NumberFormatter()
         format.locale = L10n.locale
         format.numberStyle = .decimal
@@ -187,9 +194,11 @@ struct AdjustmentControl: View {
         format.maximumFractionDigits = 2
         if number(range.upperBound).hasPrefix("+") { format.positivePrefix = "+" }
         // 保留范围内完整数字及历史小数的空间，避免符号或位数变化挤动名称和标尺。
-        let widths = [range.lowerBound, range.upperBound].map { bound in
+        let widths = [range.lowerBound, range.upperBound, defaultValue].map { bound in
             let text = format.string(from: NSNumber(value: bound * displayScale)) ?? number(bound)
-            return (text as NSString).size(withAttributes: [.font: font]).width
+            let formatted = (text as NSString).size(withAttributes: [.font: font]).width
+            let rendered = (number(bound) as NSString).size(withAttributes: [.font: font]).width
+            return max(formatted, rendered)
         }
         return max(44, ceil(widths.max() ?? 0))
     }

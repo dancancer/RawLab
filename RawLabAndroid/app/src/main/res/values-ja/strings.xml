@@ -51,6 +51,7 @@
     <string name="camera_change">"カメラを変更"</string>
     <string name="camera_choose">"カメラを選択"</string>
     <string name="camera_clear">"選択を解除"</string>
+    <string name="camera_clear_filter">"フィルタを解除"</string>
     <string name="camera_collection">"写真の選択に追加"</string>
     <string name="camera_complete">"読み込み完了"</string>
     <string name="camera_connect_action">"カメラに接続"</string>
@@ -146,6 +147,7 @@
     <string name="camera_not_found">"カメラが見つかりません。カメラを接続待機画面にしたままにしてください。"</string>
     <string name="camera_open">"エディターで開く"</string>
     <string name="camera_open_saved">"読み込み済みを表示"</string>
+    <string name="camera_open_settings">"システム設定を開く"</string>
     <string name="camera_original_changed">"元の写真が変更されています"</string>
     <string name="camera_original_missing">"元の写真にアクセスできません"</string>
     <string name="camera_original_unavailable">"元の写真を利用できません"</string>
@@ -485,7 +487,6 @@
     <string name="rename_look">"ルック名を変更"</string>
     <string name="rendering">"現像中…"</string>
     <string name="reset">"調整をリセット"</string>
-    <string name="reset_denoise">"ノイズ低減をリセット"</string>
     <string name="reset_value">"この項目をリセット"</string>
     <string name="result">"補正後"</string>
     <string name="retry">"再試行"</string>

@@ -129,8 +129,10 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var localNetworkDenied = false
     @Published private(set) var photoLibraryPermissionDenied = false
     @Published private(set) var lastSavedToPhotoLibraryCount = 0
+    @Published private(set) var lastManualImportOriginals: [CameraStoredOriginal] = []
     @Published private(set) var skippedAssets: [CameraAssetSnapshot] = []
     private var receivingSavedToPhotoLibraryCount = 0
+    private var receivingOriginals: [CameraStoredOriginal] = []
 
     init(backend: CameraWorkspaceBackend = .shared) {
         self.backend = backend
@@ -164,7 +166,8 @@ struct IOSCameraImportPreferences: Codable {
 
     func connect(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, resume: Bool) {
         manualImportRequired = false; listingLimitExceeded = false; localNetworkDenied = false
-        photoLibraryPermissionDenied = false; lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        photoLibraryPermissionDenied = false; lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         skippedCameraKey = nil; skippedAssets = []
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
@@ -199,10 +202,14 @@ struct IOSCameraImportPreferences: Codable {
                 if mode == .importing && receivingSavedToPhotoLibraryCount > 0 {
                     lastSavedToPhotoLibraryCount = receivingSavedToPhotoLibraryCount
                 }
+                if mode == .importing && !importPreferences.incremental && !receivingOriginals.isEmpty {
+                    lastManualImportOriginals = receivingOriginals
+                }
                 if mode == .importing && !importPreferences.incremental && notice == nil && receivingSavedToPhotoLibraryCount > 0 {
                     selection = []
                 }
                 receivingSavedToPhotoLibraryCount = 0
+                receivingOriginals = []
             }
         case .device(let value, let family):
             device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
@@ -268,6 +275,7 @@ struct IOSCameraImportPreferences: Codable {
             }
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
+            if mode == .importing && !importPreferences.incremental { receivingOriginals.append(original) }
             if original.photoLibraryAssetID != nil { receivingSavedToPhotoLibraryCount += 1 }
         case .failure(let error):
             parameterBusy = false; focusBusy = false; tapFocusLocked = false; tapFocusPoint = nil
@@ -310,6 +318,7 @@ struct IOSCameraImportPreferences: Codable {
     }
     func dismissPhotoLibraryBanner() {
         lastSavedToPhotoLibraryCount = 0
+        lastManualImportOriginals = []
     }
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
@@ -317,7 +326,8 @@ struct IOSCameraImportPreferences: Codable {
         canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil; shutterReady = false
         previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
         localNetworkDenied = false; photoLibraryPermissionDenied = false
-        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         backend.stop(previous) { [weak self] in
             Task { @MainActor in self?.reloadHistory(); completion() }
         }
@@ -337,14 +347,16 @@ struct IOSCameraImportPreferences: Codable {
     func importSelected() {
         guard let run, mode == .importing, phase == .browsing, !scanning, selectionAllowed else { return }
         phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
-        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         let jpeg = importPreferences.jpeg.adjust ? importPreferences.jpeg : nil
         backend.importAssets(selectedAssets, jpeg: jpeg, run: run)
     }
     func resumeImport(_ job: CameraTransferJob) {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
-        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         backend.resumeImport(jobID: job.id, run: run)
     }
     private func syncSkippedAssets() {
@@ -479,13 +491,15 @@ struct IOSCameraImportPreferences: Codable {
         let plan = CameraIncrementalPlan(format: importPreferences.format, jpeg: importPreferences.jpeg,
                                          boundary: nil, owner: scan.assets.first?.owner, boundaries: scan.nextBoundaries)
         phase = .receiving; notice = nil; photoLibraryPermissionDenied = false
-        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         backend.importAssets(scan.assets, incremental: plan, run: run)
     }
     func refreshImport() {
         guard let run, mode == .importing, phase == .browsing, !scanning else { return }
         scanning = true; notice = nil; photoLibraryPermissionDenied = false
-        lastSavedToPhotoLibraryCount = 0; receivingSavedToPhotoLibraryCount = 0
+        lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
+        receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         backend.refreshImport(run)
     }
     func thumbnail(_ asset: CameraRemoteAsset) {
@@ -638,5 +652,35 @@ struct IOSCameraImportPreferences: Codable {
                 }
             }
             .map(\.asset)
+    }
+}
+
+enum IOSCameraLayoutPolicy: Sendable {
+    static func gridColumns(forWidth width: CGFloat) -> Int {
+        if width >= 900 { return 5 }
+        if width >= 600 { return 4 }
+        return 3
+    }
+
+    static func activeFilterTokens(format: String, day: String?, onlySelected: Bool,
+                                   selectedLabel: String) -> [String] {
+        var tokens: [String] = []
+        if format != "all" { tokens.append(format.uppercased()) }
+        if let day { tokens.append(day) }
+        if onlySelected { tokens.append(selectedLabel) }
+        return tokens
+    }
+
+    static func allVisibleSelected(visibleIDs: [String], selection: Set<String>) -> Bool {
+        !visibleIDs.isEmpty && visibleIDs.allSatisfy(selection.contains)
+    }
+
+    static func toggleVisibleSelection(visibleIDs: [String], selection: inout Set<String>) {
+        guard !visibleIDs.isEmpty else { return }
+        if allVisibleSelected(visibleIDs: visibleIDs, selection: selection) {
+            selection.subtract(visibleIDs)
+        } else {
+            selection.formUnion(visibleIDs)
+        }
     }
 }

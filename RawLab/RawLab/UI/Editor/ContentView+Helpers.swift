@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 extension ContentView {
     func supportsHDR(_ tool: EditorToolSelection) -> Bool {
-        if tool == .geometry || tool.hdrRenditionKeyPath != nil { return true }
+        if tool == .film || tool == .geometry || tool.hdrRenditionKeyPath != nil { return true }
         if case .adjustment(let kind)=tool {
             return kind.hdrKeyPath != nil || kind == .hsl || kind == .colorGrading || kind == .vignette || kind == .grain
         }
@@ -18,8 +18,13 @@ extension ContentView {
     func toolUnavailableReason(_ tool: EditorToolSelection) -> String? {
         if settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
         if tool == .lens && usesNormalX3f { return L10n.text("此输入不支持镜头校正") }
-        if tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.rawWhiteBalance == nil {
-            return L10n.text("此照片没有可用的相机白平衡校准。")
+        if tool == .adjustment(.temperature) && !settings.isHDREditing {
+            if viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil {
+                return L10n.text("此照片没有可用的相机白平衡校准。")
+            }
+            if viewModel.sourceKind == .raster && workingSettings.masterRecipeID != nil {
+                return L10n.text("缺少拍摄时白平衡数据，无法保留配方效果。")
+            }
         }
         if tool == .adjustment(.strength) && !settings.hasLook { return L10n.text("请先选择外观或配方。") }
         return nil

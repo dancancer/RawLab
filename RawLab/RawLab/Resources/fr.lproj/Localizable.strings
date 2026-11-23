@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Laissez l’appareil allumé et ouvrez Connexion smartphone dans son menu. Les noms varient selon le modèle. Fermez les autres apps utilisant la connexion à l’appareil.";
 "保留旧版的特殊色彩。" = "Conserve les couleurs particulières de l’ancien développement.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Conserve jusqu’à 100 photos récentes et environ 2 Go de copies locales. Retirer une entrée conserve l’original et ses réglages.";
-"保留这次几何或镜头修改？" = "Conserver ces modifications de géométrie ou d’objectif ?";
 "候选效果" = "Résultats proposés";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Fausses couleurs : bleu pour les ombres, ambre au-dessus du blanc de référence, rose au-delà de la capacité de l’écran.";
 "停止导入" = "Arrêter l’importation";
@@ -240,10 +239,12 @@
 "取景已暂停" = "Visée en direct en pause";
 "取样监视" = "Moniteur d’échantillonnage";
 "取消" = "Annuler";
+"取消全选" = "Tout désélectionner";
 "取消对焦" = "Annuler la mise au point";
 "取消导出" = "Annuler l’exportation";
 "取消检查" = "Annuler la vérification";
 "取消连接" = "Annuler la connexion";
+"取消选中" = "Désélectionner";
 "取色失败，请重试。" = "Impossible de prélever la couleur. Réessayez.";
 "受影响色域：%@" = "Plages affectées : %@";
 "另存" = "Enregistrer sous";
@@ -352,9 +353,7 @@
 "尝试应用内自动加入（需 Hotspot 权限）" = "Connexion auto dans l’app (droit Hotspot requis)";
 "尺寸" = "Dimensions";
 "屏幕容量 %@ EV" = "Marge de l’écran %@ EV";
-"展开%@组" = "Développer le groupe %@";
 "展开直方图" = "Développer l'histogramme";
-"展开调整栏" = "Développer les réglages";
 "已保存" = "Enregistré";
 "已保存 %@ / %@ 个文件" = "%@ / %@ fichiers enregistrés";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Enregistrées %@ · Inchangées %@ · Ignorées %@ · Annulées %@ · Inachevées %@";
@@ -409,7 +408,7 @@
 "平衡" = "Balance";
 "并排" = "Côte à côte";
 "应用" = "Appliquer";
-"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。" = "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, utilisez les Réglages Wi-Fi ci-dessus.";
+"应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。" = "L’ajout automatique requiert le droit Hotspot d’un compte Apple Developer payant. Avec une signature personnelle gratuite, revenez à l’écran précédent et utilisez les Réglages Wi-Fi.";
 "应用到多张照片" = "Appliquer à plusieurs photos";
 "应用到当前照片" = "Appliquer à la photo actuelle";
 "应用并保存" = "Appliquer et enregistrer";
@@ -435,7 +434,7 @@
 "当前状态下相机未接受对焦点设置。" = "L’appareil n’a pas accepté le point de mise au point dans son état actuel.";
 "当前相机模式不支持远程选择对焦点。" = "Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point.";
 "当前相机模式未提供此功能。" = "Cette fonction est indisponible dans le mode actuel de l’appareil.";
-"当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。" = "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Veuillez utiliser les Réglages Wi-Fi ci-dessus.";
+"当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Revenez à l’écran précédent et utilisez les Réglages Wi-Fi.";
 "当前配方不可用，无法安全重置外观。" = "La recette actuelle est indisponible ; son rendu ne peut donc pas être réinitialisé en toute sécurité.";
 "待处理" = "À traiter";
 "待导入 %@ 个文件" = "%@ fichiers à importer";
@@ -496,10 +495,8 @@
 "撤销 %@ 张" = "Annuler les photos : %@";
 "操作已失效" = "Opération devenue invalide";
 "操作未完成，请重试。" = "L’opération est inachevée. Réessayez.";
-"收起%@组" = "Réduire le groupe %@";
 "收起其他方案" = "Masquer les autres options";
 "收起直方图" = "Réduire l'histogramme";
-"收起调整栏" = "Réduire les réglages";
 "放大 · 点按还原" = "Agrandie · Toucher pour ajuster";
 "放大预览" = "Aperçu agrandi";
 "放弃任务" = "Abandonner la tâche";
@@ -673,6 +670,7 @@
 "正在取色…" = "Échantillonnage…";
 "正在处理" = "Traitement";
 "正在导入" = "Importation";
+"正在导入外观" = "Importation du look…";
 "正在导入照片…" = "Importation des photos…";
 "正在导出" = "Exportation";
 "正在开启相机 Wi-Fi…" = "Activation du Wi-Fi de l’appareil photo…";
@@ -741,6 +739,7 @@
 "清空选择" = "Effacer la sélection";
 "清除搜索" = "Effacer la recherche";
 "清除相机配置" = "Retirer le profil de caméra";
+"清除筛选" = "Effacer les filtres";
 "清除锚点" = "Effacer les repères";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation";
 "渲染型 DNG 未生成。" = "Le DNG développé n’a pas été créé.";
@@ -804,6 +803,7 @@
 "确认兼容导入" = "Importer avec ces réglages";
 "确认并冻结任务" = "Confirmer et figer la tâche";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "Nettoyer les originaux exportés de l’appareil photo ? Après le nettoyage, ces originaux ne pourront plus être ouverts dans l’app ; les photos exportées ne sont pas affectées.";
+"离开前应用更改？" = "Appliquer les modifications avant de quitter ?";
 "移除" = "Supprimer";
 "移除 %@" = "Supprimer %@";
 "移除“%@”？" = "Supprimer \"%@\" ?";
@@ -908,6 +908,7 @@
 "请先应用或放弃未完成的输入和几何草稿。" = "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.";
 "请先打开这张照片，确认是否恢复旧调整。" = "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Vérifiez d’abord le résultat sur l’appareil. Une nouvelle session ne reprend pas la photo. Reprenez les transferts incomplets dans l’historique.";
+"请先确认上方存储卡保存选项" = "Confirmez d’abord l’enregistrement sur carte ci-dessus";
 "请先确认同源图片、处理条件和参考来源。" = "Confirmez d’abord la même image source, les conditions de traitement et la source de référence.";
 "请先选择外观或配方。" = "Sélectionnez d’abord un look ou une recette.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Autorisez RawLab à utiliser le Bluetooth dans les réglages système.";
@@ -947,6 +948,7 @@
 "跟随系统" = "Suivre le système";
 "跳过" = "Ignorer";
 "跳过以上目标后重试" = "Ignorer les photos ci-dessus et réessayer";
+"输入 Wi-Fi 名称与密码" = "Saisir le nom et le mot de passe Wi-Fi";
 "输入参考" = "Référence en entrée";
 "输入坐标" = "Entrée";
 "输入范围" = "Plage en entrée";
@@ -974,6 +976,7 @@
 "退出目标调整" = "Quitter le réglage ciblé";
 "退出纯预览" = "Quitter l’aperçu immersif";
 "适合窗口" = "Ajuster à la fenêtre";
+"选中" = "Sélectionner";
 "选择" = "Sélectionner";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Choisissez une photo pour comparer les options, ou ouvrez les réglages avancés pour les configurer manuellement.";
 "选择参考图" = "Choisir une image de référence";

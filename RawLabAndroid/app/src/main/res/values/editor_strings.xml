@@ -28,7 +28,6 @@
     <string name="adjustment_summary_recipe_note">"These are recipe logical values; strength is %1$s. Some fields are scaled by this strength."</string>
     <string name="adjustment_summary_relative_white_balance">"Relative White Balance"</string>
     <string name="adjustment_toggle_sign">"Toggle sign"</string>
-    <string name="all_tools">"All tools"</string>
     <string name="batch_confirmation_count">"%1$d outputs need verification"</string>
     <string name="black_point">"Black point"</string>
     <string name="camera_choose_connection">"Choose how to connect"</string>

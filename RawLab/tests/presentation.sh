@@ -72,4 +72,69 @@ rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library \
     -o "$OUT/make-base-request-tests"
 "$OUT/make-base-request-tests"
 
+python3 - "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift" "$OUT/IOSCameraLayoutPolicySlice.swift" <<'PY'
+import pathlib, re, sys
+src = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+m = re.search(r"(enum IOSCameraLayoutPolicy: Sendable \{.*?\n\})", src, re.S)
+assert m, "Could not locate IOSCameraLayoutPolicy in IOSCameraController.swift"
+out = "import CoreGraphics\nimport Foundation\n\n" + m.group(1) + "\n"
+pathlib.Path(sys.argv[2]).write_text(out, encoding="utf-8")
+PY
+cat > "$OUT/IOSCameraLayoutPolicyTests.swift" <<'SWIFT'
+import CoreGraphics
+import Foundation
+
+func check(_ condition: @autoclosure () -> Bool, _ message: String) {
+    guard condition() else {
+        fputs("FAIL: \(message)\n", stderr)
+        exit(1)
+    }
+    print("PASS: \(message)")
+}
+
+@main
+struct IOSCameraLayoutPolicyTests {
+    static func main() {
+        check(IOSCameraLayoutPolicy.gridColumns(forWidth: 390) == 3, "iPhone portrait uses 3 columns")
+        check(IOSCameraLayoutPolicy.gridColumns(forWidth: 599) == 3, "Sub-600pt width uses 3 columns")
+        check(IOSCameraLayoutPolicy.gridColumns(forWidth: 600) == 4, "600pt width uses 4 columns")
+        check(IOSCameraLayoutPolicy.gridColumns(forWidth: 899) == 4, "899pt width uses 4 columns")
+        check(IOSCameraLayoutPolicy.gridColumns(forWidth: 900) == 5, "900pt+ width uses 5 columns")
+
+        let visible = ["vis-1", "vis-2"]
+        var selection: Set<String> = ["hidden-a", "vis-1"]
+        check(!IOSCameraLayoutPolicy.allVisibleSelected(visibleIDs: visible, selection: selection),
+              "allVisibleSelected is false when part of visible subset is unselected")
+
+        IOSCameraLayoutPolicy.toggleVisibleSelection(visibleIDs: visible, selection: &selection)
+        check(selection == ["hidden-a", "vis-1", "vis-2"],
+              "toggleVisibleSelection selects missing visible IDs while preserving hidden selection")
+        check(IOSCameraLayoutPolicy.allVisibleSelected(visibleIDs: visible, selection: selection),
+              "allVisibleSelected becomes true after selecting visible IDs")
+
+        IOSCameraLayoutPolicy.toggleVisibleSelection(visibleIDs: visible, selection: &selection)
+        check(selection == ["hidden-a"],
+              "toggleVisibleSelection deselects only visible IDs while keeping hidden selection")
+
+        IOSCameraLayoutPolicy.toggleVisibleSelection(visibleIDs: [], selection: &selection)
+        check(selection == ["hidden-a"], "Empty visible scope leaves selection untouched")
+
+        let noTokens = IOSCameraLayoutPolicy.activeFilterTokens(
+            format: "all", day: nil, onlySelected: false, selectedLabel: "Selected"
+        )
+        check(noTokens.isEmpty, "Default filter state emits zero active filter tokens")
+
+        let tokens = IOSCameraLayoutPolicy.activeFilterTokens(
+            format: "raw", day: "2026-11-23", onlySelected: true, selectedLabel: "Selected"
+        )
+        check(tokens == ["RAW", "2026-11-23", "Selected"],
+              "Active filters emit format, day, and selected-only summary tokens")
+    }
+}
+SWIFT
+rawlab_ios_host_swiftc -parse-as-library \
+    "$OUT/IOSCameraLayoutPolicySlice.swift" "$OUT/IOSCameraLayoutPolicyTests.swift" \
+    -o "$OUT/ios-camera-layout-policy-tests"
+"$OUT/ios-camera-layout-policy-tests"
+
 bash "$ROOT/RawLab/tests/viewing-state.sh"

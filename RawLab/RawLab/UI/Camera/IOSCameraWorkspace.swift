@@ -25,12 +25,6 @@ struct IOSCameraWorkspace: View {
         NavigationStack(path: $path) {
             home.navigationTitle(L10n.text("相机")).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Menu {
-                            Button(L10n.text("导入记录")) { path.append(.history) }
-                            Button(L10n.text("保存位置")) { path.append(.storage) }
-                        } label: { Image(systemName: "ellipsis") }.accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("camera.menu")
-                    }
                     ToolbarItem(placement: .cancellationAction) {
                         Button { close() } label: { Image(systemName: "chevron.left") }
                             .accessibilityLabel(L10n.text("返回")).accessibilityIdentifier("camera.close")
@@ -101,19 +95,42 @@ struct IOSCameraWorkspace: View {
                 }
                 if model.manifest.canResumeTether {
                     Button { choose(.tethering, resume: true) } label: {
-                        Label(L10n.text("恢复上次联机"), systemImage: "arrow.clockwise")
-                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    }.accessibilityIdentifier("camera.resume.tether")
-                    Text(L10n.text("恢复未完成的原件接收，不会自动补拍。")).font(.footnote).foregroundStyle(.secondary)
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.clockwise").foregroundStyle(.yellow)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(L10n.text("恢复上次联机")).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                                Text(L10n.text("恢复未完成的原件接收，不会自动补拍。")).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
+                        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Color.yellow.opacity(0.45), lineWidth: 1) }
+                    }.buttonStyle(.plain).accessibilityIdentifier("camera.resume.tether")
                 }
-                Divider().padding(.vertical, 4)
-                Button { path.append(.history) } label: {
-                    HStack { Label(L10n.text("导入记录"), systemImage: "clock.arrow.circlepath"); Spacer(); Text("\(model.originals.count)").monospacedDigit() }
-                        .frame(minHeight: 44)
-                }.accessibilityIdentifier("camera.history")
-                Button { path.append(.storage) } label: {
-                    Label(L10n.text("保存位置"), systemImage: "folder").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                VStack(spacing: 0) {
+                    Button { path.append(.history) } label: {
+                        HStack {
+                            Label(L10n.text("导入记录"), systemImage: "clock.arrow.circlepath").foregroundStyle(.primary)
+                            Spacer()
+                            Text("\(model.originals.count)").font(.subheadline).monospacedDigit().foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14).frame(minHeight: 48).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("camera.history")
+                    Divider().padding(.leading, 44)
+                    Button { path.append(.storage) } label: {
+                        HStack {
+                            Label(L10n.text("保存位置"), systemImage: "folder").foregroundStyle(.primary)
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 14).frame(minHeight: 48).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
+                .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
                 Text(L10n.text("相机中的原照片会保留。")).font(.footnote).foregroundStyle(.secondary)
             }.padding(16).frame(maxWidth: 680)
                 .frame(maxWidth: .infinity)
@@ -142,8 +159,20 @@ struct IOSCameraWorkspace: View {
                         .frame(minHeight: 44).accessibilityIdentifier("camera.help")
                 }
                 if mode == .tethering {
-                    Toggle(L10n.text("已确认相机同时将原件保存到存储卡。"), isOn: $cardConfirmed)
-                        .font(.callout).accessibilityIdentifier("camera.card.confirm")
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle(L10n.text("已确认相机同时将原件保存到存储卡。"), isOn: $cardConfirmed)
+                            .font(.callout).accessibilityIdentifier("camera.card.confirm")
+                        if !cardConfirmed {
+                            Text(L10n.text("请先确认上方存储卡保存选项"))
+                                .font(.caption).foregroundStyle(.yellow)
+                        }
+                    }
+                    .padding(14)
+                    .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10)
+                            .strokeBorder(cardConfirmed ? Color.clear : Color.yellow.opacity(0.45), lineWidth: 1)
+                    }
                 }
                 if connection.connecting || model.phase == .connecting {
                     HStack {
@@ -198,16 +227,19 @@ struct IOSCameraWorkspace: View {
                         }
                         Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。"))
                             .font(.footnote).foregroundStyle(.secondary)
+                        let canContinue = mode != .tethering || cardConfirmed
                         Button {
                             model.clearNotice()
                             showHandoffPassword = false
                             handoffPasswordCopied = false
                             connection.continueAfterManualWiFiHandoff()
                         } label: {
-                            Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity, minHeight: 44)
+                            Text(L10n.text("已连接，继续"))
+                                .foregroundStyle(canContinue ? Color.black : Color.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(mode == .tethering && !cardConfirmed)
+                        .disabled(!canContinue)
                         .accessibilityIdentifier("camera.handoff.continue")
                         Button(L10n.text("取消连接")) {
                             showHandoffPassword = false
@@ -224,14 +256,17 @@ struct IOSCameraWorkspace: View {
                         Label(L10n.text("在系统 Wi-Fi 设置连接"), systemImage: "wifi").font(.headline)
                         Text(L10n.text("请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"))
                             .font(.callout).foregroundStyle(.secondary)
+                        let canContinue = mode != .tethering || cardConfirmed
                         Button {
                             model.clearNotice()
                             connection.useCurrentWiFi()
                         } label: {
-                            Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity, minHeight: 44)
+                            Text(L10n.text("已连接，继续"))
+                                .foregroundStyle(canContinue ? Color.black : Color.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(mode == .tethering && !cardConfirmed)
+                        .disabled(!canContinue)
                         .accessibilityIdentifier("camera.connect.continue")
                         Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。"))
                             .font(.footnote).foregroundStyle(.secondary)
@@ -255,7 +290,14 @@ struct IOSCameraWorkspace: View {
                         }.disabled(mode == .tethering && !cardConfirmed)
                             .accessibilityIdentifier("camera.candidate")
                     }
-                    if connection.candidates.isEmpty {
+                    if connection.searching {
+                        HStack(spacing: 10) {
+                            ProgressView().controlSize(.small)
+                            Text(connection.status.isEmpty ? L10n.text("正在查找相机…") : connection.status)
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 8)
+                    } else if connection.candidates.isEmpty {
                         Text(L10n.text("未发现相机。请打开相机的智能手机连接。")).font(.callout).foregroundStyle(.secondary)
                             .padding(.vertical, 8)
                     }
@@ -264,24 +306,30 @@ struct IOSCameraWorkspace: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }.buttonStyle(.bordered).disabled(connection.searching).accessibilityIdentifier("camera.search")
                     Button { path.append(.manual) } label: {
-                        Label(L10n.text("连接相机 Wi-Fi"), systemImage: "wifi").frame(maxWidth: .infinity, minHeight: 44)
+                        Label(L10n.text("输入 Wi-Fi 名称与密码"), systemImage: "wifi").frame(maxWidth: .infinity, minHeight: 44)
                     }.buttonStyle(.bordered).disabled(mode == .tethering && !cardConfirmed)
                         .accessibilityIdentifier("camera.manual")
                 }
-                if !connection.status.isEmpty && !connection.connecting {
+                if !connection.status.isEmpty && !connection.connecting && !connection.searching {
                     Text(connection.status).font(.footnote).foregroundStyle(.secondary)
                 }
                 if let error = model.manualImportRequired ? model.notice : connection.failure ?? model.notice {
-                    Text(error).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("camera.connection.error")
-                    if model.manualImportRequired && mode == .tethering {
-                        Button(L10n.text("从相机导入")) { choose(.importing, resume: false) }
-                            .frame(minHeight: 44).accessibilityIdentifier("camera.connection.manual-import")
-                    } else if connection.failure != nil || model.localNetworkDenied {
-                        Button(L10n.text("系统权限设置")) {
-                            if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
-                        }.frame(minHeight: 44)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(error).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("camera.connection.error")
+                        if model.manualImportRequired && mode == .tethering {
+                            Button(L10n.text("从相机导入")) { choose(.importing, resume: false) }
+                                .frame(minHeight: 44).accessibilityIdentifier("camera.connection.manual-import")
+                        } else if connection.failure != nil || model.localNetworkDenied {
+                            Button(L10n.text("系统权限设置")) {
+                                if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                            }.frame(minHeight: 44)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.45), lineWidth: 1) }
                 }
                 Text(L10n.text("部分功能不可用时，检查相机模式。已验证型号仅作参考，其他 Sony 相机也可以尝试连接。")).font(.footnote).foregroundStyle(.secondary)
             }.padding(16).frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -373,23 +421,10 @@ private struct IOSCameraManualWiFi: View {
     private var connecting: Bool { connection.connecting || model.phase == .connecting }
     var body: some View {
         Form {
-            Section(L10n.text("在系统 Wi-Fi 设置连接")) {
-                Text(L10n.text("请先在 iOS「设置 → 无线局域网」连接相机 Wi-Fi，再返回点击“已连接，继续”。"))
-                Button {
-                    model.clearNotice()
-                    connection.useCurrentWiFi()
-                } label: {
-                    Text(L10n.text("已连接，继续")).frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(connecting)
-                .accessibilityIdentifier("camera.wifi.continue")
-                Text(L10n.text("相机 Wi-Fi 通常无法访问互联网，请保持连接。")).font(.footnote).foregroundStyle(.secondary)
-            }
-            Section(L10n.text("尝试应用内自动加入（需 Hotspot 权限）")) {
+            Section(L10n.text("输入 Wi-Fi 名称与密码")) {
                 Text(connection.hotspotAutoJoinUnavailable
-                     ? L10n.text("当前签名未启用系统自动加入 Wi-Fi，请使用上方系统 Wi-Fi 方式连接。")
-                     : L10n.text("应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请使用上方系统 Wi-Fi 方式。"))
+                     ? L10n.text("当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。")
+                     : L10n.text("应用内自动加入需要付费 Apple 开发者账号的 Hotspot 权限；个人免费签名请返回上一页使用系统 Wi-Fi 方式。"))
                 .font(.footnote).foregroundStyle(.secondary)
                 TextField(L10n.text("Wi-Fi 名称"), text: $ssid).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .accessibilityIdentifier("camera.wifi.ssid")

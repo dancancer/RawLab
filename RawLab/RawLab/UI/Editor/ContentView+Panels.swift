@@ -5,22 +5,7 @@ import SwiftUI
 extension ContentView {
     @ToolbarContentBuilder
     var editorToolbar: some ToolbarContent {
-        if toolWorkspaceOpen {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: requestToolWorkspaceExit) {
-                    Label(L10n.text("返回"), systemImage: "chevron.left")
-                }
-                .disabled(editorBusy)
-                .accessibilityIdentifier("editor.tool.back")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(action: requestToolWorkspaceExit) {
-                    Label(L10n.text("收起调整栏"), systemImage: "slider.horizontal.3")
-                }
-                .disabled(editorBusy)
-                .accessibilityIdentifier("editor.adjustments")
-            }
-        } else {
+        if !toolWorkspaceOpen {
             editorOverviewToolbar
         }
     }
@@ -114,84 +99,88 @@ extension ContentView {
                 .opacity(rulerFocusOpacity)
             }
             Menu {
-                Button(action: showRecentPhotos) { Label(L10n.text("最近打开"), systemImage: "clock.arrow.circlepath") }
-                    .disabled(editorBusy).accessibilityIdentifier("recents.open")
-                Menu(L10n.text("语言")) {
-                    Picker(L10n.text("语言"), selection: $languagePreference) {
-                        ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
+                Section {
+                    Button(action: showRecentPhotos) { Label(L10n.text("最近打开"), systemImage: "clock.arrow.circlepath") }
+                        .disabled(editorBusy).accessibilityIdentifier("recents.open")
+                    Button { requestEditorImport(file: true) } label: {
+                        Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
                     }
-                    Toggle(L10n.text("调整触觉反馈"), isOn: $adjustmentHapticsEnabled)
-                }.accessibilityIdentifier("settings.language")
-                Button { photoViewing.toggleComparison() } label: {
-                    Label(L10n.text(photoViewing.enabled ? "关闭对比" : "开启对比"), systemImage: "rectangle.split.2x1")
-                }.disabled(!viewModel.hasImage).accessibilityIdentifier("editor.compare")
-                Button { requestAdjustmentExpansion(!adjustmentsExpanded) } label: {
-                    Label(L10n.text(adjustmentsExpanded ? "收起调整栏" : "展开调整栏"), systemImage: "slider.horizontal.3")
-                }.disabled(!viewModel.hasImage).accessibilityIdentifier("editor.adjustments")
-                Button(L10n.text("批量编辑"), action: openBatchSelection)
-                    .disabled(editorBusy).accessibilityIdentifier("collection.open")
-                Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
-                Button { coordinator.photoInfoMode = coordinator.photoInfoMode.next } label: {
-                    Label(L10n.text("照片信息"), systemImage: "info.circle")
-                }.disabled(!viewModel.hasImage)
-                Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
-                Menu(L10n.text("对比方式")) { comparisonModeMenu }
-                Menu(L10n.text("缩放与显示")) {
-                    Toggle(L10n.text("照片四周留白"), isOn: $coordinator.photoViewing.photoMargin)
-                }.disabled(!viewModel.hasImage)
-                Divider()
-                Toggle(L10n.text("取样监视"), isOn: $coordinator.inspection.monitorEnabled)
-                    .disabled(!viewModel.hasImage || geometrySelected)
-                    .accessibilityIdentifier("inspection.monitor")
-                Button(L10n.text("添加锚点")) { _ = pinInspectionAnchor() }
-                    .disabled(!viewModel.hasImage || geometrySelected || !coordinator.inspection.canPinMore)
-                    .accessibilityIdentifier("inspection.pinAnchor")
-                Button(L10n.text("清除锚点")) { coordinator.inspection.clearAnchors() }
-                    .disabled(coordinator.inspection.anchors.isEmpty)
-                    .accessibilityIdentifier("inspection.clearAnchors.menu")
-                Button {
-                    coordinator.inspection.toggleNeutralGray50()
-                } label: {
-                    Label(L10n.text("50% 中性灰"), systemImage: coordinator.inspection.overlay == .neutralGray50 ? "checkmark.square.fill" : "square.lefthalf.filled")
+                    .disabled(editorBusy)
+                    .accessibilityIdentifier("editor.import.file")
+                    Button(action: requestLookImport) {
+                        Label(L10n.text("导入外观"), systemImage: "camera.filters")
+                    }
+                    .disabled(editorBusy || isEditorDraftChanged || viewModel.isLookLibraryBusy)
+                    .accessibilityIdentifier("editor.import.look")
+                    Button(L10n.text("批量编辑"), action: openBatchSelection)
+                        .disabled(editorBusy).accessibilityIdentifier("collection.open")
                 }
-                    .disabled(!viewModel.hasImage || geometrySelected)
-                    .accessibilityIdentifier("inspection.gray50")
-                Menu(L10n.text("观察层")) {
-                    ForEach(InspectionOverlayMode.allCases) { mode in
-                        Button {
-                            coordinator.inspection.selectOverlay(mode)
-                        } label: {
-                            if coordinator.inspection.overlay == mode {
-                                Label(L10n.text(mode.titleKey), systemImage: "checkmark")
-                            } else {
-                                Text(L10n.text(mode.titleKey))
+                Section { adjustmentTransferMenu }.disabled(!viewModel.hasImage || editorBusy)
+                Section {
+                    Button { coordinator.presentProcessingContext() } label: {
+                        Label(L10n.text("照片处理设置"), systemImage: "slider.horizontal.3")
+                    }.disabled(!viewModel.hasImage)
+                    Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
+                        .disabled(!viewModel.hasImage)
+                    Menu(L10n.text("对比方式")) { comparisonModeMenu }
+                        .disabled(!viewModel.hasImage)
+                    Button { coordinator.photoInfoMode = coordinator.photoInfoMode.next } label: {
+                        Label(L10n.text("照片信息"), systemImage: "info.circle")
+                    }.disabled(!viewModel.hasImage)
+                    Menu(L10n.text("缩放与显示")) {
+                        Toggle(L10n.text("照片四周留白"), isOn: $coordinator.photoViewing.photoMargin)
+                    }.disabled(!viewModel.hasImage)
+                }
+                Section {
+                    Toggle(L10n.text("取样监视"), isOn: $coordinator.inspection.monitorEnabled)
+                        .disabled(!viewModel.hasImage || geometrySelected)
+                        .accessibilityIdentifier("inspection.monitor")
+                    Button(L10n.text("添加锚点")) { _ = pinInspectionAnchor() }
+                        .disabled(!viewModel.hasImage || geometrySelected || !coordinator.inspection.canPinMore)
+                        .accessibilityIdentifier("inspection.pinAnchor")
+                    Button(L10n.text("清除锚点")) { coordinator.inspection.clearAnchors() }
+                        .disabled(coordinator.inspection.anchors.isEmpty)
+                        .accessibilityIdentifier("inspection.clearAnchors.menu")
+                    Button {
+                        coordinator.inspection.toggleNeutralGray50()
+                    } label: {
+                        Label(L10n.text("50% 中性灰"), systemImage: coordinator.inspection.overlay == .neutralGray50 ? "checkmark.square.fill" : "square.lefthalf.filled")
+                    }
+                        .disabled(!viewModel.hasImage || geometrySelected)
+                        .accessibilityIdentifier("inspection.gray50")
+                    Menu(L10n.text("观察层")) {
+                        ForEach(InspectionOverlayMode.allCases) { mode in
+                            Button {
+                                coordinator.inspection.selectOverlay(mode)
+                            } label: {
+                                if coordinator.inspection.overlay == mode {
+                                    Label(L10n.text(mode.titleKey), systemImage: "checkmark")
+                                } else {
+                                    Text(L10n.text(mode.titleKey))
+                                }
                             }
                         }
+                    }.disabled(!viewModel.hasImage || geometrySelected)
+                        .accessibilityIdentifier("inspection.overlay.menu")
+                }
+                Section {
+                    Menu(L10n.text("语言")) {
+                        Picker(L10n.text("语言"), selection: $languagePreference) {
+                            ForEach(AppLanguage.allCases) { Text($0.nativeName).tag($0.rawValue) }
+                        }
+                    }.accessibilityIdentifier("settings.language")
+                    Toggle(L10n.text("调整触觉反馈"), isOn: $adjustmentHapticsEnabled)
+                        .accessibilityIdentifier("settings.haptics")
+                    Button { coordinator.presentPrivacy() } label: {
+                        Label(L10n.text("隐私设置"), systemImage: "gearshape")
                     }
-                }.disabled(!viewModel.hasImage || geometrySelected)
-                    .accessibilityIdentifier("inspection.overlay.menu")
-                Button { coordinator.presentProcessingContext() } label: {
-                    Label(L10n.text("照片处理设置"), systemImage: "slider.horizontal.3")
-                }.disabled(!viewModel.hasImage)
-                Button { coordinator.presentPrivacy() } label: {
-                    Label(L10n.text("隐私设置"), systemImage: "gearshape")
+                    .accessibilityIdentifier("editor.privacy.open")
+                    Button(action: exportErrorDiagnostics) {
+                        Label(L10n.text("导出错误日志"), systemImage: "doc.text")
+                    }
+                    .disabled(!canStartFileExport)
+                    .accessibilityIdentifier("diagnostics.export")
                 }
-                .accessibilityIdentifier("editor.privacy.open")
-                Button { requestEditorImport(file: true) } label: {
-                    Label(L10n.text("从文件导入"), systemImage: "folder.badge.plus")
-                }
-                .disabled(editorBusy)
-                .accessibilityIdentifier("editor.import.file")
-                Button(action: requestLookImport) {
-                    Label(L10n.text("导入外观"), systemImage: "camera.filters")
-                }
-                .disabled(editorBusy || isEditorDraftChanged || viewModel.isImportingLooks)
-                .accessibilityIdentifier("editor.import.look")
-                Button(action: exportErrorDiagnostics) {
-                    Label(L10n.text("导出错误日志"), systemImage: "doc.text")
-                }
-                .disabled(!canStartFileExport)
-                .accessibilityIdentifier("diagnostics.export")
             } label: {
                 Image(systemName: "ellipsis")
             }
@@ -201,8 +190,30 @@ extension ContentView {
         }
     }
 
+    var editorLoadingPresentation: EditorLoadingPresentation {
+        EditorLoadingPresentation.resolve(
+            hasImage: viewModel.hasImage,
+            isImporting: isImporting,
+            isViewModelBusy: viewModel.isBusy,
+            isSaving: isSaving,
+            isExportingHDR: viewModel.isExportingHDR,
+            cameraHDRPreflight: viewModel.cameraHDRPreflight,
+            isImportingLooks: viewModel.isImportingLooks,
+            isUpdatingLooks: viewModel.isUpdatingLooks,
+            isLoadingLUTs: viewModel.isLoadingLUTs,
+            previewRendering: viewModel.previewRendering,
+            previewResizePending: viewModel.previewResizePending,
+            matchingProcessing: viewModel.matchingProcessing,
+            autoExposing: coordinator.autoExposing,
+            isBatchExportRunning: coordinator.batchExportHandle?.isRunning == true,
+            isAdjustingSlider: coordinator.isAdjustingSlider
+        )
+    }
+
     var previewSection: some View {
-        GeometryReader { geometry in
+        let loading = editorLoadingPresentation
+        let activityBannerKey = (loading.showsTopBannerImmediately || delayedActivityBannerVisible) ? loading.topBannerMessageKey : nil
+        return GeometryReader { geometry in
             ZStack {
                 Color(white: 0.12)
                 if let image = currentPreviewImage {
@@ -213,48 +224,59 @@ extension ContentView {
                     })
                         .id(viewModel.sourceRevision)
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .overlay(alignment: .bottom) {
-                            if !adjustmentsExpanded && hslTargetActive {
-                                HSLTargetCanvasControls(axis: coordinator.hslTargetAxis) {
-                                    cancelHSLTarget(); coordinator.hslTargetEnabled = false
-                                }.padding(8)
-                            } else if !adjustmentsExpanded && curveTargetActive {
-                                CurveTargetCanvasControls(channel: coordinator.curveTargetChannel) {
-                                    cancelCurveTarget(); coordinator.curveTargetEnabled = false
-                                }.padding(8)
-                            }
-                        }
                 } else {
-                    ScrollView {
-                        VStack(spacing: 24) {
-                            Image(systemName: "photo.on.rectangle.angled")
-                                .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
-                            Button { requestEditorImport(file: false) } label: {
-                                Text(L10n.text("导入照片"))
-                                    .font(.headline)
-                                    .multilineTextAlignment(.center)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(.horizontal, 16)
-                                    .frame(minHeight: 44)
+                    ZStack {
+                        ScrollView {
+                            VStack(spacing: 20) {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "photo.on.rectangle.angled")
+                                        .font(.largeTitle)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
+                                    Text("RawLab")
+                                        .font(.title2.weight(.semibold))
+                                    Text(L10n.text("导入并打开一张照片后，可在这里继续编辑。"))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .multilineTextAlignment(.center)
+                                }
+                                VStack(spacing: 12) {
+                                    Button { requestEditorImport(file: false) } label: {
+                                        Text(L10n.text("导入照片"))
+                                            .font(.headline)
+                                            .multilineTextAlignment(.center)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .padding(.horizontal, 20)
+                                            .frame(minHeight: 44)
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .foregroundStyle(.black)
+                                    .disabled(editorBusy)
+                                    .accessibilityLabel(L10n.text("导入照片"))
+                                    .accessibilityIdentifier("editor.import.empty")
+                                    Button(L10n.text("最近打开"), action: showRecentPhotos)
+                                        .buttonStyle(.bordered).disabled(editorBusy).accessibilityIdentifier("recents.open.empty")
+                                    fileImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
+                                        .buttonStyle(.bordered)
+                                    Button { coordinator.presentCameraWorkspace() } label: {
+                                        Label(L10n.text("从相机导入"), systemImage: "camera")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(editorBusy)
+                                    .accessibilityIdentifier("editor.camera.empty")
+                                }
                             }
-                            .buttonStyle(.borderedProminent)
-                            .foregroundStyle(.black)
-                            .disabled(editorBusy)
-                            .accessibilityLabel(L10n.text("导入照片"))
-                            .accessibilityIdentifier("editor.import.empty")
-                            Button(L10n.text("最近打开"), action: showRecentPhotos)
-                                .buttonStyle(.bordered).disabled(editorBusy).accessibilityIdentifier("recents.open.empty")
-                            fileImportButton(isEnabled: !editorBusy && !isEditorDraftChanged)
-                                .buttonStyle(.bordered)
+                            .padding(24)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: geometry.size.height)
                         }
-                        .padding(24)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: geometry.size.height)
+                        .opacity(loading.showsEmptyCanvasLoading ? 0 : 1)
+                        .allowsHitTesting(!loading.showsEmptyCanvasLoading)
+                        .accessibilityHidden(loading.showsEmptyCanvasLoading)
+                        if loading.showsEmptyCanvasLoading {
+                            emptyCanvasLoadingView
+                        }
                     }
-                    .opacity(editorBusy ? 0 : 1)
-                    .accessibilityHidden(editorBusy)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -285,31 +307,34 @@ extension ContentView {
             }
             .overlay(alignment: .top) {
                 VStack(spacing: 8) {
-                    if viewModel.hasImage && (editorBusy || viewModel.previewRendering || viewModel.previewResizePending) {
+                    if loading.showsTopProgressLine {
                         previewProgressLine
                     }
                     if viewModel.isExportingHDR && !photoViewing.previewOnly {
                         hdrExportProgressBanner
                     } else if isSaving && !photoViewing.previewOnly {
                         exportSavingBanner
+                    } else if let bannerKey = activityBannerKey, !photoViewing.previewOnly {
+                        editorActivityBanner(titleKey: bannerKey)
+                    }
+                    if viewModel.previewFailed && !photoViewing.previewOnly {
+                        Button { viewModel.retryPreview(settings: draftPreviewSettings) } label: {
+                            Label(L10n.text("预览未更新") + " · " + L10n.text("重试"), systemImage: "arrow.clockwise")
+                                .font(.caption).padding(.horizontal, 12).padding(.vertical, 6).frame(minHeight: 44)
+                        }
+                        .background(.regularMaterial, in: Capsule())
+                        .accessibilityIdentifier("editor.preview.retry")
+                    } else if case .failed = viewModel.editSaveState, !photoViewing.previewOnly {
+                        editSaveStatus
+                            .padding(.horizontal, 12).padding(.vertical, 4)
+                            .background(.regularMaterial, in: Capsule())
                     }
                 }
             }
             .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 8) {
-                    iosInspectionHUD
-                    if viewModel.previewFailed {
-                        Button { viewModel.retryPreview(settings: draftPreviewSettings) } label: {
-                            Label(L10n.text("预览未更新") + " · " + L10n.text("重试"), systemImage: "arrow.clockwise")
-                                .font(.caption).padding(8).frame(minHeight: 44)
-                        }
-                        .background(.regularMaterial)
-                        .accessibilityIdentifier("editor.preview.retry")
-                    } else if case .failed = viewModel.editSaveState {
-                        editSaveStatus.padding(8).background(.regularMaterial)
-                    }
-                }
-                .padding(12)
+                iosInspectionHUD
+                    .padding(12)
+                    .padding(.bottom, (viewModel.hasImage && !photoViewing.previewOnly) ? 56 : 0)
             }
             .overlay(alignment: .topTrailing) {
                 if photoViewing.previewOnly {
@@ -325,6 +350,16 @@ extension ContentView {
             .coordinateSpace(name: "editor.photo.canvas")
             .onPreferenceChange(PhotoComparisonControlBoundsKey.self) { photoComparisonControlBounds = $0 }
             .clipped()
+        }
+        .onChange(of: loading.delayedBannerKey) { _, _ in
+            delayedActivityBannerVisible = false
+        }
+        .task(id: loading.delayedBannerKey) {
+            delayedActivityBannerVisible = false
+            guard loading.delayedBannerKey != nil else { return }
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            delayedActivityBannerVisible = true
         }
     }
 
@@ -446,19 +481,56 @@ extension ContentView {
         .accessibilityIdentifier("editor.exportSaving")
     }
 
-    var previewProgressLine: some View {
-        GeometryReader { geometry in
-            if reduceMotion {
-                Rectangle().fill(Color.yellow).frame(height: 2)
-            } else {
-                ProgressView().progressViewStyle(.linear)
-                    .frame(width: geometry.size.width, height: 2).clipped()
+    var emptyCanvasLoadingView: some View {
+        VStack(spacing: 12) {
+            if !reduceMotion {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.regular)
+                    .tint(.yellow)
             }
+            Text(L10n.text("正在导入照片…"))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.white)
         }
-        .frame(height: 2)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 20)
+        .background(Color.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.empty.loading")
+    }
+
+    func editorActivityBanner(titleKey: String) -> some View {
+        HStack(spacing: 8) {
+            if !reduceMotion {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(.yellow)
+            }
+            Text(L10n.text(titleKey))
+                .font(.caption.weight(.medium))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.regularMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+        }
         .allowsHitTesting(false)
-        .accessibilityLabel(L10n.text("正在显影…"))
-        .accessibilityIdentifier("editor.preview.updating")
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor.activity.banner")
+    }
+
+    var previewProgressLine: some View {
+        IndeterminateProgressLine(height: 3)
+            .accessibilityLabel(L10n.text(editorLoadingPresentation.progressAccessibilityKey))
+            .accessibilityIdentifier("editor.preview.updating")
     }
 
     @ViewBuilder var adjustmentPanel: some View {
@@ -563,7 +635,7 @@ extension ContentView {
         let perspective = coordinator.geometryPerspective, rotation = coordinator.geometryRotation
         let hdr = settings.isHDREditing
         return AdjustmentInputContext(id: "\(source).\(tool.stableID).\(channel).\(grading.rawValue).\(gradingGlobal).\(perspective).\(rotation).\(hdr)", isCurrent: {
-            viewModel.sourceRevision == source && currentEditorTool == tool && adjustmentsExpanded && settings.isHDREditing == hdr &&
+            viewModel.sourceRevision == source && currentEditorTool == tool && settings.isHDREditing == hdr &&
                 (tool != .adjustment(.hsl) || hslChannel == channel) &&
                 (tool != .adjustment(.colorGrading) || (coordinator.gradingZone == grading && coordinator.gradingGlobalSelected == gradingGlobal)) &&
                 (tool != .geometry || coordinator.geometryPerspective == perspective && coordinator.geometryRotation == rotation)
@@ -613,32 +685,17 @@ extension ContentView {
     func groupNavigation(side: Bool, singleLine: Bool = false, availableWidth: CGFloat = 0) -> some View {
         let buttonWidth = groupNavigationButtonWidth
         let buttonHeight: CGFloat = singleLine ? 48 : groupNavigationButtonHeight
-        let rows = stride(from: 0, to: mobileEditorGroups.count, by: 3).map {
-            Array(mobileEditorGroups[$0..<min($0 + 3, mobileEditorGroups.count)])
-        }
         return ScrollView(.horizontal, showsIndicators: false) {
-            let layout = side && !adjustmentsExpanded
-                ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
-            layout {
-                if side && !adjustmentsExpanded {
-                    ForEach(rows.indices, id: \.self) { row in
-                        HStack(spacing: 0) {
-                            ForEach(rows[row], id: \.rawValue) { group in
-                                groupNavigationButton(group, width: buttonWidth, height: buttonHeight)
-                            }
-                        }
-                    }
-                } else {
-                    ForEach(mobileEditorGroups, id: \.rawValue) { group in
-                        let width = singleLine ? max(max(44, (availableWidth - 16) / CGFloat(max(mobileEditorGroups.count, 1))), ceil((group.title as NSString).size(withAttributes:
-                            [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width) + 16) : buttonWidth
-                        groupNavigationButton(group, width: width, height: buttonHeight, singleLine: singleLine)
-                    }
+            HStack(spacing: 0) {
+                ForEach(mobileEditorGroups, id: \.rawValue) { group in
+                    let width = singleLine ? max(max(44, (availableWidth - 16) / CGFloat(max(mobileEditorGroups.count, 1))), ceil((group.title as NSString).size(withAttributes:
+                        [.font: UIFont.preferredFont(forTextStyle: .caption1)]).width) + 16) : buttonWidth
+                    groupNavigationButton(group, width: width, height: buttonHeight, singleLine: singleLine)
                 }
             }
             .padding(.horizontal, 8)
         }
-        .frame(height: buttonHeight * (side && !adjustmentsExpanded ? CGFloat(max(rows.count, 1)) : 1))
+        .frame(height: buttonHeight)
         .disabled(editorBusy)
         .accessibilityIdentifier("editor.groups")
     }
@@ -665,7 +722,7 @@ extension ContentView {
         }
         .buttonStyle(.plain)
         .disabled(settings.isHDREditing && group != .looks && !EditorAdjustmentRules.tools(group).contains(where:supportsHDR))
-        .accessibilityLabel(L10n.format(adjustmentsExpanded && selectedGroup == group ? "收起%@组" : "展开%@组", group.title))
+        .accessibilityLabel(group.title)
         .accessibilityValue(resetModified(.group(group)) ? L10n.text("已调整") : "")
         .accessibilityAddTraits(selectedGroup == group ? .isSelected : [])
         .accessibilityIdentifier("editor.group.\(group.rawValue)")
