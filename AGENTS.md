@@ -84,6 +84,8 @@
 5. 经用户明确授权后通过 PR 合入 `main`，为发布提交创建 `v<version>` 标签（不得覆盖已有标签），
    并将发布修复回合到 `development`。
 6. 上传安装包、创建 Release、签名或部署均需要相应授权；采用 Gitflow 本身不代表授权发布。
+   取得发布授权后，统一按 [统一发版与四端打包规范](docs/process/release-packaging-guide.md) 与本机私有清单
+   `"$HOME/.config/rawlab/release-env.sh"`、`"$HOME/.config/rawlab/release-hosts.md"` 执行四端构建、签名、Draft 上架与线上 `latest/download/*` 验签，不再重复向用户询问已知路径或主机信息。
 
 ## 紧急修复
 

@@ -1,6 +1,9 @@
 # Desktop release packaging
 
-This procedure prepares macOS and Windows packages and update metadata. Running
+This procedure prepares macOS and Windows packages and update metadata. For the unified
+four-platform release packaging, signing, provenance, Draft-to-Publish, and local host/key
+path conventions (`"$HOME/.config/rawlab/release-env.sh"` and `"$HOME/.config/rawlab/release-hosts.md"`),
+see the [release packaging guide](release-packaging-guide.md). Running
 these scripts does not authorize a release, an upload, a tag, or replacement of
 a user's installed app. Set the approved version and build number in
 `Shared/version.json`, run `python3 scripts/version/generate.py` to sync
