@@ -57,7 +57,10 @@ internal data class EditorLoadingPresentation(
     val delayedBannerRes: Int?,
 )
 
-internal fun resolveEditorLoadingPresentation(state: EditorState): EditorLoadingPresentation {
+internal fun resolveEditorLoadingPresentation(
+    state: EditorState,
+    isAdjustingSlider: Boolean = false,
+): EditorLoadingPresentation {
     val activeOperation = state.operation != Operation.NONE && state.operation != Operation.PICK_EXPORT
     val isRendering = state.rendering || state.previewResizePending
     val showsTopProgressLine = isRendering || activeOperation || state.matchingProcessing ||
@@ -78,7 +81,8 @@ internal fun resolveEditorLoadingPresentation(state: EditorState): EditorLoading
         immediateBannerRes == null &&
         state.operation != Operation.EXPORT &&
         !showsEmptyCanvasLoading &&
-        isRendering
+        isRendering &&
+        !isAdjustingSlider
     ) {
         R.string.rendering
     } else {
@@ -106,11 +110,12 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     inspection: InspectionSessionState = InspectionSessionState(),
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
     onInspectionAnchorSelect: (Long) -> Unit = {},
-    wbProbe: WbProbeActions? = null) {
+    wbProbe: WbProbeActions? = null,
+    isAdjustingSlider: Boolean = false) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + if (workspaceControls) 84.dp else 36.dp
     } else if (workspaceControls) 64.dp else 12.dp
-    val loading = resolveEditorLoadingPresentation(state)
+    val loading = resolveEditorLoadingPresentation(state, isAdjustingSlider)
     var delayedBannerVisible by remember { mutableStateOf(false) }
     LaunchedEffect(loading.delayedBannerRes) {
         delayedBannerVisible = false

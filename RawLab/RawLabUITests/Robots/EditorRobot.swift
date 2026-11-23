@@ -15,10 +15,8 @@ struct EditorRobot {
 
     func returnToOverviewIfInTool() {
         let cancel = app.buttons["editor.draft.cancel"]
-        let back = app.buttons["editor.tool.back"]
-        let exitButton: XCUIElement? = (cancel.exists && cancel.isHittable) ? cancel : ((back.exists && back.isHittable) ? back : nil)
-        if let exitButton {
-            exitButton.tap()
+        if cancel.exists && cancel.isHittable {
+            cancel.tap()
             waitForCondition(timeout: 10) { app.scrollViews["editor.groups"].exists || app.buttons["editor.export"].exists }
         }
     }

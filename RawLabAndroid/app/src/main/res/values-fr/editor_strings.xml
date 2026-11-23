@@ -28,7 +28,6 @@
     <string name="adjustment_summary_recipe_note">"Voici les valeurs logiques de la recette ; l’intensité est de %1$s. Certains champs sont mis à l’échelle selon cette intensité."</string>
     <string name="adjustment_summary_relative_white_balance">"Balance des blancs relative"</string>
     <string name="adjustment_toggle_sign">"Changer de signe"</string>
-    <string name="all_tools">"Tous les outils"</string>
     <string name="batch_confirmation_count">"%1$d sorties à vérifier"</string>
     <string name="black_point">"Point noir"</string>
     <string name="camera_choose_connection">"Choisir le mode de connexion"</string>

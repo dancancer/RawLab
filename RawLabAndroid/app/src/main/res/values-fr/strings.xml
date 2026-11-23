@@ -485,7 +485,6 @@
     <string name="rename_look">"Renommer le look"</string>
     <string name="rendering">"Développement…"</string>
     <string name="reset">"Réinitialiser les réglages"</string>
-    <string name="reset_denoise">"Réinitialiser la réduction du bruit"</string>
     <string name="reset_value">"Réinitialiser cet élément"</string>
     <string name="result">"Après"</string>
     <string name="retry">"Réessayer"</string>

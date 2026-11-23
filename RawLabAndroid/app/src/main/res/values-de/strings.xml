@@ -485,7 +485,6 @@
     <string name="rename_look">"Look umbenennen"</string>
     <string name="rendering">"Wird entwickelt…"</string>
     <string name="reset">"Anpassungen zurücksetzen"</string>
-    <string name="reset_denoise">"Rauschreduzierung zurücksetzen"</string>
     <string name="reset_value">"Diesen Wert zurücksetzen"</string>
     <string name="result">"Nachher"</string>
     <string name="retry">"Erneut versuchen"</string>

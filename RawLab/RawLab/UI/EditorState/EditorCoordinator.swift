@@ -134,6 +134,7 @@ protocol EditorCoordinatorBackend: AnyObject {
     var isBusy: Bool { get }
     var isLoadingLUTs: Bool { get }
     var isImportingLooks: Bool { get }
+    var isUpdatingLooks: Bool { get }
     var previewRendering: Bool { get }
     var previewResizePending: Bool { get }
     var previewFailed: Bool { get }
@@ -179,6 +180,7 @@ protocol EditorCoordinatorBackend: AnyObject {
     func returnBatchSelectionToCollection()
     func appendCurrentBatchSelectionPhoto()
     func renameLook(id: String, name: String)
+    func removeLook(id: String)
 }
 
 @MainActor
@@ -216,11 +218,8 @@ final class EditorCoordinator: ObservableObject {
     @Published var lensSelected = false
     @Published var geometrySelected = false
     @Published var choosingMasterRecipe = false
-    @Published var adjustmentsExpanded = true
     @Published var histogramExpanded = false
-    @Published var collapsedEditorTool: EditorToolSelection?
     @Published var pendingToolSelection: EditorToolSelection?
-    @Published var pendingAdjustmentExpansion: Bool?
     @Published var draftExitPresented = false
     @Published var adjustmentFine = false
 
@@ -357,7 +356,7 @@ final class EditorCoordinator: ObservableObject {
     }
 
     var editorBusy: Bool {
-        (backend?.isBusy == true) || (backend?.isLoadingLUTs == true) || (backend?.isImportingLooks == true) || editingLocked
+        (backend?.isBusy == true) || (backend?.isLoadingLUTs == true) || (backend?.isImportingLooks == true) || (backend?.isUpdatingLooks == true) || editingLocked
     }
 
     var workingSettings: RawSettings {
@@ -391,7 +390,7 @@ final class EditorCoordinator: ObservableObject {
         EditorDraftSnapshot(
             geometry: geometryDraft,
             lens: lensDraft,
-            tool: collapsedEditorTool != nil ? .film : currentEditorTool,
+            tool: currentEditorTool,
             destination: pendingToolSelection,
             workspace: !toolWorkspaceOpen ? nil : workspaceDraft
         )
@@ -416,7 +415,6 @@ final class EditorCoordinator: ObservableObject {
     }
 
     var currentEditorTool: EditorToolSelection {
-        if let collapsedEditorTool { return collapsedEditorTool }
         if geometrySelected { return .geometry }
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
@@ -533,7 +531,6 @@ final class EditorCoordinator: ObservableObject {
         guard !editorBusy else { return }
         closeQuickPresets()
         if selection == currentEditorTool && toolWorkspaceOpen {
-            if !adjustmentsExpanded { requestAdjustmentExpansion(true) }
             return
         }
         if isEditorDraftChanged {
@@ -550,8 +547,6 @@ final class EditorCoordinator: ObservableObject {
         cancelCurveTarget()
         cancelSliderInteraction()
         if resettingFine && selection != currentEditorTool { adjustmentFine = false }
-        collapsedEditorTool = nil
-        adjustmentsExpanded = true
         let leavingDraft = isEditorDraftActive || leavingWorkspace
         if leavingDraft {
             clearRecoverableDraft()
@@ -708,29 +703,17 @@ final class EditorCoordinator: ObservableObject {
             return
         }
         let selection = pendingToolSelection
-        let expansion = pendingAdjustmentExpansion
         pendingToolSelection = nil
-        pendingAdjustmentExpansion = nil
-        if expansion == false {
-            completeAdjustmentExpansion(false, closingWorkspace: leavingWorkspace)
-            return
-        }
         if let selection {
             activateEditorTool(selection, leavingWorkspace: leavingWorkspace)
-        }
-        if let expansion {
-            completeAdjustmentExpansion(expansion)
-        }
-        if selection == nil && expansion == nil {
+        } else {
             finishEditorTool()
-            collapsedEditorTool = nil
-            adjustmentsExpanded = true
         }
     }
 
     func retryEditorSave(continueImport: (() -> Void)? = nil, continueCollection: (() -> Void)? = nil) {
         if isEditorDraftActive && backend?.hasFailedDraftSave == true {
-            if pendingToolSelection != nil || pendingAdjustmentExpansion != nil || pendingFileImport ||
+            if pendingToolSelection != nil || pendingFileImport ||
                 pendingPhotoImport || !pendingSystemPhotoURLs.isEmpty || pendingAdjustmentAction != nil ||
                 pendingCollectionNavigation != nil {
                 finishDraftNavigation(apply: true, continueImport: continueImport, continueCollection: continueCollection)
@@ -754,9 +737,7 @@ final class EditorCoordinator: ObservableObject {
         guard !editorBusy else { return }
         closeQuickPresets()
         guard !isEditorDraftActive else { return }
-        collapsedEditorTool = nil
         selectedGroup = group
-        adjustmentsExpanded = true
     }
 
     func normalizeHDRNavigation(isHDREditing: Bool) {
@@ -766,9 +747,6 @@ final class EditorCoordinator: ObservableObject {
             selectedHDRRenditionTool = nil
             selectedAdjustment = .exposure
         }
-        if let collapsed = collapsedEditorTool, EditorAdjustmentRules.groupFor(collapsed) == .hdrRendition {
-            collapsedEditorTool = nil
-        }
     }
 
     func requestToolWorkspaceExit() {
@@ -776,38 +754,10 @@ final class EditorCoordinator: ObservableObject {
         if !hslTargetEnabled && !curveTargetEnabled { cancelSliderInteraction() }
         if isEditorDraftChanged {
             pendingToolSelection = nil
-            pendingAdjustmentExpansion = nil
             draftExitPresented = true
         } else {
             finishEditorTool()
-            collapsedEditorTool = nil
-            adjustmentsExpanded = true
         }
-    }
-
-    func requestAdjustmentExpansion(_ expanded: Bool) {
-        guard !editorBusy else { return }
-        if !expanded && isEditorDraftChanged {
-            pendingToolSelection = currentEditorTool
-            pendingAdjustmentExpansion = false
-            draftExitPresented = true
-        } else {
-            completeAdjustmentExpansion(expanded)
-        }
-    }
-
-    func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
-        if !expanded && !hslTargetEnabled && !curveTargetEnabled { cancelSliderInteraction() }
-        if expanded {
-            if let tool = collapsedEditorTool { activateEditorTool(tool) }
-        } else if closingWorkspace || isEditorDraftActive || geometrySelected || lensSelected {
-            let tool = currentEditorTool
-            let group = selectedGroup
-            finishEditorTool()
-            collapsedEditorTool = tool
-            selectedGroup = group
-        }
-        adjustmentsExpanded = expanded
     }
 
     func cancelDraftNavigation(onSystemPhotoSkipped: (@MainActor @Sendable () -> Void)? = nil) {
@@ -821,7 +771,6 @@ final class EditorCoordinator: ObservableObject {
         pendingFileImport = false
         pendingPhotoImport = false
         pendingToolSelection = nil
-        pendingAdjustmentExpansion = nil
         if skippedSystemPhoto, let onSystemPhotoSkipped {
             DispatchQueue.main.async(execute: onSystemPhotoSkipped)
         }
@@ -851,17 +800,14 @@ final class EditorCoordinator: ObservableObject {
         geometryDraft = nil
         lensDraft = nil
         pendingToolSelection = nil
-        pendingAdjustmentExpansion = nil
         preparedReset = nil
         preparedResetScope = nil
         resetConfirmationPresented = false
         draftExitPresented = false
         cancelRulerFocus()
         let clearedTool = EditorToolSourceState(
-            collapsedEditorTool: collapsedEditorTool,
             choosingMasterRecipe: choosingMasterRecipe
         ).afterSourceChange
-        collapsedEditorTool = clearedTool.collapsedEditorTool
         choosingMasterRecipe = clearedTool.choosingMasterRecipe
     }
 
@@ -1076,10 +1022,8 @@ final class EditorCoordinator: ObservableObject {
     func showQuickPresets() {
         guard !editorBusy, backend?.hasImage == true else { return }
         guard closeEditorDraftCleanly() else { return }
-        collapsedEditorTool = nil
         backend?.quickPresetsVisible = true
         selectedGroup = .looks
-        adjustmentsExpanded = true
     }
 
     func closeQuickPresets() {
@@ -1309,6 +1253,21 @@ final class EditorCoordinator: ObservableObject {
         showingLookRename = false
     }
 
+    func beginLookDeletion(id: String, name: String) {
+        deletingLook = EditorRenamingLook(id: id, name: name)
+    }
+
+    func cancelLookDeletion() {
+        deletingLook = nil
+    }
+
+    func completeLookDeletion() {
+        if let look = deletingLook {
+            backend?.removeLook(id: look.id)
+        }
+        deletingLook = nil
+    }
+
     func presentCameraWorkspace() {
         photoViewing.endTemporaryViewing()
         preserveEditorDraft()
@@ -1388,6 +1347,7 @@ struct EditorLoadingPresentation: Equatable {
         isExportingHDR: Bool,
         cameraHDRPreflight: Bool,
         isImportingLooks: Bool,
+        isUpdatingLooks: Bool = false,
         isLoadingLUTs: Bool,
         previewRendering: Bool,
         previewResizePending: Bool,
@@ -1399,7 +1359,7 @@ struct EditorLoadingPresentation: Equatable {
         let isOpeningPhoto = isImporting || (isViewModelBusy && !isSaving && !isExportingHDR && !cameraHDRPreflight)
         let isRendering = previewRendering || previewResizePending
         let showsTopProgressLine = isOpeningPhoto || isExportingHDR || isSaving || cameraHDRPreflight ||
-            isImportingLooks || isLoadingLUTs || isRendering || matchingProcessing || autoExposing || isBatchExportRunning
+            isImportingLooks || isUpdatingLooks || isLoadingLUTs || isRendering || matchingProcessing || autoExposing || isBatchExportRunning
         let showsEmptyCanvasLoading = !hasImage && isOpeningPhoto
 
         let topBannerMessageKey: String?
@@ -1444,6 +1404,8 @@ struct EditorLoadingPresentation: Equatable {
             progressAccessibilityKey = "正在保存"
         } else if isImportingLooks {
             progressAccessibilityKey = "正在导入外观"
+        } else if isUpdatingLooks {
+            progressAccessibilityKey = "正在处理"
         } else if matchingProcessing {
             progressAccessibilityKey = "正在匹配原画面…"
         } else if isLoadingLUTs {

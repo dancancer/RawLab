@@ -212,24 +212,14 @@ struct ContentView: View {
                           coordinator.renamedLUTName.trimmingCharacters(in: .whitespacesAndNewlines).rangeOfCharacter(from: .controlCharacters) != nil)
         }
         .alert(L10n.format("移除“%@”？", coordinator.deletingLook?.name ?? ""),
-               isPresented: Binding(get: { coordinator.deletingLook != nil }, set: { if !$0 { coordinator.deletingLook = nil } }),
-               presenting: coordinator.deletingLook) { target in
-            Button(L10n.text("删除"), role: .destructive) {
-                viewModel.removeLook(id: target.id) { removed in
-                    guard removed else { return }
-                    if settings.lutID == target.id {
-                        var committed = settings
-                        committed.lutID = nil
-                        settings = committed
-                    }
-                    if workingSettings.lutID == target.id {
-                        var updated = workingSettings
-                        updated.lutID = nil
-                        applySettingsChange(updated)
-                    }
-                }
+               isPresented: Binding(get: { coordinator.deletingLook != nil }, set: { if !$0 { coordinator.cancelLookDeletion() } }),
+               presenting: coordinator.deletingLook) { _ in
+            Button(L10n.text("移除"), role: .destructive) {
+                coordinator.completeLookDeletion()
             }
-            Button(L10n.text("取消"), role: .cancel) {}
+            Button(L10n.text("取消"), role: .cancel) {
+                coordinator.cancelLookDeletion()
+            }
         } message: { _ in
             Text(L10n.text("将移除 RawLab 保存的外观副本，原始文件不会被删除。"))
         }
@@ -329,9 +319,6 @@ struct ContentView: View {
         .onChange(of: viewModel.basePreviewImage) { _, image in
             if image == nil { coordinator.photoViewing.endTemporaryViewing() }
         }
-        .onChange(of: viewModel.hasImage) { _, hasImage in
-            if hasImage { coordinator.adjustmentsExpanded = true }
-        }
         .onChange(of: coordinator.photoViewing.holdingBefore) { _, _ in
             testHooks.onHoldingBeforeChange?(self)
         }
@@ -342,11 +329,6 @@ struct ContentView: View {
 
     private func applyEditorInteractionObservers<Content: View>(to content: Content) -> some View {
         content
-        .onChange(of: coordinator.adjustmentsExpanded) { _, expanded in
-            if !expanded { closeQuickPresets() }
-            if !expanded && coordinator.isAdjustingSlider && !coordinator.hslTargetEnabled && !coordinator.curveTargetEnabled { setSliderEditing(false) }
-            if expanded, let tool = coordinator.collapsedEditorTool { activateEditorTool(tool) }
-        }
         .onChange(of: coordinator.geometrySelected) { _, active in
             if active {
                 coordinator.photoViewing.sourceChanged()

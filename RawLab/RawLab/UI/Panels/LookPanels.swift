@@ -31,7 +31,7 @@ extension ContentView {
                     .accessibilityIdentifier(coordinator.lookSearchExpanded ? "looks.search.close" : "looks.search.open")
                 Button(action: requestLookImport) { Image(systemName: "plus").frame(width: 44, height: 44) }
                     .accessibilityLabel(L10n.text("导入外观")).accessibilityIdentifier("looks.import")
-                    .disabled(editorBusy || viewModel.isImportingLooks)
+                    .disabled(editorBusy || viewModel.isLookLibraryBusy)
             }.padding(.horizontal, 16)
             if !viewModel.unreadableLooks.isEmpty {
                 Button { coordinator.presentUnreadableLooks() } label: {
@@ -63,10 +63,10 @@ extension ContentView {
                                         if viewModel.lutMap[lut.id]?.isCustom == true {
                                             Button(L10n.text("重命名外观"), systemImage: "pencil") {
                                                 coordinator.beginLookRename(id: lut.id, name: lut.name)
-                                            }.disabled(editingLocked || viewModel.isImportingLooks)
+                                            }.disabled(editingLocked || viewModel.isLookLibraryBusy)
                                             Button(L10n.text("移除外观…"), systemImage: "trash", role: .destructive) {
-                                                coordinator.deletingLook = EditorRenamingLook(id: lut.id, name: lut.name)
-                                            }.disabled(editingLocked || viewModel.isImportingLooks)
+                                                coordinator.beginLookDeletion(id: lut.id, name: lut.name)
+                                            }.disabled(editingLocked || viewModel.isLookLibraryBusy)
                                         }
                                     }
                             }
@@ -90,7 +90,7 @@ extension ContentView {
             if viewModel.isLoadingLUTs { ProgressView(L10n.text("正在加载胶片")).padding(8).background(.regularMaterial) }
 
         }
-        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs || viewModel.isImportingLooks)
+        .disabled(!viewModel.hasImage || editingLocked || viewModel.isLoadingLUTs || viewModel.isLookLibraryBusy)
     }
 
 
@@ -213,7 +213,7 @@ struct IOSUnreadableLooksView: View {
                         Text(entry.displayName).font(.headline)
                         Text(entry.reason).font(.subheadline).foregroundStyle(.secondary)
                         Button(L10n.text("删除"), role: .destructive) { deleting = entry }
-                            .frame(minHeight: 44).disabled(model.isImportingLooks)
+                            .frame(minHeight: 44).disabled(model.isLookLibraryBusy)
                             .accessibilityIdentifier("looks.deleteUnreadable")
                     }.accessibilityElement(children: .contain).accessibilityIdentifier("looks.rowUnreadable")
                 }
