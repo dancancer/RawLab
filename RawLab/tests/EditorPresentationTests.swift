@@ -61,19 +61,19 @@ struct EditorPresentationTests {
         for recipe in MasterRecipe.allRecipes {
             var preset = RawSettings.default
             preset.temperature = 8000; preset.sharpening = 0.75
-            preset.hsl.set(.hue, channel: 7, value: 90)
+            preset.hslSettings.set(.hue, channel: 7, value: 90)
             preset.applyMasterRecipe(recipe)
-            check(preset.hsl == recipe.hsl && preset.highlights == -recipe.highlightsDelta / 100 &&
+            check(preset.hslSettings == recipe.hsl && preset.highlights == -recipe.highlightsDelta / 100 &&
                   preset.contrast == 1 + recipe.contrastDelta / 100 && preset.exposure == recipe.exposureDelta,
                   "\(recipe.id): preset overwrites six native controls and HSL")
             check(preset.temperature == 8000 && preset.sharpening == 0.75, "Unrelated iOS controls survive recipe application")
-            preset.hsl.set(.hue, channel: 7, value: 37)
-            preset.hsl.set(.saturation, channel: 5, value: -80)
+            preset.hslSettings.set(.hue, channel: 7, value: 37)
+            preset.hslSettings.set(.saturation, channel: 5, value: -80)
             for strength in [0.0, 0.5, 1.0, 2.0] {
                 preset.lutStrength = strength
                 let effective = preset.renderedRecipe(cameraTemperature: 5000, cameraTint: 8)
                 check(effective.exposure == preset.exposure * strength && effective.highlights == preset.highlights * strength &&
-                      effective.hsl.hue[7] == 37 * strength && effective.hsl.saturation[5] == max(-100, -80 * strength),
+                      effective.hslSettings.hue[7] == 37 * strength && effective.hslSettings.saturation[5] == max(-100, -80 * strength),
                       "Recipe scales current iOS controls and fractional HSL")
                 let restored = try! JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(preset))
                 check(restored == preset && restored.renderedRecipe(cameraTemperature: 5000, cameraTint: 8) == effective,
@@ -118,13 +118,13 @@ struct EditorPresentationTests {
         check(EditorLayoutPolicy.toolGridHeight(side: false, accessibility: false, itemCount: 7) == 116, "7-tool group expands to 2-row grid height")
         check(EditorLayoutPolicy.toolGridHeight(side: true, accessibility: false, itemCount: 3) == nil, "Side dock omits fixed home grid height")
         check(settings.exposureMode == .preview, "New photos match embedded-preview exposure")
-        check(settings.hsl.isIdentity, "HSL defaults to exact identity")
-        settings.hsl.set(.saturation, channel: 0, value: -60)
+        check(settings.hslSettings.isIdentity, "HSL defaults to exact identity")
+        settings.hslSettings.set(.saturation, channel: 0, value: -60)
         check(AdjustmentKind.hsl.progress(in: settings) != 0, "HSL edits mark the color tool as changed")
         AdjustmentKind.hsl.reset(in: &settings)
-        check(settings.hsl.isIdentity, "HSL reset clears every channel")
+        check(settings.hslSettings.isIdentity, "HSL reset clears every channel")
         let legacyColor = try! JSONDecoder().decode(RawSettings.self, from: Data("{}".utf8))
-        check(legacyColor.exposureMode == .scene && legacyColor.hsl.isIdentity, "Legacy edits retain scene exposure and identity HSL")
+        check(legacyColor.exposureMode == .scene && legacyColor.hslSettings.isIdentity, "Legacy edits retain scene exposure and identity HSL")
         check(!settings.denoise.enabled && settings.denoise.luma == 0 && settings.denoise.chroma == 46 && settings.denoise.coarse == 50,
               "Denoise defaults off and retains luminance texture")
         settings.denoise.apply(.clean)
@@ -137,12 +137,12 @@ struct EditorPresentationTests {
         check(settings.denoise == RawDenoiseSettings(), "Denoise group reset restores disabled defaults")
         check(!RawDenoiseSettings(enabled: true, luma: .nan).isValid &&
               !RawDenoiseSettings(enabled: true, chroma: 101).isValid, "Nonfinite and out-of-range denoise values rejected")
-        check(settings.photoEffects == PhotoEffectsSettings(vignetteAmount: 0, vignetteMidpoint: 50,
+        check(settings.effectSettings == PhotoEffectsSettings(vignetteAmount: 0, vignetteMidpoint: 50,
                                                                vignetteRoundness: 0, vignetteFeather: 50,
                                                                vignetteHighlights: 0, grainAmount: 0,
                                                                grainSize: 25, grainRoughness: 50),
               "Photo effects use the canonical disabled defaults")
-        var effects = settings.photoEffects
+        var effects = settings.effectSettings
         effects.vignetteAmount = 125
         effects.vignetteRoundness = -125
         effects.vignetteMidpoint = 125
@@ -158,22 +158,22 @@ struct EditorPresentationTests {
         var uiRounded = RawSettings.default
         uiRounded.setEditingEffect(.vignetteAmount, to: 0.5)
         uiRounded.setEditingEffect(.vignetteRoundness, to: -0.5)
-        check(uiRounded.photoEffects.vignetteAmount == 0.5 && uiRounded.photoEffects.vignetteRoundness == -0.5,
+        check(uiRounded.effectSettings.vignetteAmount == 0.5 && uiRounded.effectSettings.vignetteRoundness == -0.5,
               "Photo effect UI setters preserve decimal precision")
         effects.vignetteAmount = 0
         effects.vignetteMidpoint = 62
-        settings.photoEffects = effects
-        check(settings.photoEffects.vignetteAmount == 0 && settings.photoEffects.vignetteMidpoint == 62,
+        settings.effectSettings = effects
+        check(settings.effectSettings.vignetteAmount == 0 && settings.effectSettings.vignetteMidpoint == 62,
               "Vignette auxiliary values survive while amount is zero")
         AdjustmentKind.vignette.reset(in: &settings)
-        check(settings.photoEffects.vignetteAmount == 0 && settings.photoEffects.vignetteMidpoint == 50 &&
-              settings.photoEffects.vignetteRoundness == 0 && settings.photoEffects.vignetteFeather == 50 &&
-              settings.photoEffects.vignetteHighlights == 0,
+        check(settings.effectSettings.vignetteAmount == 0 && settings.effectSettings.vignetteMidpoint == 50 &&
+              settings.effectSettings.vignetteRoundness == 0 && settings.effectSettings.vignetteFeather == 50 &&
+              settings.effectSettings.vignetteHighlights == 0,
               "Vignette group reset restores all vignette defaults")
-        settings.photoEffects.grainAmount = 70
-        settings.photoEffects.grainSize = 60
+        settings.effectSettings.grainAmount = 70
+        settings.effectSettings.grainSize = 60
         AdjustmentKind.grain.reset(in: &settings)
-        check(settings.photoEffects == PhotoEffectsSettings(), "Grain group reset restores all defaults")
+        check(settings.effectSettings == PhotoEffectsSettings(), "Grain group reset restores all defaults")
         settings.displayChromaDenoise = 3
         check(settings.displayChromaDenoise == 2, "Display chroma mode clamps to the supported range")
         settings.displayChromaDenoise = -1
@@ -226,7 +226,7 @@ struct EditorPresentationTests {
         legacy.removeValue(forKey: "displayChromaDenoise")
         let oldDecoded = try! JSONDecoder().decode(RawSettings.self,
                                                      from: JSONSerialization.data(withJSONObject: legacy))
-        check(oldDecoded.photoEffects == PhotoEffectsSettings() && oldDecoded.displayChromaDenoise == 0,
+        check(oldDecoded.effectSettings == PhotoEffectsSettings() && oldDecoded.displayChromaDenoise == 0,
               "Older edit records default effects and display chroma to off")
         for kind in AdjustmentKind.allCases {
             kind.setValue(kind.range.upperBound, in: &settings)

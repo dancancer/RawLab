@@ -118,8 +118,8 @@ struct RawImportHistoryTests {
         aSettings.exposure = 0.2
         var bSettings = RawSettings.default
         bSettings.exposure = -0.4
-        bSettings.geometry.perspectiveHorizontal = 0.3
-        bSettings.geometry.cropWidth = 0.7
+        bSettings.geometrySettings.perspectiveHorizontal = 0.3
+        bSettings.geometrySettings.cropWidth = 0.7
         let storeURL = output.appendingPathComponent("edits")
         let store = try EditPersistence(directory: storeURL)
         try store.save(a, state: PhotoEditState(settings: aSettings))
@@ -148,7 +148,7 @@ struct RawImportHistoryTests {
         try check(bCallbacks == [bSettings] && model.restoredSettings == bSettings && model.editSaveState == .restored,
                   "RAW B restores its own exposure, perspective and saved notice")
         try check(publishedB.preview != nil && publishedB.comparison != nil && publishedB.size != nil &&
-                  publishedB.histogram != nil && publishedB.baseHistogram != nil && publishedB.geometry == bSettings.geometry,
+                  publishedB.histogram != nil && publishedB.baseHistogram != nil && publishedB.geometry == bSettings.geometrySettings,
                   "RAW B publishes pixels, geometry and both histograms")
         let bRevision = model.sourceRevision
         lateA.forEach { $0() }
@@ -185,14 +185,14 @@ struct RawImportHistoryTests {
         let beforeBEdit = Content(model)
         var edited = bSettings
         edited.exposure = 0.8
-        edited.geometry.perspectiveVertical = -0.25
+        edited.geometrySettings.perspectiveVertical = -0.25
         let newPreview = try render(model, settings: edited, deliveries: deliveries)
         oldPreview.forEach { $0() }
         try check(Content(model) == beforeBEdit && model.previewRendering,
                   "late RAW A preview cannot replace B or finish B's active preview")
         newPreview.forEach { $0() }
         try check(!model.previewRendering && model.previewImage?.pngData() != beforeBEdit.preview &&
-                  model.basePreviewGeometry == edited.geometry && model.sourceIdentity == b,
+                  model.basePreviewGeometry == edited.geometrySettings && model.sourceIdentity == b,
                   "current RAW B preview applies exposure and both perspective axes")
 
         model.queueSettingsSave(edited)
@@ -299,9 +299,9 @@ struct RawImportHistoryTests {
         } else { throw Failure.message("default light reset should be unchanged") }
 
         var paired = accepted.settings
-        paired.geometry.cropWidth = 0.8
+        paired.geometrySettings.cropWidth = 0.8
         paired.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false)
-        let pairDraft = EditorDraftSnapshot(geometry: paired.geometry, lens: paired, tool: .geometry)
+        let pairDraft = EditorDraftSnapshot(geometry: paired.geometrySettings, lens: paired, tool: .geometry)
         if case .blocked = model.prepareReset(.all, settings: accepted.settings, revision: editRevision, draft: pairDraft) {
             try check(true, "full reset blocks until the draft is resolved")
         } else { throw Failure.message("full reset bypassed the active draft") }
@@ -393,8 +393,8 @@ struct RawImportHistoryTests {
         // (b) Geometry + lens correction enabled -> 1 processRaw call, 1 core RAW decode.
         let geomLensID = PhotoIdentity(resourceIdentifier: "decode-geom-lens-\(UUID().uuidString)")
         var geomLens = RawSettings.default
-        geomLens.geometry.cropWidth = 0.75
-        geomLens.geometry.perspectiveHorizontal = 0.2
+        geomLens.geometrySettings.cropWidth = 0.75
+        geomLens.geometrySettings.perspectiveHorizontal = 0.2
         geomLens.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         try store.save(geomLensID, state: PhotoEditState(settings: geomLens))
         rawlabImportCounterReset()
@@ -410,7 +410,7 @@ struct RawImportHistoryTests {
         customWB.whiteBalanceMode = .custom
         customWB.temperature = 6200
         customWB.tint = 12
-        customWB.geometry.cropWidth = 0.8
+        customWB.geometrySettings.cropWidth = 0.8
         try store.save(customWBID, state: PhotoEditState(settings: customWB))
         rawlabImportCounterReset()
         model.importImage(from: .raw(raw), identity: customWBID)

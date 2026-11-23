@@ -23,7 +23,7 @@ final class CanonicalEditRecipeTests: XCTestCase {
             midtones: ColorGradingWheel(hue: 45, saturation: 12),
             highlights: ColorGradingWheel(hue: 350, saturation: 20)
         )
-        settings.hsl.setExact(.hue, channel: 0, value: 18)
+        settings.hslSettings.setExact(.hue, channel: 0, value: 18)
         settings.geometry = GeometrySettings(
             cropX: 0.1, cropY: 0.2, cropWidth: 0.7, cropHeight: 0.6,
             quarterTurns: 1, flipHorizontal: true, flipVertical: false,

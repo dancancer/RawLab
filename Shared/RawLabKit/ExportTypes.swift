@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 public enum ExportSize {
     public static let presets = [2048, 3000, 4096]
@@ -32,19 +33,22 @@ public enum OutputSharpening: String, Codable, Equatable, Hashable, CaseIterable
     }
 }
 
-public enum BatchOutputFormat: String, Codable, Equatable, Hashable, Sendable {
-    case jpeg
-    case png
+public enum ExportFormat: String, CaseIterable, Codable, Identifiable, Equatable, Hashable, Sendable {
+    case jpeg, png
     case hdrJPEG = "hdr_jpeg"
     case hdrHEIF = "hdr_heif"
     case renderedDNG = "dng"
 
+    public var id: String { rawValue }
     public var publishesToPhotos: Bool { self != .renderedDNG }
     public var requiresHDR: Bool { self == .hdrJPEG || self == .hdrHEIF }
     public var hdrRequiredMessage: String {
         self == .hdrHEIF ? L10n.text("HDR HEIF 需要启用 HDR 编辑。") : L10n.text("HDR JPEG 需要启用 HDR 编辑。")
     }
-
+    public var suffix: String {
+        if self == .hdrHEIF { return "heic" }
+        return self == .jpeg || self == .hdrJPEG ? "jpg" : rawValue
+    }
     public var title: String {
         switch self {
         case .hdrJPEG: return L10n.text("HDR JPEG")
@@ -54,13 +58,22 @@ public enum BatchOutputFormat: String, Codable, Equatable, Hashable, Sendable {
         case .renderedDNG: return L10n.text("DNG · 渲染型")
         }
     }
-
-    public var suffix: String {
+    public var contentType: UTType {
         switch self {
-        case .jpeg, .hdrJPEG: return "jpg"
-        case .png: return "png"
-        case .hdrHEIF: return "heic"
-        case .renderedDNG: return "dng"
+        case .hdrJPEG, .jpeg: return .jpeg
+        case .hdrHEIF: return .heic
+        case .png: return .png
+        case .renderedDNG: return UTType(filenameExtension: "dng") ?? .rawImage
+        }
+    }
+    public static func forOutput(_ url: URL) -> ExportFormat {
+        switch url.pathExtension.lowercased() {
+        case "png": return .png
+        case "dng": return .renderedDNG
+        case "heic", "heif": return .hdrHEIF
+        default: return .jpeg
         }
     }
 }
+
+public typealias BatchOutputFormat = ExportFormat

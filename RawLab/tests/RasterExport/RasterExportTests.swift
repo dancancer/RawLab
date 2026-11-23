@@ -40,8 +40,8 @@ struct RasterExportTests {
             for longEdge in [nil, 48] as [Int?] {
                 var settings = RawSettings.default
                 settings.exposure = 0.35
-                settings.geometry.quarterTurns = 1
-                settings.geometry.cropWidth = 0.75
+                settings.geometrySettings.quarterTurns = 1
+                settings.geometrySettings.cropWidth = 0.75
                 let expectedJPEG = try fixture.referenceJPEG(buffer: decoded.buffer, source: url,
                                                              settings: settings, longEdge: longEdge)
                 let actualJPEG = try fixture.jpeg(settings: settings, longEdge: longEdge)

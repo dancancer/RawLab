@@ -456,7 +456,7 @@ struct AdjustmentTransferTests {
         let plain = try MacAdjustmentTransfer.prepare(payload: payload, target: state(), context: raw)
         check(request(plain).exposure_ev == 0.7 && request(plain).contrast == 1.2,
               "Partial recipe paste materializes source strength exactly once")
-        check(plain.settings.masterRecipeID == nil && plain.filmID.isEmpty, "Partial paste does not select source look")
+        check(plain.settings.masterRecipeID == nil && (plain.filmID ?? "").isEmpty, "Partial paste does not select source look")
         var target = Adjustments()
         target.applyMasterRecipe(.hamadaDaylightV2)
         target.strength = 0.5; target.saturation = 1.13; target.tint = 0
@@ -841,7 +841,7 @@ struct AdjustmentTransferTests {
                 let payload = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: bytes)
                 if let expected = vector["neutral_effective"] as? [String: Double] {
                     let candidate = try MacAdjustmentTransfer.prepare(payload: payload, target: state(), context: raw)
-                    let actual = MacAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                    let actual = AdjustmentTransfer.effectiveNumbers(candidate.settings)
                     check(expected.allSatisfy { Float(actual[AdjustmentTransferField(rawValue: $0.key)!]!) == Float($0.value) },
                           "Shared effective vector: \(id)")
                 }
@@ -990,7 +990,7 @@ struct AdjustmentTransferTests {
                 }
             }
             if let effectiveObj = expectSpec["effective"] as? [String: NSNumber] {
-                let actualEffective = MacAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                let actualEffective = AdjustmentTransfer.effectiveNumbers(candidate.settings)
                 for key in effectiveObj.keys.sorted() {
                     let field = AdjustmentTransferField(rawValue: key)!
                     check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")

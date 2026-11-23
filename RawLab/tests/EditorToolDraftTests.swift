@@ -23,9 +23,9 @@ import Foundation
         draft.redo()
         try check(draft.value.exposure == 2 && draft.value.saturation == 1.2, "Redo restores only the tool scope")
         var hsl = EditorToolDraft(tool: .adjustment(.hsl), original: original)
-        requested = original; requested.hsl.set(.saturation, channel: 2, value: 30); requested.exposure = 3
+        requested = original; requested.hslSettings.set(.saturation, channel: 2, value: 30); requested.exposure = 3
         hsl.update(requested)
-        try check(hsl.value.hsl.saturation[2] == 30 && hsl.value.exposure == original.exposure, "HSL preserves unrelated fields")
+        try check(hsl.value.hslSettings.saturation[2] == 30 && hsl.value.exposure == original.exposure, "HSL preserves unrelated fields")
         var hdr = RawSettings.default; hdr.hdr = HDRSettings()
         try check(!EditorToolDraft(tool: .film, original: hdr).changed, "Opening an HDR look does not change its version")
         let encoded = try JSONEncoder().encode(draft)
@@ -58,7 +58,7 @@ import Foundation
             vignetteRoundness: -12.5, vignetteFeather: 50.5, vignetteHighlights: 12.5,
             grainAmount: 12.25, grainSize: 37.75, grainRoughness: 50.5)
         var sdrDecimalBase = RawSettings.default
-        sdrDecimalBase.photoEffects = sdrFx
+        sdrDecimalBase.effectSettings = sdrFx
         try check(!EditorToolDraft(tool: .adjustment(.vignette), original: sdrDecimalBase).changed,
             "Opening a vignette draft with decimals does not mark it changed")
         try check(!EditorToolDraft(tool: .adjustment(.grain), original: sdrDecimalBase).changed,
@@ -73,16 +73,16 @@ import Foundation
         let loadedVig = try checkPresent(try store.load(identity: vigIdentity, committed: sdrDecimalBase),
             "Vignette decimal draft reloads from store")
         let projectedVig = loadedVig.projecting(on: sdrDecimalBase)
-        try check(projectedVig.photoEffects.vignetteAmount == -10.3,
+        try check(projectedVig.effectSettings.vignetteAmount == -10.3,
             "Edited vignette UI slider preserves decimal value (-10.3)")
-        try check(projectedVig.photoEffects.vignetteMidpoint == 62.5
-            && projectedVig.photoEffects.vignetteRoundness == -12.5
-            && projectedVig.photoEffects.vignetteFeather == 50.5
-            && projectedVig.photoEffects.vignetteHighlights == 12.5,
+        try check(projectedVig.effectSettings.vignetteMidpoint == 62.5
+            && projectedVig.effectSettings.vignetteRoundness == -12.5
+            && projectedVig.effectSettings.vignetteFeather == 50.5
+            && projectedVig.effectSettings.vignetteHighlights == 12.5,
             "Untouched SDR vignette draft siblings preserve decimals after store reload")
-        try check(projectedVig.photoEffects.grainAmount == 12.25
-            && projectedVig.photoEffects.grainSize == 37.75
-            && projectedVig.photoEffects.grainRoughness == 50.5,
+        try check(projectedVig.effectSettings.grainAmount == 12.25
+            && projectedVig.effectSettings.grainSize == 37.75
+            && projectedVig.effectSettings.grainRoughness == 50.5,
             "Vignette draft projection preserves SDR grain decimals")
 
         var grainDraft = EditorToolDraft(tool: .adjustment(.grain), original: sdrDecimalBase)
@@ -94,10 +94,10 @@ import Foundation
         let loadedGrain = try checkPresent(try store.load(identity: grainIdentity, committed: sdrDecimalBase),
             "Grain decimal draft reloads from store")
         let projectedGrain = loadedGrain.projecting(on: sdrDecimalBase)
-        try check(projectedGrain.photoEffects.grainAmount == 15.0,
+        try check(projectedGrain.effectSettings.grainAmount == 15.0,
             "Edited grain UI slider updates to 15.0")
-        try check(projectedGrain.photoEffects.grainSize == 37.75
-            && projectedGrain.photoEffects.grainRoughness == 50.5,
+        try check(projectedGrain.effectSettings.grainSize == 37.75
+            && projectedGrain.effectSettings.grainRoughness == 50.5,
             "Untouched SDR grain draft siblings preserve decimals after store reload")
 
         var hdrDecimalBase = try RawSettings.default.withHDRMode(true, sourceIsHDR: true)

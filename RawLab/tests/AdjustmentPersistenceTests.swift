@@ -535,7 +535,7 @@ import Foundation
         let old = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: legacy))
         let oldRendered = old.renderedRecipe(cameraTemperature: 6000, cameraTint: 0)
         try check(oldRendered.blackPoint == 50 && oldRendered.gradingSettings.shadows.saturation == 8 &&
-                  oldRendered.curveSettings == old.curveSettings && oldRendered.hsl == old.hsl.scaled(by: 2),
+                  oldRendered.curveSettings == old.curveSettings && oldRendered.hslSettings == old.hslSettings.scaled(by: 2),
                   "Missing version retains old independent controls and scaled HSL")
         legacy["masterRecipeSettingsVersion"] = 5
         try rejects("Unknown recipe versions cannot silently change old photos") {

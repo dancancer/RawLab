@@ -157,6 +157,8 @@
 "保存失败" = "Speichern fehlgeschlagen";
 "保存当前调整为预设…" = "Aktuelle Anpassungen als Vorgabe speichern…";
 "保存所选调整，之后可应用到其他照片。" = "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.";
+"保存时发生中断，请先核对照片图库，避免重复生成。" = "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.";
+"保存结果待确认" = "Speicherergebnis muss bestätigt werden";
 "保存预设" = "Vorgabe speichern";
 "保留任务" = "Aufgabe behalten";
 "保留当前手动草稿" = "Aktuellen manuellen Entwurf behalten";
@@ -444,6 +446,7 @@
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Color-Grading für Schatten, Mitteltöne und Lichter zurücksetzen?";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Erfolgreich %@ · Fehlgeschlagen %@ · Nicht verarbeitet %@";
 "我的预设" = "Meine Vorgaben";
+"所选外观不可用，请重新选择外观。" = "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.";
 "所选方案" = "Ausgewählte Option";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "Diese Anpassungen sind mit dem Foto nicht kompatibel. Ändern Sie den Umfang oder überspringen Sie es.";
 "所选镜头不可用" = "Gewähltes Objektiv nicht verfügbar";
@@ -464,6 +467,7 @@
 "拉直" = "Begradigen";
 "拍摄参数" = "Aufnahmeparameter";
 "拍摄时设置" = "Einstellung wie aufgenommen";
+"拍摄时：%.0f K · 色调 %+.0f" = "Wie aufgenommen: %.0f K · Tönung %+.0f";
 "拖动照片调整颜色；退出目标模式后可平移。" = "Foto ziehen, um Farben anzupassen. Zum Verschieben den Zielmodus beenden.";
 "拖动边角裁切，拖动画面内移动选区。" = "Ziehen Sie eine Ecke, um zuzuschneiden; ziehen Sie innerhalb der Auswahl, um sie zu verschieben.";
 "指定长边" = "Lange Seite festlegen";
@@ -547,12 +551,14 @@
 "无法自动调整曝光：%@" = "Belichtung konnte nicht automatisch angepasst werden: %@";
 "无法解码普通图片：%@" = "Das Bild kann nicht dekodiert werden: %@";
 "无法计算直方图" = "Histogramm kann nicht berechnet werden";
+"无法识别原始照片，调整尚未保存。" = "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "Das HDR-Kameraprofil ist nicht lesbar oder passt nicht zu dieser Kamera.";
 "无法读取 X3F 显影模式：%@" = "X3F-Entwicklungsmodus konnte nicht gelesen werden: %@";
 "无法读取上次批量任务：%@" = "Der letzte Stapel-Export konnte nicht gelesen werden: %@";
 "无法读取基础曝光" = "Die Basisbelichtung kann nicht gelesen werden";
 "无法读取外观文件。" = "Die Look-Datei konnte nicht gelesen werden.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "Die gespeicherte Look-Bibliothek kann nicht gelesen werden; die ursprünglichen Einträge wurden nicht überschrieben.";
+"无法读取已保存的调整，原有记录未被覆盖。" = "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Die Datei kann nicht gelesen oder geschrieben werden. Bitte überprüfen Sie den Pfad und die Zugriffsberechtigungen.";
 "无法读取此条目，原文已保留" = "Dieser Eintrag konnte nicht gelesen werden; der Originaltext bleibt erhalten.";
 "无法读取照片，请检查文件和访问权限。" = "Das Foto kann nicht gelesen werden. Prüfen Sie die Datei und Zugriffsrechte.";
@@ -612,6 +618,7 @@
 "未匹配镜头，请手动选择" = "Kein passendes Objektiv; bitte manuell auswählen";
 "未发现适用于此 Mac 的新版本" = "Für diesen Mac wurde keine neue Version gefunden";
 "未变化" = "Unverändert";
+"未处理" = "Nicht verarbeitet";
 "未应用 LUT" = "LUT nicht angewendet";
 "未打开照片" = "Foto nicht geöffnet";
 "未找到机身或传感器尺寸信息" = "Kamera- oder Sensorgrößeninformationen fehlen";
@@ -660,6 +667,7 @@
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
 "正在下载更新…" = "Update wird geladen…";
+"正在保存" = "Wird gespeichert";
 "正在保存 AI 结果" = "KI-Ergebnis wird gespeichert";
 "正在停止…" = "Wird angehalten…";
 "正在准备 AI 降噪" = "KI-Entrauschen wird vorbereitet";
@@ -674,6 +682,7 @@
 "正在导出" = "Wird exportiert";
 "正在导出…" = "Wird exportiert…";
 "正在恢复更新前的数据…" = "Daten vom Stand vor dem Update werden wiederhergestellt…";
+"正在显影" = "Wird entwickelt";
 "正在显影…" = "Wird entwickelt…";
 "正在校验并准备更新…" = "Update wird überprüft und vorbereitet…";
 "正在检查 RAW 照片…" = "RAW-Fotos prüfen…";
@@ -904,6 +913,7 @@
 "请先完成或关闭现有批量任务。" = "Schließen Sie zuerst die aktuelle Stapelaufgabe ab oder schließen Sie sie.";
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Schließe die KI-Entrauschung dieses Fotos vor Vorschau oder Export ab.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Wenden Sie offene Eingaben und Geometrieentwürfe zuerst an oder verwerfen Sie sie.";
+"请先打开这张照片，确认是否恢复旧调整。" = "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.";
 "请先确认同源图片、处理条件和参考来源。" = "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.";
 "请先纠正无效数值" = "Ungültige Werte zuerst korrigieren";
 "请先退出其他 RawLab 实例" = "Beenden Sie zuerst die andere RawLab-Instanz";

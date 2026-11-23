@@ -88,7 +88,7 @@ struct ImportStateTests {
         try check(restored == [f.aSettings], "A restores exactly A's persisted settings once")
         let original = PublishedContent(f.model)
         var changed = f.aSettings
-        changed.exposure = 0.7; changed.geometry.cropX = 0.2; changed.geometry.cropWidth = 0.6
+        changed.exposure = 0.7; changed.geometrySettings.cropX = 0.2; changed.geometrySettings.cropWidth = 0.6
         // 直接调用 VM 的已提交编辑，补齐 ContentView settings observer 的接线。
         f.model.committedPreviewSettings = changed
         let results = try renderHeld(f, settings: changed)
@@ -96,7 +96,7 @@ struct ImportStateTests {
         try deliver(results)
         try check(!f.model.previewRendering && f.model.previewImage?.pngData() != original.preview &&
                   f.model.histogram != original.histogram, "Normal edit publishes new pixels and histogram and finishes")
-        try check(f.model.nativeImageSize != original.nativeSize && f.model.basePreviewGeometry == changed.geometry &&
+        try check(f.model.nativeImageSize != original.nativeSize && f.model.basePreviewGeometry == changed.geometrySettings &&
                   f.model.sourceIdentity == f.aIdentity, "Normal geometry updates dimensions/comparison and preserves source ownership")
     }
     private static func lateSuccess(_ f: Fixture) throws {
@@ -194,7 +194,7 @@ struct ImportStateTests {
     private static func latePreview(_ f: Fixture, fails: Bool) throws {
         try importCurrent(f, url: f.aURL, identity: f.aIdentity)
         var aEdit = f.aSettings
-        aEdit.exposure = 1.25; aEdit.geometry.cropWidth = 0.5
+        aEdit.exposure = 1.25; aEdit.geometrySettings.cropWidth = 0.5
         if fails {
             // Negative IO fixture: exercise the real RAW error path without a
             // private RAW. This is publication testing, not RAW correctness.
@@ -228,7 +228,7 @@ struct ImportStateTests {
         try deliver(Array(old.dropLast()))
         try check(f.model.previewImage?.pngData() != imported.preview && f.model.histogram == nil,
                   "Accepted new pixels clear previous statistics before delayed RGB arrives")
-        var second = first; second.exposure = 1.5; second.geometry.cropWidth = 0.6
+        var second = first; second.exposure = 1.5; second.geometrySettings.cropWidth = 0.6
         let current = try renderHeld(f, settings: second)
         try check(current.count == 3, "Second render retains the separate RGB publication boundary")
         try deliver(Array(current.dropLast()))

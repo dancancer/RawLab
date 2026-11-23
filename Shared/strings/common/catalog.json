@@ -9190,5 +9190,141 @@
     "fr": "Effacer les filtres",
     "ja": "フィルタを解除",
     "zh-Hans": "清除筛选"
+  },
+  "旧版 FBDD": {
+    "de": "Älteres FBDD",
+    "en": "Legacy FBDD",
+    "es": "FBDD heredado",
+    "fr": "Ancien FBDD",
+    "ja": "旧方式 FBDD",
+    "zh-Hans": "旧版 FBDD"
+  },
+  "旧版：{0}": {
+    "de": "Älteres Verfahren: {0}",
+    "en": "Legacy: {0}",
+    "es": "Heredado: {0}",
+    "fr": "Ancien : {0}",
+    "ja": "旧方式: {0}",
+    "zh-Hans": "旧版：{0}"
+  },
+  "几何编辑": {
+    "de": "Geometrie bearbeiten",
+    "en": "Geometry edits",
+    "es": "Edición de geometría",
+    "fr": "Réglages géométriques",
+    "ja": "ジオメトリ編集",
+    "zh-Hans": "几何编辑"
+  },
+  "胶片模拟": {
+    "de": "Filmsimulation",
+    "en": "Film simulation",
+    "es": "Simulación de película",
+    "fr": "Simulation de film",
+    "ja": "フィルムシミュレーション",
+    "zh-Hans": "胶片模拟"
+  },
+  "轻度": {
+    "de": "Mild",
+    "en": "Mild",
+    "es": "Leve",
+    "fr": "Doux",
+    "ja": "マイルド",
+    "zh-Hans": "轻度"
+  },
+  "降噪亮度": {
+    "de": "Luminanz",
+    "en": "Luminance",
+    "es": "Luminancia",
+    "fr": "Luminance",
+    "ja": "輝度",
+    "zh-Hans": "亮度"
+  },
+  "降噪粗色斑": {
+    "de": "Farbflecken",
+    "en": "Blotches",
+    "es": "Manchas",
+    "fr": "Taches",
+    "ja": "色斑",
+    "zh-Hans": "粗色斑"
+  },
+  "降噪色彩": {
+    "de": "Farbe",
+    "en": "Color",
+    "es": "Color",
+    "fr": "Chrominance",
+    "ja": "カラー",
+    "zh-Hans": "色彩"
+  },
+  "拍摄时：{0} K · 色调 {1}": {
+    "de": "Wie aufgenommen: {0} K · Tönung {1}",
+    "en": "As Shot: {0} K · Tint {1}",
+    "es": "Según la toma: {0} K · Matiz {1}",
+    "fr": "Selon la prise : {0} K · Teinte {1}",
+    "ja": "撮影時：{0} K · 色かぶり {1}",
+    "zh-Hans": "拍摄时：{0} K · 色调 {1}"
+  },
+  "无法识别原始照片，调整尚未保存。": {
+    "de": "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.",
+    "en": "Unable to Identify the Original Photo; Adjustments Were Not Saved.",
+    "es": "No se puede identificar la foto original; los ajustes no se guardaron.",
+    "fr": "Impossible d’identifier la photo originale ; les réglages n’ont pas été enregistrés.",
+    "ja": "元の写真を識別できないため、調整は保存されませんでした。",
+    "zh-Hans": "无法识别原始照片，调整尚未保存。"
+  },
+  "无法读取已保存的调整，原有记录未被覆盖。": {
+    "de": "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.",
+    "en": "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.",
+    "es": "No se pueden leer los ajustes guardados; no se sobrescribió el registro existente.",
+    "fr": "Impossible de lire les réglages enregistrés ; l’enregistrement existant n’a pas été remplacé.",
+    "ja": "保存済みの調整を読み取れないため、既存の記録は上書きされませんでした。",
+    "zh-Hans": "无法读取已保存的调整，原有记录未被覆盖。"
+  },
+  "请先打开这张照片，确认是否恢复旧调整。": {
+    "en": "Open this photo first to decide whether to restore its previous adjustments.",
+    "de": "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.",
+    "fr": "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.",
+    "es": "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.",
+    "ja": "先にこの写真を開き、以前の調整を復元するか選択してください。",
+    "zh-Hans": "请先打开这张照片，确认是否恢复旧调整。"
+  },
+  "保存时发生中断，请先核对照片图库，避免重复生成。": {
+    "de": "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.",
+    "en": "An interruption occurred while saving. Check Photos before generating again.",
+    "es": "La escritura se interrumpió. Comprueba Fotos antes de volver a generar.",
+    "fr": "Une interruption s’est produite lors de l’enregistrement. Vérifiez Photos avant de générer à nouveau.",
+    "ja": "保存中に中断しました。再生成する前に写真を確認してください。",
+    "zh-Hans": "保存时发生中断，请先核对照片图库，避免重复生成。"
+  },
+  "保存结果待确认": {
+    "de": "Speicherergebnis muss bestätigt werden",
+    "en": "Save Result Needs Confirmation",
+    "es": "Se debe confirmar el resultado guardado",
+    "fr": "Confirmation de l’enregistrement requise",
+    "ja": "保存結果の確認待ち",
+    "zh-Hans": "保存结果待确认"
+  },
+  "所选外观不可用，请重新选择外观。": {
+    "de": "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.",
+    "en": "Selected Look Unavailable; Choose Another Look.",
+    "es": "El aspecto seleccionado no está disponible; elige otro.",
+    "fr": "Le look sélectionné est indisponible ; choisissez-en un autre.",
+    "ja": "選択したルックを利用できません。別のルックを選択してください。",
+    "zh-Hans": "所选外观不可用，请重新选择外观。"
+  },
+  "未处理": {
+    "de": "Nicht verarbeitet",
+    "en": "Not Processed",
+    "es": "Sin procesar",
+    "fr": "Non traité",
+    "ja": "未処理",
+    "zh-Hans": "未处理"
+  },
+  "正在显影": {
+    "de": "Wird entwickelt",
+    "en": "Developing",
+    "es": "Revelando",
+    "fr": "Développement",
+    "ja": "現像中",
+    "zh-Hans": "正在显影"
   }
 }

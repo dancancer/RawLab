@@ -12,6 +12,7 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "50% 中性灰" = "50% Neutral Gray";
+"AI 降噪" = "AI denoise";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "The DCP contains unsupported spatial gains, HDR, or RGB-table processing and cannot be converted.";
 "DCP 导入选项" = "DCP import options";
@@ -97,6 +98,7 @@
 "下一张" = "Next photo";
 "不可读外观" = "Unreadable looks";
 "不支持此 HDR 格式或颜色描述。" = "This HDR format or color description is not supported.";
+"不支持此处理版本，原有记录未被覆盖。" = "This processing version is not supported. Saved edits have not been overwritten.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "This photo, look, or processing mode is not supported. Check file compatibility and processing settings.";
 "不能覆盖原始文件。" = "The original file cannot be overwritten.";
 "不适用" = "Not applicable";
@@ -200,6 +202,7 @@
 "几何" = "Geometry";
 "几何与镜头" = "Geometry & Lens";
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometry and lens settings are included only with All or an explicit selection.";
+"几何编辑" = "Geometry edits";
 "分割位置" = "Split position";
 "分割线" = "Wipe";
 "切换" = "Switch";
@@ -375,6 +378,7 @@
 "已复制" = "Copied";
 "已导入" = "Imported";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks imported: %@; files not imported: %@\n";
+"已导出" = "Exported";
 "已导出 %@ 个渲染型 DNG" = "Rendered DNG Files Exported: %@";
 "已导出渲染型 DNG。" = "Rendered DNG Exported.";
 "已展开" = "Expanded";
@@ -539,6 +543,7 @@
 "无法保存编辑草稿。" = "Unable to save the edit draft.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "Cannot write the HDR export. Check free space and destination permissions.";
 "无法写入成片，请检查输出位置和剩余空间。" = "Unable to write the exported photo. Check the output location and free space.";
+"无法写入输出目录，请检查访问权限和剩余空间。" = "Unable to write to the output folder. Check access permissions and free space.";
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法加入最近打开：%@" = "Could not add to recently opened: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
@@ -565,6 +570,7 @@
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "Unable to read the camera’s Wi-Fi information. Connect manually.";
 "无法读取统计设置，已保持关闭。" = "The analytics setting could not be read, so analytics stays off.";
+"无法读取调整记录：%@" = "Unable to read adjustment record: %@";
 "无法读取镜头校正状态" = "Could Not Read Lens Correction Status";
 "无法读取镜头配置列表" = "Could Not Read Lens Profiles";
 "无法重新打开照片" = "Could not reopen photo";
@@ -574,11 +580,14 @@
 "日光" = "Daylight";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanese luminous skin, airy transparent blue-cyan, open shadows and soft highlights";
 "日系青空 · 高调日光" = "Japanese blue sky · high-key daylight";
+"旧版 FBDD" = "Legacy FBDD";
 "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "The older edit was saved using only the Photos identifier. Restore it if this is the same original photo.";
 "旧版降噪" = "Legacy noise reduction";
+"旧版：%@" = "Legacy: %@";
 "明亮度" = "Luminance";
 "明度" = "Lightness";
 "明度：从暗到亮。" = "Lightness: from dark to light.";
+"明暗" = "Tone";
 "显示图像" = "Display image";
 "显示密码" = "Show password";
 "暂停联机" = "Pause tethering";
@@ -849,6 +858,7 @@
 "联机拍摄设置" = "Tethered shooting settings";
 "肤色色相放大" = "Skin Hue Amplification";
 "胶片" = "Film";
+"胶片模拟" = "Film simulation";
 "自动" = "Auto";
 "自动 HDR" = "Automatic HDR";
 "自动匹配" = "Automatic Matching";
@@ -859,6 +869,7 @@
 "自由" = "Free";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Dense urban texture, bold S-curve, saturated orange-cyan and purple-gold clash";
 "色度降噪" = "Chroma noise reduction";
+"色彩" = "Color";
 "色彩降噪" = "Chroma Noise Reduction";
 "色温" = "Temperature";
 "色相" = "Hue";
@@ -922,6 +933,7 @@
 "请核对手机和相机的配对数字" = "Check the pairing number on your phone and camera";
 "请等待当前任务完成。" = "Wait for the Current Task to Finish.";
 "请等待预览完成后导出。" = "Wait for the Preview to Finish Before Exporting.";
+"请至少选择一张照片。" = "Please select at least one photo.";
 "请输入 1–65535 之间的像素数" = "Enter a pixel count from 1 to 65,535";
 "请输入不同的预设名称。" = "Enter a different preset name.";
 "请输入相机显示的 Wi-Fi 名称和密码。" = "Enter the Wi-Fi name and password shown on the camera.";
@@ -948,10 +960,12 @@
 "跟随系统" = "Follow system";
 "跳过" = "Skip";
 "跳过以上目标后重试" = "Skip Listed Photos and Retry";
+"轻度" = "Mild";
 "输入 Wi-Fi 名称与密码" = "Enter Wi-Fi Name & Password";
 "输入参考" = "Input reference";
 "输入坐标" = "Input";
 "输入范围" = "Input range";
+"输入调整" = "Input adjustments";
 "输入颜色" = "Input color space";
 "输出" = "Output";
 "输出参考" = "Output reference";
@@ -1056,7 +1070,10 @@
 "阴影" = "Shadows";
 "阿里云隐私政策" = "Aliyun privacy policy";
 "降噪" = "Noise Reduction";
+"降噪亮度" = "Luminance";
 "降噪参数" = "Noise reduction settings";
+"降噪粗色斑" = "Blotches";
+"降噪色彩" = "Color";
 "隐私设置" = "Privacy settings";
 "隐藏密码" = "Hide password";
 "隐藏照片信息" = "Hide Photo Information";

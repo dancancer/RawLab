@@ -156,6 +156,7 @@ rawlab_ios_camera_sources() {
         "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift"
+        "$ROOT/RawLab/RawLab/Core/Batch/Storage/ExportEvidenceStore.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift"
         "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift"
     )

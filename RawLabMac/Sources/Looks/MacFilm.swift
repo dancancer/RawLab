@@ -1,4 +1,5 @@
 import Foundation
+import RawLabKit
 
 public struct Film: Identifiable, Hashable, Sendable {
     public var id: String { managedID ?? url.path }

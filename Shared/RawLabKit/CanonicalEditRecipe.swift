@@ -542,46 +542,6 @@ public enum CanonicalEditRecipe {
     }
 }
 
-public extension RawSettings {
-    func canonicalEditState(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
-        let exposureString: String
-        switch exposureMode {
-        case .scene: exposureString = "scene"
-        case .preview: exposureString = "preview"
-        case .sensor: exposureString = "sensor"
-        }
-        return CanonicalEditRecipe.State(
-            processing: processing,
-            x3fMode: x3fMode,
-            exposureMode: isRaster ? "sensor" : exposureString,
-            isRaster: isRaster,
-            relativeTemperature: isRaster && masterRecipeID == nil ? temperature : 6500,
-            relativeTint: isRaster && masterRecipeID == nil ? tint : 0,
-            toneControls: toneSettings,
-            atmosphere: atmosphereSettings,
-            toneCurve: curveSettings,
-            colorGrading: gradingSettings,
-            hsl: hsl,
-            geometry: geometry,
-            lensCorrection: lensSettings,
-            photoEffects: photoEffects,
-            waveletDenoise: WaveletDenoiseSettings(
-                enabled: denoise.enabled,
-                luma: denoise.luma,
-                chroma: denoise.chroma,
-                coarse: denoise.coarse
-            ),
-            chromaDenoise: displayChromaDenoise,
-            rawNoiseReduction: 0,
-            outputSharpening: outputSharpening
-        )
-    }
-
-    func canonicalParamsJSON(isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws -> String {
-        try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, outputSharpening: outputSharpening))
-    }
-}
-
 public extension Adjustments {
     func canonicalEditState(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) -> CanonicalEditRecipe.State {
         let exposureString: String

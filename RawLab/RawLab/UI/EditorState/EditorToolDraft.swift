@@ -1,4 +1,5 @@
 import Foundation
+import RawLabKit
 
 public struct EditorGeometryDraftState: Codable, Equatable, Sendable {
     public var preset: String

@@ -64,9 +64,9 @@ final class EditRecordPersistenceTests: XCTestCase {
             grainSize: 32.5,
             grainRoughness: 58.25
         )
-        s.hsl.set(.hue, channel: 0, value: 12.5)
-        s.hsl.set(.saturation, channel: 5, value: -16.5)
-        s.hsl.set(.lightness, channel: 4, value: 14.25)
+        s.hslSettings.set(.hue, channel: 0, value: 12.5)
+        s.hslSettings.set(.saturation, channel: 5, value: -16.5)
+        s.hslSettings.set(.lightness, channel: 4, value: 14.25)
         s.gradingSettings = ColorGradingSettings(
             shadows: ColorGradingWheel(hue: 215.25, saturation: 35.5),
             midtones: ColorGradingWheel(hue: 42.5, saturation: 18.25),
@@ -1772,5 +1772,191 @@ final class EditRecordPersistenceTests: XCTestCase {
         XCTAssertEqual(a3Status, .applied)
         XCTAssertEqual(session.knownRecord(forPath: identityA.path)?.state?.settings.exposure, 3.0)
         XCTAssertEqual(try MacEditPersistence(directory: dir).state(for: photoA)?.settings.exposure, 3.0)
+    }
+
+    func testCanonicalV2AdjustmentsAndPhotoEditStateEncodeDecode() throws {
+        var settings = Adjustments()
+        settings.exposure = 0.65
+        settings.contrast = 1.25
+        settings.highlights = -0.3
+        settings.shadows = 0.4
+        settings.toneCurve = 0.15
+        settings.saturation = 0.88
+        settings.sharpening = 0.5
+        settings.lutID = "builtin:fuji-classic"
+        settings.exposureMode = .scene
+        settings.whiteBalanceMode = .camera
+
+        let state = PhotoEditState(settings: settings, filmID: "builtin:fuji-classic")
+        let data = try JSONEncoder().encode(state)
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(root["updatedAt"], "Sentinel Date(1970: 0) must be omitted on canonical encode")
+        let settingsJSON = try XCTUnwrap(root["settings"] as? [String: Any])
+        XCTAssertEqual(settingsJSON["settingsVersion"] as? Int, 2)
+        XCTAssertEqual(settingsJSON["exposureMode"] as? String, "scene")
+        XCTAssertEqual(settingsJSON["whiteBalanceMode"] as? String, "camera")
+        XCTAssertEqual(settingsJSON["contrast"] as? Double, 1.25)
+        XCTAssertEqual(settingsJSON["highlights"] as? Double, -0.3)
+
+        let decoded = try JSONDecoder().decode(PhotoEditState.self, from: data)
+        XCTAssertEqual(decoded, state)
+    }
+
+    func testLegacyMacV1DecodeWithChineseEnumsPercentScalesAndMigrationDefaults() throws {
+        let recipe = try XCTUnwrap(MasterRecipe.allRecipes.first(where: { $0.exposureDelta != 0 || $0.contrastDelta != 0 }))
+        let macV1JSON: [String: Any] = [
+            "filmID": "",
+            "masterRecipeID": recipe.id,
+            "settings": [
+                "exposureMode": "匹配内嵌预览",
+                "whiteBalanceMode": "自定义",
+                "temperature": 5400,
+                "tint": 4,
+                "exposure": 0.25,
+                "contrast": 20.0,
+                "highlights": 25.0,
+                "shadows": -15.0,
+                "toneCurve": 10.0,
+                "saturation": -12.0,
+                "sharpening": 45.0,
+                "strength": 0.8,
+                "masterRecipeID": recipe.id,
+                "waveletNoiseReduction": [
+                    "enabled": true,
+                    "luma": 0.0,
+                    "chroma": 46.0,
+                    "coarse": 50.0,
+                    "preset": "细节优先"
+                ]
+            ]
+        ]
+        let data = try JSONSerialization.data(withJSONObject: macV1JSON)
+        let decoder = JSONDecoder()
+        decoder.userInfo[Adjustments.legacyFormatHintKey] = Adjustments.LegacyWireFlavor.mac
+        let state = try decoder.decode(PhotoEditState.self, from: data)
+
+        XCTAssertEqual(state.settings.exposureMode, .preview)
+        XCTAssertEqual(state.settings.whiteBalanceMode, .custom)
+        XCTAssertEqual(state.settings.waveletNoiseReduction.preset, .detail)
+        XCTAssertEqual(state.settings.masterRecipeSettingsVersion, 2)
+        XCTAssertEqual(state.settings.toneCurve, 0.10, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.sharpening, 0.45, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.exposure, 0.25 + recipe.migrationDefaults.exposureDelta, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.contrast, 1.20 + recipe.migrationDefaults.contrastDelta / 100.0, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.highlights, -0.25 - recipe.migrationDefaults.highlightsDelta / 100.0, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.shadows, -0.15 + recipe.migrationDefaults.shadowsDelta / 100.0, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.saturation, 0.88 + recipe.migrationDefaults.saturationDelta / 100.0, accuracy: 1e-9)
+
+        // Also cover remaining Mac v1 Chinese enum spellings
+        let otherEnums = try JSONSerialization.data(withJSONObject: [
+            "exposureMode": "传感器基准",
+            "whiteBalanceMode": "拍摄时设置",
+            "waveletNoiseReduction": ["enabled": true, "luma": 10.0, "chroma": 72.0, "coarse": 100.0, "preset": "去噪优先"]
+        ])
+        let decodedOther = try decoder.decode(Adjustments.self, from: otherEnums)
+        XCTAssertEqual(decodedOther.exposureMode, .sensor)
+        XCTAssertEqual(decodedOther.whiteBalanceMode, .camera)
+        XCTAssertEqual(decodedOther.waveletNoiseReduction.preset, .clean)
+    }
+
+    func testLegacyIOSV1DecodeAndInvalidEnumRejection() throws {
+        let iosV1JSON: [String: Any] = [
+            "filmID": "builtin:classic-chrome",
+            "updatedAt": 750_000_000.0,
+            "settings": [
+                "lutID": "builtin:classic-chrome",
+                "lutStrength": 0.75,
+                "exposureMode": 2,
+                "whiteBalanceMode": "camera",
+                "contrast": 1.15,
+                "highlights": -0.2,
+                "shadows": 0.3,
+                "saturation": 1.05,
+                "sharpening": 0.4,
+                "displayChromaDenoise": 1,
+                "denoise": ["enabled": true, "luma": 12.0, "chroma": 40.0, "coarse": 30.0]
+            ]
+        ]
+        let decoder = JSONDecoder()
+        decoder.userInfo[Adjustments.legacyFormatHintKey] = Adjustments.LegacyWireFlavor.ios
+        let state = try decoder.decode(PhotoEditState.self, from: JSONSerialization.data(withJSONObject: iosV1JSON))
+        XCTAssertEqual(state.settings.lutID, "builtin:classic-chrome")
+        XCTAssertEqual(state.settings.strength, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.exposureMode, .sensor)
+        XCTAssertEqual(state.settings.whiteBalanceMode, .camera)
+        XCTAssertEqual(state.settings.contrast, 1.15, accuracy: 1e-9)
+        XCTAssertEqual(state.settings.chromaNoiseReduction, 1)
+        XCTAssertTrue(state.settings.waveletNoiseReduction.enabled)
+        XCTAssertEqual(state.settings.waveletNoiseReduction.preset, .custom)
+
+        // Minimal ios_json disambiguated via legacyFormatHintKey / updatedAt
+        let minimalIOSData = try JSONSerialization.data(withJSONObject: [
+            "updatedAt": 750_000_000.0,
+            "settings": ["contrast": 1.4, "highlights": -0.5]
+        ])
+        let minimal = try JSONDecoder().decode(PhotoEditState.self, from: minimalIOSData)
+        XCTAssertEqual(minimal.settings.contrast, 1.4, accuracy: 1e-9)
+        XCTAssertEqual(minimal.settings.highlights, -0.5, accuracy: 1e-9)
+
+        // Reject invalid legacy iOS enums/bounds via EditPersistence and Adjustments decoder
+        let invalidExposure = try JSONSerialization.data(withJSONObject: ["exposureMode": 999])
+        XCTAssertThrowsError(try decoder.decode(Adjustments.self, from: invalidExposure))
+        let invalidWB = try JSONSerialization.data(withJSONObject: ["whiteBalanceMode": "invalid-wb"])
+        XCTAssertThrowsError(try decoder.decode(Adjustments.self, from: invalidWB))
+
+        let iosDir = temporaryRoot.appendingPathComponent("ios-legacy-reject", isDirectory: true)
+        let iosStore = try EditPersistence(directory: iosDir)
+        let badPayload = try JSONSerialization.data(withJSONObject: [
+            "version": 1,
+            "records": [
+                "photo:asset-1": [
+                    "filmID": "builtin:classic-chrome",
+                    "updatedAt": 750_000_000.0,
+                    "settings": ["exposureMode": 999]
+                ]
+            ]
+        ])
+        try badPayload.write(to: iosDir.appendingPathComponent("edits.json"), options: .atomic)
+        XCTAssertThrowsError(try iosStore.readState(for: PhotoIdentity(resourceIdentifier: "asset-1")))
+    }
+
+    func testMacLegacyV1WriteAdapterRoundTripThroughMacEditPersistence() throws {
+        let dir = temporaryRoot.appendingPathComponent("mac-legacy-v1-bridge", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let photo = try makeTempFile(named: "bridge.ARW")
+        let store = try MacEditPersistence(directory: dir)
+
+        var settings = Adjustments()
+        settings.exposureMode = .preview
+        settings.whiteBalanceMode = .custom
+        settings.temperature = 5200
+        settings.tint = -8
+        settings.contrast = 1.25
+        settings.highlights = -0.20
+        settings.shadows = 0.35
+        settings.toneCurve = 0.15
+        settings.saturation = 1.12
+        settings.sharpening = 0.50
+
+        let savedState = MacPhotoEditState(settings: settings, filmID: "builtin:velvia")
+        try store.save(photo, state: savedState)
+
+        let rawDisk = try Data(contentsOf: dir.appendingPathComponent("edits.json"))
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: rawDisk) as? [String: Any])
+        let records = try XCTUnwrap(root["records"] as? [String: Any])
+        let recordObj = try XCTUnwrap(records[OriginalFileIdentity(photo).path] as? [String: Any])
+        let wireState = try XCTUnwrap(recordObj["state"] as? [String: Any])
+        let wireSettings = try XCTUnwrap(wireState["settings"] as? [String: Any])
+
+        XCTAssertNil(wireSettings["settingsVersion"], "MacLegacyV1WriteAdapter must omit settingsVersion for gui_sync.py")
+        XCTAssertEqual(wireSettings["exposureMode"] as? String, "匹配内嵌预览")
+        XCTAssertEqual(wireSettings["whiteBalanceMode"] as? String, "自定义")
+        XCTAssertEqual(try XCTUnwrap(wireSettings["contrast"] as? Double), 25.0, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(wireSettings["highlights"] as? Double), 20.0, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(wireSettings["shadows"] as? Double), 35.0, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(wireSettings["sharpening"] as? Double), 50.0, accuracy: 1e-9)
+
+        let reloaded = try MacEditPersistence(directory: dir).state(for: photo)
+        XCTAssertEqual(reloaded, savedState)
     }
 }

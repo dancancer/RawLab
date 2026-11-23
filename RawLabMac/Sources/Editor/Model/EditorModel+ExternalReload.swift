@@ -59,6 +59,10 @@ extension EditorModel {
 
     func handleExternalEditsFileChange() {
         guard let file else { return }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: editDirectory.path, isDirectory: &isDirectory), !isDirectory.boolValue {
+            return
+        }
         let editsURL = editDirectory.appendingPathComponent("edits.json")
         let resolvedEditsPath = ExternalStoreFileWatcher.canonicalTargetPath(for: editsURL)
         let currentFingerprint = FileStatFingerprint(resolvedPath: resolvedEditsPath)

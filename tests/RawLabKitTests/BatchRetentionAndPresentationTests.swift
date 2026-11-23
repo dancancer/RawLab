@@ -88,38 +88,10 @@ final class BatchRetentionAndPresentationTests: XCTestCase {
         XCTAssertTrue(text.contains("\"dng\""))
     }
 
-    func testRenderSchedulerHistogramAndParameterPrecision() {
-        var scheduler = RenderScheduler<Int>()
-        scheduler.setInteracting(true)
-        let req1 = scheduler.submit(10, fileID: "a.arw")
-        XCTAssertEqual(req1.pass, .interactive)
-        XCTAssertEqual(scheduler.startNext()?.id, req1.id)
-        let req2 = scheduler.submit(20, fileID: "a.arw")
-        XCTAssertEqual(scheduler.finish(req1), .publishInteractive)
-        XCTAssertEqual(scheduler.startNext()?.id, req2.id)
-        scheduler.setInteracting(false)
-        let exact = scheduler.submit(20, fileID: "a.arw")
-        XCTAssertEqual(scheduler.finish(req2), .publishInteractive)
-        XCTAssertEqual(scheduler.startNext()?.id, exact.id)
-        XCTAssertEqual(scheduler.finish(exact), .publishExact)
-
-        let histogram = HistogramPresentation(bins: [
-            [100] + [Double](repeating: 0, count: 255),
-            [50] + [Double](repeating: 0, count: 255),
-            [50] + [Double](repeating: 0, count: 255)
-        ])
-        XCTAssertEqual(histogram.peak, 100)
-        let segs = histogram.segments(at: 0)
-        XCTAssertEqual(segs.map(\.fill), [.neutralGray, .red])
-
-        XCTAssertEqual(ParameterPrecision.exposure.text(0.5, signed: true), "+0.50")
-        XCTAssertEqual(ParameterPrecision.temperature.stepped(6500, direction: 1, fine: false, in: 2000...50000), 6600)
-    }
-
     func testBatchSettingsSummaryAndFilmPresentation() {
         var settings = RawSettings.default
         settings.exposure = 0.5
-        settings.photoEffects.vignetteAmount = -25
+        settings.effectSettings.vignetteAmount = -25
         let headline = BatchSettingsSummary.headline(settings)
         XCTAssertEqual(headline.count, 4)
         let details = BatchSettingsSummary.details(settings)

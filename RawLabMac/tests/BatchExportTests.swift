@@ -269,7 +269,7 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         mutate(&jobObj, &settingsObj)
         jobObj["settings"] = settingsObj
         let badData = try JSONSerialization.data(withJSONObject: jobObj)
-        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" {
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" || label == "out-of-range waveletNoiseReduction" {
             // PhotoEffectsSettings.init(from:) and Adjustments.init(from:) chromaNoiseReduction enforce fail-closed decoding.
             var decodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badData) }
@@ -325,7 +325,7 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         itemRows[0]["frozen"] = frozenObj
         perTargetObj["items"] = itemRows
         let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
-        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" {
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" || label == "out-of-range waveletNoiseReduction" {
             var frozenDecodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData) }
             catch is DecodingError { frozenDecodeRejected = true }
@@ -525,7 +525,9 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         try check(try JSONDecoder().decode(MacBatchExportJob.self,
                   from: JSONSerialization.data(withJSONObject: legacyPNG)).suffix == "png",
                   "legacy PNG journals retain their original format")
-        var legacyRecipeJob = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        let legacyEncoder = JSONEncoder()
+        legacyEncoder.userInfo[Adjustments.legacyV1EncodingKey] = true
+        var legacyRecipeJob = try JSONSerialization.jsonObject(with: legacyEncoder.encode(job)) as! [String: Any]
         var legacyRecipeSettings = legacyRecipeJob["settings"] as! [String: Any]
         legacyRecipeSettings["masterRecipeID"] = MasterRecipe.hamadaDaylightV2.id
         legacyRecipeSettings["exposure"] = 0

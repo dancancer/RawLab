@@ -506,7 +506,7 @@ extension MacGeometryDraftTests {
         let directory = output.appendingPathComponent("unreadable-edits-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let registry = directory.appendingPathComponent("edits.json")
-        let corruptRecord = Data("unreadable edit registry".utf8)
+        let corruptRecord = Data(#"{"version":999,"records":{}}"#.utf8)
         let model = EditorModel(lookDirectory: output.appendingPathComponent("read-error-looks"), editDirectory: directory,
                                 batchDirectory: output.appendingPathComponent("read-error-batch"))
         model.films = []; model.selectedFilmID = ""

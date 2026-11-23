@@ -107,17 +107,17 @@ struct BatchExportTests {
         var settings = RawSettings.default
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
         settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
-        settings.geometry.cropX = 0.2
-        settings.geometry.cropWidth = 0.6
-        settings.geometry.quarterTurns = 3
-        settings.geometry.flipVertical = true
-        settings.geometry.straightenDegrees = 6
+        settings.geometrySettings.cropX = 0.2
+        settings.geometrySettings.cropWidth = 0.6
+        settings.geometrySettings.quarterTurns = 3
+        settings.geometrySettings.flipVertical = true
+        settings.geometrySettings.straightenDegrees = 6
         settings.lutStrength = 0.5
         settings.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
-        settings.photoEffects.vignetteMidpoint = 62
-        settings.photoEffects.grainSize = 60
+        settings.effectSettings.vignetteMidpoint = 62
+        settings.effectSettings.grainSize = 60
         settings.exposureMode = .sensor
-        settings.hsl.set(.hue, channel: 3, value: 32)
+        settings.hslSettings.set(.hue, channel: 3, value: 32)
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "source"),
                                           sourceFile: .externallyManaged(sourceURL), displayName: "source.ARW", settings: settings)
@@ -136,9 +136,9 @@ struct BatchExportTests {
               rawTargetSettings.tint == 0 && rawTargetSettings.exposureMode == .preview &&
               rawTargetSettings.lensCorrection == nil,
               "mixed batch does not leak raster-only camera WB, exposure, or lens settings into RAW targets")
-        check(rawTargetSettings.geometry == rasterSettings.geometry &&
-              rawTargetSettings.hsl == rasterSettings.hsl &&
-              rawTargetSettings.photoEffects == rasterSettings.photoEffects &&
+        check(rawTargetSettings.geometrySettings == rasterSettings.geometrySettings &&
+              rawTargetSettings.hslSettings == rasterSettings.hslSettings &&
+              rawTargetSettings.effectSettings == rasterSettings.effectSettings &&
               rawTargetSettings.denoise == rasterSettings.denoise && rawTargetSettings.toneSettings == rasterSettings.toneSettings,
               "mixed batch keeps raster style settings frozen while resolving target camera defaults")
         check(rasterSource.settings(for: .raster) == rasterSettings,
@@ -154,7 +154,7 @@ struct BatchExportTests {
         try journal.save(job)
         let reopenedJob = try journal.load(id: job.id)
         let pendingJobs = try journal.pendingJobs()
-        check(reopenedJob?.source.settings.geometry == settings.geometry, "journal freezes geometry settings")
+        check(reopenedJob?.source.settings.geometrySettings == settings.geometrySettings, "journal freezes geometry settings")
         check(reopenedJob?.source.settings.toneSettings == settings.toneSettings, "journal freezes independent tone controls")
         check(reopenedJob?.targets.count == 6, "journal round-trips the selected rows")
         check(reopenedJob?.source.settings.lensCorrection == settings.lensCorrection &&
@@ -169,9 +169,9 @@ struct BatchExportTests {
                                               from: JSONSerialization.data(withJSONObject: oldJournal))
         check(oldJob.longEdge == nil, "old journals default to native export size")
         check(reopenedJob?.source.settings.denoise == settings.denoise, "journal preserves denoise settings")
-        check(reopenedJob?.source.settings.photoEffects == settings.photoEffects,
+        check(reopenedJob?.source.settings.effectSettings == settings.effectSettings,
               "journal preserves photo effects auxiliary values")
-        check(reopenedJob?.source.settings.hsl == settings.hsl && reopenedJob?.source.settings.exposureMode == .sensor,
+        check(reopenedJob?.source.settings.hslSettings == settings.hslSettings && reopenedJob?.source.settings.exposureMode == .sensor,
               "journal preserves HSL and the exposure baseline")
         check(pendingJobs.contains(where: { $0.id == job.id }), "pending journal is recoverable after interruption")
         var legacyJSON = try JSONSerialization.jsonObject(with: JSONEncoder().encode(job)) as! [String: Any]
@@ -208,11 +208,11 @@ struct BatchExportTests {
         job = try BatchExportRunner.run(job: job, journalStore: journal,
                                         render: { target, settings in
                                             renderCount += 1
-                                            check(settings.geometry == source.settings.geometry, "batch uses frozen geometry settings")
+                                            check(settings.geometrySettings == source.settings.geometrySettings, "batch uses frozen geometry settings")
                                             check(settings.denoise == source.settings.denoise, "batch uses frozen denoise settings")
-                                            check(settings.photoEffects == source.settings.photoEffects,
+                                            check(settings.effectSettings == source.settings.effectSettings,
                                                   "batch uses frozen photo effects settings")
-                                            check(settings.hsl == source.settings.hsl && settings.exposureMode == .sensor,
+                                            check(settings.hslSettings == source.settings.hslSettings && settings.exposureMode == .sensor,
                                                   "batch uses frozen HSL and exposure baseline")
                                             return Data("\(target.id):\(settings.exposure)".utf8)
                                         }, write: { data, name, target, _ in
@@ -276,7 +276,7 @@ struct BatchExportTests {
                                                    render: { _, _ in Data([9]) },
                                                    write: { data, name, _, _ in try data.write(to: root.appendingPathComponent(name)) })
         check(retry.targets.filter { $0.status == .succeeded }.count == 6, "retry only reruns the failed row")
-        check(retry.source.settings.geometry == source.settings.geometry, "retry retains frozen geometry settings")
+        check(retry.source.settings.geometrySettings == source.settings.geometrySettings, "retry retains frozen geometry settings")
         check(retry.longEdge == 3000, "retry retains the frozen export long edge")
         check(retry.targets.first(where: { $0.id == successfulID })?.status == .succeeded,
               "retry preserves the original successful row")

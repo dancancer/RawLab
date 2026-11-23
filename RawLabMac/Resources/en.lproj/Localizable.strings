@@ -157,6 +157,8 @@
 "保存失败" = "Save failed";
 "保存当前调整为预设…" = "Save Current Adjustments as Preset…";
 "保存所选调整，之后可应用到其他照片。" = "Save selected adjustments to apply them to other photos later.";
+"保存时发生中断，请先核对照片图库，避免重复生成。" = "An interruption occurred while saving. Check Photos before generating again.";
+"保存结果待确认" = "Save Result Needs Confirmation";
 "保存预设" = "Save Preset";
 "保留任务" = "Keep task";
 "保留当前手动草稿" = "Keep Current Manual Draft";
@@ -444,6 +446,7 @@
 "恢复阴影、中间调和高光的颜色分级默认值？" = "Restore default color grading for shadows, midtones, and highlights?";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Succeeded %@ · Failed %@ · Unprocessed %@";
 "我的预设" = "My Presets";
+"所选外观不可用，请重新选择外观。" = "Selected Look Unavailable; Choose Another Look.";
 "所选方案" = "Selected option";
 "所选调整与目标不兼容，请调整范围或跳过目标。" = "These adjustments are incompatible with this photo. Change the scope or skip it.";
 "所选镜头不可用" = "Selected Lens Unavailable";
@@ -464,6 +467,7 @@
 "拉直" = "Straighten";
 "拍摄参数" = "Capture Settings";
 "拍摄时设置" = "As-Shot Setting";
+"拍摄时：%.0f K · 色调 %+.0f" = "As Shot: %.0f K · Tint %+.0f";
 "拖动照片调整颜色；退出目标模式后可平移。" = "Drag the photo to adjust color. Exit target mode to pan.";
 "拖动边角裁切，拖动画面内移动选区。" = "Drag a corner to crop; drag inside the selection to move it.";
 "指定长边" = "Specify long edge";
@@ -547,12 +551,14 @@
 "无法自动调整曝光：%@" = "Unable to auto-adjust exposure: %@";
 "无法解码普通图片：%@" = "Unable to decode the image: %@";
 "无法计算直方图" = "Unable to calculate histogram";
+"无法识别原始照片，调整尚未保存。" = "Unable to Identify the Original Photo; Adjustments Were Not Saved.";
 "无法读取 HDR 相机配置，或配置与当前相机不匹配。" = "The HDR camera profile could not be read or does not match this camera.";
 "无法读取 X3F 显影模式：%@" = "Unable to read X3F rendering mode: %@";
 "无法读取上次批量任务：%@" = "Unable to read last batch task: %@";
 "无法读取基础曝光" = "Unable to read base exposure";
 "无法读取外观文件。" = "Unable to read the look file.";
 "无法读取已保存的外观库，原有记录未被覆盖。" = "The saved look library cannot be read; the original records were not overwritten.";
+"无法读取已保存的调整，原有记录未被覆盖。" = "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.";
 "无法读取或写入文件，请检查路径和访问权限。" = "Unable to read or write the file. Check the path and access permissions.";
 "无法读取此条目，原文已保留" = "This entry could not be read; the original text is preserved.";
 "无法读取照片，请检查文件和访问权限。" = "Unable to read the photo. Check the file and access permissions.";
@@ -612,6 +618,7 @@
 "未匹配镜头，请手动选择" = "No Lens Match; Choose Manually";
 "未发现适用于此 Mac 的新版本" = "No new version found for this Mac";
 "未变化" = "Unchanged";
+"未处理" = "Not Processed";
 "未应用 LUT" = "LUT not applied";
 "未打开照片" = "No Photo Open";
 "未找到机身或传感器尺寸信息" = "Camera or Sensor Size Information Missing";
@@ -660,6 +667,7 @@
 "横向色差标定不可用" = "Lateral Chromatic Aberration Calibration Unavailable";
 "橙" = "Orange";
 "正在下载更新…" = "Downloading update…";
+"正在保存" = "Saving";
 "正在保存 AI 结果" = "Saving AI result";
 "正在停止…" = "Stopping…";
 "正在准备 AI 降噪" = "Preparing AI denoise";
@@ -674,6 +682,7 @@
 "正在导出" = "Exporting";
 "正在导出…" = "Exporting…";
 "正在恢复更新前的数据…" = "Restoring data from before the update…";
+"正在显影" = "Developing";
 "正在显影…" = "Developing…";
 "正在校验并准备更新…" = "Verifying and preparing update…";
 "正在检查 RAW 照片…" = "Checking RAW photos…";
@@ -904,6 +913,7 @@
 "请先完成或关闭现有批量任务。" = "Finish or close the current batch task first.";
 "请先完成此照片的 AI 降噪，再预览或导出。" = "Complete AI denoising for this photo before previewing or exporting.";
 "请先应用或放弃未完成的输入和几何草稿。" = "Apply or discard unfinished input and geometry drafts first.";
+"请先打开这张照片，确认是否恢复旧调整。" = "Open this photo first to decide whether to restore its previous adjustments.";
 "请先确认同源图片、处理条件和参考来源。" = "First confirm the same source image, processing conditions, and reference source.";
 "请先纠正无效数值" = "Correct Invalid Values First";
 "请先退出其他 RawLab 实例" = "Quit the other RawLab instance first";

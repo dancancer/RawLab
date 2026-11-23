@@ -222,7 +222,7 @@ final class InspectionSuiteTests: XCTestCase {
             x3fMode: .normal,
             exposureMode: "preview",
             isRaster: false,
-            geometry: rawSettings.geometry
+            geometry: rawSettings.geometrySettings
         )
         let baseRecipe = try canonicalSortedJSON(CanonicalEditRecipe.encode(recipeState))
 
