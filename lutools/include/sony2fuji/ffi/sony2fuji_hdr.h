@@ -354,6 +354,13 @@ sony2fuji_status sony2fuji_hdr_geometry_size(uint32_t native_width, uint32_t nat
 sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* session, const sony2fuji_hdr_image_pair_v1* source,
     const sony2fuji_hdr_request_v1* request, sony2fuji_hdr_image_pair_v1* result,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// Encodes a linear-sRGB RGB32F `sony2fuji_hdr_buffer_v1` (e.g. `edited.sdr`) into
+// display-sRGB RGBA16 in `out_rgba16`. Pass a zero-initialized or previously released
+// buffer; release with `sony2fuji_release_buffer`.
+sony2fuji_status sony2fuji_hdr_encode_rgba16(
+    const sony2fuji_hdr_buffer_v1* source,
+    sony2fuji_buffer* out_rgba16
+);
 // 捕获几何调整后的 HDR，在自然饱和度之后、HSL/分级/外观之前取样。
 // 使用 sony2fuji_hsl_probe_sample/destroy；RGB 为扩展线性 sRGB，
 // hsl[2] 为有界坐标 Y/(1+Y)，不修改来源或渲染结果。

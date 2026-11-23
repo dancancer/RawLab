@@ -1175,6 +1175,17 @@ sony2fuji_status sony2fuji_process(
     sony2fuji_buffer* out_buffer
 );
 
+// Renders `request` on `session` and returns a display-sRGB RGBA16 buffer in
+// `out_rgba16` for diagnostics. When `request->output_target == SONY2FUJI_TARGET_FILE`,
+// the output file is also written in the same pass. When `output_target == SONY2FUJI_TARGET_BUFFER`,
+// `out_rgba16` receives RGBA16 directly without 8-bit quantization.
+// Pass a zero-initialized or previously released buffer; release with `sony2fuji_release_buffer`.
+sony2fuji_status sony2fuji_session_render_rgba16(
+    sony2fuji_session* session,
+    const sony2fuji_request* request,
+    sony2fuji_buffer* out_rgba16
+);
+
 #define SONY2FUJI_PROCESSING_MIGRATION_VERSION 1u
 typedef enum sony2fuji_migration_disposition {
     SONY2FUJI_MIGRATION_UNCHANGED = 0,

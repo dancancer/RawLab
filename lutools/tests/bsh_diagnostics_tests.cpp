@@ -321,6 +321,33 @@ int main() {
         }
     }
 
+    // 10. Stride-aware encodeRgba16BufferFromFloatRgb rejects invalid args and respects non-tight strides
+    {
+        REQUIRE(sony2fuji::encodeRgba16BufferFromFloatRgb(nullptr, 2, 2, 24, false).data == nullptr);
+        const float dummy[6] = {0.0f, 0.5f, 1.0f, 0.25f, 0.5f, 0.75f};
+        REQUIRE(sony2fuji::encodeRgba16BufferFromFloatRgb(dummy, 0, 1, 12, false).data == nullptr);
+        REQUIRE(sony2fuji::encodeRgba16BufferFromFloatRgb(dummy, 1, 0, 12, false).data == nullptr);
+        REQUIRE(sony2fuji::encodeRgba16BufferFromFloatRgb(dummy, 2, 1, 20, false).data == nullptr);
+
+        // 2x2 with 28-byte stride (4 bytes padding after each 24-byte row)
+        std::vector<uint8_t> strided(2 * 28, 0xFF);
+        const float row0[6] = {0.0f, 0.5f, 1.0f, 0.25f, 0.75f, 0.5f};
+        const float row1[6] = {1.0f, 0.0f, 0.5f, 0.5f, 0.25f, 0.0f};
+        std::memcpy(strided.data(), row0, sizeof(row0));
+        std::memcpy(strided.data() + 28, row1, sizeof(row1));
+        auto encoded = sony2fuji::encodeRgba16BufferFromFloatRgb(
+            reinterpret_cast<const float*>(strided.data()), 2, 2, 28, false);
+        REQUIRE(encoded.data != nullptr);
+        REQUIRE(encoded.width == 2 && encoded.height == 2 && encoded.strideBytes == 16);
+        auto readPx = [&](size_t x, size_t y, size_t ch) -> uint16_t {
+            const uint8_t* p = static_cast<const uint8_t*>(encoded.data) + y * 16u + x * 8u + ch * 2u;
+            return static_cast<uint16_t>(p[0]) | (static_cast<uint16_t>(p[1]) << 8);
+        };
+        REQUIRE(readPx(0, 0, 0) == 0 && readPx(0, 0, 1) == 32768 && readPx(0, 0, 2) == 65535);
+        REQUIRE(readPx(0, 1, 0) == 65535 && readPx(0, 1, 1) == 0 && readPx(0, 1, 2) == 32768);
+        REQUIRE(readPx(1, 1, 0) == 32768 && readPx(1, 1, 1) == 16384 && readPx(1, 1, 2) == 0);
+    }
+
     std::cout << "bsh_diagnostics_tests passed\n";
     return 0;
 }

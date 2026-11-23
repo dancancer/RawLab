@@ -1,5 +1,7 @@
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 #include "ffi/hdr_session.h"
+#include "ffi/session_internal.h"
+#include "core/bsh_diagnostics.h"
 #include "core/hdr_look.h"
 #include "core/hdr_pipeline.h"
 #include "core/hdr_progress.h"
@@ -10,6 +12,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -434,6 +437,58 @@ sony2fuji_status sony2fuji_hdr_render(sony2fuji_session* sessionHandle, const so
         reportHdrProgress(1000, 1000);
         hdrSessionDidRenderCPU(session);
     });
+}
+
+sony2fuji_status sony2fuji_hdr_encode_rgba16(
+    const sony2fuji_hdr_buffer_v1* source,
+    sony2fuji_buffer* out_rgba16
+) {
+    if (!out_rgba16 || !source || overlaps(source, sizeof(*source), out_rgba16, sizeof(*out_rgba16))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (source->struct_size >= sizeof(*source) && source->data && source->size_bytes > 0 &&
+        overlaps(source->data, source->size_bytes, out_rgba16, sizeof(*out_rgba16))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    *out_rgba16 = {};
+    if (source->version != SONY2FUJI_HDR_VERSION) {
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
+    if (source->struct_size < sizeof(*source) || !source->data ||
+        source->width == 0 || source->height == 0 ||
+        source->width > UINT32_MAX / 8u ||
+        static_cast<uint64_t>(source->width) * static_cast<uint64_t>(source->height) > UINT32_MAX ||
+        source->pixel_format != SONY2FUJI_HDR_RGB32F_LINEAR ||
+        source->color_encoding != SONY2FUJI_HDR_LINEAR_SRGB) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint64_t rowBytes = static_cast<uint64_t>(source->width) * 3u * sizeof(float);
+    if (source->stride_bytes < rowBytes ||
+        (source->height > 1u &&
+         source->stride_bytes > (std::numeric_limits<uint64_t>::max() - rowBytes) / (source->height - 1u))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint64_t requiredBytes = static_cast<uint64_t>(source->height - 1u) * source->stride_bytes + rowBytes;
+    if (requiredBytes > source->size_bytes || source->size_bytes > std::numeric_limits<size_t>::max()) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        sony2fuji::OwnedPixelBuffer rgba16 = sony2fuji::encodeRgba16BufferFromFloatRgb(
+            static_cast<const float*>(source->data),
+            source->width,
+            source->height,
+            source->stride_bytes,
+            /*linearToSrgb=*/true);
+        if (!rgba16.data) {
+            return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        }
+        *out_rgba16 = toFfiBuffer(rgba16);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* sessionHandle, const sony2fuji_hdr_image_pair_v1* source,

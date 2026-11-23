@@ -186,6 +186,26 @@ class MutationAnchorTests(unittest.TestCase):
             self.assertNotEqual(mutated.returncode, 0, "makeLatest=true must fail test_assets_prepare.py")
             self.assertIn("makeLatest", mutated.stdout + mutated.stderr)
 
+    def test_anchor_6_cli_private_include_fails_test_cli_layering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rawlab-mut-cli-") as tmp:
+            root = Path(tmp)
+            _copy_files(root, ("scripts/ci/test_cli_layering.py",))
+            shutil.copytree(ROOT / "lutools/src/cli", root / "lutools/src/cli")
+
+            test_target = root / "scripts/ci/test_cli_layering.py"
+            baseline = _run_test_script(test_target, root)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            agent_cpp = root / "lutools/src/cli/agent_commands.cpp"
+            agent_cpp.write_text(
+                '#include "core/pipeline.h"\n' + agent_cpp.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            mutated = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated.returncode, 0, "Injected CLI private include must fail test_cli_layering.py")
+            self.assertIn("core/pipeline.h", mutated.stdout + mutated.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -409,7 +409,7 @@ if(BUILD_CLI)
     add_executable(rawlab_lut_probe tools/lut_contract_probe.cpp)
     target_include_directories(rawlab_lut_probe PRIVATE third_party)
     target_link_libraries(rawlab_lut_probe sony2fuji_core)
-    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/raw_info.cpp)
+    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/bsh_cli_report.cpp src/cli/raw_info.cpp)
     if(SONY2FUJI_ENABLE_DNGSDK)
         target_compile_definitions(sony2fuji_cli PRIVATE SONY2FUJI_ENABLE_DNGSDK)
     endif()
@@ -567,6 +567,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/bsh_diagnostics_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME rgba16_api
+        SOURCES tests/rgba16_api_tests.cpp
+        DEFINES TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        LIBRARIES sony2fuji_core
+        LABELS core hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_X3F)
         rawlab_add_test(

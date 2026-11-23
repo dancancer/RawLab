@@ -1,10 +1,6 @@
 #include "agent_commands.h"
+#include "bsh_cli_report.h"
 #include "raw_info.h"
-#include "core/bsh_diagnostics.h"
-#include "core/edit_recipe_params.h"
-#include "core/pipeline.h"
-#include "core/x3f_processor.h"
-#include "platform/display_image.h"
 #include "sony2fuji/edit_recipe.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
@@ -37,21 +33,6 @@ const char* statusCode(sony2fuji_status status) {
         case SONY2FUJI_STATUS_AI_NOT_READY: return "ai_not_ready";
     }
     return "processing_error";
-}
-
-sony2fuji_status renderStatusToFfi(RenderStatus status) noexcept {
-    switch (status) {
-        case RenderStatus::Ok: return SONY2FUJI_STATUS_OK;
-        case RenderStatus::InvalidArgument: return SONY2FUJI_STATUS_INVALID_ARGUMENT;
-        case RenderStatus::Unsupported: return SONY2FUJI_STATUS_UNSUPPORTED;
-        case RenderStatus::IoError: return SONY2FUJI_STATUS_IO_ERROR;
-        case RenderStatus::ProcessingError: return SONY2FUJI_STATUS_PROCESSING_ERROR;
-        case RenderStatus::OutOfMemory: return SONY2FUJI_STATUS_OUT_OF_MEMORY;
-        case RenderStatus::OutputIoError: return SONY2FUJI_STATUS_OUTPUT_IO_ERROR;
-        case RenderStatus::Cancelled: return SONY2FUJI_STATUS_CANCELLED;
-        case RenderStatus::AiNotReady: return SONY2FUJI_STATUS_AI_NOT_READY;
-        default: return SONY2FUJI_STATUS_PROCESSING_ERROR;
-    }
 }
 
 const char* formatName(sony2fuji_output_format format) {
@@ -140,11 +121,29 @@ struct HDRPair {
     sony2fuji_hdr_image_pair_v1 value=hdrInitial<sony2fuji_hdr_image_pair_v1>();
     ~HDRPair() { sony2fuji_hdr_release_pair(&value); }
 };
+struct OwnedFfiBuffer {
+    sony2fuji_buffer value{};
+    OwnedFfiBuffer() = default;
+    OwnedFfiBuffer(const OwnedFfiBuffer&) = delete;
+    OwnedFfiBuffer& operator=(const OwnedFfiBuffer&) = delete;
+    OwnedFfiBuffer(OwnedFfiBuffer&& other) noexcept : value(other.value) {
+        other.value = {};
+    }
+    OwnedFfiBuffer& operator=(OwnedFfiBuffer&& other) noexcept {
+        if (this != &other) {
+            sony2fuji_release_buffer(&value);
+            value = other.value;
+            other.value = {};
+        }
+        return *this;
+    }
+    ~OwnedFfiBuffer() { sony2fuji_release_buffer(&value); }
+};
 struct HDRCommandResult {
     sony2fuji_status status=SONY2FUJI_STATUS_OK;
     sony2fuji_hdr_diagnostic_v1 diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
     float sourceHeadroom=0,editedHeadroom=0;
-    OwnedPixelBuffer sdrRgba16{};
+    OwnedFfiBuffer sdrRgba16{};
 };
 
 HDRCommandResult renderHDR(
@@ -204,24 +203,8 @@ HDRCommandResult renderHDR(
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
     if (analyze) {
-        const auto& sdr = edited.value.sdr;
-        if (!sdr.data || sdr.width == 0 || sdr.height == 0 ||
-            sdr.pixel_format != SONY2FUJI_HDR_RGB32F_LINEAR) {
-            result.status = SONY2FUJI_STATUS_PROCESSING_ERROR;
-            return result;
-        }
-        ImageData linearImg(static_cast<int>(sdr.width), static_cast<int>(sdr.height));
-        const uint8_t* srcBytes = static_cast<const uint8_t*>(sdr.data);
-        const size_t rowBytes = static_cast<size_t>(sdr.width) * sizeof(RGB);
-        for (uint32_t y = 0; y < sdr.height; ++y) {
-            std::memcpy(
-                linearImg.pixels.data() + static_cast<size_t>(y) * sdr.width,
-                srcBytes + static_cast<size_t>(y) * sdr.stride_bytes,
-                rowBytes);
-        }
-        result.sdrRgba16 = encodeRgba16BufferFromImageData(linearImg, /*linearToSrgb=*/true);
-        if (!result.sdrRgba16.data) {
-            result.status = SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        result.status = sony2fuji_hdr_encode_rgba16(&edited.value.sdr, &result.sdrRgba16.value);
+        if (result.status != SONY2FUJI_STATUS_OK) {
             return result;
         }
     }
@@ -250,17 +233,9 @@ HDRCommandResult renderHDR(
 }
 
 Json runBshDiagnosticsOnRgba16(
-    const OwnedPixelBuffer& rgba16,
+    const sony2fuji_buffer& buf,
     const std::vector<BshSampleQueryItem>& sampleQueries
 ) {
-    sony2fuji_buffer buf{};
-    buf.data = rgba16.data;
-    buf.size_bytes = rgba16.sizeBytes;
-    buf.width = rgba16.width;
-    buf.height = rgba16.height;
-    buf.stride_bytes = rgba16.strideBytes;
-    buf.pixel_format = SONY2FUJI_PIXEL_RGBA16;
-
     sony2fuji_bsh_diagnosis diag{};
     diag.version = SONY2FUJI_BSH_DIAGNOSIS_VERSION;
     diag.struct_size = sizeof(diag);
@@ -848,7 +823,7 @@ int runAgentCommands(int argc, char* argv[]) {
             resolve(recipe.outputPath);
             resolve(recipe.lookPath);
             if (recipe.hdr) resolve(recipe.hdr->cameraProfilePath);
-            if (recipe.schemaVersion == 7 && !hasX3fSignature(recipe.inputPath))
+            if (recipe.schemaVersion == 7 && sony2fuji_is_normal_x3f(recipe.inputPath.c_str(), SONY2FUJI_X3F_NORMAL) == 0)
                 return fail("invalid_argument", "schema_version 7 requires an actual FOVb X3F source",
                     SONY2FUJI_STATUS_INVALID_ARGUMENT);
         } else {
@@ -891,7 +866,8 @@ int runAgentCommands(int argc, char* argv[]) {
                 recipe.exposureMode = SONY2FUJI_EXPOSURE_SENSOR;
                 recipe.whiteBalanceMode = SONY2FUJI_WB_CAMERA;
             } else {
-                const bool x3f = hasX3fSignature(absolute) && sony2fuji_x3f_available() != 0;
+                const bool x3f = sony2fuji_is_normal_x3f(absolute.c_str(), SONY2FUJI_X3F_NORMAL) != 0 &&
+                    sony2fuji_x3f_available() != 0;
                 recipe.schemaVersion = x3f ? 7 : 5;
                 recipe.x3fMode = x3f ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY;
                 recipe.processingVersion = SONY2FUJI_PROCESSING_BASIC_V3;
@@ -933,78 +909,12 @@ int runAgentCommands(int argc, char* argv[]) {
         std::string sourceError;
         Json lensResult = nullptr;
         HDRCommandResult hdrResult;
-        OwnedPixelBuffer sdrDiagRgba16;
+        OwnedFfiBuffer sdrDiagRgba16;
 
         if (recipe.hdr) {
             DiagnosticsToStderr diagnostics;
             hdrResult = renderHDR(recipe, preview, analyze, lensDatabase);
             status = hdrResult.status;
-        } else if (analyze) {
-            DiagnosticsToStderr diagnostics;
-            EditRecipe canonicalSource = recipe;
-            if (canonicalSource.outputPath.empty()) {
-                canonicalSource.outputPath = "unused-analyze.png";
-                canonicalSource.outputFormat = SONY2FUJI_OUTPUT_PNG;
-            }
-            const std::string canonicalJson = serializeEditRecipe(canonicalSource);
-            CanonicalSdrRecipe coreRecipe;
-            std::string coreErr;
-            if (!parseCanonicalSdrRecipe(canonicalJson, coreRecipe, coreErr, /*allowRasterLensCorrection=*/false)) {
-                return fail("invalid_recipe", coreErr);
-            }
-            Pipeline pipeline;
-            if (!lensDatabase.empty()) {
-                status = renderStatusToFfi(pipeline.setLensDatabase(lensDatabase.c_str()));
-            }
-            if (status == SONY2FUJI_STATUS_OK) {
-                status = renderStatusToFfi(pipeline.applyParams(canonicalJson.c_str()));
-            }
-            RenderParams params = coreRecipe.toRenderParams();
-            params.intent = RenderIntent::Final;
-            if (preview) {
-                params.outputTarget = RenderOutputTarget::File;
-                params.outputFormat = RenderOutputFormat::PNG;
-                params.outputPath = recipe.outputPath;
-            } else {
-                params.outputTarget = RenderOutputTarget::Buffer;
-                params.outputFormat = RenderOutputFormat::RGBA8;
-                params.outputPath.clear();
-            }
-            OwnedPixelBuffer inputOwned;
-            if (status == SONY2FUJI_STATUS_OK && recipe.rasterInput) {
-                status = renderStatusToFfi(loadDisplayImage(recipe.inputPath.c_str(), inputOwned));
-                if (status == SONY2FUJI_STATUS_OK) {
-                    params.inputPixels = inputOwned.data;
-                    params.inputWidth = inputOwned.width;
-                    params.inputHeight = inputOwned.height;
-                    params.inputPixelFormat = inputOwned.format;
-                    params.inputColorSpace = ColorSpace::sRGB;
-                    params.inputIsLinear = false;
-                }
-            }
-            ImageData renderedImage;
-            if (status == SONY2FUJI_STATUS_OK) {
-                status = renderStatusToFfi(pipeline.processToImageData(params, renderedImage));
-            }
-            if (status != SONY2FUJI_STATUS_OK) {
-                sourceError = pipeline.x3fError();
-            }
-            if (status == SONY2FUJI_STATUS_OK && recipe.schemaVersion >= 4 &&
-                (recipe.lensDistortion || recipe.lensTca || recipe.lensVignetting)) {
-                const auto& lr = pipeline.lensReport();
-                const char* states[] = {"off", "matched", "no_database", "no_camera", "no_lens", "ambiguous",
-                    "no_calibration", "missing_focal_length", "embedded_geometry", "unsupported_input"};
-                const auto state = static_cast<unsigned>(lr.state);
-                lensResult = {{"state", state < 10 ? states[state] : "unknown"},
-                    {"applied_distortion", lr.appliedDistortion}, {"applied_tca", lr.appliedTCA},
-                    {"applied_vignetting", lr.appliedVignetting}, {"crop_scale", lr.cropScale}, {"profile_id", lr.profile.id}};
-            }
-            if (status == SONY2FUJI_STATUS_OK) {
-                sdrDiagRgba16 = encodeRgba16BufferFromImageData(renderedImage, /*linearToSrgb=*/false);
-                if (!sdrDiagRgba16.data) {
-                    status = SONY2FUJI_STATUS_OUT_OF_MEMORY;
-                }
-            }
         } else {
             DiagnosticsToStderr diagnostics;
             sony2fuji_session* pointer = nullptr;
@@ -1014,23 +924,37 @@ int runAgentCommands(int argc, char* argv[]) {
             if (status == SONY2FUJI_STATUS_OK && !lensDatabase.empty())
                 status = sony2fuji_session_set_lens_database(session.get(), lensDatabase.c_str());
             if (status == SONY2FUJI_STATUS_OK) {
-                const std::string canonicalJson = serializeEditRecipe(recipe);
+                EditRecipe canonicalSource = recipe;
+                if (analyze && canonicalSource.outputPath.empty()) {
+                    canonicalSource.outputPath = "unused-analyze.png";
+                    canonicalSource.outputFormat = SONY2FUJI_OUTPUT_PNG;
+                }
+                const std::string canonicalJson = serializeEditRecipe(canonicalSource);
                 status = sony2fuji_apply_params(session.get(), canonicalJson.c_str());
             }
             auto request = recipe.toRequest();
-            sony2fuji_buffer image{};
-            const auto release = [](sony2fuji_buffer* value) { sony2fuji_release_buffer(value); };
-            const std::unique_ptr<sony2fuji_buffer, decltype(release)> decoded(&image, release);
+            if (analyze && !preview) {
+                request.output_target = SONY2FUJI_TARGET_BUFFER;
+                request.output_format = SONY2FUJI_OUTPUT_RGBA8;
+                request.output_path = nullptr;
+            }
+            OwnedFfiBuffer decoded;
             if (status == SONY2FUJI_STATUS_OK && recipe.rasterInput) {
-                status = sony2fuji_load_display_image(recipe.inputPath.c_str(), &image);
-                request.input_pixels = image.data;
-                request.input_width = image.width;
-                request.input_height = image.height;
-                request.input_pixel_format = image.pixel_format;
+                status = sony2fuji_load_display_image(recipe.inputPath.c_str(), &decoded.value);
+                request.input_pixels = decoded.value.data;
+                request.input_width = decoded.value.width;
+                request.input_height = decoded.value.height;
+                request.input_pixel_format = decoded.value.pixel_format;
                 request.input_color_space = SONY2FUJI_COLOR_SRGB;
                 request.input_is_linear = 0;
             }
-            if (status == SONY2FUJI_STATUS_OK) status = sony2fuji_process(session.get(), &request, nullptr);
+            if (status == SONY2FUJI_STATUS_OK) {
+                if (analyze) {
+                    status = sony2fuji_session_render_rgba16(session.get(), &request, &sdrDiagRgba16.value);
+                } else {
+                    status = sony2fuji_process(session.get(), &request, nullptr);
+                }
+            }
             if (status != SONY2FUJI_STATUS_OK) sourceError = sony2fuji_session_x3f_error(session.get());
             if (status == SONY2FUJI_STATUS_OK && recipe.schemaVersion >= 4 &&
                 (recipe.lensDistortion || recipe.lensTca || recipe.lensVignetting)) {
@@ -1050,7 +974,7 @@ int runAgentCommands(int argc, char* argv[]) {
             (sourceError.empty() ? sony2fuji_status_message(status) : sourceError),status);
 
         if (analyze && !preview) {
-            const OwnedPixelBuffer& diagBuf = recipe.hdr ? hdrResult.sdrRgba16 : sdrDiagRgba16;
+            const sony2fuji_buffer& diagBuf = recipe.hdr ? hdrResult.sdrRgba16.value : sdrDiagRgba16.value;
             Json diagResult = runBshDiagnosticsOnRgba16(diagBuf, sampleQueries);
             if (jsonOutput) std::cout << machineJson(envelope(command, diagResult)) << '\n';
             else std::cout << diagResult.dump(2) + "\n";
@@ -1080,7 +1004,7 @@ int runAgentCommands(int argc, char* argv[]) {
             result["quality"] = "exact";
         }
         if (analyze) {
-            const OwnedPixelBuffer& diagBuf = recipe.hdr ? hdrResult.sdrRgba16 : sdrDiagRgba16;
+            const sony2fuji_buffer& diagBuf = recipe.hdr ? hdrResult.sdrRgba16.value : sdrDiagRgba16.value;
             result["diagnostics"] = runBshDiagnosticsOnRgba16(diagBuf, sampleQueries);
         }
         if (jsonOutput) std::cout << machineJson(envelope(command, result)) << '\n';

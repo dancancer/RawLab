@@ -1,4 +1,5 @@
 #include "ffi/session_internal.h"
+#include "core/bsh_diagnostics.h"
 #include "core/hdr_pipeline.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -133,6 +135,13 @@ bool toCoreParametricCurveConfig(
     out.splitMidtone = src.split_midtone;
     out.splitHighlight = src.split_highlight;
     return out.valid();
+}
+
+bool overlapsBytes(const void* a, uint64_t aSize, const void* b, uint64_t bSize) noexcept {
+    if (!a || !b || !aSize || !bSize) return false;
+    const auto ap = reinterpret_cast<uintptr_t>(a);
+    const auto bp = reinterpret_cast<uintptr_t>(b);
+    return ap <= bp ? aSize > bp - ap : bSize > ap - bp;
 }
 
 } // namespace
@@ -262,6 +271,13 @@ PreviewExposureDiagnostics previewExposureDiagnostics(const sony2fuji_session* h
     if (!SessionLease::acquire(handle, lease)) return {};
     return lease.constRaw()->pipeline.previewExposureDiagnostics();
 }
+bool overlapsBytes(const void* a, uint64_t aSize, const void* b, uint64_t bSize) noexcept {
+    if (!a || !b || !aSize || !bSize) return false;
+    const auto ap = reinterpret_cast<uintptr_t>(a);
+    const auto bp = reinterpret_cast<uintptr_t>(b);
+    return ap <= bp ? aSize > bp - ap : bSize > ap - bp;
+}
+
 } // namespace sony2fuji
 
 // ============================================================================
@@ -992,6 +1008,49 @@ sony2fuji_status sony2fuji_process(sony2fuji_session* handle, const sony2fuji_re
         return SONY2FUJI_STATUS_OK;
     } catch (const std::bad_alloc&) { return SONY2FUJI_STATUS_OUT_OF_MEMORY; }
     catch (...) { return SONY2FUJI_STATUS_PROCESSING_ERROR; }
+}
+
+sony2fuji_status sony2fuji_session_render_rgba16(
+    sony2fuji_session* handle,
+    const sony2fuji_request* request,
+    sony2fuji_buffer* out_rgba16
+) {
+    if (!out_rgba16 || !request ||
+        overlapsBytes(request, sizeof(*request), out_rgba16, sizeof(*out_rgba16))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (request->version == SONY2FUJI_REQUEST_VERSION &&
+        request->struct_size >= sizeof(*request) &&
+        request->input_type != SONY2FUJI_INPUT_RAW &&
+        request->input_pixels && request->input_width > 0 && request->input_height > 0) {
+        const uint64_t bpp = request->input_pixel_format == SONY2FUJI_PIXEL_RGBA16 ? 8ull
+            : (request->input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4ull : 3ull);
+        const uint64_t pixels = static_cast<uint64_t>(request->input_width) * request->input_height;
+        if (pixels <= UINT64_MAX / bpp &&
+            overlapsBytes(request->input_pixels, pixels * bpp, out_rgba16, sizeof(*out_rgba16))) {
+            return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    *out_rgba16 = {};
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    lease.raw()->pipeline.clearGeometrySize();
+    sony2fuji::RenderParams params;
+    if (!toCoreRenderParams(request, params)) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    try {
+        sony2fuji::ImageData renderedImage;
+        const auto status = lease.raw()->pipeline.processToImageData(params, renderedImage);
+        if (status != sony2fuji::RenderStatus::Ok) return toFfiStatus(status);
+        sony2fuji::OwnedPixelBuffer rgba16 =
+            sony2fuji::encodeRgba16BufferFromImageData(renderedImage, /*linearToSrgb=*/false);
+        if (!rgba16.data) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        *out_rgba16 = toFfiBuffer(rgba16);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_preview_lut_compatibility(
