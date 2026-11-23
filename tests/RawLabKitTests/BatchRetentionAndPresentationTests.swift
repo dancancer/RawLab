@@ -101,4 +101,124 @@ final class BatchRetentionAndPresentationTests: XCTestCase {
         XCTAssertEqual(film.artworkName, "classic-chrome")
         XCTAssertEqual(film.group, .fuji)
     }
+
+    func testMacBatchExportItemSymlinkCanonicalizationAndDevInodeResume() throws {
+        let realDNG = temporaryRoot.appendingPathComponent("real.dng")
+        try Data("raw-bytes".utf8).write(to: realDNG)
+        let symDNG = temporaryRoot.appendingPathComponent("sym.dng")
+        try FileManager.default.createSymbolicLink(at: symDNG, withDestinationURL: realDNG)
+
+        let itemReal = try MacBatchExportItem(url: realDNG)
+        let itemSym = try MacBatchExportItem(url: symDNG)
+        let canonicalURL = realDNG.resolvingSymlinksInPath().standardizedFileURL
+        let attrs = try FileManager.default.attributesOfItem(atPath: canonicalURL.path)
+        let dev = try XCTUnwrap(attrs[.systemNumber] as? NSNumber).uint64Value
+        let ino = try XCTUnwrap(attrs[.systemFileNumber] as? NSNumber).uint64Value
+        let expectedResourceKey = "\(dev):\(ino)"
+
+        XCTAssertEqual(itemReal.input, canonicalURL)
+        XCTAssertEqual(itemSym.input, canonicalURL)
+        XCTAssertEqual(itemReal.resourceIdentifier, expectedResourceKey)
+        XCTAssertEqual(itemSym.resourceIdentifier, expectedResourceKey)
+        XCTAssertEqual(try MacBatchExportItem.resourceKey(symDNG), expectedResourceKey)
+        XCTAssertThrowsError(try MacBatchExportItem(url: temporaryRoot.appendingPathComponent("missing.dng")))
+
+        var duplicateJob = MacBatchExportJob(source: canonicalURL, settings: Adjustments(), look: nil, lookName: "Dup")
+        duplicateJob.version = 3
+        duplicateJob.settingsMode = .perTargetFrozen
+        var dupA = itemReal
+        dupA.selected = true
+        dupA.frozen = MacBatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: nil, lookSHA256: nil, lookName: "Dup", outputFormat: .jpeg, longEdge: nil)
+        var dupB = itemSym
+        dupB.selected = true
+        dupB.frozen = MacBatchFrozenSettings(ordinal: 1, settings: Adjustments(), look: nil, lookSHA256: nil, lookName: "Dup", outputFormat: .jpeg, longEdge: nil)
+        duplicateJob.items = [dupA, dupB]
+        XCTAssertThrowsError(try duplicateJob.validate())
+
+        let outputDir = temporaryRoot.appendingPathComponent("out", isDirectory: true)
+        try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        let journal = MacBatchJournal(directory: temporaryRoot.appendingPathComponent("journal", isDirectory: true))
+        var resumeJob = MacBatchExportJob(source: canonicalURL, settings: Adjustments(), look: nil, lookName: "Resume")
+        resumeJob.version = 3
+        resumeJob.settingsMode = .perTargetFrozen
+        resumeJob.outputDirectory = outputDir
+        var item = itemReal
+        item.selected = true
+        item.resourceIdentifier = expectedResourceKey
+        item.frozen = MacBatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: nil, lookSHA256: nil, lookName: "Resume", outputFormat: .png, longEdge: 2048)
+        resumeJob.items = [item]
+
+        let encodedData = try JSONEncoder().encode(resumeJob)
+        var decoded = try JSONDecoder().decode(MacBatchExportJob.self, from: encodedData)
+        XCTAssertEqual(decoded.items[0].resourceIdentifier, expectedResourceKey)
+        try MacBatchExportRunner.run(job: &decoded, journal: journal, scope: .unfinished, shouldCancel: { false }) { _, _, _, destination in
+            try Data("exported".utf8).write(to: destination)
+        }
+        XCTAssertEqual(decoded.succeededCount, 1)
+        XCTAssertEqual(decoded.items[0].status, .succeeded)
+    }
+
+    func testMacBatchExportJobEffectiveOutputSharpeningAndFrozenValidation() throws {
+        let source = temporaryRoot.appendingPathComponent("src.dng")
+        try Data("src".utf8).write(to: source)
+        var job = MacBatchExportJob(source: source, settings: Adjustments(), look: nil, lookName: "Sharp")
+        job.outputFormat = .jpeg
+        job.outputSharpening = .high
+        XCTAssertEqual(job.effectiveOutputSharpening, .high)
+        job.outputFormat = .renderedDNG
+        XCTAssertEqual(job.effectiveOutputSharpening, .off)
+
+        var badSettings = Adjustments()
+        badSettings.exposure = 999.0
+        let digest = String(repeating: "a", count: 64)
+        let badIOSFrozen = BatchFrozenSettings(ordinal: 0, settings: badSettings, inputSHA256: digest, outputFormat: .jpeg)
+        XCTAssertThrowsError(try badIOSFrozen.validate())
+
+        let macLongEdge65535 = MacBatchFrozenSettings(ordinal: 0, settings: Adjustments(), look: nil, lookSHA256: nil, lookName: "Max", outputFormat: .jpeg, longEdge: 65535)
+        XCTAssertNoThrow(try macLongEdge65535.validate())
+        let iosLongEdge65535 = BatchFrozenSettings(ordinal: 0, settings: Adjustments(), inputSHA256: digest, outputFormat: .jpeg, longEdge: 65535)
+        XCTAssertThrowsError(try iosLongEdge65535.validate())
+        var macJob65535 = MacBatchExportJob(source: source, settings: Adjustments(), look: nil, lookName: "Max")
+        macJob65535.longEdge = 65535
+        XCTAssertNoThrow(try macJob65535.validate())
+    }
+
+    func testAdjustmentTransferPreflightCancelResetsIsRunning() throws {
+        let queue = DispatchQueue(label: "preflight-cancel-isrunning-test")
+        let preflight = AdjustmentTransferPreflight(queue: queue)
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        var completedCalls = 0
+
+        let payload = try AdjustmentTransferPayload(
+            source: .init(identifier: "src", isRaw: true, processingVersion: ProcessingIdentity.current.version, recipe: nil, hdrProcessingVersion: nil),
+            values: ["light.exposure": .number(0.5)]
+        )
+        let prepared = PreparedAdjustmentTransfer(id: UUID(), payload: payload, action: .paste, targets: [])
+
+        preflight.start({ shouldCancel in
+            entered.signal()
+            release.wait()
+            if shouldCancel() { throw CancellationError() }
+            return prepared
+        }, completed: { _ in
+            completedCalls += 1
+        })
+        XCTAssertTrue(preflight.isRunning)
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success)
+
+        preflight.cancel()
+        XCTAssertFalse(preflight.isRunning)
+
+        release.signal()
+        let drained = DispatchSemaphore(value: 0)
+        queue.async { DispatchQueue.main.async { drained.signal() } }
+        let deadline = Date().addingTimeInterval(5)
+        while drained.wait(timeout: .now()) != .success {
+            guard Date() < deadline else { XCTFail("Preflight queue did not drain"); return }
+            RunLoop.main.run(mode: .default, before: deadline)
+        }
+        XCTAssertFalse(preflight.isRunning)
+        XCTAssertEqual(completedCalls, 0)
+    }
 }

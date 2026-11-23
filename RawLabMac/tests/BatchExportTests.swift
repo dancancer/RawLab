@@ -74,6 +74,27 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     do { try journal.save(JSONDecoder().decode(MacBatchExportJob.self, from: JSONSerialization.data(withJSONObject: duplicate))) }
     catch { duplicateRejected = true }
     try check(duplicateRejected, "frozen target identities cannot be duplicated with a new row UUID")
+    let symlinkInput = root.appendingPathComponent("symlink-to-one.ARW")
+    try? FileManager.default.removeItem(at: symlinkInput)
+    try FileManager.default.createSymbolicLink(at: symlinkInput, withDestinationURL: inputs[0])
+    let symlinkItem = try MacBatchExportItem(url: symlinkInput)
+    try check(symlinkItem.input == inputs[0].resolvingSymlinksInPath().standardizedFileURL &&
+              symlinkItem.resourceIdentifier == (items[0]["resourceIdentifier"] as? String),
+              "MacBatchExportItem canonicalizes symlinked input and uses <dev>:<ino> resourceIdentifier")
+    var symlinkDup = object
+    var symlinkRows = items
+    symlinkRows[1]["input"] = symlinkItem.input.absoluteString
+    symlinkRows[1]["identity"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(symlinkItem.identity))
+    symlinkRows[1]["resourceIdentifier"] = symlinkItem.resourceIdentifier
+    symlinkDup["items"] = symlinkRows
+    var symlinkDupRejected = false
+    do { try journal.save(JSONDecoder().decode(MacBatchExportJob.self, from: JSONSerialization.data(withJSONObject: symlinkDup))) }
+    catch { symlinkDupRejected = true }
+    try check(symlinkDupRejected, "MacBatchExportJob.validate rejects duplicate symlinked targets")
+    var sharpeningCheckJob = MacBatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Sharp")
+    sharpeningCheckJob.outputFormat = .renderedDNG
+    sharpeningCheckJob.outputSharpening = .high
+    try check(sharpeningCheckJob.effectiveOutputSharpening == .off, "renderedDNG forces effectiveOutputSharpening to .off")
     var missingLook = object
     var missingLookRows = items
     var missingLookSnapshot = missingLookRows[0]["frozen"] as! [String: Any]

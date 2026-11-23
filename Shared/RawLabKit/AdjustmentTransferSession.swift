@@ -5,7 +5,10 @@ public final class AdjustmentTransferPreflight: ObservableObject {
     private let queue: DispatchQueue; private var active: DispatchWorkItem?
     public init(queue: DispatchQueue = DispatchQueue(label: "rawlab.adjustment-preflight", qos: .userInitiated)) { self.queue = queue }
     deinit { active?.cancel() }
-    public func cancel() { active?.cancel(); active = nil }
+    public func cancel() {
+        active?.cancel(); active = nil
+        if Thread.isMainThread { isRunning = false } else { DispatchQueue.main.async { [weak self] in if self?.active == nil { self?.isRunning = false } } }
+    }
 
     public func start(_ operation: @escaping (@escaping () -> Bool) throws -> PreparedAdjustmentTransfer, completed: @escaping (Result<PreparedAdjustmentTransfer, Error>) -> Void) {
         cancel(); isRunning = true

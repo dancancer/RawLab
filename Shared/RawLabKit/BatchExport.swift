@@ -216,16 +216,16 @@ public struct BatchFrozenSettings: Codable, Equatable {
     public static func validateSettings(_ settings: Adjustments) throws { try BatchExportCore.validateSettings(settings) }
     public func validate() throws {
         func digest(_ v: String?) -> Bool { v?.count == 64 && v!.allSatisfy { "0123456789abcdef".contains($0) } }
-        guard version == 1, settingsVersion == 1, ordinal >= 0, ExportSize.isValid(longEdge) else { throw CocoaError(.fileReadCorruptFile) }
+        guard version == 1, settingsVersion == 1, ordinal >= 0 else { throw CocoaError(.fileReadCorruptFile) }
         if let inputSHA256 {
-            guard digest(inputSHA256), (lookURL == nil && lookSHA256 == nil && !settings.hasLook) || (lookURL != nil && digest(lookSHA256)) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
+            guard ExportSize.isValid(longEdge), digest(inputSHA256),
+                  (lookURL == nil && lookSHA256 == nil && !settings.hasLook) || (lookURL != nil && digest(lookSHA256)) else { throw CocoaError(.fileReadCorruptFile) }
         } else {
-            guard settings.isHDREditing || settings.masterRecipeID == nil || lookURL != nil,
+            guard longEdge.map({ (1...65535).contains($0) }) ?? true,
+                  settings.isHDREditing || settings.masterRecipeID == nil || lookURL != nil,
                   (lookURL == nil && lookSHA256 == nil) || (lookURL != nil && digest(lookSHA256)) else { throw CocoaError(.fileReadCorruptFile) }
-            try Self.validateSettings(settings)
         }
+        try Self.validateSettings(settings)
     }
     public func verifyFiles(input: URL) throws {
         if let inputSHA256, (try? PhotoIdentity.cachedFallback(for: input).contentIdentifier) != inputSHA256 {
@@ -601,10 +601,15 @@ public struct MacBatchExportItem: Codable, Identifiable {
     public let id: UUID, input: URL, identity: OriginalFileIdentity
     public var selected = false, status = BatchItemStatus.waiting, output: URL?, completedIdentity: OriginalFileIdentity?
     public var error: String?, validationError: String?, noticeKey: String?, resolvedX3fMode: X3fMode?, frozen: MacBatchFrozenSettings?, resourceIdentifier: String?
-    public init(url: URL) throws { id = UUID(); input = url; identity = try OriginalFileIdentity(url); resourceIdentifier = try? Self.resourceKey(url) }
+    public init(url: URL) throws {
+        id = UUID(); input = url.resolvingSymlinksInPath().standardizedFileURL
+        identity = try OriginalFileIdentity(input); resourceIdentifier = try Self.resourceKey(input)
+    }
     public static func resourceKey(_ url: URL) throws -> String {
-        guard let identifier = (try url.resourceValues(forKeys: [.fileResourceIdentifierKey])).fileResourceIdentifier as? NSObject else { throw CocoaError(.fileReadUnknown) }
-        return try NSKeyedArchiver.archivedData(withRootObject: identifier, requiringSecureCoding: true).base64EncodedString()
+        let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let attrs = try FileManager.default.attributesOfItem(atPath: path)
+        guard let dev = attrs[.systemNumber] as? NSNumber, let ino = attrs[.systemFileNumber] as? NSNumber else { return path }
+        return "\(dev.uint64Value):\(ino.uint64Value)"
     }
 }
 
@@ -613,7 +618,7 @@ public struct MacBatchExportJob: Codable {
     public let id: UUID, source: URL, settings: Adjustments, lookName: String
     public var look: URL?, items: [MacBatchExportItem] = [], outputDirectory: URL?, png = false, outputFormat: ExportFormat?, longEdge: Int?, outputSharpening: OutputSharpening?
     public var started = false, interrupted = false, cancelled = false, failure: String?, settingsMode: BatchSettingsMode?
-    public var effectiveOutputSharpening: OutputSharpening { outputSharpening ?? .off }
+    public var effectiveOutputSharpening: OutputSharpening { format == .renderedDNG ? .off : (outputSharpening ?? .off) }
     public enum CodingKeys: String, CodingKey {
         case version, id, source, settings, look, lookName, items, outputDirectory, png, outputFormat, longEdge, started, interrupted, cancelled, failure
         case outputSharpening = "output_sharpening", settingsMode = "settings_mode"
@@ -633,7 +638,7 @@ public struct MacBatchExportJob: Codable {
         self.id = UUID(); self.source = source; self.settings = settings; self.look = look; self.lookName = lookName
     }
     public func validate() throws {
-        guard (1...BatchJournalVersionKey.job.maxSupportedVersion).contains(version), ExportSize.isValid(longEdge) else { throw CocoaError(.fileReadCorruptFile) }
+        guard (1...BatchJournalVersionKey.job.maxSupportedVersion).contains(version), longEdge.map({ (1...65535).contains($0) }) ?? true else { throw CocoaError(.fileReadCorruptFile) }
         try MacBatchFrozenSettings.validateSettings(settings)
         guard mode == .perTargetFrozen else { guard version < 3, items.allSatisfy({ $0.frozen == nil }) else { throw CocoaError(.fileReadCorruptFile) }; return }
         guard version == 3, !items.isEmpty, Set(items.map(\.id)).count == items.count,
