@@ -13,18 +13,18 @@ internal static class MasterRecipeRefinementChecks
         Check(MasterRecipe.All.Count == 14 && MasterRecipe.All.All(r => r.SettingsVersion == 4 && r.Grading != null && r.Grading.IsValid),
             "All 14 bundled v4 master recipes deserialize with valid color grading");
         var state = new Adjustments { ToneControls = new(-20, 30, -25), Atmosphere = new(-40, 20) };
-        state.Set(Parameter.ToneCurve, 35); state.Set(Parameter.Temperature, 8000); state.Set(Parameter.Sharpening, 75);
+        state.Set(Parameter.ToneCurve, .35); state.Set(Parameter.Temperature, 8000); state.Set(Parameter.Sharpening, .75);
         state.ApplyMasterRecipe(recipe);
         Check(state.ToneControls == new ToneControlsSettings(50, -60, 15) && state.Atmosphere == new AtmosphereSettings(12, -6),
             "Explicit v4 application replaces visible tone and atmosphere");
         Check(state.ColorGrading.Shadows == new ColorGradingWheel(210, 8) && state.Curve.Mode == ToneCurveMode.Custom &&
             state.Curve.Points.Count == 5 && state[Parameter.ToneCurve] == 0, "V4 application replaces grading and curve");
-        Check(state[Parameter.Temperature] == 8000 && state[Parameter.Sharpening] == 75, "V4 retains independent adjustments");
+        Check(state[Parameter.Temperature] == 8000 && state[Parameter.Sharpening] == .75, "V4 retains independent adjustments");
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(state.Capture()))!.Restore();
         Check(restored.Capture().SameAs(state.Capture()), "V4 snapshot survives serialization");
         Check(restored.MasterRecipeSettingsVersion == 4, "Snapshot preserves explicit recipe version");
         foreach (var strength in new[] { 0.0, 0.5, 1, 2 }) {
-            state.Set(Parameter.Strength, strength * 100);
+            state.Set(Parameter.Strength, strength);
             Check(state.RenderToneControls == new ToneControlsSettings(Math.Min(100, 50 * strength), Math.Max(-100, -60 * strength), 15 * strength) &&
                 state.RenderAtmosphere == new AtmosphereSettings(12 * strength, -6 * strength), "V4 current tone/atmosphere scale once");
             Check(state.RenderGrading.Shadows == new ColorGradingWheel(210, 8 * strength), "Grading scales saturation, not hue");
@@ -50,7 +50,7 @@ internal static class MasterRecipeRefinementChecks
         catch (InvalidDataException) { }
         var flat = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0), new(.2, .8), new(.4, .8), new(1, 1)]);
         Check(flat.Scaled(2).Points.Select(p => p.Y).SequenceEqual(new[] { 0.0, 1, 1, 1 }), "Extreme manual curve scaling stays monotone");
-        state.ResolveWhiteBalance((5300, 8)); state.Set(Parameter.Strength, 50);
+        state.ResolveWhiteBalance((5300, 8)); state.Set(Parameter.Strength, .5);
         var detached = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Looks),
             new(new("photo.ARW", 1, 2, 3), state.Capture(), null));
         Check(detached.Status == EditorResetStatus.Ready, "V4 look reset is representable");
@@ -60,7 +60,7 @@ internal static class MasterRecipeRefinementChecks
         Check(independent.MasterRecipeID == null && independent.ToneControls == state.RenderToneControls &&
             independent.Atmosphere == state.RenderAtmosphere && independent.ColorGrading == state.RenderGrading && independent.Curve == state.RenderCurve,
             "V4 look reset materializes modern controls once");
-        var extreme = state.Clone(); extreme.Set(Parameter.Exposure, 4); extreme.Set(Parameter.Strength, 200);
+        var extreme = state.Clone(); extreme.Set(Parameter.Exposure, 4); extreme.Set(Parameter.Strength, 2);
         var unchanged = extreme.Capture();
         try { extreme.ClearMasterRecipe(); throw new Exception("Unrepresentable direct removal accepted"); }
         catch (InvalidDataException) { Check(extreme.Capture().SameAs(unchanged), "Blocked removal preserves the original edit"); }
@@ -77,22 +77,22 @@ internal static class MasterRecipeRefinementChecks
         var fields = new[] { F.BlackPoint, F.WhitePoint, F.Vibrance, F.Clarity, F.Dehaze, F.Curve, F.SCurve,
             F.GradingShadows, F.GradingMidtones, F.GradingHighlights };
         foreach (var strength in new[] { 0.0, 0.5, 1, 2 }) {
-            source.Set(Parameter.Strength, strength * 100);
+            source.Set(Parameter.Strength, strength);
             var partial = AdjustmentTransfer.Capture(AdjustmentScope.Custom(fields), Edit(source), context);
             var plain = AdjustmentTransfer.Prepare(partial, Edit(new()), context).Settings.Restore();
             Check(plain.MasterRecipeID == null && plain.ToneControls == source.RenderToneControls && plain.Atmosphere == source.RenderAtmosphere &&
                 plain.ColorGrading == source.RenderGrading && plain.Curve == source.RenderCurve, "Partial v4 transfer materializes all new groups");
             var full = AdjustmentTransfer.Capture(AdjustmentScope.All, Edit(source), context);
             var copied = AdjustmentTransfer.Prepare(full, Edit(new()), context).Settings.Restore();
-            Check(copied.MasterRecipeSettingsVersion == 4 && copied[Parameter.Strength] == strength * 100 &&
+            Check(copied.MasterRecipeSettingsVersion == 4 && copied[Parameter.Strength] == strength &&
                 copied.ToneControls == source.ToneControls && copied.ColorGrading == source.ColorGrading && copied.Curve == source.Curve,
                 "Full v4 transfer keeps logical controls and version");
         }
-        source.Set(Parameter.Strength, 50);
+        source.Set(Parameter.Strength, .5);
         var legacyFields = AdjustmentTransfer.Capture(AdjustmentScope.Custom(AdjustmentFields.RecipeDependencies), Edit(source), context);
         var separate = AdjustmentTransfer.Prepare(legacyFields, Edit(new()), context);
         Check(separate.Settings.MasterRecipeID == null && separate.Look == "recipe-lut:" + recipe.Id, "Incomplete v4 becomes an independent LUT");
-        var target = source.Clone(); target.Set(Parameter.Tint, 0); source.Set(Parameter.Strength, 100);
+        var target = source.Clone(); target.Set(Parameter.Tint, 0); source.Set(Parameter.Strength, 1);
         var strengthOnly = AdjustmentTransfer.Capture(AdjustmentScope.Custom([F.Strength]), Edit(source), context);
         var changed = AdjustmentTransfer.Prepare(strengthOnly, Edit(target), context).Settings.Restore();
         Check(changed.RenderToneControls == target.RenderToneControls && changed.RenderAtmosphere == target.RenderAtmosphere &&

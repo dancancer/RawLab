@@ -535,4 +535,57 @@ class BatchJournalTest {
         assertEquals(2 * count, syncCount)
         assertEquals(result, BatchJournal(root).load(original.id))
     }
+
+    @Test fun futureStructuredSettingsV4RefusesQuarantineWhileV2AndV3LoadCleanly() {
+        val upgradeRoot = temporary.newFolder("v2-v3-v4-settings")
+        val journal = BatchJournal(upgradeRoot)
+
+        // 1. Legacy v2: JSON source.settings loads and upgrades into canonical EditSettings.
+        val canonical = EditSettings(exposure = .5f, highlights = .35f, contrast = 1.25f, saturation = 0.8f)
+        val v2Job = job().copy(
+            id = "legacy-v2-job",
+            source = job().source.copy(settings = canonical),
+        )
+        journal.save(v2Job)
+        val v2File = File(upgradeRoot, "legacy-v2-job.properties")
+        val v2Props = Properties().also { v2File.inputStream().use(it::load) }
+        val v3Settings = v2Props.getProperty("source.settings")
+        assertTrue(v3Settings.startsWith("v3:"))
+        val v2Root = org.json.JSONObject(v3Settings.removePrefix("v3:")).put("version", 2)
+        v2Root.getJSONObject("settings")
+            .put("contrast", 0.25)
+            .put("saturation", -0.2)
+            .put("highlights", -0.35)
+        v2Props.setProperty("source.settings", "v2:$v2Root")
+        v2File.outputStream().use { v2Props.store(it, null) }
+
+        val loadedV2 = journal.load("legacy-v2-job")!!
+        assertEquals(0.35f, loadedV2.source.settings.highlights, 1e-6f)
+        assertEquals(1.25f, loadedV2.source.settings.contrast, 1e-6f)
+        assertEquals(0.8f, loadedV2.source.settings.saturation, 1e-6f)
+
+        // 2. Future v4: prefix or inner "version": 4 in source.settings refuses quarantine & overwrite.
+        for ((suffix, mutator) in listOf(
+            "prefix" to { raw: String -> raw.replaceFirst("v3:", "v4:").replace("\"version\":3", "\"version\":4") },
+            "inner" to { raw: String -> raw.replace("\"version\":3", "\"version\":4") },
+            "opaque" to { _: String -> "v4:opaque-future-format" },
+        )) {
+            val id = "future-v4-$suffix"
+            val futureJob = job().copy(id = id)
+            journal.save(futureJob)
+            val record = File(upgradeRoot, "$id.properties")
+            val props = Properties().also { record.inputStream().use(it::load) }
+            props.setProperty("source.settings", mutator(props.getProperty("source.settings")))
+            record.outputStream().use { props.store(it, null) }
+            val originalBytes = record.readBytes()
+
+            assertThrows(Exception::class.java) { journal.pending() }
+            assertTrue("Future v4 journal ($suffix) must remain in place", record.exists())
+            assertArrayEquals(originalBytes, record.readBytes())
+            assertTrue(upgradeRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
+            assertThrows(Exception::class.java) { journal.save(futureJob) }
+            assertArrayEquals(originalBytes, record.readBytes())
+            journal.discard(id)
+        }
+    }
 }

@@ -10,7 +10,7 @@ import java.nio.file.Files
 
 class ProcessingMigrationTest {
     private fun original() = EditSettings(processing = ProcessingIdentity.C5, film = "saved-look", exposure = .5f,
-        highlights = -.2f, clarity = 14f, denoise = DenoiseSettings(true, 10f, 70f, 90f))
+        highlights = .2f, clarity = 14f, denoise = DenoiseSettings(true, 10f, 70f, 90f))
     private fun result(disposition: Float = 1f) = floatArrayOf(1f, 80f, 2f, 3f, disposition, 20f,
         .75f, 1.1f, .1f, .2f, 1.15f, -.1f, .2f, .05f, .1f, -.05f, .001f, .003f, .002f, .001f)
 
@@ -18,9 +18,9 @@ class ProcessingMigrationTest {
         val before = original()
         val after = requireNotNull(ProcessingMigrationOutcome.decode(before, result()).candidate(before))
         assertEquals(.75f, after.exposure, 1e-6f)
-        assertEquals(.1f, after.contrast, 1e-6f)
-        assertEquals(-.1f, after.highlights, 1e-6f)
-        assertEquals(.15f, after.saturation, 1e-6f)
+        assertEquals(1.1f, after.contrast, 1e-6f)
+        assertEquals(.1f, after.highlights, 1e-6f)
+        assertEquals(1.15f, after.saturation, 1e-6f)
         assertEquals(-10f, after.blackPoint, 1e-6f)
         assertEquals(5f, after.vibrance, 1e-6f)
         assertEquals(before.denoise, after.denoise)

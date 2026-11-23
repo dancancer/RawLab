@@ -162,19 +162,19 @@ internal static class AdjustmentPresetChecks
         var source = Path.Combine(directory, "source.ARW"); var target = Path.Combine(directory, "target.ARW");
         File.WriteAllText(source, "source"); File.WriteAllText(target, "target");
         var store = new EditStore(Path.Combine(directory, "edits")); var session = new AdjustmentTransferSession(store);
-        var settings = new Adjustments { ToneControls = new(-37.25,42.5,18.125) }; settings.Set(Parameter.Exposure, 1.25); settings.Set(Parameter.Contrast, 20);
+        var settings = new Adjustments { ToneControls = new(-37.25,42.5,18.125) }; settings.Set(Parameter.Exposure, 1.25); settings.Set(Parameter.Contrast, 1.2);
         var sourceEdit = new SavedEdit(OriginalIdentity.Read(source), settings.Capture(), null);
         var clipboard = session.Copy(AdjustmentScope.Custom([AdjustmentField.Contrast]), sourceEdit, new(source, true));
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Custom([AdjustmentField.Exposure, AdjustmentField.BlackPoint, AdjustmentField.WhitePoint, AdjustmentField.Vibrance]), sourceEdit, new(source, true));
         var preset = new AdjustmentPresetStore(Path.Combine(directory, "presets")).Create("Independent", payload);
         File.Delete(source);
-        var baseline = new Adjustments(); baseline.Set(Parameter.Contrast, 35);
+        var baseline = new Adjustments(); baseline.Set(Parameter.Contrast, 1.35);
         var destination = new AdjustmentTransferTarget(target, new(OriginalIdentity.Read(target), baseline.Capture(), null), new(target, true));
         var operation = session.Prepare(preset.Payload, [destination], AdjustmentHistoryAction.Preset);
         Check(SavedEdit.Same(operation.Targets.Single().Candidate, session.Prepare(payload, [destination]).Targets.Single().Candidate),
             "preset and clipboard produce identical candidate after source removal");
         Check(session.Apply(operation).Single().Status == AdjustmentStatus.Applied &&
-            store.Find(target)!.Settings.Restore()[Parameter.Contrast] == 35, "preset changes only selected fields");
+            store.Find(target)!.Settings.Restore()[Parameter.Contrast] == 1.35, "preset changes only selected fields");
         Check(session.Clipboard == clipboard && session.Transactions.Single().Action == AdjustmentHistoryAction.Preset,
             "preset preserves clipboard and records its own action");
         Check(session.UndoPhoto(target).Single().Status == AdjustmentStatus.Applied && session.PhotoHistoryID(target, false) != null, "preset undo uses saved history");

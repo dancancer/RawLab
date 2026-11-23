@@ -22,9 +22,9 @@ internal static class AgentRecipeChecks
         var mixed=new Adjustments{ExposureMode=2,ToneControls=new(-32.75,46.5,21.25),Hsl=new HslSettings().WithValue(0,0,18).WithValue(1,4,-27).WithValue(2,7,13),
             Effects=new(-28,63,19,72,34,18,31,42),Denoise=new(true,8,51,63),DisplayChromaDenoise=2,
             Geometry=new(.07,.08,.8,.76,1,true,false,3.5,.04,-.03)};
-        mixed.Set(Parameter.Exposure,.35);mixed.Set(Parameter.Contrast,23.5);mixed.Set(Parameter.Saturation,-17.8);
-        mixed.Set(Parameter.Highlights,21.4);mixed.Set(Parameter.Shadows,14.8);mixed.Set(Parameter.ToneCurve,-18.2);mixed.Set(Parameter.Sharpening,35.7);
-        mixed.Set(Parameter.Temperature,5300);mixed.Set(Parameter.Tint,12.4);mixed.Set(Parameter.Strength,73);
+        mixed.Set(Parameter.Exposure,.35);mixed.Set(Parameter.Contrast,1.235);mixed.Set(Parameter.Saturation,.822);
+        mixed.Set(Parameter.Highlights,-.214);mixed.Set(Parameter.Shadows,.148);mixed.Set(Parameter.ToneCurve,-.182);mixed.Set(Parameter.Sharpening,.357);
+        mixed.Set(Parameter.Temperature,5300);mixed.Set(Parameter.Tint,12.4);mixed.Set(Parameter.Strength,.73);
         Verify(raw,mixed,look,"mixed",257);
         var legacy=mixed.Clone();legacy.Processing=ProcessingIdentity.Legacy;
         Verify(raw,legacy,look,"legacy-processing",257);
@@ -34,7 +34,7 @@ internal static class AgentRecipeChecks
         var targetMaster=new Adjustments();var tintRecipe=MasterRecipe.All.First(recipe=>recipe.TintDelta!=0);
         targetMaster.ApplyMasterRecipe(tintRecipe);targetMaster.ResolveWhiteBalance((2000,-150));
         Verify(target,targetMaster,tintRecipe.LutPath,"target-wb",48);
-        foreach(var strength in new[]{0,50,100,200})
+        foreach(var strength in new[]{0.0,.5,1.0,2.0})
         {
             var recipe=MasterRecipe.All.First(recipe=>recipe.TintDelta!=0);
             var state=new Adjustments();state.ApplyMasterRecipe(recipe);state.Set(Parameter.Strength,strength);
@@ -43,9 +43,9 @@ internal static class AgentRecipeChecks
             check(state.AsShot==(2000,-150),"Agent target WB resolution does not mutate the captured source state");
         }
         var chroma=new Adjustments{DisplayChromaDenoise=1};Verify(raw,chroma,null,"display-chroma",128);
-        var clamped=new Adjustments();clamped.ApplyMasterRecipe(tintRecipe);clamped.Set(Parameter.Strength,200);
-        clamped.Set(Parameter.Contrast,100);clamped.Set(Parameter.Saturation,-100);clamped.Set(Parameter.Highlights,100);
-        clamped.Set(Parameter.Shadows,-100);clamped.Set(Parameter.ToneCurve,100);clamped.Set(Parameter.Sharpening,200);
+        var clamped=new Adjustments();clamped.ApplyMasterRecipe(tintRecipe);clamped.Set(Parameter.Strength,2);
+        clamped.Set(Parameter.Contrast,2);clamped.Set(Parameter.Saturation,0);clamped.Set(Parameter.Highlights,-1);
+        clamped.Set(Parameter.Shadows,-1);clamped.Set(Parameter.ToneCurve,1);clamped.Set(Parameter.Sharpening,2);
         Verify(raw,clamped,tintRecipe.LutPath,"core-clamp",128);
         foreach(var edge in new[]{0,65536})
         {
@@ -124,7 +124,7 @@ internal static class AgentRecipeChecks
             var camera=engine.Render(input,new Adjustments{ExposureMode=state.ExposureMode},null,32,statistics:false,clipping:false)!.WhiteBalance;
             check(camera.HasValue && camera!=(2000,-150),"Independent neutral target WB is available and differs from captured source WB: "+name);
             using var json=JsonDocument.Parse(text);var wb=json.RootElement.GetProperty("edits").GetProperty("white_balance");
-            var offset=state[Parameter.Tint]*state[Parameter.Strength]/100;
+            var offset=state[Parameter.Tint]*state[Parameter.Strength];
             if(state.CameraWhiteBalance && offset==0)
                 check(wb.GetProperty("mode").GetString()=="camera","Zero recipe tint keeps target camera WB: "+name);
             else

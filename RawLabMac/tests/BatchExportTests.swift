@@ -269,12 +269,12 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         mutate(&jobObj, &settingsObj)
         jobObj["settings"] = settingsObj
         let badData = try JSONSerialization.data(withJSONObject: jobObj)
-        if label == "out-of-range photoEffects" {
-            // PhotoEffectsSettings.init(from:) enforces fail-closed decoding for out-of-range parameters.
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" {
+            // PhotoEffectsSettings.init(from:) and Adjustments.init(from:) chromaNoiseReduction enforce fail-closed decoding.
             var decodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badData) }
             catch is DecodingError { decodeRejected = true }
-            try check(decodeRejected, "\(label): uniform job decode rejects out-of-range photoEffects")
+            try check(decodeRejected, "\(label): uniform job decode rejects out-of-range value")
         } else {
             let decodedUniform = try JSONDecoder().decode(MacBatchExportJob.self, from: badData)
             var saveRejected = false
@@ -325,11 +325,11 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         itemRows[0]["frozen"] = frozenObj
         perTargetObj["items"] = itemRows
         let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
-        if label == "out-of-range photoEffects" {
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" {
             var frozenDecodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData) }
             catch is DecodingError { frozenDecodeRejected = true }
-            try check(frozenDecodeRejected, "\(label): per-target frozen job decode rejects out-of-range photoEffects")
+            try check(frozenDecodeRejected, "\(label): per-target frozen job decode rejects out-of-range value")
         } else {
             let decodedFrozen = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData)
             var frozenRejected = false
@@ -535,7 +535,7 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         try FileManager.default.createDirectory(at: legacyRecipeJournal.directory, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: legacyRecipeJob).write(to: legacyRecipeJournal.directory.appendingPathComponent("job.json"))
         let restoredRecipeJob = try legacyRecipeJournal.load()!
-        try check(restoredRecipeJob.settings.exposure == 0.4 && restoredRecipeJob.settings.shadows == 20 &&
+        try check(restoredRecipeJob.settings.exposure == 0.4 && restoredRecipeJob.settings.shadows == 0.2 &&
                   restoredRecipeJob.settings.tint == 5,
                   "unfinished legacy recipe jobs migrate their frozen controls")
         try legacyRecipeJournal.save(restoredRecipeJob)

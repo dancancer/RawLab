@@ -327,7 +327,6 @@ struct Harness {
         if let v = num(sdrValues["effects.clarity"]) { settings.clarity = v }
         if let v = num(sdrValues["effects.dehaze"]) { settings.dehaze = v }
         if let v = num(sdrValues["detail.sharpening"]) { settings.sharpening = v }
-        if let v = num(sdrValues["detail.denoise.post_rgb"]) { settings.noiseReduction = v }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { settings.displayChromaDenoise = v }
         if let wObj = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             settings.denoise = RawDenoiseSettings(
@@ -529,7 +528,6 @@ struct Harness {
         if let v = num(sdrValues["effects.clarity"]) { verify(approx(s.clarity, v), "effects.clarity") }
         if let v = num(sdrValues["effects.dehaze"]) { verify(approx(s.dehaze, v), "effects.dehaze") }
         if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening, v), "detail.sharpening") }
-        if let v = num(sdrValues["detail.denoise.post_rgb"]) { verify(approx(s.noiseReduction, v), "detail.denoise.post_rgb") }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { verify(s.displayChromaDenoise == v, "detail.denoise.chroma_mode") }
         if let w = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             verify(s.denoise.enabled == (w["enabled"] as? Bool ?? false), "wavelet.enabled")

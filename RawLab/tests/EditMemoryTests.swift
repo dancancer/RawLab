@@ -454,7 +454,7 @@ extension EditMemoryTests {
         settings.hsl = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[0.5,1.5,0,0,0,0,0,0],\"saturation\":[2.5,3.5,0,0,0,0,0,0],\"lightness\":[4.5,5.5,0,0,0,0,0,0]}".utf8))
         settings.photoEffects.vignetteMidpoint = 63; settings.photoEffects.grainSize = 61
         settings.denoise = RawDenoiseSettings(enabled: false, luma: 10, chroma: 72, coarse: 100)
-        settings.noiseReduction = 0.3; settings.sharpening = 0.4; settings.displayChromaDenoise = 2
+        settings.sharpening = 0.4; settings.displayChromaDenoise = 2
         settings.geometry.quarterTurns = 1
         settings.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "stored-disabled-profile")
         let original = state(settings)
@@ -475,7 +475,7 @@ extension EditMemoryTests {
             (.adjustment(.hsl), { $0.hsl = HSLSettings() }),
             (.adjustment(.vignette), { $0.photoEffects.resetVignette() }),
             (.adjustment(.grain), { $0.photoEffects.resetGrain() }),
-            (.adjustment(.noiseReduction), { $0.noiseReduction = 0; $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
+            (.adjustment(.noiseReduction), { $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
             (.adjustment(.sharpening), { $0.sharpening = 0 }),
             (.geometry, { $0.geometry = GeometrySettings() }),
             (.lens, { $0.lensCorrection = nil })
@@ -520,7 +520,7 @@ extension EditMemoryTests {
         let effects = candidate(.group(.effects), original)
         check(effects.settings.photoEffects == PhotoEffectsSettings() && effects.settings.denoise == settings.denoise, "effects reset includes disabled auxiliary values")
         let detail = candidate(.group(.detail), original)
-        check(detail.settings.denoise == RawDenoiseSettings() && detail.settings.noiseReduction == 0 && detail.settings.displayChromaDenoise == 0 && detail.settings.sharpening == 0, "detail reset clears modern and legacy complete noise settings")
+        check(detail.settings.denoise == RawDenoiseSettings() && detail.settings.displayChromaDenoise == 0 && detail.settings.sharpening == 0, "detail reset clears modern and legacy complete noise settings")
         let geometry = candidate(.group(.geometry), original)
         check(geometry.settings.geometry.isIdentity && geometry.settings.lensCorrection == nil && geometry.settings.hsl == settings.hsl, "geometry reset includes complete disabled lens configuration")
         let channel = candidate(.hslChannel(0), original)
@@ -572,7 +572,7 @@ extension EditMemoryTests {
         check(candidate(.group(.looks), state(recipeSettings), noCamera).settings.whiteBalanceMode == .camera, "RAW camera zero tint remains calibration-free")
         recipeSettings.whiteBalanceMode = .custom; recipeSettings.tint = 10
         let rasterLook = candidate(.group(.looks), state(recipeSettings), raster)
-        check(rasterLook.settings.whiteBalanceMode == recipeSettings.whiteBalanceMode && rasterLook.settings.temperature == recipeSettings.temperature && rasterLook.settings.tint == recipeSettings.tint && rasterLook.settings.noiseReduction == recipeSettings.noiseReduction && rasterLook.settings.lensCorrection == recipeSettings.lensCorrection, "raster materialization retains disabled RAW fields under processor effective constraints")
+        check(rasterLook.settings.whiteBalanceMode == recipeSettings.whiteBalanceMode && rasterLook.settings.temperature == recipeSettings.temperature && rasterLook.settings.tint == recipeSettings.tint && rasterLook.settings.lensCorrection == recipeSettings.lensCorrection, "raster materialization retains disabled RAW fields under processor effective constraints")
         recipeSettings.exposure = 4; recipeSettings.lutStrength = 2
         check(blocked(recipeSettings, .group(.looks), context), "unrepresentable scaled exposure blocks without clamping")
         recipeSettings = RawSettings.default; recipeSettings.masterRecipeID = "unknown-recipe"

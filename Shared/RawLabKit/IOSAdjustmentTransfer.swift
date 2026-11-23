@@ -205,10 +205,6 @@ public enum IOSAdjustmentTransfer {
         if let balance = payload[.gradingBalance]?.number {
             result.gradingSettings.balance = balance
         }
-        if context.isRaw, !selected.contains(.postRGBDenoise), target.settings.denoise.enabled != result.denoise.enabled,
-           target.settings.noiseReduction != 0 {
-            throw AdjustmentTransferError.unrepresentable("unselected \(Field.postRGBDenoise.rawValue)")
-        }
         try validate(result)
         let actual = effectiveNumbers(result)
         for field in before.keys where field != .strength {
@@ -328,7 +324,7 @@ public enum IOSAdjustmentTransfer {
         result[Field.gradingBalance.rawValue] = .number(settings.gradingSettings.balance)
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.photoEffects[keyPath: key]) }
         result[Field.rawDenoise.rawValue] = .number(0)
-        result[Field.postRGBDenoise.rawValue] = .number(context.isRaw ? settings.noiseReduction : 0)
+        result[Field.postRGBDenoise.rawValue] = .number(0)
         result[Field.chromaDenoise.rawValue] = .number(Double(settings.displayChromaDenoise))
         let denoise = settings.denoise
         result[Field.waveletDenoise.rawValue] = .object(["enabled": .boolean(denoise.enabled),
@@ -348,14 +344,10 @@ public enum IOSAdjustmentTransfer {
     }
     public static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout RawSettings,
                                     context: IOSAdjustmentTransferContext) throws {
-        // Q3：iOS 不建模解马赛克前 FBDD，收到非 0 raw_level 忽略并提示，不再拒绝。
+        // Q3：iOS 不建模解马赛克前 FBDD，且 SDR 不建模 post_rgb，收到非 0 值忽略并提示，不再拒绝。
         if let raw = payload[.rawDenoise]?.number, raw != 0 { context.transferNotices?(.ignoredRawDenoise) }
-        if let post = payload[.postRGBDenoise]?.number, payload.source.isRaw || !context.isRaw {
-            if !context.isRaw && post != 0 {
-                context.transferNotices?(.ignoredPostRGBDenoise)
-            } else {
-                settings.noiseReduction = post
-            }
+        if let post = payload[.postRGBDenoise]?.number, post != 0 {
+            context.transferNotices?(.ignoredPostRGBDenoise)
         }
         if let chroma = payload[.chromaDenoise] { settings.displayChromaDenoise = Int(chroma.number ?? 0) }
         if let value = payload[.waveletDenoise] {

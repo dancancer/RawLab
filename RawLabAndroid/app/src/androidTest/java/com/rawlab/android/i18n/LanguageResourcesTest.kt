@@ -69,8 +69,8 @@ class LanguageResourcesTest {
             "de" to "Automatisch", "fr" to "Auto",
             "ja" to "自動", "es" to "Automático")
         val settings = EditSettings(
-            film = "velvia", strength = 1.35f, exposure = -.75f, highlights = .25f, shadows = -.2f,
-            contrast = .4f, toneCurve = -.15f, saturation = .3f, customWb = true, temperature = 4200f,
+            film = "velvia", strength = 1.35f, exposure = -.75f, highlights = -.25f, shadows = -.2f,
+            contrast = 1.4f, toneCurve = -.15f, saturation = 1.3f, customWb = true, temperature = 4200f,
             tint = 12f, denoise = DenoiseSettings(true, 10f, 72f, 100f), sharpening = .65f,
             effects = PhotoEffectsSettings(vignetteAmount = -40f, grainAmount = 65f),
             displayChromaDenoise = 2, exposureMode = 2,

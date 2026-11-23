@@ -60,7 +60,7 @@ class BatchWorkflowInstrumentedTest {
             compose.runOnUiThread { model.importPhoto(Uri.fromFile(source)) }
             compose.waitUntil(180_000) { model.state.value.canExport || model.state.value.error != null }
             assertNull(model.state.value.error)
-            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f, contrast = .2f,
+            compose.runOnUiThread { model.edit(model.state.value.edits.copy(exposure = .5f, contrast = 1.2f,
                 denoise = DenoiseSettings(true, 10f, 72f, 100f))) }
             compose.waitUntil(180_000) { model.state.value.canExport }
             val settings = model.state.value.edits

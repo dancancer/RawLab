@@ -283,10 +283,10 @@ struct Harness {
         if let em = sdrValues["light.exposure_mode"] as? String {
             settings.exposureMode = em == "scene" ? .scene : em == "sensor" ? .sensor : .preview
         }
-        if let v = num(sdrValues["light.contrast"]) { settings.contrast = (v - 1.0) * 100.0 }
-        if let v = num(sdrValues["light.highlights"]) { settings.highlights = -v * 100.0 }
-        if let v = num(sdrValues["light.shadows"]) { settings.shadows = v * 100.0 }
-        if let v = num(sdrValues["light.s_curve"]) { settings.toneCurve = v * 100.0 }
+        if let v = num(sdrValues["light.contrast"]) { settings.contrast = v }
+        if let v = num(sdrValues["light.highlights"]) { settings.highlights = v }
+        if let v = num(sdrValues["light.shadows"]) { settings.shadows = v }
+        if let v = num(sdrValues["light.s_curve"]) { settings.toneCurve = v }
         if let cObj = sdrValues["light.curve"] as? [String: Any] {
             var parsed = try parseCurve(cObj)
             if let applyLum = sdrValues["light.curve.apply_to_luminosity"] as? Bool { parsed.applyToLuminosity = applyLum }
@@ -307,7 +307,7 @@ struct Harness {
         }
         if let v = num(sdrValues["color.white_balance.temperature_kelvin"]) { settings.temperature = v }
         if let v = num(sdrValues["color.white_balance.tint"]) { settings.tint = v }
-        if let v = num(sdrValues["color.saturation"]) { settings.saturation = (v - 1.0) * 100.0 }
+        if let v = num(sdrValues["color.saturation"]) { settings.saturation = v }
 
         var hsl = HSLSettings()
         for (idx, ch) in ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"].enumerated() {
@@ -335,9 +335,9 @@ struct Harness {
         }
         if let v = num(sdrValues["effects.clarity"]) { settings.clarity = v }
         if let v = num(sdrValues["effects.dehaze"]) { settings.dehaze = v }
-        if let v = num(sdrValues["detail.sharpening"]) { settings.sharpening = v * 100.0 }
+        if let v = num(sdrValues["detail.sharpening"]) { settings.sharpening = v }
         if let v = num(sdrValues["detail.denoise.raw_level"]) { settings.rawNoiseReduction = v }
-        if let v = num(sdrValues["detail.denoise.chroma_mode"]) { settings.chromaNoiseReduction = v }
+        if let v = num(sdrValues["detail.denoise.chroma_mode"]) { settings.chromaNoiseReduction = Int(v.rounded()) }
         if let wObj = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             let presetStr = wObj["preset"] as? String ?? "custom"
             let preset: DenoisePreset = presetStr == "detail" ? .detail : presetStr == "clean" ? .clean : .custom
@@ -508,10 +508,10 @@ struct Harness {
             let actualEm = s.exposureMode == .scene ? "scene" : s.exposureMode == .preview ? "preview" : "sensor"
             verify(actualEm == em, "light.exposure_mode")
         }
-        if let v = num(sdrValues["light.contrast"]) { verify(approx(1 + s.contrast / 100, v), "light.contrast") }
-        if let v = num(sdrValues["light.highlights"]) { verify(approx(-s.highlights / 100, v), "light.highlights") }
-        if let v = num(sdrValues["light.shadows"]) { verify(approx(s.shadows / 100, v), "light.shadows") }
-        if let v = num(sdrValues["light.s_curve"]) { verify(approx(s.toneCurve / 100, v), "light.s_curve") }
+        if let v = num(sdrValues["light.contrast"]) { verify(approx(s.contrast, v), "light.contrast") }
+        if let v = num(sdrValues["light.highlights"]) { verify(approx(s.highlights, v), "light.highlights") }
+        if let v = num(sdrValues["light.shadows"]) { verify(approx(s.shadows, v), "light.shadows") }
+        if let v = num(sdrValues["light.s_curve"]) { verify(approx(s.toneCurve, v), "light.s_curve") }
         if let cObj = sdrValues["light.curve"] as? [String: Any] { verifyCurveInto(cObj, s.curveSettings, "sdr") }
         if let applyLum = sdrValues["light.curve.apply_to_luminosity"] as? Bool {
             verify(s.curveSettings.applyToLuminosity == applyLum, "sdr.curve.apply_to_luminosity")
@@ -533,7 +533,7 @@ struct Harness {
                 if let tn = num(sdrValues["color.white_balance.tint"]) { verify(approx(s.tint, tn), "wb.tint") }
             }
         }
-        if let v = num(sdrValues["color.saturation"]) { verify(approx(1 + s.saturation / 100, v), "color.saturation") }
+        if let v = num(sdrValues["color.saturation"]) { verify(approx(s.saturation, v), "color.saturation") }
         verifyHSL(sdrValues, s.hslSettings, "sdr")
         for (fid, kp) in [
             ("effects.vignette.amount", \PhotoEffectsSettings.vignetteAmount),
@@ -549,12 +549,12 @@ struct Harness {
         }
         if let v = num(sdrValues["effects.clarity"]) { verify(approx(s.clarity, v), "effects.clarity") }
         if let v = num(sdrValues["effects.dehaze"]) { verify(approx(s.dehaze, v), "effects.dehaze") }
-        if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening / 100, v), "detail.sharpening") }
+        if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening, v), "detail.sharpening") }
         if let v = num(sdrValues["detail.denoise.raw_level"]) { verify(approx(s.rawNoiseReduction, v), "detail.denoise.raw_level") }
-        if let v = num(sdrValues["detail.denoise.chroma_mode"]) { verify(approx(s.chromaNoiseReduction ?? -1, v), "detail.denoise.chroma_mode") }
+        if let v = num(sdrValues["detail.denoise.chroma_mode"]) { verify(approx(Double(s.chromaNoiseReduction), v), "detail.denoise.chroma_mode") }
         if let wObj = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             let wd = s.waveletSettings
-            verify(s.waveletNoiseReduction != nil, "waveletNoiseReduction.nonNil")
+            verify(s.waveletNoiseReduction != WaveletDenoiseSettings(), "waveletNoiseReduction.nonDefault")
             verify(wd.enabled == (wObj["enabled"] as? Bool ?? false), "wavelet.enabled")
             verify(approx(wd.luma, num(wObj["luma"]) ?? -1) &&
                    approx(wd.chroma, num(wObj["chroma"]) ?? -1) &&

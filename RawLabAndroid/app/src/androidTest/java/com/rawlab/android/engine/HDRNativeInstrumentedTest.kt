@@ -198,7 +198,7 @@ class HDRNativeInstrumentedTest {
     @Test fun hdrSourceInSdrModeUsesLegacyEditsMeteringAndLutPreview() = withFixture("hdr-sample.jpg") { file, _ ->
         NativeProcessor(NativeProcessor.CPU).use { processor ->
             val baseline = processor.preview(file, null, EditSettings(), 256, false, PhotoInputKind.RASTER)
-            val edited = processor.preview(file, null, EditSettings(exposure = 1f, contrast = .4f), 256, false, PhotoInputKind.RASTER)
+            val edited = processor.preview(file, null, EditSettings(exposure = 1f, contrast = 1.4f), 256, false, PhotoInputKind.RASTER)
             assertTrue(maxOf(edited.width, edited.height) <= 256)
             assertFalse(baseline.pixels.contentEquals(edited.pixels))
             assertTrue(processor.autoExposure(file, EditSettings(), PhotoInputKind.RASTER).isFinite())

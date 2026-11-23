@@ -7,7 +7,7 @@ internal static class BatchSettingsText
     {
         var state=PhotoInput.PrepareInputSettings(path,snapshot.Restore());
         var raster=PhotoInput.IsRaster(path);
-        var text = Loc.Text("外观")+"  "+lookName+"\n"+string.Join("\n", ParameterSpec.All.Where(spec => state.Curve.Mode == ToneCurveMode.Legacy || spec.Id != Parameter.ToneCurve).Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : state[spec.Id].ToString("F" + spec.Decimals) + spec.Unit)}"));
+        var text = Loc.Text("外观")+"  "+lookName+"\n"+string.Join("\n", ParameterSpec.All.Where(spec => state.Curve.Mode == ToneCurveMode.Legacy || spec.Id != Parameter.ToneCurve).Select(spec => $"{Loc.Text(spec.Title)}  {(spec.Id is Parameter.Temperature or Parameter.Tint && raster ? Loc.Text("不适用") : spec.Id is Parameter.Temperature or Parameter.Tint && state.CameraWhiteBalance ? Loc.Text("按每张照片") : spec.ToDisplay(state[spec.Id]).ToString("F" + spec.Decimals) + spec.Unit)}"));
         foreach (var channel in Enum.GetValues<ToneCurveChannel>()) {
             var shape = state.Curve.Shape(channel);
             if (shape.Mode != ToneCurveMode.Custom) continue;
@@ -38,13 +38,14 @@ internal static class BatchSettingsText
             Row("镜头匹配", Loc.Text(state.Lens.Manual ? "手动" : "自动")),
             Row("畸变矫正", OnOff(state.Lens.Distortion)),
             Row("横向色差", OnOff(state.Lens.Tca)),
+            Row("暗角校正", OnOff(state.Lens.Vignetting)),
             Row("自动裁边", OnOff(state.Lens.AutoCrop))
         });
         var geometry = state.Geometry;
         text += "\n" + Loc.Format("几何：左边 {0:0.##}% · 顶边 {1:0.##}% · 宽度 {2:0.##}% · 高度 {3:0.##}% · 旋转 {4}° · 拉直 {5:0.##}°",
             geometry.CropX * 100, geometry.CropY * 100, geometry.CropWidth * 100, geometry.CropHeight * 100,
             geometry.QuarterTurns * 90, geometry.StraightenDegrees);
-        text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",geometry.PerspectiveHorizontal.ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)),geometry.PerspectiveVertical.ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)));
+        text += "\n"+Loc.Format("透视：水平 {0:0.###} · 垂直 {1:0.###}",(geometry.PerspectiveHorizontal*100).ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)),(geometry.PerspectiveVertical*100).ToString("0.##",CultureInfo.GetCultureInfo(Loc.Language)));
         text += $"\n{Loc.Text("水平翻转")}  {OnOff(geometry.FlipHorizontal)} · {Loc.Text("垂直翻转")}  {OnOff(geometry.FlipVertical)}";
         var effects = state.Effects;
         var chroma = state.DisplayChromaDenoise switch { 1 => Loc.Text("细节优先"), 2 => Loc.Text("去噪优先"), _ => Loc.Text("停用") };

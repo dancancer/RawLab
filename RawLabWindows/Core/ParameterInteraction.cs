@@ -33,7 +33,7 @@ public sealed record NumericRange(double Min, double Max, double Grid = .1, doub
     public string StepText(double step) => step==.001 ? "1/1000" : Format(step);
 
     public (double Start,double End) Fill(double origin,double current) => (Math.Min(Position(origin),Position(current)),Math.Max(Position(origin),Position(current)));
-    public static NumericRange For(ParameterSpec spec) => new(spec.Min, spec.Max, spec.Step,
+    public static NumericRange For(ParameterSpec spec) => new(spec.DisplayMin, spec.DisplayMax, spec.Step,
         spec.Id == Parameter.Exposure ? .1 : spec.Id == Parameter.Temperature ? 100 : 1,
         spec.Id == Parameter.Exposure ? .01 : spec.Id == Parameter.Temperature ? 10 : .1,
         spec.Id == Parameter.Temperature, spec.Id == Parameter.Exposure ? 2 : -1);

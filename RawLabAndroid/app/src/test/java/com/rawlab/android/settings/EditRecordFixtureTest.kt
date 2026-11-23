@@ -402,11 +402,11 @@ class EditRecordFixtureTest {
             film = film,
             strength = (num(sdrValues.opt("looks.strength")) ?: 1.0).toFloat(),
             exposure = (num(sdrValues.opt("light.exposure")) ?: 0.0).toFloat(),
-            highlights = -(num(sdrValues.opt("light.highlights")) ?: 0.0).toFloat(),
+            highlights = (num(sdrValues.opt("light.highlights")) ?: 0.0).toFloat(),
             shadows = (num(sdrValues.opt("light.shadows")) ?: 0.0).toFloat(),
-            contrast = ((num(sdrValues.opt("light.contrast")) ?: 1.0) - 1.0).toFloat(),
+            contrast = (num(sdrValues.opt("light.contrast")) ?: 1.0).toFloat(),
             toneCurve = (num(sdrValues.opt("light.s_curve")) ?: 0.0).toFloat(),
-            saturation = ((num(sdrValues.opt("color.saturation")) ?: 1.0) - 1.0).toFloat(),
+            saturation = (num(sdrValues.opt("color.saturation")) ?: 1.0).toFloat(),
             customWb = customWb,
             temperature = (num(sdrValues.opt("color.white_balance.temperature_kelvin")) ?: 6500.0).toFloat(),
             tint = (num(sdrValues.opt("color.white_balance.tint")) ?: 0.0).toFloat(),
@@ -563,8 +563,8 @@ class EditRecordFixtureTest {
             val actualEm = listOf("scene", "preview", "sensor")[s.exposureMode]
             verify(actualEm == em, "light.exposure_mode")
         }
-        num(sdrValues.opt("light.contrast"))?.let { verify(approx(1.0 + s.contrast, it), "light.contrast") }
-        num(sdrValues.opt("light.highlights"))?.let { verify(approx(-s.highlights.toDouble(), it), "light.highlights") }
+        num(sdrValues.opt("light.contrast"))?.let { verify(approx(s.contrast.toDouble(), it), "light.contrast") }
+        num(sdrValues.opt("light.highlights"))?.let { verify(approx(s.highlights.toDouble(), it), "light.highlights") }
         num(sdrValues.opt("light.shadows"))?.let { verify(approx(s.shadows.toDouble(), it), "light.shadows") }
         num(sdrValues.opt("light.s_curve"))?.let { verify(approx(s.toneCurve.toDouble(), it), "light.s_curve") }
         sdrValues.optJSONObject("light.curve")?.let { verifyCurveInto(it, s.curve, "sdr") }
@@ -588,7 +588,7 @@ class EditRecordFixtureTest {
         }
         num(sdrValues.opt("color.white_balance.temperature_kelvin"))?.let { verify(approx(s.temperature.toDouble(), it), "wb.temp") }
         num(sdrValues.opt("color.white_balance.tint"))?.let { verify(approx(s.tint.toDouble(), it), "wb.tint") }
-        num(sdrValues.opt("color.saturation"))?.let { verify(approx(1.0 + s.saturation, it), "color.saturation") }
+        num(sdrValues.opt("color.saturation"))?.let { verify(approx(s.saturation.toDouble(), it), "color.saturation") }
         verifyHslInto(sdrValues, s.hsl, "sdr")
 
         verifyEffectsInto(sdrValues, s.effects, "sdr")
@@ -710,11 +710,11 @@ class EditRecordFixtureTest {
         val props = loadProperties(file)
         val encKey = "record.${encodeB64(identity)}.values"
         val rawVal = props.getProperty(encKey) ?: throw HarnessSetupException("Missing $encKey")
-        if (!rawVal.startsWith("v2:")) throw HarnessSetupException("Expected v2 prefix on $encKey")
-        val root = JSONObject(rawVal.removePrefix("v2:"))
+        if (!rawVal.startsWith("v3:")) throw HarnessSetupException("Expected v3 prefix on $encKey")
+        val root = JSONObject(rawVal.removePrefix("v3:"))
         val settings = root.getJSONObject("settings")
         transform(root, settings)
-        props.setProperty(encKey, "v2:$root")
+        props.setProperty(encKey, "v3:$root")
         storeProperties(file, props)
     }
 

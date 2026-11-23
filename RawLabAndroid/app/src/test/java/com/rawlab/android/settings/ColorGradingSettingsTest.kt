@@ -18,9 +18,9 @@ class ColorGradingSettingsTest {
         for (format in listOf("photo_edit", "batch_settings")) {
             val encoded = StructuredSettingsCodec.encode(settings, format)
             assertEquals(settings, StructuredSettingsCodec.decode(encoded, format))
-            val old = JSONObject(encoded.removePrefix("v2:"))
+            val old = JSONObject(encoded.removePrefix("v3:"))
             old.getJSONObject("settings").remove("colorGrading")
-            assertTrue(StructuredSettingsCodec.decode("v2:$old", format).colorGrading.isDefault)
+            assertTrue(StructuredSettingsCodec.decode("v3:$old", format).colorGrading.isDefault)
         }
         assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
         assertTrue(grading.shadows.isIdentity); assertFalse(grading.shadows.isDefault)
@@ -41,14 +41,14 @@ class ColorGradingSettingsTest {
         for (wheel in listOf("""{"hue":-0.01,"saturation":0}""", """{"hue":360,"saturation":0}""",
             """{"hue":360.000001,"saturation":0}""", """{"hue":0,"saturation":100.000001}""",
             """{"hue":0}""", """{"hue":0,"saturation":0,"lightness":0}""", "null")) {
-            val json = JSONObject(encoded.removePrefix("v2:"))
+            val json = JSONObject(encoded.removePrefix("v3:"))
             json.getJSONObject("settings").getJSONObject("colorGrading").put("shadows", if (wheel == "null") JSONObject.NULL else JSONObject(wheel))
-            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$json") }
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v3:$json") }
         }
         for (zone in listOf("shadows", "midtones", "highlights")) {
-            val json = JSONObject(encoded.removePrefix("v2:"))
+            val json = JSONObject(encoded.removePrefix("v3:"))
             json.getJSONObject("settings").getJSONObject("colorGrading").remove(zone)
-            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$json") }
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v3:$json") }
         }
     }
 

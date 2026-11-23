@@ -123,10 +123,10 @@ class AdjustmentTransferTest {
     @Test fun partialCopyFreezesExactHSLAndPreservesOtherFields() {
         val source = EditSettings(exposure = 1.5f, hsl = HslSettings().withValue(0, 0, 12.375f))
         val payload = capture(source, F.EXPOSURE, F.HSL_HUE_RED)
-        val target = EditSettings(contrast = .25f, hsl = HslSettings().withValue(1, 0, 23.5f),
+        val target = EditSettings(contrast = 1.25f, hsl = HslSettings().withValue(1, 0, 23.5f),
             geometry = GeometrySettings(cropWidth = .6f), processing = ProcessingIdentity.LEGACY)
         val result = prepare(payload, target)
-        assertEquals(1.5f, result.exposure); assertEquals(.25f, result.contrast)
+        assertEquals(1.5f, result.exposure); assertEquals(1.25f, result.contrast)
         assertEquals(12.375f, result.hsl.value(0, 0)); assertEquals(23.5f, result.hsl.value(1, 0))
         assertEquals(target.geometry, result.geometry); assertEquals(target.processing, result.processing)
         assertEquals(result, prepare(payload, result))
@@ -150,12 +150,12 @@ class AdjustmentTransferTest {
     }
 
     @Test fun recipeContributionAppliesOnceAndUnselectedRecipeValuesStayEffective() {
-        val source = EditSettings(recipeID = "r", strength = .5f, exposure = 1.4f, contrast = .4f)
+        val source = EditSettings(recipeID = "r", strength = .5f, exposure = 1.4f, contrast = 1.4f)
         val values = capture(source, F.EXPOSURE, F.CONTRAST)
-        val target = EditSettings(recipeID = "r", strength = .8f, exposure = -.2f, contrast = -.2f, saturation = .3f)
+        val target = EditSettings(recipeID = "r", strength = .8f, exposure = -.2f, contrast = .8f, saturation = 1.3f)
         val result = prepare(values, target)
         assertEquals(.7f, result.exposure * result.recipeScale, 1e-6f)
-        assertEquals(1.2f, 1f + result.contrast * result.recipeScale, 1e-6f)
+        assertEquals(1.2f, 1f + (result.contrast - 1f) * result.recipeScale, 1e-6f)
         assertEquals(target.saturation, result.saturation)
         assertEquals("r", result.recipeID)
         assertEquals(result, prepare(values, result))
@@ -167,7 +167,7 @@ class AdjustmentTransferTest {
         val hdrTarget = EditSettings().withHDRMode(true, true)
         val hdrContext = context.copy(isRaw = false, defaultExposureMode = 2)
         for (strength in listOf(0.5f, 1.0f)) {
-            val source = EditSettings(recipeID = "r", strength = strength, exposure = 1f, contrast = 0.4f)
+            val source = EditSettings(recipeID = "r", strength = strength, exposure = 1f, contrast = 1.4f)
             val values = capture(source, F.EXPOSURE, F.CONTRAST)
             val applied = prepare(values, hdrTarget, hdrContext).hdr
             requireNotNull(applied) { "strength $strength: HDR target must retain HDR settings" }
@@ -177,18 +177,18 @@ class AdjustmentTransferTest {
     }
 
     @Test fun selectingStrengthProtectsUnselectedContributionsAndBlocksZeroScaleLoss() {
-        val target = EditSettings(recipeID = "r", strength = .5f, exposure = 1f, saturation = .4f,
+        val target = EditSettings(recipeID = "r", strength = .5f, exposure = 1f, saturation = 1.4f,
             hsl = HslSettings().withValue(0, 2, 20f))
         val result = prepare(payload(F.STRENGTH to AdjustmentValue.Number(1.0)), target)
         assertEquals(.5f, result.exposure)
-        assertEquals(1f + target.saturation * target.recipeScale, 1f + result.saturation * result.recipeScale)
+        assertEquals(1f + (target.saturation - 1f) * target.recipeScale, 1f + (result.saturation - 1f) * result.recipeScale)
         assertEquals(10f, result.hsl.value(0, 2))
         assertThrows(AdjustmentTransferException::class.java) { prepare(payload(F.STRENGTH to AdjustmentValue.Number(0.0)), target) }
     }
 
     @Test fun partialRecipeLookBecomesIndependentLUTWithoutReapplyingRecipe() {
         val source = EditSettings(recipeID = "r", strength = .5f, exposure = 2f)
-        val target = EditSettings(exposure = -.5f, saturation = .3f)
+        val target = EditSettings(exposure = -.5f, saturation = 1.3f)
         val result = prepare(capture(source, F.LOOK), target)
         assertNull(result.recipeID); assertEquals("recipe-lut:r", result.film)
         assertEquals(target.exposure, result.exposure); assertEquals(target.saturation, result.saturation)
@@ -204,7 +204,7 @@ class AdjustmentTransferTest {
         val legacyResult = prepare(legacy)
         assertEquals(37.25f, legacyResult.renderHsl.value(0, 0))
         assertEquals("r", legacyResult.recipeID)
-        val self = EditSettings(recipeID = "r", strength = .7f, exposure = .23f, contrast = .21f,
+        val self = EditSettings(recipeID = "r", strength = .7f, exposure = .23f, contrast = 1.21f,
             hsl = HslSettings().withValue(0, 0, 13.15f))
         assertEquals(self, prepare(AdjustmentTransfer.capture(AdjustmentScope.All, self, context), self))
     }

@@ -19,7 +19,7 @@ struct DenoiseControls: View {
 
     private var ordinaryControls: some View {
         Group {
-            if model.settings.hasLegacyDenoise {
+            if model.settings.hasLegacyFBDD {
                 legacyControls
             } else {
                 VStack(alignment: .leading, spacing: 4) {
@@ -89,7 +89,7 @@ struct DenoiseControls: View {
             }.buttonStyle(.borderless).help(L10n.text("重置降噪"))
                 .accessibilityLabel(L10n.text("重置降噪"))
                 .accessibilityIdentifier("denoise.reset")
-                .disabled(model.settings.waveletNoiseReduction == nil)
+                .disabled(!model.isAdjustmentModified(.tool(.denoise)))
         }
     }
 
@@ -104,18 +104,11 @@ struct DenoiseControls: View {
 
     private var legacyControls: some View {
         VStack(spacing: 4) {
-            Text(model.settings.denoiseMode == 3 ? L10n.text("旧版 FBDD") : L10n.text("旧版色度降噪"))
+            Text(L10n.text("旧版 FBDD"))
                 .font(.caption).foregroundStyle(.secondary)
-            if model.settings.denoiseMode == 3 {
-                Picker(L10n.text("旧版 FBDD"), selection: $model.settings.rawNoiseReduction) {
-                    ForEach(RawNoiseReductionLevel.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.menu).labelsHidden().id(localizationLocale.identifier)
-            } else {
-                Picker(L10n.text("旧版色度降噪"), selection: $model.settings.denoiseMode) {
-                    ForEach(ChromaNoiseReductionMode.allCases) { Text($0.title).tag($0.rawValue) }
-                }.pickerStyle(.menu).labelsHidden().id(localizationLocale.identifier)
-                    .accessibilityIdentifier("chromaNoiseReduction.mode")
-            }
+            Picker(L10n.text("旧版 FBDD"), selection: $model.settings.rawNoiseReduction) {
+                ForEach(RawNoiseReductionLevel.allCases) { Text($0.title).tag($0.rawValue) }
+            }.pickerStyle(.menu).labelsHidden().id(localizationLocale.identifier)
             Button(L10n.text("使用可调降噪")) { model.settings.applyDenoisePreset(.detail) }
                 .buttonStyle(.link).accessibilityIdentifier("denoise.upgrade")
         }

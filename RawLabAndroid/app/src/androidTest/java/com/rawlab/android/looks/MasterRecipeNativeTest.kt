@@ -124,7 +124,7 @@ class MasterRecipeNativeTest {
                             val current = preset.copy(strength = strength)
                             val manual = EditSettings(strength = strength, exposure = current.exposure * strength,
                                 shadows = current.shadows * strength, highlights = current.highlights * strength,
-                                contrast = current.contrast * strength, saturation = current.saturation * strength,
+                                contrast = 1f + (current.contrast - 1f) * strength, saturation = 1f + (current.saturation - 1f) * strength,
                                 customWb = strength != 0f, temperature = neutral.temperature,
                                 tint = (neutral.tint + current.tint * strength).coerceIn(-150f, 150f),
                                 hsl = current.renderHsl, toneCurve = current.renderToneCurve, curve = current.renderCurve,

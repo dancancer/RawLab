@@ -27,7 +27,7 @@ import ImageIO
             try engine.render(url, settings: settings, lut: nil, edge: nil)!.image.dataProvider!.data! as Data
         }
         let baseline = try bytes(Adjustments())
-        var settings = Adjustments(); settings.toneCurve = 65
+        var settings = Adjustments(); settings.toneCurve = 0.65
         let legacy = try bytes(settings)
         require(legacy != baseline, "legacy S curve remains effective")
         settings.curveSettings = .identity

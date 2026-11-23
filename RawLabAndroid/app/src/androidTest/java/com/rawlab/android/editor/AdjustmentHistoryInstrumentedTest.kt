@@ -140,7 +140,7 @@ class AdjustmentHistoryInstrumentedTest {
                 main { model.importPhoto(original) }; await(model) { it.canExport && it.photo?.uri == original }
             } finally { other.delete() }
             main { model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.SAVED)
-            main { model.edit(model.state.value.edits.copy(contrast = .4f)) }; await(model) { it.canExport }
+            main { model.edit(model.state.value.edits.copy(contrast = 1.4f)) }; await(model) { it.canExport }
             val ordinary = edits.readState(identity)
             main { model.undoQuickPreset() }; phase(QuickPresetPhase.UNDO_FAILED)
             assertEquals(ordinary, edits.readState(identity))
@@ -547,7 +547,7 @@ class AdjustmentHistoryInstrumentedTest {
     }
 
     @Test fun presetCaptureKeepsClipboardPhotoRevisionAndHistoryUnchanged() = withModel(raw = true) { model, edits, identity ->
-        main { model.edit(model.state.value.edits.copy(exposure = 1.25f, contrast = .2f)) }
+        main { model.edit(model.state.value.edits.copy(exposure = 1.25f, contrast = 1.2f)) }
         await(model) { it.canExport }
         main { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST))) }
         val clipboard = model.adjustmentClipboard
@@ -571,7 +571,7 @@ class AdjustmentHistoryInstrumentedTest {
             val prepared = requireNotNull(model.adjustmentTransfer.value.prepared)
             assertEquals(AdjustmentStatus.APPLIED, paste(model, prepared).single().status)
             await(model) { it.canExport && it.edits.exposure == 1.25f }
-            assertEquals(.2f, edits.load(identity)!!.contrast)
+            assertEquals(1.2f, edits.load(identity)!!.contrast)
             assertEquals(com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET, model.adjustmentTransactions.last().action)
             main { model.undoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .3f }
             main { model.redoAdjustment() }; await(model) { it.canExport && it.edits.exposure == 1.25f }
@@ -663,7 +663,7 @@ class AdjustmentHistoryInstrumentedTest {
             main { model.closeAdjustmentOperation() }
             assertTrue(result<Boolean> { model.editCollectionPhoto(targetID.value, it) })
             await(model) { it.canExport && it.photo?.identity == targetID }
-            main { model.edit(model.state.value.edits.copy(contrast = .3f)) }
+            main { model.edit(model.state.value.edits.copy(contrast = 1.3f)) }
             await(model) { it.canExport }
             assertTrue(result<Boolean> { model.returnToCollection(it) })
             assertEquals(setOf(sourceID.value, targetID.value), model.collection.value.selected)
@@ -691,7 +691,7 @@ class AdjustmentHistoryInstrumentedTest {
             waitFor { !model.collection.value.busy && model.batch.value?.state?.value?.phase == com.rawlab.android.batch.BatchPhase.SELECTING }
             val batch = model.batch.value!!; val job = batch.state.value.job; jobID = job.id
             val frozenTarget = job.rows.first { it.id == targetID.value }.target
-            assertEquals(.3f, frozenTarget.frozen!!.settings.contrast)
+            assertEquals(1.3f, frozenTarget.frozen!!.settings.contrast)
             main { model.edit(model.state.value.edits.copy(exposure = 1.6f)) }
             await(model) { it.canExport }
             val frozen = kotlinx.coroutines.runBlocking { batch.preview(frozenTarget) }

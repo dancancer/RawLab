@@ -133,7 +133,7 @@ class NativeDngMemoryTest {
 
     private fun settings(profile: String): EditSettings {
         val all = EditSettings(film = "velvia", strength = .65f, exposure = .35f,
-            highlights = -.2f, shadows = .15f, contrast = .1f, toneCurve = .15f, saturation = -.1f,
+            highlights = .2f, shadows = .15f, contrast = 1.1f, toneCurve = .15f, saturation = .9f,
             customWb = true, temperature = 5800f, tint = 8f, sharpening = .2f, exposureMode = 1,
             denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2,
             hsl = HslSettings().withValue(0, 2, 12f).withValue(1, 4, -15f).withValue(2, 6, 8f),

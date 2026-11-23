@@ -170,13 +170,13 @@ object AdjustmentFieldSpec {
             id = "light.contrast",
             group = "light",
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 2.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
-            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -1.0, max = 1.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p - 1", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "(p - 1) * 100"),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = 0.0, max = 2.0, defaultValue = AdjustmentModelDefault.Number(1.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "(p - 1) * 100"),
         )
         val LIGHT_HIGHLIGHTS = AdjustmentFieldDefinition(
             id = "light.highlights",
             group = "light",
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -1.0, max = 1.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
-            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -1.0, max = 1.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "-p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "-p * 100"),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -1.0, max = 1.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "-p * 100"),
         )
         val LIGHT_SHADOWS = AdjustmentFieldDefinition(
             id = "light.shadows",
@@ -284,7 +284,7 @@ object AdjustmentFieldSpec {
             id = "color.saturation",
             group = "color",
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 2.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
-            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -1.0, max = 1.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p - 1", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "(p - 1) * 100"),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = 0.0, max = 2.0, defaultValue = AdjustmentModelDefault.Number(1.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -100.0, hdrMax = 100.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "(p - 1) * 100"),
         )
         val HDR_RELATIVE_TEMPERATURE = AdjustmentFieldDefinition(
             id = "hdr.relative_temperature",

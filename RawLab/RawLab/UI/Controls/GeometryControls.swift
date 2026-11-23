@@ -118,7 +118,7 @@ struct IOSGeometryControls: View {
             if key == \.cropHeight { maximum = min(maximum, (1 - settings.cropX) / normalized) }
         }
         let upper = min(1, max(0, maximum)) * 100
-        let minimum = key == \.cropWidth || key == \.cropHeight ? 1.0 : 0
+        let minimum = key == \.cropWidth || key == \.cropHeight ? 0.1 : 0
         return min(minimum, upper)...upper
     }
 

@@ -149,9 +149,9 @@ object AdjustmentTransfer {
     internal fun recipe(settings: EditSettings) = settings.recipeID?.let { AdjustmentRecipeContext(it, settings.strength.toDouble(), settings.masterRecipeSettingsVersion) }
     fun effectiveNumbers(s: EditSettings): Map<AdjustmentField, Float> = buildMap {
         put(AdjustmentField.STRENGTH, s.strength); put(AdjustmentField.EXPOSURE, s.exposure * s.recipeScale)
-        put(AdjustmentField.CONTRAST, 1f + s.contrast * s.recipeScale); put(AdjustmentField.HIGHLIGHTS, -s.highlights * s.recipeScale)
+        put(AdjustmentField.CONTRAST, if (s.recipeScale == 1f) s.contrast else 1f + (s.contrast - 1f) * s.recipeScale); put(AdjustmentField.HIGHLIGHTS, s.highlights * s.recipeScale)
         put(AdjustmentField.SHADOWS, s.shadows * s.recipeScale); put(AdjustmentField.S_CURVE, (s.toneCurve * s.refinementScale).coerceIn(-1f, 1f))
-        put(AdjustmentField.SATURATION, 1f + s.saturation * s.recipeScale); put(AdjustmentField.SHARPENING, s.sharpening)
+        put(AdjustmentField.SATURATION, if (s.recipeScale == 1f) s.saturation else 1f + (s.saturation - 1f) * s.recipeScale); put(AdjustmentField.SHARPENING, s.sharpening)
         put(AdjustmentField.BLACK_POINT, s.renderBlackPoint); put(AdjustmentField.WHITE_POINT, s.renderWhitePoint)
         put(AdjustmentField.VIBRANCE, s.renderVibrance)
         put(AdjustmentField.CLARITY, s.renderClarity)
@@ -178,9 +178,9 @@ object AdjustmentTransfer {
         val candidate = AdjustmentTransferValues.setLogical(settings, field, logical)
         if (effectiveNumbers(candidate)[field] == value) return candidate
         // 反解后只尝试相邻的本端 Float 表示；只有实际 JNI 请求完全一致才接受。
-        val native = (AdjustmentTransferValues.logical(candidate, field) - identity).toFloat()
+        val native = AdjustmentTransferValues.logical(candidate, field).toFloat()
         for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
-            val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, identity + neighbor.toDouble()) }.getOrNull()
+            val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
             if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
         }
         throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
@@ -253,10 +253,10 @@ object AdjustmentTransfer {
             } else raw
         }
         scaled(AdjustmentField.EXPOSURE)?.let { result = result.copy(exposure = it.toFloat()); hdr = hdr.copy(exposure = it.toFloat()) }
-        scaled(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = (it - 1).toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
-        scaled(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = (-it).toFloat()); hdr = hdr.copy(highlights = (-it * 100).toFloat()) }
+        scaled(AdjustmentField.CONTRAST)?.let { result = result.copy(contrast = it.toFloat()); hdr = hdr.copy(contrast = ((it - 1) * 100).toFloat()) }
+        scaled(AdjustmentField.HIGHLIGHTS)?.let { result = result.copy(highlights = it.toFloat().canonicalZero()); hdr = hdr.copy(highlights = (-it * 100).toFloat().canonicalZero()) }
         scaled(AdjustmentField.SHADOWS)?.let { result = result.copy(shadows = it.toFloat()); hdr = hdr.copy(shadows = (it * 100).toFloat()) }
-        scaled(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = (it - 1).toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
+        scaled(AdjustmentField.SATURATION)?.let { result = result.copy(saturation = it.toFloat()); hdr = hdr.copy(saturation = ((it - 1) * 100).toFloat()) }
         number(AdjustmentField.HDR_TEMPERATURE)?.let { result = result.copy(temperature = it.toFloat()); hdr = hdr.copy(temperature = it.toFloat()) }
         number(AdjustmentField.HDR_TINT)?.let { result = result.copy(tint = it.toFloat()); hdr = hdr.copy(tint = it.toFloat()) }
         var geometry = result.geometry

@@ -200,9 +200,10 @@ public sealed record HDRSettings
 
     internal double Get(Parameter id) => id switch {
         Parameter.Exposure => Exposure, Parameter.Temperature => Temperature, Parameter.Tint => Tint,
-        Parameter.Contrast => Contrast, Parameter.Highlights => Highlights, Parameter.Shadows => Shadows,
-        Parameter.Saturation => Saturation, Parameter.ToneCurve => ToneSettings.CurveStrength,
-        Parameter.Sharpening => DetailSettings.Sharpening * 100,
+        Parameter.Contrast => 1.0 + Contrast / 100.0, Parameter.Highlights => -Highlights / 100.0,
+        Parameter.Shadows => Shadows / 100.0, Parameter.Saturation => 1.0 + Saturation / 100.0,
+        Parameter.ToneCurve => ToneSettings.CurveStrength / 100.0,
+        Parameter.Sharpening => DetailSettings.Sharpening,
         _ => throw new ArgumentOutOfRangeException(nameof(id))
     };
 
@@ -210,26 +211,29 @@ public sealed record HDRSettings
         Parameter.Exposure => this with { Exposure = Math.Clamp(value, -4, 4) },
         Parameter.Temperature => this with { Temperature = Math.Clamp(value, 2000, 50000) },
         Parameter.Tint => this with { Tint = Math.Clamp(value, -150, 150) },
-        Parameter.Contrast => this with { Contrast = Math.Clamp(value, -100, 100) },
-        Parameter.Highlights => this with { Highlights = Math.Clamp(value, -100, 100) },
-        Parameter.Shadows => this with { Shadows = Math.Clamp(value, -100, 100) },
-        Parameter.Saturation => this with { Saturation = Math.Clamp(value, -100, 100) },
-        Parameter.ToneCurve => WithTone(ToneSettings with { CurveStrength = Math.Clamp(value, -100, 100) }),
-        Parameter.Sharpening => WithDetail(DetailSettings with { Sharpening = Math.Clamp(value, 0, 200) / 100 }),
+        Parameter.Contrast => this with { Contrast = Percent((value - 1.0) * 100.0) },
+        Parameter.Highlights => this with { Highlights = Percent(-value * 100.0) },
+        Parameter.Shadows => this with { Shadows = Percent(value * 100.0) },
+        Parameter.Saturation => this with { Saturation = Percent((value - 1.0) * 100.0) },
+        Parameter.ToneCurve => WithTone(ToneSettings with { CurveStrength = Percent(value * 100.0) }),
+        Parameter.Sharpening => WithDetail(DetailSettings with { Sharpening = Math.Clamp(value, 0, 2) }),
         _ => throw new ArgumentOutOfRangeException(nameof(id))
     };
 
     internal static HDRSettings FromSdr(Adjustments settings)
     {
-        var scale = settings.MasterRecipeID == null ? 1 : settings[Parameter.Strength] / 100;
+        var scale = settings.MasterRecipeID == null ? 1 : settings[Parameter.Strength];
         return new() {
             Exposure = Math.Clamp(settings[Parameter.Exposure] * scale, -4, 4),
-            Contrast = Math.Clamp(settings[Parameter.Contrast] * scale, -100, 100),
-            Highlights = Math.Clamp(settings[Parameter.Highlights] * scale, -100, 100),
-            Shadows = Math.Clamp(settings[Parameter.Shadows] * scale, -100, 100),
-            Saturation = Math.Clamp(settings[Parameter.Saturation] * scale, -100, 100), Geometry = settings.Geometry
+            Contrast = Percent((settings[Parameter.Contrast] - 1.0) * 100.0 * scale),
+            Highlights = Percent(-settings[Parameter.Highlights] * 100.0 * scale),
+            Shadows = Percent(settings[Parameter.Shadows] * 100.0 * scale),
+            Saturation = Percent((settings[Parameter.Saturation] - 1.0) * 100.0 * scale), Geometry = settings.Geometry
         };
     }
+
+    private static double Percent(double value) =>
+        Math.Round(Math.Clamp(value, -100, 100), 10, MidpointRounding.AwayFromZero);
 
     internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null,
         OutputSharpening outputSharpening = OutputSharpening.Off)

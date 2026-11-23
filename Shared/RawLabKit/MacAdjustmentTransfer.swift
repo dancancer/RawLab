@@ -308,30 +308,18 @@ public enum MacAdjustmentTransfer {
     ]
 
     public static func logical(_ value: Double, field: Field) -> Double {
-        switch field {
-        case .contrast, .saturation: return 1 + value / 100
-        case .highlights: return -value / 100
-        case .shadows, .sCurve, .sharpening: return value / 100
-        default: return value
-        }
+        value
     }
 
     public static func assignLogical(_ value: Double, field: Field, to settings: inout Adjustments) {
-        let native: Double
-        switch field {
-        case .contrast, .saturation: native = (value - 1) * 100
-        case .highlights: native = -value * 100
-        case .shadows, .sCurve, .sharpening: native = value * 100
-        default: native = value
-        }
-        settings[keyPath: scalarKeys[field]!] = native
+        settings[keyPath: scalarKeys[field]!] = value
     }
 
     public static func effectiveNumbers(_ settings: Adjustments) -> [Field: Double] {
         let rendered = settings.resolvedRenderValues()
         var result: [Field: Double] = [
             .strength: settings.strength, .exposure: Double(rendered.exposureEV), .contrast: Double(rendered.contrast),
-            .highlights: Double(rendered.highlights), .shadows: Double(rendered.shadows), .sCurve: Double(Float(min(100, max(-100, settings.toneCurve * settings.refinementScale)) / 100)),
+            .highlights: Double(rendered.highlights), .shadows: Double(rendered.shadows), .sCurve: Double(Float(min(1, max(-1, settings.toneCurve * settings.refinementScale)))),
             .saturation: Double(rendered.saturation), .sharpening: Double(rendered.sharpening),
             .blackPoint: settings.renderToneSettings.blackPoint, .whitePoint: settings.renderToneSettings.whitePoint,
             .vibrance: settings.renderToneSettings.vibrance, .clarity: settings.renderAtmosphereSettings.clarity, .dehaze: settings.renderAtmosphereSettings.dehaze
@@ -379,14 +367,14 @@ public enum MacAdjustmentTransfer {
         result[Field.gradingBlending.rawValue] = .number(settings.gradingSettings.blending)
         result[Field.gradingBalance.rawValue] = .number(settings.gradingSettings.balance)
         for (field, key) in effectKeys { result[field.rawValue] = .number(settings.effectSettings[keyPath: key]) }
-        let wavelet = settings.waveletSettings
+        let wavelet = settings.waveletNoiseReduction
         let waveletValue: Value = .object([
             "enabled": .boolean(wavelet.enabled), "luma": .number(wavelet.luma), "chroma": .number(wavelet.chroma),
             "coarse": .number(wavelet.coarse), "preset": .string(wavelet.preset.rawValue)
         ])
         result[Field.rawDenoise.rawValue] = .number(isRaw ? settings.rawNoiseReduction : 0)
         result[Field.postRGBDenoise.rawValue] = .number(0)
-        result[Field.chromaDenoise.rawValue] = .number(settings.chromaNoiseReduction ?? 0)
+        result[Field.chromaDenoise.rawValue] = .number(Double(settings.chromaNoiseReduction))
         result[Field.waveletDenoise.rawValue] = waveletValue
         let geometry = settings.geometrySettings
         result[Field.quarterTurns.rawValue] = .number(Double(geometry.quarterTurns))
@@ -413,19 +401,19 @@ public enum MacAdjustmentTransfer {
                 context.transferNotices?(.ignoredRawDenoise)
             } else if !settings.aiDenoiseEnabled {
                 settings.rawNoiseReduction = raw
-                if raw != 0, settings.waveletNoiseReduction?.enabled == false {
-                    settings.waveletNoiseReduction = nil
+                if raw != 0, !settings.waveletNoiseReduction.enabled {
+                    settings.waveletNoiseReduction = WaveletDenoiseSettings()
                 }
             }
         }
         if let value = payload[.chromaDenoise] {
-            let chroma = value.number ?? 0
+            let chroma = Int((value.number ?? 0).rounded())
             if settings.aiDenoiseEnabled {
                 if chroma != 0 { context.transferNotices?(.ignoredTargetDenoise) }
             } else {
-                settings.chromaNoiseReduction = chroma == 0 ? nil : chroma
-                if chroma != 0, settings.waveletNoiseReduction?.enabled == false {
-                    settings.waveletNoiseReduction = nil
+                settings.chromaNoiseReduction = chroma
+                if chroma != 0, !settings.waveletNoiseReduction.enabled {
+                    settings.waveletNoiseReduction = WaveletDenoiseSettings()
                 }
             }
         }
@@ -440,7 +428,7 @@ public enum MacAdjustmentTransfer {
             if settings.aiDenoiseEnabled {
                 if decoded != WaveletDenoiseSettings() { context.transferNotices?(.ignoredTargetDenoise) }
             } else {
-                settings.waveletNoiseReduction = decoded == WaveletDenoiseSettings() ? nil : decoded
+                settings.waveletNoiseReduction = decoded
             }
         }
         if payload.fields.contains(where: { $0.group == "geometry" && !Field.lensFields.contains($0) }) {

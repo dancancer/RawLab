@@ -20,7 +20,7 @@ final class ExternalReloadAndTransferTests: XCTestCase {
     func testTransferJSONEncodeDecodeRoundTripPreservesV012Fields() throws {
         var settings = Adjustments()
         settings.exposure = 0.65
-        settings.contrast = 18.0
+        settings.contrast = 1.18
         settings.atmosphere = AtmosphereSettings(clarity: 0.35, dehaze: 0)
         settings.toneControls = ToneControlsSettings(blackPoint: -0.15, whitePoint: 0, vibrance: 0)
         settings.toneCurveConfig = ToneCurveSettings(
@@ -326,8 +326,8 @@ final class ExternalReloadAndTransferTests: XCTestCase {
         let record = try editStore.readState(for: photoURL)
         let state = try XCTUnwrap(record.state)
         XCTAssertEqual(state.settings.exposure, -4.5, accuracy: 1e-6)
-        XCTAssertEqual(state.settings.toneCurve, 25.0, accuracy: 1e-6)
-        XCTAssertEqual(state.settings.sharpening, 150.0, accuracy: 1e-6)
+        XCTAssertEqual(state.settings.toneCurve, 0.25, accuracy: 1e-6)
+        XCTAssertEqual(state.settings.sharpening, 1.5, accuracy: 1e-6)
         XCTAssertEqual(state.settings.hslSettings.hue[0], 85.0, accuracy: 1e-6)
         XCTAssertEqual(state.settings.curveSettings.channels.red.mode, .custom)
         XCTAssertEqual(state.settings.curveSettings.parametric.splitMidtone, 0.5, accuracy: 1e-6)

@@ -31,17 +31,17 @@ struct AdjustmentTests {
         settings.reset(.color)
         check(settings.hslSettings.isIdentity, "Color reset clears HSL")
         settings.exposure=1.25; settings.exposureMode = .preview; settings.strength=0.4
-        settings.contrast=25; settings.highlights = -60; settings.shadows=40; settings.toneCurve=30
-        settings.saturation = -20; settings.sharpening=75
+        settings.contrast=1.25; settings.highlights=0.6; settings.shadows=0.4; settings.toneCurve=0.3
+        settings.saturation=0.8; settings.sharpening=0.75
         settings.apply(to: &request)
         check(request.contrast == 1.25 && request.saturation == 0.8 && request.highlights == 0.6 &&
             request.shadows == 0.4 && request.tone_curve == 0.3 && request.sharpening == 0.75 &&
             request.exposure_ev == 1.25, "Six controls map to the shared core without changing input EV")
         settings.reset(.tone)
-        check(settings.isDefault(.tone) && settings.saturation == -20 && settings.sharpening == 75 &&
+        check(settings.isDefault(.tone) && settings.saturation == 0.8 && settings.sharpening == 0.75 &&
             settings.exposure == 1.25 && settings.strength == 0.4, "Tone group reset preserves other groups")
         settings.reset(.input)
-        check(settings.exposureMode == .preview && settings.exposure == 0 && settings.saturation == -20,
+        check(settings.exposureMode == .preview && settings.exposure == 0 && settings.saturation == 0.8,
             "Input reset restores exposure mode without resetting color")
         for group in AdjustmentGroup.allCases { settings.reset(group) }
         check(settings == Adjustments(), "All group resets restore defaults")
@@ -51,7 +51,8 @@ struct AdjustmentTests {
             check(spec.parse(spec.text(spec.defaultValue)) == spec.defaultValue,"\(parameter) default numeric round trip")
             check(spec.parse("nan") == nil && spec.parse("inf") == nil && spec.parse("oops") == nil,
                 "\(parameter) rejects invalid numeric input")
-            check(spec.parse("999999") == spec.range.upperBound && spec.parse("-999999") == spec.range.lowerBound,
+            check(spec.parse("999999").map { spec.displayValue($0) } == spec.displayRange.upperBound &&
+                spec.parse("-999999").map { spec.displayValue($0) } == spec.displayRange.lowerBound,
                 "\(parameter) clamps typed values to bounds")
         }
         check(AdjustmentParameter.strength.spec.parse("42") == 0.42 &&
@@ -82,7 +83,7 @@ struct AdjustmentTests {
         let controls: [AdjustmentParameter]=[.clarity,.dehaze,.blackPoint,.whitePoint,.vibrance,.contrast,.highlights,.shadows,.toneCurve,.saturation,.sharpening,.vignetteAmount,.grainAmount]
         for parameter in controls {
             var changed=Adjustments()
-            changed[keyPath: parameter.spec.keyPath]=parameter == .sharpening ? 100 : 60
+            changed[keyPath: parameter.spec.keyPath]=parameter.spec.modelValue(parameter == .sharpening ? 100 : 60)
             let rendered=try engine.render(raw,settings: changed,lut: lut,edge: 400)!
             // Core tests separately isolate sharpening from preview resizing effects.
             check((rendered.image.dataProvider!.data! as Data) != (original.image.dataProvider!.data! as Data),"\(parameter) changes a real RAW render")
@@ -98,8 +99,8 @@ struct AdjustmentTests {
 
         // Export the adjusted image from the same engine and verify encoded pixels against
         // the full-resolution display buffer, not just the existence of an output file.
-        settings.contrast=12; settings.highlights = -25; settings.shadows=15
-        settings.toneCurve=10; settings.saturation=8; settings.sharpening=40
+        settings.contrast=1.12; settings.highlights=0.25; settings.shadows=0.15
+        settings.toneCurve=0.1; settings.saturation=1.08; settings.sharpening=0.4
         settings.setEffect(.vignetteAmount, to: -40)
         settings.setEffect(.vignetteHighlights, to: 65)
         settings.setEffect(.grainAmount, to: 45)

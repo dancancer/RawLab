@@ -26,7 +26,7 @@ internal static class ToneCurveRenderChecks
         using var engine=new RenderEngine(0,Path.Combine(repo,"lutools","tests","fixtures","lenses.xml"));
         byte[] Preview(Adjustments value)=>Bytes(engine.RenderPreview(input,value,null,width,false,false,false).Result.Image);
         var neutral=new Adjustments();var baseline=Preview(neutral);
-        var settings=new Adjustments();settings.Set(Parameter.ToneCurve,65);var legacy=Preview(settings);
+        var settings=new Adjustments();settings.Set(Parameter.ToneCurve,.65);var legacy=Preview(settings);
         check(!legacy.SequenceEqual(baseline),"Legacy S curve remains effective");
         settings.Curve=ToneCurveSettings.Identity;
         check(Preview(settings).SequenceEqual(baseline),"Identity bypasses inactive legacy scalar exactly");

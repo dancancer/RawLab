@@ -134,12 +134,12 @@ public enum CropInteraction {
                 height = width / normalizedRatio
             } else { width = height * normalizedRatio }
             let maximum = min(maximumWidth, maximumHeight * normalizedRatio)
-            let minimum = min(maximum, max(0.01, 0.01 * normalizedRatio))
+            let minimum = min(maximum, max(0.001, 0.001 * normalizedRatio))
             width = min(maximum, max(minimum, width))
             height = width / normalizedRatio
         } else {
-            width = min(maximumWidth, max(min(0.01, maximumWidth), width))
-            height = min(maximumHeight, max(min(0.01, maximumHeight), height))
+            width = min(maximumWidth, max(min(0.001, maximumWidth), width))
+            height = min(maximumHeight, max(min(0.001, maximumHeight), height))
         }
         return CGRect(x: left ? anchor.x - width : anchor.x,
                       y: top ? anchor.y - height : anchor.y, width: width, height: height)

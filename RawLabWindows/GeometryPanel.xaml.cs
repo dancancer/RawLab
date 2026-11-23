@@ -37,8 +37,8 @@ public partial class GeometryPanel : UserControl
         RegisterName("CropWidth",crops[2].Number);RegisterName("CropHeight",crops[3].Number);
         RegisterName("StraightenSlider",angle.Slider);
         angle.Changed+=(number,dragging)=>Publish(value with{StraightenDegrees=number},dragging);
-        horizontal.Changed+=(number,dragging)=>Publish(value with{PerspectiveHorizontal=number},dragging);
-        vertical.Changed+=(number,dragging)=>Publish(value with{PerspectiveVertical=number},dragging);
+        horizontal.Changed+=(number,dragging)=>Publish(value with{PerspectiveHorizontal=number/100},dragging);
+        vertical.Changed+=(number,dragging)=>Publish(value with{PerspectiveVertical=number/100},dragging);
         RefreshLanguage();Refresh(value);
     }
     public void Begin(GeometrySettings settings)
@@ -72,8 +72,8 @@ public partial class GeometryPanel : UserControl
         syncing=true;value=settings;
         HorizontalFlip.IsChecked=value.FlipHorizontal;VerticalFlip.IsChecked=value.FlipVertical;
         angle.Refresh(Loc.Text("拉直"),new(-45,45,.01,.1,.01,false,2),value.StraightenDegrees,0,"°");
-        horizontal.Refresh(Loc.Text("水平透视"),new(-1,1,.001,.01,.001),value.PerspectiveHorizontal,0);
-        vertical.Refresh(Loc.Text("垂直透视"),new(-1,1,.001,.01,.001),value.PerspectiveVertical,0);
+        horizontal.Refresh(Loc.Text("水平透视"),new(-100,100,.1,1,.1),value.PerspectiveHorizontal*100,0);
+        vertical.Refresh(Loc.Text("垂直透视"),new(-100,100,.1,1,.1),value.PerspectiveVertical*100,0);
         var numbers=new[]{value.CropX,value.CropY,value.CropWidth,value.CropHeight};
         var names=new[]{"裁切左边","裁切上边","裁切宽度","裁切高度"};
         var normalized=AspectRatio is {} ratio && canvasWidth>0 ? ratio*canvasHeight/canvasWidth : (double?)null;
@@ -81,7 +81,7 @@ public partial class GeometryPanel : UserControl
         var maxHeight=normalized is {} h ? Math.Min(1-value.CropY,(1-value.CropX)/h) : 1-value.CropY;
         var maxima=new[]{1-value.CropWidth,1-value.CropHeight,maxWidth,maxHeight};
         for(var i=0;i<crops.Length;++i)crops[i].Refresh(Loc.Text(names[i]),
-            new(i<2 ? 0 : .01,maxima[i]*100,.01,.1,.01,CompactPercent:true),numbers[i]*100,i<2 ? 0 : 100,"%");
+            new(i<2 ? 0 : .1,maxima[i]*100,.01,.1,.01,CompactPercent:true),numbers[i]*100,i<2 ? 0 : 100,"%");
         LockIcon.Kind=AspectRatio==null ? "Unlock" : "Lock";
         AutomationProperties.SetItemStatus(AspectLock,Loc.Text(AspectRatio==null ? "已停用" : "已启用"));
         SwapAspect.IsEnabled=AspectRatio!=null && AspectRatio!=1;

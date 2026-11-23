@@ -110,15 +110,15 @@ final class EditRecordPersistenceTests: XCTestCase {
         a.proRAWDecodeVersion = 2
         a.exposureMode = .scene
         a.exposure = 0.625
-        a.contrast = 25.0
-        a.saturation = 15.0
+        a.contrast = 1.25
+        a.saturation = 1.15
         a.resolveWhiteBalance(WhiteBalance(temperature: 5400, tint: 4.5))
         a.set(.temperature, to: 6150)
         a.set(.tint, to: -8.5)
-        a.highlights = 37.5
-        a.shadows = 43.75
-        a.toneCurve = 25.0
-        a.sharpening = 75.0
+        a.highlights = -0.375
+        a.shadows = 0.4375
+        a.toneCurve = 0.25
+        a.sharpening = 0.75
         a.chromaNoiseReduction = 1
         a.waveletNoiseReduction = WaveletDenoiseSettings(enabled: true, luma: 18, chroma: 54, coarse: 62, preset: .custom)
         a.aiDenoiseEnabled = true
@@ -242,8 +242,11 @@ final class EditRecordPersistenceTests: XCTestCase {
         XCTAssertEqual(macLoaded.settings.processing, .legacy)
         XCTAssertEqual(macLoaded.settings.x3fMode, .legacy)
         XCTAssertEqual(macLoaded.settings.exposure, 0.35, accuracy: 1e-9)
-        XCTAssertEqual(macLoaded.settings.contrast, 12.5, accuracy: 1e-9)
-        XCTAssertEqual(macLoaded.settings.saturation, 8.5, accuracy: 1e-9)
+        XCTAssertEqual(macLoaded.settings.contrast, 1.125, accuracy: 1e-9)
+        XCTAssertEqual(macLoaded.settings.highlights, 0.18, accuracy: 1e-9)
+        XCTAssertEqual(macLoaded.settings.shadows, 0.22, accuracy: 1e-9)
+        XCTAssertEqual(macLoaded.settings.saturation, 1.085, accuracy: 1e-9)
+        XCTAssertEqual(macLoaded.settings.sharpening, 0.25, accuracy: 1e-9)
         XCTAssertEqual(macLoaded.settings.temperature, 5800.0, accuracy: 1e-9)
         XCTAssertEqual(macLoaded.settings.tint, 4.5, accuracy: 1e-9)
     }

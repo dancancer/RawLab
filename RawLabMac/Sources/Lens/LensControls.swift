@@ -96,7 +96,7 @@ struct LensDraftWorkspace: View {
     }
 
     private var correctionOptions: some View {
-        HStack(alignment: .top, spacing: 18) { distortion; tca; autoCrop }
+        HStack(alignment: .top, spacing: 18) { distortion; tca; vignetting; autoCrop }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -110,6 +110,12 @@ struct LensDraftWorkspace: View {
     private var tca: some View {
         correctionOption("横向色差", detail: presentation.correctionDetailKey(tca: true),
             value: value(\.tca), enabled: presentation.canChangeCorrection(tca: true), identifier: "lens.tca")
+    }
+
+    private var vignetting: some View {
+        correctionOption("暗角校正", detail: presentation.vignettingDetailKey,
+            value: value(\.vignetting), enabled: presentation.canChangeVignetting,
+            identifier: "lens.vignetting")
     }
 
     private var autoCrop: some View {

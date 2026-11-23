@@ -32,7 +32,7 @@ public partial class LensPanel : UserControl
         syncing = true;
         value = settings; info = report;
         Automatic.IsChecked = !value.Manual; Manual.IsChecked = value.Manual;
-        Distortion.IsChecked = value.Distortion; Tca.IsChecked = value.Tca; AutoCrop.IsChecked = value.AutoCrop;
+        Distortion.IsChecked = value.Distortion; Tca.IsChecked = value.Tca; Vignetting.IsChecked = value.Vignetting; AutoCrop.IsChecked = value.AutoCrop;
         var title = value.Manual ? info?.Candidates.FirstOrDefault(p => p.Id == value.ProfileId)?.Title : info?.SelectedLens;
         SelectedTitle.Text = string.IsNullOrEmpty(title) ? value.Manual ? Loc.Text("选择镜头") : Loc.Text("未匹配镜头") : title;
         ProfileButton.ToolTip = SelectedTitle.Text;
@@ -42,10 +42,12 @@ public partial class LensPanel : UserControl
         var inputAllowed=info?.State is not (2 or 3 or 7 or 8 or 9);
         Distortion.IsEnabled=value.Distortion || inputAllowed && candidate?.HasDistortion==true;
         Tca.IsEnabled=value.Tca || inputAllowed && candidate?.HasTca==true;
+        Vignetting.IsEnabled=value.Vignetting || inputAllowed && candidate!=null;
         var unavailable=info==null ? Loc.Text("镜头信息尚未就绪") : !inputAllowed ? info.Message
             : candidate==null ? Loc.Text("未匹配镜头，请手动选择") : null;
         Explain(Distortion,unavailable ?? (candidate?.HasDistortion==true ? null : Loc.Text("畸变标定不可用")));
         Explain(Tca,unavailable ?? (candidate?.HasTca==true ? null : Loc.Text("横向色差标定不可用")));
+        Explain(Vignetting,unavailable);
         StatusText.Text = info?.Message ?? Loc.Text("镜头信息尚未就绪");
         StatusText.ToolTip = info?.DetectedLens;
         // 按显示精度判断：四舍五入后是 0.0% 的裁边不值得报告
@@ -66,7 +68,7 @@ public partial class LensPanel : UserControl
     }
     private void ModeChanged(object sender, RoutedEventArgs e) => Publish(value with { Manual = ReferenceEquals(sender, Manual) });
     private void SwitchChanged(object sender, RoutedEventArgs e) => Publish(value with {
-        Distortion = Distortion.IsChecked == true, Tca = Tca.IsChecked == true, AutoCrop = AutoCrop.IsChecked == true });
+        Distortion = Distortion.IsChecked == true, Tca = Tca.IsChecked == true, Vignetting = Vignetting.IsChecked == true, AutoCrop = AutoCrop.IsChecked == true });
     private void ResetClicked(object sender, RoutedEventArgs e) { if (!syncing && IsEnabled) ResetRequested?.Invoke(); }
     private void ChooseClicked(object sender, RoutedEventArgs e) { Chooser.IsOpen = true; Search.Focus(); }
     private void SearchChanged(object sender, TextChangedEventArgs e) { if (!syncing) FilterProfiles(); }

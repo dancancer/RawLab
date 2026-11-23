@@ -211,7 +211,7 @@ final class InspectionSuiteTests: XCTestCase {
     func testZeroEditStateAndCanonicalRecipePollution() throws {
         var rawSettings = RawSettings.default
         rawSettings.exposure = 0.4
-        rawSettings.contrast = 12
+        rawSettings.contrast = 1.12
         rawSettings.geometry = GeometrySettings(cropX: 0.1, cropY: 0.1, cropWidth: 0.8, cropHeight: 0.8, quarterTurns: 1)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]

@@ -158,8 +158,8 @@ struct EditorPresentationTests {
         var uiRounded = RawSettings.default
         uiRounded.setEditingEffect(.vignetteAmount, to: 0.5)
         uiRounded.setEditingEffect(.vignetteRoundness, to: -0.5)
-        check(uiRounded.photoEffects.vignetteAmount == 1 && uiRounded.photoEffects.vignetteRoundness == -1,
-              "Photo effect UI setters use the shared nearest-integer rounding contract")
+        check(uiRounded.photoEffects.vignetteAmount == 0.5 && uiRounded.photoEffects.vignetteRoundness == -0.5,
+              "Photo effect UI setters preserve decimal precision")
         effects.vignetteAmount = 0
         effects.vignetteMidpoint = 62
         settings.photoEffects = effects

@@ -72,9 +72,9 @@ class AdjustmentPresetContractInstrumentedTest {
 
         val encoded = SettingsCodec.encode(EditSettings(exposure = 0.5f))
         for (invalid in listOf(
-            encoded.replaceFirst("v2:{", "v2:{/*comment*/"),
-            encoded.replaceFirst("\"version\":2", "\"version\":1,\"version\":2"),
-            encoded.replaceFirst("\"version\":2", "\"version\":2.0"),
+            encoded.replaceFirst("v3:{", "v3:{/*comment*/"),
+            encoded.replaceFirst("\"version\":3", "\"version\":1,\"version\":3"),
+            encoded.replaceFirst("\"version\":3", "\"version\":3.0"),
             encoded.removeSuffix("}") + ",}",
         )) {
             assertThrows(invalid, IllegalArgumentException::class.java) { SettingsCodec.decode(invalid) }

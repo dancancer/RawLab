@@ -286,9 +286,9 @@ struct AdjustmentRow: View {
                     .accessibilityLabel(L10n.text("白平衡"))
             }
             ParameterRow(title: titleOverride ?? spec.title,
-                         value: Binding(get: { value * spec.multiplier }, set: { value = $0 / spec.multiplier }),
-                         range: (spec.range.lowerBound * spec.multiplier)...(spec.range.upperBound * spec.multiplier),
-                         defaultValue: spec.defaultValue * spec.multiplier, unit: spec.unit,
+                         value: Binding(get: { spec.displayValue(value) }, set: { value = spec.modelValue($0) }),
+                         range: spec.displayRange,
+                         defaultValue: spec.displayDefault, unit: spec.unit,
                          precision: precision, identifier: "value.\(parameter.rawValue)",
                          onEditingChanged: onEditingChanged,
                          sliderMapping: spec.reciprocalScale ? .reciprocalKelvin : .linear, compact: compact, showsTicks: showsTicks)

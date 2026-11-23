@@ -769,7 +769,7 @@ internal static class HDRWorkflowChecks
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 window.OrdinaryParameter.Number.Text=value.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 check(window.OrdinaryParameter.Commit(),"HDR parameter commits through the visible editor: "+tool);Ready(window);
-                check(window.Settings[parameter]==value,"HDR record receives the edited value: "+tool);
+                check(Math.Abs(window.Settings[parameter]-ParameterSpec.All[(int)parameter].ToCanonical(value))<1e-9,"HDR record receives the edited value: "+tool);
             }
             foreach (var (tool, parameter, value) in new[] {
                 (EditorAdjustmentTool.BlackPoint, ToneControlParameter.BlackPoint, -25d),

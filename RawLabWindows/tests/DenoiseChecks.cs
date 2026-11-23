@@ -111,7 +111,7 @@ internal static class DenoiseChecks
         var combined=settings.Clone();
         combined.Effects=new PhotoEffectsSettings(-65,52,-35,70,75,70,60,80);
         combined.DisplayChromaDenoise=2;
-        combined.Set(Parameter.Sharpening,50);
+        combined.Set(Parameter.Sharpening,.5);
         var combinedCpu=engine.Render(raw,combined,null,600)!;
         var combinedAuto=gpuEngine.Render(raw,combined,null,600)!;
         Check(Pixels(combinedCpu.Image).Zip(Pixels(combinedAuto.Image),(a,b)=>Math.Abs(a-b)).Max()<=2,

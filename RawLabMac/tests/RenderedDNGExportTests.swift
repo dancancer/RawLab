@@ -23,8 +23,8 @@ import ImageIO
         settings.whiteBalanceMode = .custom
         settings.temperature = 5400; settings.tint = 12
         settings.strength = 0.7
-        settings.contrast = 17; settings.highlights = -15; settings.shadows = 20
-        settings.toneCurve = 12; settings.saturation = 8; settings.sharpening = 25
+        settings.contrast = 1.17; settings.highlights = 0.15; settings.shadows = 0.20
+        settings.toneCurve = 0.12; settings.saturation = 1.08; settings.sharpening = 0.25
         settings.setHSL(.hue, channel: 1, value: 12)
         settings.setHSL(.saturation, channel: 5, value: -20)
         settings.setEffect(.vignetteAmount, to: -35)
@@ -60,10 +60,10 @@ import ImageIO
                     throw RenderError.failed("DNG export did not execute Metal")
                 }
                 if mode == SONY2FUJI_GPU_AUTO {
-                    let cpu = output.appendingPathComponent("cpu" + (longEdge.map { "-\($0)" } ?? "-native") + ".dng")
-                    guard engine.lastBackend == SONY2FUJI_BACKEND_CPU,
-                          try Data(contentsOf: dng) == Data(contentsOf: cpu) else {
-                        throw RenderError.failed("DNG Auto fallback did not match CPU")
+                    // 13f068d84 起 basic_v3 在 Metal 上加速，c5Wavelet 仅在内部按 cpuC5 走 CPU；
+                    // 无 atmosphere 时 Auto 走 Metal 管线。
+                    guard engine.lastBackend == SONY2FUJI_BACKEND_METAL else {
+                        throw RenderError.failed("DNG Auto export did not execute Metal")
                     }
                 }
                 var job = MacBatchExportJob(source: input, settings: modeSettings, look: lut, lookName: label)
@@ -85,5 +85,21 @@ import ImageIO
                 print("PASS: \(label), ImageIO decode, single/batch exact DNG match, original unchanged")
             }
         }
+        // atmosphere（clarity/dehaze）仍为 CPU-only，Auto DNG 导出应诚实回退 CPU 并与 OFF 逐字节一致。
+        var atmosphereSettings = settings
+        atmosphereSettings.clarity = 15
+        let cpuEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+        let autoEngine = try RenderEngine(gpuMode: SONY2FUJI_GPU_AUTO)
+        let atmosphereCPU = output.appendingPathComponent("atmosphere-cpu-1536.dng")
+        let atmosphereAuto = output.appendingPathComponent("atmosphere-auto-1536.dng")
+        _ = try cpuEngine.render(input, settings: atmosphereSettings, lut: lut, edge: nil,
+                                 output: atmosphereCPU, exportLongEdge: 1536)
+        _ = try autoEngine.render(input, settings: atmosphereSettings, lut: lut, edge: nil,
+                                  output: atmosphereAuto, exportLongEdge: 1536)
+        guard autoEngine.lastBackend == SONY2FUJI_BACKEND_CPU,
+              try Data(contentsOf: atmosphereAuto) == Data(contentsOf: atmosphereCPU) else {
+            throw RenderError.failed("DNG Auto atmosphere fallback did not match CPU")
+        }
+        print("PASS: atmosphere DNG Auto fallback matches CPU bytes exactly")
     }
 }

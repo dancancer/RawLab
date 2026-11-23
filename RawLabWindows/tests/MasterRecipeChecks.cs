@@ -22,11 +22,13 @@ internal static class MasterRecipeChecks
             var current = new Adjustments(); current.ApplyMasterRecipe(recipe);
             current.Hsl = current.Hsl.WithValue(0, 7, 37);
             foreach (var strength in new[] { 0.0, .5, 1, 2 }) {
-                current.Set(Parameter.Strength, strength * 100);
+                current.Set(Parameter.Strength, strength);
                 var manual = new Adjustments(); manual.ResolveWhiteBalance(camera);
-                manual.Set(Parameter.Strength, strength * 100);
-                foreach (var parameter in new[] { Parameter.Exposure, Parameter.Highlights, Parameter.Shadows, Parameter.Contrast, Parameter.Saturation })
+                manual.Set(Parameter.Strength, strength);
+                foreach (var parameter in new[] { Parameter.Exposure, Parameter.Highlights, Parameter.Shadows })
                     manual.Set(parameter, current[parameter] * strength);
+                foreach (var parameter in new[] { Parameter.Contrast, Parameter.Saturation })
+                    manual.Set(parameter, 1.0 + (current[parameter] - 1.0) * strength);
                 if (strength != 0) manual.Set(Parameter.Tint, Math.Clamp(camera.Tint + current[Parameter.Tint] * strength, -150, 150));
                 manual.Hsl = current.RenderHsl;
                 manual.ToneControls = current.ToneControls.Scaled(strength);

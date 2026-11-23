@@ -47,9 +47,9 @@ class HDRResetTest {
     @Test fun sdrResetAllKeepsDormantHdrAndProRawDecoder() {
         val context = rawContext.copy(asShot = AsShotWhiteBalance(5200f, 8f))
         val sdr = proRawHdr().withHDRMode(false, false, cameraRaw = true, proRAW = true)
-            .copy(contrast = .3f, customWb = true, temperature = 7000f, tint = -12f)
+            .copy(contrast = 1.3f, customWb = true, temperature = 7000f, tint = -12f)
         val reset = (EditorAdjustmentRules.prepareReset(EditorResetScope.All, sdr, context) as EditorResetResult.Ready).candidate
-        assertEquals(0f, reset.contrast); assertEquals("neutral", reset.film); assertEquals(0f, reset.exposure)
+        assertEquals(1f, reset.contrast); assertEquals("neutral", reset.film); assertEquals(0f, reset.exposure)
         assertFalse(reset.customWb); assertEquals(5200f, reset.temperature); assertEquals(8f, reset.tint)
         assertEquals(sdr.hdr, reset.hdr)
         assertEquals(2, reset.proRAWDecodeVersion)
@@ -111,7 +111,7 @@ class HDRResetTest {
             assertNotEquals(EditorAdjustmentGroup.HDR_RENDITION, EditorAdjustmentRules.groupFor(EditorAdjustmentRules.normalizeTool(tool, isHDREditing = false)))
         }
 
-        val sdrBase = EditSettings(film = "velvia", exposure = -.5f, contrast = .25f)
+        val sdrBase = EditSettings(film = "velvia", exposure = -.5f, contrast = 1.25f)
         var renditionHdr = sdrBase.withHDRMode(true, false, cameraRaw = true, proRAW = false)
             .copy(exposure = 1.5f).synchronizeHDR()
         renditionHdr = renditionHdr.copy(hdr = renditionHdr.hdr!!.withCameraDevelopment(HDRCameraDevelopmentSettings(fbddLevel = 2)))

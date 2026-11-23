@@ -114,11 +114,11 @@ class EditorAdjustmentRulesTest {
 
     @Test fun explicitAsShotOverridesWhiteBalanceDefaultsForWbColorAndAll() {
         val ctx = context(shot = AsShotWhiteBalance(5200f, 8f))
-        val source = EditSettings(customWb = true, temperature = 4200f, tint = 18f, exposure = .5f, saturation = .2f)
+        val source = EditSettings(customWb = true, temperature = 4200f, tint = 18f, exposure = .5f, saturation = 1.2f)
         val wb = source.copy(customWb = false, temperature = 5200f, tint = 8f)
         assertEquals(wb, candidate(EditorResetScope.Tool(8), source, ctx))
         assertEquals(wb, candidate(EditorResetScope.Tool(9), source, ctx))
-        assertEquals(wb.copy(saturation = 0f), candidate(EditorResetScope.Group(EditorAdjustmentGroup.COLOR), source, ctx))
+        assertEquals(wb.copy(saturation = 1f), candidate(EditorResetScope.Group(EditorAdjustmentGroup.COLOR), source, ctx))
         assertEquals(EditSettings(temperature = 5200f, tint = 8f), candidate(EditorResetScope.All, source, ctx))
         assertFalse(rules.isModified(EditorResetScope.Tool(8), wb, ctx))
         val recipe = source.copy(recipeID = recipeId, strength = 0f)
@@ -167,7 +167,7 @@ class EditorAdjustmentRulesTest {
 
     @Test fun channelResetPreservesFractionalHslAndOtherFields() {
         val hsl = HslSettings(List(24) { (it + 1) * .5f })
-        val source = EditSettings(recipeID = recipeId, strength = 0f, saturation = .2f, hsl = hsl)
+        val source = EditSettings(recipeID = recipeId, strength = 0f, saturation = 1.2f, hsl = hsl)
         val scope = EditorResetScope.HslChannel(3)
         assertTrue(rules.isModified(scope, source, context()))
         val result = candidate(scope, source)
@@ -177,14 +177,14 @@ class EditorAdjustmentRulesTest {
     }
 
     @Test fun recipeMaterializationMatchesIndependentJniVectorsAtFourStrengths() {
-        val source = EditSettings(recipeID = recipeId, exposure = .75f, highlights = -.25f, shadows = .125f,
-            contrast = -.25f, saturation = .125f, toneCurve = .3f, sharpening = .7f,
+        val source = EditSettings(recipeID = recipeId, exposure = .75f, highlights = .25f, shadows = .125f,
+            contrast = .75f, saturation = 1.125f, toneCurve = .3f, sharpening = .7f,
             hsl = HslSettings(List(24) { if (it == 0) 80f else .5f }), exposureMode = 0)
         val expected = listOf(
-            listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f),
-            listOf(.375f, -.125f, .0625f, -.125f, .0625f, 40f, .25f),
-            listOf(.75f, -.25f, .125f, -.25f, .125f, 80f, .5f),
-            listOf(1.5f, -.5f, .25f, -.5f, .25f, 100f, 1f))
+            listOf(0f, 0f, 0f, 1f, 1f, 0f, 0f),
+            listOf(.375f, .125f, .0625f, .875f, 1.0625f, 40f, .25f),
+            listOf(.75f, .25f, .125f, .75f, 1.125f, 80f, .5f),
+            listOf(1.5f, .5f, .25f, .5f, 1.25f, 100f, 1f))
         listOf(0f, .5f, 1f, 2f).zip(expected).forEach { (strength, v) ->
             val result = candidate(EditorResetScope.Group(EditorAdjustmentGroup.LOOKS), source.copy(strength = strength))
             assertEquals(EditSettings(exposure = v[0], highlights = v[1], shadows = v[2], contrast = v[3], saturation = v[4],
@@ -214,7 +214,7 @@ class EditorAdjustmentRulesTest {
     }
 
     @Test fun outOfRangeOrUnknownRecipeIsBlockedAndLightResetNeverReplaysRecipe() {
-        val source = EditSettings(recipeID = recipeId, strength = 2f, exposure = 4f, saturation = .3f)
+        val source = EditSettings(recipeID = recipeId, strength = 2f, exposure = 4f, saturation = 1.3f)
         assertTrue(rules.prepareReset(EditorResetScope.Tool(15), source, context()) is EditorResetResult.Blocked)
         assertTrue(rules.prepareReset(EditorResetScope.Tool(2), source.copy(recipeID = "missing"), context()) is EditorResetResult.Blocked)
         assertEquals(source.copy(exposure = 0f), candidate(EditorResetScope.Group(EditorAdjustmentGroup.LIGHT), source))
@@ -237,8 +237,8 @@ class EditorAdjustmentRulesTest {
         assertEquals(.21000001f, candidate(EditorResetScope.Tool(15), source).exposure)
         for (invalid in listOf(EditSettings(recipeID = recipeId, strength = 2f, highlights = .75f),
             EditSettings(recipeID = recipeId, strength = 2f, shadows = -.75f),
-            EditSettings(recipeID = recipeId, strength = 2f, contrast = .75f),
-            EditSettings(recipeID = recipeId, strength = 2f, saturation = -.75f))) {
+            EditSettings(recipeID = recipeId, strength = 2f, contrast = 1.75f),
+            EditSettings(recipeID = recipeId, strength = 2f, saturation = .25f))) {
             assertTrue(rules.prepareReset(EditorResetScope.Tool(15), invalid, context()) is EditorResetResult.Blocked)
         }
     }

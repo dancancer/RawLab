@@ -22,14 +22,15 @@ internal static class AdjustmentTransferValues
     internal static readonly IReadOnlySet<F> Scaled = new HashSet<F> { F.Exposure,F.Contrast,F.Highlights,F.Shadows,F.Saturation };
     internal static double Logical(AdjustmentSnapshot s, F field)
     {
+        s = s.Normalized();
         if (AtmosphereFields.TryGetValue(field, out var atmosphere)) return (s.Atmosphere ?? new())[atmosphere];
         if (ToneFields.TryGetValue(field, out var tone)) return (s.ToneControls ?? new())[tone];
         if (field.HslIndex() is {} index) return (s.Hsl ?? new()).Values[index];
-        var value = s.Values[(int)Scalars[field]];
-        return field switch { F.Exposure=>value, F.Contrast or F.Saturation=>1+value/100, F.Highlights=>-value/100, _=>value/100 };
+        return s.Values[(int)Scalars[field]];
     }
     internal static AdjustmentSnapshot SetLogical(AdjustmentSnapshot s, F field, double value)
     {
+        s = s.Normalized();
         if (AtmosphereFields.TryGetValue(field, out var atmosphere)) {
             var controls = (s.Atmosphere ?? new()).With(atmosphere, value); _ = controls.NativeConfig();
             return s with { Atmosphere = controls.IsIdentity ? null : controls };
@@ -42,12 +43,12 @@ internal static class AdjustmentTransferValues
             var hsl=(s.Hsl ?? new()).Values; hsl[index]=value; return s with { Hsl=new(hsl) };
         }
         var values=(double[])s.Values.Clone();
-        values[(int)Scalars[field]]=field switch { F.Exposure=>value, F.Contrast or F.Saturation=>(value-1)*100, F.Highlights=>-value*100, _=>value*100 };
+        values[(int)Scalars[field]]=value;
         var result=s with { Values=values }; _=result.Restore(); return result;
     }
     internal static Dictionary<F,JsonElement> Values(SavedEdit edit, AdjustmentTransferContext context)
     {
-        var s=edit.Settings; var result=new Dictionary<F,JsonElement>();
+        var s=edit.Settings.Normalized(); var result=new Dictionary<F,JsonElement>();
         void Put<T>(F field,T value) => result[field]=Value(value);
         var curve = s.Curve ?? new ToneCurveSettings();
         result[F.Curve] = CurveElement(curve);
@@ -95,6 +96,7 @@ internal static class AdjustmentTransferValues
     }
     internal static AdjustmentSnapshot ApplyObjects(AdjustmentPayload p,AdjustmentSnapshot s,AdjustmentTransferContext context)
     {
+        s = s.Normalized();
         double N(F f,double fallback)=>Number(p[f]) ?? fallback;
         bool B(F f,bool fallback)=>Boolean(p[f]) ?? fallback;
         // Q3：Windows 的 SDR 管线不建模这两个键，收到非 0 值忽略并提示，不再拒绝。

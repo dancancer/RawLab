@@ -368,7 +368,7 @@ struct MacBatchSettingsSummaryView: View {
             if !settings.isHDREditing {
             DisclosureGroup(L10n.text("降噪")) {
                 summary("RAW 降噪", number(settings.rawNoiseReduction))
-                summary("色度降噪", number(settings.chromaNoiseReduction ?? 0))
+                summary("色度降噪", number(Double(settings.chromaNoiseReduction)))
                 summary("降噪", enabled(settings.waveletSettings.enabled))
                 summary("亮度降噪", number(settings.waveletSettings.luma))
                 summary("色彩降噪", number(settings.waveletSettings.chroma))

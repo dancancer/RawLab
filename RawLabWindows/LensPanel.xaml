@@ -8,6 +8,7 @@
    <RadioButton x:Name="Manual" Content="{DynamicResource '手动'}" GroupName="LensMode" Checked="ModeChanged" Margin="0,4,20,4" AutomationProperties.Name="{DynamicResource '选择镜头'}"/>
    <CheckBox x:Name="Distortion" Content="{DynamicResource '畸变矫正'}" AutomationProperties.Name="{DynamicResource '畸变矫正'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <CheckBox x:Name="Tca" Content="{DynamicResource '横向色差'}" AutomationProperties.Name="{DynamicResource '横向色差'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
+   <CheckBox x:Name="Vignetting" Content="{DynamicResource '暗角校正'}" AutomationProperties.Name="{DynamicResource '暗角校正'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <CheckBox x:Name="AutoCrop" Content="{DynamicResource '自动裁边'}" AutomationProperties.Name="{DynamicResource '自动裁边'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <Button Click="ResetClicked" ToolTip="{DynamicResource '重置镜头校正'}" AutomationProperties.Name="{DynamicResource '重置镜头校正'}" Padding="6,3"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   </WrapPanel>

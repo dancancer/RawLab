@@ -101,7 +101,7 @@ final class RulesAndTransferTests: XCTestCase {
 
         var srcAdj = Adjustments()
         srcAdj.exposure = 0.75
-        srcAdj.highlights = 25
+        srcAdj.highlights = -0.25
         srcAdj.dehaze = -12
         let srcState = MacPhotoEditState(settings: srcAdj, filmID: "")
         let payload = try session.copy(scope: .modified, snapshot: srcState,
@@ -122,7 +122,7 @@ final class RulesAndTransferTests: XCTestCase {
         XCTAssertNil(try store.readState(for: dstURL).state)
         XCTAssertTrue(session.canRedoPhoto(dstURL))
         _ = session.redoPhoto(dstURL)
-        XCTAssertEqual(try store.readState(for: dstURL).state?.settings.highlights, 25)
+        XCTAssertEqual(try store.readState(for: dstURL).state?.settings.highlights, -0.25)
     }
 
     func testIOSSessionSequentialABAConflictsOutOfOrderUndo() throws {

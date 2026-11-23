@@ -233,6 +233,8 @@ public sealed class BatchJournal
     private static bool HasFutureSettings(JsonElement settings)
     {
         if (settings.ValueKind != JsonValueKind.Object) return false;
+        if (IsFutureInteger(settings, "SettingsVersion", AdjustmentSnapshot.CurrentSettingsVersion) ||
+            IsFutureInteger(settings, "settingsVersion", AdjustmentSnapshot.CurrentSettingsVersion)) return true;
         if (TryGetObject(settings, "Processing", out var processing) &&
             IsFutureInteger(processing, "version", ProcessingIdentity.Current.Version)) return true;
         if (IsFutureInteger(settings, "MasterRecipeSettingsVersion", 4)) return true;

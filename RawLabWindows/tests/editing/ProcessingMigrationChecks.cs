@@ -36,10 +36,10 @@ internal static class ProcessingMigrationChecks
     {
         var settings = new Adjustments { Processing = ProcessingIdentity.C5 };
         settings.Set(Parameter.Exposure, .7);
-        settings.Set(Parameter.Contrast, 18);
-        settings.Set(Parameter.Highlights, -22);
-        settings.Set(Parameter.Shadows, 31);
-        settings.Set(Parameter.Saturation, 13);
+        settings.Set(Parameter.Contrast, 1.18);
+        settings.Set(Parameter.Highlights, .22);
+        settings.Set(Parameter.Shadows, .31);
+        settings.Set(Parameter.Saturation, 1.13);
         settings.SetTone(ToneControlParameter.BlackPoint, -12);
         settings.SetTone(ToneControlParameter.WhitePoint, 17);
         settings.SetTone(ToneControlParameter.Vibrance, 9);
@@ -70,10 +70,10 @@ internal static class ProcessingMigrationChecks
         Check(candidate!.Settings.Processing == ProcessingIdentity.Current,
             "candidate upgrades only the processing identity");
         var settings = candidate.Settings.Restore();
-        Check(Math.Abs(settings[Parameter.Exposure] - 1.25) < 1e-4 && Math.Abs(settings[Parameter.Contrast] - 18) < 1e-4 &&
-              Math.Abs(settings[Parameter.Highlights] - 23) < 1e-4 && Math.Abs(settings[Parameter.Shadows] - 31) < 1e-4 &&
-              Math.Abs(settings[Parameter.Saturation] - 13) < 1e-4,
-            "canonical core exposure, contrast, saturation and reversed highlights map to UI values");
+        Check(Math.Abs(settings[Parameter.Exposure] - 1.25) < 1e-4 && Math.Abs(settings[Parameter.Contrast] - 1.18) < 1e-4 &&
+              Math.Abs(settings[Parameter.Highlights] - (-0.23)) < 1e-4 && Math.Abs(settings[Parameter.Shadows] - 0.31) < 1e-4 &&
+              Math.Abs(settings[Parameter.Saturation] - 1.13) < 1e-4,
+            "canonical core exposure, contrast, saturation and highlights map directly");
         Check(Math.Abs(settings.EditingToneValue(ToneControlParameter.BlackPoint) + 12) < 1e-6 &&
               Math.Abs(settings.EditingToneValue(ToneControlParameter.WhitePoint) - 17) < 1e-6 &&
               Math.Abs(settings.EditingToneValue(ToneControlParameter.Vibrance) - 9) < 1e-6 &&

@@ -36,14 +36,14 @@ import Foundation
         for legacyMode in 0...2 {
             var old = Adjustments()
             old.rawNoiseReduction = legacyMode == 0 ? 2 : 0
-            old.chromaNoiseReduction = legacyMode == 0 ? nil : Double(legacyMode)
+            old.chromaNoiseReduction = legacyMode
             var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String:Any]
             object.removeValue(forKey: "waveletNoiseReduction")
             settings = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: object))
-            check(settings.waveletNoiseReduction == nil && settings.denoiseMode == old.denoiseMode,
+            check(settings.waveletNoiseReduction == WaveletDenoiseSettings() && settings.denoiseMode == old.denoiseMode,
                   "Missing candidate state retains legacy algorithm \(legacyMode)")
             settings.applyDenoisePreset(.clean)
-            check(settings.rawNoiseReduction == 0 && settings.chromaNoiseReduction == nil &&
+            check(settings.rawNoiseReduction == 0 && settings.chromaNoiseReduction == 0 &&
                   settings.waveletSettings.luma == 10 && settings.waveletSettings.chroma == 72,
                   "Explicit preset replaces legacy without stacking")
         }

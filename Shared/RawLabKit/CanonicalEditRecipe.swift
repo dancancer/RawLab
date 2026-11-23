@@ -590,9 +590,10 @@ public extension Adjustments {
         case .preview: exposureString = "preview"
         case .sensor: exposureString = "sensor"
         }
-        let wavelet = includeDenoise ? waveletNoiseReduction : nil
-        let chromaMode = includeDenoise && wavelet == nil ? Int(chromaNoiseReduction ?? 0) : 0
-        let legacyLevel = includeDenoise && wavelet == nil && chromaMode == 0 ? Int(rawNoiseReduction) : 0
+        let hasWavelet = waveletNoiseReduction != WaveletDenoiseSettings()
+        let wavelet: WaveletDenoiseSettings? = (includeDenoise && hasWavelet) ? waveletNoiseReduction : nil
+        let chromaMode = (includeDenoise && !hasWavelet) ? chromaNoiseReduction : 0
+        let legacyLevel = (includeDenoise && !hasWavelet && chromaMode == 0) ? Int(rawNoiseReduction) : 0
         return CanonicalEditRecipe.State(
             processing: processing,
             x3fMode: x3fMode,

@@ -572,12 +572,12 @@ struct AdjustmentTransferSessionTests {
         let directory = root.appendingPathComponent("migration-reset")
         let store = try MacEditPersistence(directory: directory)
         let session = AdjustmentTransferSession(store: store)
-        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = -18
+        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = 0.18
         let original = MacPhotoEditState(settings: oldSettings, filmID: "saved-look")
         try store.save(a, state: original)
         let initial = try store.readState(for: a)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
-        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = -12
+        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = 0.12
         let migrated = MacPhotoEditState(settings: migratedSettings, filmID: "saved-look")
         let accepted = try store.commitProcessingMigration(expected: initial, candidate: migrated, quality: quality)
         session.adoptProcessingMigration(accepted)

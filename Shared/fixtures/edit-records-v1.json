@@ -153,7 +153,6 @@
         "effects.grain.roughness": 58.25,
         "detail.sharpening": 0.75,
         "detail.denoise.raw_level": 2,
-        "detail.denoise.post_rgb": 0.0,
         "detail.denoise.chroma_mode": 1,
         "detail.denoise.wavelet": {
           "enabled": true,
@@ -393,6 +392,7 @@
       },
       "hdr_values": {
         "light.exposure": 0.25,
+        "detail.denoise.post_rgb": 1.0,
         "hdr.camera_development": {
           "version": 1,
           "white_balance_mode": "as_shot",
@@ -483,7 +483,7 @@
     },
     {
       "id": "sdr-raw-camera-wb",
-      "description": "SDR RAW photo using camera white balance, detail wavelet denoise preset (0/46/50), and non-zero fractional SDR post_rgb denoise.",
+      "description": "SDR RAW photo using camera white balance and detail wavelet denoise preset (0/46/50).",
       "photo": {
         "name": "sample-raw-camera-wb.DNG",
         "is_raw": true
@@ -544,7 +544,6 @@
         "effects.dehaze": 0.0,
         "detail.sharpening": 0.25,
         "detail.denoise.raw_level": 1,
-        "detail.denoise.post_rgb": 0.375,
         "detail.denoise.chroma_mode": 0,
         "detail.denoise.wavelet": {
           "enabled": true,
@@ -655,7 +654,6 @@
         "effects.grain.roughness": 0.0,
         "detail.sharpening": 0.0,
         "detail.denoise.raw_level": 0,
-        "detail.denoise.post_rgb": 0.0,
         "detail.denoise.chroma_mode": 0,
         "detail.denoise.wavelet": {
           "enabled": false,
@@ -788,7 +786,6 @@
         "effects.grain.roughness": 100.0,
         "detail.sharpening": 2.0,
         "detail.denoise.raw_level": 2,
-        "detail.denoise.post_rgb": 1.0,
         "detail.denoise.chroma_mode": 2,
         "detail.denoise.wavelet": {
           "enabled": true,
@@ -846,7 +843,6 @@
       },
       "sdr_values": {
         "detail.denoise.raw_level": 1,
-        "detail.denoise.post_rgb": 0.5,
         "detail.denoise.chroma_mode": 1,
         "detail.denoise.wavelet": {
           "enabled": true,
@@ -886,7 +882,6 @@
       },
       "sdr_values": {
         "detail.denoise.raw_level": 1,
-        "detail.denoise.post_rgb": 0.5,
         "detail.denoise.chroma_mode": 1,
         "detail.denoise.wavelet": {
           "enabled": true,
@@ -1178,11 +1173,11 @@
             "temperature": 5800.0,
             "tint": 4.5,
             "strength": 0.9,
-            "contrast": 12.5,
-            "highlights": -18.0,
-            "shadows": 22.0,
-            "saturation": 8.5,
-            "sharpening": 25.0,
+            "contrast": 1.125,
+            "highlights": 0.18,
+            "shadows": 0.22,
+            "saturation": 1.085,
+            "sharpening": 0.25,
             "processing_version": 1,
             "x3f_mode": "legacy"
           }
@@ -1211,11 +1206,11 @@
             "film_id": "neutral",
             "strength": 0.9,
             "exposure": 0.35,
-            "highlights": -0.18,
+            "highlights": 0.18,
             "shadows": 0.22,
-            "contrast": 0.125,
+            "contrast": 1.125,
             "tone_curve": 0.0,
-            "saturation": 0.085,
+            "saturation": 1.085,
             "custom_wb": true,
             "temperature": 5800.0,
             "tint": 4.5,

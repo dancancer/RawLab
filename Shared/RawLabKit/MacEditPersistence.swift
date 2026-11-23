@@ -108,6 +108,12 @@ public final class MacEditPersistence: @unchecked Sendable {
         _ = try core.readEnvelope()
     }
 
+    private static func makeLegacyV1Encoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.userInfo[Adjustments.legacyV1EncodingKey] = true
+        return encoder
+    }
+
     private static func validateState(_ state: MacPhotoEditState) throws {
         try state.settings.validateResetValues()
         if state.settings.isHDREditing {
@@ -337,12 +343,12 @@ public final class MacEditPersistence: @unchecked Sendable {
                 if let candidate {
                     try Self.validateState(candidate)
                     guard candidate.settings.processing == .current, quality.passes else { throw AdjustmentCommitError.expired }
-                    updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: candidate))
+                    updated.records[expected.identity.path] = try Self.makeLegacyV1Encoder().encode(Record(identity: expected.identity, state: candidate))
                 }
                 let receipt = ProcessingMigrationReceipt(status: candidate == nil ? .kept : .migrated,
                     original: original, quality: quality)
                 var migrations = updated.processingMigrations ?? [:]
-                migrations[expected.identity.path] = try JSONEncoder().encode(StoredMigration(identity: expected.identity, receipt: receipt))
+                migrations[expected.identity.path] = try Self.makeLegacyV1Encoder().encode(StoredMigration(identity: expected.identity, receipt: receipt))
                 updated.processingMigrations = migrations
                 try core.writeEnvelope(&updated)
                 return try snapshot(identity: expected.identity, registry: updated)
@@ -365,9 +371,9 @@ public final class MacEditPersistence: @unchecked Sendable {
                     throw AdjustmentCommitError.expired
                 }
                 try Self.validateState(stored.receipt.original)
-                updated.records[expected.identity.path] = try JSONEncoder().encode(Record(identity: expected.identity, state: stored.receipt.original))
+                updated.records[expected.identity.path] = try Self.makeLegacyV1Encoder().encode(Record(identity: expected.identity, state: stored.receipt.original))
                 stored.receipt.status = .rolledBack
-                updated.processingMigrations?[expected.identity.path] = try JSONEncoder().encode(stored)
+                updated.processingMigrations?[expected.identity.path] = try Self.makeLegacyV1Encoder().encode(stored)
                 try core.writeEnvelope(&updated)
                 return try snapshot(identity: expected.identity, registry: updated)
             }
@@ -399,7 +405,7 @@ public final class MacEditPersistence: @unchecked Sendable {
                 for url in urls {
                     let identity = try OriginalFileIdentity(url)
                     if try snapshot(identity: identity, registry: updated).state == state { continue }
-                    updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state))
+                    updated.records[identity.path] = try Self.makeLegacyV1Encoder().encode(Record(identity: identity, state: state))
                     changedPaths[identity.path] = MacPhotoEditRecord(identity: identity, state: state)
                 }
                 if !changedPaths.isEmpty { try core.writeEnvelope(&updated) }
@@ -420,7 +426,7 @@ public final class MacEditPersistence: @unchecked Sendable {
             stateChanged = current.state != state
             let clearsMigration = clearsProcessingMigration && updated.processingMigrations?[identity.path] != nil
             guard stateChanged || clearsMigration else { return current }
-            if let state { updated.records[identity.path] = try JSONEncoder().encode(Record(identity: identity, state: state)) }
+            if let state { updated.records[identity.path] = try Self.makeLegacyV1Encoder().encode(Record(identity: identity, state: state)) }
             else { updated.records.removeValue(forKey: identity.path) }
             if clearsMigration {
                 updated.processingMigrations?.removeValue(forKey: identity.path)

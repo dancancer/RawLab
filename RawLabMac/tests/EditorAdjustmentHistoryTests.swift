@@ -59,7 +59,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         try check(model.settings.exposure == 0.6 && model.settings.gradingSettings.shadows == ColorGradingWheel(hue: 231.25, saturation: 0)
             && model.adjustmentSession!.transactions.count == 1,
             "cancelled gesture restores its entry snapshot without history")
-        model.settings.contrast = 15; try check(model.saveEdits(), "ordinary change saves")
+        model.settings.contrast = 1.15; try check(model.saveEdits(), "ordinary change saves")
         try check(model.applyCurrentSettings(to: [first, first]) == 0,
             "sync excludes its source and does not report an empty target set as success")
         let clipboard = try model.copyAdjustments(scope: .custom([.exposure]))
@@ -71,18 +71,18 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         model.applyAdjustmentPaste(operation)
         try rendered(model)
         try check(model.settings.exposure == 0.6 && !model.dirty, "pasting the active photo updates the committed model")
-        model.setInteracting(true); model.settings.saturation = 17
+        model.setInteracting(true); model.settings.saturation = 1.17
         model.applyAdjustmentPaste(operation)
-        try check(model.settings.saturation == 17 && model.dirty,
+        try check(model.settings.saturation == 1.17 && model.dirty,
             "retry receipts never replace later unsaved edits on an already successful photo")
         model.cancelAdjustmentInteraction(); try rendered(model)
-        model.settings.saturation = 20; try check(model.saveEdits(), "editing after paste saves the new photo state")
+        model.settings.saturation = 1.20; try check(model.saveEdits(), "editing after paste saves the new photo state")
         model.undoAdjustment(); try rendered(model)
-        try check(model.settings.saturation == 0 && model.settings.exposure == 0.6, "ordinary undo leaves earlier paste intact")
+        try check(model.settings.saturation == 1 && model.settings.exposure == 0.6, "ordinary undo leaves earlier paste intact")
         model.undoAdjustment(); try rendered(model)
         try check(model.settings.exposure == 0, "next undo reaches paste history")
         model.open(first); try rendered(model)
-        try check(model.settings.exposure == 1.1 && model.settings.contrast == 15, "photo histories do not cross identities")
+        try check(model.settings.exposure == 1.1 && model.settings.contrast == 1.15, "photo histories do not cross identities")
         let geometryCount = model.adjustmentSession!.transactions.count
         try check(model.beginGeometryDraft(), "geometry draft opens after committed edits")
         try rendered(model)
@@ -500,11 +500,11 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
             "Discard then preset capture uses committed values without adding a geometry history item")
         model.adjustmentSheet = nil
         model.open(second); try rendered(model)
-        model.settings.exposure = -0.2; model.settings.saturation = 14
+        model.settings.exposure = -0.2; model.settings.saturation = 1.14
         try check(model.saveEdits(), "preset target has independent committed adjustments")
         let operation = try model.prepareAdjustmentPaste(payload: preset.payload, targets: [second], action: .preset)
         model.applyAdjustmentPaste(operation); try rendered(model)
-        try check(model.settings.exposure == 0.7 && model.settings.saturation == 14 && !model.dirty,
+        try check(model.settings.exposure == 0.7 && model.settings.saturation == 1.14 && !model.dirty,
             "native preset apply adopts its conditional receipt and preserves unselected settings")
         try check(model.adjustmentSession!.transactions.last?.action == .preset, "native preset history records its actual action")
         model.undoAdjustment(); try rendered(model)

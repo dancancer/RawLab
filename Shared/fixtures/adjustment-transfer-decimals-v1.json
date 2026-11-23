@@ -384,7 +384,8 @@
             "ignored_post_rgb_denoise"
           ],
           "ios": [
-            "ignored_raw_denoise"
+            "ignored_raw_denoise",
+            "ignored_post_rgb_denoise"
           ],
           "android": [
             "ignored_raw_denoise",

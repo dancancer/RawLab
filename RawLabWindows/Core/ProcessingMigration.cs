@@ -57,11 +57,10 @@ internal static class ProcessingMigration
             return false;
 
         settings.Set(Parameter.Exposure, result.ExposureEv);
-        settings.Set(Parameter.Contrast, (result.Contrast - 1) * 100);
-        // The native migration result uses the core's reversed highlight sign.
-        settings.Set(Parameter.Highlights, -result.Highlights * 100);
-        settings.Set(Parameter.Shadows, result.Shadows * 100);
-        settings.Set(Parameter.Saturation, (result.Saturation - 1) * 100);
+        settings.Set(Parameter.Contrast, result.Contrast);
+        settings.Set(Parameter.Highlights, result.Highlights);
+        settings.Set(Parameter.Shadows, result.Shadows);
+        settings.Set(Parameter.Saturation, result.Saturation);
         settings.SetTone(ToneControlParameter.BlackPoint, result.BlackPoint * 100);
         settings.SetTone(ToneControlParameter.WhitePoint, result.WhitePoint * 100);
         settings.SetTone(ToneControlParameter.Vibrance, result.Vibrance * 100);

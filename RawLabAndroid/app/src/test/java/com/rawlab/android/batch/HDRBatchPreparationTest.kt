@@ -18,7 +18,7 @@ class HDRBatchPreparationTest {
         val directory=File(root,"jobs")
         val store=EditStore(File(root,"edits"))
         val look=File(root,"look.cube").apply { writeText("original look") }
-        val sourceSettings=sourceDefaultSettings(true).copy(exposure=.5f,contrast=.25f,
+        val sourceSettings=sourceDefaultSettings(true).copy(exposure=.5f,contrast=1.25f,
             geometry=GeometrySettings(quarterTurns=1)).synchronizeHDR()
         val source=BatchSourceSnapshot(PhotoIdentity("source"),File(root,"source.jpg").apply { writeText("source") },sourceSettings,inputKind=PhotoInputKind.RASTER)
         val targets=listOf("hdr.jpg","sdr.jpg","raw.dng","hdr-old.jpg").map { name ->
@@ -43,7 +43,7 @@ class HDRBatchPreparationTest {
         assertEquals(listOf(true,false,false,false),frozen.rows.map { it.target.frozen!!.settings.isHDREditing })
         frozen.rows.forEachIndexed { index,row ->
             val settings=frozen.settingsFor(row.target)
-            assertEquals(.5f,settings.exposure);assertEquals(.25f,settings.contrast)
+            assertEquals(.5f,settings.exposure);assertEquals(1.25f,settings.contrast)
             assertEquals(1,settings.geometry.quarterTurns);assertEquals(index,row.target.frozen!!.ordinal)
             row.target.frozen!!.verifyFiles(row.target.sourceFile)
         }

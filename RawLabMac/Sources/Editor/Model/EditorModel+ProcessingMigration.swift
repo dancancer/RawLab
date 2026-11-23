@@ -70,10 +70,10 @@ extension EditorModel {
                         let p = fitted.parameters
                         adjusted.processing = .current
                         adjusted.exposure = p.exposure
-                        adjusted.contrast = (p.contrast - 1) * 100
-                        adjusted.highlights = -p.highlights * 100
-                        adjusted.shadows = p.shadows * 100
-                        adjusted.saturation = (p.saturation - 1) * 100
+                        adjusted.contrast = p.contrast
+                        adjusted.highlights = p.highlights
+                        adjusted.shadows = p.shadows
+                        adjusted.saturation = p.saturation
                         adjusted.blackPoint = p.blackPoint * 100
                         adjusted.whitePoint = p.whitePoint * 100
                         adjusted.vibrance = p.vibrance * 100

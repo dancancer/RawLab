@@ -22,12 +22,12 @@ internal static class WhiteBalanceChecks
             engine.CancellationCallback=countCalls;
             Native.Check(Native.sony2fuji_session_set_cancellation_callback(session,countCalls,IntPtr.Zero), session);
             var recipe=new Adjustments();recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
-            recipe.Set(Parameter.Strength,100);recipe.Set(Parameter.Tint,10);
+            recipe.Set(Parameter.Strength,1);recipe.Set(Parameter.Tint,10);
             var firstPrepared=engine.PrepareRecipe(source,recipe);
             var first=firstPrepared.Settings;
             check(polls>0 && first.AsShot!=null,"First recipe reads the target RAW camera white balance with the native probe");
             polls=0;
-            recipe.Set(Parameter.Exposure,.5);recipe.Set(Parameter.Tint,-15);recipe.Set(Parameter.Strength,50);
+            recipe.Set(Parameter.Exposure,.5);recipe.Set(Parameter.Tint,-15);recipe.Set(Parameter.Strength,.5);
             var editedPrepared=engine.PrepareRecipe(source,recipe);
             var edited=editedPrepared.Settings;
             check(polls==0 && edited.AsShot==first.AsShot &&
@@ -43,7 +43,7 @@ internal static class WhiteBalanceChecks
             var x3fRecipe=new Adjustments{X3fMode=X3fMode.Normal};
             x3fRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
             x3fRecipe.Set(Parameter.Tint,20);
-            x3fRecipe.Set(Parameter.Strength,50);
+            x3fRecipe.Set(Parameter.Strength,.5);
             polls=0;
             var x3fPrepared=engine.PrepareRecipe(x3fSource,x3fRecipe);
             var x3fRequest=x3fPrepared.Request(x3fSource,null,640,null);
@@ -60,7 +60,7 @@ internal static class WhiteBalanceChecks
                 updated.WhiteBalance==expected.WhiteBalance && updated.Histogram.SequenceEqual(expected.Histogram),
                 "Real recipe previews use the same camera calibration and output as a fresh render across edits and sizes");
             var cold=new Adjustments();cold.ApplyMasterRecipe(MasterRecipe.All[0]);
-            cold.Set(Parameter.Tint,7);cold.Set(Parameter.Strength,75);
+            cold.Set(Parameter.Tint,7);cold.Set(Parameter.Strength,.75);
             var coldFrame=engine.RenderPreview(source,cold,lut,384,false,false,false);
             var resolvedCold=cold.Clone();
             resolvedCold.ResolveWhiteBalance(coldFrame.Result.WhiteBalance!.Value);
@@ -83,11 +83,11 @@ internal static class WhiteBalanceChecks
     internal static void Run(Action<bool,string> check)
     {
         foreach(var sample in new[] {
-            (Temperature:5000.5f,Tint:12.5f,Offset:5.0,Strength:100.0,CameraTemperature:5001.0,CameraTint:13.0,RequestTint:18.0f),
-            (Temperature:5000.5f,Tint:-12.5f,Offset:-5.0,Strength:150.0,CameraTemperature:5001.0,CameraTint:-13.0,RequestTint:-20.5f),
-            (Temperature:5000.5f,Tint:12.5f,Offset:5.0,Strength:50.0,CameraTemperature:5001.0,CameraTint:13.0,RequestTint:15.5f),
-            (Temperature:5000.25f,Tint:12.25f,Offset:5.0,Strength:50.0,CameraTemperature:5000.0,CameraTint:12.0,RequestTint:14.5f),
-            (Temperature:5000.75f,Tint:-12.75f,Offset:5.0,Strength:50.0,CameraTemperature:5001.0,CameraTint:-13.0,RequestTint:-10.5f)
+            (Temperature:5000.5f,Tint:12.5f,Offset:5.0,Strength:1.0,CameraTemperature:5001.0,CameraTint:13.0,RequestTint:18.0f),
+            (Temperature:5000.5f,Tint:-12.5f,Offset:-5.0,Strength:1.5,CameraTemperature:5001.0,CameraTint:-13.0,RequestTint:-20.5f),
+            (Temperature:5000.5f,Tint:12.5f,Offset:5.0,Strength:.5,CameraTemperature:5001.0,CameraTint:13.0,RequestTint:15.5f),
+            (Temperature:5000.25f,Tint:12.25f,Offset:5.0,Strength:.5,CameraTemperature:5000.0,CameraTint:12.0,RequestTint:14.5f),
+            (Temperature:5000.75f,Tint:-12.75f,Offset:5.0,Strength:.5,CameraTemperature:5001.0,CameraTint:-13.0,RequestTint:-10.5f)
         })
         {
             var camera=RoundWb(sample.Temperature,sample.Tint);
@@ -111,14 +111,14 @@ internal static class WhiteBalanceChecks
                 "Frozen export request keeps the same WB and fractional recipe result");
             settings.Set(Parameter.Strength,0);
             check(settings.Request("target.ARW",null,32,null).WbMode==0,"Zero recipe strength retains original camera gains");
-            settings.Set(Parameter.Strength,100);settings.Set(Parameter.Tint,0);
+            settings.Set(Parameter.Strength,1);settings.Set(Parameter.Tint,0);
             check(settings.Request("target.ARW",null,32,null).WbMode==0,"Zero recipe offset retains original camera gains");
         }
         var mismatched=new Adjustments();
         mismatched.ApplyMasterRecipe(MasterRecipe.All[0]);
         mismatched.ResolveWhiteBalance((3200.0,-40.0));
         mismatched.Set(Parameter.Tint,20.0);
-        mismatched.Set(Parameter.Strength,50.0);
+        mismatched.Set(Parameter.Strength,.5);
         var direct=new PreparedRecipeSettings(mismatched,new ResolvedNativeWhiteBalance(3,5600f,17.5f))
             .Request("target.ARW",null,32,null);
         check(direct is {WbMode:3,Temperature:5600f,Tint:17.5f},

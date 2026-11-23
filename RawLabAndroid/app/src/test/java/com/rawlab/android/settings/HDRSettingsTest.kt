@@ -129,10 +129,10 @@ class HDRSettingsTest {
     }
     @Test fun proRawDecoderIdentitySurvivesStructuredSettingsRoundTrip() {
         val encoded = StructuredSettingsCodec.encode(EditSettings().withHDRMode(true, false, cameraRaw = true), "photo_edit")
-        val document = org.json.JSONObject(encoded.removePrefix("v2:"))
+        val document = org.json.JSONObject(encoded.removePrefix("v3:"))
         document.getJSONObject("settings").put("proRAWDecodeVersion", 2)
-        val decoded = StructuredSettingsCodec.decode("v2:$document", "photo_edit")
-        val saved = org.json.JSONObject(StructuredSettingsCodec.encode(decoded, "photo_edit").removePrefix("v2:"))
+        val decoded = StructuredSettingsCodec.decode("v3:$document", "photo_edit")
+        val saved = org.json.JSONObject(StructuredSettingsCodec.encode(decoded, "photo_edit").removePrefix("v3:"))
         assertEquals(2, saved.getJSONObject("settings").getInt("proRAWDecodeVersion"))
     }
     @Test fun tombstoneWithoutSettingsStillUsesTheHdrSourceDefault() {
@@ -174,7 +174,7 @@ class HDRSettingsTest {
     @Test fun cameraRawHdrModeAndBothSnapshotsRoundTripThroughTheEditRecord() {
         val camera = EditSettings(film = "velvia", exposure = 1f, temperature = 7200f)
             .withHDRMode(true, sourceIsHDR = false, cameraRaw = true)
-            .copy(exposure = 1.5f, highlights = -.4f).synchronizeHDR()
+            .copy(exposure = 1.5f, highlights = .4f).synchronizeHDR()
 
         val restored = StructuredSettingsCodec.decode(StructuredSettingsCodec.encode(camera, "photo_edit"), "photo_edit")
 
@@ -186,7 +186,7 @@ class HDRSettingsTest {
 
     @Test
     fun enablingAnHdrSourceKeepsIndependentSdrSnapshot() {
-        val sdr = EditSettings(exposure = -1.25f, contrast = .2f, geometry = GeometrySettings(quarterTurns = 1))
+        val sdr = EditSettings(exposure = -1.25f, contrast = 1.2f, geometry = GeometrySettings(quarterTurns = 1))
 
         val hdr = sdr.withHDRMode(enabled = true, sourceIsHDR = true)
 
@@ -199,15 +199,15 @@ class HDRSettingsTest {
     @Test
     fun gainMapHdrStartsFromBoundedEffectiveRecipeValues() {
         val sdr = EditSettings(recipeID = "test-recipe", strength = .5f, exposure = 1f,
-            contrast = .4f, highlights = -.6f, shadows = .8f, saturation = -.2f)
+            contrast = 1.4f, highlights = .6f, shadows = .8f, saturation = .8f)
         val hdr = HDRSettings.from(sdr)
         assertEquals(.5f, hdr.exposure)
-        assertEquals(20f, hdr.contrast)
+        assertEquals(20f, hdr.contrast, .00001f)
         assertEquals(-30f, hdr.highlights, .00001f)
         assertEquals(40f, hdr.shadows)
-        assertEquals(-10f, hdr.saturation)
+        assertEquals(-10f, hdr.saturation, .00001f)
         val bounded = HDRSettings.from(sdr.copy(strength = 2f, exposure = 4f,
-            contrast = 1f, highlights = -1f, shadows = 1f, saturation = -1f))
+            contrast = 2f, highlights = 1f, shadows = 1f, saturation = 0f))
         assertEquals(4f, bounded.exposure)
         assertEquals(100f, bounded.contrast)
         assertEquals(-100f, bounded.highlights)
@@ -261,7 +261,7 @@ class HDRSettingsTest {
 
     @Test
     fun structuredRecordUsesSharedSnakeCaseHdrContract() {
-        val active = EditSettings(contrast = .25f).withHDRMode(true, true)
+        val active = EditSettings(contrast = 1.25f).withHDRMode(true, true)
 
         val encoded = StructuredSettingsCodec.encode(active, "photo_edit")
         val decoded = StructuredSettingsCodec.decode(encoded, "photo_edit")

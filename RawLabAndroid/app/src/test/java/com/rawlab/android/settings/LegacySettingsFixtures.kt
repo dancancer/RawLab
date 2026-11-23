@@ -2,8 +2,8 @@ package com.rawlab.android.settings
 
 // 冻结旧记录的写法，仅供 reader 兼容回归，不能通过新 writer 生成旧 fixture。
 fun legacyPipeSettings(settings: EditSettings): String = listOf(
-        settings.film, settings.strength, settings.exposure, settings.highlights, settings.shadows,
-        settings.contrast, settings.toneCurve, settings.saturation, settings.customWb,
+        settings.film, settings.strength, settings.exposure, (-settings.highlights).canonicalZero(), settings.shadows,
+        (settings.contrast - 1f).canonicalZero(), settings.toneCurve, (settings.saturation - 1f).canonicalZero(), settings.customWb,
         settings.temperature, settings.tint, settings.sharpening,
         settings.denoise.enabled, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
         settings.displayChromaDenoise,
@@ -16,8 +16,8 @@ fun legacyPipeSettings(settings: EditSettings): String = listOf(
         .joinToString("|")
 
 fun legacyCSVSettings(settings: EditSettings): String = listOf(
-        settings.strength, settings.exposure, settings.highlights, settings.shadows,
-        settings.contrast, settings.toneCurve, settings.saturation,
+        settings.strength, settings.exposure, (-settings.highlights).canonicalZero(), settings.shadows,
+        (settings.contrast - 1f).canonicalZero(), settings.toneCurve, (settings.saturation - 1f).canonicalZero(),
         if (settings.customWb) 1f else 0f, settings.temperature, settings.tint, settings.sharpening,
         if (settings.denoise.enabled) 1f else 0f, settings.denoise.luma, settings.denoise.chroma, settings.denoise.coarse,
         settings.displayChromaDenoise,

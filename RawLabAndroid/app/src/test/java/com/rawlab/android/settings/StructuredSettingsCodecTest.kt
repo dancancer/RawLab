@@ -8,10 +8,10 @@ import java.util.Properties
 
 class StructuredSettingsCodecTest {
     @Test fun atmosphereExtensionSurvivesStructuredSettings() {
-        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v2:"))
+        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v3:"))
         json.getJSONObject("settings").put("atmosphere", org.json.JSONObject().put("clarity", -37.25).put("dehaze", 42.5))
-        val restored = SettingsCodec.decode("v2:$json")
-        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v2:"))
+        val restored = SettingsCodec.decode("v3:$json")
+        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v3:"))
         val atmosphere = result.getJSONObject("settings").getJSONObject("atmosphere")
         assertEquals(-37.25, atmosphere.getDouble("clarity"), 0.0)
         assertEquals(42.5, atmosphere.getDouble("dehaze"), 0.0)
@@ -20,13 +20,13 @@ class StructuredSettingsCodecTest {
     @Test fun atmosphereIsOptionalStrictAndPreservedByPhotoStore() {
         val settings = EditSettings(clarity = -37.251234f, dehaze = 42.5f)
         assertEquals(settings, SettingsCodec.decode(SettingsCodec.encode(settings)))
-        val old = org.json.JSONObject(SettingsCodec.encode(settings).removePrefix("v2:"))
+        val old = org.json.JSONObject(SettingsCodec.encode(settings).removePrefix("v3:"))
         old.getJSONObject("settings").remove("atmosphere")
-        assertEquals(EditSettings(), SettingsCodec.decode("v2:$old"))
+        assertEquals(EditSettings(), SettingsCodec.decode("v3:$old"))
         for (value in listOf("null", "{}", "{\"clarity\":1}", "{\"clarity\":0,\"dehaze\":101}",
             "{\"clarity\":0,\"dehaze\":0,\"extra\":1}", "{\"clarity\":\"1\",\"dehaze\":0}")) {
             val invalid = old.toString().replace("\"settings\":{", "\"settings\":{\"atmosphere\":$value,")
-            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$invalid") }
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v3:$invalid") }
         }
         for (bad in listOf(-100.1f, 100.1f, Float.NaN, Float.POSITIVE_INFINITY)) {
             assertThrows(IllegalArgumentException::class.java) { settings.copy(clarity = bad) }
@@ -41,22 +41,22 @@ class StructuredSettingsCodecTest {
     }
 
     @Test fun gradingPendingHueSurvivesStructuredSettings() {
-        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v2:"))
+        val json = org.json.JSONObject(SettingsCodec.encode(EditSettings()).removePrefix("v3:"))
         val grading = org.json.JSONObject("""{"shadows":{"hue":231.25,"saturation":0},"midtones":{"hue":0,"saturation":0},"highlights":{"hue":0,"saturation":0}}""")
         json.getJSONObject("settings").put("colorGrading", grading)
-        val restored = SettingsCodec.decode("v2:$json")
-        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v2:"))
+        val restored = SettingsCodec.decode("v3:$json")
+        val result = org.json.JSONObject(SettingsCodec.encode(restored).removePrefix("v3:"))
         assertEquals(231.25, result.getJSONObject("settings").getJSONObject("colorGrading").getJSONObject("shadows").getDouble("hue"), 0.0)
     }
-    @Test fun batchSettingsWritesExplicitV2AndRoundTripsDelimitedNames() {
+    @Test fun batchSettingsWritesExplicitV3AndRoundTripsDelimitedNames() {
         val settings = EditSettings(film = "look|,\n特殊", recipeID = "recipe|name")
         val encoded = SettingsCodec.encode(settings)
-        assertTrue("Batch settings use a versioned structured record", encoded.startsWith("v2:"))
+        assertTrue("Batch settings use a versioned structured record", encoded.startsWith("v3:"))
         assertEquals(settings, SettingsCodec.decode(encoded))
-        assertThrows(Exception::class.java) { SettingsCodec.decode(encoded.replaceFirst("v2:", "v3:")) }
+        assertThrows(Exception::class.java) { SettingsCodec.decode(encoded.replaceFirst("v3:", "v4:")) }
     }
-    @Test fun photoEditWritesV2UnderTheExistingRecordKey() {
-        val directory = Files.createTempDirectory("rawlab-v2-record").toFile()
+    @Test fun photoEditWritesV3UnderTheExistingRecordKey() {
+        val directory = Files.createTempDirectory("rawlab-v3-record").toFile()
         try {
             val settings = EditSettings(exposure = .75f)
             val identity = PhotoIdentity("image")
@@ -64,7 +64,7 @@ class StructuredSettingsCodecTest {
             val file = File(directory, "edits.properties")
             val properties = Properties().also { file.inputStream().use(it::load) }
             val key = properties.stringPropertyNames().single { it.endsWith(".values") }
-            assertTrue("Photo values use a versioned structured record", properties.getProperty(key).startsWith("v2:"))
+            assertTrue("Photo values use a versioned structured record", properties.getProperty(key).startsWith("v3:"))
             assertEquals(settings, EditStore(directory).load(identity))
         } finally { directory.deleteRecursively() }
     }
@@ -73,14 +73,14 @@ class StructuredSettingsCodecTest {
             film = "look|,\n特殊", lens = LensSettings(manual = true, profileId = "lens|,\n特殊"))
         val encoded = SettingsCodec.encode(settings)
         assertEquals(settings, SettingsCodec.decode(encoded))
-        val json = org.json.JSONObject(encoded.removePrefix("v2:"))
+        val json = org.json.JSONObject(encoded.removePrefix("v3:"))
         val variants = listOf(
-            encoded.replace("\"version\":2", "\"version\":3"),
-            encoded.replace("\"version\":2", "\"version\":2.0"),
+            encoded.replace("\"version\":3", "\"version\":4"),
+            encoded.replace("\"version\":3", "\"version\":3.0"),
             encoded.replace("\"blackPoint\":-37.25", "\"blackPoint\":-100.1"),
             encoded.replace("\"blackPoint\":-37.25", "\"blackPoint\":\"-37.25\""),
             encoded.replace("\"vibrance\":18.125", "\"vibrance\":18.125,\"vibrance\":0"),
-            "v2:" + org.json.JSONObject(json.toString()).put("future", true),
+            "v3:" + org.json.JSONObject(json.toString()).put("future", true),
             encoded + " trailing")
         for (invalid in variants) {
             assertNotEquals(encoded, invalid)
@@ -124,10 +124,10 @@ class StructuredSettingsCodecTest {
             for (key in properties.stringPropertyNames()) {
                 val id = String(java.util.Base64.getUrlDecoder().decode(key.removePrefix("record.").removeSuffix(".values")))
                 if (id != identity.value) assertEquals(properties.getProperty(key), updated.getProperty(key))
-                else assertTrue(updated.getProperty(key).startsWith("v2:"))
+                else assertTrue(updated.getProperty(key).startsWith("v3:"))
             }
-            val key = updated.stringPropertyNames().single { it.endsWith(".values") && updated.getProperty(it).startsWith("v2:") }
-            val futureValue = updated.getProperty(key).replaceFirst("v2:", "v3:")
+            val key = updated.stringPropertyNames().single { it.endsWith(".values") && updated.getProperty(it).startsWith("v3:") }
+            val futureValue = updated.getProperty(key).replaceFirst("v3:", "v4:")
             updated.setProperty(key, futureValue)
             file.outputStream().use { updated.store(it, null) }
             val protected = file.readBytes()
@@ -220,9 +220,60 @@ class StructuredSettingsCodecTest {
     @Test fun toneBoundsAreCheckedBeforeFloatRounding() {
         val settings = EditSettings()
         for (field in listOf("blackPoint", "whitePoint", "vibrance")) for (invalid in listOf(-100.000001, 100.000001)) {
-            val json = org.json.JSONObject(SettingsCodec.encode(settings).removePrefix("v2:"))
+            val json = org.json.JSONObject(SettingsCodec.encode(settings).removePrefix("v3:"))
             json.getJSONObject("settings").getJSONObject("tone").put(field, invalid)
-            assertThrows(Exception::class.java) { SettingsCodec.decode("v2:$json") }
+            assertThrows(Exception::class.java) { SettingsCodec.decode("v3:$json") }
         }
+    }
+
+    @Test fun legacyV2JsonAndPipeRecordsUpgradeToCanonicalV3AndRejectOutOfRange() {
+        val canonical = EditSettings(highlights = 0.4f, contrast = 0.75f, saturation = 1.3f)
+        for (format in listOf("photo_edit", "batch_settings")) {
+            val v3Root = org.json.JSONObject(StructuredSettingsCodec.encode(canonical, format).removePrefix("v3:"))
+            val v2Root = org.json.JSONObject(v3Root.toString()).put("version", 2)
+            v2Root.getJSONObject("settings")
+                .put("contrast", -0.25)
+                .put("saturation", 0.3)
+                .put("highlights", -0.4)
+            val v2Encoded = "v2:$v2Root"
+            val decoded = StructuredSettingsCodec.decode(v2Encoded, format)
+            assertEquals(canonical, decoded)
+            assertTrue(StructuredSettingsCodec.encode(decoded, format).startsWith("v3:"))
+
+            for (badField in listOf(
+                { s: org.json.JSONObject -> s.put("contrast", -1.1) },
+                { s: org.json.JSONObject -> s.put("contrast", 1.1) },
+                { s: org.json.JSONObject -> s.put("saturation", -1.1) },
+                { s: org.json.JSONObject -> s.put("saturation", 1.1) },
+            )) {
+                val badRoot = org.json.JSONObject(v2Root.toString())
+                badField(badRoot.getJSONObject("settings"))
+                assertThrows(IllegalArgumentException::class.java) {
+                    StructuredSettingsCodec.decode("v2:$badRoot", format)
+                }
+            }
+            val mismatched = org.json.JSONObject(v2Root.toString()).put("version", 3)
+            assertThrows(IllegalArgumentException::class.java) {
+                StructuredSettingsCodec.decode("v2:$mismatched", format)
+            }
+        }
+
+        val pipeDecoded = SettingsCodec.decode(legacyPipeSettings(canonical))
+        assertEquals(canonical.copy(x3fMode = X3fMode.LEGACY), pipeDecoded)
+
+        val v2SnapshotRoot = org.json.JSONObject(StructuredSettingsCodec.encode(canonical, "batch_settings").removePrefix("v3:")).put("version", 2)
+        v2SnapshotRoot.getJSONObject("settings")
+            .put("contrast", -0.25)
+            .put("saturation", 0.3)
+            .put("highlights", -0.4)
+        val v2SdrSnapshot = "v2:$v2SnapshotRoot"
+        val hdrWithV2Snapshot = EditSettings(hdr = HDRSettings(mode = HDRMode.HDR), sdrSnapshot = v2SdrSnapshot)
+        val encodedHdr = StructuredSettingsCodec.encode(hdrWithV2Snapshot, "photo_edit")
+        val decodedHdr = StructuredSettingsCodec.decode(encodedHdr, "photo_edit")
+        assertEquals(v2SdrSnapshot, decodedHdr.sdrSnapshot)
+        val restoredSdr = decodedHdr.withHDRMode(enabled = false, sourceIsHDR = true)
+        assertEquals(canonical.highlights, restoredSdr.highlights, 1e-6f)
+        assertEquals(canonical.contrast, restoredSdr.contrast, 1e-6f)
+        assertEquals(canonical.saturation, restoredSdr.saturation, 1e-6f)
     }
 }

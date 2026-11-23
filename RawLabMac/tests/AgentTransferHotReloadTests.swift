@@ -58,7 +58,7 @@ private func rendered(_ model: EditorModel) throws {
         // 1. Export & Import Transfer JSON (including 1-step Undo and AI denoise field scoping)
         model.prepareAIOperation = { _, _, _ in }
         model.settings.exposure = 0.55
-        model.settings.contrast = 12
+        model.settings.contrast = 1.12
         model.settings.aiDenoiseEnabled = true
         try check(waitUntil(3.0) { !model.aiState.isRunning }, "AI denoise stub settles")
         try check(model.saveEdits(), "initial adjustment save succeeds")
@@ -68,12 +68,12 @@ private func rendered(_ model: EditorModel) throws {
         try check(abs((exportedPayload[.exposure]?.number ?? 0) - 0.55) < 1e-6, "exported transfer JSON preserves exposure even with AI denoise enabled")
 
         model.settings.exposure = -0.25
-        model.settings.contrast = -10
+        model.settings.contrast = 0.9
         model.settings.aiDenoiseEnabled = false
         try check(model.saveEdits(), "reset state before JSON import saves")
 
         try model.importAdjustmentTransfer(data: exportedData)
-        try check(abs(model.settings.exposure - 0.55) < 1e-6 && abs(model.settings.contrast - 12) < 1e-6,
+        try check(abs(model.settings.exposure - 0.55) < 1e-6 && abs(model.settings.contrast - 1.12) < 1e-6,
                   "importing transfer JSON updates EditorModel sliders")
         model.undoAdjustment()
         try check(abs(model.settings.exposure - (-0.25)) < 1e-6, "importing transfer JSON is 1-step undoable")
@@ -94,11 +94,11 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj1 = Adjustments()
         extAdj1.exposureMode = .sensor
         extAdj1.exposure = 0.95
-        extAdj1.saturation = 14
+        extAdj1.saturation = 1.14
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj1, filmID: ""))
 
         let autoReloaded = waitUntil(3.0) {
-            abs(model.settings.exposure - 0.95) < 1e-6 && abs(model.settings.saturation - 14) < 1e-6
+            abs(model.settings.exposure - 0.95) < 1e-6 && abs(model.settings.saturation - 1.14) < 1e-6
         }
         try check(autoReloaded && !model.hasActiveExternalReloadBanner && !model.dirty,
                   "clean state auto-reloads external edits.json changes without showing banner")
@@ -119,7 +119,7 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj2 = Adjustments()
         extAdj2.exposureMode = .sensor
         extAdj2.exposure = 1.4
-        extAdj2.contrast = 33
+        extAdj2.contrast = 1.33
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj2, filmID: ""))
 
         let bannerShown = waitUntil(3.0) { model.hasActiveExternalReloadBanner }
@@ -137,7 +137,7 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj3 = Adjustments()
         extAdj3.exposureMode = .sensor
         extAdj3.exposure = 1.65
-        extAdj3.contrast = 42
+        extAdj3.contrast = 1.42
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj3, filmID: ""))
 
         let bannerResurfaced = waitUntil(3.0) { model.hasActiveExternalReloadBanner }
@@ -145,7 +145,7 @@ private func rendered(_ model: EditorModel) throws {
 
         model.reloadFromExternalUpdate()
         try check(!model.hasActiveExternalReloadBanner && !model.dirty &&
-                  abs(model.settings.exposure - 1.65) < 1e-6 && abs(model.settings.contrast - 42) < 1e-6,
+                  abs(model.settings.exposure - 1.65) < 1e-6 && abs(model.settings.contrast - 1.42) < 1e-6,
                   "clicking Reload Sliders applies external edit and clears draft")
         model.undoAdjustment()
         try check(abs(model.settings.exposure - 0.95) < 1e-6,

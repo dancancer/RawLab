@@ -149,7 +149,7 @@ public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendabl
         case .tint:
             return 1
         case .noiseReduction:
-            return 0.05
+            return 0.01
         case .sharpening:
             return 1
         case .vignette, .grain:
@@ -234,7 +234,6 @@ public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendabl
         case .tint:
             settings.tint = value
         case .noiseReduction:
-            settings.noiseReduction = 0
             settings.denoise = RawDenoiseSettings(enabled: value > 0)
         case .sharpening:
             settings.sharpening = value / 100

@@ -364,9 +364,13 @@ public struct AdjustmentSpec {
     public var defaultValue: Double
     public let step: Double
     public let unit: String
-    public var multiplier: Double
+    public let displayRange: ClosedRange<Double>
+    public var displayDefault: Double
+    public var displayScale: Double
     public var decimals: Int
     public var reciprocalScale: Bool
+    public let displayValue: (Double) -> Double
+    public let modelValue: (Double) -> Double
 
     public init(title: String,
                 keyPath: WritableKeyPath<Adjustments, Double>,
@@ -374,49 +378,67 @@ public struct AdjustmentSpec {
                 defaultValue: Double,
                 step: Double,
                 unit: String,
-                multiplier: Double = 1.0,
+                displayRange: ClosedRange<Double>? = nil,
+                displayDefault: Double? = nil,
+                displayScale: Double = 1.0,
                 decimals: Int = 0,
-                reciprocalScale: Bool = false) {
+                reciprocalScale: Bool = false,
+                displayValue: ((Double) -> Double)? = nil,
+                modelValue: ((Double) -> Double)? = nil) {
         self.title = title
         self.keyPath = keyPath
         self.range = range
         self.defaultValue = defaultValue
         self.step = step
         self.unit = unit
-        self.multiplier = multiplier
+        self.displayScale = displayScale
         self.decimals = decimals
         self.reciprocalScale = reciprocalScale
+        let toDisplay = displayValue ?? { $0 * displayScale }
+        let toModel = modelValue ?? { $0 / displayScale }
+        self.displayValue = toDisplay
+        self.modelValue = toModel
+        self.displayRange = displayRange ?? (min(toDisplay(range.lowerBound), toDisplay(range.upperBound))...max(toDisplay(range.lowerBound), toDisplay(range.upperBound)))
+        self.displayDefault = displayDefault ?? toDisplay(defaultValue)
     }
 
     public func position(for value: Double) -> Double {
         if reciprocalScale {
             return (1 / range.lowerBound - 1 / value) / (1 / range.lowerBound - 1 / range.upperBound)
         }
-        return (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+        let displayed = displayValue(value)
+        return (displayed - displayRange.lowerBound) / (displayRange.upperBound - displayRange.lowerBound)
     }
 
     public func value(at position: Double) -> Double {
         let position = min(1, max(0, position))
-        let value = reciprocalScale ? 1 / (1 / range.lowerBound - position * (1 / range.lowerBound - 1 / range.upperBound)) :
-            range.lowerBound + position * (range.upperBound - range.lowerBound)
-        return min(range.upperBound, max(range.lowerBound, (value / step).rounded() * step))
+        if reciprocalScale {
+            let value = 1 / (1 / range.lowerBound - position * (1 / range.lowerBound - 1 / range.upperBound))
+            return min(range.upperBound, max(range.lowerBound, (value / step).rounded() * step))
+        }
+        let rawDisplay = displayRange.lowerBound + position * (displayRange.upperBound - displayRange.lowerBound)
+        let displayStep = step * displayScale
+        let snappedDisplay = min(displayRange.upperBound, max(displayRange.lowerBound, (rawDisplay / displayStep).rounded() * displayStep))
+        return min(range.upperBound, max(range.lowerBound, modelValue(snappedDisplay)))
     }
 
     public func text(_ value: Double) -> String {
-        let displayed = value * multiplier
+        let displayed = displayValue(value)
         let places = decimals == 1 && abs(displayed - displayed.rounded()) < 0.0000001 ? 0 : decimals
         return String(format: "%.*f", locale: Locale(identifier: "en_US_POSIX"), places, displayed == 0 ? 0 : displayed)
     }
 
     // 给用户看的数值：与编辑框一致，可正可负的参数带正号；"EV""K"前空一格，"%"紧跟数字
     public func display(_ value: Double) -> String {
-        let number = (range.lowerBound < 0 && value * multiplier > 0 ? "+" : "") + text(value)
+        let displayed = displayValue(value)
+        let number = (displayRange.lowerBound < 0 && displayed > 0 ? "+" : "") + text(value)
         return unit.isEmpty || unit == "%" ? number + unit : number + " " + unit
     }
 
     public func parse(_ text: String) -> Double? {
         guard let number = Double(text.trimmingCharacters(in: .whitespacesAndNewlines)), number.isFinite else { return nil }
-        return min(range.upperBound, max(range.lowerBound, number / multiplier))
+        let clampedDisplay = min(displayRange.upperBound, max(displayRange.lowerBound, number))
+        return min(range.upperBound, max(range.lowerBound, modelValue(clampedDisplay)))
     }
     public func progress(for value: Double) -> Double {
         let origin = position(for: defaultValue)
@@ -444,7 +466,7 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         case .toneCurve: return \.toneSettings.curveStrength
         case .saturation: return \.saturation
         case .vibrance: return \.colorSettings.vibrance
-        case .sharpening: return \.detailSettings.sharpeningPercent
+        case .sharpening: return \.detailSettings.sharpening
         case .clarity: return \.detailSettings.clarityPercent
         case .dehaze: return \.detailSettings.dehazePercent
         case .denoiseMode: return \.detailSettings.denoise
@@ -485,9 +507,13 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         keyPath: WritableKeyPath<Adjustments, Double>,
         step: Double? = nil,
         unit: String = "%",
-        multiplier: Double = 1.0,
+        displayRange: ClosedRange<Double>? = nil,
+        displayDefault: Double? = nil,
+        displayScale: Double = 1.0,
         decimals: Int? = nil,
-        reciprocalScale: Bool = false
+        reciprocalScale: Bool = false,
+        displayValue: ((Double) -> Double)? = nil,
+        modelValue: ((Double) -> Double)? = nil
     ) -> AdjustmentSpec {
         let model = generatedModelSpec
         let defaultStep = model.quantization == .discrete ? 1.0 : 0.1
@@ -499,9 +525,13 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
             defaultValue: model.defaultValue.numberValue ?? 0,
             step: step ?? defaultStep,
             unit: unit,
-            multiplier: multiplier,
+            displayRange: displayRange,
+            displayDefault: displayDefault,
+            displayScale: displayScale,
             decimals: decimals ?? defaultDecimals,
-            reciprocalScale: reciprocalScale
+            reciprocalScale: reciprocalScale,
+            displayValue: displayValue,
+            modelValue: modelValue
         )
     }
 
@@ -516,7 +546,9 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
                 defaultValue: hdrModel.defaultValue.numberValue ?? 0,
                 step: 0.01,
                 unit: "%",
-                multiplier: 100
+                displayRange: 0...100,
+                displayDefault: 0,
+                displayScale: 100
             )
         }
         if settings.isHDREditing && self == .exposure {
@@ -531,14 +563,33 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
                 decimals: value.decimals
             )
         }
+        if settings.isHDREditing, [.contrast, .highlights, .shadows, .toneCurve, .saturation].contains(self) {
+            let hdrModel = generatedModelSpec
+            let hdrRange = hdrModel.hdrClosedRange!
+            let hdrDefault = hdrModel.hdrDefaultNumber ?? 0
+            return AdjustmentSpec(
+                title: value.title,
+                keyPath: value.keyPath,
+                range: hdrRange,
+                defaultValue: hdrDefault,
+                step: 0.1,
+                unit: value.unit,
+                displayRange: hdrRange,
+                displayDefault: hdrDefault,
+                displayScale: 1.0,
+                decimals: 1
+            )
+        }
         if settings.isHDREditing { return value }
         if self == .temperature {
             value.defaultValue = settings.asShotWhiteBalance?.temperature
                 ?? AdjustmentFieldSpec.Fields.colorWhiteBalanceTemperatureKelvin.macosModel.defaultValue.numberValue!
+            value.displayDefault = value.displayValue(value.defaultValue)
         }
         if self == .tint {
             let defaultTint = AdjustmentFieldSpec.Fields.colorWhiteBalanceTint.macosModel.defaultValue.numberValue!
             value.defaultValue = settings.masterRecipe != nil ? defaultTint : (settings.asShotWhiteBalance?.tint ?? defaultTint)
+            value.displayDefault = value.displayValue(value.defaultValue)
         }
         return value
     }
@@ -566,7 +617,7 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
     }
     public var spec: AdjustmentSpec {
         switch self {
-        case .strength: return makeSpec(title: L10n.text("强度"), keyPath: \.strength, step: 0.001, multiplier: 100, decimals: 1)
+        case .strength: return makeSpec(title: L10n.text("强度"), keyPath: \.strength, step: 0.001, displayScale: 100, decimals: 1)
         case .exposure: return makeSpec(title: L10n.text("曝光"), keyPath: \.exposure, step: 0.01, unit: "EV", decimals: 2)
         case .temperature: return makeSpec(title: L10n.text("色温"), keyPath: \.temperature, step: 10, unit: "K", decimals: 0, reciprocalScale: true)
         case .tint: return makeSpec(title: L10n.text("色调"), keyPath: \.tint, unit: "")
@@ -575,12 +626,27 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         case .vibrance: return makeSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance)
         case .clarity: return makeSpec(title: L10n.text("清晰度"), keyPath: \.clarity)
         case .dehaze: return makeSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze)
-        case .contrast: return makeSpec(title: L10n.text("对比度"), keyPath: \.contrast)
-        case .highlights: return makeSpec(title: L10n.text("高光"), keyPath: \.highlights)
-        case .shadows: return makeSpec(title: L10n.text("阴影"), keyPath: \.shadows)
-        case .toneCurve: return makeSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve)
-        case .saturation: return makeSpec(title: L10n.text("饱和度"), keyPath: \.saturation)
-        case .sharpening: return makeSpec(title: L10n.text("锐化"), keyPath: \.sharpening)
+        case .contrast:
+            return makeSpec(title: L10n.text("对比度"), keyPath: \.contrast, step: 0.001,
+                            displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1,
+                            displayValue: { ($0 - 1) * 100 }, modelValue: { 1 + $0 / 100 })
+        case .highlights:
+            return makeSpec(title: L10n.text("高光"), keyPath: \.highlights, step: 0.001,
+                            displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1,
+                            displayValue: { -$0 * 100 }, modelValue: { -$0 / 100 })
+        case .shadows:
+            return makeSpec(title: L10n.text("阴影"), keyPath: \.shadows, step: 0.001,
+                            displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1)
+        case .toneCurve:
+            return makeSpec(title: L10n.text("S 曲线"), keyPath: \.toneCurve, step: 0.001,
+                            displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1)
+        case .saturation:
+            return makeSpec(title: L10n.text("饱和度"), keyPath: \.saturation, step: 0.001,
+                            displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1,
+                            displayValue: { ($0 - 1) * 100 }, modelValue: { 1 + $0 / 100 })
+        case .sharpening:
+            return makeSpec(title: L10n.text("锐化"), keyPath: \.sharpening, step: 0.001,
+                            displayRange: 0...200, displayDefault: 0, displayScale: 100, decimals: 1)
         case .rawNoiseReduction: return makeSpec(title: L10n.text("RAW 降噪"), keyPath: \.rawNoiseReduction, unit: "")
         case .denoiseMode: return makeSpec(title: L10n.text("降噪"), keyPath: \.denoiseMode, unit: "")
         case .vignetteAmount: return makeSpec(title: L10n.text("暗角"), keyPath: \.vignetteAmount, unit: "")

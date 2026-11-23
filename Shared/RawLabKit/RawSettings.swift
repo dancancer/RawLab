@@ -13,7 +13,7 @@ public extension RawSettings {
     }
 
     mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
-        setExactEditingEffect(parameter, to: value.rounded())
+        setExactEditingEffect(parameter, to: value)
     }
 
     mutating func setExactEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
@@ -177,7 +177,6 @@ public struct RawSettings: Codable, Equatable {
     public var highlights: Double
     public var shadows: Double
     public var toneCurve: Double
-    public var noiseReduction: Double
     public var sharpening: Double
     public var lutID: String?
     public var lutStrength: Double
@@ -229,7 +228,7 @@ public struct RawSettings: Codable, Equatable {
     public enum CodingKeys: String, CodingKey {
         case hdr, proRAWDecodeVersion, x3fMode
         case exposure, contrast, saturation, temperature, tint, highlights, shadows
-        case toneCurve, noiseReduction, sharpening, lutID, lutStrength, whiteBalanceMode
+        case toneCurve, sharpening, lutID, lutStrength, whiteBalanceMode
         case denoise, photoEffects, displayChromaDenoise, exposureMode, hsl
         case masterRecipeID, masterRecipeSettingsVersion, lensCorrection, geometry, processing, toneControls, atmosphere, colorGrading, toneCurveConfig
     }
@@ -256,7 +255,6 @@ public struct RawSettings: Codable, Equatable {
         highlights: 0,
         shadows: 0,
         toneCurve: 0,
-        noiseReduction: 0,
         sharpening: 0,
         lutID: nil,
         lutStrength: 1,
@@ -274,7 +272,6 @@ public struct RawSettings: Codable, Equatable {
         highlights: Double,
         shadows: Double,
         toneCurve: Double,
-        noiseReduction: Double,
         sharpening: Double,
         lutID: String?,
         lutStrength: Double,
@@ -292,7 +289,6 @@ public struct RawSettings: Codable, Equatable {
         self.highlights = highlights
         self.shadows = shadows
         self.toneCurve = toneCurve
-        self.noiseReduction = noiseReduction
         self.sharpening = sharpening
         self.lutID = lutID
         self.lutStrength = lutStrength
@@ -335,7 +331,6 @@ public struct RawSettings: Codable, Equatable {
         highlights = try values.decodeIfPresent(Double.self, forKey: .highlights) ?? 0
         shadows = try values.decodeIfPresent(Double.self, forKey: .shadows) ?? 0
         toneCurve = try values.decodeIfPresent(Double.self, forKey: .toneCurve) ?? 0
-        noiseReduction = try values.decodeIfPresent(Double.self, forKey: .noiseReduction) ?? 0
         sharpening = try values.decodeIfPresent(Double.self, forKey: .sharpening) ?? 0
         lutID = try values.decodeIfPresent(String.self, forKey: .lutID)
         masterRecipeID = try values.decodeIfPresent(String.self, forKey: .masterRecipeID)
@@ -400,7 +395,7 @@ public extension RawSettings {
         } else if effective.whiteBalanceMode == .camera {
             effective.temperature = 6500; effective.tint = 0
         }
-        let noise = !isRaw || effective.denoise.enabled ? 0 : effective.noiseReduction
+        let noise = 0.0
         return [effective.exposure, effective.contrast, effective.saturation, effective.temperature,
                 effective.tint, effective.highlights, effective.shadows, effective.toneCurve,
                 noise, effective.sharpening].map(Float.init) +

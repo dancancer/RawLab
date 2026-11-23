@@ -55,6 +55,7 @@ import com.rawlab.android.looks.filmStripItems
 import com.rawlab.android.looks.localizedName
 import com.rawlab.android.looks.localizedSubtitle
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.canonicalZero
 import com.rawlab.android.settings.canonicalZeros
 import com.rawlab.android.settings.synchronizeHDR
 import com.rawlab.android.settings.X3fMode
@@ -366,18 +367,18 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 }
                 }
             }
-            3 -> NumericControl(R.string.highlights, edits.highlights * 100, -100f..100f, "%", parameterEnabled,
-                { value, dragging -> editParameter(edits.copy(highlights = value / 100), dragging) }, { editParameter(edits.copy(highlights = 0f), false) })
+            3 -> NumericControl(R.string.highlights, (-edits.highlights * 100).canonicalZero(), -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(highlights = (-value / 100).canonicalZero()), dragging) }, { editParameter(edits.copy(highlights = 0f), false) })
             4 -> NumericControl(R.string.shadows, edits.shadows * 100, -100f..100f, "%", parameterEnabled,
                 { value, dragging -> editParameter(edits.copy(shadows = value / 100), dragging) }, { editParameter(edits.copy(shadows = 0f), false) })
-            5 -> NumericControl(R.string.contrast, edits.contrast * 100, -100f..100f, "%", parameterEnabled,
-                { value, dragging -> editParameter(edits.copy(contrast = value / 100), dragging) }, { editParameter(edits.copy(contrast = 0f), false) })
+            5 -> NumericControl(R.string.contrast, (edits.contrast - 1f) * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(contrast = 1f + value / 100), dragging) }, { editParameter(edits.copy(contrast = 1f), false) })
             6 -> ToneCurveControls(edits.editingCurve, edits.editingCurveStrength, parameterEnabled,
                 { value, dragging -> editParameter(edits.withEditingCurve(value), dragging) },
                 { value, dragging -> editParameter(edits.withEditingCurveStrength(value), dragging) },
                 edits.isHDREditing, hslTarget = hslTarget)
-            7 -> NumericControl(R.string.saturation, edits.saturation * 100, -100f..100f, "%", parameterEnabled,
-                { value, dragging -> editParameter(edits.copy(saturation = value / 100), dragging) }, { editParameter(edits.copy(saturation = 0f), false) })
+            7 -> NumericControl(R.string.saturation, (edits.saturation - 1f) * 100, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(saturation = 1f + value / 100), dragging) }, { editParameter(edits.copy(saturation = 1f), false) })
             8 -> {
                 if (!calibrated) Text(stringResource(R.string.wb_unavailable), Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                 else Column {

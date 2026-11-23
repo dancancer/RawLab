@@ -7,12 +7,12 @@ func mixedSettings() -> Adjustments {
     var settings = Adjustments()
     settings.exposureMode = .sensor
     settings.exposure = 0.27
-    settings.contrast = 23.5
-    settings.highlights = 31.0
-    settings.shadows = -24.0
-    settings.toneCurve = 35.0
-    settings.saturation = -17.0
-    settings.sharpening = 78.0
+    settings.contrast = 1.235
+    settings.highlights = -0.31
+    settings.shadows = -0.24
+    settings.toneCurve = 0.35
+    settings.saturation = 0.83
+    settings.sharpening = 0.78
     settings.setHSL(.hue, channel: 0, value: 18)
     settings.setHSL(.saturation, channel: 5, value: -43)
     settings.setHSL(.lightness, channel: 3, value: 21)
@@ -44,7 +44,7 @@ func mixedSettings() -> Adjustments {
 
 func chromaSettings(from source: Adjustments) -> Adjustments {
     var result = source
-    result.waveletNoiseReduction = nil
+    result.waveletNoiseReduction = WaveletDenoiseSettings()
     result.chromaNoiseReduction = 2
     result.rawNoiseReduction = 0
     return result
