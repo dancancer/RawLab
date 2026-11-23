@@ -239,10 +239,12 @@
 "取景已暂停" = "Visée en direct en pause";
 "取样监视" = "Moniteur d’échantillonnage";
 "取消" = "Annuler";
+"取消全选" = "Tout désélectionner";
 "取消对焦" = "Annuler la mise au point";
 "取消导出" = "Annuler l’exportation";
 "取消检查" = "Annuler la vérification";
 "取消连接" = "Annuler la connexion";
+"取消选中" = "Désélectionner";
 "取色失败，请重试。" = "Impossible de prélever la couleur. Réessayez.";
 "受影响色域：%@" = "Plages affectées : %@";
 "另存" = "Enregistrer sous";
@@ -737,6 +739,7 @@
 "清空选择" = "Effacer la sélection";
 "清除搜索" = "Effacer la recherche";
 "清除相机配置" = "Retirer le profil de caméra";
+"清除筛选" = "Effacer les filtres";
 "清除锚点" = "Effacer les repères";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation";
 "渲染型 DNG 未生成。" = "Le DNG développé n’a pas été créé.";
@@ -905,6 +908,7 @@
 "请先应用或放弃未完成的输入和几何草稿。" = "Appliquez ou abandonnez d’abord les saisies et les brouillons de géométrie en cours.";
 "请先打开这张照片，确认是否恢复旧调整。" = "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Vérifiez d’abord le résultat sur l’appareil. Une nouvelle session ne reprend pas la photo. Reprenez les transferts incomplets dans l’historique.";
+"请先确认上方存储卡保存选项" = "Confirmez d’abord l’enregistrement sur carte ci-dessus";
 "请先确认同源图片、处理条件和参考来源。" = "Confirmez d’abord la même image source, les conditions de traitement et la source de référence.";
 "请先选择外观或配方。" = "Sélectionnez d’abord un look ou une recette.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Autorisez RawLab à utiliser le Bluetooth dans les réglages système.";
@@ -944,6 +948,7 @@
 "跟随系统" = "Suivre le système";
 "跳过" = "Ignorer";
 "跳过以上目标后重试" = "Ignorer les photos ci-dessus et réessayer";
+"输入 Wi-Fi 名称与密码" = "Saisir le nom et le mot de passe Wi-Fi";
 "输入参考" = "Référence en entrée";
 "输入坐标" = "Entrée";
 "输入范围" = "Plage en entrée";
@@ -971,6 +976,7 @@
 "退出目标调整" = "Quitter le réglage ciblé";
 "退出纯预览" = "Quitter l’aperçu immersif";
 "适合窗口" = "Ajuster à la fenêtre";
+"选中" = "Sélectionner";
 "选择" = "Sélectionner";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Choisissez une photo pour comparer les options, ou ouvrez les réglages avancés pour les configurer manuellement.";
 "选择参考图" = "Choisir une image de référence";

@@ -428,6 +428,12 @@
       "source": "清空选择",
       "types": []
     },
+    "camera_clear_filter": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "清除筛选",
+      "types": []
+    },
     "camera_collection": {
       "file": "strings.xml",
       "formats": [],
@@ -1064,6 +1070,12 @@
       "file": "strings.xml",
       "formats": [],
       "source": "打开编辑",
+      "types": []
+    },
+    "camera_open_settings": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "打开系统设置",
       "types": []
     },
     "camera_open_saved": {
@@ -7497,14 +7509,6 @@
       "ja": "元の写真にアクセスできません",
       "zh-Hans": "原片无法访问"
     },
-    "取消选中": {
-      "de": "Auswahl aufheben",
-      "en": "Deselect",
-      "es": "Deseleccionar",
-      "fr": "Désélectionner",
-      "ja": "選択を解除",
-      "zh-Hans": "取消选中"
-    },
     "取消选择": {
       "zh-Hans": "取消选择",
       "en": "Cancel selection",
@@ -8576,14 +8580,6 @@
       "es": "Conectar cámara",
       "fr": "Connecter l’appareil photo",
       "ja": "カメラに接続"
-    },
-    "选中": {
-      "de": "Auswählen",
-      "en": "Select",
-      "es": "Seleccionar",
-      "fr": "Sélectionner",
-      "ja": "選択",
-      "zh-Hans": "选中"
     },
     "选择可供 RawLab 浏览的照片。也可以从文件导入 JPEG、PNG 或 RAW。": {
       "de": "Wählen Sie Fotos aus, die RawLab durchsuchen darf. JPEG-, PNG- oder RAW-Dateien können auch aus Dateien importiert werden.",

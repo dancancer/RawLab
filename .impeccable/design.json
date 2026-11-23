@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-22T15:35:00Z",
+  "generatedAt": "2026-11-23T09:17:00Z",
   "title": "Design System: RawLab",
   "extensions": {
     "colorMeta": {
@@ -151,6 +151,10 @@
       {
         "name": "mobile-tether-landscape",
         "value": "width > height"
+      },
+      {
+        "name": "mobile-camera-grid-columns",
+        "value": "<600pt/dp: 3 cols; 600..899pt/dp: 4 cols; >=900pt/dp: 5 cols"
       }
     ],
     "native": {
@@ -368,6 +372,7 @@
           "mobilePhotoCanvasInset": "0pt default (16pt optional margin toggle); fit proportionally filling >= 1 edge",
           "wheelPresentation": "Explicit iPhone sheet (incl. landscape); iPad popover 280..480pt (ideal 360pt, height min(440pt, windowHeight - safeArea - 40))",
           "wheelWideShortLayout": "44% context beside 200..220pt picker when content width > 480pt && height < 400pt",
+          "cameraWorkspace": "home/connect/incremental <= 680pt centered width with 10pt tonal cards; adaptive 3/4/5 manual import grid (<600 / 600..899 / >=900pt) with 22pt circle selection badges",
           "tetherControls": "108pt portrait bottom shutter bar / 96pt landscape right rail"
         },
         "behaviors": {
@@ -375,7 +380,7 @@
           "dualAdjustmentControls": "Standard moving-tape AdjustmentRulerView for single-parameter tools; compact single-row inline sliders (72pt label + 14pt thumb + fixed worst-case stableValueWidth) for multi-parameter tools; Fine (0.25x) inside workspace More menu.",
           "nativeValueWheel": "Single-column UIPickerView via SizingPickerView + PickerContainerView (width-change reload > 0.5pt keeps values centered on resize/rotation); changed draft blocks interactive dismissal.",
           "richToolsAndLens": "Full RGB/R/G/B Tone Curves (194pt canvas), Color Grading (130pt wheel), 8-ch HSL (19pt swatches + 88pt 3x loupe), RAW+JPEG Lens with Vignetting toggle & DisplayLensMetadata editor, HDR suite + cancellable HDR HEIF/JPEG export, 1:1 1024px ROI tiled zoom.",
-          "recentsAndCameraPreview": "Recently Opened (up to 100 photos / ~2 GiB) with All/Edited/Unedited filters and pencil badge; Sony wireless camera import & tethering shipped as unverified hardware preview."
+          "recentsAndCameraPreview": "Recently Opened (up to 100 photos / ~2 GiB) with All/Edited/Unedited filters and pencil badge; Sony wireless camera workspace groups Import/Tether & History/Storage, highlights card-save confirmation, hides manual JPEG settings into overflow menu (surfacing a yellow summary pill when active), supports pinch-zoomable prev/next manual preview and auto-scrolled medium/large tether parameter pickers (unverified real-camera hardware preview)."
         },
         "sources": [
           "RawLab/RawLab/UI/Editor/ContentView.swift",
@@ -392,7 +397,10 @@
           "RawLab/RawLab/UI/Controls/LensControls.swift",
           "RawLab/RawLab/UI/Preview/ZoomablePhoto.swift",
           "RawLab/RawLab/UI/Library/RecentPhotosView.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraController.swift",
           "RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraBrowser.swift",
+          "RawLab/RawLab/UI/Camera/IOSCameraIncrementalImport.swift",
           "RawLab/RawLab/UI/Camera/IOSCameraTether.swift",
           "Shared/RawLabKit/FilmPresentation.swift",
           "Shared/Native/HDRCanvas.swift",
@@ -440,13 +448,14 @@
           "bottomDock": "Adaptive home dock 108dp 1-row / 164dp 2-row height (Looks includes My Presets); tool workspace min(332dp, availableHeight - 96dp); 48dp Close/Title/Check footer",
           "mobilePhotoCanvasInset": "0dp default (8dp optional toggle)",
           "edgeBackGuard": "24dp horizontal inset exclusion on standard AdjustmentRuler",
+          "cameraWorkspace": "home/connect/help/incremental <= 680dp centered width with 10dp tonal cards; adaptive 3/4/5 manual import grid (<600 / 600..899 / >=900dp) with 22dp circle selection badges",
           "tetherControls": "108dp portrait bottom shutter bar / 96dp landscape right rail"
         },
         "behaviors": {
           "dedicatedToolWorkspaces": "2-level tool workspaces with per-tool AdjustmentDraft (100 steps), dark translucent workspaceActions capsules with focus fade + clickable yellow Fine badge, 48dp Apply/Cancel bar returning to tool grid, per-photo HDR controls in Processing Settings, and predictive Back (enableOnBackInvokedCallback=true).",
           "dualAdjustmentControls": "48dp fixed-track AdjustmentRuler with onSurfaceVariant baseline dot, #F2CE48 needle/bar, 21 ticks & +4dp proximity pulse on single-param tools; compact inline rows (14dp thumb) on multi-param tools; validated Material numeric AlertDialog on readout tap.",
           "richToolsAndHdr": "Full RGB/R/G/B Tone Curves (194dp), Color Grading (130dp), 8-ch HSL (19dp swatches + 88dp loupe), RAW+JPEG Lens with Vignetting toggle, API 34+ FP16/scRGB HDR display + HDRMonitoring + cancellable HDR JPEG export, 1:1 1024px ROI tiled zoom.",
-          "albumAndCamera": "Square/Staggered Album (1..6 cols) with All/Edited/Unedited filter & pencil badge; Sony BLE/Wi-Fi camera import (manual + incremental + JPEG resize) & tether (tap-to-focus on 640x480 grid, 14 focus areas, verified on α7C II fw 2.00)."
+          "albumAndCamera": "Square/Staggered Album (1..6 cols) with All/Edited/Unedited filter & pencil badge; Sony BLE/Wi-Fi camera import (segmented Manual/Incremental switch, adaptive 3/4/5 grid, Select All/Clear Filter bar, Option A overflow JPEG Settings + active yellow summary pill, pinch-zoom preview) & tether (status-dot LIVE HUD, auto-scrolled ModalBottomSheet parameter pickers, 640x480 tap-to-focus, verified on a7C II fw 2.00)."
         },
         "sources": [
           "RawLabAndroid/app/src/main/java/com/rawlab/android/MainActivity.kt",
@@ -462,6 +471,7 @@
           "RawLabAndroid/app/src/main/java/com/rawlab/android/editor/canvas/RgbHistogramOverlay.kt",
           "RawLabAndroid/app/src/main/java/com/rawlab/android/album/AlbumScreen.kt",
           "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraScreen.kt",
+          "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraConnectionPanel.kt",
           "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraImportScreen.kt",
           "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraTetherScreen.kt",
           "RawLabAndroid/app/src/main/java/com/rawlab/android/batch/ui/BatchSelectionScreen.kt",
@@ -575,7 +585,7 @@
       "name": "Mobile Sony Camera Import & Tether Viewfinder",
       "kind": "custom",
       "refersTo": "android-shutter-button",
-      "description": "Full-frame wireless camera workspace with 68pt/dp circular shutter, 4-slot live parameter strip, 640x480 tap-to-focus, and green/white focus frames.",
+      "description": "Wireless Sony camera workspace pairing tonal home/connect/incremental cards, an adaptive 3/4/5 manual import grid (with 22pt/dp circle badges and Option A overflow JPEG Settings + active yellow summary pill), and a tether viewfinder with status-dot LIVE badge, 68pt/dp shutter, 4-slot live parameter strip, auto-scrolled parameter picker sheets, 640x480 tap-to-focus, and green/white focus frames.",
       "nativeSource": {
         "path": "RawLabAndroid/app/src/main/java/com/rawlab/android/camera/CameraTetherScreen.kt",
         "symbol": "CameraTetherScreen / IOSCameraTether"

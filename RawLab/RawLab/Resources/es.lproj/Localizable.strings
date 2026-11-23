@@ -239,10 +239,12 @@
 "取景已暂停" = "Vista en directo pausada";
 "取样监视" = "Monitor de muestreo";
 "取消" = "Cancelar";
+"取消全选" = "Deseleccionar todo";
 "取消对焦" = "Cancelar enfoque";
 "取消导出" = "Cancelar exportación";
 "取消检查" = "Cancelar comprobación";
 "取消连接" = "Cancelar conexión";
+"取消选中" = "Deseleccionar";
 "取色失败，请重试。" = "No se pudo tomar la muestra. Inténtalo de nuevo.";
 "受影响色域：%@" = "Gamas afectadas: %@";
 "另存" = "Guardar como";
@@ -737,6 +739,7 @@
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
 "清除相机配置" = "Quitar perfil de cámara";
+"清除筛选" = "Borrar filtros";
 "清除锚点" = "Borrar anclas";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";
@@ -905,6 +908,7 @@
 "请先应用或放弃未完成的输入和几何草稿。" = "Aplica o descarta primero las entradas y los borradores de geometría pendientes.";
 "请先打开这张照片，确认是否恢复旧调整。" = "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Comprueba primero el resultado en la cámara. Una sesión nueva no volverá a disparar. Continúa las transferencias incompletas desde el historial.";
+"请先确认上方存储卡保存选项" = "Confirma primero el guardado en tarjeta arriba";
 "请先确认同源图片、处理条件和参考来源。" = "Confirma primero la misma imagen de origen, las condiciones de procesamiento y la fuente de referencia.";
 "请先选择外观或配方。" = "Selecciona primero un look o una receta.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Permite a RawLab usar Bluetooth en los ajustes del sistema.";
@@ -944,6 +948,7 @@
 "跟随系统" = "Seguir el sistema";
 "跳过" = "Omitir";
 "跳过以上目标后重试" = "Omitir las fotos indicadas y reintentar";
+"输入 Wi-Fi 名称与密码" = "Introducir nombre y contraseña Wi-Fi";
 "输入参考" = "Referencia de entrada";
 "输入坐标" = "Entrada";
 "输入范围" = "Rango de entrada";
@@ -971,6 +976,7 @@
 "退出目标调整" = "Salir del ajuste dirigido";
 "退出纯预览" = "Salir de vista previa inmersiva";
 "适合窗口" = "Ajustar a la ventana";
+"选中" = "Seleccionar";
 "选择" = "Seleccionar";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Elige una foto para comparar las opciones o abre los ajustes avanzados para configurarlas manualmente.";
 "选择参考图" = "Elegir imagen de referencia";

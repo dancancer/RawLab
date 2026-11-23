@@ -87,18 +87,62 @@ internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImport
         )
         return
     }
-    state.stage?.let { stage ->
-        if (stage != SonyCameraConnection.Stage.MANUAL_WIFI) LinearProgressIndicator(Modifier.fillMaxWidth())
-        Text(stringResource(stageText(stage)), style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val stage = state.stage
+    val connecting = stage != null &&
+        stage != SonyCameraConnection.Stage.SCANNING &&
+        stage != SonyCameraConnection.Stage.MANUAL_WIFI
+    if (connecting) {
+        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(
+                    stringResource(stageText(stage!!)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedButton(
+                    onClick = model::disconnect,
+                    shape = CameraControlShape,
+                    modifier = Modifier.fillMaxWidth().testTag("camera-cancel-connection"),
+                ) {
+                    Text(stringResource(R.string.camera_cancel_connection))
+                }
+            }
+        }
+        return
     }
-    if (state.stage == SonyCameraConnection.Stage.MANUAL_WIFI) {
+    if (stage == SonyCameraConnection.Stage.SCANNING) {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        Text(
+            stringResource(stageText(stage)),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (stage == SonyCameraConnection.Stage.MANUAL_WIFI) {
         Text(stringResource(R.string.camera_manual_guide), style = MaterialTheme.typography.bodyMedium)
         if (state.mode == CameraMode.TETHER) {
-            Row(Modifier.fillMaxWidth().toggleable(state.cardSavingConfirmed, role = Role.Checkbox,
-                onValueChange = model::confirmCardSaving).testTag("tether-card-confirm"), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(state.cardSavingConfirmed, onCheckedChange = null)
-                Text(stringResource(R.string.tether_card_confirm), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Surface(
+                shape = CameraControlShape,
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (state.cardSavingConfirmed) MaterialTheme.colorScheme.outlineVariant
+                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+                ),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().toggleable(state.cardSavingConfirmed, role = Role.Checkbox,
+                        onValueChange = model::confirmCardSaving).padding(horizontal = 8.dp, vertical = 4.dp)
+                        .testTag("tether-card-confirm"),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(state.cardSavingConfirmed, onCheckedChange = null)
+                    Text(stringResource(R.string.tether_card_confirm), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
         OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }, shape = CameraControlShape,
@@ -110,18 +154,18 @@ internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImport
         state.candidates.forEach { candidate ->
             val name = SonyCameraModel.fromAdvertisement(candidate.name).takeUnless { it == SonyCameraModel.UNKNOWN }?.displayName ?: candidate.name
             ListItem(headlineContent = { Text(name) }, supportingContent = if (name != candidate.name) ({ Text(candidate.name) }) else null,
-                modifier = Modifier.fillMaxWidth().clickable(enabled = available && state.stage == SonyCameraConnection.Stage.SCANNING) {
+                modifier = Modifier.fillMaxWidth().clickable(enabled = available && stage == SonyCameraConnection.Stage.SCANNING) {
                     request(CameraConnectionAction.JOIN, candidate.id)
                 }.testTag("camera-candidate-${candidate.id}"))
             HorizontalDivider()
         }
-        if (state.candidates.isEmpty() && state.stage == null && !state.closing)
+        if (state.candidates.isEmpty() && stage == null && !state.closing)
             Text(stringResource(R.string.camera_devices_empty), style = MaterialTheme.typography.bodyMedium)
     }
     OutlinedButton(onClick = { request(CameraConnectionAction.DISCOVER) }, shape = CameraControlShape,
-        enabled = available && (state.stage == null || state.stage == SonyCameraConnection.Stage.SCANNING || state.stage == SonyCameraConnection.Stage.MANUAL_WIFI),
+        enabled = available && (stage == null || stage == SonyCameraConnection.Stage.SCANNING || stage == SonyCameraConnection.Stage.MANUAL_WIFI),
         modifier = Modifier.fillMaxWidth().testTag("camera-find")) { Text(stringResource(R.string.camera_find)) }
-    if (state.stage == null || state.stage == SonyCameraConnection.Stage.SCANNING)
+    if (stage == null || stage == SonyCameraConnection.Stage.SCANNING)
         TextButton(onClick = model::prepareLegacyWifi, enabled = available, modifier = Modifier.fillMaxWidth().testTag("camera-legacy-connect")) {
             Text(stringResource(R.string.camera_manual_wifi))
         }

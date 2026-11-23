@@ -960,6 +960,14 @@
       "formats": [],
       "source": "取消"
     },
+    "取消全选": {
+      "formats": [],
+      "source": "取消全选"
+    },
+    "取消选中": {
+      "formats": [],
+      "source": "取消选中"
+    },
     "取消导出": {
       "formats": [],
       "source": "取消导出"
@@ -3838,6 +3846,22 @@
       "formats": [],
       "source": "输入范围"
     },
+    "输入 Wi-Fi 名称与密码": {
+      "formats": [],
+      "source": "输入 Wi-Fi 名称与密码"
+    },
+    "清除筛选": {
+      "formats": [],
+      "source": "清除筛选"
+    },
+    "请先确认上方存储卡保存选项": {
+      "formats": [],
+      "source": "请先确认上方存储卡保存选项"
+    },
+    "选中": {
+      "formats": [],
+      "source": "选中"
+    },
     "输入颜色": {
       "formats": [],
       "source": "输入颜色"
@@ -5239,14 +5263,6 @@
       "ja": "カメラでスマートフォン接続を開き、「設定 → Wi-Fi」でカメラの Wi-Fi に接続してから（インターネット未接続は正常）、戻り「接続済み、続ける」をタップしてください。",
       "zh-Hans": "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。"
     },
-    "打开系统设置": {
-      "de": "Systemeinstellungen öffnen",
-      "en": "Open System Settings",
-      "es": "Abrir ajustes del sistema",
-      "fr": "Ouvrir les réglages système",
-      "ja": "システム設定を開く",
-      "zh-Hans": "打开系统设置"
-    },
     "拍摄日期": {
       "en": "Capture date",
       "de": "Aufnahmedatum",
@@ -6038,6 +6054,22 @@
       "fr": "Par défaut",
       "ja": "デフォルト",
       "zh-Hans": "默认"
+    },
+    "输入 Wi-Fi 名称与密码": {
+      "de": "WLAN-Name & Passwort eingeben",
+      "en": "Enter Wi-Fi Name & Password",
+      "es": "Introducir nombre y contraseña Wi-Fi",
+      "fr": "Saisir le nom et le mot de passe Wi-Fi",
+      "ja": "Wi-Fi 名とパスワードを入力",
+      "zh-Hans": "输入 Wi-Fi 名称与密码"
+    },
+    "请先确认上方存储卡保存选项": {
+      "de": "Speicherung auf Kamerakarte oben bestätigen",
+      "en": "Confirm camera card saving above first",
+      "es": "Confirma primero el guardado en tarjeta arriba",
+      "fr": "Confirmez d’abord l’enregistrement sur carte ci-dessus",
+      "ja": "上のカメラカード保存を先に確認してください",
+      "zh-Hans": "请先确认上方存储卡保存选项"
     }
   }
 }

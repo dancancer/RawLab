@@ -398,6 +398,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         mutable.update { it.copy(selected = if (photo.key in it.selected) it.selected - photo.key else it.selected + photo.key) }
     }
     fun clearSelection() { if (!mutable.value.transferring) mutable.update { it.copy(selected = emptySet()) } }
+    fun toggleSelectAll(visibleKeys: Collection<String>) {
+        if (mutable.value.transferring) return
+        mutable.update { it.copy(selected = toggleVisibleSelection(it.selected, visibleKeys)) }
+    }
     fun selectJob(job: CameraImportJob) { if (!mutable.value.transferring && !mutable.value.preparing) mutable.update { it.copy(job = job) } }
 
     private fun debugCameraLog(message: String) {
@@ -1277,4 +1281,27 @@ internal suspend fun executeOpenTetherSaved(
     } finally {
         resetPreparing()
     }
+}
+
+internal sealed interface CameraPreviewLoadState {
+    data object Loading : CameraPreviewLoadState
+    data class Loaded(val bitmap: Bitmap) : CameraPreviewLoadState
+    data object Unavailable : CameraPreviewLoadState
+}
+
+internal fun previewLoadState(bitmap: Bitmap?): CameraPreviewLoadState =
+    if (bitmap != null) CameraPreviewLoadState.Loaded(bitmap) else CameraPreviewLoadState.Unavailable
+
+internal fun cameraGridColumns(maxWidthDp: Float): Int = when {
+    maxWidthDp >= 900f -> 5
+    maxWidthDp >= 600f -> 4
+    else -> 3
+}
+
+internal fun allVisibleSelected(selected: Set<String>, visibleKeys: Collection<String>): Boolean =
+    visibleKeys.isNotEmpty() && visibleKeys.all { it in selected }
+
+internal fun toggleVisibleSelection(selected: Set<String>, visibleKeys: Collection<String>): Set<String> {
+    if (visibleKeys.isEmpty()) return selected
+    return if (allVisibleSelected(selected, visibleKeys)) selected - visibleKeys.toSet() else selected + visibleKeys
 }
