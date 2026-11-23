@@ -8,6 +8,7 @@ import com.rawlab.android.editor.controls.WbProbeCanvasControls
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,10 +44,54 @@ import com.rawlab.android.editor.geometry.GeometryCropCanvas
 import com.rawlab.android.editor.inspection.InspectionSessionState
 import com.rawlab.android.photo.PhotoInfo
 import com.rawlab.android.settings.EditSettings
+import kotlinx.coroutines.delay
 
 // ============================================================================
 //  编辑器画布区的状态块：画布、保存提示、渲染错误与空白引导
 // ============================================================================
+
+internal data class EditorLoadingPresentation(
+    val showsTopProgressLine: Boolean,
+    val showsEmptyCanvasLoading: Boolean,
+    val immediateBannerRes: Int?,
+    val delayedBannerRes: Int?,
+)
+
+internal fun resolveEditorLoadingPresentation(state: EditorState): EditorLoadingPresentation {
+    val activeOperation = state.operation != Operation.NONE && state.operation != Operation.PICK_EXPORT
+    val isRendering = state.rendering || state.previewResizePending
+    val showsTopProgressLine = isRendering || activeOperation || state.matchingProcessing ||
+        state.importingHDRCameraProfile || state.lookImportPreparing || state.committingAdjustments
+    val showsEmptyCanvasLoading = state.preview == null &&
+        (state.operation == Operation.IMPORT || (state.rendering && state.photo != null))
+
+    val immediateBannerRes = when {
+        state.operation == Operation.EXPORT -> null
+        state.operation == Operation.IMPORT -> if (showsEmptyCanvasLoading) null else R.string.importing
+        state.operation == Operation.IMPORT_LOOK || state.lookImportPreparing || state.importingHDRCameraProfile ->
+            R.string.look_importing
+        state.operation == Operation.PREPARE_EXPORT -> R.string.exporting
+        state.matchingProcessing -> R.string.processing_migration_matching
+        else -> null
+    }
+    val delayedBannerRes = if (
+        immediateBannerRes == null &&
+        state.operation != Operation.EXPORT &&
+        !showsEmptyCanvasLoading &&
+        isRendering
+    ) {
+        R.string.rendering
+    } else {
+        null
+    }
+
+    return EditorLoadingPresentation(
+        showsTopProgressLine = showsTopProgressLine,
+        showsEmptyCanvasLoading = showsEmptyCanvasLoading,
+        immediateBannerRes = immediateBannerRes,
+        delayedBannerRes = delayedBannerRes,
+    )
+}
 
 @Composable
 internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: PhotoCanvasState, photoInfo: PhotoInfo?, infoMode: Int,
@@ -63,8 +108,20 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null) {
     val comparisonInset = if (compare) with(LocalDensity.current) {
-        MaterialTheme.typography.labelSmall.lineHeight.toDp() + 36.dp
-    } else 12.dp
+        MaterialTheme.typography.labelSmall.lineHeight.toDp() + if (workspaceControls) 84.dp else 36.dp
+    } else if (workspaceControls) 64.dp else 12.dp
+    val loading = resolveEditorLoadingPresentation(state)
+    var delayedBannerVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(loading.delayedBannerRes) {
+        delayedBannerVisible = false
+        if (loading.delayedBannerRes != null) {
+            delay(350)
+            delayedBannerVisible = true
+        }
+    }
+    val context = LocalContext.current
+    val reduceMotion = android.provider.Settings.Global.getFloat(context.contentResolver,
+        android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
             val hdrPreview = rememberPhotoHDRPreview(it.hdr?.result)
@@ -95,21 +152,32 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
                 })
-        } ?: EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE, onCamera)
-        val busy = state.rendering || state.previewResizePending
+        } ?: if (loading.showsEmptyCanvasLoading) {
+            EmptyCanvasLoading(reduceMotion = reduceMotion)
+        } else {
+            EmptyEditor(onAlbum, onFile, state.operation == Operation.NONE, onCamera)
+        }
         val previewStatus = stringResource(when {
-            busy -> R.string.rendering
+            state.operation == Operation.IMPORT -> R.string.importing
+            state.operation == Operation.IMPORT_LOOK || state.lookImportPreparing || state.importingHDRCameraProfile ->
+                R.string.look_importing
+            state.operation == Operation.PREPARE_EXPORT || state.operation == Operation.EXPORT -> R.string.exporting
+            state.matchingProcessing -> R.string.processing_migration_matching
+            loading.showsTopProgressLine -> R.string.rendering
             state.error != null -> R.string.editor_preview_outdated
             else -> R.string.editor_preview_updated
         })
-        val context = LocalContext.current
-        val reduceMotion = android.provider.Settings.Global.getFloat(context.contentResolver,
-            android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        if (state.preview != null) Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(2.dp)
-            .testTag("preview-progress").semantics { stateDescription = previewStatus; liveRegion = LiveRegionMode.Polite }) {
-            if (busy) {
-                if (reduceMotion) Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary))
-                else LinearProgressIndicator(Modifier.fillMaxSize())
+        if (state.preview != null || loading.showsTopProgressLine) {
+            Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().height(3.dp)
+                .testTag("preview-progress").semantics { stateDescription = previewStatus; liveRegion = LiveRegionMode.Polite }) {
+                if (loading.showsTopProgressLine) {
+                    if (reduceMotion) Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary))
+                    else LinearProgressIndicator(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = Color.White.copy(alpha = 0.16f),
+                    )
+                }
             }
         }
         if (!view.purePreview) {
@@ -158,17 +226,13 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                     }
                 }
             } else {
-                val operation = when (state.operation) {
-                    Operation.IMPORT -> R.string.importing
-                    Operation.IMPORT_LOOK -> R.string.look_importing
-                    Operation.PREPARE_EXPORT -> R.string.exporting
-                    else -> null
-                }
-                operation?.let {
+                val bannerRes = loading.immediateBannerRes ?: loading.delayedBannerRes?.takeIf { delayedBannerVisible }
+                bannerRes?.let {
                     Row(
                         Modifier.align(Alignment.TopStart).padding(12.dp)
                             .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                            .testTag("editor-activity-banner"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (!reduceMotion) {
@@ -223,6 +287,35 @@ internal fun RenderError(state: EditorState, onRetry: () -> Unit, modifier: Modi
                 modifier = Modifier.testTag(if (state.retryLegacyX3f) "x3f.retryLegacy" else "preview.retry")) {
                 Text(stringResource(if (state.retryLegacyX3f) R.string.x3f_retry_legacy else R.string.retry))
             }
+        }
+    }
+}
+
+@Composable
+internal fun EmptyCanvasLoading(reduceMotion: Boolean) {
+    Surface(
+        modifier = Modifier.testTag("empty-canvas-loading"),
+        shape = RoundedCornerShape(12.dp),
+        color = Color.Black.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!reduceMotion) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.5.dp,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            Text(
+                stringResource(R.string.importing),
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }

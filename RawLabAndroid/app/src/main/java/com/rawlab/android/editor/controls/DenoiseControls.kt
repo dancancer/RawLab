@@ -14,10 +14,9 @@ import kotlin.math.roundToInt
 import com.rawlab.android.R
 import com.rawlab.android.settings.DenoisePreset
 import com.rawlab.android.settings.DenoiseSettings
-import com.rawlab.android.ui.ToolIcon
 
 @Composable
-internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean, onReset: (() -> Unit)? = null,
+internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean,
     onChange: (DenoiseSettings, Boolean) -> Unit) {
     var menu by remember { mutableStateOf(false) }
     fun title(preset: DenoisePreset) = when (preset) {
@@ -40,7 +39,6 @@ internal fun DenoiseControls(value: DenoiseSettings, enabled: Boolean, onReset: 
                     }
                 }
             }
-            ToolIcon(AppIcons.Outlined.RestartAlt, R.string.reset_denoise, enabled) { onReset?.invoke() ?: onChange(DenoiseSettings(), false) }
         }
         val active = enabled && value.enabled
         NumericControl(R.string.denoise_luma, value.luma, 0f..100f, "", active,

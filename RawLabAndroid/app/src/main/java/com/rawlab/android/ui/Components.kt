@@ -10,6 +10,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -21,15 +22,15 @@ import androidx.core.view.WindowCompat
 // ============================================================================
 
 @Composable
-fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, onClick: () -> Unit) =
-    ToolIcon(icon, stringResource(label), enabled, onClick)
+fun ToolIcon(icon: ImageVector, label: Int, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) =
+    ToolIcon(icon, stringResource(label), enabled, modifier, onClick)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToolIcon(icon: ImageVector, label: String, enabled: Boolean = true, onClick: () -> Unit) {
+fun ToolIcon(icon: ImageVector, label: String, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
     TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
-        IconButton(onClick = onClick, enabled = enabled) { Icon(icon, label) }
+        IconButton(onClick = onClick, enabled = enabled, modifier = modifier) { Icon(icon, label) }
     }
 }
 

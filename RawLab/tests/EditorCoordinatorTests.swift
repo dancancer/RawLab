@@ -268,6 +268,7 @@ struct EditorCoordinatorTests {
         testModalsSheetsAndPresets()
         testImportExportAndSceneLifecycle()
         testDraftPersistenceRoundTrip()
+        testLoadingPresentationAndProgressMath()
         print("PASS: all EditorCoordinator unit tests passed")
     }
 
@@ -623,5 +624,146 @@ struct EditorCoordinatorTests {
         check(coordinator.toolWorkspaceOpen && coordinator.geometrySelected &&
               coordinator.geometryDraft?.cropX == 0.25 && coordinator.geometryDraft?.cropWidth == 0.5,
               "restoreEditorDraft recovers saved geometry draft from EditorToolDraftStore")
+    }
+
+    static func resolveLoading(
+        hasImage: Bool = false,
+        isImporting: Bool = false,
+        isViewModelBusy: Bool = false,
+        isSaving: Bool = false,
+        isExportingHDR: Bool = false,
+        cameraHDRPreflight: Bool = false,
+        isImportingLooks: Bool = false,
+        isLoadingLUTs: Bool = false,
+        previewRendering: Bool = false,
+        previewResizePending: Bool = false,
+        matchingProcessing: Bool = false,
+        autoExposing: Bool = false,
+        isBatchExportRunning: Bool = false,
+        isAdjustingSlider: Bool = false
+    ) -> EditorLoadingPresentation {
+        EditorLoadingPresentation.resolve(
+            hasImage: hasImage,
+            isImporting: isImporting,
+            isViewModelBusy: isViewModelBusy,
+            isSaving: isSaving,
+            isExportingHDR: isExportingHDR,
+            cameraHDRPreflight: cameraHDRPreflight,
+            isImportingLooks: isImportingLooks,
+            isLoadingLUTs: isLoadingLUTs,
+            previewRendering: previewRendering,
+            previewResizePending: previewResizePending,
+            matchingProcessing: matchingProcessing,
+            autoExposing: autoExposing,
+            isBatchExportRunning: isBatchExportRunning,
+            isAdjustingSlider: isAdjustingSlider
+        )
+    }
+
+    static func testLoadingPresentationAndProgressMath() {
+        // 1. Indeterminate progress bar stays bounded in 0...1 and advances across phases
+        let phases = [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]
+        for phase in phases {
+            let seg = IndeterminateProgressMath.segment(forPhase: phase)
+            check(seg.lowerBound >= 0.0 && seg.upperBound <= 1.0 && seg.lowerBound <= seg.upperBound,
+                  "IndeterminateProgressMath segment stays bounded at phase \(phase)")
+        }
+        let midA = IndeterminateProgressMath.segment(forPhase: 0.2)
+        let midB = IndeterminateProgressMath.segment(forPhase: 0.5)
+        let midC = IndeterminateProgressMath.segment(forPhase: 0.85)
+        check(midA.upperBound > midA.lowerBound && midB.upperBound > midB.lowerBound && midC.upperBound > midC.lowerBound,
+              "IndeterminateProgressMath produces non-zero bar width mid-cycle")
+        check(midA.upperBound < midB.upperBound && midB.lowerBound < midC.lowerBound,
+              "IndeterminateProgressMath bar head and tail advance across cycle")
+
+        let wrapped = IndeterminateProgressMath.segment(elapsed: IndeterminateProgressMath.cycleDuration + 0.4)
+        let base = IndeterminateProgressMath.segment(elapsed: 0.4)
+        check(abs(wrapped.lowerBound - base.lowerBound) < 1e-9 && abs(wrapped.upperBound - base.upperBound) < 1e-9,
+              "IndeterminateProgressMath wraps cleanly modulo cycleDuration")
+        let negative = IndeterminateProgressMath.segment(elapsed: -0.25)
+        check(negative.lowerBound >= 0 && negative.upperBound <= 1, "negative elapsed stays clamped inside 0...1")
+        let nonFinite = IndeterminateProgressMath.segment(elapsed: .nan)
+        check(nonFinite.lowerBound == 0 && nonFinite.upperBound == 0, "NaN elapsed resets cleanly to 0...0")
+
+        // 2. Idle empty & loaded states
+        let idleEmpty = resolveLoading(hasImage: false)
+        check(!idleEmpty.showsTopProgressLine && !idleEmpty.showsEmptyCanvasLoading &&
+              idleEmpty.topBannerMessageKey == nil && idleEmpty.delayedBannerKey == nil,
+              "idle empty state hides progress line and loading card")
+
+        // 3. Initial RAW open hides empty buttons, shows empty loading card & top bar
+        let initialOpen = resolveLoading(hasImage: false, isImporting: true)
+        check(initialOpen.showsTopProgressLine && initialOpen.showsEmptyCanvasLoading &&
+              initialOpen.topBannerMessageKey == nil && !initialOpen.showsTopBannerImmediately &&
+              initialOpen.progressAccessibilityKey == "正在导入照片…",
+              "initial RAW open shows empty-canvas loading and top bar without duplicate top pill")
+
+        // Fallback viewModel busy open also triggers empty loading state
+        let fallbackBusyOpen = resolveLoading(hasImage: false, isViewModelBusy: true)
+        check(fallbackBusyOpen.showsTopProgressLine && fallbackBusyOpen.showsEmptyCanvasLoading &&
+              fallbackBusyOpen.progressAccessibilityKey == "正在导入照片…",
+              "viewModel busy without active export triggers empty-canvas photo opening loading")
+
+        // 4. Cold-launch look loading does NOT hide the empty-state UI
+        let coldLookLoad = resolveLoading(hasImage: false, isLoadingLUTs: true)
+        check(coldLookLoad.showsTopProgressLine && !coldLookLoad.showsEmptyCanvasLoading &&
+              coldLookLoad.topBannerMessageKey == nil && coldLookLoad.progressAccessibilityKey == "正在加载胶片",
+              "cold-launch look loading animates top bar without hiding empty state buttons")
+
+        // 5. Opening second RAW keeps existing canvas visible and shows immediate top banner
+        let secondOpen = resolveLoading(hasImage: true, isImporting: true, previewRendering: true)
+        check(secondOpen.showsTopProgressLine && !secondOpen.showsEmptyCanvasLoading &&
+              secondOpen.topBannerMessageKey == "正在导入照片…" && secondOpen.showsTopBannerImmediately &&
+              secondOpen.delayedBannerKey == nil,
+              "opening second RAW shows immediate importing pill and top bar")
+
+        // 6. Slider scrub keeps top bar without banner; released/slow render shows delayed banner
+        let scrubbing = resolveLoading(hasImage: true, previewRendering: true, isAdjustingSlider: true)
+        check(scrubbing.showsTopProgressLine && scrubbing.topBannerMessageKey == nil && scrubbing.delayedBannerKey == nil,
+              "active slider scrubbing suppresses banner popup while keeping top progress bar")
+
+        let slowRender = resolveLoading(hasImage: true, previewRendering: true, isAdjustingSlider: false)
+        check(slowRender.showsTopProgressLine && slowRender.topBannerMessageKey == "正在显影…" &&
+              !slowRender.showsTopBannerImmediately && slowRender.delayedBannerKey == "正在显影…",
+              "non-scrubbing preview render schedules delayed rendering banner")
+
+        let resizePending = resolveLoading(hasImage: true, previewResizePending: true)
+        check(resizePending.showsTopProgressLine && resizePending.delayedBannerKey == "正在显影…",
+              "previewResizePending activates top progress bar and delayed rendering banner")
+
+        // 7. Camera HDR preflight, look import, processing match, auto exposure
+        let preflight = resolveLoading(hasImage: true, isViewModelBusy: true, cameraHDRPreflight: true)
+        check(preflight.showsTopProgressLine && !preflight.showsEmptyCanvasLoading &&
+              preflight.topBannerMessageKey == "正在显影…" && preflight.showsTopBannerImmediately,
+              "cameraHDRPreflight shows immediate developing banner instead of import banner")
+
+        let lookImport = resolveLoading(hasImage: true, isImportingLooks: true)
+        check(lookImport.showsTopProgressLine && lookImport.topBannerMessageKey == "正在导入外观" &&
+              lookImport.showsTopBannerImmediately && lookImport.progressAccessibilityKey == "正在导入外观",
+              "isImportingLooks shows immediate look import banner")
+
+        let matching = resolveLoading(hasImage: true, matchingProcessing: true)
+        check(matching.showsTopProgressLine && matching.topBannerMessageKey == "正在匹配原画面…" &&
+              matching.showsTopBannerImmediately && matching.progressAccessibilityKey == "正在匹配原画面…",
+              "matchingProcessing shows immediate processing migration banner")
+
+        let autoExpose = resolveLoading(hasImage: true, autoExposing: true)
+        check(autoExpose.showsTopProgressLine && autoExpose.topBannerMessageKey == "正在处理" &&
+              !autoExpose.showsTopBannerImmediately && autoExpose.delayedBannerKey == "正在处理",
+              "autoExposing activates top bar and delayed processing banner")
+
+        // 8. Export / save precedence & batch export
+        let hdrExport = resolveLoading(hasImage: true, isViewModelBusy: true, isExportingHDR: true, previewRendering: true)
+        check(hdrExport.showsTopProgressLine && hdrExport.topBannerMessageKey == nil &&
+              hdrExport.delayedBannerKey == nil && hdrExport.progressAccessibilityKey == "正在导出",
+              "HDR export suppresses duplicate activity banner while keeping top progress bar")
+
+        let saving = resolveLoading(hasImage: true, isSaving: true)
+        check(saving.showsTopProgressLine && saving.topBannerMessageKey == nil &&
+              saving.delayedBannerKey == nil && saving.progressAccessibilityKey == "正在保存",
+              "saving suppresses duplicate activity banner while keeping top progress bar")
+
+        let batch = resolveLoading(hasImage: true, isBatchExportRunning: true)
+        check(batch.showsTopProgressLine, "running batch export activates top progress bar")
     }
 }

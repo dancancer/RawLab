@@ -44,8 +44,7 @@ class HdrAndX3fUiSmokeTest {
             compose.applyWorkbenchDraft(model)
             assertEquals(1.2f, model.state.value.edits.hdr?.renditionSettings?.sdrExposureEV ?: 0f, 0.01f)
 
-            compose.openEditorMenu()
-            compose.onNodeWithText(compose.activity.getString(R.string.editor_settings)).performScrollTo().performClick()
+            compose.openWorkbenchMenuItem("processing-settings")
             compose.onNodeWithTag("hdr-rendition").performScrollTo().performClick()
             compose.onNodeWithTag("hdr-rendition-reset").performScrollTo().assertIsEnabled().performClick()
             compose.waitUntil(30_000) { model.state.value.edits.hdr?.renditionSettings?.isDefault == true }

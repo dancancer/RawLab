@@ -27,6 +27,13 @@ public enum EditorLayoutPolicy {
         side ? nil : (accessibility ? 148 : 116)
     }
 
+    public static func toolGridHeight(side: Bool, accessibility: Bool, itemCount: Int) -> Double? {
+        guard !side else { return nil }
+        let columns = toolGridColumns(accessibility: accessibility)
+        let rows = min(2, max(1, Int(ceil(Double(itemCount) / Double(columns)))))
+        return rows == 1 ? (accessibility ? 76 : 60) : (accessibility ? 148 : 116)
+    }
+
     public static func editorToolHeight(accessibility: Bool, bodyLineHeight: Double, standardHeight: Double) -> Double {
         accessibility ? max(44, bodyLineHeight + 16) : standardHeight
     }

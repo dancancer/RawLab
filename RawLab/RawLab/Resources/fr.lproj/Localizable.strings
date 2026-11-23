@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Laissez l’appareil allumé et ouvrez Connexion smartphone dans son menu. Les noms varient selon le modèle. Fermez les autres apps utilisant la connexion à l’appareil.";
 "保留旧版的特殊色彩。" = "Conserve les couleurs particulières de l’ancien développement.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Conserve jusqu’à 100 photos récentes et environ 2 Go de copies locales. Retirer une entrée conserve l’original et ses réglages.";
-"保留这次几何或镜头修改？" = "Conserver ces modifications de géométrie ou d’objectif ?";
 "候选效果" = "Résultats proposés";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Fausses couleurs : bleu pour les ombres, ambre au-dessus du blanc de référence, rose au-delà de la capacité de l’écran.";
 "停止导入" = "Arrêter l’importation";
@@ -673,6 +672,7 @@
 "正在取色…" = "Échantillonnage…";
 "正在处理" = "Traitement";
 "正在导入" = "Importation";
+"正在导入外观" = "Importation du look…";
 "正在导入照片…" = "Importation des photos…";
 "正在导出" = "Exportation";
 "正在开启相机 Wi-Fi…" = "Activation du Wi-Fi de l’appareil photo…";
@@ -804,6 +804,7 @@
 "确认兼容导入" = "Importer avec ces réglages";
 "确认并冻结任务" = "Confirmer et figer la tâche";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "Nettoyer les originaux exportés de l’appareil photo ? Après le nettoyage, ces originaux ne pourront plus être ouverts dans l’app ; les photos exportées ne sont pas affectées.";
+"离开前应用更改？" = "Appliquer les modifications avant de quitter ?";
 "移除" = "Supprimer";
 "移除 %@" = "Supprimer %@";
 "移除“%@”？" = "Supprimer \"%@\" ?";
