@@ -10,8 +10,10 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -143,16 +145,29 @@ internal fun CameraTetherWorkspace(state: CameraTetherState,
             @Composable fun viewfinder(modifier: Modifier) {
                 Box(modifier) {
                     TetherViewfinder(state, grid, Modifier.fillMaxSize(), onFocusPoint = onFocusPoint, onCancelTouchFocus = onCancelTouchFocus)
-                    if (!state.active) Column(Modifier.align(Alignment.Center).background(Color.Black.copy(alpha = .8f))
-                        .padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(stringResource(R.string.tether_paused), color = Color.White)
-                        Text(stringResource(R.string.tether_saved, saved.size), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
-                        if (state.canResume || state.run == null && state.failure != CameraTetherFailure.SOURCE) {
-                            TextButton(onClick = onReconnect, modifier = Modifier.testTag("tether-reconnect")) { Text(stringResource(R.string.tether_reconnect)) }
-                        } else {
-                            if (state.canConfirmAndContinue) TextButton(onClick = onConfirmContinue,
-                                modifier = Modifier.testTag("tether-confirm-continue")) { Text(stringResource(R.string.tether_confirm_continue)) }
-                            TextButton(onClick = onImport, modifier = Modifier.testTag("tether-import-instead")) { Text(stringResource(R.string.camera_import)) }
+                    if (!state.active) Surface(
+                        modifier = Modifier.align(Alignment.Center).padding(horizontal = 24.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xD8141416),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.14f)),
+                    ) {
+                        Column(
+                            Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text(stringResource(R.string.tether_paused), color = Color.White, style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.tether_saved, saved.size), color = Color.LightGray, style = MaterialTheme.typography.bodySmall)
+                            if (state.canResume || state.run == null && state.failure != CameraTetherFailure.SOURCE) {
+                                Button(onClick = onReconnect, shape = CameraControlShape, modifier = Modifier.testTag("tether-reconnect")) {
+                                    Text(stringResource(R.string.tether_reconnect))
+                                }
+                            } else {
+                                if (state.canConfirmAndContinue) Button(onClick = onConfirmContinue, shape = CameraControlShape,
+                                    modifier = Modifier.testTag("tether-confirm-continue")) { Text(stringResource(R.string.tether_confirm_continue)) }
+                                OutlinedButton(onClick = onImport, shape = CameraControlShape,
+                                    modifier = Modifier.testTag("tether-import-instead")) { Text(stringResource(R.string.camera_import)) }
+                            }
                         }
                     }
                 }
@@ -209,27 +224,32 @@ private fun CameraTetherParameter.valueText(): String = formatCameraParameter(co
 @Composable
 private fun TetherParameterBar(state: CameraTetherState, onSetParameter: (Int, Long) -> Unit) {
     val values = state.parameters.values.associateBy { it.code }
-    Column(Modifier.fillMaxWidth().testTag("tether-parameter-strip")) {
-        Row(Modifier.fillMaxWidth()) {
-            TetherParameterKind.common.forEach { kind ->
-                TetherParameterControl(kind, values[kind.code] ?: if (kind == TetherParameterKind.ISO) values[0xd226] else null,
-                    state.parameters, onSetParameter, Modifier.weight(1f),
-                    available = state.phase == CameraTetherPhase.READY && !state.focusBusy, focusBusy = state.focusBusy)
+    Surface(color = MaterialTheme.colorScheme.surface) {
+        Column(Modifier.fillMaxWidth().testTag("tether-parameter-strip")) {
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth()) {
+                TetherParameterKind.common.forEach { kind ->
+                    TetherParameterControl(kind, values[kind.code] ?: if (kind == TetherParameterKind.ISO) values[0xd226] else null,
+                        state.parameters, onSetParameter, Modifier.weight(1f),
+                        available = state.phase == CameraTetherPhase.READY && !state.focusBusy, focusBusy = state.focusBusy)
+                }
             }
-        }
-        if (state.parameters.busy) Text(stringResource(R.string.camera_param_busy), style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        state.parameters.failure?.let { failure ->
-            val message = when (failure) {
-                CameraParameterFailure.UNAVAILABLE -> R.string.camera_param_unavailable
-                CameraParameterFailure.UNCONFIRMED -> R.string.camera_param_unknown
-                CameraParameterFailure.REJECTED, CameraParameterFailure.CONNECTION -> R.string.camera_param_failed
+            if (state.parameters.busy) LinearProgressIndicator(Modifier.fillMaxWidth().height(2.dp))
+            state.parameters.failure?.let { failure ->
+                val message = when (failure) {
+                    CameraParameterFailure.UNAVAILABLE -> R.string.camera_param_unavailable
+                    CameraParameterFailure.UNCONFIRMED -> R.string.camera_param_unknown
+                    CameraParameterFailure.REJECTED, CameraParameterFailure.CONNECTION -> R.string.camera_param_failed
+                }
+                Text(stringResource(message), Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
             }
-            Text(stringResource(message), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            HorizontalDivider()
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraTetherParameter?,
     parameters: CameraTetherParameterState, onSetParameter: (Int, Long) -> Unit, modifier: Modifier = Modifier,
@@ -238,6 +258,7 @@ private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraT
     var reason by remember { mutableStateOf(false) }
     val canSet = available && parameter != null && parameter.enabled && parameter.writable && parameters.writable &&
         !parameters.busy && !focusBusy && parameter.options.isNotEmpty()
+    val readoutColor = if (canSet) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
     Box(modifier) {
         val cell = Modifier.fillMaxWidth().heightIn(min = 64.dp).clickable(enabled = !parameters.busy && !focusBusy, role = Role.Button) {
             if (canSet) menu = true else reason = true
@@ -245,7 +266,7 @@ private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraT
         val value = parameter?.valueText() ?: "—"
         if (inline) Row(cell, verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(kind.title), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            Text(value, style = MaterialTheme.typography.bodyMedium)
+            Text(value, style = MaterialTheme.typography.bodyMedium, color = readoutColor)
             if (!canSet) Text(stringResource(R.string.camera_param_readonly_short), Modifier.padding(start = 8.dp), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else Box(cell, contentAlignment = Alignment.Center) {
@@ -255,14 +276,51 @@ private fun TetherParameterControl(kind: TetherParameterKind, parameter: CameraT
                 kind == TetherParameterKind.SHUTTER -> value.removeSuffix(" s")
                 else -> value
             }
-            Text(readout, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            Text(readout, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, color = readoutColor,
                 modifier = Modifier.semantics { contentDescription = readout })
         }
-        DropdownMenu(menu, { menu = false }) {
-            parameter?.options?.forEach { option ->
-                DropdownMenuItem(text = { Text(formatCameraParameter(parameter.code, option)) }, onClick = {
-                    menu = false; onSetParameter(parameter.code, option)
-                })
+    }
+    if (menu && parameter != null) {
+        val sheetOptions = parameter.options
+        val currentIndex = sheetOptions.indexOf(parameter.current).coerceAtLeast(0)
+        val listState = rememberLazyListState(initialFirstVisibleItemIndex = currentIndex)
+        ModalBottomSheet(
+            onDismissRequest = { menu = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(stringResource(kind.title), style = MaterialTheme.typography.titleLarge)
+                LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    items(sheetOptions, key = { it }) { option ->
+                        val isCurrent = option == parameter.current
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .clip(CameraControlShape)
+                                .clickable {
+                                    menu = false
+                                    onSetParameter(parameter.code, option)
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                formatCameraParameter(parameter.code, option),
+                                Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            )
+                            if (isCurrent) {
+                                Icon(Icons.Outlined.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
             }
         }
     }
@@ -408,9 +466,16 @@ private fun TetherViewfinder(
             }
         }
         if (state.frame == null && state.active && state.liveAvailable) CircularProgressIndicator(Modifier.size(32.dp))
-        if (state.frame != null) Text(if (live) "LIVE" else label,
-            Modifier.align(Alignment.TopStart).padding(12.dp).background(Color.Black.copy(alpha = .6f), MaterialTheme.shapes.small).padding(6.dp),
-            color = Color.White, style = MaterialTheme.typography.labelSmall)
+        if (state.frame != null) Row(
+            Modifier.align(Alignment.TopStart).padding(12.dp)
+                .background(Color.Black.copy(alpha = 0.68f), MaterialTheme.shapes.small)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(if (live) Color(0xFF34D759) else Color.Gray))
+            Text(if (live) "LIVE" else label, color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
         else if (state.active) Text(label,
             Modifier.background(Color.Black.copy(alpha = .7f), MaterialTheme.shapes.small).padding(12.dp), color = Color.White)
         if (live && state.parameters.canCancelTouchFocus) {

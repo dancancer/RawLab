@@ -239,10 +239,12 @@
 "取景已暂停" = "Live view paused";
 "取样监视" = "Sampling Monitor";
 "取消" = "Cancel";
+"取消全选" = "Deselect all";
 "取消对焦" = "Cancel focus";
 "取消导出" = "Cancel Export";
 "取消检查" = "Cancel Check";
 "取消连接" = "Cancel connection";
+"取消选中" = "Deselect";
 "取色失败，请重试。" = "Could not sample. Try again.";
 "受影响色域：%@" = "Affected ranges: %@";
 "另存" = "Save As";
@@ -737,6 +739,7 @@
 "清空选择" = "Clear Selection";
 "清除搜索" = "Clear search";
 "清除相机配置" = "Clear camera profile";
+"清除筛选" = "Clear Filters";
 "清除锚点" = "Clear Anchors";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warm rich vintage urban film, clean stable shadows, warm golden highlights and a wandering story feel";
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
@@ -905,6 +908,7 @@
 "请先应用或放弃未完成的输入和几何草稿。" = "Apply or discard unfinished input and geometry drafts first.";
 "请先打开这张照片，确认是否恢复旧调整。" = "Open this photo first to decide whether to restore its previous adjustments.";
 "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。" = "Check the capture result on the camera first. A new session will not retake the photo. Resume unfinished transfers from import history.";
+"请先确认上方存储卡保存选项" = "Confirm camera card saving above first";
 "请先确认同源图片、处理条件和参考来源。" = "First confirm the same source image, processing conditions, and reference source.";
 "请先选择外观或配方。" = "Select a look or recipe first.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Allow RawLab to use Bluetooth in system settings.";
@@ -944,6 +948,7 @@
 "跟随系统" = "Follow system";
 "跳过" = "Skip";
 "跳过以上目标后重试" = "Skip Listed Photos and Retry";
+"输入 Wi-Fi 名称与密码" = "Enter Wi-Fi Name & Password";
 "输入参考" = "Input reference";
 "输入坐标" = "Input";
 "输入范围" = "Input range";
@@ -971,6 +976,7 @@
 "退出目标调整" = "Exit target adjustment";
 "退出纯预览" = "Exit immersive preview";
 "适合窗口" = "Fit to window";
+"选中" = "Select";
 "选择" = "Select";
 "选择一张照片即可比较方案；也可以展开高级设置手动配置。" = "Choose a photo to compare the options, or expand Advanced settings to configure them manually.";
 "选择参考图" = "Choose reference image";

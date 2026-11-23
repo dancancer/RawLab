@@ -51,6 +51,7 @@
     <string name="camera_change">"更换相机"</string>
     <string name="camera_choose">"选择相机"</string>
     <string name="camera_clear">"清空选择"</string>
+    <string name="camera_clear_filter">"清除筛选"</string>
     <string name="camera_collection">"加入选片集合"</string>
     <string name="camera_complete">"导入完成"</string>
     <string name="camera_connect_action">"连接相机"</string>
@@ -146,6 +147,7 @@
     <string name="camera_not_found">"没有找到相机。请保持相机处于等待连接画面。"</string>
     <string name="camera_open">"打开编辑"</string>
     <string name="camera_open_saved">"查看已导入"</string>
+    <string name="camera_open_settings">"打开系统设置"</string>
     <string name="camera_original_changed">"原片已变化"</string>
     <string name="camera_original_missing">"原片无法访问"</string>
     <string name="camera_original_unavailable">"原片不可用"</string>

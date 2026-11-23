@@ -2,8 +2,11 @@ package com.rawlab.android.camera
 
 import com.rawlab.android.ui.AppIcons
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,7 +14,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +44,6 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
     var returnToTask by rememberSaveable { mutableStateOf(false) }
     var history by rememberSaveable { mutableStateOf(false) }
     var settings by rememberSaveable { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
     fun home() { model.disconnect(); route = CameraRoute.HOME }
     fun connect(mode: CameraMode, resume: Boolean = false, task: Boolean = false) {
         connectReturn = route
@@ -63,44 +64,73 @@ internal fun CameraScreen(model: CameraImportViewModel, storage: PhotoStorage, o
                 TopAppBar(title = { Text(stringResource(R.string.camera_title)) }, expandedHeight = 56.dp,
                     navigationIcon = { IconButton(onClick = { model.disconnect(); onBack() }, modifier = Modifier.testTag("camera-back")) {
                         Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back))
-                    } }, actions = {
-                        Box {
-                            IconButton(onClick = { menu = true }, modifier = Modifier.testTag("camera-menu")) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more)) }
-                            DropdownMenu(menu, { menu = false }) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.camera_history)) }, leadingIcon = { Icon(AppIcons.Outlined.History, null) },
-                                    modifier = Modifier.testTag("camera-history"), onClick = { menu = false; model.setMode(CameraMode.IMPORT); history = true; route = CameraRoute.IMPORT })
-                                DropdownMenuItem(text = { Text(stringResource(R.string.camera_save_location)) }, leadingIcon = { Icon(Icons.Outlined.Settings, null) },
-                                    modifier = Modifier.testTag("camera-destination-settings"), onClick = { menu = false; settings = true })
+                    } })
+            }) { insets ->
+                Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
+                    Column(Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 12.dp).testTag("camera-home"),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val previousCamera = tether.run?.profileId?.let { id -> SonyCameraModel.entries.firstOrNull { it.profileId == id } }
+                        Column(Modifier.padding(horizontal = 4.dp, vertical = 12.dp).testTag("camera-identity"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(if (connection.connected) connection.model.displayName else previousCamera?.displayName ?: stringResource(R.string.camera_title), style = MaterialTheme.typography.headlineSmall)
+                            Text(stringResource(if (previousCamera == null) R.string.camera_choose_connection else R.string.camera_previous_disconnected),
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                            CameraTaskEntry(R.string.camera_import, R.string.camera_import_hint, AppIcons.Outlined.PhotoLibrary,
+                                "camera-mode-IMPORT", !connection.closing && !connection.preparing) {
+                                if (connection.connected && connection.mode == CameraMode.IMPORT) route = CameraRoute.IMPORT else connect(CameraMode.IMPORT)
                             }
                         }
-                    })
-            }) { insets ->
-                Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).testTag("camera-home")) {
-                    val previousCamera = tether.run?.profileId?.let { id -> SonyCameraModel.entries.firstOrNull { it.profileId == id } }
-                    Column(Modifier.padding(horizontal = 20.dp, vertical = 24.dp).testTag("camera-identity"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(if (connection.connected) connection.model.displayName else previousCamera?.displayName ?: stringResource(R.string.camera_title), style = MaterialTheme.typography.headlineSmall)
-                        Text(stringResource(if (previousCamera == null) R.string.camera_choose_connection else R.string.camera_previous_disconnected),
-                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    CameraTaskEntry(R.string.camera_import, R.string.camera_import_hint, AppIcons.Outlined.PhotoLibrary,
-                        "camera-mode-IMPORT", !connection.closing && !connection.preparing) {
-                        if (connection.connected && connection.mode == CameraMode.IMPORT) route = CameraRoute.IMPORT else connect(CameraMode.IMPORT)
-                    }
-                    HorizontalDivider(Modifier.padding(horizontal = 16.dp))
-                    CameraTaskEntry(R.string.tether_title, R.string.camera_tether_hint, AppIcons.Outlined.PhotoCamera,
-                        "camera-mode-TETHER", !connection.closing && !connection.preparing) { connect(CameraMode.TETHER) }
-                    val previous = tether.run
-                    if (previous != null && tether.canResume) {
-                        val name = SonyCameraModel.entries.find { it.profileId == previous.profileId }?.displayName.orEmpty()
-                        TextButton(onClick = { connect(CameraMode.TETHER, resume = true) }, enabled = !connection.closing && !connection.preparing,
-                            modifier = Modifier.padding(horizontal = 56.dp).testTag("camera-resume-tether")) {
-                            Text(stringResource(R.string.camera_resume_previous, name))
+                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                            CameraTaskEntry(R.string.tether_title, R.string.camera_tether_hint, AppIcons.Outlined.PhotoCamera,
+                                "camera-mode-TETHER", !connection.closing && !connection.preparing) { connect(CameraMode.TETHER) }
                         }
-                    } else if (previous?.status == CameraTetherStatus.PAUSED) {
-                        Text(stringResource(R.string.tether_source_error), modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val previous = tether.run
+                        if (previous != null && tether.canResume) {
+                            val name = SonyCameraModel.entries.find { it.profileId == previous.profileId }?.displayName.orEmpty()
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth().clickable(enabled = !connection.closing && !connection.preparing) {
+                                    connect(CameraMode.TETHER, resume = true)
+                                }.testTag("camera-resume-tether"),
+                            ) {
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.camera_resume_previous, name), style = MaterialTheme.typography.titleSmall) },
+                                    leadingContent = { Icon(AppIcons.Outlined.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary) },
+                                    trailingContent = { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null) },
+                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                )
+                            }
+                        } else if (previous?.status == CameraTetherStatus.PAUSED) {
+                            Text(stringResource(R.string.tether_source_error), modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                            Column {
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.camera_history)) },
+                                    leadingContent = { Icon(AppIcons.Outlined.History, null) },
+                                    trailingContent = { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null) },
+                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        model.setMode(CameraMode.IMPORT); history = true; route = CameraRoute.IMPORT
+                                    }.testTag("camera-history"),
+                                )
+                                HorizontalDivider()
+                                ListItem(
+                                    headlineContent = { Text(stringResource(R.string.camera_save_location)) },
+                                    leadingContent = { Icon(Icons.Outlined.Settings, null) },
+                                    trailingContent = { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null) },
+                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                                    modifier = Modifier.fillMaxWidth().clickable { settings = true }.testTag("camera-destination-settings"),
+                                )
+                            }
+                        }
+                        if (connection.closing) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
                     }
-                    if (connection.closing) LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
                 }
             }
         }
@@ -125,32 +155,57 @@ private fun CameraTaskEntry(title: Int, detail: Int, icon: ImageVector, tag: Str
         supportingContent = { Text(stringResource(detail), style = MaterialTheme.typography.bodyMedium) },
         leadingContent = { Icon(icon, null, tint = MaterialTheme.colorScheme.primary) },
         trailingContent = { Icon(AppIcons.AutoMirrored.Outlined.NavigateNext, null) },
-        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 8.dp).testTag(tag))
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(vertical = 4.dp).testTag(tag))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CameraConnectionScreen(model: CameraImportViewModel, onBack: () -> Unit, onHelp: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
     BackHandler(onBack = onBack)
     Scaffold(topBar = {
         TopAppBar(title = { Text(stringResource(if (state.mode == CameraMode.IMPORT) R.string.camera_connect_import else R.string.camera_connect_tether)) }, expandedHeight = 56.dp,
             navigationIcon = { IconButton(onClick = onBack, modifier = Modifier.testTag("camera-back")) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back)) } })
     }) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState()).padding(16.dp)
-            .testTag("camera-connect-screen"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.camera_choose),
-                    Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = onHelp, modifier = Modifier.testTag("camera-connection-help")) {
-                    Text(stringResource(R.string.camera_connection_help))
+        Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp)
+                .testTag("camera-connect-screen"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.camera_choose),
+                        Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = onHelp, modifier = Modifier.testTag("camera-connection-help")) {
+                        Text(stringResource(R.string.camera_connection_help))
+                    }
                 }
+                state.message?.let { message ->
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                            if (message == R.string.camera_permissions) {
+                                TextButton(
+                                    onClick = {
+                                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.fromParts("package", context.packageName, null)))
+                                    },
+                                    modifier = Modifier.testTag("camera-open-settings"),
+                                ) {
+                                    Text(stringResource(R.string.camera_open_settings))
+                                }
+                            }
+                        }
+                    }
+                }
+                if (state.closing) Text(stringResource(R.string.camera_connect_wait))
+                CameraConnectionPanel(state, model)
+                Text(stringResource(R.string.camera_supported), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            state.message?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
-            if (state.closing) Text(stringResource(R.string.camera_connect_wait))
-            CameraConnectionPanel(state, model)
-            Text(stringResource(R.string.camera_supported), style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -166,9 +221,10 @@ private fun CameraConnectionHelpScreen(onBack: () -> Unit) {
             }
         })
     }) { insets ->
-        Column(Modifier.fillMaxSize().padding(insets).verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp).testTag("camera-connect-help"),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Box(Modifier.fillMaxSize().padding(insets), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 680.dp).fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp).testTag("camera-connect-help"),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(stringResource(R.string.camera_guide_intro), style = MaterialTheme.typography.bodyMedium)
             listOf(
                 R.string.camera_guide_prepare_title to R.string.camera_guide_prepare,
@@ -184,6 +240,7 @@ private fun CameraConnectionHelpScreen(onBack: () -> Unit) {
             Text(stringResource(R.string.camera_guide_compatibility), style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.tether_foreground), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
     }
 }
