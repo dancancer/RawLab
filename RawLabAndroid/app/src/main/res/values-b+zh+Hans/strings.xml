@@ -485,7 +485,6 @@
     <string name="rename_look">"重命名外观"</string>
     <string name="rendering">"正在显影…"</string>
     <string name="reset">"重置调整"</string>
-    <string name="reset_denoise">"重置降噪"</string>
     <string name="reset_value">"重置此项"</string>
     <string name="result">"调整后"</string>
     <string name="retry">"重试"</string>

@@ -14,9 +14,9 @@ struct EditorRobot {
     }
 
     func returnToOverviewIfInTool() {
-        let back = app.buttons["editor.tool.back"]
-        if back.exists && back.isHittable {
-            back.tap()
+        let cancel = app.buttons["editor.draft.cancel"]
+        if cancel.exists && cancel.isHittable {
+            cancel.tap()
             waitForCondition(timeout: 10) { app.scrollViews["editor.groups"].exists || app.buttons["editor.export"].exists }
         }
     }

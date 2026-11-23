@@ -100,33 +100,75 @@ extension ContentView {
         return layout {
             previewSection
                 .overlay(alignment: .bottom) {
-                    if viewModel.hasImage && !photoViewing.previewOnly { workspaceActions.padding(.horizontal, 8) }
+                    if viewModel.hasImage && !photoViewing.previewOnly {
+                        VStack(spacing: 8) {
+                            if let notice = coordinator.toolNoticeMessage {
+                                Text(notice)
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 12).padding(.vertical, 6)
+                                    .background(Color.black.opacity(0.75), in: Capsule())
+                                    .overlay { Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
+                                    .accessibilityIdentifier("editor.tool.notice")
+                            }
+                            workspaceActions
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if viewModel.hasImage {
                 Divider().opacity(photoViewing.previewOnly ? 0 : 1)
                 VStack(spacing: 0) {
                     if !isTool {
+                        let itemCount = mobileEditorTools.count + (selectedGroup == .looks ? 1 : 0)
                         ScrollView {
                             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 4), count: EditorLayoutPolicy.toolGridColumns(accessibility: accessibility)), spacing: 4) {
                                 ForEach(mobileEditorTools, id: \.self) { tool in
-                                    Button { coordinator.geometryPerspective = false; coordinator.geometryRotation = false; selectEditorTool(tool) } label: {
+                                    let disabledByMode = (settings.isHDREditing && !supportsHDR(tool)) ||
+                                        (tool == .lens && usesNormalX3f) ||
+                                        (tool == .adjustment(.temperature) && !settings.isHDREditing &&
+                                            ((viewModel.sourceKind == .raw && viewModel.rawWhiteBalance == nil) ||
+                                             (viewModel.sourceKind == .raster && workingSettings.masterRecipeID != nil)))
+                                    let tileTitle = settings.isHDREditing && tool == .film ? L10n.text("外观") : tool.title
+                                    ZStack {
+                                        Button { coordinator.geometryPerspective = false; coordinator.geometryRotation = false; selectEditorTool(tool) } label: {
+                                            VStack(spacing: 4) {
+                                                Image(systemName: tool.symbol).font(.system(size: 21)).frame(height: 24)
+                                                Text(tileTitle).font(.caption).multilineTextAlignment(.center)
+                                                Circle().fill(resetModified(.tool(tool)) ? Color.yellow : .clear).frame(width: 3, height: 3)
+                                            }.frame(maxWidth: .infinity, minHeight: EditorLayoutPolicy.toolGridMinRowHeight(accessibility: accessibility)).contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(.plain)
+                                        .disabled(editorBusy || disabledByMode)
+                                        .opacity(!editorBusy && disabledByMode ? 0.38 : 1)
+                                        .accessibilityLabel(tileTitle).accessibilityValue(editorToolAccessibilityValue(tool))
+                                        .accessibilityIdentifier("tool.\(tool.stableID)")
+                                        if disabledByMode, !editorBusy, let reason = toolUnavailableReason(tool) {
+                                            Color.clear
+                                                .contentShape(Rectangle())
+                                                .onTapGesture { coordinator.showToolNotice(reason) }
+                                                .accessibilityHidden(true)
+                                        }
+                                    }
+                                }
+                                if selectedGroup == .looks {
+                                    Button(action: showQuickPresets) {
                                         VStack(spacing: 4) {
-                                            Image(systemName: tool.symbol).font(.system(size: 21)).frame(height: 24)
-                                            Text(tool.title).font(.caption).multilineTextAlignment(.center)
-                                            Circle().fill(resetModified(.tool(tool)) ? Color.yellow : .clear).frame(width: 3, height: 3)
+                                            Image(systemName: "bookmark").font(.system(size: 21)).frame(height: 24)
+                                            Text(L10n.text("我的预设")).font(.caption).multilineTextAlignment(.center)
+                                            Circle().fill(Color.clear).frame(width: 3, height: 3)
                                         }.frame(maxWidth: .infinity, minHeight: EditorLayoutPolicy.toolGridMinRowHeight(accessibility: accessibility)).contentShape(Rectangle())
                                     }
                                     .buttonStyle(.plain)
-                                    .disabled(editorBusy || (settings.isHDREditing && !supportsHDR(tool)) ||
-                                        (tool == .lens && usesNormalX3f) ||
-                                        (tool == .adjustment(.temperature) && !settings.isHDREditing && viewModel.sourceKind != .raw))
-                                    .accessibilityLabel(tool.title).accessibilityValue(editorToolAccessibilityValue(tool))
-                                    .accessibilityIdentifier("tool.\(tool.stableID)")
+                                    .disabled(editorBusy)
+                                    .accessibilityLabel(L10n.text("我的预设"))
+                                    .accessibilityIdentifier("tool.presets")
                                 }
-
                             }.padding(.horizontal, 8).padding(.vertical, 4)
-                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility).map { CGFloat($0) })
+                        }.frame(height: EditorLayoutPolicy.toolGridHeight(side: side, accessibility: accessibility, itemCount: itemCount).map { CGFloat($0) })
+                            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: selectedGroup)
                             .accessibilityIdentifier("editor.tools")
                         groupNavigation(side: false, singleLine: true, availableWidth: side ? panelWidth : size.width)
                     } else {
@@ -168,34 +210,70 @@ extension ContentView {
     }
 
     var workspaceActions: some View {
-        HStack(spacing: 0) {
-            Button { if toolWorkspaceOpen { undoEditorDraft() } else { requestAdjustmentAction(.undo) } } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                .disabled((toolWorkspaceOpen ? workspaceDraft?.canUndo != true : !viewModel.canUndoAdjustment) || editorBusy)
-                .accessibilityLabel(L10n.text("撤销")).accessibilityIdentifier("editor.draft.undo")
-            Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                .disabled((toolWorkspaceOpen ? workspaceDraft?.canRedo != true : !viewModel.canRedoAdjustment) || editorBusy)
-                .accessibilityLabel(L10n.text("重做")).accessibilityIdentifier("editor.draft.redo")
-            workspaceResetControl
-            Spacer(minLength: 0)
-            Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 20)).frame(width: 44, height: 44).contentShape(Rectangle()) }
-                .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
-            if toolWorkspaceOpen {
-            Menu {
-                Toggle(L10n.text("精细"), isOn: $coordinator.adjustmentFine).accessibilityIdentifier("editor.fine")
-                    .modifier(OptionalGeometryObserver(action: testHooks.onFineToggleFrame))
-                if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $coordinator.hslTargetEnabled) }
-                if currentEditorTool == .adjustment(.toneCurve) { Toggle(L10n.text("目标调整"), isOn: $coordinator.curveTargetEnabled) }
-                Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
-                    .accessibilityIdentifier("editor.compare.mode")
-                Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
-                Button(L10n.text("照片信息")) { coordinator.photoInfoMode = coordinator.photoInfoMode.next }
-                    .accessibilityIdentifier("editor.photoInfo").accessibilityValue(coordinator.photoInfoMode.title)
-                Button(L10n.text("纯预览")) { coordinator.photoViewing.togglePreview(isDraft: geometrySelected) }
-                Button(L10n.text("照片处理设置")) { coordinator.presentProcessingContext() }
-            } label: { Image(systemName: "ellipsis").font(.system(size: 20)).frame(width: 44, height: 44) }
-                .accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("editor.tool.more")
+        HStack(spacing: 8) {
+            HStack(spacing: 0) {
+                Button { if toolWorkspaceOpen { undoEditorDraft() } else { requestAdjustmentAction(.undo) } } label: { Image(systemName: "arrow.uturn.backward").font(.system(size: 19)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    .disabled((toolWorkspaceOpen ? workspaceDraft?.canUndo != true : !viewModel.canUndoAdjustment) || editorBusy)
+                    .accessibilityLabel(L10n.text("撤销")).accessibilityIdentifier("editor.draft.undo")
+                Button { if toolWorkspaceOpen { redoEditorDraft() } else { requestAdjustmentAction(.redo) } } label: { Image(systemName: "arrow.uturn.forward").font(.system(size: 19)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    .disabled((toolWorkspaceOpen ? workspaceDraft?.canRedo != true : !viewModel.canRedoAdjustment) || editorBusy)
+                    .accessibilityLabel(L10n.text("重做")).accessibilityIdentifier("editor.draft.redo")
+                workspaceResetControl
             }
-        }.buttonStyle(.plain).foregroundStyle(.primary)
+            .padding(.horizontal, 4)
+            .background(Color.black.opacity(0.62), in: Capsule())
+            .overlay { Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
+
+            Spacer(minLength: 0)
+
+            if toolWorkspaceOpen && coordinator.adjustmentFine {
+                Button { coordinator.adjustmentFine = false } label: {
+                    Text(L10n.text("精细"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.yellow)
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 32)
+                        .background(Color.black.opacity(0.72), in: Capsule())
+                        .overlay { Capsule().strokeBorder(Color.yellow.opacity(0.65), lineWidth: 1) }
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("editor.fine.badge")
+            }
+
+            Spacer(minLength: 0)
+
+            HStack(spacing: 0) {
+                Button { photoViewing.toggleComparison() } label: { Image(systemName: "square.on.square").font(.system(size: 19)).frame(width: 44, height: 44).contentShape(Rectangle()) }
+                    .disabled(geometrySelected).accessibilityLabel(L10n.text("对比"))
+                    .accessibilityIdentifier("editor.compare")
+                if toolWorkspaceOpen {
+                    Menu {
+                        Toggle(L10n.text("精细"), isOn: $coordinator.adjustmentFine).accessibilityIdentifier("editor.fine")
+                            .modifier(OptionalGeometryObserver(action: testHooks.onFineToggleFrame))
+                        if currentEditorTool == .adjustment(.hsl) { Toggle(L10n.text("目标调整"), isOn: $coordinator.hslTargetEnabled) }
+                        if currentEditorTool == .adjustment(.toneCurve) { Toggle(L10n.text("目标调整"), isOn: $coordinator.curveTargetEnabled) }
+                        Button(L10n.text("我的预设"), action: showQuickPresets)
+                            .accessibilityIdentifier("editor.tool.presets")
+                        Menu(L10n.text("对比方式")) { comparisonModeMenu }.disabled(geometrySelected)
+                            .accessibilityIdentifier("editor.compare.mode")
+                        Toggle(L10n.text("直方图"), isOn: $coordinator.histogramExpanded)
+                        Button(L10n.text("照片信息")) { coordinator.photoInfoMode = coordinator.photoInfoMode.next }
+                            .accessibilityIdentifier("editor.photoInfo").accessibilityValue(coordinator.photoInfoMode.title)
+                        Button(L10n.text("纯预览")) { coordinator.photoViewing.togglePreview(isDraft: geometrySelected) }
+                        Button(L10n.text("照片处理设置")) { coordinator.presentProcessingContext() }
+                    } label: { Image(systemName: "ellipsis").font(.system(size: 19)).frame(width: 44, height: 44) }
+                        .accessibilityLabel(L10n.text("更多")).accessibilityIdentifier("editor.tool.more")
+                }
+            }
+            .padding(.horizontal, 4)
+            .background(Color.black.opacity(0.62), in: Capsule())
+            .overlay { Capsule().strokeBorder(Color.white.opacity(0.14), lineWidth: 1) }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .opacity(rulerFocusOpacity)
     }
 
     var workspaceResetControl: some View {

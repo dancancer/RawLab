@@ -276,12 +276,6 @@
       "source": "全部相册",
       "types": []
     },
-    "all_tools": {
-      "file": "editor_strings.xml",
-      "formats": [],
-      "source": "全部工具",
-      "types": []
-    },
     "app_name": {
       "file": "strings.xml",
       "formats": [],
@@ -5440,12 +5434,6 @@
       "source": "重置所有调整？",
       "types": []
     },
-    "reset_denoise": {
-      "file": "strings.xml",
-      "formats": [],
-      "source": "重置降噪",
-      "types": []
-    },
     "reset_effect": {
       "file": "editor_strings.xml",
       "formats": [
@@ -7421,14 +7409,6 @@
       "fr": "Tout sélectionner",
       "ja": "すべて選択"
     },
-    "全部工具": {
-      "de": "Alle Werkzeuge",
-      "en": "All tools",
-      "es": "Todas las herramientas",
-      "fr": "Tous les outils",
-      "ja": "すべてのツール",
-      "zh-Hans": "全部工具"
-    },
     "全部相册": {
       "de": "Alle Alben",
       "en": "All albums",
@@ -8189,14 +8169,6 @@
       "ja": "{0} を読み込み中",
       "zh-Hans": "正在导入 {0}"
     },
-    "正在导入外观": {
-      "de": "Look wird importiert…",
-      "en": "Importing look…",
-      "es": "Importando look…",
-      "fr": "Importation du look…",
-      "ja": "ルックを読み込み中…",
-      "zh-Hans": "正在导入外观"
-    },
     "正在结束上次连接…": {
       "zh-Hans": "正在结束上次连接…",
       "en": "Finishing previous connection…",
@@ -8428,14 +8400,6 @@
       "fr": "Confirmer le résultat et continuer",
       "ja": "結果を確認して続行",
       "zh-Hans": "确认结果后继续"
-    },
-    "离开前应用更改？": {
-      "de": "Änderungen vor dem Verlassen anwenden?",
-      "en": "Apply changes before leaving?",
-      "es": "¿Aplicar cambios antes de salir?",
-      "fr": "Appliquer les modifications avant de quitter ?",
-      "ja": "終了前に変更を適用しますか？",
-      "zh-Hans": "离开前应用更改？"
     },
     "离开此页面会暂停联机，已保存照片不受影响。": {
       "zh-Hans": "离开此页面会暂停联机，已保存照片不受影响。",

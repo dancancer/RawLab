@@ -2,32 +2,6 @@ import RawLabKit
 import SwiftUI
 import UIKit
 
-struct AdjustmentToolLabel: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    let title: String
-    let symbol: String
-    let selected: Bool
-    let progress: Double
-    let width: CGFloat
-    let height: CGFloat
-    var maximumWidth: CGFloat? = nil
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: symbol).font(.body).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            Text(title).font(dynamicTypeSize.isAccessibilitySize ? .body : .subheadline)
-                .fixedSize(horizontal: maximumWidth == nil, vertical: true)
-                .frame(maxWidth: maximumWidth.map { max(44, $0 - 55) })
-            Circle().fill(progress != 0 ? Color.yellow : .clear).frame(width: 3, height: 3)
-        }
-        .padding(.horizontal, 8).frame(minWidth: 44, minHeight: max(44, height))
-        .frame(maxWidth: maximumWidth)
-        .foregroundStyle(selected ? Color.yellow : Color.primary)
-        .background(selected ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 5))
-        .contentShape(Rectangle()).accessibilityElement(children: .ignore).accessibilityLabel(title)
-    }
-}
-
 struct FilmLabel: View {
     @Environment(\.locale) private var localizationLocale
     @ScaledMetric(relativeTo: .caption) private var labelHeight = 30.0
@@ -91,22 +65,6 @@ struct FilmLabel: View {
         }
         return images
     }()
-}
-
-struct DefaultValueMarker: View {
-    @Environment(\.locale) private var localizationLocale
-    let range: ClosedRange<Double>
-    let value: Double
-
-    var body: some View {
-        let _ = localizationLocale
-        GeometryReader { geometry in
-            let fraction = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
-            Circle().fill(.yellow).frame(width: 3, height: 3)
-                .position(x: 14 + (geometry.size.width - 28) * fraction, y: 2)
-        }
-        .accessibilityHidden(true)
-    }
 }
 
 struct FloatingHistogram: View {
@@ -241,5 +199,39 @@ struct HistogramView: View {
                 context.fill(marker, with: .color(.yellow))
             }
         }
+    }
+}
+
+struct IndeterminateProgressLine: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var height: CGFloat = 3
+    var tint: Color = .yellow
+    var trackColor: Color = .white.opacity(0.16)
+    @State private var startedAt = Date()
+
+    var body: some View {
+        Group {
+            if reduceMotion {
+                Rectangle().fill(tint)
+            } else {
+                TimelineView(.animation) { context in
+                    let segment = IndeterminateProgressMath.segment(elapsed: context.date.timeIntervalSince(startedAt))
+                    Canvas { graphics, size in
+                        let fullRect = CGRect(origin: .zero, size: size)
+                        graphics.fill(Path(fullRect), with: .color(trackColor))
+                        let startX = size.width * segment.lowerBound
+                        let width = size.width * (segment.upperBound - segment.lowerBound)
+                        if width > 0 {
+                            let activeRect = CGRect(x: startX, y: 0, width: width, height: size.height)
+                            graphics.fill(Path(roundedRect: activeRect, cornerRadius: size.height / 2), with: .color(tint))
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .allowsHitTesting(false)
+        .onAppear { startedAt = Date() }
     }
 }

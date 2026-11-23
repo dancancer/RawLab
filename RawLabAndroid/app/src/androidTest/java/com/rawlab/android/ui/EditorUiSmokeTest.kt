@@ -80,10 +80,10 @@ class EditorUiSmokeTest {
             compose.applyWorkbenchDraft(model)
             assertEquals(0.60f, model.state.value.edits.exposure, 0.001f)
 
-            compose.openWorkbenchMenuItem("adjustment-menu-undo")
+            compose.onNodeWithTag("workspace-undo").assertIsEnabled().performClick()
             compose.waitUntilEditorReady(model)
             assertEquals(0f, model.state.value.edits.exposure, 0.001f)
-            compose.openWorkbenchMenuItem("adjustment-menu-redo")
+            compose.onNodeWithTag("workspace-redo").assertIsEnabled().performClick()
             compose.waitUntilEditorReady(model)
             assertEquals(0.60f, model.state.value.edits.exposure, 0.001f)
         } finally {

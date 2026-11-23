@@ -79,7 +79,7 @@ extension RawEditorViewModel {
     func importLooks(from sources: [URL], compatibilityPrompt: LookImportCoordinator.CompatibilityPrompt? = nil,
                      dcpOptionsPrompt: LookImportCoordinator.DCPOptionsPrompt? = nil,
                      completion: @escaping (LookImportBatchResult) -> Void) {
-        guard !sources.isEmpty else {
+        guard !sources.isEmpty, !isLookLibraryBusy else {
             completion(LookImportBatchResult(imported: [], failures: []))
             return
         }
@@ -108,12 +108,12 @@ extension RawEditorViewModel {
     }
 
     func renameLook(id: String, name: String) {
-        guard !isImportingLooks, lutMap[id]?.isCustom == true else { return }
-        isImportingLooks = true
+        guard !isLookLibraryBusy, !isLoadingLUTs, lutMap[id]?.isCustom == true else { return }
+        isUpdatingLooks = true
         lookImportCoordinator.rename(id: id, name: name) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
-                self.isImportingLooks = false
+                self.isUpdatingLooks = false
                 switch result {
                 case .success(let look):
                     self.availableLUTs = self.availableLUTs.map { option in
@@ -129,16 +129,44 @@ extension RawEditorViewModel {
     }
 
     func removeUnreadableLook(_ entry: LookLibrary.UnreadableLook) {
-        guard !isImportingLooks, !isLoadingLUTs else { return }
-        isImportingLooks = true
+        guard !isLookLibraryBusy, !isLoadingLUTs else { return }
+        isUpdatingLooks = true
         lookImportCoordinator.removeUnreadable(entry) { [weak self] result in
             guard let self else { return }
             self.resultDelivery {
-                self.isImportingLooks = false
+                self.isUpdatingLooks = false
                 switch result {
                 case .success(let remaining): self.unreadableLooks = remaining
                 case .failure(let error):
                     self.reportError(error, operation: .lookImport, stage: "removeUnreadableLook", message: error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    func removeLook(id: String) {
+        guard !isLookLibraryBusy, !isLoadingLUTs, lutMap[id]?.isCustom == true else { return }
+        isUpdatingLooks = true
+        lookImportCoordinator.remove(id: id) { [weak self] result in
+            guard let self else { return }
+            self.resultDelivery {
+                self.isUpdatingLooks = false
+                switch result {
+                case .success:
+                    self.availableLUTs.removeAll { $0.id == id }
+                    self.lutMap.removeValue(forKey: id)
+                    self.pruneRecentLooks()
+                    if self.hasImage,
+                       !self.currentPreviewSettings.isHDREditing,
+                       self.currentPreviewSettings.masterRecipeID == nil,
+                       self.currentPreviewSettings.lutID == id {
+                        self.lastPreviewRequest = nil
+                        self.completedPreviewCache.removeAll()
+                        self.completedPreviewCacheBytes = 0
+                        self.updatePreview(settings: self.currentPreviewSettings)
+                    }
+                case .failure(let error):
+                    self.reportError(error, operation: .lookImport, stage: "removeLook", message: error.localizedDescription)
                 }
             }
         }

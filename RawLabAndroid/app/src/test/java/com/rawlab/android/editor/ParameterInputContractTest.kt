@@ -2,6 +2,7 @@ package com.rawlab.android.editor
 
 import com.rawlab.android.editor.controls.AdjustmentScale
 import com.rawlab.android.editor.controls.formatAdjustment
+import com.rawlab.android.editor.controls.formatAdjustmentReadout
 import com.rawlab.android.editor.controls.editorDockLayout
 import org.junit.Assert.*
 import org.junit.Test
@@ -25,6 +26,16 @@ class ParameterInputContractTest {
         assertEquals("0", formatAdjustment(.00001f, .05f))
         assertEquals("12.35", formatAdjustment(12.3456f, 1f))
         assertEquals("12,35", formatAdjustment(12.3456f, 1f, Locale.GERMAN))
+    }
+
+    @Test fun displayReadoutsKeepFixedDecimalsAndPlusSignForSignedRanges() {
+        assertEquals("+0.10", formatAdjustmentReadout(.1f, .05f, -5f..5f, Locale.US))
+        assertEquals("-0.05", formatAdjustmentReadout(-.05f, .05f, -5f..5f, Locale.US))
+        assertEquals("0.00", formatAdjustmentReadout(0f, .05f, -5f..5f, Locale.US))
+        assertEquals("0.00", formatAdjustmentReadout(-.00001f, .05f, -5f..5f, Locale.US))
+        assertEquals("+12", formatAdjustmentReadout(12f, 1f, -100f..100f, Locale.US))
+        assertEquals("5500", formatAdjustmentReadout(5500f, 10f, 2000f..50000f, Locale.US))
+        assertEquals("+0,10", formatAdjustmentReadout(.1f, .05f, -5f..5f, Locale.GERMAN))
     }
 
     @Test fun originalValueExceptionAppliesToEveryParameterAndEquivalentNumericText() {

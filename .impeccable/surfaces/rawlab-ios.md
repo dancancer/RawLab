@@ -1,58 +1,25 @@
+---
+version: 1
+slug: "rawlab-ios"
+primary_target: "RawLab/RawLab/UI/Editor/ContentView.swift"
+related_targets: ["RawLab/RawLab/UI/EditorState/EditorLayout.swift", "RawLab/RawLab/UI/Editor/ContentView+Panels.swift", "RawLab/RawLab/UI/Adjustments/AdjustmentControl.swift", "RawLab/RawLab/UI/Adjustments/AdjustmentRuler.swift", "RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift", "RawLab/RawLab/UI/Library/RecentPhotosView.swift"]
+---
+
 # RawLab iOS / iPadOS Editor
 
-Mode: Operate.
+Mode: Operate. Target audience: sighted photographers working at standard iOS / iPadOS text sizes across six supported languages (low-vision AX large-text reflow and VoiceOver flows are out of active design scope).
 
-Target: `RawLab/RawLab/UI/Editor/ContentView.swift`.
-Native SwiftUI/UIKit for iPhone and iPad. Preserve the shared RAW processing contract.
-Root `DESIGN.md` records the scoped iOS system without changing desktop guidance.
+Native SwiftUI/UIKit editor enforcing `.preferredColorScheme(.dark)` over a `Color(white: 0.12)` photo canvas and semantic `.systemBackground` / `.secondarySystemBackground` surfaces with `.yellow` / `UIColor.systemYellow` functional accents. Photos default to `0 pt` canvas margin (optional `16 pt` margin toggle), fitting proportionally to fill at least one edge without default cropping. Before import, show `RawLab` branding, guidance copy, photo import, Recently Opened, file import, and camera import; keep the adjustment dock absent.
 
-- Use a dark neutral photo canvas, system text styles, SF Symbols and yellow
-  selection accents. Dark appearance is intentional even with a light system
-  appearance; semantic native labels and backgrounds remain the source of truth.
-- Before import, show the photo import action and keep the adjustment surface
-  absent. After import, keep the photograph available, the selected tool in view
-  and the parameter surface independently scrollable.
-- Compose beside the photo when window width is at least 600 pt, wider than its
-  height and below accessibility text sizes. The side panel is bounded by 336 pt
-  and 48% of the window width. Otherwise stack photo, tool strip and controls.
-  Accessibility tools use a 44 pt glyph circle and complete body-style title;
-  the stacked layout reserves up to 96 pt of photo space when available. Its parameter region contracts to measured content within the window budget; side panels stay full height. Tools use a full-width strip, with Fine and Reset grouped separately.
-- Keep 44×44 pt action and drag targets. Tools use inline icons and complete names. Fine is a compact selected button beside Reset, with a 32 pt visible body and a 44 pt touch target. Scalar parameter controls at every width place the name and complete value above a full-width ruler, with a stable numeric slot. Value changes never move or resize the ruler, and width changes never alter the value or legal grid.
-- Preserve the fixed yellow ruler indicator, moving tape/default dot, legal grid
-  and quarter-sensitivity Fine action. Local strokes rise from 13/22 to at most
-  28 pt within 24 pt, then decay in 180 ms even while a paused finger stays down.
-  Release settles only tape position over 120 ms. Focus fades in over 100 ms,
-  uses phone/pad peripheral opacity 0.08/0.42, holds 160 ms and returns in 180 ms.
-  New input interrupts the finish. Reduce Motion retains static values, arcs,
-  ticks and defaults, with immediate release restoration.
-- Numeric entry uses one native complete-value column with a protected local
-  draft. Keep fixed 44 pt Cancel/Apply actions, title, complete temporary value
-  and unit, and range. Changed drafts require explicit Cancel or Apply; closing
-  returns accessibility focus to the original numeric button. Regular iPad
-  popovers prefer 440 pt, or 600 with accessibility text, clamped to the current
-  presenting window and safe area. iPhone explicitly uses a sheet, including
-  landscape regular horizontal size class. iPad popovers adapt to a large sheet
-  in compact presentation.
-  Content wider than 480 pt and shorter than 400 pt puts context beside
-  wheel/default; ordinary picker height
-  is 200–220 pt, accessibility height 100–264 pt. Do not auto-scroll away context.
-- Geometry and lens use staged preview settings with fixed Cancel/Apply. Apply
-  commits, Cancel discards, and both return to Exposure. Dirty tool navigation
-  asks Apply/Discard/Continue. Active drafts block export even when unchanged;
-  single-photo import is guarded by changed drafts. Lens editing is RAW-only,
-  and its export guard is source evidence without a raster UI coverage claim.
-- Preserve film and master recipes as peer tools, individual/all resets,
-  comparison, named HSL channels, existing effects, histogram state and local
-  edit-save feedback. The master-recipe family is `square.stack.3d.up`.
-- Preview feedback follows `previewRendering` / `previewResizePending` at the
-  photo edge. Single JPEG and rendered DNG export support RAW and raster input;
-  batch supports compatible RAW and raster photos, resolving camera-only settings for each target. Preserve size controls, destinations and actual output
-  results without implying original-RAW or edit-history preservation by DNG.
-- The app icon retains the desktop yellow/cyan dual-frame identity on a
-  full-bleed opaque charcoal square. The operating system supplies the mask.
+- **Two-level dedicated tool workspaces**:
+  - **Overview**: Top toolbar shows Back/Import, Camera, Export/Cancel, and sectioned More (Files & Batch, Adjustment Reuse, View & Processing, Preferences incl. Haptics & Language). Above the dock, floating dark translucent `workspaceActions` capsules (`.black.opacity(0.62)` + `1 pt` `.white.opacity(0.14)` stroke) expose Undo/Redo/`EditorWorkspaceResetControl` on the leading side and Compare on the trailing side; status/error retry capsules stack cleanly in the top safe-area banner without overlapping canvas buttons. Below sits a 4-column flat tool `LazyVGrid` (`21 pt` SF Symbols, `3×3 pt` yellow dot, `52 pt` min row height, adaptive `60 pt` 1-row / `116 pt` 2-row height — no 48 pt tool circles, 270° arcs, or scalar badges) over a `48 pt` horizontal group bar (**6 SDR groups / 7 HDR groups**). Looks group includes `My Presets` alongside Film and Master Recipes (and opens `HDRLookControls` when HDR editing is active); tapping disabled tools displays the localized unavailable reason toast.
+  - **Active Tool Workspace**: Top navigation bar hides to preserve vertical photo space; every tool opens a dedicated `EditorToolDraft` (up to 100 undo/redo steps, persisted via `EditorToolDraftStore`) with its scrollable panel above a fixed `48×48 pt` `Cancel / Title / Apply` footer (`Apply` highlighted in `.yellow` when modified). Both Apply and Cancel return to the tool grid overview (dirty exit prompts general `"离开前应用更改？"` Apply / Discard / Continue, also wired to the left-edge `EditorToolBackGesture`). Canvas `workspaceActions` adds the `editor.tool.more` menu (`Fine` toggle, HSL Target toggle, My Presets, Compare modes, Histogram, Photo Info, Pure Preview, Processing Settings) and shows a tappable yellow `Fine` pill (`editor.fine.badge`) between the capsules when `Fine` is enabled.
+- **Adaptive Window Composition**: Side-by-side when `availableWidth >= 600 pt && width > height` (`min(336 pt, width × 0.48)`); otherwise stacked with measured parameter height (`240 pt` fallback, `52%` height cap, **`140 pt` photo reservation**). Minimum touch target `44×44 pt`.
+- **Dual-Mode Adjustment Controls & Native Value Wheel**:
+  - Single-parameter scalar tools use full-width `AdjustmentRulerView` (fixed yellow center needle; moving `13/22 → 28 pt` tape with `24 pt` excitation radius, `180 ms` decay, `120 ms` settle, `100/160/180 ms` focus fade at `0.08` phone / `0.42` iPad opacity, `125 ms` gated haptics, and Reduce Motion static mode).
+  - Multi-parameter tools (WB, HSL, Vignette, Grain, Denoise, Film & Master Recipe Strength, Color Grading, Geometry) use compact single-row inline sliders (`72 pt` title, `14×14 pt` thumb, `44 pt` height, fixed worst-case `stableValueWidth` preventing horizontal slider jitter); Film and Master Recipes share `6 pt` yellow-outlined selection cards, custom looks support context-menu Rename & confirmed Remove, Denoise/Vignette/Grain rely on canvas `workspaceActions` Reset without duplicate inline headers/reset buttons, and RAW Tint edits switch camera WB cleanly.
+  - `Fine` (`0.25×` sensitivity) lives in `editor.tool.more`; `EditorCompactActionStyle` (`32 pt` body / `44 pt` target) applies to `exposure.auto`. Tapping any monospaced readout opens `NativeValueWheel` (single-column `UIPickerView` inside `PickerContainerView` / `SizingPickerView` with width-change re-centering; iPhone sheet even in landscape, iPad `280–480 pt` popover adapting to sheet in compact contexts; wide-short `width > 480 && height < 400` puts 44% context beside `200–220 pt` picker).
+- **Rich Tools, Lens, HDR & Zoom**: Full `RGB / Red / Green / Blue` Tone Curves (`194 pt` canvas, `-8…+8 EV` in HDR), Color Grading (`130 pt` wheel), 8-channel HSL (`19 pt` swatches + `88 pt` `3×` circular photo-sampling loupe), Geometry live crop overlay, and **RAW + JPEG/raster Lens Correction** (including `lens.vignetting` switch and manual metadata editor; disabled on normal X3F and HDR). Full HDR toolset + `.hdrRendition` group + Metal EDR monitoring + HDR luminance histogram + cancellable HDR JPEG / HDR HEIF / SDR JPEG / rendered DNG export. Double-tap Fit ↔ `100%` activates `1024 px` multi-level ROI detail tiling above `1.05×` base scale.
+- **Recently Opened & Camera Preview**: `RecentPhotosView` retains up to 100 photos / ~2 GiB with All/Edited/Unedited filters and lower-right pencil badges. `IOSCameraWorkspace` (import, incremental import, JPEG resize, live view tether with tap-to-focus & focus frames) ships as a preview and remains untested on physical camera hardware.
 
-Native review evidence belongs in `.impeccable/review/ios-editor-v4/README.md`.
-Required coverage includes iPhone/iPad portrait and landscape, narrow windows,
-large Dynamic Type, the value wheel, drafts, looks, HSL and export. Screenshot
-coverage does not establish hardware haptic feel, performance improvement or
-RAW output correctness. No photo catalog is implied.
+[DESIGN.md](../../DESIGN.md) records the iOS / iPadOS tokens and shared rules; `.impeccable/review/ios-editor-v4/README.md` holds historical v4 simulator captures.

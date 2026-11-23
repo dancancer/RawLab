@@ -485,7 +485,6 @@
     <string name="rename_look">"ルック名を変更"</string>
     <string name="rendering">"現像中…"</string>
     <string name="reset">"調整をリセット"</string>
-    <string name="reset_denoise">"ノイズ低減をリセット"</string>
     <string name="reset_value">"この項目をリセット"</string>
     <string name="result">"補正後"</string>
     <string name="retry">"再試行"</string>

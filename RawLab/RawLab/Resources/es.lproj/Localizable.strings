@@ -167,7 +167,6 @@
 "保持相机开机，在机身菜单打开智能手机连接。菜单名称以你的机型为准。关闭占用相机连接的其他应用。" = "Mantén la cámara encendida y abre la conexión con el smartphone en su menú. El nombre depende del modelo. Cierra otras apps que estén usando la conexión de la cámara.";
 "保留旧版的特殊色彩。" = "Conserva los colores particulares del revelado anterior.";
 "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。" = "Conserva hasta 100 fotos recientes y unos 2 GB de copias locales. Quitar una entrada conserva la foto original y sus ajustes.";
-"保留这次几何或镜头修改？" = "¿Conservar estos cambios de geometría u objetivo?";
 "候选效果" = "Resultados candidatos";
 "假色：蓝色为暗部，琥珀色高于参考白，粉色超出屏幕容量。" = "Color falso: azul en sombras, ámbar sobre el blanco de referencia, rosa sobre la capacidad de la pantalla.";
 "停止导入" = "Detener la importación";
@@ -352,9 +351,7 @@
 "尝试应用内自动加入（需 Hotspot 权限）" = "Unirse automáticamente desde la app (requiere permiso Hotspot)";
 "尺寸" = "Tamaño";
 "屏幕容量 %@ EV" = "Margen de pantalla %@ EV";
-"展开%@组" = "Expandir el grupo %@";
 "展开直方图" = "Expandir histograma";
-"展开调整栏" = "Expandir ajustes";
 "已保存" = "Guardado";
 "已保存 %@ / %@ 个文件" = "%@ de %@ archivos guardados";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Guardadas %@ · Sin cambios %@ · Omitidas %@ · Deshechas %@ · Pendientes %@";
@@ -496,10 +493,8 @@
 "撤销 %@ 张" = "Deshacer fotos: %@";
 "操作已失效" = "Operación no válida";
 "操作未完成，请重试。" = "La operación no se ha completado. Inténtalo de nuevo.";
-"收起%@组" = "Contraer el grupo %@";
 "收起其他方案" = "Ocultar otras opciones";
 "收起直方图" = "Contraer histograma";
-"收起调整栏" = "Contraer ajustes";
 "放大 · 点按还原" = "Ampliada · Toca para ajustar";
 "放大预览" = "Vista previa ampliada";
 "放弃任务" = "Descartar tarea";
@@ -673,6 +668,7 @@
 "正在取色…" = "Muestreando…";
 "正在处理" = "Procesando";
 "正在导入" = "Importando";
+"正在导入外观" = "Importando look…";
 "正在导入照片…" = "Importando fotos…";
 "正在导出" = "Exportando";
 "正在开启相机 Wi-Fi…" = "Activando la red Wi-Fi de la cámara…";
@@ -804,6 +800,7 @@
 "确认兼容导入" = "Importar con estos ajustes";
 "确认并冻结任务" = "Confirmar y fijar tarea";
 "确认清理已导出的相机原件？清理后这些原件无法在应用内打开，已导出的照片不受影响。" = "¿Limpiar los originales exportados de la cámara? Después, estos originales ya no podrán abrirse en la app; las fotos exportadas no se ven afectadas.";
+"离开前应用更改？" = "¿Aplicar cambios antes de salir?";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
 "移除“%@”？" = "¿Eliminar \"%@\"?";

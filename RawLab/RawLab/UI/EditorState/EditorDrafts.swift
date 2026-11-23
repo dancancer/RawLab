@@ -39,10 +39,6 @@ extension ContentView {
     var lensSelected: Bool { coordinator.lensSelected }
     var geometrySelected: Bool { coordinator.geometrySelected }
     var choosingMasterRecipe: Bool { coordinator.choosingMasterRecipe }
-    var adjustmentsExpanded: Bool {
-        get { coordinator.adjustmentsExpanded }
-        nonmutating set { coordinator.adjustmentsExpanded = newValue }
-    }
     var isAdjustingSlider: Bool { coordinator.isAdjustingSlider }
     var geometryDraft: GeometrySettings? {
         get { coordinator.geometryDraft }
@@ -57,7 +53,6 @@ extension ContentView {
         nonmutating set { coordinator.draftExitPresented = newValue }
     }
     var pendingToolSelection: EditorToolSelection? { coordinator.pendingToolSelection }
-    var pendingAdjustmentExpansion: Bool? { coordinator.pendingAdjustmentExpansion }
     var selectedGroup: EditorAdjustmentGroup {
         get { coordinator.selectedGroup }
         nonmutating set { coordinator.selectedGroup = newValue }
@@ -67,7 +62,6 @@ extension ContentView {
         nonmutating set { coordinator.hslChannel = newValue }
     }
     var adjustmentFine: Bool { coordinator.adjustmentFine }
-    var collapsedEditorTool: EditorToolSelection? { coordinator.collapsedEditorTool }
     var preparedReset: PreparedEditorReset? { coordinator.preparedReset }
     var resetConfirmationPresented: Bool {
         get { coordinator.resetConfirmationPresented }
@@ -204,19 +198,9 @@ extension ContentView {
 
     func previewEditorDraft() { coordinator.previewEditorDraft() }
 
-    func selectedScalarBadge(_ adjustment: AdjustmentKind) -> String? {
-        guard selectedAdjustment == adjustment, !geometrySelected, !lensSelected else { return nil }
-        return adjustment.badge(for: adjustment.value(from: settings))
-    }
-
     func selectEditorGroup(_ group: EditorAdjustmentGroup) { coordinator.selectEditorGroup(group) }
     func normalizeHDRNavigation(isHDREditing: Bool) { coordinator.normalizeHDRNavigation(isHDREditing: isHDREditing) }
     func requestToolWorkspaceExit() { coordinator.requestToolWorkspaceExit() }
-    func requestAdjustmentExpansion(_ expanded: Bool) { coordinator.requestAdjustmentExpansion(expanded) }
-
-    func completeAdjustmentExpansion(_ expanded: Bool, closingWorkspace: Bool = false) {
-        coordinator.completeAdjustmentExpansion(expanded, closingWorkspace: closingWorkspace)
-    }
 
     func cancelDraftNavigation() {
         coordinator.cancelDraftNavigation(onSystemPhotoSkipped: { continueSystemPhotoImport() })

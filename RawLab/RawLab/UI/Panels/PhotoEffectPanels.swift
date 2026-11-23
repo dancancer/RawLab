@@ -5,9 +5,6 @@ struct IOSDenoiseControls: View {
     @Environment(\.locale) private var localizationLocale
     @Binding var settings: RawDenoiseSettings
     let onEditingChanged: (Bool) -> Void
-    let onReset: () -> Void
-    var resetEnabled: Bool = true
-    @State private var advancedExpanded = true
 
     private var parameters: [(String, WritableKeyPath<RawDenoiseSettings, Double>, Double)] { [
         (L10n.text("亮度降噪"), \.luma, 0),
@@ -21,39 +18,27 @@ struct IOSDenoiseControls: View {
                 Toggle(L10n.text("降噪"), isOn: $settings.enabled)
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("denoise.enabled")
-                Button(action: onReset) {
-                    Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
+                Spacer(minLength: 4)
+                Picker(L10n.text("预设"), selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
+                    Text(RawDenoisePreset.detail.title).tag(RawDenoisePreset.detail)
+                    Text(RawDenoisePreset.clean.title).tag(RawDenoisePreset.clean)
+                    if settings.preset == .custom { Text(L10n.text("自定义")).tag(RawDenoisePreset.custom) }
                 }
-                .accessibilityLabel(L10n.text("重置降噪"))
-                .accessibilityIdentifier("denoise.reset")
-                .disabled(!resetEnabled)
+                .pickerStyle(.menu)
+                .id(localizationLocale.identifier)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(minHeight: 44)
+                .accessibilityIdentifier("denoise.preset")
             }
-            Picker(L10n.text("预设"), selection: Binding(get: { settings.preset }, set: { settings.apply($0) })) {
-                Text(RawDenoisePreset.detail.title).tag(RawDenoisePreset.detail)
-                Text(RawDenoisePreset.clean.title).tag(RawDenoisePreset.clean)
-                if settings.preset == .custom { Text(L10n.text("自定义")).tag(RawDenoisePreset.custom) }
-            }
-            .pickerStyle(.menu)
-            .id(localizationLocale.identifier)
-            .frame(minHeight: 44)
-            .accessibilityIdentifier("denoise.preset")
-            DisclosureGroup(isExpanded: $advancedExpanded) {
-                VStack(spacing: 12) {
-                    ForEach(parameters.indices, id: \.self) { index in
-                        let parameter = parameters[index]
-                        AdjustmentControl(title: parameter.0, value: value(for: parameter.1),
-                                          range: 0...100, step: 1, defaultValue: parameter.2,
-                                          formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
-                                          identifier: "denoise.\(index)", onEditingChanged: onEditingChanged)
-                            .disabled(!settings.enabled)
-                    }
+            VStack(spacing: 12) {
+                ForEach(parameters.indices, id: \.self) { index in
+                    let parameter = parameters[index]
+                    AdjustmentControl(title: parameter.0, value: value(for: parameter.1),
+                                      range: 0...100, step: 1, defaultValue: parameter.2,
+                                      formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                                      identifier: "denoise.\(index)", onEditingChanged: onEditingChanged)
+                        .disabled(!settings.enabled)
                 }
-                .padding(.top, 8)
-            } label: {
-                Text(L10n.text("高级参数"))
-                    .font(.subheadline)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("denoise.advanced")
             }
         }
     }
@@ -70,8 +55,6 @@ struct IOSPhotoEffectsControls: View {
     let effect: AdjustmentKind
     let value: (PhotoEffectParameter) -> Binding<Double>
     let onEditingChanged: (Bool) -> Void
-    let onReset: () -> Void
-    var resetEnabled: Bool = true
     @State private var advancedExpanded = false
 
     private var parameters: [PhotoEffectParameter] {
@@ -80,20 +63,6 @@ struct IOSPhotoEffectsControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Text(effect.title)
-                    .font(.subheadline.weight(.medium))
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                if effect != .vignette || advancedExpanded {
-                    Button(action: onReset) {
-                        Image(systemName: "arrow.counterclockwise").frame(width: 44, height: 44)
-                    }
-                    .accessibilityLabel(L10n.format("重置%@", effect.title))
-                    .accessibilityIdentifier("effects.\(effect.rawValue).reset")
-                    .disabled(!resetEnabled)
-                }
-            }
             parameterControl(effect == .vignette ? .vignetteAmount : .grainAmount)
             DisclosureGroup(isExpanded: $advancedExpanded) {
                 VStack(alignment: .leading, spacing: 12) {

@@ -221,6 +221,14 @@ struct LookImportTests {
         let lastDeleted = try awaitResult { afterRemoval.removeUnreadable(remaining[0], completion: $0) }
         guard case .success(let empty) = lastDeleted else { throw LookImportTestError.message("last deletion failed") }
         try check(empty.isEmpty, "iOS all unreadable UI rows can be removed")
+        let customRemoved: Result<Void, LookImportFailureReason> = try awaitResult {
+            afterRemoval.remove(id: renameTarget.record.id, completion: $0)
+        }
+        guard case .success = customRemoved else { throw LookImportTestError.message("custom look removal failed") }
+        let postDeleteLoad = try awaitResult { afterRemoval.load(completion: $0) }
+        guard case .success(let postDeleteRows) = postDeleteLoad else { throw LookImportTestError.message("post-delete reload failed") }
+        try check(!postDeleteRows.looks.contains { $0.record.id == renameTarget.record.id } && !manager.fileExists(atPath: changed.url.path),
+                  "removing a custom look deletes it from LookLibrary and storage")
         print("PASS: iOS look import regression suite")
     }
 }

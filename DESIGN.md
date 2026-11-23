@@ -1,20 +1,66 @@
 ---
-name: "RawLab iOS / iPadOS design extension"
-description: "Native editor design and iOS / iPadOS tokens."
+name: "RawLab"
+description: "Photo-first dark native RAW editor design system across macOS, Windows, iOS / iPadOS, and Android."
+colors:
+  canvas-dark: "#1c1c1e"
+  surface-low: "#212124"
+  surface-base: "#272729"
+  surface-high: "#303033"
+  win-window-surface: "#181a1e"
+  win-tree-surface: "#232326"
+  win-selected-surface: "#34332d"
+  accent-yellow: "#f2ce48"
+  accent-ink: "#252110"
+  accent-cyan: "#63cdd6"
+  outline-subtle: "#444449"
+  text-primary: "#eeeef2"
+  text-secondary: "#b9b9c3"
+  error-soft: "#ffb09b"
 rounded:
+  mac-thumbnail: "3pt"
+  mac-control: "4pt"
+  mac-film-selection: "6pt"
+  mac-overlay: "8pt"
+  win-tile: "3px"
+  win-control: "5px"
+  win-popup: "6px"
+  win-banner: "8px"
   ios-film-artwork: "4pt"
   ios-film-selection: "6pt"
+  ios-number-tile: "6pt"
   ios-overlay: "8pt"
+  android-tile: "4dp"
+  android-control: "6dp"
+  android-overlay: "10dp"
 spacing:
   ios-gap-compact: "4pt"
   ios-gap-standard: "8pt"
   ios-gap-controls: "12pt"
   ios-inset-controls: "16pt"
+  mac-canvas-margin: "12pt"
+  win-canvas-margin: "16px"
+  android-grid-gap: "8dp"
 components:
-  ios-adjustment-circle-base:
-    size: "48pt"
+  mac-slider-thumb:
+    size: "14pt"
+  mac-hsl-swatch:
+    size: "18pt"
+  mac-histogram-plot:
+    height: "68pt"
+  win-slider-thumb:
+    size: "14px"
+  win-hsl-swatch:
+    size: "20px"
+  win-histogram-plot:
+    height: "92px"
+  ios-tool-grid-row:
+    height: "52pt"
+  ios-group-bar:
+    height: "48pt"
+  ios-draft-bar:
+    height: "48pt"
   ios-hsl-swatch:
-    size: "22pt"
+    size: "19pt"
   ios-histogram-header:
     height: "44pt"
   ios-film-artwork:
@@ -23,188 +69,195 @@ components:
     rounded: "{rounded.ios-film-selection}"
   ios-status-container:
     rounded: "{rounded.ios-overlay}"
+  android-touch-target:
+    size: "48dp"
+  android-hsl-swatch:
+    size: "19dp"
+  android-shutter-button:
+    size: "68dp"
 ---
 
-Native slider rendering and crop precision follow [compact controls](docs/design/editor-workspace/compact-controls.md). The macOS workspace layout is described below.
-
-Approved mobile implementation, 2026-11-10: [dedicated tool workspaces](docs/design/editor-workspace/mobile-workspaces.md) and [camera workspaces](docs/design/camera-transfer/android-camera-ui.md) define iOS/Android navigation, scoped drafts and compact controls. Their native implementation and validation status is tracked at proposal level in the design manifest. Desktop rules below retain their scope; clickable prototypes are design assets and do not establish native or camera-hardware validation.
-
-# RawLab Desktop Design
+# Design System: RawLab
 
 ## Overview
 
-The native macOS editor uses a left photo browser, a central canvas and a right adjustment inspector. The photo leads. Preserve source photos and the shared rendering contract. Controls support Simplified Chinese, English, German, French, Japanese and Spanish; film simulation names retain their proper names.
-
-Editable proposals are maintained in the [design asset registry](docs/design/README.md). Check each asset's metadata before reusing it: a review prototype does not replace the confirmed native rules in this document or establish implementation evidence.
-
-<!-- BEGIN RAWLAB IOS IPADOS OVERVIEW -->
-### iOS / iPadOS
-
 **Creative North Star: "RawLab photo-first editor"**
 
-The native iOS and iPadOS editor uses the same restrained gray-and-yellow identity for an Operate surface: import a photo, inspect a real preview, adjust it and export. The photograph leads; system navigation, sheets, menus, SF Symbols and semantic text styles carry the interface.
+RawLab is an Operate-mode native RAW and photo editor spanning four native clients: **macOS** (SwiftUI/AppKit), **Windows** (WPF), **iOS / iPadOS** (SwiftUI/UIKit), and **Android** (Jetpack Compose / Material 3). Across every screen size and operating system, the photograph leads: restrained dark neutral-gray surfaces eliminate viewing glare, functional yellow marks active controls and adjusted values without decorative competition, and native platform ergonomics shape each workspace while preserving shared color and parameter semantics.
 
-This extension is scoped to `RawLab/RawLab/UI/Editor/ContentView.swift`, its Adjustments, EditorState and Panels, and `RawLab/RawLab/UI/Controls/EditorComponents.swift`. The desktop prose above and in every section below remains the macOS authority. All frontmatter tokens have an `ios-` prefix and describe native points at their base size. Semantic UIKit colors and Dynamic Type styles are recorded as native source identities in the prose and sidecar; they are not converted into fixed hex values, CSS font families or invented tonal ramps. The sidecar records native components without presenting HTML/CSS approximations as SwiftUI or UIKit controls.
+RawLab targets **sighted photographers working at standard OS text sizes**; low-vision extreme large-text reflow and screen-reader-first (VoiceOver/TalkBack/UIA) flows are outside active design scope. Controls support Simplified Chinese, English, German, French, Japanese, and Spanish while preserving proper film simulation names.
+
+Related interaction specifications and asset registries live in [compact controls](docs/design/editor-workspace/compact-controls.md), [dedicated mobile workspaces](docs/design/editor-workspace/mobile-workspaces.md), [mobile camera workspaces](docs/design/camera-transfer/android-camera-ui.md), [edited-photo previews](docs/design/editor-workspace/edited-photo-previews.md), and the [design asset registry](docs/design/README.md). Clickable design prototypes remain reference expressions and do not replace implemented source behavior or device acceptance.
 
 **Key Characteristics:**
-- A dark photo workspace with yellow functional selection.
-- Continuous control surfaces, a scrollable tool strip and complete numeric readouts.
-- Window-dependent iPhone/iPad composition and a stacked accessibility layout.
-- A moving horizontal ruler, a single-column system value wheel and explicit local drafts.
-
-This document records implemented design and source behavior. Simulator evidence and its limits belong in `.impeccable/review/ios-editor-v4/README.md`; these rules do not establish physical haptic feel, performance improvement or RAW export correctness.
-<!-- END RAWLAB IOS IPADOS OVERVIEW -->
+- A dark neutral photo workspace with functional yellow for active selection, modified values, and adjustment fills.
+- Desktop three-column Edit / Select / Preview workspaces (macOS & Windows) paired with mobile two-level dedicated tool workspaces (iOS & Android).
+- Native platform controls, monospaced/tabular numeric readouts, and explicit draft transactions without decorative card stacks.
+- Cross-client HDR editing, monitoring, and luminance histograms alongside mobile wireless Sony camera import and tethering.
 
 ## Colors
 
-- Dark neutral-gray canvas (`NSColor(white: 0.12, alpha: 1)`) and native window-background surfaces reduce glare.
-- Yellow identifies selected tools, changed values, default-value markers and adjustment progress. It is functional, not decorative.
-- Film icons are square, flat front-label artwork inspired by documented Fujifilm packaging. Preserve each reference's colors and typography; no perspective boxes, sides or generic all-green styling. Simulations without physical products use explicitly marked concept labels.
-- Histogram RGB channels and clipping colors retain their output-diagnostic meanings, not sensor-measurement claims.
+Achromatic neutral-dark surfaces anchor color judgment so the photograph's own chroma and contrast remain uncontested, while functional yellow signals selection, edits, and progress.
 
-<!-- BEGIN RAWLAB IOS IPADOS COLORS -->
+### Primary
+- **Functional Yellow** (`#F2CE48` on Windows & Android; `.yellow` / `NSColor.systemYellow` / `UIColor.systemYellow` on Apple platforms): Active tabs, selected tool outlines, modified parameter values and dots, ruler indicator needles, slider active fills, crop handles, and primary draft/export confirmations. Paired with `#252110` dark ink when used as a solid fill on Windows and Android.
+
+### Secondary
+- **Brand Cyan** (`#63CDD6`): Supporting secondary role in the dual-frame RawLab icon (yellow + cyan overlap) and Android secondary scheme token. Never used as competing editor chrome.
+
+### Neutral
+- **Canvas Dark** (`#1C1C1E` on Windows & Android; `NSColor(white: 0.12)` / `Color(white: 0.12)` on Apple platforms): Photo editing and contact-sheet background.
+- **Layered Control Surfaces** (`#212124` low inputs/tiles, `#272729` inspector/dock surfaces, `#303033` raised bars/headers on Windows & Android; native `.windowBackgroundColor` / `.systemBackground` / `.secondarySystemBackground` on Apple platforms): Separate chrome from the photo canvas via quiet tonal steps and `1 px`/`1 pt` borders (`#444449` / `.separatorColor`).
+- **Text & Semantic Error** (`#EEEEF2` primary, `#B9B9C3`/`#B1B1BC` secondary/muted, `#FFB09B`/`#FFAB92` soft error on mobile/Windows; `.primary`/`.secondary`/`.systemRed` on Apple platforms): Readable standard-contrast typography and non-glaring diagnostics.
+
+### Shared Visualization & Artwork Semantics
+- **Film Icons**: Square, flat front-label artwork inspired by documented Fujifilm packaging; preserve each reference's palette and typography without perspective boxes, sides, or generic all-green styling. Concepts without physical packaging use explicitly marked concept labels.
+- **RGB Histogram**: 256 bins per channel, shared linear peak scaling, filled RGB/CMY/neutral-gray overlaps representing the current sRGB output.
+- **HDR Luminance Histogram**: 256 `log1p`-scaled luminance bins spanning `-8…+8 EV`, with a solid white `0 EV` reference-white marker (0.5 position) and a dashed yellow current display-headroom marker (both backed with black contrast strokes).
+- **Clipping & HDR False Color**: Highlight clipping red `RGBA(255, 0, 0, 160)` and shadow clipping blue `RGBA(0, 130, 255, 160)`. HDR False Color maps linear luminance `y` to magenta-red `(1.0, 0.0, 0.35)` when `y > headroom`, amber `(1.0, 0.6, 0.0)` when `1.0 < y <= headroom`, deep blue `(0.02, 0.15, 0.7)` when `y <= 0.01`, and neutral gray `(0.35, 0.35, 0.35)` for SDR midtones.
+- **HSL Swatches**: Eight named channels (Red `#E65C5A`, Orange `#E8A04F`, Yellow `#DFCE51`, Green `#7BBA64`, Aqua `#68C8C7`, Blue `#5C89DF`, Purple `#A075D2`, Magenta `#CB6EAF` on mobile; matching named WPF colors on Windows and system swatches on macOS).
+
+### macOS
+- Editor, Batch Selection, and Batch Export windows force `.preferredColorScheme(.dark)`; utility windows (About, Software Update, LUT/DCP import dialogs, Preset/Transfer sheets) inherit parent or system appearance.
+- Numeric fields use `NSColor(calibratedWhite: 0.13, alpha: 1)` fill with `.systemYellow` border when active/stepping and `.systemRed` when invalid. Active workspace-mode toolbar pills use neutral `Color.primary.opacity(0.14)`, while subtle yellow washes (`0.08–0.18` opacity) mark selected folders, tiles, film cards, grading zones, and curve points. Drag-and-drop drop targets highlight with system `Color.accentColor`.
+- Canvas badges and overlays use `.black.opacity(0.65–0.72)` or `.regularMaterial`.
+
+### Windows
+- Explicit dark WPF palette applied dynamically across 33 brushes: `WindowSurface #181A1E`, `CanvasSurface #1C1C1E`, `InputSurface #212124`, `TreeSurface #232326`, `OverlayPaper #24272D`, `Surface #272729`, `PopupSurface #292C32`, `RaisedSurface #303033`, `HoverSurface #41454D`, `PressedSurface #515662`, `SelectedSurface #34332D`, `Outline #444449`, `Foreground #EEEEF2`, `Muted #B1B1BC`, `Accent/Indicator #F2CE48`, `AccentText #252110`, `OverlayAccent #F2D259`, `ErrorForeground #FFAB92`, and `OverlaySurface #D923252A`. Disabled controls use `0.4` opacity.
+
 ### iOS / iPadOS
+- The editor and camera workspace deliberately enforce `.preferredColorScheme(.dark)` even under light system appearance.
+- Photo canvas uses `Color(white: 0.12)`; semantic `Color(.systemBackground)`, `Color(.secondarySystemBackground)`, and `Color(.tertiarySystemBackground)` carry docks, parameter controls, and compact number tiles; `Color(.tertiarySystemFill)` backs Recent thumbnail slots.
+- Camera workspace uses `Color(white: 0.10–0.17)` neutral surfaces; live viewfinder focus frames use `#34D759`-equivalent green (`rgb(0.20, 0.84, 0.35)`) when locked vs. `.white.opacity(0.92)` while searching, backed by `.black.opacity(0.45)`.
 
-The photo canvas uses `Color(white: 0.12)`; the workspace and adjustment surface use `Color(.systemBackground)` and `Color(.secondarySystemBackground)`. The editor deliberately requests dark appearance even when the system appearance is light. Text uses `Color.primary` / `Color.secondary` and UIKit `label` / `secondaryLabel`; the ruler uses `UIColor.systemYellow` for its fixed indicator.
+### Android
+- Static dark-only Material 3 `darkColorScheme` (`background #1C1C1E`, `surfaceContainerLow #212124`, `surface #272729`, `surfaceContainerHigh #303033`, `primary #F2CE48`, `onPrimary #252110`, `primaryContainer/secondaryContainer #3D351C`, `secondary #63CDD6`, `onSurface #EEEEF2`, `onSurfaceVariant #B9B9C3`, `outline #85858E`, `outlineVariant #444449`, `error #FFB09B`); no light theme and no Material You dynamic color.
+- Pure `#000000` backs camera viewfinder, tether fullscreen review, HSL 3× loupe, and RGB histogram plots; `#34D759` indicates locked focus frames. `NumericControl` modified readouts, ruler needles, and active bars use `colorScheme.primary` (`#F2CE48`), paired with neutral `onSurfaceVariant` baseline markers.
 
-Yellow remains functional: selected tools, signed scalar values, progress arcs, film outlines and primary actions. Positive, negative and zero selected scalar badges keep the same yellow. The ruler's separate default dot uses `UIColor.secondaryLabel`; it moves with the tape and is not the yellow current indicator. HSL swatches preserve their eight named channel colors and selected outline.
-
-**The iOS State Color Rule.** Preserve semantic text colors and express selection with a visible shape or label as well as tint.
-<!-- END RAWLAB IOS IPADOS COLORS -->
+**The Functional Yellow Rule.** Yellow signals active selection, modified state, and adjustment progress — never decorative chrome. Pair tint with a visible dot, outline, or label.
 
 ## Typography
 
-Use macOS system typography, compact 11-point tool labels and native control sizes. Numeric values use monospaced digits. Built-in film names must remain readable; wrap long names inside stable two-line slots. Do not add a display font or scale text with window width.
+Use each operating system's native UI font stack with monospaced or tabular numerals for parameter readouts at standard OS text sizes. Do not add decorative display fonts or shrink labels to force fixed containers.
 
-<!-- BEGIN RAWLAB IOS IPADOS TYPOGRAPHY -->
+### macOS
+- System font (`SF Pro`) without display fonts or window-width scaling.
+- `13 pt` semibold sidebar/inspector section headers (`文件夹`, `照片`, `调整栏`) and parameter labels; right-aligned `NSFont.monospacedDigitSystemFont` numeric fields.
+- `12 pt` toolbar workspace tabs (semibold when active), folder tree rows, group tabs (`medium`), and collapsible accordion headers (`semibold`).
+- `11 pt` film names (wrapped in a two-line `29 pt` slot; `10 pt` when a compatibility notice appears), master recipe titles, status bar text, comparison labels, and secondary captions.
+- `10 pt` sidebar thumbnail filenames and master recipe subtitles; `14 pt` semibold + `12 pt` photo info overlay; `.caption2.monospacedDigit()` histogram stats and Highlights tick marks.
+
+### Windows
+- `Segoe UI, Microsoft YaHei UI` with `TextOptions.TextFormattingMode="Display"` and `UseLayoutRounding="True"`.
+- `13 px` body (`Window.FontSize`, photo info overlay, canvas labels); `11 px` captions (inspector tools, film/recipe labels, tile filenames, histogram stats, lens metadata); `24 px` empty-state welcome heading; `22 px` semibold and `16 px` semibold headings in batch and picker windows.
+- `ParameterNumberBox` enforces `FontNumeralAlignment.Tabular` (`CultureInfo`-aware formatting with max 2 decimals) rather than a monospace family.
+
 ### iOS / iPadOS
+- SwiftUI system text styles and `UIFont.preferredFont(forTextStyle:)` (`SF Pro`): `.subheadline` parameter names, semibold `.body.monospacedDigit()` complete tappable values inside a reserved width slot, `.caption` tool grid captions / film two-line slots / reference bounds, `.headline` value-wheel title, `.body.monospacedDigit()` temporary wheel readout and picker rows, and `16 pt` monospaced tether parameter bar readouts.
 
-Use SwiftUI system text styles and `UIFont.preferredFont(forTextStyle:)`. Parameter names use `.subheadline`; complete tappable values use semibold `.body` with monospaced digits. At every available control width, put the name and value above a full-width ruler. Reserve a stable numeric slot so sign and digit-count changes cannot move or resize the ruler; preserve the compact number-only geometry controls. Reference text uses `.caption`; ruler labels use `.caption2`. The wheel title uses `.headline`, the complete temporary value and native picker rows use `.body`, and its range/default explanation uses `.caption`. SF Symbols follow the surrounding native styles.
+### Android
+- Compose Material 3 default `Typography` on system `sans` (`bodySmall`, `labelSmall`, `titleMedium`, `bodyMedium`, `labelMedium`, `titleSmall`, `titleLarge`, `labelLarge`, `headlineSmall`).
+- `16 sp` readouts in the camera tether parameter strip (`Shutter / Aperture / ISO / EV`).
+- `NumericControl` stabilizes numeric jitter using `FontFamily.Monospace` inside fixed-width boxes (`104 dp` standard, `56 dp` / `68 dp` inline) rather than `tnum`, using fixed-decimal signed formatting (`formatAdjustmentReadout`).
 
-Ordinary tool captions use two centered lines of `.caption`. At accessibility sizes, each tool changes to a horizontal row with a 44-point glyph circle and its complete `.body` title; only the glyph's Dynamic Type growth is capped. The caption-sized scalar badge is supplementary: measure it with the native preferred caption font, show it only when it fits the scaled circle, and use the glyph at accessibility sizes. The main parameter header retains the complete value and unit.
-
-Film names retain stable two-line slots. Do not shrink text to make a circle, window or translated title fit.
-<!-- END RAWLAB IOS IPADOS TYPOGRAPHY -->
+**The Stable Readout Rule.** Numeric readouts reserve stable width with monospaced or tabular digits so sign and precision changes never shift adjacent sliders or controls.
 
 ## Layout
 
-- Minimum content size is 950×620 points. In Edit, the browser defaults to 232 points wide and the inspector to 304. Resize each independently within 200–288 and 280–360 points and remember its width. Below 1180 points, the browser opens as a 264-point overlay and the inspector uses 280 points. Dismiss the overlay with Escape or by opening a photo.
-- The window toolbar switches between Edit, Select and Preview. Use a flat toolbar with a distinct selected tab. The full tab bounds respond to clicks, including the space between the icon and the label. Select replaces the canvas with a contact sheet and keeps folder navigation. Click to mark a photo, Shift-click to mark a range in the current folder, and double-click to edit. Marked photos stay selected across folders. Add them explicitly to the batch selection and retain items that fail to transfer. Preview gives the photo both sidebars' space. Escape restores the previous workspace.
-- The directory tree lists folders only. Its disclosure controls, the selected browse path and the current photo are independent. Keep Collapse All above the tree, the path and Up above the thumbnails, and separate scroll positions for both lists. Remember the thumbnail position per folder and restore it when returning. Directory errors provide a retry and retain the current photo.
-- The photo area shares zoom and pan across comparison views. Fit mode uses bounded previews. Actual pixels request native resolution and account for display scale. Photo information overlays the upper-left corner, and comparison labels stay inside the photo.
-- Keep the RGB or HDR luminance histogram at the top of the inspector. When the inspector is hidden, the histogram remains available in a toolbar popover. The six adjustment groups sit above independently scrolling tools. Processing settings stay at the foot of the inspector. Show automatic migration progress and the saved outcome there, with a rollback action after a successful migration. Confirm that rollback replaces all adjustments made after migration; retain this action after reopening the photo. Keep the window's bottom edge for photo and preview status.
-- Show exposure, contrast, highlights, shadows, white point and black point in the Light group. Highlights and shadows each use −100 to +100 with zero at the center. Color Grading exposes one wheel at a time for shadows, midtones or highlights, with numeric hue and saturation and resets for the active zone and all zones.
-- In the adjustment inspector, align the parameter name and numeric field above a full-width slider. The rail ends at the thumb centers for the minimum and maximum values, and the highlighted range follows the thumb. Keep all eight HSL swatches visible with named tooltips, a current-channel label and arrow-key navigation. Give denoise its own switch and a preset menu that fits the sidebar.
-- Keep Look Strength above the scrolling Looks tools and use it for films, imported looks and master recipes. Film uses a three-column artwork chooser with categories, case- and accent-insensitive search, Recent and import. Filtering leaves the applied look selected. Recent keeps up to 12 readable identities and updates after a successful save.
-- Geometry and lens editing keep Cancel and Apply below the scrolling controls. Changes go through the existing draft departure and export guards. Keep numeric fields readable and allow a stacked row where a label, track and value cannot fit side by side.
+### macOS
+- Minimum content size `950×620 pt` (default `1320×850 pt`), with three workspace modes (`Edit`, `Select`, `Preview`) in a flat center toolbar; `Escape` restores the previous mode from Preview.
+- In `Edit`, the left browser defaults to `232 pt` (`200–288 pt`) and the right inspector defaults to `304 pt` (`280–360 pt`), persisting widths across launches. Below `1180 pt` window width, the browser opens as a `264 pt` leading overlay drawer (dismissed via `Escape`, opening a photo, or widening past `1180 pt`) and the inspector locks to `280 pt`.
+- The left browser strictly separates folders (`min(height × 0.34, 220 pt)` in Edit, full height in Select, with Collapse All above the tree) and thumbnails (2-column sidebar in Edit; adaptive `132–208 pt` contact sheet + bottom batch bar in Select; per-folder scroll memory, breadcrumbs, Up button, and retry on directory error).
+- The central photo canvas spans full height between the toolbar and `30 pt` bottom status bar, sharing zoom and pan across comparisons (`12 pt` default canvas margin, toggleable; Fit vs. 1:1 actual pixels quantized in `64 px` render steps; upper-left `360 pt` max-width photo info overlay; in-bounds comparison labels).
+- The right inspector places the collapsible `68 pt` RGB/HDR histogram at the top (also accessible in a `286 pt` toolbar `ellipsis.circle` popover when hidden), followed by **6 adjustment groups in SDR / 7 in HDR** (`Looks`, `Light`, `Color`, `Effects`, `Detail`, `Geometry & Lens`, plus `HDR Rendition`), Look Strength pinned above SDR Looks (replaced by `HDRLookControls` + `QuickPresetView` in HDR), and independently scrolling accordion tools. When a Geometry/Lens draft is active, fixed Cancel/Apply draft actions occupy the footer; otherwise the footer displays `"当前外观"` + active look name and opens the **`320 pt` Processing Settings popover** (HDR toggle, HDR monitoring, HDR rendition controls, HDR RAW camera development, processing version, automatic migration progress & confirmed rollback, X3F mode, and exposure baseline).
 
-<!-- BEGIN RAWLAB IOS IPADOS LAYOUT -->
+### Windows
+- Minimum window `1000×680 px` (default `1440×920 px`) in a 4-row shell: Menu (`28 px`), Toolbar (`48 px`), WorkspaceBody (`*`), Status Bar (`40 px`).
+- Uses the same `Editing` / `Selection` / `Preview` modes and `1180 px` compact threshold (`264 px` slide-over `LibraryOverlay` drawer; inspector locked to `280 px` with splitter hidden). Resizable widths persist (`200–288 px` default `232 px` library; `280–360 px` default `304 px` inspector via `5 px` `GridSplitter`).
+- Strictly separates virtualized folder `TreeView` (`min(220, height × 0.34)` in Editing, full height in Selection) and thumbnail gallery (2-col `108 px` rows in Editing; adaptive `144 px` rows in Selection with bottom action bar) with per-folder `Gallery.Anchors` scroll memory and debounced filesystem watch.
+- Right inspector hosts the collapsible `92 px` histogram (reparents to `280 px` toolbar `HistogramPopup` when hidden or body height `< 400 px`), 6 SDR / 7 HDR group wrap panel, SDR Look Strength row, scrolling tool buttons with `ToolBody` inserted directly below the active tool, fixed Geometry/Lens `DraftActions` when editing geometry/lens, and a footer with active look name + `330 px` `ProcessingPopup` (processing version, migration status & rollback, X3F mode, exposure baseline).
+
 ### iOS / iPadOS
+- `NavigationStack` workspace with **0 pt default photo canvas margin** (optional `16 pt` toggle); photos scale proportionally to fill at least one edge without default cropping. Empty state shows RawLab heading, guidance copy, photo import, Recently Opened, file import, and camera import; no adjustment dock appears until a photo is open.
+- **Two-level dedicated tool workspaces**:
+  - **Overview**: photo canvas with floating dark translucent `workspaceActions` capsules (`.black.opacity(0.62)` + `1 pt` `.white.opacity(0.14)` stroke; leading Undo/Redo/Reset, trailing Compare) above a 4-column tool `LazyVGrid` (`52 pt` min row height, `4 pt` spacing, adaptive `60 pt` 1-row / `116 pt` 2-row height; Looks includes `My Presets`) and `48 pt` single-line horizontal group bar (**6 SDR groups / 7 HDR groups**). Overview top toolbar holds Back/Import, Camera, Export/Cancel, and sectioned More.
+  - **Active Tool Workspace**: top navigation bar hides cleanly to maximize photo height; parameter panel scrolls independently above a fixed `48×48 pt` `Cancel / Title / Apply` footer (highlighting `Apply` in `.yellow` when modified); canvas `workspaceActions` adds `editor.tool.more` overflow menu (`Fine` toggle, HSL Target toggle, My Presets, Compare modes, Histogram, Photo Info, Pure Preview, Processing Settings) and displays a tappable yellow `Fine` capsule (`editor.fine.badge`) between capsules when `Fine` is active. Left-edge `UIScreenEdgePanGestureRecognizer` exits via dirty-draft confirmation.
+- Side-by-side composition activates when `availableWidth >= 600 pt && width > height` (`sidePanelWidth = min(336 pt, width × 0.48)`); narrower or portrait windows stack vertically with measured parameter height (`240 pt` fallback, `52%` height cap, **`140 pt` photo reservation**).
+- Native Value Wheel explicitly presents as a sheet on iPhone (including regular-width landscape) and an anchored popover on iPad (`280–480 pt`, ideal `360 pt`, height `min(440 pt, availableHeight - safeArea - 40)`), adapting to a sheet in compact contexts; when sheet content is `width > 480 && height < 400`, title/value/range context sits at `44%` width beside the `200–220 pt` picker without auto-scrolling away.
+- Camera Tether adapts between a `108 pt` bottom shutter bar (portrait) and `96 pt` right rail (landscape).
 
-A `NavigationStack` contains the photo workspace and the same adjustment surface across iPhone and iPad. Before import, the photo area shows the import action and the adjustment surface is absent. After import, the tool strip remains attached to the photo column and the parameter area scrolls independently.
+### Android
+- Edge-to-edge dark system bars with `Scaffold`, `statusBarsPadding`, `navigationBarsPadding`, and `imePadding`. State-driven root router (`Camera` / `BatchExport` / `BatchSelection` / `Album` / `Editor`) preserves Album and Editor state.
+- Editor uses the same **two-level dedicated tool workspaces** and **0 dp default photo margin** (optional `8 dp` toggle): `48 dp` overview top bar (Back, Camera, Export, sectioned More; hidden in tool workspaces and Pure Preview); adaptive home dock (`108 dp` 1-row / `164 dp` 2-row height) with 6 SDR / 7 HDR `EditorGroupStrip` + 4-column `EditorTool` grid (`52 dp` min row height; Looks includes `My Presets`; disabled tools dim and explain via snackbar on tap); active tool workspace with floating dark translucent `workspaceActions` capsules (`CircleShape`, `Black 0.62`, `1 dp` `White 0.14` stroke, focus fade, plus tappable yellow `Fine` pill between capsules when active), scrollable parameter body (`min(332 dp, availableHeight - 96 dp)`), and fixed `48 dp` `Close / Title / Check` Apply/Cancel footer (`Check` in `#F2CE48` when dirty). Per-photo HDR controls live inside Processing Settings rather than Editor Settings.
+- Side dock activates at `maxWidth >= 600 dp && maxWidth > maxHeight` (`336 dp` fixed width); otherwise bottom dock.
+- Album supports Square or Original-ratio Staggered grids (`1–6` columns, default `3`). Camera Tether adapts between a `108 dp` bottom shutter bar (portrait) and `96 dp` right rail (landscape).
 
-The current layout policy uses side-by-side composition when the available width is at least 600 points, width exceeds height and Dynamic Type is below accessibility sizes. The side panel is `min(336, width × 0.48)` points wide; portrait, narrow windows and accessibility sizes use the stacked composition. These are window conditions, not device-model or orientation locks. Keep the tool strip horizontally scrollable and center the selected tool after its available width changes.
-
-The stacked parameter region measures its content and contracts up to a body-scaled 220-point maximum, further bounded by the window and text size. The full-width tool row is separate from the trailing Fine/Reset action group. Complex parameter content scrolls while draft actions and group navigation remain fixed; the side panel retains its allocated height. Ordinary stacked windows reserve up to 96 points for the photo, or 68 points when tools scroll with parameters in a short accessibility window. These are layout budgets, not guaranteed photo heights in an arbitrarily small window.
-
-The value wheel explicitly uses a sheet on iPhone, including a landscape window with regular horizontal size class. iPad uses an anchored popover with system adaptation to a large sheet in compact presentation. Regular popovers prefer 440 points of height, or 600 at accessibility sizes, clamped to the presenting window height minus its safe-area insets and 40 points. Popover width is 280–480 points, with a 360-point ideal; sheets use their available width. The Cancel/Apply row remains outside the value content. Below it, use a single stacked column normally; when a sheet's content area is wider than 480 points and shorter than 400, put the scrollable title/value/range context beside the wheel and default action, giving the context 44% of the width. Do not auto-scroll the context away on presentation. The picker is bounded to 200–220 points normally and 100–264 at accessibility sizes; native row height is at least 44 points and grows with the preferred body font.
-
-**The iOS Photo Budget Rule.** Reflow and scroll controls as the window and reading size change; keep the photograph available for evaluating the adjustment.
-<!-- END RAWLAB IOS IPADOS LAYOUT -->
+**The Photo Budget Rule.** Keep the photograph visible and unobstructed at center stage; scroll complex parameters within bounded panels or drawers rather than squeezing controls over the image.
 
 ## Elevation & Depth
 
-Use continuous window surfaces and separators. The histogram uses an inset dark plot with a visible source label. Film and file selections use restrained yellow outlines.
+All four clients rely on flat tonal layering and hairline dividers rather than decorative drop shadows or card stacks.
 
-<!-- BEGIN RAWLAB IOS IPADOS ELEVATION -->
-### iOS / iPadOS
+- **macOS**: Continuous window surfaces separated by `1 pt` `.separatorColor` lines (`6 pt` split drag target); only the compact narrow-window browser drawer uses a structural drop shadow (`.black.opacity(0.35), radius: 12, x: 4`). Transient canvas overlays use `.black.opacity(0.65–0.72)` or `.regularMaterial`.
+- **Windows**: Pure tonal step hierarchy (`#181A1E` → `#232326` → `#272729` → `#292C32` → `#303033`) with `1 px` `Outline` strokes (`#444449`) and **zero `DropShadowEffect`**. Canvas overlays use translucent `OverlaySurface` (`#D923252A`).
+- **iOS / iPadOS**: Continuous semantic backgrounds and dividers; system sheets/popovers for secondary flows; `.regularMaterial` capsules/bars pinned near photo edges without obscuring the image center; floating RGB/HDR histogram uses `.black.opacity(0.65)` with a `1 pt` `.white.opacity(0.12)` border.
+- **Android**: Flat Material 3 tonal hierarchy (`#1C1C1E` → `#212124` → `#272729` → `#303033`) with `HorizontalDivider` / `VerticalDivider` and dark scrims (`.56–.80` black alpha); only `RgbHistogramOverlay`'s popup uses an explicit `shadowElevation` (`6 dp`).
 
-Continuous semantic backgrounds and dividers separate the photo, tool strip and parameter surface. System sheets and popovers supply task presentation; progress feedback uses system `.regularMaterial` near the photo edge. Do not obscure the imported photograph's center with a processing overlay.
-
-The floating RGB histogram uses a translucent black surface (opacity 0.65), a quiet white border (opacity 0.12) and rounded corners. Its title and before/after source remain explicit. A short photo area or accessibility text size uses a scrollable system popover with a 44-point close target. Film selection uses a restrained yellow fill (opacity 0.08) and outline. Tool circles use a subtle selected yellow fill (opacity 0.12) and border (opacity 0.5), with low-opacity white fill/border for unselected tools. These overlays do not establish a decorative shadow vocabulary.
-<!-- END RAWLAB IOS IPADOS ELEVATION -->
+**The Flat-By-Default Rule.** Separate regions through tonal steps and hairline dividers; reserve translucency or structural elevation for transient overlays, drawers, and popups.
 
 ## Shapes
 
-- Circular tool icons have a stable 40-point diameter inside 72x70-point button layouts, leaving room for localized captions.
-- Progress starts at the top: positive changes run clockwise, negative changes counterclockwise. Normalize each side against its own distance from the default. Keep the ring visible on the selected tool.
-- Thumbnail corners are 4 points; film selection outlines are 6 points. Do not introduce decorative blobs or nested cards.
-
-<!-- BEGIN RAWLAB IOS IPADOS SHAPES -->
-### iOS / iPadOS
-
-Ordinary adjustment tool circles start at 48 points and scale relative to the title3 text style. Accessibility tool rows use a 44-point glyph circle. Tappable controls and crop drag handles target at least 44×44 points; visible glyphs, the 22-point HSL swatches and the 12-point crop corner marks can be smaller within that target.
-
-Progress arcs start at 12 o'clock, travel clockwise for positive change and counterclockwise for negative change, and cover at most 270 degrees. Normalize each direction against its own distance from the parameter default; do not turn every default into zero. A default has no progress arc.
-
-Film artwork and film selection outlines use the namespaced rounded tokens. Histogram and material status containers use the overlay radius. Preserve these native shapes without adding decorative card stacks.
-<!-- END RAWLAB IOS IPADOS SHAPES -->
+- **App Icon**: Abstract flat mark featuring two offset yellow and cyan photographic frames on a charcoal tile (rounded-square on desktop; full-bleed opaque square with OS mask on iOS; `#242426` adaptive background on Android). No aperture blades, film perforations, text, bevels, or 3D camera illustrations.
+- **macOS**: **No circular tool buttons or circular progress rings in active UI.** Group tabs and accordion sections use `4 pt` pills with `3×3 pt` / `4×4 pt` yellow modified dots. Main workspace photo tiles (`WorkspacePhotoTile`) and `46×46 pt` film/recipe artwork use **`3 pt`** corner radius; film selection cards use `6 pt` radius with `1 pt` yellow stroke; `RoundParameterSlider` uses a `14×14 pt` circular thumb and `3 pt` track; HSL swatches are `18×18 pt` circles; histogram plots use `3 pt` radius; crop handle targets are `40×40 pt` with `18 pt` L-corners.
+- **Windows**: Crisp small radii — `3 px` photo tiles/badges/menu items/scroll thumbs, `4 px` combo boxes/labels, `5 px` buttons/popups/info overlay, `6 px` histogram & processing popups, `8 px` HSL banner & update lock card; `14×14 px` circular slider thumb; `20×20 px` circular HSL swatches; compact `18×18 px` `AdjustmentRing` draws a `4 px` yellow modified dot beside `16×16 px` `EditorIcon` glyphs (`24×24` grid, `1.6 px` stroke).
+- **iOS / iPadOS**: **No 48 pt tool circles, 270° progress arcs, or circle scalar badges in active UI.** Flat tool grid tiles pair `21 pt` SF Symbols with a `3×3 pt` yellow dot; action buttons target `>= 44×44 pt` (`48×48 pt` draft Apply/Cancel); HSL swatches are `19 pt` circles (`2 pt` `.primary` selected ring + `4×4 pt` yellow dot); film artwork uses `4 pt`, film selection & compact number tiles use `6 pt`, overlays use `8 pt`; compact inline sliders use `14×14 pt` circular thumbs; HSL target loupe is `88×88 pt` circular (`3×` zoom); camera tether shutter is `68×68 pt` circular; crop marks are `12×12 pt` inside `44×44 pt` targets.
+- **Android**: Material 3 standard corner scales (`4 / 8 / 12 / 16 dp`) plus `3 dp` status notices, `4 dp` edited pencil badge & camera tiles, `6 dp` camera controls & export rows, `10 dp` progress pills, `24 dp` cancel-focus pill, and `CircleShape` for `3 dp` modified dots, `19 dp` HSL swatches (`3 dp` selected ring), `32 dp` wipe handle, `48 dp` canvas buttons, `68 dp` shutter, and `88 dp` HSL loupe. Enforces `48×48 dp` minimum touch targets (`HslControls` cells `48 dp` tall, `>= 44 dp` wide) and a local 64-icon `AppIcons` vector set.
 
 ## Components
 
-- The macOS app icon is an abstract flat mark: two offset yellow/cyan photographic frames on a charcoal rounded-square tile. No aperture blades, film perforations, text, metallic bevels or 3D camera illustration. The color overlap represents the source-to-render transformation.
+### Shared Cross-Platform Semantics
+- **Edited-Photo Markers & Thumbnails**: All four browsers render saved non-default edits into thumbnails (on-demand viewport loading) with a passive lower-right pencil badge on a dark translucent backdrop (`4 pt`/`3 px`/`4 dp` radius) independent of current-photo borders and selection checkmarks.
+- **Adjustment Transfer, Quick & My Presets, History**: Copy/Paste/Sync (All / Modified / Custom scope with live value summaries), Quick Presets inline drawer, My Presets modal library, session transaction Undo/Redo, and individual quarantine/deletion of unreadable edit records, presets, looks, or batch journals.
+- **Processing Migration & X3F**: Automatic background fitting to processing version 3 for eligible legacy SDR edits with persistent confirmed rollback (`回到迁移前`) inside desktop Processing Settings popovers and mobile Processing Settings sheets; Normal vs. Legacy X3F switcher.
+- **Single & Batch Export**: Native resolution or explicit long-edge ceiling (presets `2048`/`3000`/`4096` + custom), separated from preview quality, never overwriting source files. Uniform frozen batch tasks and per-target frozen collection exports (`BatchSelection` → `BatchExport`) preserve target states and report per-item results.
 
-- Use SF Symbols, native sliders, numeric fields, pickers, menus and file dialogs. Film label bitmaps are bundled local resources with generation provenance.
-- The toolbar contains workspace modes, browser visibility, open, comparison, photo information, one zoom menu, adjustment visibility and export. The information action cycles hidden/file/capture; desktop `I` is inactive while entering text. Fit, actual pixels, zoom in and zoom out live inside the zoom menu. Editing sliders do not belong in the toolbar.
-- Directory contents and visible thumbnails load on demand. Unedited RAW thumbnails may use embedded previews with orientation. Edited photos show the saved rendered result and a passive pencil at the lower right, independently of the current-photo border and selection checkmark. Mobile lists add All / Edited / Unedited filters; iOS keeps a bounded Recently Opened library. See [edited-photo previews](docs/design/editor-workspace/edited-photo-previews.md) for state, cache and source-access rules.
-- Histogram collapse state survives photo changes. Switching workspace modes keeps the selected adjustment tools and panel sizes. A slider marks its default and fills from that point to the current value.
-- No-photo, loading, disabled, error/retry and export-complete states are explicit. Export must not overwrite the source file.
-- Photo adjustments and look identities persist locally per original photo; unseen photos start with defaults. Save failures remain visible and retryable. No sidecars or cloud catalog are created.
-- Batch export uses a frozen source adjustment snapshot, including denoise settings, in a separate desktop window or mobile task page. It never changes target photos' saved edits. The confirmed flow is documented in [the batch export design](docs/design/2026-10-09-edit-memory-batch-export/README.md).
-- Single and batch export size controls default to native resolution, with a long-edge pixel ceiling, presets and custom entry. Keep this setting separate from preview quality. Desktop file-tree context actions can explicitly copy current settings to confirmed targets' local edit records, without opening targets first or changing source photos; folder scope is direct supported RAW/raster children only.
+### Desktop (`macOS` & `Windows`)
+- **Workspace Shell & File Browser**: Flat `Edit / Select / Preview` toolbar switcher; trailing actions for Compare (Side-by-Side, Wipe with keyboard/mouse divider, hold-canvas or hold-`\` Before view), Photo Info (`I` cycles hidden/file/capture), Clipping overlay, Zoom menu (`Fit`, `100%`, `±25%`, canvas margin toggle), Inspector toggle, and Export menu. Left browser keeps Collapse All, breadcrumbs, Up, retry on error, per-folder scroll memory, and thumbnail context action `"应用当前设置"`.
+- **Sliders & Numeric Fields**: `RoundParameterSlider` (`macOS`) and `ParameterSlider` + `ParameterRow` (`Windows`) feature `3 pt/px` tracks, `14 pt/px` circular thumbs, baseline origin marks, yellow fill from default to current value, double-click reset, arrow/Shift-fine keys, and scroll-wheel stepping on numeric inputs.
+- **Adjustment Inspector Modules**:
+  - *Looks*: Shared SDR Look Strength (`0–200%`), 3-column Film chooser (`Neutral` + bundled + imported `.cube`/`.vlt`/`.rlook`/`.dcp` with `LUTCompatibilityDialog` & `DCPImportOptionsDialog`, categories, accent-insensitive live search, Recent max 12, unreadable cleanup), 3-column Master Recipes, Quick & My Presets, and HDR Looks (`HDR Silver`, `HDR Silver Master`, `.cube`).
+  - *Light*: Exposure (`±5 EV` SDR / `±4 EV` HDR) + Auto Exposure, Contrast, Highlights/Shadows (`-100…+100`), White/Black Points, and S-Curve / Multi-point **master Tone Curve** (`164 pt/px` canvas, up to 33 points, `-8…+8 EV` in HDR). *(Desktop UI currently edits only the master RGB curve while preserving and rendering stored R/G/B channel curves.)*
+  - *Color*: White Balance (reciprocal Kelvin `2000–50000 K`, Tint `-150…+150`; Relative WB in HDR), Saturation, Vibrance, 8-swatch HSL (`0.1` precision on macOS) + canvas Target Adjustment, and 3-zone Color Grading wheel (`138–156 pt/px`).
+  - *Effects & Detail*: Clarity, Dehaze, Vignette (Amount + expandable Midpoint/Roundness/Feather/Highlights + Reset), Grain (Amount/Size/Roughness + Reset), Sharpening (`0–200%`), Wavelet Denoise (`Detail`/`Clean`/`Custom` presets) + desktop GPU AI Denoise (`Core ML` on Apple Silicon macOS; `DirectML` on Windows) with progress, cancel, retry, and diagnostics export.
+  - *Geometry & Lens*: Explicit draft transaction with fixed Cancel/Apply footer and dirty-departure guard; crop overlay with aspect lock/swap, 90° rotation, H/V flip, thirds grid, Straighten (`±45°`), numeric `%` Position & Size, Perspective H/V. **SDR Lens** on macOS and Windows enforces RAW-only visibility and exposes Distortion, TCA, and Auto-Crop **without a Vignetting toggle**; **Bayer HDR RAW Camera Development** (inside macOS popover / Windows `HDR RAW…` dialog) exposes Distortion, TCA, **Vignetting**, Auto-Crop, FBDD (`0–2`), WB, exposure reference, and `.dcp`/`.rlook` camera profiles.
+  - *HDR & Updates*: 7th `HDR Rendition` group + Processing Settings HDR controls (Metal EDR on macOS / D3D11 FP16 scRGB `HwndHost` on Windows, Auto HDR vs. SDR Compatible toggle, HDR False Color, HDR Luminance Histogram). Desktop updates use Sparkle (`macOS`) and Velopack (`Windows`) with non-blocking lock banners when installing.
 
-<!-- BEGIN RAWLAB IOS IPADOS COMPONENTS -->
-### iOS / iPadOS
-
-#### Adjustment ruler and scalar tool
-
-Keep the yellow indicator fixed at the ruler center while the tape, labels and gray default dot move. Show the complete parameter name, legal value, unit, default and range; show a boundary label at either endpoint. Horizontal intent must be confirmed before adjustment, so vertical movement can scroll the parameter surface. The Fine action is a compact selected button beside Reset, with a 32-point visible body, a 44-point touch target and explicit accessibility state. Fine and Auto share the same compact action style; reset and exposure-mode controls use matching caption text and secondary color. At ordinary text sizes, exposure mode and Auto share one row; accessibility sizes stack them. It changes drag sensitivity to one quarter; it does not change the legal grid, range or committed value. Ordinary SDR exposure uses −5…+5 EV in 0.05 EV steps; HDR exposure retains −4…+4 EV; HSL axes use −100…+100 integers. Temperature keeps reciprocal tape mapping with numeric Kelvin values and a per-photo camera baseline.
-
-The ruler keeps a fixed bottom edge. Minor strokes are 13 points, major strokes 22, and only nearby strokes grow toward 28. Actual horizontal tape movement excites each stroke within 24 points using `max(0, 1 − (distance / 24)²)`; retain the larger of its decayed residual and new weight. After the last nearby movement, each residual decays over 180 ms with `(1 − progress)²`. A pause relaxes the height while the finger can remain down. The marker, default dot, labels and container do not grow with the strokes. A stationary touch, native wheel, keyboard step or release does not inject another height pulse.
-
-Release may settle the tape to the already committed legal value over 120 ms with an ease-out quadratic curve. It adds no inertia, parameter value or haptic event. Starting another adjustment interrupts the old finish. Cancel, loss of the ruler's window/focus, hiding and app inactivity clear residuals and settlement. Reduce Motion keeps the static 13/22-point strokes, current readout, default marker and arc, removes settlement, and restores surrounding controls immediately on release.
-
-During adjustment, the current tool, main readout and ruler remain visible. Enter focus with a 100 ms ease-out fade; surrounding navigation, overlays and other tools retain their positions and names at opacity 0.08 on iPhone or 0.42 on iPad. After release, hold for 160 ms and return over 180 ms. A new drag cancels the pending return. Tool changes, source changes, scene inactivity and disappearance clear the focus task. Reduce Motion removes the hold and return animation. These are authored RawLab constants, not measurements of Apple's Photos app.
-
-Only selected scalar tools show a circle value when it fits; multi-parameter tools retain their SF Symbol. The selected value persists after surroundings return. The `square.stack.3d.up` family identifies the master-recipe tool and choices.
-
-#### Single-column native value wheel
-
-The numeric entry uses one `UIPickerView` column, with each row a complete legal value. Keep sign, integer and decimal together. The title, complete temporary value, unit and range remain in the value context; VoiceOver names the temporary selection. The value list is sorted and deduplicated, includes legal endpoints, and retains a valid current value and default even if they are off the normal grid.
-
-Wheel selection changes only its local draft. Cancel leaves the entering value intact; Apply commits the selected legal value and returns accessibility focus to the originating numeric button. A changed draft disables interactive dismissal; an unchanged draft can close. Default changes the same draft. Preserve the native picker's motion and system feedback instead of applying the custom ruler's physics or additional haptics to it.
-
-#### Geometry, lens, looks and effects
-
-Geometry and lens establish local drafts and render their temporary settings into the photo preview. Keep the Cancel/Apply row fixed outside the scrolling parameters. Apply is unavailable while the draft is unchanged, a ruler is adjusting, or `previewRendering` / `previewResizePending` indicates an incomplete preview. Apply commits, Cancel discards, and either action returns to Exposure. Switching tools with changes presents Apply, Discard or Continue Editing. Single-photo import is guarded by changed drafts; all export entry points remain disabled while either geometry or lens draft is active, including an unchanged draft. Lens editing is RAW-only and disabled for raster sources; its draft export guard is recorded from source, without claiming raster UI tests cover a RAW lens draft.
-
-Film and master recipes are peer tools. Preserve real names and available bundled artwork; selecting no recipe clears the recipe/look choice without promising a global reset. Global reset explicitly returns all adjustments to neutral. HSL keeps eight named swatches, three independent axes, reset-current-color and reset-all actions. Denoise uses a native toggle and preset menu with expandable existing parameters. Vignette and grain preserve auxiliary settings at zero amount; vignette highlight protection is disabled for nonnegative amount with an explanation.
-
-#### Preview, import and export
-
-Single import uses the system photo picker or file picker and accepts supported RAW and raster images. Raster input follows the shared opaque RGB8 SDR contract, with orientation applied once and no additional RAW scene curve. Camera-only white balance, exposure baseline and lens controls are unavailable for raster input. Preserve the previous visible image during preview work and show edge feedback from the actual `previewRendering` or `previewResizePending` flags. Export actions also wait for those flags, a usable look and an idle editor; do not present an old preview as current merely because a generic busy flag is false.
-
-Single-photo JPEG and rendered DNG export are available for both supported RAW and raster sources. JPEG saves to Photos; rendered DNG uses the system file destination flow. A rendered DNG is an output appearance, not the original RAW or preserved adjustment history. Batch export accepts supported RAW and raster targets and uses a frozen source adjustment snapshot, the existing output formats, explicit targets and per-item results. Resolve camera-only settings for each target independently without altering the saved snapshot or leaking RAW session state into raster targets. Keep native-resolution/long-edge export sizing separate from preview sizing, and report completion only from the actual output result.
-<!-- END RAWLAB IOS IPADOS COMPONENTS -->
+### Mobile (`iOS / iPadOS` & `Android`)
+- **Two-Level Dedicated Tool Workspaces & Local Drafts**: Every adjustment tool opens a dedicated workspace backed by a scoped local draft (up to `100` undo/redo steps), floating canvas `workspaceActions` bar (Undo, Redo, context-aware Reset menu, Compare, and More menu), fixed `48 pt/dp` bottom `Cancel / Title / Apply` bar returning to the overview tool grid, and a 3-way dirty-exit confirmation (`Apply / Discard / Continue`) triggered by back navigation, iOS left-edge swipe back, or Android predictive Back.
+- **Dual-Mode Adjustment Controls**:
+  - *Full-Width Scalar Ruler*: Used on single-parameter tools. iOS `AdjustmentRulerView` moves a `13/22 → 28 pt` responsive tick tape beneath a fixed center yellow indicator (`24 pt` excitation radius, `180 ms` quadratic decay, `120 ms` release settle, `100/160/180 ms` focus fade at `0.08` phone / `0.42` iPad opacity, `125 ms` gated haptics). Android `AdjustmentRuler` uses a fixed `48 dp`-tall track with `21` ticks, `+4 dp` proximity pulse, `24 dp` edge-back gesture guard, and `125 ms` gated haptics.
+  - *Compact Inline Row*: Used on multi-parameter tools (WB, HSL, Vignette, Grain, Denoise, Film Strength, Color Grading, Geometry) — single-row `Label + 14 pt/dp-thumb Track + Value`.
+  - *Fine & Direct Numeric Entry*: `Fine` (`0.25×` drag sensitivity) lives inside the workspace More menu and surfaces a tappable yellow canvas `Fine` pill (`editor.fine.badge` / `adjustment-fine-badge`) while active; tapping any numeric readout opens iOS single-column `NativeValueWheel` (with `SizingPickerView` width-change re-centering and `PickerContainerView` vertical centering) or Android's validated Material numeric `AlertDialog`.
+- **Rich Mobile Tool Workspaces**:
+  - **RGB Tone Curves**: Full `RGB / Red / Green / Blue` channel tabs (`194 pt/dp` canvas, up to 33 points, point coordinate editor, `-8…+8 EV` axis in HDR).
+  - **8-Channel HSL & Loupe Sampling**: `19 pt/dp` swatches + canvas Target Adjustment with `88 pt/dp` `3×` circular magnification loupe.
+  - **Color Grading**: 3 zone tabs (`Shadows` / `Midtones` / `Highlights`) + `130 pt/dp` wheel + inline Hue/Saturation controls.
+  - **RAW + JPEG Lens Correction**: Enabled for both RAW and JPEG/raster sources (disabled on normal X3F and HDR mode), exposing **Distortion, TCA, Vignetting, Auto-Crop**, searchable Lensfun profile chooser, and manual focal-length / crop-factor entry with JPEG in-camera correction guidance.
+  - **HDR Editing & Cancellable Export**: Full HDR toolset + 7th `HDR Rendition` group (`Peak Limit`, `SDR Exposure`, `SDR Contrast`, `SDR Saturation`), top-edge HDR monitoring card (Auto HDR / SDR Compatible, False Color, EV luminance histogram), Metal EDR (`iOS`) / API 34+ FP16 (`Android`), and cancellable HDR JPEG / HDR HEIF (iOS) export progress banners.
+- **1:1 Viewport ROI Tiled Zoom & Mobile Libraries**: Double-tap Fit ↔ `100%`, progressive `1024 px` multi-level tile pyramid above `1.05×` base scale (hysteresis `0.85×`) synchronized across before/after comparisons. Browsers expose `All / Edited / Unedited` filters (`RecentPhotosView` up to 100 photos / ~2 GiB on iOS; Square/Staggered `AlbumScreen` + System Open With private copy cleanup on Android).
+- **Sony Wireless Camera Import & Tether Workspace**: Dedicated `.fullScreenCover` / root route from editor top bar; model-agnostic BLE/Wi-Fi connect + manual Wi-Fi + Connection Help + Save Location. Supports Manual selection (3-col grid, format/date/selected filters, preview) and One-tap Resumable Incremental Import (RAW / JPEG / RAW+JPEG, local JPEG resize/recompress), plus still-photo Tether live view (`68 pt/dp` shutter, 4-slot live parameter strip, Shooting Params sheet with Focus Area `0xD22C`, aspect-fit `640×480` tap-to-focus, live focus/face/tracking frames with `#34D759` green lock state and Cancel Focus pill). *(Verified on Android with Sony α7C II fw 2.00; iOS camera workflow remains an unverified hardware preview.)*
 
 ## Do's and Don'ts
 
-- Give the canvas the full height between the window toolbar and status bar. Let the browser and adjustment tools scroll independently.
-- Preserve source-specific controls, per-photo settings and the shared color-processing semantics across workspace modes.
-- RAW white balance starts at the per-photo as-shot calibration estimate. Kelvin increases toward warm; positive tint adds magenta. Use the camera baseline for reset and the signed ring. The slider uses reciprocal Kelvin; numeric input remains Kelvin. Do not claim Lightroom profile parity or that the estimate is a literal EXIF Kelvin tag.
-- Histograms use 256 bins per channel, shared linear pixel-count scaling and RGB/CMY/neutral-gray filled overlaps. The horizontal axis is the current sRGB output, not RAW sensor saturation or Adobe's internal working space. Ordinary and comparison views show after-frame statistics; temporary before view shows the matching neutral frame. Unavailable statistics clear the graph, retain its layout and show a localized status while preserving the photo.
+### Do:
+- **Do** keep the photograph central and unobstructed; keep default mobile photo margin at 0 and desktop full-height canvas between toolbar and status bar.
+- **Do** preserve dark neutral surfaces, functional yellow for active/modified states, native system controls, and monospaced/tabular readouts.
+- **Do** enforce explicit scoped draft Apply/Cancel and export/import guards; never export an active draft or present an unfinished preview as current.
+- **Do** preserve shared color, HDR, v3 migration/rollback, and RAW/raster compatibility semantics across all four clients; keep camera-only controls honest per source type.
+- **Do** design and evaluate layouts at standard OS text sizes for sighted photographers, keeping all 6 localized languages crisp and untruncated.
 
-<!-- BEGIN RAWLAB IOS IPADOS DOS -->
-### iOS / iPadOS
-
-- **Do** preserve the shared processing contract, semantic system colors, system text styles and native navigation/task presentations.
-- **Do** keep complete values and units visible, provide 44-point action targets and retain named defaults, ranges and explicit draft actions.
-- **Do** preserve the fixed indicator, moving tape, local residual decay and static Reduce Motion state.
-- **Do** reflow by the available window and Dynamic Type; keep the selected tool and wheel draft stable across layout changes.
-- **Don't** invent aggregate values for multi-parameter tools, shrink text into a badge, split numeric signs/decimals into separate wheels or introduce a custom numeric keyboard.
-- **Don't** export an active geometry/lens draft or label an unfinished preview as current.
-- **Don't** turn the custom ruler's lack of inertia into a change to the native picker's system behavior.
-- **Don't** describe authored timing as an Apple measurement, or claim Simulator images prove physical haptics, performance improvement or RAW output correctness.
-<!-- END RAWLAB IOS IPADOS DOS -->
-
-移动编辑器默认不加照片边距：按原比例适合可用画布，至少一边贴满宽度或高度。完整画幅与用户选择的放大状态仍由预览控件管理。
+### Don't:
+- **Don't** introduce decorative drop shadows, nested card stacks, custom display fonts, or non-functional accent color washes.
+- **Don't** invent aggregate badges for multi-parameter tools, reintroduce retired circular tool progress rings, or obscure the photo center with processing spinners.
+- **Don't** optimize layouts, inflate controls, or file review issues around low-vision Accessibility Dynamic Type / large-text modes or VoiceOver / TalkBack screen-reader flows.
+- **Don't** claim Simulator/Emulator screenshots prove physical haptics, physical HDR peak brightness, iOS camera hardware compatibility, or RAW export numerical accuracy.
