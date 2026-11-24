@@ -114,10 +114,25 @@ public partial class MainWindow
         SelectionWorkspaceButton.Tag = workspaceLayout.Mode == WorkspaceMode.Selection ? "selected" : null;
         PreviewWorkspaceButton.Tag = workspaceLayout.Mode == WorkspaceMode.Preview ? "selected" : null;
         RefreshWorkspaceAvailability();
+        RefreshToolbarOverflow();
         RefreshHistogramWorkspace();
         RefreshWorkspaceBrowserLayout();
         RefreshInspection();
         RefreshHDRPresentation();
+    }
+
+    private void RefreshToolbarOverflow()
+    {
+        var compact = WorkspaceLayout.Compact(WorkspaceWidth);
+        ClippingButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        InfoButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        ToolbarOverflowButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        var photoReady = file != null && !exporting && ShowsPhotoWorkspace;
+        ToolbarOverflowButton.IsEnabled = photoReady;
+        OverflowClippingMenu.IsEnabled = OverflowInfoMenu.IsEnabled = photoReady;
+        OverflowClippingMenu.IsChecked = clipping;
+        OverflowInfoMenu.IsChecked = photoInfoMode != PhotoInfoMode.Hidden;
+        ToolbarOverflowButton.Tag = compact && (clipping || photoInfoMode != PhotoInfoMode.Hidden) ? "selected" : null;
     }
 
     private void RefreshWorkspaceAvailability()

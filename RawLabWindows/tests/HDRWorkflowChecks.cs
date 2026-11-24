@@ -24,31 +24,20 @@ internal static class HDRWorkflowChecks
         var window = TestWindowState.CreateIsolatedWindow(root);
         Adjustments Settings() => window.Settings;
         HDRRenderedPair Frame() => window.CurrentResult!.HDR!;
-        void Edit(string field, string value, bool accept)
+        void SelectRenditionTool(EditorAdjustmentTool tool)
         {
-            Exception? error = null;
-            window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
-                Window? dialog = null;
-                try {
-                    dialog = window.OwnedWindows.OfType<Window>().Single(child => AutomationProperties.GetAutomationId(child) == "hdr.rendition");
-                    var panel = (StackPanel)dialog.Content;
-                    var row = panel.Children.OfType<ParameterRow>().Single(control =>
-                        AutomationProperties.GetAutomationId(control.Number) == "hdr.rendition."+field+".value");
-                    row.Number.Text=value;
-                    check(row.Commit(),"Visible rendition control accepts "+field);
-                    if (!accept) { dialog.Close(); return; }
-                    Capture(dialog,Path.Combine(root,"hdr-rendition-"+field+".png"));
-                    var apply = panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(button =>
-                        AutomationProperties.GetAutomationId(button) == "hdr.rendition.apply");
-                    apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                } catch (Exception failure) {
-                    error=failure;
-                    foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
-                }
-            }));
-            check(window.HDRRenditionMenu.IsEnabled,"HDR rendition menu is enabled");
-            window.HDRRenditionMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            if (error != null) throw error;
+            var button = window.WorkspaceTools[tool].Button;
+            check(button.IsVisible && button.IsEnabled, "Inline HDR rendition tool is reachable: " + tool);
+            WpfTestHost.Click(button);
+            window.UpdateLayout();
+        }
+        void Edit(EditorAdjustmentTool tool, string value)
+        {
+            SelectRenditionTool(tool);
+            var row = window.OrdinaryParameter;
+            check(row.IsVisible && row.IsEnabled && row.Number.IsEnabled, "Visible inline rendition control accepts " + tool);
+            row.Number.Text = value;
+            check(row.Commit(), "Visible inline rendition control commits " + tool);
             Ready(window);
         }
         try {
@@ -56,28 +45,42 @@ internal static class HDRWorkflowChecks
             var original = Frame();
             var originalHDR = Settings().HDR!;
             var originalSDRExposure = Settings().Capture().Values[(int)Parameter.Exposure];
-            Edit("sdrExposure","-1.5",false);
-            check(Settings().HDR == originalHDR,"Closing the output dialog discards its draft");
-            Edit("sdrExposure","-1.5",true);
+            check(window.HDRRenditionMenu.IsEnabled, "HDR rendition menu is enabled");
+            window.HDRRenditionMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            window.UpdateLayout();
+            Ready(window);
+            check(window.OwnedWindows.Count == 0 &&
+                  window.ExpandedGroup == EditorAdjustmentGroup.HdrRendition &&
+                  window.CurrentToolForTests == EditorAdjustmentTool.HdrPeakLimit &&
+                  window.ToolsScroller.IsVisible,
+                "HDR rendition menu routes to the inline 7th inspector group instead of a modal dialog");
+            SelectRenditionTool(EditorAdjustmentTool.HdrSdrExposure);
+            window.OrdinaryParameter.Number.Text = "-1.5";
+            window.OrdinaryParameter.CancelInput();
+            check(Settings().HDR == originalHDR, "Cancelling inline rendition edit preserves HDR settings");
+            Edit(EditorAdjustmentTool.HdrSdrExposure, "-1.5");
             var baseEdited = Frame();
             check(Settings().HDR!.ProcessingVersion == 4 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5 &&
                   baseEdited.HDR.RGB.SequenceEqual(original.HDR.RGB) && !baseEdited.SDR.RGB.SequenceEqual(original.SDR.RGB),
                 "Editing the SDR base changes only its float plane");
-            Edit("peakLimit","0.3",true);
+            Edit(EditorAdjustmentTool.HdrPeakLimit, "0.3");
             var capped = Frame();
+            Capture(window, Path.Combine(root, "hdr-rendition-inline.png"));
             var edited = Settings().HDR!;
             check(Math.Abs(edited.RenditionSettings.PeakLimitEV-.3) < 1e-9 &&
                   !capped.HDR.RGB.SequenceEqual(baseEdited.HDR.RGB) && capped.SDR.RGB.SequenceEqual(baseEdited.SDR.RGB),
                 "Capping the HDR peak changes only the master");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR!.RenditionSettings.PeakLimitEV == 0 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5,
-                "Undo reverts the entire last rendition dialog commit");
+                "Undo reverts only the last inline rendition parameter commit");
             window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR == edited,"Redo restores the HDR peak edit");
             window.HDREditMenu.IsChecked=false;
             window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
-            check(!window.HDRRenditionMenu.IsEnabled && Settings()[Parameter.Exposure] == originalSDRExposure,
-                "Ordinary SDR editing retains its own exposure");
+            check(!window.HDRRenditionMenu.IsEnabled &&
+                  window.ExpandedGroup != EditorAdjustmentGroup.HdrRendition &&
+                  Settings()[Parameter.Exposure] == originalSDRExposure,
+                "Ordinary SDR editing disables the 7th rendition group and retains its own exposure");
             window.HDREditMenu.IsChecked=true;
             window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             window.OpenFile(input); Ready(window);

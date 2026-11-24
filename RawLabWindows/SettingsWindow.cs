@@ -79,6 +79,7 @@ public sealed class SettingsWindow : Window
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,20,0,0)};
         var cancel=new Button{Content=Loc.Text("取消"),IsCancel=true};cancel.Click+=(_,_)=>DialogResult=false;
         var apply=new Button{Content=Loc.Text("应用"),IsDefault=true};
+        apply.SetResourceReference(StyleProperty,"AccentButton");
         AutomationProperties.SetAutomationId(cancel,"settings.cancel");AutomationProperties.SetAutomationId(apply,"settings.apply");
         apply.Click+=(_,_)=>{
             try{if(language.SelectedValue is string code && code!=Loc.Preference)Loc.SetPreference(code,languagePreferencePath);DialogResult=true;}

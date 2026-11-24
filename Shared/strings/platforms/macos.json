@@ -4700,6 +4700,18 @@
     "高光拆分": {
       "formats": [],
       "source": "高光拆分"
+    },
+    "导出 16 位 PNG…": {
+      "formats": [],
+      "source": "导出 16 位 PNG…"
+    },
+    "导出 HDR JPEG…": {
+      "formats": [],
+      "source": "导出 HDR JPEG…"
+    },
+    "导出 HDR HEIF…": {
+      "formats": [],
+      "source": "导出 HDR HEIF…"
     }
   },
   "overrides": {},
@@ -6007,6 +6019,30 @@
       "es": "Salir del cuentagotas de BB",
       "ja": "WB スポイトを終了",
       "zh-Hans": "退出白平衡吸管"
+    },
+    "导出 16 位 PNG…": {
+      "de": "16-Bit-PNG exportieren…",
+      "en": "Export 16-bit PNG…",
+      "es": "Exportar PNG de 16 bits…",
+      "fr": "Exporter en PNG 16 bits…",
+      "ja": "16-bit PNG を書き出す…",
+      "zh-Hans": "导出 16 位 PNG…"
+    },
+    "导出 HDR JPEG…": {
+      "de": "HDR-JPEG exportieren…",
+      "en": "Export HDR JPEG…",
+      "es": "Exportar JPEG HDR…",
+      "fr": "Exporter en HDR JPEG…",
+      "ja": "HDR JPEG を書き出す…",
+      "zh-Hans": "导出 HDR JPEG…"
+    },
+    "导出 HDR HEIF…": {
+      "de": "HDR-HEIF exportieren…",
+      "en": "Export HDR HEIF…",
+      "es": "Exportar HEIF HDR…",
+      "fr": "Exporter en HDR HEIF…",
+      "ja": "HDR HEIF を書き出す…",
+      "zh-Hans": "导出 HDR HEIF…"
     }
   }
 }

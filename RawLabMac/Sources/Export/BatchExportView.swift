@@ -161,32 +161,8 @@ struct BatchExportView: View {
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
             DisclosureGroup(L10n.text("全部调整")) {
-                VStack(spacing: 10) {
-                    // 曝光已在上方摘要中，这里不再重复
-                    ForEach(AdjustmentParameter.allCases.filter { $0 != .exposure && (model.job.settings.curveSettings.mode == .legacy || $0 != .toneCurve) }) { parameter in
-                        let spec = parameter.spec(for: model.job.settings)
-                        valueRow(spec.title, parameter.isWhiteBalance && model.job.settings.whiteBalanceMode == .asShot
-                                 ? L10n.text("按每张照片") : spec.display(model.job.settings[keyPath: spec.keyPath]))
-                    }
-                    if !model.job.settings.curveSettings.isDefault {
-                        valueRow(L10n.text("曲线"), L10n.format("多点曲线（%d 个控制点）", model.job.settings.curveSettings.labeledPoints.count))
-                        ForEach(Array(model.job.settings.curveSettings.labeledPoints.enumerated()), id: \.offset) { index, point in
-                            valueRow(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
-                        }
-                    }
-                    let denoise = model.job.settings.waveletNoiseReduction
-                    if denoise != WaveletDenoiseSettings() {
-                        valueRow(L10n.text("降噪"), denoise.enabled ? L10n.text("开启") : L10n.text("停用"))
-                        valueRow(L10n.text("亮度降噪"), String(format: "%.0f", denoise.luma))
-                        valueRow(L10n.text("色彩降噪"), String(format: "%.0f", denoise.chroma))
-                        valueRow(L10n.text("粗色斑抑制"), String(format: "%.0f", denoise.coarse))
-                    }
-                    let lens = model.job.settings.lensSettings
-                    valueRow(L10n.text("镜头匹配"), lens.mode == .automatic ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))" : L10n.text("手动"))
-                    valueRow(L10n.text("畸变矫正"), lens.distortion ? L10n.text("开启") : L10n.text("停用"))
-                    valueRow(L10n.text("横向色差"), lens.tca ? L10n.text("开启") : L10n.text("停用"))
-                    valueRow(L10n.text("自动裁边"), lens.autoCrop ? L10n.text("开启") : L10n.text("停用"))
-                }.padding(.top, 12)
+                MacBatchSettingsSummaryView(settings: model.job.settings, perPhotoAdaptive: true)
+                    .padding(.top, 10)
             }
             }
             }
@@ -270,7 +246,7 @@ struct BatchExportView: View {
             }
             Text(L10n.format("%@ · 本次导出效果", L10n.text(model.job.items.first { $0.input == model.previewFile }?.frozen?.lookName ?? model.job.lookName))).font(.caption).foregroundStyle(.secondary)
             if model.preview?.hdr != nil { HDRMonitoringControls(state:hdrDisplay) }
-        }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600)
+        }.padding(20).frame(minWidth: 640, idealWidth: 800, minHeight: 440, idealHeight: 600).preferredColorScheme(.dark)
     }
 
     private func valueRow(_ label: String, _ value: String) -> some View {

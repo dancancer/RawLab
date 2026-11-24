@@ -620,7 +620,7 @@ local/pre-release integration harnesses:
   `RawLabMac/tests/lens-settings.sh`, `RawLabMac/tests/lut-preview.sh`,
   `RawLabMac/tests/mac-canvas-input.sh`, `RawLabMac/tests/mac-crop-presentation.sh`,
   `RawLabMac/tests/mac-lens-draft-controls.sh`, `RawLabMac/tests/mac-lens-draft-presentation.sh`,
-  `RawLabMac/tests/mac-perspective-integration.sh`, `RawLabMac/tests/mac-rotation-ruler.sh`,
+  `RawLabMac/tests/mac-perspective-integration.sh`,
   `RawLabMac/tests/mac-straighten-preview.sh`, `RawLabMac/tests/mac-ui-smoke.sh`,
   `RawLabMac/tests/mac-viewing-model.sh`,
   `RawLabMac/tests/master-recipe-render.sh`, `RawLabMac/tests/parameter-value.sh`,

@@ -5,12 +5,14 @@ import AppKit
 struct EditorView: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    private let viewCommands: MacViewCommandState?
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
     @StateObject private var photoPreviews: MacEditedPhotoPreviews
 
-    init(model: EditorModel) {
+    init(model: EditorModel, viewCommands: MacViewCommandState? = nil) {
         self.model = model
+        self.viewCommands = viewCommands
         _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(editDirectory: model.editDirectory))
     }
     @StateObject private var browser = MacWorkspaceBrowserState()
@@ -270,6 +272,9 @@ struct EditorView: View {
         .onDisappear {
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
+        }
+        .onChange(of: currentViewCommandSnapshot, initial: true) { _, _ in
+            syncViewCommands()
         }
         .toolbar {
             if #available(macOS 26.0, *) {
@@ -619,10 +624,10 @@ struct EditorView: View {
                 Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)
                 Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
                 Divider()
-                Button(L10n.text("直方图")) {
-                    if showInspector { histogramExpanded = true }
-                    else { showsHistogram = true }
-                }.disabled(model.result == nil || !showsPhotoWorkspace)
+                Button(L10n.text("直方图")) { openHistogram() }
+                    .disabled(model.result == nil || !showsPhotoWorkspace)
+                Toggle(L10n.text("显示裁切提示"), isOn: $clipping)
+                    .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
                 Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合"), action: openCollection)
                     .accessibilityIdentifier("collection.open")
             } label: { Image(systemName: "ellipsis.circle") }
@@ -683,27 +688,25 @@ struct EditorView: View {
                 .accessibilityLabel(L10n.text("50% 中性灰"))
                 .accessibilityIdentifier("inspection.gray50")
                 .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
-            Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
-                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
-                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Menu {
                 Button(L10n.text("并排")) { viewing.select(.sideBySide) }
                 Button(L10n.text("分割线")) { viewing.select(.wipe) }
                 Button(L10n.text("关闭对比")) { viewing.close() }
-            } label: { Image(systemName: "chevron.down") }
-                .accessibilityLabel(L10n.text("对比方式")).accessibilityIdentifier("compare.mode")
-                .disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
+            } label: {
+                Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled)
+            } primaryAction: {
+                viewing.toggle()
+            }
+                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
+                .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
+                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
                 .accessibilityIdentifier("photo.information")
                 .disabled(model.file == nil || !showsPhotoWorkspace)
             Menu {
-                Button(L10n.text("适合窗口"), action: fit).keyboardShortcut("0")
-                Button(L10n.text("实际像素 · 100%")) {
-                    viewport.actualPixels(); viewport.focus = CGPoint(x: 0.5, y: 0.5)
-                    if !model.fullResolution { model.fullResolution = true }
-                }.keyboardShortcut("1")
+                Button(L10n.text("适合窗口"), action: fit)
+                Button(L10n.text("实际像素 · 100%"), action: actualPixels)
                 Divider()
                 Button(L10n.text("放大")) { zoom(1.25) }
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
@@ -716,7 +719,6 @@ struct EditorView: View {
                 .help(showInspector ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(showInspector ? L10n.text("已展开") : L10n.text("已收起"))
                 .accessibilityIdentifier("workspace.inspector.toggle")
-                .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(model.file == nil || workspaceLayout.mode != .editing)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
@@ -855,17 +857,100 @@ struct EditorView: View {
         return message
     }
 
+    private struct ViewCommandSnapshot: Equatable {
+        let showFiles: Bool
+        let canToggleLibrary: Bool
+        let showInspector: Bool
+        let canToggleInspector: Bool
+        let canOpenHistogram: Bool
+        let canZoom: Bool
+        let margins: Bool
+        let canCompare: Bool
+        let compareEnabled: Bool
+        let compareMode: MacCompareMode
+        let canToggleClipping: Bool
+        let clipping: Bool
+        let canShowInfo: Bool
+        let infoActive: Bool
+        let canInspect: Bool
+    }
+
+    private var currentViewCommandSnapshot: ViewCommandSnapshot {
+        ViewCommandSnapshot(
+            showFiles: showFiles,
+            canToggleLibrary: workspaceLayout.mode != .preview,
+            showInspector: showInspector,
+            canToggleInspector: model.file != nil && workspaceLayout.mode == .editing,
+            canOpenHistogram: model.result != nil && showsPhotoWorkspace,
+            canZoom: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace,
+            margins: viewing.margins,
+            canCompare: model.result != nil && model.canComparePreview && showsPhotoWorkspace,
+            compareEnabled: viewing.enabled,
+            compareMode: viewing.preferredMode,
+            canToggleClipping: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace,
+            clipping: clipping,
+            canShowInfo: model.file != nil && showsPhotoWorkspace,
+            infoActive: infoMode != .hidden,
+            canInspect: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace
+        )
+    }
+
+    private func syncViewCommands() {
+        guard let viewCommands else { return }
+        let snapshot = currentViewCommandSnapshot
+        viewCommands.showFiles = snapshot.showFiles
+        viewCommands.canToggleLibrary = snapshot.canToggleLibrary
+        viewCommands.showInspector = snapshot.showInspector
+        viewCommands.canToggleInspector = snapshot.canToggleInspector
+        viewCommands.canOpenHistogram = snapshot.canOpenHistogram
+        viewCommands.canZoom = snapshot.canZoom
+        viewCommands.margins = snapshot.margins
+        viewCommands.canCompare = snapshot.canCompare
+        viewCommands.compareEnabled = snapshot.compareEnabled
+        viewCommands.compareMode = snapshot.compareMode
+        viewCommands.canToggleClipping = snapshot.canToggleClipping
+        viewCommands.clipping = snapshot.clipping
+        viewCommands.canShowInfo = snapshot.canShowInfo
+        viewCommands.infoActive = snapshot.infoActive
+        viewCommands.canInspect = snapshot.canInspect
+        viewCommands.toggleLibrary = { workspaceLayout.toggleLibrary(width: windowWidth) }
+        viewCommands.toggleInspector = toggleInspector
+        viewCommands.openHistogram = openHistogram
+        viewCommands.fit = fit
+        viewCommands.actualPixels = actualPixels
+        viewCommands.zoomIn = { zoom(1.25) }
+        viewCommands.zoomOut = { zoom(1 / 1.25) }
+        viewCommands.setMargins = { viewing.margins = $0 }
+        viewCommands.toggleCompare = { viewing.toggle() }
+        viewCommands.selectCompareMode = { viewing.select($0) }
+        viewCommands.closeCompare = { viewing.close() }
+        viewCommands.setClipping = { clipping = $0 }
+        viewCommands.cycleInfo = { infoMode = infoMode.next }
+    }
+
+    private func openHistogram() {
+        guard model.result != nil && showsPhotoWorkspace else { return }
+        if showInspector { histogramExpanded = true }
+        else { showsHistogram = true }
+    }
+
     private func fit() {
         viewing.holdingBefore = false; viewport.fit()
         if model.fullResolution { model.fullResolution = false }
     }
+    private func actualPixels() {
+        viewing.holdingBefore = false
+        viewport.actualPixels()
+        viewport.focus = CGPoint(x: 0.5, y: 0.5)
+        if !model.fullResolution { model.fullResolution = true }
+    }
     private func zoom(_ multiplier: CGFloat) {
         viewing.holdingBefore = false; viewport.zoom(by: multiplier)
     }
-    private func toggleActualPixels() {
+    private func toggleActualPixels(at anchor: CGPoint? = nil) {
         viewing.holdingBefore = false
-        viewport.toggleActualPixels()
-        viewport.focus = CGPoint(x: 0.5, y: 0.5)
+        viewport.toggleActualPixels(anchor: anchor)
+        if !viewport.pixelMode { viewport.focus = CGPoint(x: 0.5, y: 0.5) }
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive || model.wbProbeActive }
@@ -921,6 +1006,8 @@ struct EditorView: View {
                     hslTargetPoint: activeTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
+                    }, onDoubleClickPoint: { point in
+                        if model.geometryDraft == nil { toggleActualPixels(at: point) }
                     }, sourceHeight: model.result?.nativeHeight,
                     cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
                     pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,

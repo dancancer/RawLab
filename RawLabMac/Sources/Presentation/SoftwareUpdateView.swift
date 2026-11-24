@@ -108,6 +108,7 @@ struct SoftwareUpdateView: View {
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
         }.font(.system(size: textSize.isAccessibilitySize ? 22 : 13))
             .frame(minWidth: 420, idealWidth: 560, minHeight: 320, idealHeight: 600)
+            .preferredColorScheme(.dark)
             .accessibilityIdentifier(settings ? "updates.settings" : "updates.prompt")
     }
 

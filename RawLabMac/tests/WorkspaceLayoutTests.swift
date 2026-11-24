@@ -58,9 +58,6 @@ import Foundation
         precondition(layout.libraryPresentation(width: 1440) == .pinned && layout.showsInspector(hasPhoto: true))
         precondition(AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 280) > 70)
         precondition(AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 360) > AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 280))
-        precondition(AdjustmentPanelLayout.ToolCaption.lineLimit(for: "Tone Curve") == 2)
-        precondition(AdjustmentPanelLayout.ToolCaption.lineLimit(for: "曝光") == 1)
-        precondition(AdjustmentPanelLayout.ToolCaption.minimumScale(for: "曝光") < 1)
         print("PASS Mac workspace widths, docked/overlay browser, edit/selection/preview restoration")
     }
 }

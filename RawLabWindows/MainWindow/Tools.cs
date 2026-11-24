@@ -330,6 +330,8 @@ public partial class MainWindow
             presetLibraryButton.Tag = quickPresetsVisible ? "selected" : null;
         }
         var expanded=expandedGroup!=null;
+        QuickPresetContainer.Visibility = expanded && quickPresetsVisible ? Visibility.Visible : Visibility.Collapsed;
+        HdrLookPanel.Visibility = expanded && quickPresetsVisible && settings.IsHDREditing ? Visibility.Visible : Visibility.Collapsed;
         QuickPresetSurface.Visibility = expanded && quickPresetsVisible ? Visibility.Visible : Visibility.Collapsed;
         QuickPresetSurface.IsEnabled = file != null && !exporting && !closing && !aiJob.State.IsRunning;
         if (expanded && quickPresetsVisible) {
@@ -507,6 +509,8 @@ public partial class MainWindow
             if (parameterRowSourceIdentity != rowSource)
             {
                 parameterRowSourceIdentity = rowSource;
+                hdrLookLoading = false;
+                hdrLookError = null;
                 foreach(var row in ParameterRows(AdjustmentPanel)) row.SourceIdentity = rowSource;
             }
             var raster=file!=null && LibraryEntry.IsRaster(file);
@@ -741,6 +745,8 @@ public partial class MainWindow
                     strength.ToDisplay(settings.Default(Parameter.Strength)), strength.Unit,
                     enabled: file != null && lut != null && !exporting && !transform.Active, inputScope: Parameter.Strength);
             }
+            if (!dragFastPath || HdrLookPanel.Visibility == Visibility.Visible)
+                RefreshInlineHDRLook();
             if (!dragFastPath)
             {
                 RefreshComparisonLayout();
@@ -783,6 +789,28 @@ public partial class MainWindow
         BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;
         AutomationProperties.SetItemStatus(BusyIndicator,Loc.Text(busy ? "正在显影…" : renderFailed ? "预览未更新" : "预览已更新"));
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
+        var showStaleBanner = file != null && renderFailed && result != null && !scheduler.Busy && !exporting && ShowsPhotoWorkspace;
+        CanvasErrorBanner.Visibility = showStaleBanner ? Visibility.Visible : Visibility.Collapsed;
+        var showEmptyStatus = file != null && result == null && openingPreview == null && ShowsPhotoWorkspace;
+        CanvasEmptyStatus.Visibility = showEmptyStatus ? Visibility.Visible : Visibility.Collapsed;
+        if (showEmptyStatus)
+        {
+            if (renderFailed)
+            {
+                CanvasStatusTitle.Text = Loc.Text("预览未更新");
+                CanvasStatusSubtitle.Text = Status.Text;
+                CanvasStatusProgress.Visibility = Visibility.Collapsed;
+                CanvasStatusRetry.Visibility = !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else
+            {
+                CanvasStatusTitle.Text = Loc.Text("正在显影…");
+                CanvasStatusSubtitle.Text = Path.GetFileName(file);
+                CanvasStatusProgress.Visibility = SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
+                CanvasStatusRetry.Visibility = Visibility.Collapsed;
+            }
+        }
+        RefreshToolbarOverflow();
         ExportButton.ToolTip=file==null ? Loc.Text("载入照片后可用") : transform.Active ? Loc.Text("草稿未应用，无法导出或复制设置。") :
             renderFailed ? Status.Text :
             !exactReady || scheduler.Busy || previewResize.IsEnabled ? Loc.Text("请等待预览完成后导出。") : Loc.Text("导出");

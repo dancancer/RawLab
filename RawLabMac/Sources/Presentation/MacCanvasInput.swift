@@ -13,7 +13,10 @@ struct MacCanvasInput: NSViewRepresentable {
     var onHold: (Bool) -> Void
     var onPan: (CGSize) -> Void
     var onPanEnd: () -> Void
-    var onDoubleClick: () -> Void
+    var onDoubleClick: () -> Void = {}
+    var onDoubleClickPoint: ((CGPoint?) -> Void)? = nil
+    var onMagnify: ((CGFloat, CGPoint) -> Void)? = nil
+    var onScrollPan: ((CGSize) -> Void)? = nil
     var onHover: ((CGPoint?) -> Void)? = nil
     var onPin: ((CGPoint) -> Void)? = nil
     func makeNSView(context: Context) -> InputView { InputView() }
@@ -168,7 +171,13 @@ struct MacCanvasInput: NSViewRepresentable {
                 pendingPinViewLocation = convert(event.locationInWindow, from: nil)
             } else {
                 window?.makeFirstResponder(self)
-                if event.clickCount == 2 { owner?.onDoubleClick() }
+                if event.clickCount == 2 {
+                    if let onDoubleClickPoint = owner?.onDoubleClickPoint {
+                        onDoubleClickPoint(normalizedImagePoint(for: event))
+                    } else {
+                        owner?.onDoubleClick()
+                    }
+                }
             }
         }
         @objc private func panned(_ gesture: NSPanGestureRecognizer) {
@@ -189,8 +198,34 @@ struct MacCanvasInput: NSViewRepresentable {
                 owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
             } else { super.mouseDragged(with: event) }
         }
-        override func magnify(with event: NSEvent) { cancelInput(); super.magnify(with: event) }
-        override func scrollWheel(with event: NSEvent) { cancelInput(); super.scrollWheel(with: event) }
+        override func magnify(with event: NSEvent) {
+            cancelInput()
+            if event.magnification.isFinite, let onMagnify = owner?.onMagnify {
+                let multiplier = max(0.5, min(2.0, 1 + event.magnification))
+                onMagnify(multiplier, convert(event.locationInWindow, from: nil))
+            }
+        }
+        override func scrollWheel(with event: NSEvent) {
+            cancelInput()
+            let point = convert(event.locationInWindow, from: nil)
+            let zoomModifier = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.command)
+            if (!event.hasPreciseScrollingDeltas || zoomModifier), let onMagnify = owner?.onMagnify {
+                if event.scrollingDeltaY.isFinite, abs(event.scrollingDeltaY) > 0.001 {
+                    let steps = event.hasPreciseScrollingDeltas
+                        ? max(-4.0, min(4.0, event.scrollingDeltaY / 30.0))
+                        : (event.scrollingDeltaY > 0 ? 1.0 : -1.0)
+                    onMagnify(pow(1.18, steps), point)
+                    return
+                }
+            } else if event.hasPreciseScrollingDeltas, let onScrollPan = owner?.onScrollPan {
+                if event.scrollingDeltaX.isFinite, event.scrollingDeltaY.isFinite,
+                   abs(event.scrollingDeltaX) > 0.001 || abs(event.scrollingDeltaY) > 0.001 {
+                    onScrollPan(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
+                    return
+                }
+            }
+            super.scrollWheel(with: event)
+        }
         override func mouseUp(with event: NSEvent) {
             if let origin = targetOrigin {
                 let point = convert(event.locationInWindow, from: nil)
