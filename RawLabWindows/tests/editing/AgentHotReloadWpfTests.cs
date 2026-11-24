@@ -10,6 +10,7 @@ using Xunit;
 
 namespace RawLab.Windows.Tests;
 
+[Collection("Wpf")]
 public sealed class AgentHotReloadWpfTests
 {
     private static void PumpUntil(Func<bool> condition, TimeSpan timeout)
@@ -52,20 +53,21 @@ public sealed class AgentHotReloadWpfTests
     [StaFact]
     [Trait("Category", "WpfModel")]
     [Trait("Suite", "agent-hot-reload")]
-    public void MainWindowHotReloadsExternalEditsPresetsAndPreviewInvalidationEndToEnd()
-    {
-        var root = Path.Combine(Path.GetTempPath(), "rawlab-wpf-hotreload-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(root);
-        TestWindowState.CreateApplication();
-        MainWindow? window = null;
-        try
+    public void MainWindowHotReloadsExternalEditsPresetsAndPreviewInvalidationEndToEnd() =>
+        WpfTestHost.Run(() =>
         {
-            var photo = WriteTestPng(Path.Combine(root, "photos"));
-            var out1 = Path.Combine(root, "win-1");
-            var out2 = Path.Combine(root, "win-2");
+            var root = Path.Combine(Path.GetTempPath(), "rawlab-wpf-hotreload-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            MainWindow? window = null;
+            try
+            {
+                var photo = WriteTestPng(Path.Combine(root, "photos"));
+                var out1 = Path.Combine(root, "win-1");
+                var out2 = Path.Combine(root, "win-2");
 
-            window = TestWindowState.CreateIsolatedWindow(out1, width: 1200, height: 800);
-            window.Show();
+                window = TestWindowState.CreateIsolatedWindow(out1, width: 1200, height: 800);
+                window.GpuMode.SelectedIndex = 1;
+                window.Show();
 
             // Verify IsolateForTests hooks PhotoPreviews and restarts ExternalStoreWatcher on isolated paths
             TestWindowState.Isolate(window, out2);
@@ -149,15 +151,15 @@ public sealed class AgentHotReloadWpfTests
             externalPresetStore.Create("External WPF Preset", payload);
             window.HandleExternalPresetsFileChangeForTests();
             Assert.Single(window.PresetStoreInstance.List());
-        }
-        finally
-        {
-            if (window != null)
-            {
-                window.UpdateQuitApproved = true;
-                window.Close();
             }
-            try { Directory.Delete(root, recursive: true); } catch { }
-        }
-    }
+            finally
+            {
+                if (window != null)
+                {
+                    window.UpdateQuitApproved = true;
+                    window.Close();
+                }
+                try { Directory.Delete(root, recursive: true); } catch { }
+            }
+        });
 }
