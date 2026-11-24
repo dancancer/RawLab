@@ -7167,6 +7167,154 @@
       "formats": [],
       "source": "忘记已保存凭据",
       "types": []
+    },
+    "diagnostics_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "故障诊断与错误日志",
+      "types": []
+    },
+    "diagnostics_recording": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "记录详细诊断日志",
+      "types": []
+    },
+    "diagnostics_privacy_notice": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。",
+      "types": []
+    },
+    "diagnostics_status_recording": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。",
+      "types": []
+    },
+    "diagnostics_status_recovered": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。",
+      "types": []
+    },
+    "diagnostics_status_ready": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。",
+      "types": []
+    },
+    "diagnostics_status_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。",
+      "types": []
+    },
+    "diagnostics_note_label": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "问题简述（选填，勿填个人隐私）",
+      "types": []
+    },
+    "diagnostics_save_device": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存到设备…",
+      "types": []
+    },
+    "diagnostics_share_zip": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "分享诊断包…",
+      "types": []
+    },
+    "diagnostics_upload": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "一键云端上传",
+      "types": []
+    },
+    "diagnostics_uploading": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在上传…",
+      "types": []
+    },
+    "diagnostics_preview": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "预览日志",
+      "types": []
+    },
+    "diagnostics_clear": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "清除日志",
+      "types": []
+    },
+    "diagnostics_code_format": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "诊断码：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "diagnostics_copy_code": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "复制诊断码",
+      "types": []
+    },
+    "diagnostics_copied": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已复制",
+      "types": []
+    },
+    "diagnostics_saved_feedback": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。",
+      "types": []
+    },
+    "diagnostics_export_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法导出诊断包。",
+      "types": []
+    },
+    "diagnostics_upload_succeeded": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "上传成功，请复制诊断码发送给开发者。",
+      "types": []
+    },
+    "diagnostics_upload_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "云端上传暂不可用，请先将诊断包保存到设备后发送。",
+      "types": []
+    },
+    "diagnostics_upload_too_large": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。",
+      "types": []
+    },
+    "diagnostics_empty": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暂无可导出的错误日志。",
+      "types": []
+    },
+    "diagnostics_cleared": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已清除本地诊断日志。",
+      "types": []
     }
   },
   "overrides": {

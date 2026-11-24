@@ -22,6 +22,7 @@ internal sealed class AppPaths
     internal string DualDnCacheDirectory => Path.Combine(Root, "Cache", "DualDn");
     internal string HdrCacheDirectory => Path.Combine(Root, "Cache", "HDR");
     internal string ExportStagingDirectory => Path.Combine(Root, "Cache", "ExportStaging");
+    internal string DiagnosticsDirectory => Path.Combine(Root, "Diagnostics");
     internal string AiDiagnosticsDirectory => Path.Combine(Root, "Diagnostics", "AI");
     internal string AiGpuPreferencesPath => Path.Combine(Root, "ai-gpu.json");
     internal string LanguagePreferencePath => Path.Combine(Root, "language.txt");

@@ -184,6 +184,7 @@ public partial class MainWindow
         exportStagingDirectory = isolatedPaths.ExportStagingDirectory;
         aiPreferenceStore = new AIGpuPreferenceStore(isolatedPaths.AiGpuPreferencesPath);
         aiDiagnostics = new AIDiagnosticStore(isolatedPaths.AiDiagnosticsDirectory);
+        diagnosticSession = new DiagnosticSessionStore(isolatedPaths.DiagnosticsDirectory);
         aiPreference = new AIGpuPreference();
         library.SettingsPath = isolatedPaths.FoldersPath;
         library.Roots.Clear();

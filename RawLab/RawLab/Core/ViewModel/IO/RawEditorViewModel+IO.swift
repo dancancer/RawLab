@@ -211,6 +211,12 @@ extension RawEditorViewModel {
                         context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
                         stage = "renderPreview"
                         let importContext = context.merging(ErrorDiagnostics.fileContext(localURL)) { first, _ in first }
+                        DiagnosticCenter.recordBreadcrumb(
+                            category: "import",
+                            stage: "importPreviewStart",
+                            message: "Starting iOS photo preview pipeline",
+                            context: importContext
+                        )
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {
