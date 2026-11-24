@@ -361,6 +361,23 @@ sony2fuji_status sony2fuji_hdr_encode_rgba16(
     const sony2fuji_hdr_buffer_v1* source,
     sony2fuji_buffer* out_rgba16
 );
+// Parallel HDR->SDR display-8 encoders matching `sony2fuji::hdr::srgbToUInt8`.
+// Unlike `sony2fuji_hdr_encode_rgba16`, non-finite floats (NaN / +-Inf) are rejected
+// with `SONY2FUJI_STATUS_INVALID_ARGUMENT`.
+sony2fuji_status sony2fuji_hdr_encode_rgba8(
+    const sony2fuji_hdr_buffer_v1* source,
+    sony2fuji_buffer* out_rgba8
+);
+sony2fuji_status sony2fuji_hdr_encode_bgra8(
+    const sony2fuji_hdr_buffer_v1* source,
+    sony2fuji_buffer* out_bgra8
+);
+sony2fuji_status sony2fuji_hdr_encode_rgba8_into(
+    const sony2fuji_hdr_buffer_v1* source,
+    void* dst,
+    uint64_t dst_size_bytes,
+    uint64_t dst_stride_bytes
+);
 // 捕获几何调整后的 HDR，在自然饱和度之后、HSL/分级/外观之前取样。
 // 使用 sony2fuji_hsl_probe_sample/destroy；RGB 为扩展线性 sRGB，
 // hsl[2] 为有界坐标 Y/(1+Y)，不修改来源或渲染结果。
@@ -472,6 +489,137 @@ sony2fuji_status sony2fuji_hdr_render_file_roi(sony2fuji_session* session, const
 void sony2fuji_hdr_clear_session_cache(sony2fuji_session* session);
 
 void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image);
+
+#define SONY2FUJI_HDR_RENDER_OPTIONS_V1_VERSION 1u
+typedef struct sony2fuji_hdr_render_options_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t intent;
+    uint32_t long_edge;
+} sony2fuji_hdr_render_options_v1;
+
+sony2fuji_status sony2fuji_hdr_geometry_size_json(
+    uint32_t native_width,
+    uint32_t native_height,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    uint32_t* width,
+    uint32_t* height,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_roi_source_bounds_json(
+    uint32_t full_source_width,
+    uint32_t full_source_height,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_roi_source_bounds_v1* out_bounds,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_render_json(
+    sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_render_roi_json(
+    sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_render_camera_raw_roi_json(
+    sony2fuji_session* session,
+    const char* file,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_render_file_roi_json(
+    sony2fuji_session* session,
+    const char* file,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_roi_v1* roi,
+    sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_roi_result_v1* out_roi,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_decode_camera_raw_json(
+    sony2fuji_session* session,
+    const char* file,
+    const sony2fuji_hdr_decode_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_hdr_image_pair_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_export_stream_json(
+    sony2fuji_session* session,
+    const sony2fuji_hdr_stream_source_v1* source,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_export_config_v1* config,
+    uint32_t keep_hdr,
+    const char* temporary_root,
+    const char* path,
+    sony2fuji_hdr_stream_result_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_export_tiled_json(
+    sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_stream_source_v1* stream,
+    const char* source_path,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_export_config_v1* config,
+    uint32_t output_format,
+    const char* temporary_root,
+    const char* path,
+    sony2fuji_hdr_stream_result_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_export_proraw_json(
+    sony2fuji_session* session,
+    const char* source_path,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_export_config_v1* config,
+    uint32_t keep_hdr,
+    const char* temporary_root,
+    const char* path,
+    sony2fuji_hdr_stream_result_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_create_hsl_probe_json(
+    sony2fuji_session* session,
+    const sony2fuji_hdr_image_pair_v1* source,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    uint64_t source_revision,
+    uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
 
 #ifdef __cplusplus
 }

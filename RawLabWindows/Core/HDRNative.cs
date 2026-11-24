@@ -161,28 +161,8 @@ internal static class HDRNative
                 : Native.sony2fuji_hdr_decode(path, ref options, ref pair, ref diagnostic);
         int DecodeCameraRaw()
         {
-            if (!cameraAI && development is not { IsDefault: false })
-                return Native.sony2fuji_hdr_decode_camera_raw(session,path,ref options,ref pair,ref diagnostic);
-            var camera = development ?? new();
-            if (cameraAI && !camera.AllowsAI) throw new HDRSourceException(2, ReasonCameraAI, 11);
-            var config = new Native.HDRCameraDevelopment {
-                Version=1, StructSize=(uint)Marshal.SizeOf<Native.HDRCameraDevelopment>(),
-                WhiteBalance=camera.CustomWhiteBalance ? 1u : 0, ExposureReference=camera.SensorExposure ? 1u : 0,
-                Temperature=(float)camera.Temperature, Tint=(float)camera.Tint, FbddLevel=(uint)camera.FbddLevel,
-                LensFlags=(camera.LensDistortion ? 1u : 0) | (camera.LensTca ? 2u : 0) | (camera.LensVignetting ? 8u : 0) |
-                    (camera.LensActive && camera.LensAutoCrop ? 4u : 0), LensProfile=camera.LensProfile
-            };
-            if (camera.CameraProfile is { } profile) {
-                config.Version = 2;
-                config.StructSize = (uint)Marshal.SizeOf<Native.HDRCameraDevelopmentV2>();
-                var profiled = new Native.HDRCameraDevelopmentV2 {
-                    Base = config, ProfilePath = profile.RequireAsset(cameraProfileDirectory), ProfileSha256 = Encoding.ASCII.GetBytes(profile.Sha256 + '\0')
-                };
-                return Native.DecodeWithHDRCameraProfile(session,path,ref options,ref profiled,ref pair,ref diagnostic);
-            }
-            return cameraAI
-                ? Native.sony2fuji_hdr_decode_camera_raw_with_ai(session,path,ref options,ref config,ref pair,ref diagnostic)
-                : Native.sony2fuji_hdr_decode_camera_raw_with_development(session,path,ref options,ref config,ref pair,ref diagnostic);
+            var editStateJson = BuildCameraRawDecodeJson(expected, development, cameraAI, cameraProfileDirectory);
+            return Native.sony2fuji_hdr_decode_camera_raw_json(session, path, ref options, editStateJson, ref pair, ref diagnostic);
         }
         if (status != StatusOk)
         {
@@ -212,13 +192,34 @@ internal static class HDRNative
         return new(pair);
     }
 
+    internal static string BuildCameraRawDecodeJson(
+        HDRSourceInfo expected,
+        HDRCameraDevelopmentSettings? development,
+        bool cameraAI,
+        string? cameraProfileDirectory = null)
+    {
+        var camera = development ?? new();
+        if (cameraAI && !camera.AllowsAI) throw new HDRSourceException(2, ReasonCameraAI, 11);
+        return HDRSettings.ToCameraDevelopmentEditStateJson(
+            expected.CameraProcessingVersion, camera, cameraAI, cameraProfileDirectory);
+    }
+
+    private static Native.HDRRenderOptions RenderOptions(HDRIntent intent, uint longEdge = 0) => new()
+    {
+        Version = 1,
+        StructSize = (uint)Marshal.SizeOf<Native.HDRRenderOptions>(),
+        Intent = (uint)intent,
+        LongEdge = longEdge
+    };
+
     internal static HDRPairOwner Render(Native.Session session, HDRPairOwner source, HDRSettings settings,
         HDRIntent intent, uint longEdge = 0, string? lookDirectory = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
-        var request = settings.NativeRenderRequest(intent, longEdge, lookDirectory, outputSharpening);
+        var execOptions = RenderOptions(intent, longEdge);
+        var editStateJson = settings.ToCanonicalEditStateJson(lookDirectory, outputSharpening);
         var result = Pair(); var diagnostic = Diagnostic();
-        var status = Native.sony2fuji_hdr_render(session, ref source.Pair, ref request, ref result, ref diagnostic);
+        var status = Native.sony2fuji_hdr_render_json(session, ref source.Pair, ref execOptions, editStateJson, ref result, ref diagnostic);
         if (status != StatusOk)
         {
             Native.sony2fuji_hdr_release_pair(ref result);
@@ -230,12 +231,13 @@ internal static class HDRNative
 
     internal static (uint Width,uint Height) GeometrySize(uint width,uint height,GeometrySettings geometry)
     {
-        var request=new HDRSettings { Geometry=geometry }.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.Base;
-        var diagnostic=Diagnostic();
-        var status=Native.sony2fuji_hdr_geometry_size(width,height,ref request,out var w,out var h,ref diagnostic);
-        if(status==StatusCancelled)throw new OperationCanceledException();
-        if(status!=0)throw new HDRSourceException(status,diagnostic.Reason,diagnostic.Field);
-        return(w,h);
+        var execOptions = RenderOptions(HDRIntent.Preview);
+        var editStateJson = new HDRSettings { Geometry = geometry }.ToCanonicalEditStateJson();
+        var diagnostic = Diagnostic();
+        var status = Native.sony2fuji_hdr_geometry_size_json(width, height, ref execOptions, editStateJson, out var w, out var h, ref diagnostic);
+        if (status == StatusCancelled) throw new OperationCanceledException();
+        if (status != 0) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
+        return (w, h);
     }
 
     internal static HDRLookSettings ImportLook(string path, string? directory = null)
@@ -310,9 +312,10 @@ internal static class HDRNative
     internal static IntPtr CreateHslProbe(Native.Session session, HDRPairOwner source, HDRSettings settings,
         uint longEdge, HslTargetRevision revision)
     {
-        var request = settings.NativeRenderRequest(HDRIntent.Preview, longEdge);
+        var execOptions = RenderOptions(HDRIntent.Preview, longEdge);
+        var editStateJson = settings.ToCanonicalEditStateJson();
         var diagnostic = Diagnostic();
-        var status = Native.sony2fuji_hdr_create_hsl_probe(session, ref source.Pair, ref request,
+        var status = Native.sony2fuji_hdr_create_hsl_probe_json(session, ref source.Pair, ref execOptions, editStateJson,
             revision.Source, revision.Request, out var probe, ref diagnostic);
         if (status == StatusCancelled) throw new OperationCanceledException();
         if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);
@@ -356,7 +359,8 @@ internal static class HDRNative
     {
         if (longEdge > 65535) throw new ArgumentOutOfRangeException(nameof(longEdge));
         if (sha256.Length != 32) throw new ArgumentException("A frozen SHA-256 digest is required.", nameof(sha256));
-        var request = settings.NativeRenderRequest(HDRIntent.Final, longEdge, outputSharpening: outputSharpening);
+        var execOptions = RenderOptions(HDRIntent.Final, longEdge);
+        var editStateJson = settings.ToCanonicalEditStateJson(outputSharpening: outputSharpening);
         var config = new Native.HDRExportConfig {
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRExportConfig>(), JpegQuality = quality,
             BaseColor = ColorSrgb, MetadataPolicy = MetadataIsoXmp, MetadataSourcePath = sourcePath,
@@ -366,7 +370,7 @@ internal static class HDRNative
             Version = 1, StructSize = (uint)Marshal.SizeOf<Native.HDRStreamResult>()
         };
         var diagnostic = Diagnostic();
-        var status = Native.sony2fuji_hdr_export_proraw(session, sourcePath, ref request, ref config,
+        var status = Native.sony2fuji_hdr_export_proraw_json(session, sourcePath, ref execOptions, editStateJson, ref config,
             keepHdr ? 1u : 0u, EnsureTemporaryRoot(temporaryRoot), destination, ref result, ref diagnostic);
         if (status == StatusCancelled) throw new OperationCanceledException();
         if (status != StatusOk) throw new HDRSourceException(status, diagnostic.Reason, diagnostic.Field);

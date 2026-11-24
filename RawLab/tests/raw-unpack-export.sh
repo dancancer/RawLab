@@ -97,6 +97,19 @@ sony2fuji_status hook_process(sony2fuji_session* session, const sony2fuji_reques
 }
 DYLD_INTERPOSE_NAME(hook_process, sony2fuji_process, process)
 
+sony2fuji_status hook_session_render(sony2fuji_session* session, const sony2fuji_render_options_v1* options,
+                                     const char* edit_state_json, sony2fuji_buffer* output,
+                                     sony2fuji_viewport_roi_result* out_roi) {
+    const uint64_t before = sony2fuji_session_get_raw_decode_count(session);
+    const sony2fuji_status status = sony2fuji_session_render(session, options, edit_state_json, output, out_roi);
+    const uint64_t after = sony2fuji_session_get_raw_decode_count(session);
+    if (after > before) {
+        g_core_decode.fetch_add(static_cast<int32_t>(after - before));
+    }
+    return status;
+}
+DYLD_INTERPOSE_NAME(hook_session_render, sony2fuji_session_render, session_render)
+
 sony2fuji_status hook_create_hsl_probe(sony2fuji_session* session, const sony2fuji_request* request,
                                        uint64_t source_revision, uint64_t request_revision,
                                        sony2fuji_hsl_probe** out_probe) {
@@ -110,6 +123,21 @@ sony2fuji_status hook_create_hsl_probe(sony2fuji_session* session, const sony2fu
     return status;
 }
 DYLD_INTERPOSE_NAME(hook_create_hsl_probe, sony2fuji_session_create_hsl_probe, create_hsl_probe)
+
+sony2fuji_status hook_create_hsl_probe_json(sony2fuji_session* session, const sony2fuji_render_options_v1* options,
+                                            const char* edit_state_json,
+                                            uint64_t source_revision, uint64_t request_revision,
+                                            sony2fuji_hsl_probe** out_probe) {
+    const uint64_t before = sony2fuji_session_get_raw_decode_count(session);
+    const sony2fuji_status status = sony2fuji_session_create_hsl_probe_json(
+        session, options, edit_state_json, source_revision, request_revision, out_probe);
+    const uint64_t after = sony2fuji_session_get_raw_decode_count(session);
+    if (after > before) {
+        g_core_decode.fetch_add(static_cast<int32_t>(after - before));
+    }
+    return status;
+}
+DYLD_INTERPOSE_NAME(hook_create_hsl_probe_json, sony2fuji_session_create_hsl_probe_json, create_hsl_probe_json)
 CPP
 
 xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$RAWLAB_IOS_SIM_TARGET" -isysroot "$RAWLAB_IOS_SIM_SDK" \

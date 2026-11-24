@@ -5,214 +5,212 @@ import Foundation
     static func require(_ value: @autoclosure () -> Bool, _ message: String) {
         if !value() { fatalError(message) }
     }
-    static func main() throws {
-        var channelSettings = HDRSettings()
-        channelSettings.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.6)
-        let channelRequest = try makeHDRRequest(settings: channelSettings, intent: SONY2FUJI_INTENT_FINAL)
-        withHDRRequestPrefix(channelRequest) { base in
-            require(base.pointee.hdr_processing_version == 8 && base.pointee.struct_size == 2584, "HDR v8 ABI header")
-            let full = UnsafeRawPointer(base).load(as: sony2fuji_hdr_request_v8.self)
-            require(full.channels.0.count == 3 && full.channels.0.points.1.y == 0.6 && full.channels.1.mode == SONY2FUJI_CURVE_LEGACY,
-                    "HDR v8 channel tail")
-        }
 
-        let cameraError = HDRNativeError(status: SONY2FUJI_STATUS_UNSUPPORTED,
-            reason: UInt32(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT), field: UInt32(SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT))
+    static func parse(_ json: String) throws -> [String: Any] {
+        let data = try XCTUnwrapData(json)
+        return try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    }
+
+    static func XCTUnwrapData(_ string: String) throws -> Data {
+        guard let data = string.data(using: .utf8) else {
+            throw HDRNativeError.invalidSettings
+        }
+        return data
+    }
+
+    static func main() throws {
+        require(HDRNativeError.invalidSettings.status == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                "HDRNativeError.invalidSettings status mismatch")
+        require(MemoryLayout<sony2fuji_hdr_image_pair_v1>.size == 208,
+                "Swift HDR pair layout differs from C11 contract")
+        require(MemoryLayout<sony2fuji_hdr_render_options_v1>.size == 16 &&
+                SONY2FUJI_HDR_RENDER_OPTIONS_V1_VERSION == 1,
+                "Swift HDR render_options_v1 layout differs from C11 contract")
+
+        let cameraError = HDRNativeError(
+            status: SONY2FUJI_STATUS_UNSUPPORTED,
+            reason: UInt32(SONY2FUJI_HDR_REASON_CAMERA_DEVELOPMENT),
+            field: UInt32(SONY2FUJI_HDR_FIELD_CAMERA_DEVELOPMENT)
+        )
         require(cameraError.errorDescription == L10n.text("无效或不可用的相机显影设置（白平衡或镜头校正）。"),
                 "HDR camera white-balance failures must not blame lens correction alone")
-        var settings=HDRSettings()
-        require(MemoryLayout<sony2fuji_hdr_image_pair_v1>.size==208,"Swift HDR pair layout differs from C11 contract")
-        settings.exposure=1.25; settings.temperature=7200; settings.tint = -12
-        settings.contrast=30; settings.highlights=20; settings.shadows=40; settings.saturation=10
-        settings.geometry.quarterTurns=1; settings.geometry.flipHorizontal=true
-        let request=try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:1600).native.base.base.base.base.base.base.base.base
-        require(request.version==1 && request.struct_size==88 && request.hdr_processing_version==1,"HDR ABI header differs")
-        require(request.exposure_ev==1.25 && request.temperature==7200 && request.tint == -12,"HDR exposure/WB mapping differs")
-        require(request.contrast==30 && request.highlights==20 && request.shadows==40 && request.saturation==10,"HDR logical tone mapping differs")
-        require(request.quarter_turns==1 && request.flip_horizontal==1 && request.long_edge==1600,"HDR geometry/size mapping differs")
-        let data=try HDRRecipe.document(settings:settings,input:URL(fileURLWithPath:"/tmp/source.heic"),
-            output:URL(fileURLWithPath:"/tmp/output.jpg"),baseColor:.displayP3,longEdge:1600)
-        let root=try JSONSerialization.jsonObject(with:data) as! [String:Any]
-        let edits=root["edits"] as! [String:Any]
-        let tone=edits["tone"] as! [String:Double]
-        let wb=edits["white_balance"] as! [String:Any]
-        require(root["schema_version"] as? Int==6 && wb["mode"] as? String=="relative","HDR JSON context missing")
-        require(tone["contrast"]==1.3 && tone["highlights"] == -0.2 && tone["shadows"]==0.4,"HDR canonical transfer units differ")
-        require(!String(decoding:data,as:UTF8.self).contains("headroom"),"display/source headroom entered a recipe")
+
+        var channelSettings = HDRSettings()
+        channelSettings.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.6)
+        let channelJSON = try CanonicalEditRecipe.hdrSessionStateJSON(settings: channelSettings)
+        let channelRoot = try parse(channelJSON)
+        let channelProcessing = channelRoot["processing"] as! [String: Any]
+        let channelEdits = channelRoot["edits"] as! [String: Any]
+        let channelTone = channelEdits["tone"] as! [String: Any]
+        let channelCurve = channelTone["curve"] as! [String: Any]
+        let channels = channelCurve["channels"] as! [String: Any]
+        let redChannel = channels["red"] as! [String: Any]
+        require(channelRoot["schema_version"] as? Int == 15 &&
+                channelProcessing["family"] as? String == "rawlab_hdr" &&
+                channelProcessing["version"] as? Int == 8,
+                "HDR v8 SessionState header mismatch")
+        require((redChannel["points"] as? [[Double]]) == [[0, 0], [0.5, 0.6], [1, 1]],
+                "HDR v8 SessionState red channel points mismatch")
+
+        var settings = HDRSettings()
+        settings.exposure = 1.25
+        settings.temperature = 7200
+        settings.tint = -12
+        settings.contrast = 30
+        settings.highlights = 20
+        settings.shadows = 40
+        settings.saturation = 10
+        settings.geometry.quarterTurns = 1
+        settings.geometry.flipHorizontal = true
+
+        let v6JSON = try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings)
+        let v6Root = try parse(v6JSON)
+        let v6Edits = v6Root["edits"] as! [String: Any]
+        let v6Tone = v6Edits["tone"] as! [String: Double]
+        let v6WB = v6Edits["white_balance"] as! [String: Any]
+        let v6Geo = v6Edits["geometry"] as! [String: Any]
+        require(v6Root["schema_version"] as? Int == 6 && v6WB["mode"] as? String == "relative" &&
+                v6WB["relative_temperature"] as? Double == 7200 && v6WB["relative_tint"] as? Double == -12,
+                "HDR v6 SessionState WB mismatch")
+        require(v6Tone["contrast"] == 1.3 && v6Tone["highlights"] == -0.2 &&
+                v6Tone["shadows"] == 0.4 && v6Tone["saturation"] == 1.1,
+                "HDR v6 SessionState tone mismatch")
+        require(v6Geo["quarter_turns"] as? Int == 1 && v6Geo["flip_horizontal"] as? Bool == true,
+                "HDR v6 SessionState geometry mismatch")
+        require(!v6JSON.contains("headroom") && !v6JSON.contains("session.raw") && !v6JSON.contains("session.png"),
+                "HDR SessionState leaked headroom or dummy path")
+
+        let data = try HDRRecipe.document(
+            settings: settings,
+            input: URL(fileURLWithPath: "/tmp/source.heic"),
+            output: URL(fileURLWithPath: "/tmp/output.jpg"),
+            baseColor: .displayP3,
+            longEdge: 1600
+        )
+        let root = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let edits = root["edits"] as! [String: Any]
+        let tone = edits["tone"] as! [String: Double]
+        let wb = edits["white_balance"] as! [String: Any]
+        require(root["schema_version"] as? Int == 6 && wb["mode"] as? String == "relative", "HDR JSON context missing")
+        require(tone["contrast"] == 1.3 && tone["highlights"] == -0.2 && tone["shadows"] == 0.4, "HDR canonical transfer units differ")
+        require(!String(decoding: data, as: UTF8.self).contains("headroom"), "display/source headroom entered a recipe")
+
         settings.toneSettings.blackPoint = -42
         settings.toneSettings.whitePoint = 11
         settings.toneSettings.curveStrength = -27
         settings.toneSettings.curve = .init(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.5, y: 0.4), .init(x: 1, y: 1)])
-        let extended = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_PREVIEW)
-        let nativeTone = withHDRRequestPrefix(extended) { UnsafeRawPointer($0).load(as: sony2fuji_hdr_request_v2.self) }
-        require(nativeTone.base.version == 1 && nativeTone.base.struct_size == 648 && nativeTone.base.hdr_processing_version == 2,
-                "Swift HDR tone ABI header differs")
-        require(nativeTone.black_point == -42 && nativeTone.white_point == 11 && nativeTone.curve_strength == -27 && nativeTone.reserved == 0 &&
-                nativeTone.curve.mode == SONY2FUJI_CURVE_CUSTOM && nativeTone.curve.count == 3 && nativeTone.curve.points.1.y == 0.4,
-                "Swift HDR tone tail differs")
-        let extendedData = try HDRRecipe.document(settings: settings, input: URL(fileURLWithPath: "/tmp/source.heic"),
-            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)
-        let extendedRoot = try JSONSerialization.jsonObject(with: extendedData) as! [String: Any]
-        let processing = extendedRoot["processing"] as! [String: Any]
+        let extendedRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings))
+        let extendedProcessing = extendedRoot["processing"] as! [String: Any]
         let extendedEdits = extendedRoot["edits"] as! [String: Any]
         let extendedTone = extendedEdits["tone"] as! [String: Any]
         let curve = extendedTone["curve"] as! [String: Any]
-        require(extendedRoot["schema_version"] as? Int == 8 && processing["version"] as? Int == 2,
-                "HDR v2 recipe negotiation differs")
+        require(extendedRoot["schema_version"] as? Int == 8 && extendedProcessing["version"] as? Int == 2,
+                "HDR v2 SessionState negotiation differs")
         require(extendedTone["black_point"] as? Double == -0.42 && extendedTone["white_point"] as? Double == 0.11 &&
                 extendedTone["s_curve"] as? Double == 0 && curve["mode"] as? String == "custom" &&
-                curve["points"] as? [[Double]] == [[0, 0], [0.5, 0.4], [1, 1]], "HDR v8 tone fields differ")
+                curve["points"] as? [[Double]] == [[0, 0], [0.5, 0.4], [1, 1]],
+                "HDR v8 tone fields differ")
+
         settings.colorSettings.vibrance = 23
         settings.colorSettings.hsl.setExact(.saturation, channel: 7, value: -12.5)
         settings.colorSettings.grading.midtones = .init(hue: 210, saturation: 17)
-        let nativeColor = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base.base
-        require(nativeColor.base.base.struct_size == 792 && nativeColor.base.base.hdr_processing_version == 3 &&
-                nativeColor.vibrance == 23 && nativeColor.hsl.saturation.7 == -12.5 &&
-                nativeColor.grading.midtones_hue == 210 && nativeColor.grading.midtones_saturation == 17,
-                "Swift HDR color ABI differs")
-        let colorData = try HDRRecipe.document(settings: settings, input: URL(fileURLWithPath: "/tmp/source.heic"),
-            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)
-        let colorRoot = try JSONSerialization.jsonObject(with: colorData) as! [String: Any]
+        let colorRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings))
         let colorEdits = colorRoot["edits"] as! [String: Any]
         require(colorRoot["schema_version"] as? Int == 9 &&
                 (colorEdits["color"] as? [String: Double])?["vibrance"] == 0.23 &&
                 (colorEdits["hsl"] as? [String: [Double]])?["saturation"]?.last == -12.5 &&
                 (colorEdits["color_grading"] as? [String: [String: Double]])?["midtones"]?["hue"] == 210,
-                "Swift HDR v9 recipe changed color values")
+                "Swift HDR v9 SessionState changed color values")
+
         settings.renditionSettings.peakLimitEV = 2
         settings.renditionSettings.sdrExposureEV = -0.5
         settings.renditionSettings.sdrContrast = 25
         settings.renditionSettings.sdrSaturation = -15
-        let nativeRendition = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base.base
-        require(nativeRendition.base.base.base.struct_size == 808 &&
-                nativeRendition.base.base.base.hdr_processing_version == 4 &&
-                nativeRendition.base.vibrance == 23 && nativeRendition.peak_limit_ev == 2 &&
-                nativeRendition.sdr_exposure_ev == -0.5 && nativeRendition.sdr_contrast == 25 &&
-                nativeRendition.sdr_saturation == -15, "Swift HDR rendition ABI differs")
-        let renditionData = try HDRRecipe.document(settings: settings, input: URL(fileURLWithPath: "/tmp/source.heic"),
-            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)
-        let renditionRoot = try JSONSerialization.jsonObject(with: renditionData) as! [String: Any]
+        let renditionRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings))
         let renditionEdits = renditionRoot["edits"] as! [String: Any]
         require(renditionRoot["schema_version"] as? Int == 10 &&
                 (renditionEdits["rendition"] as? [String: Double]) == [
                     "peak_limit_ev": 2, "sdr_exposure_ev": -0.5, "sdr_contrast": 0.25, "sdr_saturation": -0.15
-                ], "Swift HDR v10 recipe changed rendition values")
+                ], "Swift HDR v10 SessionState changed rendition values")
+
         settings.effectsSettings.vignetteAmount = -50
         settings.effectsSettings.grainAmount = 40
         settings.effectsSettings.grainSize = 30
-        let nativeEffects = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL).native.base.base.base.base
-        require(nativeEffects.base.base.base.base.struct_size == 848 &&
-                nativeEffects.base.base.base.base.hdr_processing_version == 5 &&
-                nativeEffects.base.peak_limit_ev == 2 && nativeEffects.effects.vignette_amount == -50 &&
-                nativeEffects.effects.grain_amount == 40 && nativeEffects.effects.grain_size == 30,
-                "Swift HDR effects ABI differs")
-        let effectsData = try HDRRecipe.document(settings: settings, input: URL(fileURLWithPath: "/tmp/source.heic"),
-            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)
-        let effectsRoot = try JSONSerialization.jsonObject(with: effectsData) as! [String: Any]
+        let effectsRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings))
         let effectsEdits = effectsRoot["edits"] as! [String: Any]
         require(effectsRoot["schema_version"] as? Int == 11 &&
-                (effectsEdits["effects"] as? [String: Double])?["grain_amount"] == 40, "Swift HDR v11 recipe lost effects")
+                (effectsEdits["effects"] as? [String: Double])?["grain_amount"] == 40,
+                "Swift HDR v11 SessionState lost effects")
+
         settings.detailSettings = .init(sharpening: 1.25, clarity: 0.5, dehaze: -0.4, denoise: 0.75)
-        let detailRequest = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL)
-        let detail = detailRequest.native.base.base.base
-        let prefix = withHDRRequestPrefix(detailRequest) { $0.pointee }
-        require(prefix.struct_size == 864 && prefix.hdr_processing_version == 6 &&
-                detail.sharpening == 1.25 && detail.clarity == 0.5 && detail.dehaze == -0.4 && detail.denoise == 0.75,
-                "Swift HDR detail ABI differs")
-        let detailData = try HDRRecipe.document(settings: settings, input: URL(fileURLWithPath: "/tmp/source.heic"),
-            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)
-        let detailRoot = try JSONSerialization.jsonObject(with: detailData) as! [String: Any]
+        let detailRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings))
         let detailEdits = detailRoot["edits"] as! [String: Any]
         require(detailRoot["schema_version"] as? Int == 12 &&
-                (detailEdits["detail"] as? [String: Double]) == ["sharpening": 1.25, "clarity": 0.5, "dehaze": -0.4, "denoise": 0.75],
-                "Swift HDR v12 recipe lost detail")
+                (detailEdits["detail"] as? [String: Double]) == [
+                    "sharpening": 1.25, "clarity": 0.5, "dehaze": -0.4, "denoise": 0.75
+                ], "Swift HDR v12 SessionState lost detail")
+
         let hash = String(repeating: "a", count: 64)
         settings.lookSettings = .init(sha256: hash, name: "HDR fixture", strength: 0.75)
         let directory = URL(fileURLWithPath: "/tmp/hdr-look-fixtures")
-        let lookRequest = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, lookDirectory: directory)
-        withHDRRequestPrefix(lookRequest) { pointer in
-            let look = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v7.self)
-            require(pointer.pointee.struct_size == 952 && pointer.pointee.hdr_processing_version == 7 &&
-                    look.look_strength == 0.75 && look.look_path.map { String(cString: $0) } == directory.path + "/" + hash + ".cube",
-                    "Swift HDR look request lost path or strength")
-            let bytes = withUnsafeBytes(of: look.look_sha256) { Data($0) }
-            require(bytes == Data(hash.utf8) + Data([0]), "Swift HDR look fingerprint is not NUL-terminated")
-        }
+        let lookRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings, lookDirectory: directory))
+        let lookEdits = lookRoot["edits"] as! [String: Any]
+        let lookObj = lookEdits["look"] as! [String: Any]
+        require(lookRoot["schema_version"] as? Int == 13 &&
+                lookObj["strength"] as? Double == 0.75 &&
+                lookObj["path"] as? String == directory.path + "/" + hash + ".cube" &&
+                lookObj["sha256"] as? String == hash,
+                "Swift HDR v13 SessionState look mismatch")
+
         var v9Settings = settings
         v9Settings.toneSettings.curve = ToneCurveSettings(
             mode: .custom,
             points: [.init(x: 0, y: 0.1), .init(x: 0.5, y: 0.6), .init(x: 1, y: 0.9)],
             applyToLuminosity: true,
-            parametric: ToneCurveParametric(highlights: -15, lights: 10, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
+            parametric: ToneCurveParametric(
+                highlights: -15, lights: 10, darks: -5, shadows: 20,
+                splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8
+            )
         )
-        let v9Request = try makeHDRRequest(settings: v9Settings, intent: SONY2FUJI_INTENT_FINAL)
-        withHDRRequestPrefix(v9Request) { pointer in
-            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == 2696, "HDR v9 ABI header")
-            let full = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
-            require(full.curve_apply_to_luminosity == 1 && full.parametric_curve.shadows == 20 &&
-                    full.parametric_curve.split_shadow == 0.2 && full.grading_v2.version == 2 &&
-                    full.grading_v2.struct_size == 64 && full.grading_v2.midtones_hue == 210,
-                    "HDR v9 tone curve v2 + grading_v2 tail")
-        }
-        var v9GradingSettings = HDRSettings()
-        v9GradingSettings.colorSettings.grading.shadows.luminance = -25
-        v9GradingSettings.colorSettings.grading.global = .init(hue: 210, saturation: 35, luminance: 15)
-        v9GradingSettings.colorSettings.grading.blending = 72
-        v9GradingSettings.colorSettings.grading.balance = -18
-        let v9GradingRequest = try makeHDRRequest(settings: v9GradingSettings, intent: SONY2FUJI_INTENT_FINAL)
-        withHDRRequestPrefix(v9GradingRequest) { pointer in
-            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == UInt32(MemoryLayout<sony2fuji_hdr_request_v9>.size),
-                    "Swift HDR v9 request lost v9 header")
-            let full = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
-            require(full.parametric_curve.version == 1 && full.parametric_curve.split_shadow == 0.25 &&
-                    full.grading_v2.version == 2 && full.grading_v2.shadows_luminance == -25 &&
-                    full.grading_v2.global_hue == 210 && full.grading_v2.global_saturation == 35 &&
-                    full.grading_v2.global_luminance == 15 && full.grading_v2.blending == 72 &&
-                    full.grading_v2.balance == -18,
-                    "Swift HDR v9 grading_v2 or default parametric_curve mismatch")
-        }
-        for edge in [0,-1,65536] {
-            do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL,longEdge:edge); fatalError("invalid edge accepted") }
-            catch HDRRequestError.invalidSettings {}
-        }
-        let sharpened = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, outputSharpening: .standard)
-        withHDRRequestPrefix(sharpened) { pointer in
-            let v9 = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
-            require(pointer.pointee.hdr_processing_version == 9, "HDR v9 ABI header")
-            require(v9.output_sharpening == SONY2FUJI_OUTPUT_SHARPENING_STANDARD.rawValue, "HDR v9 output_sharpening")
-            require(v9.parametric_curve.version == 1 && v9.parametric_curve.split_shadow == 0.25 &&
-                    v9.parametric_curve.split_midtone == 0.50 && v9.parametric_curve.split_highlight == 0.75,
-                    "HDR v9 parametric_curve defaults")
-            require(v9.grading_v2.version == 2 && v9.grading_v2.blending == 50 &&
-                    v9.grading_v2.midtones_hue == 210 && v9.grading_v2.midtones_saturation == 17,
-                    "HDR v9 grading_v2 forwarding")
-        }
-        var combined = v9Settings
-        combined.toneSettings.curve.channels.red = .identity.inserting(x: 0.5, y: 0.58)
-        combined.toneSettings.curve.channels.blue = .identity.inserting(x: 0.5, y: 0.44)
-        combined.colorSettings.grading = ColorGradingSettings(
-            shadows: .init(hue: 215, saturation: 28, luminance: -14),
-            midtones: .init(hue: 45, saturation: 16, luminance: 8),
-            highlights: .init(hue: 315, saturation: 20, luminance: -10),
-            global: .init(hue: 165, saturation: 14, luminance: 6),
-            blending: 74,
-            balance: -22
-        )
-        let combinedReq = try makeHDRRequest(settings: combined, intent: SONY2FUJI_INTENT_FINAL, outputSharpening: .high)
-        withHDRRequestPrefix(combinedReq) { pointer in
-            let v9 = UnsafeRawPointer(pointer).load(as: sony2fuji_hdr_request_v9.self)
-            require(pointer.pointee.hdr_processing_version == 9 && pointer.pointee.struct_size == 2696, "HDR v9 combined header")
-            require(v9.output_sharpening == SONY2FUJI_OUTPUT_SHARPENING_HIGH.rawValue, "HDR v9 combined output_sharpening")
-            require(v9.curve_apply_to_luminosity == 1 && v9.parametric_curve.shadows == 20 &&
-                    v9.base.channels.0.count == 3 && v9.base.channels.2.count == 3,
-                    "HDR v9 combined curve v2 + channels")
-            require(v9.grading_v2.shadows_luminance == -14 && v9.grading_v2.global_hue == 165 &&
-                    v9.grading_v2.blending == 74 && v9.grading_v2.balance == -22,
-                    "HDR v9 combined grading_v2")
-        }
+        let sharpenedRoot = try parse(try CanonicalEditRecipe.hdrSessionStateJSON(
+            settings: v9Settings, outputSharpening: .standard, lookDirectory: directory
+        ))
+        let sharpenedProcessing = sharpenedRoot["processing"] as! [String: Any]
+        let sharpenedEdits = sharpenedRoot["edits"] as! [String: Any]
+        let sharpenedCurve = (sharpenedEdits["tone"] as! [String: Any])["curve"] as! [String: Any]
+        let sharpenedParam = sharpenedCurve["parametric"] as! [String: Double]
+        let sharpenedOutput = sharpenedRoot["output"] as! [String: Any]
+        require(sharpenedRoot["schema_version"] as? Int == 16 &&
+                sharpenedProcessing["version"] as? Int == 9 &&
+                sharpenedCurve["apply_to_luminosity"] as? Bool == true &&
+                sharpenedParam["shadows"] == 20 &&
+                sharpenedParam["split_shadow"] == 0.2 &&
+                sharpenedOutput["output_sharpening"] as? String == "standard",
+                "HDR v16 SessionState parametric/output_sharpening mismatch")
+
+        var cam = HDRCameraDevelopmentSettings()
+        cam.whiteBalance = .temperature
+        cam.temperature = 5400
+        cam.tint = 8
+        cam.lensDistortion = true
+        cam.lensProfile = "lens-42"
+        let camRoot = try parse(try CanonicalEditRecipe.hdrCameraDevelopmentJSON(
+            camera: cam, processingVersion: 3, useAI: true
+        ))
+        let camDev = camRoot["camera_development"] as! [String: Any]
+        require(camDev["wb_mode"] as? String == "temperature" &&
+                camDev["temperature"] as? Double == 5400 &&
+                camDev["lens_profile_id"] as? String == "lens-42" &&
+                camDev["use_ai"] as? Bool == true &&
+                camDev["processing_version"] as? Int == 3,
+                "HDR camera_development SessionState JSON mismatch")
+
         settings.mode = .sdr
-        do { _ = try makeHDRRequest(settings:settings,intent:SONY2FUJI_INTENT_FINAL); fatalError("SDR mode entered HDR") }
-        catch HDRRequestError.invalidSettings {}
-        print("PASS shared HDR native requests and v6/v8/v9/v10/v11/v12/v13 logical mapping")
+        do {
+            _ = try CanonicalEditRecipe.hdrSessionStateJSON(settings: settings)
+            fatalError("SDR mode entered HDR")
+        } catch HDRRecipe.Failure.invalidSettings {}
+
+        print("PASS shared HDR JSON SessionState and v6/v8/v9/v10/v11/v12/v13/v15/v16 logical mapping")
     }
 }

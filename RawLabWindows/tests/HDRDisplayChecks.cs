@@ -104,6 +104,8 @@ public sealed class HDRDisplayTests
         return bytes;
     }
 
+    public HDRDisplayTests() => NativeTestResolver.EnsureRegistered();
+
     private static HDRFloatImage MakeImage(int width, int height, Func<int, float> generator)
     {
         var rgb = new float[width * height * 3];
@@ -112,7 +114,8 @@ public sealed class HDRDisplayTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-look-import")]
     public void HdrRenderedPairCachesSdrBitmapThreadSafelyAndIgnoresCacheInEquality()
     {
         var image = MakeImage(17, 11, i => (i % 97) / 96f);
@@ -147,7 +150,8 @@ public sealed class HDRDisplayTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-look-import")]
     public void SimdSdrConversionMatchesScalarReferenceAndStatisticsBitForBit()
     {
         float[] samples =
@@ -165,24 +169,30 @@ public sealed class HDRDisplayTests
             return samples[i % samples.Length];
         });
 
-        var rgb8 = HDRDisplay.SDRRgb8(image);
-        Assert.Equal(image.RGB.Length, rgb8.Length);
-        for (var i = 0; i < image.RGB.Length; i++)
+        var rgba8 = HDRDisplay.SDRRgba8(image);
+        Assert.Equal(image.Width * image.Height * 4, rgba8.Length);
+        for (var p = 0; p < image.Width * image.Height; p++)
         {
-            var expected = ScalarToByte(image.RGB[i]);
-            if (image.RGB[i] <= 0f) Assert.Equal(0, rgb8[i]);
-            else if (image.RGB[i] >= 1f) Assert.Equal(255, rgb8[i]);
-            else Assert.True(Math.Abs(rgb8[i] - expected) <= 1,
-                $"Channel {i} (v={image.RGB[i]}): actual={rgb8[i]}, expected={expected}");
+            for (var c = 0; c < 3; c++)
+            {
+                var v = image.RGB[p * 3 + c];
+                var actual = rgba8[p * 4 + c];
+                var expected = ScalarToByte(v);
+                if (v <= 0f) Assert.Equal(0, actual);
+                else if (v >= 1f) Assert.Equal(255, actual);
+                else Assert.True(Math.Abs(actual - expected) <= 1,
+                    $"Pixel {p} channel {c} (v={v}): actual={actual}, expected={expected}");
+            }
+            Assert.Equal(255, rgba8[p * 4 + 3]);
         }
 
         var directBitmap = HDRDisplay.SDRBitmap(image);
         var directBgra = CopyBgraBytes(directBitmap);
         for (var p = 0; p < 11 * 7; p++)
         {
-            Assert.Equal(rgb8[p * 3 + 2], directBgra[p * 4]);
-            Assert.Equal(rgb8[p * 3 + 1], directBgra[p * 4 + 1]);
-            Assert.Equal(rgb8[p * 3], directBgra[p * 4 + 2]);
+            Assert.Equal(rgba8[p * 4 + 2], directBgra[p * 4]);
+            Assert.Equal(rgba8[p * 4 + 1], directBgra[p * 4 + 1]);
+            Assert.Equal(rgba8[p * 4], directBgra[p * 4 + 2]);
             Assert.Equal(255, directBgra[p * 4 + 3]);
         }
 
@@ -210,7 +220,8 @@ public sealed class HDRDisplayTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-look-import")]
     public void NonFiniteValuesThrowInvalidDataExceptionInSimdAlignedAndTailPositions()
     {
         var floatCount = Vector<float>.Count * 3 * 2 + 6; // guaranteed aligned + tail
@@ -221,7 +232,7 @@ public sealed class HDRDisplayTests
             var image = MakeImage(width, 1, i => i == badIndex ? bad : 0.25f);
             Assert.Throws<InvalidDataException>(() => HDRDisplay.SDRBitmap(image));
             Assert.Throws<InvalidDataException>(() => HDRDisplay.RenderSDRWithStatistics(image, clipping: false));
-            Assert.Throws<InvalidDataException>(() => HDRDisplay.SDRRgb8(image));
+            Assert.Throws<InvalidDataException>(() => HDRDisplay.SDRRgba8(image));
             Assert.Throws<InvalidDataException>(() => HDRDisplay.Statistics(image, clipping: false));
             Assert.Throws<InvalidDataException>(() => HDRDisplay.Analyze(image));
 
@@ -301,7 +312,8 @@ public sealed class HDRDisplayTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "Benchmark")]
+    [Trait("Suite", "benchmark")]
     public void BenchmarkSimdSinglePassVsScalarTwoPassReportsElapsedMs()
     {
         const int width = 2000;

@@ -70,7 +70,10 @@ typedef enum sony2fuji_pixel_format {
     SONY2FUJI_PIXEL_RGB8 = 0,
     SONY2FUJI_PIXEL_RGBA8 = 1,
     // Tightly packed little-endian 16-bit RGBA; input only, for DISPLAY_BUFFER.
-    SONY2FUJI_PIXEL_RGBA16 = 2
+    SONY2FUJI_PIXEL_RGBA16 = 2,
+    // Display-order BGRA8 (e.g. WPF Pbgra32 with opaque alpha); supported by
+    // HDR display encoding and sony2fuji_analyze_image / sony2fuji_compute_histogram.
+    SONY2FUJI_PIXEL_BGRA8 = 3
 } sony2fuji_pixel_format;
 
 typedef enum sony2fuji_look_format {
@@ -1229,6 +1232,103 @@ typedef struct sony2fuji_processing_migration_result {
 sony2fuji_status sony2fuji_session_migrate_processing(
     const sony2fuji_session* session,
     const sony2fuji_request* request,
+    sony2fuji_processing_migration_result* result
+);
+
+#define SONY2FUJI_RENDER_OPTIONS_V1_VERSION 1u
+typedef struct sony2fuji_render_options_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_input_type input_type;
+    sony2fuji_pixel_format input_pixel_format;
+    const char* input_path;
+    const void* input_pixels;
+    uint32_t input_width;
+    uint32_t input_height;
+    sony2fuji_color_space input_color_space;
+    int32_t input_is_linear;
+    sony2fuji_intent intent;
+    sony2fuji_size_mode size_mode;
+    uint32_t target_width;
+    uint32_t target_height;
+    uint32_t long_edge;
+    uint32_t short_edge;
+    uint32_t preview_long_edge;
+    int32_t interactive_preview;
+    int32_t viewport_preview;
+    uint32_t reserved;
+    const sony2fuji_viewport_roi* viewport_roi;
+    sony2fuji_output_target output_target;
+    sony2fuji_output_format output_format;
+    const char* output_path;
+    uint32_t jpeg_quality;
+    uint32_t reserved2;
+} sony2fuji_render_options_v1;
+
+// Stateless SDR execution entries with optional atomic CanonicalEditState JSON.
+// When edit_state_json is non-NULL, it is parsed and committed atomically before
+// running; when NULL, the session's current committed CanonicalEditState is used.
+// Transient options (intent, interactive_preview, viewport_preview, viewport_roi)
+// apply only to the current call and never leak across calls.
+sony2fuji_status sony2fuji_session_render(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_buffer,
+    sony2fuji_viewport_roi_result* out_roi
+);
+
+sony2fuji_status sony2fuji_session_render_rgba16_with_options(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_rgba16
+);
+
+sony2fuji_status sony2fuji_session_create_hsl_probe_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    uint64_t source_revision,
+    uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe
+);
+
+sony2fuji_status sony2fuji_session_estimate_auto_exposure_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    float* exposure_ev
+);
+
+sony2fuji_status sony2fuji_session_sample_wb_probe_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_wb_probe_query* query,
+    sony2fuji_wb_probe_result* out_result
+);
+
+sony2fuji_status sony2fuji_session_prepare_ai_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_ai_progress_callback progress,
+    void* context
+);
+
+sony2fuji_status sony2fuji_preview_lut_compatibility_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const char* configuration_json,
+    sony2fuji_buffer* out_buffer
+);
+
+sony2fuji_status sony2fuji_session_migrate_processing_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
     sony2fuji_processing_migration_result* result
 );
 

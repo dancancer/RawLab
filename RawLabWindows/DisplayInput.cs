@@ -25,19 +25,17 @@ internal sealed partial class RenderEngine
         if(LibraryEntry.IsRaster(path))Native.CheckWithoutSession(Native.sony2fuji_load_display_image(path,ref displayInput));
         inputStamp=stamp;
     }
-    private void SetInput(ref Native.Request request,string path)
+    private void SetInput(ref Native.RenderOptions options, string path)
     {
-        if(!LibraryEntry.IsRaster(path))return;
-        request.InputType=2;request.InputPixels=displayInput.Data;
-        request.InputWidth=displayInput.Width;request.InputHeight=displayInput.Height;
-        request.InputPixelFormat=displayInput.PixelFormat;request.InputColorSpace=0;request.InputIsLinear=0;
-        request.WbMode=0;request.Temperature=6500;request.Tint=0;
+        if (!LibraryEntry.IsRaster(path)) return;
+        options.InputType = 2; options.InputPixels = displayInput.Data;
+        options.InputWidth = displayInput.Width; options.InputHeight = displayInput.Height;
+        options.InputPixelFormat = displayInput.PixelFormat; options.InputColorSpace = 0; options.InputIsLinear = 0;
     }
-    private static void SetInput(ref Native.Request request, Native.Buffer input)
+    private static void SetInput(ref Native.RenderOptions options, Native.Buffer input)
     {
-        request.InputType=2; request.InputPixels=input.Data; request.InputWidth=input.Width;
-        request.InputHeight=input.Height; request.InputPixelFormat=input.PixelFormat;
-        request.InputColorSpace=0; request.InputIsLinear=0; request.WbMode=0;
-        request.Temperature=6500; request.Tint=0;
+        options.InputType = 2; options.InputPixels = input.Data; options.InputWidth = input.Width;
+        options.InputHeight = input.Height; options.InputPixelFormat = input.PixelFormat;
+        options.InputColorSpace = 0; options.InputIsLinear = 0;
     }
 }

@@ -2015,6 +2015,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
         LABELS core cli ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME canonical_edit_state
+        SOURCES tests/canonical_edit_state_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core hdr recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(
             NAME lens_database_cache

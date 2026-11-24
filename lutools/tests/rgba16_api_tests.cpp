@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include "../src/core/hdr_srgb_lut.h"
 #include "../third_party/nlohmann/json.hpp"
 
 #include <algorithm>
@@ -533,6 +534,148 @@ void testHdrEncodeRgba16ValidationAndErrors() {
         "aliasing source->data and out_rgba16 rejected", __FILE__, __LINE__);
 }
 
+void testHdrEncodeDisplay8Rgba8Bgra8Into() {
+    // Exercise parallelRowRanges (> 65536 pixels across > 4 row blocks) + boundary values + padded strides.
+    constexpr uint32_t kW = 260;
+    constexpr uint32_t kH = 260;
+    constexpr uint32_t kSrcFloatStride = kW * 3 + 5; // non-tight float stride
+    std::vector<float> srcFloats(static_cast<size_t>(kH) * kSrcFloatStride, 0.0f);
+    const std::array<float, 10> samples = {
+        -0.5f, -0.0f, 0.0f, 0.001f, 0.0031308f, 0.18f, 0.5f, 0.999f, 1.0f, 2.5f
+    };
+    for (uint32_t y = 0; y < kH; ++y) {
+        float* row = srcFloats.data() + static_cast<size_t>(y) * kSrcFloatStride;
+        for (uint32_t x = 0; x < kW; ++x) {
+            const size_t idx = static_cast<size_t>(y) * kW + x;
+            row[x * 3 + 0] = samples[idx % samples.size()];
+            row[x * 3 + 1] = samples[(idx * 3 + 1) % samples.size()];
+            row[x * 3 + 2] = samples[(idx * 7 + 2) % samples.size()];
+        }
+    }
+
+    auto src = hdrInit<sony2fuji_hdr_buffer_v1>();
+    src.data = srcFloats.data();
+    src.width = kW;
+    src.height = kH;
+    src.stride_bytes = static_cast<uint64_t>(kSrcFloatStride) * sizeof(float);
+    src.size_bytes = srcFloats.size() * sizeof(float);
+    src.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR;
+    src.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
+
+    BufferGuard rgba8;
+    require(sony2fuji_hdr_encode_rgba8(&src, &rgba8.value) == SONY2FUJI_STATUS_OK,
+        "hdr_encode_rgba8 failed", __FILE__, __LINE__);
+    require(rgba8.value.width == kW && rgba8.value.height == kH &&
+            rgba8.value.pixel_format == SONY2FUJI_PIXEL_RGBA8 &&
+            rgba8.value.stride_bytes == kW * 4u &&
+            rgba8.value.size_bytes == static_cast<size_t>(kW) * kH * 4u,
+        "hdr_encode_rgba8 metadata mismatch", __FILE__, __LINE__);
+
+    BufferGuard bgra8;
+    require(sony2fuji_hdr_encode_bgra8(&src, &bgra8.value) == SONY2FUJI_STATUS_OK,
+        "hdr_encode_bgra8 failed", __FILE__, __LINE__);
+    require(bgra8.value.width == kW && bgra8.value.height == kH &&
+            bgra8.value.pixel_format == SONY2FUJI_PIXEL_BGRA8 &&
+            bgra8.value.stride_bytes == kW * 4u &&
+            bgra8.value.size_bytes == static_cast<size_t>(kW) * kH * 4u,
+        "hdr_encode_bgra8 metadata mismatch", __FILE__, __LINE__);
+
+    constexpr uint64_t kDstStride = kW * 4u + 16u;
+    std::vector<uint8_t> intoBuf(static_cast<size_t>(kH) * kDstStride, 0xAAu);
+    require(sony2fuji_hdr_encode_rgba8_into(&src, intoBuf.data(), intoBuf.size(), kDstStride) == SONY2FUJI_STATUS_OK,
+        "hdr_encode_rgba8_into failed", __FILE__, __LINE__);
+
+    const auto* rgbaBytes = static_cast<const uint8_t*>(rgba8.value.data);
+    const auto* bgraBytes = static_cast<const uint8_t*>(bgra8.value.data);
+    for (uint32_t y = 0; y < kH; ++y) {
+        const float* sRow = srcFloats.data() + static_cast<size_t>(y) * kSrcFloatStride;
+        const uint8_t* intoRow = intoBuf.data() + static_cast<size_t>(y) * kDstStride;
+        for (uint32_t x = 0; x < kW; ++x) {
+            const uint8_t er = sony2fuji::hdr::srgbToUInt8(sRow[x * 3 + 0]);
+            const uint8_t eg = sony2fuji::hdr::srgbToUInt8(sRow[x * 3 + 1]);
+            const uint8_t eb = sony2fuji::hdr::srgbToUInt8(sRow[x * 3 + 2]);
+            const size_t off = (static_cast<size_t>(y) * kW + x) * 4u;
+            require(rgbaBytes[off + 0] == er && rgbaBytes[off + 1] == eg &&
+                    rgbaBytes[off + 2] == eb && rgbaBytes[off + 3] == 255u,
+                "rgba8 pixel mismatch vs srgbToUInt8", __FILE__, __LINE__);
+            require(bgraBytes[off + 0] == eb && bgraBytes[off + 1] == eg &&
+                    bgraBytes[off + 2] == er && bgraBytes[off + 3] == 255u,
+                "bgra8 pixel channel order mismatch vs srgbToUInt8", __FILE__, __LINE__);
+            require(intoRow[x * 4 + 0] == er && intoRow[x * 4 + 1] == eg &&
+                    intoRow[x * 4 + 2] == eb && intoRow[x * 4 + 3] == 255u,
+                "rgba8_into pixel mismatch vs srgbToUInt8", __FILE__, __LINE__);
+        }
+    }
+
+    // BGRA8 parity in sony2fuji_analyze_image (CPU/Auto) & sony2fuji_compute_histogram.
+    std::vector<uint32_t> binsRgba(768, 0), binsBgra(768, 0);
+    uint32_t shRgba = 0, hiRgba = 0, shBgra = 0, hiBgra = 0;
+    BufferGuard clipRgba, clipBgra;
+    require(sony2fuji_analyze_image(&rgba8.value, SONY2FUJI_GPU_OFF, binsRgba.data(), &shRgba, &hiRgba, &clipRgba.value) == SONY2FUJI_STATUS_OK,
+        "analyze_image RGBA8 failed", __FILE__, __LINE__);
+    require(sony2fuji_analyze_image(&bgra8.value, SONY2FUJI_GPU_AUTO, binsBgra.data(), &shBgra, &hiBgra, &clipBgra.value) == SONY2FUJI_STATUS_OK,
+        "analyze_image BGRA8 failed", __FILE__, __LINE__);
+    require(binsRgba == binsBgra && shRgba == shBgra && hiRgba == hiBgra,
+        "analyze_image BGRA8 histogram/clipping parity mismatch", __FILE__, __LINE__);
+
+    std::vector<float> histRgba(256, 0.0f), histBgra(256, 0.0f);
+    require(sony2fuji_compute_histogram(&rgba8.value, 256, histRgba.data()) == SONY2FUJI_STATUS_OK,
+        "compute_histogram RGBA8 failed", __FILE__, __LINE__);
+    require(sony2fuji_compute_histogram(&bgra8.value, 256, histBgra.data()) == SONY2FUJI_STATUS_OK,
+        "compute_histogram BGRA8 failed", __FILE__, __LINE__);
+    require(histRgba == histBgra, "compute_histogram BGRA8 parity mismatch", __FILE__, __LINE__);
+}
+
+void testHdrEncodeDisplay8ValidationAndNonfinite() {
+    for (float bad : {std::numeric_limits<float>::quiet_NaN(),
+                      std::numeric_limits<float>::infinity(),
+                      -std::numeric_limits<float>::infinity()}) {
+        std::vector<float> px = {0.25f, 0.25f, 0.25f, 0.1f, bad, 0.3f};
+        auto src = hdrInit<sony2fuji_hdr_buffer_v1>();
+        src.data = px.data();
+        src.width = 2;
+        src.height = 1;
+        src.stride_bytes = 2 * 12u;
+        src.size_bytes = px.size() * sizeof(float);
+        src.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR;
+        src.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
+
+        BufferGuard rgba8, bgra8;
+        require(sony2fuji_hdr_encode_rgba8(&src, &rgba8.value) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+                rgba8.value.data == nullptr,
+            "rgba8 must reject nonfinite floats with INVALID_ARGUMENT", __FILE__, __LINE__);
+        require(sony2fuji_hdr_encode_bgra8(&src, &bgra8.value) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+                bgra8.value.data == nullptr,
+            "bgra8 must reject nonfinite floats with INVALID_ARGUMENT", __FILE__, __LINE__);
+        std::vector<uint8_t> intoDst(8, 0);
+        require(sony2fuji_hdr_encode_rgba8_into(&src, intoDst.data(), intoDst.size(), 8) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+            "rgba8_into must reject nonfinite floats with INVALID_ARGUMENT", __FILE__, __LINE__);
+    }
+
+    // Validate _into buffer/stride/overlap checks.
+    std::vector<float> px(4 * 2 * 3, 0.5f);
+    auto valid = hdrInit<sony2fuji_hdr_buffer_v1>();
+    valid.data = px.data();
+    valid.width = 4;
+    valid.height = 2;
+    valid.stride_bytes = 4 * 12u;
+    valid.size_bytes = px.size() * sizeof(float);
+    valid.pixel_format = SONY2FUJI_HDR_RGB32F_LINEAR;
+    valid.color_encoding = SONY2FUJI_HDR_LINEAR_SRGB;
+
+    std::vector<uint8_t> dst(4 * 2 * 4, 0);
+    require(sony2fuji_hdr_encode_rgba8_into(&valid, nullptr, dst.size(), 16) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "into null dst rejected", __FILE__, __LINE__);
+    require(sony2fuji_hdr_encode_rgba8_into(&valid, dst.data(), dst.size(), 12) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "into short stride rejected", __FILE__, __LINE__);
+    require(sony2fuji_hdr_encode_rgba8_into(&valid, dst.data(), dst.size() - 1, 16) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "into short size_bytes rejected", __FILE__, __LINE__);
+    require(sony2fuji_hdr_encode_rgba8_into(&valid, px.data(), valid.size_bytes, 16) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "into overlapping src->data rejected", __FILE__, __LINE__);
+    require(sony2fuji_hdr_encode_rgba8_into(&valid, &valid, sizeof(valid), 16) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "into overlapping source struct rejected", __FILE__, __LINE__);
+}
+
 } // namespace
 
 TEST_MAIN(
@@ -542,5 +685,7 @@ TEST_MAIN(
     testHdrEncodeRgba16StridedAndNonfinite();
     testHdrEncodeRgba16WithHdrRender();
     testHdrEncodeRgba16ValidationAndErrors();
+    testHdrEncodeDisplay8Rgba8Bgra8Into();
+    testHdrEncodeDisplay8ValidationAndNonfinite();
     std::cout << "rgba16_api_tests passed (" << ::rawlab::test::checkCount() << " checks)\n";
 )

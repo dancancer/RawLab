@@ -144,6 +144,100 @@ bool overlapsBytes(const void* a, uint64_t aSize, const void* b, uint64_t bSize)
     return ap <= bp ? aSize > bp - ap : bSize > ap - bp;
 }
 
+bool toCoreRenderExecutionOptions(
+    const sony2fuji_render_options_v1* options,
+    sony2fuji::Pipeline::RenderExecutionOptions& out
+) {
+    if (!options || options->version != SONY2FUJI_RENDER_OPTIONS_V1_VERSION ||
+        options->struct_size < sizeof(*options) ||
+        options->reserved != 0 || options->reserved2 != 0 ||
+        (options->interactive_preview != 0 && options->interactive_preview != 1) ||
+        (options->viewport_preview != 0 && options->viewport_preview != 1)) {
+        return false;
+    }
+    if (options->viewport_roi) {
+        if (options->viewport_roi->struct_size < sizeof(*options->viewport_roi) ||
+            (options->viewport_roi->enabled != 0 && options->viewport_roi->enabled != 1)) {
+            return false;
+        }
+    }
+    out = {};
+    out.inputType = static_cast<sony2fuji::RenderInputType>(options->input_type);
+    out.inputPixelFormat = static_cast<sony2fuji::PixelBufferFormat>(options->input_pixel_format);
+    out.inputPath = options->input_path ? options->input_path : "";
+    out.inputPixels = options->input_pixels;
+    out.inputWidth = options->input_width;
+    out.inputHeight = options->input_height;
+    out.inputColorSpace = toCoreColorSpace(options->input_color_space);
+    out.inputIsLinear = options->input_is_linear != 0;
+    out.intent = static_cast<sony2fuji::RenderIntent>(options->intent);
+    out.sizeMode = static_cast<sony2fuji::RenderSizeMode>(options->size_mode);
+    out.targetWidth = options->target_width;
+    out.targetHeight = options->target_height;
+    out.longEdge = options->long_edge;
+    out.shortEdge = options->short_edge;
+    out.previewLongEdge = options->preview_long_edge;
+    out.interactivePreview = options->interactive_preview != 0;
+    out.viewportPreview = options->viewport_preview != 0;
+    if (options->viewport_roi && options->viewport_roi->enabled != 0) {
+        out.viewportRoi.enabled = true;
+        out.viewportRoi.normX0 = options->viewport_roi->norm_x0;
+        out.viewportRoi.normY0 = options->viewport_roi->norm_y0;
+        out.viewportRoi.normX1 = options->viewport_roi->norm_x1;
+        out.viewportRoi.normY1 = options->viewport_roi->norm_y1;
+        out.viewportRoi.maxOutputLongEdge = options->viewport_roi->max_output_long_edge;
+    }
+    out.outputTarget = static_cast<sony2fuji::RenderOutputTarget>(options->output_target);
+    out.outputFormat = static_cast<sony2fuji::RenderOutputFormat>(options->output_format);
+    out.outputPath = options->output_path ? options->output_path : "";
+    out.jpegQuality = options->jpeg_quality;
+    return true;
+}
+
+bool overlapsRenderOptionsInput(
+    const sony2fuji_render_options_v1* options,
+    const void* outPtr,
+    uint64_t outSize
+) noexcept {
+    if (!options || !outPtr || !outSize) return false;
+    if (overlapsBytes(options, sizeof(*options), outPtr, outSize)) return true;
+    if (options->viewport_roi &&
+        overlapsBytes(options->viewport_roi, sizeof(*options->viewport_roi), outPtr, outSize)) {
+        return true;
+    }
+    if (options->version == SONY2FUJI_RENDER_OPTIONS_V1_VERSION &&
+        options->struct_size >= sizeof(*options) &&
+        options->input_type != SONY2FUJI_INPUT_RAW &&
+        options->input_pixels && options->input_width > 0 && options->input_height > 0) {
+        const uint64_t bpp = options->input_pixel_format == SONY2FUJI_PIXEL_RGBA16 ? 8ull
+            : ((options->input_pixel_format == SONY2FUJI_PIXEL_RGBA8 ||
+                options->input_pixel_format == SONY2FUJI_PIXEL_BGRA8) ? 4ull : 3ull);
+        const uint64_t pixels = static_cast<uint64_t>(options->input_width) * options->input_height;
+        if (pixels <= UINT64_MAX / bpp &&
+            overlapsBytes(options->input_pixels, pixels * bpp, outPtr, outSize)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void writeViewportRoiResult(
+    sony2fuji_viewport_roi_result* outResult,
+    const sony2fuji::Pipeline::ViewportRoiResult& r
+) noexcept {
+    if (!outResult) return;
+    const uint32_t size = outResult->struct_size;
+    std::memset(outResult, 0, size);
+    outResult->struct_size = size;
+    outResult->active = r.active ? 1u : 0u;
+    outResult->native_x0 = r.nativeX0;
+    outResult->native_y0 = r.nativeY0;
+    outResult->native_x1 = r.nativeX1;
+    outResult->native_y1 = r.nativeY1;
+    outResult->full_native_width = r.fullNativeWidth;
+    outResult->full_native_height = r.fullNativeHeight;
+}
+
 } // namespace
 
 // ============================================================================
@@ -271,13 +365,6 @@ PreviewExposureDiagnostics previewExposureDiagnostics(const sony2fuji_session* h
     if (!SessionLease::acquire(handle, lease)) return {};
     return lease.constRaw()->pipeline.previewExposureDiagnostics();
 }
-bool overlapsBytes(const void* a, uint64_t aSize, const void* b, uint64_t bSize) noexcept {
-    if (!a || !b || !aSize || !bSize) return false;
-    const auto ap = reinterpret_cast<uintptr_t>(a);
-    const auto bp = reinterpret_cast<uintptr_t>(b);
-    return ap <= bp ? aSize > bp - ap : bSize > ap - bp;
-}
-
 } // namespace sony2fuji
 
 // ============================================================================
@@ -1115,3 +1202,286 @@ sony2fuji_status sony2fuji_hsl_probe_sample(
 }
 
 void sony2fuji_hsl_probe_destroy(sony2fuji_hsl_probe* probe) { delete probe; }
+
+sony2fuji_status sony2fuji_session_render(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_buffer,
+    sony2fuji_viewport_roi_result* out_roi
+) {
+    if (!options) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (out_buffer && overlapsRenderOptionsInput(options, out_buffer, sizeof(*out_buffer))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (out_roi) {
+        if (out_roi->struct_size < sizeof(*out_roi) ||
+            overlapsRenderOptionsInput(options, out_roi, out_roi->struct_size) ||
+            (out_buffer && overlapsBytes(out_buffer, sizeof(*out_buffer), out_roi, out_roi->struct_size))) {
+            return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        }
+    }
+    if (out_buffer) *out_buffer = {};
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (execOpts.outputTarget == sony2fuji::RenderOutputTarget::Buffer && !out_buffer) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    lease.raw()->pipeline.clearGeometrySize();
+    try {
+        sony2fuji::OwnedPixelBuffer owned;
+        sony2fuji::Pipeline::ViewportRoiResult roiRes{};
+        const auto status = lease.raw()->pipeline.renderWithOptions(
+            execOpts,
+            edit_state_json,
+            out_buffer ? &owned : nullptr,
+            out_roi ? &roiRes : nullptr);
+        if (status != sony2fuji::RenderStatus::Ok) {
+            if (out_roi) writeViewportRoiResult(out_roi, {});
+            return toFfiStatus(status);
+        }
+        if (out_buffer && execOpts.outputTarget == sony2fuji::RenderOutputTarget::Buffer) {
+            *out_buffer = toFfiBuffer(owned);
+        }
+        if (out_roi) {
+            writeViewportRoiResult(out_roi, roiRes);
+        }
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_render_rgba16_with_options(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_rgba16
+) {
+    if (!out_rgba16 || !options || overlapsRenderOptionsInput(options, out_rgba16, sizeof(*out_rgba16))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    *out_rgba16 = {};
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    lease.raw()->pipeline.clearGeometrySize();
+    try {
+        sony2fuji::ImageData renderedImage;
+        const auto status = lease.raw()->pipeline.renderToImageDataWithOptions(
+            execOpts, edit_state_json, renderedImage);
+        if (status != sony2fuji::RenderStatus::Ok) return toFfiStatus(status);
+        sony2fuji::OwnedPixelBuffer rgba16 =
+            sony2fuji::encodeRgba16BufferFromImageData(renderedImage, /*linearToSrgb=*/false);
+        if (!rgba16.data) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        *out_rgba16 = toFfiBuffer(rgba16);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_create_hsl_probe_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    uint64_t source_revision,
+    uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe
+) {
+    if (out_probe) *out_probe = nullptr;
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !out_probe || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        auto probe = std::make_unique<sony2fuji_hsl_probe>();
+        const auto status = lease.raw()->pipeline.createHslProbeWithOptions(
+            execOpts, edit_state_json, source_revision, request_revision, probe->data);
+        if (status != sony2fuji::RenderStatus::Ok) return toFfiStatus(status);
+        *out_probe = probe.release();
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_estimate_auto_exposure_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    float* exposure_ev
+) {
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !exposure_ev || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (options->input_type == SONY2FUJI_INPUT_BUFFER &&
+        (options->input_color_space < SONY2FUJI_COLOR_SRGB || options->input_color_space > SONY2FUJI_COLOR_ADOBE_RGB)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        return toFfiStatus(lease.raw()->pipeline.estimateAutoExposureWithOptions(
+            execOpts, edit_state_json, *exposure_ev));
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_sample_wb_probe_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_wb_probe_query* query,
+    sony2fuji_wb_probe_result* out_result
+) {
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderExecutionOptions(options, execOpts) ||
+        !query || !out_result ||
+        query->version != SONY2FUJI_WB_PROBE_VERSION ||
+        query->struct_size < sizeof(*query) ||
+        query->reserved != 0 ||
+        (query->window_size != 0 && query->window_size != 1 &&
+         query->window_size != 3 && query->window_size != 5) ||
+        out_result->version != SONY2FUJI_WB_PROBE_VERSION ||
+        out_result->struct_size < sizeof(*out_result)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint32_t preservedVersion = out_result->version;
+    const uint32_t preservedSize = out_result->struct_size;
+    std::memset(out_result, 0, sizeof(*out_result));
+    out_result->version = preservedVersion;
+    out_result->struct_size = preservedSize;
+    out_result->availability = SONY2FUJI_WB_PROBE_UNAVAILABLE;
+    out_result->temperature = 6500.0f;
+    out_result->tint = 0.0f;
+    out_result->wb_mul[0] = 1.0f;
+    out_result->wb_mul[1] = 1.0f;
+    out_result->wb_mul[2] = 1.0f;
+    try {
+        const sony2fuji::WbProbeQuery coreQuery{query->norm_x, query->norm_y, query->window_size};
+        sony2fuji::WbProbeResult coreResult;
+        const auto status = lease.raw()->pipeline.sampleWbProbeWithOptions(
+            execOpts, edit_state_json, coreQuery, coreResult);
+        if (status != sony2fuji::RenderStatus::Ok) {
+            return toFfiStatus(status);
+        }
+        out_result->availability = static_cast<sony2fuji_wb_probe_availability>(coreResult.availability);
+        out_result->valid_pixel_count = coreResult.validPixelCount;
+        out_result->rejected_overexposed_count = coreResult.rejectedOverexposedCount;
+        out_result->temperature = coreResult.temperature;
+        out_result->tint = coreResult.tint;
+        std::copy(coreResult.sampledRgb.begin(), coreResult.sampledRgb.end(), out_result->sampled_rgb);
+        std::copy(coreResult.wbMul.begin(), coreResult.wbMul.end(), out_result->wb_mul);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_prepare_ai_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_ai_progress_callback progress,
+    void* context
+) {
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        sony2fuji::Pipeline::AiProgressCallback cb;
+        if (progress) {
+            cb = [progress, context](int32_t phase, uint64_t done, uint64_t total) {
+                return progress(context, phase, done, total) != 0;
+            };
+        }
+        return toFfiStatus(lease.raw()->pipeline.prepareAiWithOptions(execOpts, edit_state_json, cb));
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_preview_lut_compatibility_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const char* configuration_json,
+    sony2fuji_buffer* buffer
+) {
+    if (!buffer) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji_release_buffer(buffer);
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        sony2fuji::OwnedPixelBuffer owned;
+        const auto status = lease.raw()->pipeline.previewLutCompatibilityWithOptions(
+            execOpts, edit_state_json, configuration_json, owned);
+        if (status != sony2fuji::RenderStatus::Ok) return toFfiStatus(status);
+        *buffer = toFfiBuffer(owned);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_session_migrate_processing_json(
+    sony2fuji_session* handle,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_processing_migration_result* result
+) {
+    if (result) *result = {};
+    SessionLease lease;
+    sony2fuji::Pipeline::RenderExecutionOptions execOpts;
+    if (!SessionLease::acquire(handle, lease) || !result || !toCoreRenderExecutionOptions(options, execOpts)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        sony2fuji::ProcessingMigrationResult coreResult;
+        const auto status = lease.raw()->pipeline.migrateProcessingWithOptions(
+            execOpts, edit_state_json, coreResult);
+        if (status != sony2fuji::RenderStatus::Ok) return toFfiStatus(status);
+        *result = {
+            SONY2FUJI_PROCESSING_MIGRATION_VERSION, sizeof(*result),
+            coreResult.sourceVersion, coreResult.targetVersion,
+            static_cast<int32_t>(coreResult.disposition), coreResult.evaluationCount,
+            coreResult.fitted[0], coreResult.fitted[1], coreResult.fitted[2], coreResult.fitted[3], coreResult.fitted[4],
+            coreResult.fitted[5], coreResult.fitted[6], coreResult.fitted[7], coreResult.fitted[8], coreResult.fitted[9],
+            coreResult.quality.rgbRMSE, coreResult.quality.p99Error,
+            coreResult.quality.worstTileRMSE, coreResult.quality.detailRMSE
+        };
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}

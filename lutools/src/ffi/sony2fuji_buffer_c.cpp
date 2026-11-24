@@ -81,10 +81,12 @@ sony2fuji_status sony2fuji_compute_histogram(
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
     if (buffer->pixel_format != SONY2FUJI_PIXEL_RGB8 &&
-        buffer->pixel_format != SONY2FUJI_PIXEL_RGBA8) {
+        buffer->pixel_format != SONY2FUJI_PIXEL_RGBA8 &&
+        buffer->pixel_format != SONY2FUJI_PIXEL_BGRA8) {
         return SONY2FUJI_STATUS_UNSUPPORTED;
     }
-    const uint32_t channels = buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4u : 3u;
+    const bool bgra = buffer->pixel_format == SONY2FUJI_PIXEL_BGRA8;
+    const uint32_t channels = (buffer->pixel_format == SONY2FUJI_PIXEL_RGBA8 || bgra) ? 4u : 3u;
     const uint64_t rowBytes = static_cast<uint64_t>(buffer->width) * channels;
     if (rowBytes > static_cast<uint64_t>(buffer->stride_bytes) ||
         static_cast<uint64_t>(buffer->stride_bytes) * (buffer->height - 1u) + rowBytes > buffer->size_bytes) {
@@ -99,9 +101,9 @@ sony2fuji_status sony2fuji_compute_histogram(
             const uint8_t* row = data + static_cast<size_t>(y) * buffer->stride_bytes;
             for (uint32_t x = 0; x < buffer->width; ++x) {
                 size_t offset = static_cast<size_t>(x) * channels;
-                float r = row[offset] / 255.0f;
+                float r = row[offset + (bgra ? 2 : 0)] / 255.0f;
                 float g = row[offset + 1] / 255.0f;
-                float b = row[offset + 2] / 255.0f;
+                float b = row[offset + (bgra ? 0 : 2)] / 255.0f;
                 float l = 0.2126f * r + 0.7152f * g + 0.0722f * b;
                 uint32_t bin = static_cast<uint32_t>(l * static_cast<float>(bins - 1));
                 if (bin >= bins) bin = bins - 1;
@@ -139,8 +141,10 @@ sony2fuji_status sony2fuji_analyze_image(
         image->width > UINT32_MAX / 4 || static_cast<uint64_t>(image->width) * image->height > UINT32_MAX) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
-    const size_t channels = image->pixel_format == SONY2FUJI_PIXEL_RGBA8 ? 4 :
-        (image->pixel_format == SONY2FUJI_PIXEL_RGB8 ? 3 : 0);
+    const size_t channels =
+        (image->pixel_format == SONY2FUJI_PIXEL_RGBA8 || image->pixel_format == SONY2FUJI_PIXEL_BGRA8)
+            ? 4
+            : (image->pixel_format == SONY2FUJI_PIXEL_RGB8 ? 3 : 0);
     if (!channels || static_cast<size_t>(image->width) * channels > image->stride_bytes ||
         static_cast<uint64_t>(image->stride_bytes) * (image->height - 1) +
             static_cast<uint64_t>(image->width) * channels > image->size_bytes) {

@@ -550,8 +550,8 @@ public sealed class Adjustments
             Version=2, StructSize=(uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.Request>(), InputPath=path,
             LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength],
             WbMode=wbMode, Wb0=1,Wb1=1,Wb2=1,Wb3=1,
-            ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)((this[Parameter.Contrast]-1)*scale),
-            Saturation=1+(float)((this[Parameter.Saturation]-1)*scale), Temperature=temperature,
+            ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=(float)(1.0+(this[Parameter.Contrast]-1.0)*scale),
+            Saturation=(float)(1.0+(this[Parameter.Saturation]-1.0)*scale), Temperature=temperature,
             Tint=tint, Highlights=(float)(this[Parameter.Highlights]*scale),
             Shadows=(float)(this[Parameter.Shadows]*scale),ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)Math.Clamp(this[Parameter.ToneCurve]*RefinementScale,-1,1),Sharpening=(float)this[Parameter.Sharpening],
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge

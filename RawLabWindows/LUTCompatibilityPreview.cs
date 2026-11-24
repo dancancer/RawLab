@@ -77,29 +77,44 @@ internal sealed class LUTPreviewWorker : IDisposable
         try {
             var gpu = new Native.GpuConfig { Version = 1, StructSize = 12, Mode = 0 };
             Native.Check(Native.sony2fuji_session_set_gpu_config(session, ref gpu), session);
-            Native.Check(Native.sony2fuji_apply_params(session, CanonicalEditRecipe.ProcessingOnlyJson(2, "scene")), session);
             return session;
         } catch { session.Dispose(); throw; }
     }
-    private static Native.Request Request() => new() {
-        Version = 2, StructSize = (uint)Marshal.SizeOf<Native.Request>(), Wb0 = 1, Wb1 = 1, Wb2 = 1, Wb3 = 1,
-        Brightness = 1, Contrast = 1, Saturation = 1, Temperature = 6500, OutputTarget = 1, OutputFormat = 3,
-        Intent = 0, PreviewLongEdge = 512, SizeMode = 3 };
-    private static void SetDisplay(ref Native.Request request, Native.Buffer display)
+    private static Native.RenderOptions RenderOptions(string? inputPath, Native.Buffer? displayBuffer)
     {
-        request.InputType = 2; request.InputPixels = display.Data; request.InputWidth = display.Width;
-        request.InputHeight = display.Height; request.InputPixelFormat = display.PixelFormat;
+        var options = new Native.RenderOptions
+        {
+            Version = 1,
+            StructSize = (uint)Marshal.SizeOf<Native.RenderOptions>(),
+            InputPath = inputPath,
+            OutputTarget = 1,
+            OutputFormat = 3,
+            Intent = 0,
+            PreviewLongEdge = 512,
+            SizeMode = 3
+        };
+        if (displayBuffer is { } buf)
+        {
+            options.InputType = 2;
+            options.InputPixels = buf.Data;
+            options.InputWidth = buf.Width;
+            options.InputHeight = buf.Height;
+            options.InputPixelFormat = buf.PixelFormat;
+        }
+        return options;
     }
     internal LUTPreviewFrame Render(LUTCompatibility? configuration)
     {
         if (configuration != null && !configuration.SupportsPreview(DisplayInput))
             throw new InvalidOperationException(Loc.Text("此配置与预览照片类型不匹配，请更换照片或配置。"));
-        var request = Request(); request.InputPath = source; request.LutPath = configuration == null ? null : lut;
-        request.LutStrength = configuration == null ? 0 : 1; if (DisplayInput) SetDisplay(ref request, display);
+        var options = RenderOptions(source, DisplayInput ? display : null);
         var output = new Native.Buffer();
         try {
-            Native.Check(configuration == null ? Native.sony2fuji_process(session, ref request, out output) :
-                Native.sony2fuji_preview_lut_compatibility(session, ref request, configuration.PreviewRequest(), ref output), session);
+            Native.Check(configuration == null
+                ? Native.sony2fuji_session_render(session, ref options, CanonicalEditRecipe.ProcessingStateJson(2, "scene"), out output, IntPtr.Zero)
+                : Native.sony2fuji_preview_lut_compatibility_json(session, ref options,
+                    CanonicalEditRecipe.CompatibilityPreviewStateJson(2, "scene", lut, 1.0),
+                    configuration.PreviewRequest(), ref output), session);
             return LUTPreviewFrame.From(output);
         } finally { Native.sony2fuji_release_buffer(ref output); }
     }
@@ -114,8 +129,9 @@ internal sealed class LUTPreviewWorker : IDisposable
                 hdrInput = new HDRSdrInput(HDRDisplay.CopySDROnly(decoded.Pair).SDR); input = hdrInput.Buffer;
             }
             else Native.CheckWithoutSession(Native.sony2fuji_load_display_image(file, ref input));
-            var request = Request(); SetDisplay(ref request, input);
-            Native.Check(Native.sony2fuji_process(session, ref request, out output), session); return LUTPreviewFrame.From(output);
+            var options = RenderOptions(null, input);
+            Native.Check(Native.sony2fuji_session_render(session, ref options, CanonicalEditRecipe.ProcessingStateJson(2, "scene"), out output, IntPtr.Zero), session);
+            return LUTPreviewFrame.From(output);
         } finally { if (hdrInput == null) Native.sony2fuji_release_buffer(ref input); hdrInput?.Dispose(); Native.sony2fuji_release_buffer(ref output); }
     }
     public void Dispose()

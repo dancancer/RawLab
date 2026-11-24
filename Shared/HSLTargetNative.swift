@@ -2,19 +2,25 @@ import RawLabKit
 import Foundation
 
 extension HSLTargetSample {
-    static func capture(session: OpaquePointer, request: inout sony2fuji_request,
-                        revision: HSLTargetRevision, x: Double, y: Double) -> HSLTargetSample {
+    static func capture(session: OpaquePointer, options: inout sony2fuji_render_options_v1,
+                        editStateJSON: String, revision: HSLTargetRevision, x: Double, y: Double) -> HSLTargetSample {
         capture(revision: revision, x: x, y: y) { probe in
-            sony2fuji_session_create_hsl_probe(session, &request, revision.source, revision.request, &probe)
+            withUnsafePointer(to: &options) { optPtr in
+                editStateJSON.withCString { json in
+                    sony2fuji_session_create_hsl_probe_json(session, optPtr, json, revision.source, revision.request, &probe)
+                }
+            }
         }
     }
 
     static func capture(session: OpaquePointer, pair: UnsafePointer<sony2fuji_hdr_image_pair_v1>,
-                        request: HDRRenderRequest, revision: HSLTargetRevision,
-                        x: Double, y: Double) -> HSLTargetSample {
+                        options: inout sony2fuji_hdr_render_options_v1, editStateJSON: String,
+                        revision: HSLTargetRevision, x: Double, y: Double) -> HSLTargetSample {
         capture(revision: revision, x: x, y: y) { probe in
-            withHDRRequestPrefix(request) { prefix in
-                sony2fuji_hdr_create_hsl_probe(session, pair, prefix, revision.source, revision.request, &probe, nil)
+            withUnsafePointer(to: &options) { optPtr in
+                editStateJSON.withCString { json in
+                    sony2fuji_hdr_create_hsl_probe_json(session, pair, optPtr, json, revision.source, revision.request, &probe, nil)
+                }
             }
         }
     }

@@ -76,28 +76,10 @@ public enum CanonicalEditRecipe {
         }
     }
 
-    public static func processingOnlyJSON(processingVersion: Int, exposureMode: String = "scene") -> String {
+    public static func processingSessionStateJSON(processingVersion: Int) -> String {
         let clampedVersion = min(3, max(1, processingVersion))
-        let payload = Payload(
-            schemaVersion: 5,
-            x3fMode: nil,
-            processing: .init(family: "rawlab", version: clampedVersion, quality: "standard"),
-            input: .init(path: "session.raw", type: "raw"),
-            edits: .init(
-                exposure: .init(mode: exposureMode, ev: 0, brightness: 1),
-                whiteBalance: .init(mode: "camera"),
-                look: .init(path: nil, strength: 1),
-                geometry: nil,
-                tone: nil,
-                color: nil,
-                colorGrading: nil,
-                detail: .init(sharpening: 0),
-                hsl: nil,
-                effects: nil,
-                denoise: nil,
-                lensCorrection: nil
-            ),
-            output: .init(path: "session.png", format: "png", size: .init(mode: "native"), outputSharpening: nil)
+        let payload = SessionProcessingPayload(
+            processing: .init(family: "rawlab", version: clampedVersion, quality: "standard")
         )
         let data = try! encoder.encode(payload)
         return String(decoding: data, as: UTF8.self)
@@ -143,7 +125,7 @@ public enum CanonicalEditRecipe {
             schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
-            input: .init(path: state.isRaster ? "session.png" : "session.raw", type: state.isRaster ? "raster" : "raw"),
+            input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
             edits: .init(
                 exposure: .init(mode: effectiveExposureMode, ev: 0, brightness: 1),
                 whiteBalance: rasterRelativeActive
@@ -214,7 +196,8 @@ public enum CanonicalEditRecipe {
                     chromaMode: state.chromaDenoise,
                     wavelet: state.waveletDenoise.map {
                         WaveletPayload(enabled: $0.enabled, luma: $0.luma, chroma: $0.chroma, coarse: $0.coarse)
-                    }
+                    },
+                    aiDenoiseBlend: nil
                 ),
                 lensCorrection: .init(
                     distortion: state.lensCorrection.distortion,
@@ -222,13 +205,14 @@ public enum CanonicalEditRecipe {
                     vignetting: state.lensCorrection.vignetting,
                     autoCrop: state.lensCorrection.autoCrop,
                     profileId: profileID
-                )
+                ),
+                masterRecipe: nil
             ),
-            output: .init(
-                path: "session.png",
-                format: "png",
-                size: .init(mode: "native"),
-                outputSharpening: state.outputSharpening == .off ? nil : state.outputSharpening.rawValue
+            output: state.outputSharpening == .off ? nil : .init(
+                path: nil,
+                format: nil,
+                size: nil,
+                outputSharpening: state.outputSharpening.rawValue
             )
         )
 
@@ -242,13 +226,17 @@ public enum CanonicalEditRecipe {
         return encoder
     }()
 
+    private struct SessionProcessingPayload: Encodable {
+        let processing: ProcessingPayload
+    }
+
     private struct Payload: Encodable {
         let schemaVersion: Int
         let x3fMode: String?
         let processing: ProcessingPayload
         let input: InputPayload
         let edits: EditsPayload
-        let output: OutputPayload
+        let output: OutputPayload?
 
         enum CodingKeys: String, CodingKey {
             case schemaVersion = "schema_version"
@@ -264,14 +252,14 @@ public enum CanonicalEditRecipe {
     }
 
     private struct InputPayload: Encodable {
-        let path: String
+        let path: String?
         let type: String
     }
 
     private struct OutputPayload: Encodable {
-        let path: String
-        let format: String
-        let size: SizePayload
+        let path: String?
+        let format: String?
+        let size: SizePayload?
         let outputSharpening: String?
 
         enum CodingKeys: String, CodingKey {
@@ -282,6 +270,23 @@ public enum CanonicalEditRecipe {
 
     private struct SizePayload: Encodable {
         let mode: String
+    }
+
+    private struct MasterRecipePayload: Encodable {
+        let active: Bool
+        let strength: Double
+        let customWb: Bool
+        let temperatureKelvin: Double
+        let tint: Double
+        let uncalibratedFallback: String
+
+        enum CodingKeys: String, CodingKey {
+            case active, strength
+            case customWb = "custom_wb"
+            case temperatureKelvin = "temperature_kelvin"
+            case tint
+            case uncalibratedFallback = "uncalibrated_fallback"
+        }
     }
 
     private struct EditsPayload: Encodable {
@@ -297,6 +302,7 @@ public enum CanonicalEditRecipe {
         let effects: EffectsPayload?
         let denoise: DenoisePayload?
         let lensCorrection: LensCorrectionPayload?
+        let masterRecipe: MasterRecipePayload?
 
         enum CodingKeys: String, CodingKey {
             case exposure
@@ -305,6 +311,7 @@ public enum CanonicalEditRecipe {
             case colorGrading = "color_grading"
             case detail, hsl, effects, denoise
             case lensCorrection = "lens_correction"
+            case masterRecipe = "master_recipe"
         }
     }
 
@@ -316,17 +323,24 @@ public enum CanonicalEditRecipe {
 
     private struct WhiteBalancePayload: Encodable {
         let mode: String
+        let temperatureKelvin: Double?
+        let tint: Double?
         let relativeTemperature: Double?
         let relativeTint: Double?
 
-        init(mode: String, relativeTemperature: Double? = nil, relativeTint: Double? = nil) {
+        init(mode: String, temperatureKelvin: Double? = nil, tint: Double? = nil,
+             relativeTemperature: Double? = nil, relativeTint: Double? = nil) {
             self.mode = mode
+            self.temperatureKelvin = temperatureKelvin
+            self.tint = tint
             self.relativeTemperature = relativeTemperature
             self.relativeTint = relativeTint
         }
 
         enum CodingKeys: String, CodingKey {
             case mode
+            case temperatureKelvin = "temperature_kelvin"
+            case tint
             case relativeTemperature = "relative_temperature"
             case relativeTint = "relative_tint"
         }
@@ -519,11 +533,13 @@ public enum CanonicalEditRecipe {
         let rawLevel: Int
         let chromaMode: Int
         let wavelet: WaveletPayload?
+        let aiDenoiseBlend: Double?
 
         enum CodingKeys: String, CodingKey {
             case rawLevel = "raw_level"
             case chromaMode = "chroma_mode"
             case wavelet
+            case aiDenoiseBlend = "ai_denoise_blend"
         }
     }
 
@@ -539,6 +555,368 @@ public enum CanonicalEditRecipe {
             case autoCrop = "auto_crop"
             case profileId = "profile_id"
         }
+    }
+
+    static func encodeSDRSessionState(
+        _ state: State,
+        resolved: ResolvedRenderValues,
+        lutPath: String?,
+        lutStrength: Double,
+        masterRecipe: (active: Bool, customWB: Bool, temperature: Double, tint: Double)?,
+        aiDenoiseBlend: Double?
+    ) throws -> String {
+        guard state.toneControls.isValid else { throw CanonicalEditRecipeError.invalidToneControls }
+        guard state.atmosphere.isValid else { throw CanonicalEditRecipeError.invalidAtmosphere }
+        guard state.toneCurve.isValid else { throw CanonicalEditRecipeError.invalidToneCurve }
+        guard state.colorGrading.isValid else { throw CanonicalEditRecipeError.invalidColorGrading }
+        guard state.hsl.isValid else { throw CanonicalEditRecipeError.invalidHSL }
+        guard state.geometry.isValid else { throw CanonicalEditRecipeError.invalidGeometry }
+        guard state.photoEffects.isValid else { throw CanonicalEditRecipeError.invalidPhotoEffects }
+        if let wavelet = state.waveletDenoise {
+            let valid = [wavelet.luma, wavelet.chroma, wavelet.coarse].allSatisfy {
+                $0.isFinite && (0...100).contains($0)
+            }
+            guard valid else { throw CanonicalEditRecipeError.invalidWaveletDenoise }
+        }
+        guard (0...2).contains(state.chromaDenoise) else { throw CanonicalEditRecipeError.invalidChromaDenoise }
+        guard (0...2).contains(state.rawNoiseReduction) else { throw CanonicalEditRecipeError.invalidRawNoiseReduction }
+
+        let effectiveExposureMode = state.isRaster ? "sensor" : state.exposureMode
+        let effectiveRawNR = state.isRaster ? 0 : state.rawNoiseReduction
+        let profileID = state.lensCorrection.coreProfileID.isEmpty ? nil : state.lensCorrection.coreProfileID
+        let channels: CurveChannelsPayload? = state.toneCurve.channels.isDefault ? nil : CurveChannelsPayload(
+            red: CurveShapePayload(state.toneCurve.channels.red),
+            green: CurveShapePayload(state.toneCurve.channels.green),
+            blue: CurveShapePayload(state.toneCurve.channels.blue)
+        )
+
+        let whiteBalance: WhiteBalancePayload
+        let masterRecipePayload: MasterRecipePayload?
+        if state.isRaster {
+            masterRecipePayload = nil
+            let rasterRelativeActive = state.relativeTemperature != 6500 || state.relativeTint != 0
+            if rasterRelativeActive {
+                guard state.relativeTemperature.isFinite, (2000...50000).contains(state.relativeTemperature),
+                      state.relativeTint.isFinite, (-150...150).contains(state.relativeTint) else {
+                    throw CanonicalEditRecipeError.invalidWhiteBalance
+                }
+                whiteBalance = .init(
+                    mode: "relative",
+                    relativeTemperature: state.relativeTemperature,
+                    relativeTint: state.relativeTint
+                )
+            } else {
+                whiteBalance = .init(mode: "none")
+            }
+        } else if let masterRecipe, masterRecipe.active {
+            guard masterRecipe.temperature.isFinite, (2000...50000).contains(masterRecipe.temperature),
+                  masterRecipe.tint.isFinite, (-150...150).contains(masterRecipe.tint) else {
+                throw CanonicalEditRecipeError.invalidWhiteBalance
+            }
+            whiteBalance = masterRecipe.customWB
+                ? .init(mode: "temperature", temperatureKelvin: masterRecipe.temperature, tint: masterRecipe.tint)
+                : .init(mode: "camera")
+            masterRecipePayload = MasterRecipePayload(
+                active: true,
+                strength: lutStrength,
+                customWb: masterRecipe.customWB,
+                temperatureKelvin: masterRecipe.temperature,
+                tint: masterRecipe.tint,
+                uncalibratedFallback: "error"
+            )
+        } else {
+            masterRecipePayload = nil
+            if resolved.usesTemperatureWB {
+                guard resolved.temperature.isFinite, (2000...50000).contains(Double(resolved.temperature)),
+                      resolved.tint.isFinite, (-150...150).contains(Double(resolved.tint)) else {
+                    throw CanonicalEditRecipeError.invalidWhiteBalance
+                }
+                whiteBalance = .init(
+                    mode: "temperature",
+                    temperatureKelvin: Double(resolved.temperature),
+                    tint: Double(resolved.tint)
+                )
+            } else {
+                whiteBalance = .init(mode: "camera")
+            }
+        }
+
+        let payload = Payload(
+            schemaVersion: 17,
+            x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
+            processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
+            input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
+            edits: .init(
+                exposure: .init(
+                    mode: effectiveExposureMode,
+                    ev: Double(resolved.exposureEV),
+                    brightness: Double(resolved.brightness)
+                ),
+                whiteBalance: whiteBalance,
+                look: .init(path: lutPath, strength: lutPath == nil ? 0 : lutStrength),
+                geometry: .init(
+                    crop: .init(
+                        x: state.geometry.cropX,
+                        y: state.geometry.cropY,
+                        width: state.geometry.cropWidth,
+                        height: state.geometry.cropHeight
+                    ),
+                    quarterTurns: state.geometry.quarterTurns,
+                    flipHorizontal: state.geometry.flipHorizontal,
+                    flipVertical: state.geometry.flipVertical,
+                    straightenDegrees: state.geometry.straightenDegrees,
+                    perspective: .init(
+                        horizontal: state.geometry.perspectiveHorizontal,
+                        vertical: state.geometry.perspectiveVertical
+                    )
+                ),
+                tone: .init(
+                    contrast: min(2, max(0, Double(resolved.contrast))),
+                    saturation: min(2, max(0, Double(resolved.saturation))),
+                    highlights: min(1, max(-1, Double(resolved.highlights))),
+                    shadows: min(1, max(-1, Double(resolved.shadows))),
+                    sCurve: Double(resolved.toneCurve),
+                    blackPoint: state.toneControls.blackPoint / 100.0,
+                    whitePoint: state.toneControls.whitePoint / 100.0,
+                    curve: .init(
+                        mode: state.toneCurve.mode.rawValue,
+                        points: state.toneCurve.points.map { [$0.x, $0.y] },
+                        channels: channels,
+                        applyToLuminosity: state.toneCurve.applyToLuminosity ? true : nil,
+                        parametric: state.toneCurve.parametric.isDefault ? nil : CurveParametricPayload(state.toneCurve.parametric)
+                    )
+                ),
+                color: .init(vibrance: state.toneControls.vibrance / 100.0),
+                colorGrading: .init(
+                    shadows: WheelPayload(state.colorGrading.shadows),
+                    midtones: WheelPayload(state.colorGrading.midtones),
+                    highlights: WheelPayload(state.colorGrading.highlights),
+                    global: state.colorGrading.global.isDefault ? nil : WheelPayload(state.colorGrading.global),
+                    blending: state.colorGrading.blending == 50.0 ? nil : state.colorGrading.blending,
+                    balance: state.colorGrading.balance == 0.0 ? nil : state.colorGrading.balance
+                ),
+                detail: .init(sharpening: min(2, max(0, Double(resolved.sharpening)))),
+                hsl: .init(
+                    hue: state.hsl.hue,
+                    saturation: state.hsl.saturation,
+                    lightness: state.hsl.lightness
+                ),
+                effects: .init(
+                    vignetteAmount: state.photoEffects.vignetteAmount,
+                    vignetteMidpoint: state.photoEffects.vignetteMidpoint,
+                    vignetteRoundness: state.photoEffects.vignetteRoundness,
+                    vignetteFeather: state.photoEffects.vignetteFeather,
+                    vignetteHighlights: state.photoEffects.vignetteHighlights,
+                    grainAmount: state.photoEffects.grainAmount,
+                    grainSize: state.photoEffects.grainSize,
+                    grainRoughness: state.photoEffects.grainRoughness,
+                    clarity: state.atmosphere.clarity / 100.0,
+                    dehaze: state.atmosphere.dehaze / 100.0
+                ),
+                denoise: .init(
+                    rawLevel: effectiveRawNR,
+                    chromaMode: state.chromaDenoise,
+                    wavelet: state.waveletDenoise.map {
+                        WaveletPayload(enabled: $0.enabled, luma: $0.luma, chroma: $0.chroma, coarse: $0.coarse)
+                    },
+                    aiDenoiseBlend: aiDenoiseBlend.map { min(1.0, max(0.0, $0)) }
+                ),
+                lensCorrection: .init(
+                    distortion: state.lensCorrection.distortion,
+                    tca: state.lensCorrection.tca,
+                    vignetting: state.lensCorrection.vignetting,
+                    autoCrop: state.lensCorrection.autoCrop,
+                    profileId: profileID
+                ),
+                masterRecipe: masterRecipePayload
+            ),
+            output: state.outputSharpening == .off ? nil : .init(
+                path: nil,
+                format: nil,
+                size: nil,
+                outputSharpening: state.outputSharpening.rawValue
+            )
+        )
+
+        let data = try encoder.encode(payload)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public static func hdrCameraDevelopmentJSON(
+        camera: HDRCameraDevelopmentSettings = HDRCameraDevelopmentSettings(),
+        cameraProfileURL: URL? = nil,
+        processingVersion: Int,
+        useAI: Bool = false
+    ) throws -> String {
+        guard camera.isValid else { throw HDRRecipe.Failure.invalidSettings }
+        let root: [String: Any] = [
+            "camera_development": cameraDevelopmentObject(
+                camera: camera,
+                cameraProfileURL: cameraProfileURL,
+                processingVersion: processingVersion,
+                useAI: useAI
+            )
+        ]
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public static func hdrSessionStateJSON(
+        settings: HDRSettings,
+        outputSharpening: OutputSharpening = .off,
+        lookDirectory: URL = HDRLookSettings.directory,
+        camera: HDRCameraDevelopmentSettings? = nil,
+        cameraProfileURL: URL? = nil,
+        cameraProcessingVersion: Int? = nil,
+        useCameraAI: Bool = false
+    ) throws -> String {
+        guard settings.mode == .hdr, settings.isValid, camera?.isValid ?? true else {
+            throw HDRRecipe.Failure.invalidSettings
+        }
+        let g = settings.geometry
+        let version = max(settings.processingVersion, outputSharpening != .off ? 9 : 1)
+        let schemaVersion = version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6
+
+        var tone: [String: Any] = [
+            "contrast": 1 + settings.contrast / 100,
+            "saturation": 1 + settings.saturation / 100,
+            "highlights": -settings.highlights / 100,
+            "shadows": settings.shadows / 100
+        ]
+        if version >= 2 {
+            let current = settings.toneSettings
+            tone["black_point"] = current.blackPoint / 100
+            tone["white_point"] = current.whitePoint / 100
+            tone["s_curve"] = current.curve.mode == .custom ? 0 : current.curveStrength / 100
+            tone["curve"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(current.curve))
+        }
+        var edits: [String: Any] = [
+            "exposure": ["ev": settings.exposure],
+            "white_balance": [
+                "mode": "relative",
+                "relative_temperature": settings.temperature,
+                "relative_tint": settings.tint
+            ],
+            "tone": tone,
+            "geometry": [
+                "crop": ["x": g.cropX, "y": g.cropY, "width": g.cropWidth, "height": g.cropHeight],
+                "quarter_turns": g.quarterTurns,
+                "flip_horizontal": g.flipHorizontal,
+                "flip_vertical": g.flipVertical,
+                "straighten_degrees": g.straightenDegrees,
+                "perspective": ["horizontal": g.perspectiveHorizontal, "vertical": g.perspectiveVertical]
+            ]
+        ]
+        if version >= 3 {
+            let color = settings.colorSettings
+            edits["color"] = ["vibrance": color.vibrance / 100]
+            edits["hsl"] = ["hue": color.hsl.hue, "saturation": color.hsl.saturation, "lightness": color.hsl.lightness]
+            var gradingDict: [String: Any] = Dictionary(uniqueKeysWithValues: ColorGradingZone.allCases.map { zone in
+                let wheel = color.grading[zone]
+                var wheelDict: [String: Any] = ["hue": wheel.hue, "saturation": wheel.saturation]
+                if wheel.luminance != 0.0 { wheelDict["luminance"] = wheel.luminance }
+                return (zone.rawValue, wheelDict)
+            })
+            if !color.grading.global.isDefault {
+                var globalDict: [String: Any] = ["hue": color.grading.global.hue, "saturation": color.grading.global.saturation]
+                if color.grading.global.luminance != 0.0 { globalDict["luminance"] = color.grading.global.luminance }
+                gradingDict["global"] = globalDict
+            }
+            if color.grading.blending != 50.0 { gradingDict["blending"] = color.grading.blending }
+            if color.grading.balance != 0.0 { gradingDict["balance"] = color.grading.balance }
+            edits["color_grading"] = gradingDict
+        }
+        if version >= 4 {
+            let rendition = settings.renditionSettings
+            edits["rendition"] = [
+                "peak_limit_ev": rendition.peakLimitEV,
+                "sdr_exposure_ev": rendition.sdrExposureEV,
+                "sdr_contrast": rendition.sdrContrast / 100,
+                "sdr_saturation": rendition.sdrSaturation / 100
+            ]
+        }
+        if version >= 5 {
+            let fx = settings.effectsSettings
+            edits["effects"] = [
+                "vignette_amount": fx.vignetteAmount,
+                "vignette_midpoint": fx.vignetteMidpoint,
+                "vignette_roundness": fx.vignetteRoundness,
+                "vignette_feather": fx.vignetteFeather,
+                "vignette_highlights": fx.vignetteHighlights,
+                "grain_amount": fx.grainAmount,
+                "grain_size": fx.grainSize,
+                "grain_roughness": fx.grainRoughness
+            ]
+        }
+        if version >= 6 {
+            let detail = settings.detailSettings
+            edits["detail"] = [
+                "sharpening": detail.sharpening,
+                "clarity": detail.clarity,
+                "dehaze": detail.dehaze,
+                "denoise": detail.denoise
+            ]
+        }
+        if version >= 7 {
+            var look: [String: Any] = ["strength": settings.lookSettings.strength]
+            if let asset = settings.lookSettings.asset(in: lookDirectory) {
+                look["path"] = asset.path
+            }
+            if let sha = settings.lookSettings.sha256 {
+                look["sha256"] = sha
+            }
+            edits["look"] = look
+        }
+        var root: [String: Any] = [
+            "schema_version": schemaVersion,
+            "processing": ["family": "rawlab_hdr", "version": version, "quality": "standard"],
+            "edits": edits
+        ]
+        if outputSharpening != .off {
+            root["output"] = ["output_sharpening": outputSharpening.rawValue]
+        }
+        if let camera {
+            root["camera_development"] = cameraDevelopmentObject(
+                camera: camera,
+                cameraProfileURL: cameraProfileURL,
+                processingVersion: cameraProcessingVersion ?? 3,
+                useAI: useCameraAI
+            )
+        }
+        let data = try JSONSerialization.data(withJSONObject: root, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func cameraDevelopmentObject(
+        camera: HDRCameraDevelopmentSettings,
+        cameraProfileURL: URL?,
+        processingVersion: Int,
+        useAI: Bool
+    ) -> [String: Any] {
+        var object: [String: Any] = [
+            "version": 1,
+            "wb_mode": camera.whiteBalance == .asShot ? "as_shot" : "temperature",
+            "temperature": camera.temperature,
+            "tint": camera.tint,
+            "exposure_reference": camera.exposureReference == .metadata ? "metadata" : "sensor",
+            "fbdd_level": camera.fbddLevel,
+            "lens_distortion": camera.lensDistortion,
+            "lens_tca": camera.lensTCA,
+            "lens_vignetting": camera.lensVignetting,
+            "lens_auto_crop": camera.lensAutoCrop,
+            "use_ai": useAI,
+            "processing_version": min(3, max(1, processingVersion))
+        ]
+        if let lensProfile = camera.lensProfile {
+            object["lens_profile_id"] = lensProfile
+        }
+        if let profile = camera.cameraProfile, let cameraProfileURL {
+            object["camera_profile"] = [
+                "path": cameraProfileURL.path,
+                "sha256": profile.sha256
+            ]
+        }
+        return object
     }
 }
 
@@ -578,5 +956,38 @@ public extension Adjustments {
 
     func canonicalParamsJSON(isRaster: Bool = false, includeDenoise: Bool = true, outputSharpening: OutputSharpening = .off) throws -> String {
         try CanonicalEditRecipe.encode(canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise, outputSharpening: outputSharpening))
+    }
+
+    func sdrSessionStateJSON(
+        isRaster: Bool = false,
+        lutPath: String? = nil,
+        includeDenoise: Bool = true,
+        aiDenoiseBlend: Double? = nil,
+        outputSharpening: OutputSharpening = .off
+    ) throws -> String {
+        let state = canonicalEditState(isRaster: isRaster, includeDenoise: includeDenoise, outputSharpening: outputSharpening)
+        let resolved = resolvedRenderValues()
+        let customWB = !usesAsShotWhiteBalance
+        let effectiveMasterTemp = customWB ? temperature : 6500
+        let effectiveMasterTint = (!customWB && clampedLUTStrength == 0) ? 0 : tint
+        let master = (!isRaster && masterRecipe != nil)
+            ? (active: true, customWB: customWB, temperature: effectiveMasterTemp, tint: effectiveMasterTint)
+            : nil
+        let effectiveBlend: Double?
+        if let aiDenoiseBlend {
+            effectiveBlend = aiDenoiseBlend
+        } else if includeDenoise {
+            effectiveBlend = aiDenoiseEnabled ? (aiDenoiseStrength / 100.0) : 1.0
+        } else {
+            effectiveBlend = nil
+        }
+        return try CanonicalEditRecipe.encodeSDRSessionState(
+            state,
+            resolved: resolved,
+            lutPath: lutPath,
+            lutStrength: Double(clampedLUTStrength),
+            masterRecipe: master,
+            aiDenoiseBlend: effectiveBlend
+        )
     }
 }
