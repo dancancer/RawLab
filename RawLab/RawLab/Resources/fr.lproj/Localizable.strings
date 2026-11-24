@@ -770,7 +770,7 @@
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Film urbain vintage chaud et riche, ombres stables et propres, hautes lumières dorées et récit de déambulation";
 "渲染型 DNG 未生成。" = "Le DNG développé n’a pas été créé.";
 "滨田英明" = "Hideaki Hamada";
-"点击曲线区域添加控制点，拖动中间点调整。" = "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.";
+"点击曲线区域添加控制点，拖动控制点调整。" = "Touchez la zone de courbe pour ajouter un point. Faites glisser les points de contrôle pour ajuster.";
 "点曲线" = "Courbe à points";
 "焦距（mm）" = "Distance focale (mm)";
 "照片" = "Photo";

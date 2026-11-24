@@ -96,6 +96,7 @@ public enum AdjustmentFieldSpec {
             public static let customMinPoints = 2
             public static let customMaxPoints = 33
             public static let coordRange: ClosedRange<Double> = 0.0...1.0
+            public static let endpointsXUnpinned = true
             public static let endpointsYUnpinned = true
             public static let allowedChannels: [String] = ["red", "green", "blue"]
         }

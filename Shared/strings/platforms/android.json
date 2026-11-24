@@ -1926,7 +1926,7 @@
     },
     "curve_hint": {
       "formats": [],
-      "source": "点击曲线区域添加控制点，拖动中间点调整。",
+      "source": "点击曲线区域添加控制点，拖动控制点调整。",
       "file": "editor_strings.xml",
       "types": []
     },

@@ -86,7 +86,7 @@
     <string name="curve_darks">"Oscuros"</string>
     <string name="curve_edit_point">"Editar punto"</string>
     <string name="curve_fixed_endpoint">"Los extremos son fijos"</string>
-    <string name="curve_hint">"Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar."</string>
+    <string name="curve_hint">"Toca el área de la curva para añadir un punto. Arrastra los puntos de control para ajustar."</string>
     <string name="curve_input">"Entrada"</string>
     <string name="curve_lights">"Claros"</string>
     <string name="curve_luminosity_only">"Solo luminancia"</string>

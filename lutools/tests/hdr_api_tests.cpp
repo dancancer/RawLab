@@ -169,7 +169,7 @@ void toneV2(sony2fuji_session* session) {
     settings.base.struct_size = sizeof(settings.base);
     render(SONY2FUJI_STATUS_INVALID_ARGUMENT, unchanged);
     settings.base.struct_size = sizeof(settings);
-    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION + 1;
+    settings.base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION + 1;
     render(SONY2FUJI_STATUS_UNSUPPORTED, unchanged);
 }
 
@@ -367,6 +367,26 @@ void gradingV2V9(sony2fuji_session* session) {
     result = init<sony2fuji_hdr_image_pair_v1>();
     require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
         "HDR v9 accepted invalid grading_v2 blending");
+
+    // v10 沿用 v9 请求布局，只额外放开曲线端点 x；v9 必须继续拒绝端点 x 内移。
+    v9.grading_v2 = {};
+    v9.grading_v2.version = SONY2FUJI_COLOR_GRADING_V2_CONFIG_VERSION;
+    v9.grading_v2.struct_size = sizeof(v9.grading_v2);
+    v9.grading_v2.blending = 50;
+    v2.curve.mode = SONY2FUJI_CURVE_CUSTOM;
+    v2.curve.count = 2;
+    v2.curve.points[0] = {0.2, 0.0};
+    v2.curve.points[1] = {0.8, 1.0};
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "HDR v9 accepted free endpoint x");
+    base.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION;
+    result = init<sony2fuji_hdr_image_pair_v1>();
+    require(sony2fuji_hdr_render(session, &source.pair, &base, &result, &diagnostic) == SONY2FUJI_STATUS_OK,
+        "HDR v10 free endpoint x render failed");
+    require(std::memcmp(result.hdr.data, source.hdr.data(), source.hdr.size() * sizeof(float)) != 0,
+        "HDR v10 free endpoint x did not change pixels");
+    sony2fuji_hdr_release_pair(&result);
 }
 }
 

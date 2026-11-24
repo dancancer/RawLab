@@ -58,9 +58,9 @@ int main(int argc, char** argv) {
         sony2fuji::ToneCurve reference(coreCustom);
         // Free-endpoint Y validation & active_ check (Wave 0).
         sony2fuji::ToneCurveConfig freeEnd{sony2fuji::ToneCurveMode::Custom, 2, {{{0, 0}, {1, 0.9}}}};
-        require(!sony2fuji::validToneCurve(freeEnd, false), "v1 rejects unpinned endpoint Y");
-        require(sony2fuji::validToneCurve(freeEnd, true), "v2 allows unpinned endpoint Y");
-        sony2fuji::ToneCurve freeEndCurve(freeEnd, true);
+        require(!sony2fuji::validToneCurve(freeEnd, sony2fuji::ToneCurveEndpoints::Pinned), "v1 rejects unpinned endpoint Y");
+        require(sony2fuji::validToneCurve(freeEnd, sony2fuji::ToneCurveEndpoints::FreeY), "v2 allows unpinned endpoint Y");
+        sony2fuji::ToneCurve freeEndCurve(freeEnd, sony2fuji::ToneCurveEndpoints::FreeY);
         require(freeEndCurve.active(), "2-point curve with y1 < 1 must be active");
         require(std::abs(freeEndCurve.evaluate(0.0) - 0.0) < 1e-9 &&
                 std::abs(freeEndCurve.evaluate(1.0) - 0.9) < 1e-9, "evaluate clamps to endpoint Y");
@@ -321,7 +321,62 @@ int main(int argc, char** argv) {
                 sony2fuji_session_set_gpu_config(s, &gpu);
             }
 
-            // 5) Pipeline::setToneCurve resets curveApplyToLuminosity_ and parametricCurve_
+            // 5) Free-X clip endpoints on master + channel + luminosity on CPU and Force GPU
+            {
+                const std::vector<uint8_t> clipPixels{
+                    26, 26, 26,      // ~0.102 <= 0.20 -> crushes to 0
+                    128, 128, 128,   // ~0.502 -> midtone
+                    230, 230, 230,   // ~0.902 >= 0.80 -> clips to 255
+                    200, 80, 40,
+                };
+                auto clipReq = requestFor(clipPixels);
+                auto freeXSet = makeV2Set();
+                freeXSet.apply_to_luminosity = 1;
+                freeXSet.curves[0].mode = SONY2FUJI_CURVE_CUSTOM;
+                freeXSet.curves[0].count = 2;
+                freeXSet.curves[0].points[0] = {0.2, 0.0};
+                freeXSet.curves[0].points[1] = {0.8, 1.0};
+                freeXSet.curves[1].mode = SONY2FUJI_CURVE_CUSTOM;
+                freeXSet.curves[1].count = 2;
+                freeXSet.curves[1].points[0] = {0.15, 0.05};
+                freeXSet.curves[1].points[1] = {0.85, 0.95};
+                require(sony2fuji_session_set_tone_curves_v2(s, &freeXSet) == SONY2FUJI_STATUS_OK, "v2 free-X setter");
+                const auto freeXOut = render(s, clipReq);
+                // Master crushes 26->0, red channel lifts 0->0.05 (~13 DN), G/B stay 0
+                require(freeXOut[0] == 13 && freeXOut[1] == 0 && freeXOut[2] == 0,
+                    "free-X master crush + red channel lift on dark pixel");
+                // Master clips 230->255, red channel drops 1->0.95 (~242 DN), G/B stay 255
+                require(freeXOut[6] == 242 && freeXOut[7] == 255 && freeXOut[8] == 255,
+                    "free-X master clip + red channel clamp on bright pixel");
+
+                double fxXs[3]{0.1, 0.5, 0.9};
+                double fxYs[3]{};
+                require(sony2fuji_sample_tone_curve_v2(&freeXSet.curves[0], nullptr, fxXs, fxYs, 3) == SONY2FUJI_STATUS_OK,
+                    "sample_tone_curve_v2 free-X");
+                require(fxYs[0] == 0.0 && std::abs(fxYs[1] - 0.5) < 1e-12 && fxYs[2] == 1.0,
+                    "sample_tone_curve_v2 clamps flat outside [x0, x1]");
+
+                if (available) {
+                    auto sceneClip = clipReq;
+                    sceneClip.input_type = SONY2FUJI_INPUT_BUFFER;
+                    gpu.mode = SONY2FUJI_GPU_OFF;
+                    sony2fuji_session_set_gpu_config(s, &gpu);
+                    const auto cpuClip = render(s, sceneClip);
+                    gpu.mode = SONY2FUJI_GPU_FORCE;
+                    sony2fuji_session_set_gpu_config(s, &gpu);
+                    const auto gpuClip = render(s, sceneClip);
+                    require(sony2fuji_session_get_last_backend(s) == rawlabtest::nativeBackend,
+                        "free-X master + channel + luminosity runs on Force GPU");
+                    for (size_t i = 0; i < cpuClip.size(); ++i) {
+                        require(std::abs(int(gpuClip[i]) - int(cpuClip[i])) <= 2,
+                            "free-X Force GPU matches CPU within 2 DN");
+                    }
+                    gpu.mode = SONY2FUJI_GPU_OFF;
+                    sony2fuji_session_set_gpu_config(s, &gpu);
+                }
+            }
+
+            // 6) Pipeline::setToneCurve resets curveApplyToLuminosity_ and parametricCurve_
             require(sony2fuji_session_set_tone_curve(s, &reset) == SONY2FUJI_STATUS_OK, "legacy setToneCurve reset");
             require(render(s, v2Req) == v2Baseline, "legacy setToneCurve clears v2 luminosity and parametric state");
         }

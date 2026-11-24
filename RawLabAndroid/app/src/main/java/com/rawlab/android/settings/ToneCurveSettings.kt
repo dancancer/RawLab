@@ -11,56 +11,97 @@ data class ToneCurvePoint(val x: Double, val y: Double)
 class ToneCurveShape(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: List<ToneCurvePoint> = emptyList()) {
     val points: List<ToneCurvePoint> = java.util.Collections.unmodifiableList(points.map { ToneCurvePoint(it.x.canonicalZero(), it.y.canonicalZero()) })
     init {
-        val validEndpoints = if (AdjustmentFieldSpec.SubFields.LightCurve.endpointsYUnpinned) {
-            this.points.size in 2..33 && this.points.first().x == 0.0 && this.points.last().x == 1.0
-        } else {
-            this.points.size in 2..33 && this.points.first() == ToneCurvePoint(0.0, 0.0) &&
-                this.points.last() == ToneCurvePoint(1.0, 1.0)
-        }
+        val sub = AdjustmentFieldSpec.SubFields.LightCurve
+        val validX = sub.endpointsXUnpinned || (this.points.size >= 2 && this.points.first().x == 0.0 && this.points.last().x == 1.0)
+        val validY = sub.endpointsYUnpinned || (this.points.size >= 2 && this.points.first().y == 0.0 && this.points.last().y == 1.0)
         require(if (mode == ToneCurveMode.LEGACY) this.points.isEmpty() else
-            validEndpoints &&
+            this.points.size in 2..33 && validX && validY &&
                 this.points.all { it.x.isFinite() && it.y.isFinite() && it.x in 0.0..1.0 && it.y in 0.0..1.0 } &&
                 this.points.zipWithNext().all { (a, b) -> a.x < b.x && a.y <= b.y })
     }
     val isDefault get() = mode == ToneCurveMode.LEGACY
-    val isIdentity get() = isDefault || points.all { it.x == it.y }
-    val hasUnpinnedEndpoints get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 && (points.first().y != 0.0 || points.last().y != 1.0)
-    val progress get() = points.maxOfOrNull { kotlin.math.abs(it.y - it.x) } ?: 0.0
+    val hasUnpinnedEndpoints get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 &&
+        (points.first().x != 0.0 || points.first().y != 0.0 || points.last().x != 1.0 || points.last().y != 1.0)
+    /** 端点 x 内移需要 SDR 配方 v18 / HDR 处理 v10；已发布的 v17 / v9 只放开端点 y。 */
+    val hasFreeEndpointX get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 &&
+        (points.first().x != 0.0 || points.last().x != 1.0)
+    val isIdentity get() = isDefault || (!hasUnpinnedEndpoints && points.all { it.x == it.y })
+    val progress get() = if (mode != ToneCurveMode.CUSTOM || points.isEmpty()) 0.0 else
+        maxOf(points.maxOf { kotlin.math.abs(it.y - it.x) }, points.first().y, 1.0 - points.last().y)
     fun scaled(strength: Float): ToneCurveShape = scaled(strength.toDouble())
     fun scaled(strength: Double): ToneCurveShape {
         if (mode != ToneCurveMode.CUSTOM || strength == 1.0) return this
         if (strength == 0.0) return identity
+        val scaledPoints = points.toMutableList()
+        val last = scaledPoints.lastIndex
+        if (scaledPoints.size == 2) {
+            val rawX0 = (points[0].x * strength).coerceIn(0.0, 1.0)
+            val rawX1 = (1.0 + (points[1].x - 1.0) * strength).coerceIn(0.0, 1.0)
+            if (rawX0 < rawX1) {
+                scaledPoints[0] = ToneCurvePoint(rawX0, points[0].y)
+                scaledPoints[1] = ToneCurvePoint(rawX1, points[1].y)
+            } else if (rawX1 <= 0.0) {
+                scaledPoints[0] = ToneCurvePoint(0.0, points[0].y)
+                scaledPoints[1] = ToneCurvePoint(Math.nextUp(0.0), points[1].y)
+            } else if (rawX0 >= 1.0) {
+                scaledPoints[0] = ToneCurvePoint(Math.nextDown(1.0), points[0].y)
+                scaledPoints[1] = ToneCurvePoint(1.0, points[1].y)
+            } else {
+                val mid = points[0].x / (points[0].x + (1.0 - points[1].x))
+                scaledPoints[0] = ToneCurvePoint(Math.nextDown(mid), points[0].y)
+                scaledPoints[1] = ToneCurvePoint(Math.nextUp(mid), points[1].y)
+            }
+        } else {
+            val x0 = (points[0].x * strength).coerceIn(0.0, Math.nextDown(points[1].x))
+            val x1 = (1.0 + (points[last].x - 1.0) * strength).coerceIn(Math.nextUp(points[last - 1].x), 1.0)
+            scaledPoints[0] = ToneCurvePoint(x0, points[0].y)
+            scaledPoints[last] = ToneCurvePoint(x1, points[last].y)
+        }
         var previous = 0.0
-        return ToneCurveShape(mode, points.map { point ->
-            val y = (point.x + (point.y - point.x) * strength).coerceIn(previous, 1.0)
+        for (i in scaledPoints.indices) {
+            val point = points[i]
+            val rawY = when (i) {
+                0 -> point.y * strength
+                last -> 1.0 + (point.y - 1.0) * strength
+                else -> point.x + (point.y - point.x) * strength
+            }
+            val y = rawY.coerceIn(previous, 1.0)
             previous = y
-            ToneCurvePoint(point.x, y)
-        })
+            scaledPoints[i] = ToneCurvePoint(scaledPoints[i].x, y)
+        }
+        return ToneCurveShape(mode, scaledPoints)
     }
     fun packed() = points.flatMap { listOf(it.x, it.y) }.toDoubleArray()
     fun isInterior(index: Int) = mode == ToneCurveMode.CUSTOM && index > 0 && index + 1 < points.size
     fun isEndpoint(index: Int) = mode == ToneCurveMode.CUSTOM && points.size >= 2 && (index == 0 || index == points.lastIndex)
+    fun canMoveX(index: Int) = mode == ToneCurveMode.CUSTOM && index in points.indices &&
+        (AdjustmentFieldSpec.SubFields.LightCurve.endpointsXUnpinned || isInterior(index))
     fun canMoveY(index: Int) = mode == ToneCurveMode.CUSTOM && index in points.indices
     fun inserting(x: Double, y: Double): ToneCurveShape {
         if (mode != ToneCurveMode.CUSTOM || points.size >= 33 || !x.isFinite() || !y.isFinite() ||
-            x <= 0 || x >= 1 || points.any { it.x == x }) return this
-        val next = points.indexOfFirst { it.x > x }
+            x < 0.0 || x > 1.0 || points.any { it.x == x }) return this
+        val next = points.indexOfFirst { it.x > x }.let { if (it < 0) points.size else it }
+        val minY = if (next > 0) points[next - 1].y else 0.0
+        val maxY = if (next < points.size) points[next].y else 1.0
         return ToneCurveShape(mode, points.toMutableList().also {
-            it.add(next, ToneCurvePoint(x, y.coerceIn(points[next - 1].y, points[next].y)))
+            it.add(next, ToneCurvePoint(x, y.coerceIn(minY, maxY)))
         })
     }
     fun moving(index: Int, x: Double, y: Double): ToneCurveShape {
         if (!canMoveY(index) || !x.isFinite() || !y.isFinite()) return this
+        val allowX = AdjustmentFieldSpec.SubFields.LightCurve.endpointsXUnpinned
         if (index == 0) {
+            val highX = if (points.size > 1) Math.nextDown(points[1].x) else 1.0
             val maxY = if (points.size > 1) points[1].y else 1.0
             return ToneCurveShape(mode, points.toMutableList().also {
-                it[0] = ToneCurvePoint(0.0, y.coerceIn(0.0, maxY))
+                it[0] = ToneCurvePoint(if (allowX) x.coerceIn(0.0, highX) else 0.0, y.coerceIn(0.0, maxY))
             })
         }
         if (index == points.lastIndex) {
+            val lowX = if (points.size > 1) Math.nextUp(points[index - 1].x) else 0.0
             val minY = if (points.size > 1) points[index - 1].y else 0.0
             return ToneCurveShape(mode, points.toMutableList().also {
-                it[index] = ToneCurvePoint(1.0, y.coerceIn(minY, 1.0))
+                it[index] = ToneCurvePoint(if (allowX) x.coerceIn(lowX, 1.0) else 1.0, y.coerceIn(minY, 1.0))
             })
         }
         val low = Math.nextUp(points[index - 1].x); val high = Math.nextDown(points[index + 1].x)
@@ -101,6 +142,7 @@ data class ToneCurveChannels(
     val isDefault get() = red.isDefault && green.isDefault && blue.isDefault
     val isIdentity get() = red.isIdentity && green.isIdentity && blue.isIdentity
     val hasUnpinnedEndpoints get() = red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
+    val hasFreeEndpointX get() = red.hasFreeEndpointX || green.hasFreeEndpointX || blue.hasFreeEndpointX
     val progress get() = maxOf(red.progress, green.progress, blue.progress)
     fun scaled(strength: Double) = ToneCurveChannels(red.scaled(strength), green.scaled(strength), blue.scaled(strength))
     fun json() = JSONObject().put("red", red.json()).put("green", green.json()).put("blue", blue.json())
@@ -203,6 +245,7 @@ class ToneCurveSettings(
     val isIdentity get() = master.isIdentity && channels.isIdentity && parametric.isIdentity
     val hasChannelCurves get() = !channels.isDefault
     val hasV2Extensions get() = applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
+    val hasFreeEndpointX get() = master.hasFreeEndpointX || channels.hasFreeEndpointX
     val progress get() = maxOf(master.progress, channels.progress, parametric.progress)
     fun shape(channel: ToneCurveChannel) = when (channel) {
         ToneCurveChannel.RGB -> master; ToneCurveChannel.RED -> channels.red
@@ -222,6 +265,7 @@ class ToneCurveSettings(
     fun packed() = master.packed()
     fun isInterior(index: Int) = master.isInterior(index)
     fun isEndpoint(index: Int) = master.isEndpoint(index)
+    fun canMoveX(index: Int) = master.canMoveX(index)
     fun canMoveY(index: Int) = master.canMoveY(index)
     fun inserting(x: Double, y: Double) = replacing(ToneCurveChannel.RGB, master.inserting(x, y))
     fun moving(index: Int, x: Double, y: Double) = replacing(ToneCurveChannel.RGB, master.moving(index, x, y))

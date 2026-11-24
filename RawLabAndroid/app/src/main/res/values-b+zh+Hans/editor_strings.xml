@@ -86,7 +86,7 @@
     <string name="curve_darks">"暗部"</string>
     <string name="curve_edit_point">"编辑控制点"</string>
     <string name="curve_fixed_endpoint">"端点固定"</string>
-    <string name="curve_hint">"点击曲线区域添加控制点，拖动中间点调整。"</string>
+    <string name="curve_hint">"点击曲线区域添加控制点，拖动控制点调整。"</string>
     <string name="curve_input">"输入坐标"</string>
     <string name="curve_lights">"亮部"</string>
     <string name="curve_luminosity_only">"仅作用于明度"</string>

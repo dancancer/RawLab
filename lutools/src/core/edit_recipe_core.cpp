@@ -94,7 +94,18 @@ void hslAxis(const Json& object, const char* key, std::array<float, 8>& destinat
     }
 }
 
-void readToneCurve(const Json& curve, ToneCurveConfig& config, bool allowFreeEndpoints) {
+// SDR 文档 v17 / HDR 处理版本 9 只放开端点 y；SDR v18 / HDR 处理版本 10 起端点 x 也放开。
+ToneCurveEndpoints sdrCurveEndpoints(uint32_t schemaVersion) {
+    if (schemaVersion >= 18) return ToneCurveEndpoints::Free;
+    return schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+}
+
+ToneCurveEndpoints hdrStateCurveEndpoints(uint32_t processingVersion) {
+    if (processingVersion >= kHdrProcessingFreeCurveXVersion) return ToneCurveEndpoints::Free;
+    return processingVersion >= kHdrProcessingV2GradingCurveVersion ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+}
+
+void readToneCurve(const Json& curve, ToneCurveConfig& config, ToneCurveEndpoints endpoints) {
     const std::string path = "edits.tone.curve";
     fields(curve, path, {"mode", "points"});
     const auto mode = text(required(curve, "mode", path), path + ".mode");
@@ -111,7 +122,7 @@ void readToneCurve(const Json& curve, ToneCurveConfig& config, bool allowFreeEnd
             throw std::invalid_argument(path + ".points must contain [x,y] pairs");
         config.points[i] = {point[0].get<double>(), point[1].get<double>()};
     }
-    if (!validToneCurve(config, allowFreeEndpoints))
+    if (!validToneCurve(config, endpoints))
         throw std::invalid_argument(path + ".points are invalid for the selected mode");
 }
 
@@ -201,7 +212,7 @@ void readColorGrading(const Json& grading, CanonicalEditState& parsed, bool allo
     }
 }
 
-void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV12, bool sessionMode) {
+void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV12, ToneCurveEndpoints curveEndpoints, bool sessionMode) {
     if (edits.contains("color_grading")) {
         readColorGrading(edits.at("color_grading"), parsed, allowV12);
     }
@@ -227,7 +238,7 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
                 fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
                 const char* names[]{"red", "green", "blue"};
                 for (size_t i = 0; i < 3; ++i)
-                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], allowV12);
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], curveEndpoints);
                 master.erase("channels");
             }
             if (allowV12 && root.contains("apply_to_luminosity")) {
@@ -238,7 +249,7 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
                 readParametricCurve(root.at("parametric"), parsed.parametricCurve);
                 master.erase("parametric");
             }
-            readToneCurve(master, parsed.toneCurve, allowV12);
+            readToneCurve(master, parsed.toneCurve, curveEndpoints);
             if (parsed.toneCurve.mode == ToneCurveMode::Custom && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -507,7 +518,7 @@ CanonicalEditState parseHdrState(
                 throw std::invalid_argument("Unsupported processing.quality for HDR");
         }
         const uint32_t expectedMin = explicitSchema ? parsed.hdr.processingVersion : 1u;
-        const uint32_t expectedMax = explicitSchema ? parsed.hdr.processingVersion : kHdrProcessingV2GradingCurveVersion;
+        const uint32_t expectedMax = explicitSchema ? parsed.hdr.processingVersion : kHdrProcessingFreeCurveXVersion;
         parsed.hdr.processingVersion = integer(
             required(processing, "version", "processing"), expectedMin, expectedMax, "processing.version");
         if (!explicitSchema) {
@@ -598,7 +609,7 @@ CanonicalEditState parseHdrState(
             fields(edits.at("tone"), "edits.tone", {"contrast", "saturation", "highlights", "shadows"});
         }
         const bool allowV12 = effectiveSchema >= 16;
-        readCommonEdits(edits, parsed, allowV12, sessionMode);
+        readCommonEdits(edits, parsed, allowV12, hdrStateCurveEndpoints(processingVersion), sessionMode);
         if (edits.contains("geometry")) {
             readGeometry(edits.at("geometry"), parsed, true);
         }
@@ -717,7 +728,7 @@ CanonicalEditState parseSdrState(
     const bool sessionMode = options.mode == RecipeParseMode::SessionState;
     if (sessionMode) {
         fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output", "master_recipe", "ai_denoise_blend"});
-    } else if (version == 7 || version == 17) {
+    } else if (version == 7 || version >= 17) {
         fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
     } else if (version >= 5) {
         fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
@@ -729,7 +740,7 @@ CanonicalEditState parseSdrState(
     parsed.isHdr = false;
     parsed.schemaVersion = version;
 
-    if ((version == 7 && !sessionMode) || (root.contains("x3f_mode") && (sessionMode || version == 7 || version == 17))) {
+    if ((version == 7 && !sessionMode) || (root.contains("x3f_mode") && (sessionMode || version == 7 || version >= 17))) {
         const auto mode = sessionMode
             ? text(root.at("x3f_mode"), "x3f_mode")
             : text(required(root, "x3f_mode", "recipe"), "x3f_mode");
@@ -769,7 +780,7 @@ CanonicalEditState parseSdrState(
 
     if (!sessionMode && version == 7 && parsed.rasterInput)
         throw std::invalid_argument("schema_version 7 requires an X3F raw input");
-    if ((version == 17 || sessionMode) && parsed.rasterInput && root.contains("x3f_mode"))
+    if ((version >= 17 || sessionMode) && parsed.rasterInput && root.contains("x3f_mode"))
         throw std::invalid_argument("x3f_mode requires a raw input");
 
     if (parsed.rasterInput && sessionMode) {
@@ -796,7 +807,9 @@ CanonicalEditState parseSdrState(
         }
 
         if (version >= 4 || sessionMode) {
-            readCommonEdits(edits, parsed, allowV12, sessionMode);
+            readCommonEdits(edits, parsed, allowV12,
+                version >= 18 ? ToneCurveEndpoints::Free : allowV12 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned,
+                sessionMode);
         }
 
         if (!sessionMode || edits.contains("exposure")) {
@@ -951,6 +964,7 @@ uint32_t hdrProcessingVersionForSchema(uint32_t schema) noexcept {
     if (schema == 14) return kHdrProcessingLookVersion;
     if (schema == 15) return kHdrProcessingChannelCurvesVersion;
     if (schema == 16) return kHdrProcessingV2GradingCurveVersion;
+    if (schema == 19) return kHdrProcessingFreeCurveXVersion;
     return 0;
 }
 
@@ -959,6 +973,7 @@ uint32_t schemaVersionForHdrProcessing(uint32_t processingVersion) noexcept {
     if (processingVersion >= 2u && processingVersion <= 7u) return processingVersion + 6u;
     if (processingVersion == kHdrProcessingChannelCurvesVersion) return 15u;
     if (processingVersion == kHdrProcessingV2GradingCurveVersion) return 16u;
+    if (processingVersion == kHdrProcessingFreeCurveXVersion) return 19u;
     return 0;
 }
 
@@ -968,7 +983,7 @@ bool validProfileId(const std::string& id) {
 }
 
 RenderParams CanonicalSdrRecipe::toRenderParams() const {
-    const bool freeEndpoints = schemaVersion >= 17;
+    const auto freeEndpoints = sdrCurveEndpoints(schemaVersion);
     RenderParams params{};
     params.inputType = rasterInput ? RenderInputType::DisplayBuffer : RenderInputType::Raw;
     params.inputPath = inputPath;
@@ -1205,7 +1220,7 @@ bool parseCanonicalEditState(
             const uint32_t hdrVer = hdrProcessingVersionForSchema(version);
             if (hdrVer != 0) {
                 isHdrFamily = true;
-            } else if (version != 17 && (version < 1 || version > 7)) {
+            } else if (version != 17 && version != 18 && (version < 1 || version > 7)) {
                 throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
             }
         } else {

@@ -57,5 +57,17 @@ extension ProcessorExportTests {
         v2.curveSettings.applyToLuminosity = true
         let v2Lum = try render(v2)
         check(v2Rgb != v2Lum, "iOS applyToLuminosity produces distinct chrominance-preserving render")
+
+        var freeX = RawSettings.default
+        freeX.curveSettings = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0.2, y: 0.0), .init(x: 0.8, y: 1.0)],
+            channels: ToneCurveChannels(red: ToneCurveShape(mode: .custom, points: [.init(x: 0.15, y: 0.05), .init(x: 0.85, y: 0.95)]))
+        )
+        let fxRgb = freeX.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        let fxRed = freeX.curveSettings.sampledPoints(channel: .red, count: 256)
+        check(fxRgb[0].y == 0.0 && fxRgb[255].y == 1.0 && abs(fxRed[0].y - 0.05) < 1e-5 && abs(fxRed[255].y - 0.95) < 1e-5,
+            "iOS free-X sampling clamps flat outside [x0, x1]")
+        check(try render(freeX) != baseline, "iOS free-X curve reaches native pixels")
     }
 }

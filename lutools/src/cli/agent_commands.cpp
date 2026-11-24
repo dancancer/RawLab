@@ -662,7 +662,7 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
-                    {"processing_versions",{1,2,3,4,5,6,7,8,9}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"processing_versions",{1,2,3,4,5,6,7,8,9,10}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
                     {"effects_recipe_version",11},
                     {"detail_recipe_version",12},
                     {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},
@@ -704,6 +704,8 @@ int runAgentCommands(int argc, char* argv[]) {
             versions.push_back(7);
             if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14, 15, 16}) versions.push_back(version);
             versions.push_back(17);
+            versions.push_back(18);
+            if (hdrAvailable()) versions.push_back(19);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer", "save_preset", "sync_photo_edit"}},
                 {"input_types", inputs},

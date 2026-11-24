@@ -1187,6 +1187,37 @@ void testCameraDevelopmentLensFlagsContract(const TempDir& dir) {
         __FILE__, __LINE__);
 }
 
+void testFreeEndpointXSessionVersions() {
+    using namespace sony2fuji;
+    std::string err;
+    CanonicalEditState state;
+    const Json freeXCurve = {{"mode", "custom"}, {"points", Json::array({Json::array({0.1, 0.0}), Json::array({0.9, 1.0})})}};
+    const auto sdr = [&](uint32_t schema) {
+        return Json({{"schema_version", schema}, {"edits", {{"tone", {{"curve", freeXCurve}}}}}}).dump();
+    };
+    const auto hdr = [&](uint32_t schema, uint32_t processing) {
+        return Json({
+            {"schema_version", schema},
+            {"processing", {{"family", "rawlab_hdr"}, {"version", processing}, {"quality", "standard"}}},
+            {"edits", {{"tone", {{"curve", {{"mode", "legacy"}, {"points", Json::array()},
+                {"channels", {{"green", freeXCurve}}}}}}}}}
+        }).dump();
+    };
+    // 已发布的 SDR 17 / HDR 处理版本 9 只放开端点 y；客户端会话 JSON 遇到端点 x 内移必须写 18 / 19。
+    require(parseCanonicalEditState(sdr(18), state, err, {RecipeParseMode::SessionState, true}) &&
+            !state.isHdr && state.schemaVersion == 18 && state.toneCurve.points[0].x == 0.1,
+        ("SDR session schema 18 must accept free endpoint X: " + err).c_str(), __FILE__, __LINE__);
+    require(!parseCanonicalEditState(sdr(17), state, err, {RecipeParseMode::SessionState, true}),
+        "SDR session schema 17 must reject free endpoint X", __FILE__, __LINE__);
+    require(parseCanonicalEditState(hdr(19, 10), state, err, {RecipeParseMode::SessionState, true}) &&
+            state.isHdr && state.hdr.processingVersion == 10 && state.channelCurves[1].points[0].x == 0.1,
+        ("HDR session schema 19 / processing 10 must accept free endpoint X: " + err).c_str(), __FILE__, __LINE__);
+    require(!parseCanonicalEditState(hdr(16, 9), state, err, {RecipeParseMode::SessionState, true}),
+        "HDR session schema 16 / processing 9 must reject free endpoint X", __FILE__, __LINE__);
+    require(!parseCanonicalEditState(hdr(16, 10), state, err, {RecipeParseMode::SessionState, true}),
+        "HDR schema 16 must not carry processing 10", __FILE__, __LINE__);
+}
+
 } // namespace
 
 TEST_MAIN(
@@ -1196,5 +1227,6 @@ TEST_MAIN(
     testMasterRecipeWbInCore(dir);
     testHdrCanonicalEditStateParityAndCameraRaw(dir);
     testCameraDevelopmentLensFlagsContract(dir);
+    testFreeEndpointXSessionVersions();
     std::cout << "canonical_edit_state_tests passed (" << ::rawlab::test::checkCount() << " checks)\n";
 )

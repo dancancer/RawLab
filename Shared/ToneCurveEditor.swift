@@ -59,7 +59,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
                         }
                         VStack(spacing: 8) { plot.frame(maxWidth: 320); pointControls }
                     }
-                    Text(L10n.text("点击曲线区域添加控制点，拖动中间点调整。"))
+                    Text(L10n.text("点击曲线区域添加控制点，拖动控制点调整。"))
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                     ViewThatFits(in: .horizontal) {
                         HStack { addButton; removeButton; Spacer(minLength: 4); resetButton }

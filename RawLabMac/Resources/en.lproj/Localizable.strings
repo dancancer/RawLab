@@ -786,7 +786,7 @@
 "渲染型 DNG 未生成。" = "Rendered DNG Was Not Created.";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Wheel: %@; Shift: %@; Range: %@ to %@ %@";
 "滨田英明" = "Hideaki Hamada";
-"点击曲线区域添加控制点，拖动中间点调整。" = "Tap the curve area to add a point. Drag interior points to adjust.";
+"点击曲线区域添加控制点，拖动控制点调整。" = "Tap the curve area to add a point. Drag control points to adjust.";
 "点击照片中的中性灰区域取样，按 Esc 退出。" = "Click a neutral gray area on the photo to sample. Press Esc to exit.";
 "点曲线" = "Point Curve";
 "点选添加锚点" = "Click to Pin Anchor";

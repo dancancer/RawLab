@@ -46,18 +46,37 @@ internal static class ToneCurveChecks
             hdrV2Json["edits"]!["tone"]!["curve"]!["parametric"]!["highlights"]!.GetValue<double>() == 15 &&
             hdrV2Json["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 75,
             "HDR v9 curve v2 canonical JSON");
+        // 已发布的 v9 只放开端点 y；端点 x 内移升到处理版本 10 / 文档 schema 19。
+        var hdrFreeX = new HDRSettings().WithTone(new HDRToneSettings {
+            Curve = new ToneCurveSettings(channels: new ToneCurveChannels(new(), new(ToneCurveMode.Custom, [new(0.1, 0), new(0.9, 1)]), new()))
+        });
+        var hdrFreeXJson = JsonNode.Parse(hdrFreeX.ToCanonicalEditStateJson())!.AsObject();
+        Check(hdrFreeX.ProcessingVersion == 10 && hdrFreeX.RecordVersion == 11 &&
+            hdrFreeXJson["schema_version"]!.GetValue<int>() == 19 &&
+            hdrFreeXJson["processing"]!["version"]!.GetValue<int>() == 10 &&
+            JsonSerializer.Deserialize<HDRSettings>(JsonSerializer.Serialize(hdrFreeX)) == hdrFreeX,
+            "HDR free endpoint X persists as processing v10 / record v11 and canonical schema 19");
+        var tamperedFreeX = JsonSerializer.Serialize(hdrFreeX)
+            .Replace("\"hdr_processing_version\":10", "\"hdr_processing_version\":9").Replace("\"record_version\":11", "\"record_version\":10");
+        var tamperedRejected = false;
+        try { JsonSerializer.Deserialize<HDRSettings>(tamperedFreeX); } catch (JsonException) { tamperedRejected = true; }
+        Check(tamperedRejected, "HDR v9 record with free endpoint X is rejected");
         Loc.Initialize("en");
         var coordinate = new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
         Check(coordinate.Parse("0.250000000000001") == curve.Points[1].X && coordinate.Parse("1.000001") == null &&
             new NumericRange(0, 1, .001).Parse("0.2501") == null, "Precise curve input keeps Double coordinates without relaxing other controls");
-        Check(curve.IsEndpoint(0) && curve.IsEndpoint(3) && curve.CanMoveY(0) && curve.CanMoveY(3) &&
+        Check(curve.IsEndpoint(0) && curve.IsEndpoint(3) && curve.CanMoveX(0) && curve.CanMoveX(3) && curve.CanMoveY(0) && curve.CanMoveY(3) &&
             !curve.IsInterior(0) && !curve.IsInterior(3) && curve.Removing(0) == curve && curve.Removing(3) == curve,
-            "Endpoints allow Y movement while disallowing deletion and X drag");
+            "Endpoints allow X and Y movement while disallowing deletion");
         var movedBlack = curve.Moving(0, .2, .1);
-        var clampedBlack = curve.Moving(0, .2, .5);
+        var clampedBlack = curve.Moving(0, .5, .5);
         var movedWhite = curve.Moving(3, .8, .9);
-        Check(movedBlack.Points[0] == new ToneCurvePoint(0, .1) && clampedBlack.Points[0] == new ToneCurvePoint(0, curve.Points[1].Y) &&
-            movedWhite.Points[3] == new ToneCurvePoint(1, .9), "Endpoints move along Y within monotonic neighbor bounds");
+        var clampedWhite = curve.Moving(3, .2, .2);
+        Check(movedBlack.Points[0] == new ToneCurvePoint(.2, .1) &&
+            clampedBlack.Points[0].X < curve.Points[1].X && clampedBlack.Points[0].Y == curve.Points[1].Y &&
+            movedWhite.Points[3] == new ToneCurvePoint(.8, .9) &&
+            clampedWhite.Points[3].X > curve.Points[2].X && clampedWhite.Points[3].Y == curve.Points[2].Y,
+            "Endpoints move along X and Y within monotonic neighbor bounds");
         var moved = curve.Moving(1, 1, 1);
         Check(moved.Points[1].X < moved.Points[2].X && moved.Points[1].Y == .875, "Moving cannot cross adjacent points");
         var state = new Adjustments { Curve = curve }; state.Set(Parameter.ToneCurve, .65);
@@ -72,20 +91,33 @@ internal static class ToneCurveChecks
         Check(Marshal.SizeOf<Native.ToneCurveConfig>() == 544 && config.Count == 4 && config.Points[2] == curve.Points[1].X,
             "Additive curve config retains binary64 points and stable ABI");
         foreach (var bad in new[] { """{"mode":"custom","points":[[0,0],[1,1,2]]}""",
-            """{"mode":"custom","points":[[0.1,0],[1,1]]}""",
+            """{"mode":"custom","points":[[-0.1,0],[1,1]]}""",
+            """{"mode":"custom","points":[[0,0],[1.1,1]]}""",
             """{"mode":"custom","points":[[0,0],[0.5,0.6],[0.6,0.5],[1,1]]}""",
             """{"mode":"custom","points":[[0,0],[1,1]],"future":0}""" })
             Reject(() => JsonSerializer.Deserialize<ToneCurveSettings>(bad));
-        var unpinned = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.125), new(0.5, 0.55), new(1, 0.875)],
+        var unpinned = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.12, 0.08), new(0.5, 0.55), new(0.88, 0.92)],
             applyToLuminosity: true, parametric: new ToneCurveParametric(-10, 15, -5, 20, 0.2, 0.5, 0.8));
         Check(JsonSerializer.Deserialize<ToneCurveSettings>(JsonSerializer.Serialize(unpinned)) == unpinned,
-            "Unpinned Y and parametric curve round-trip");
+            "Unpinned X/Y and parametric curve round-trip");
+        var diagInset = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.1, 0.1), new(0.9, 0.9)]);
+        var insertedOutside = diagInset.Inserting(0.05, 0.05).Inserting(0.95, 0.95);
+        var freeXHalf = new ToneCurveSettings(ToneCurveMode.Custom, unpinned.Points).Scaled(0.5);
+        var crossing = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.4, 0.2), new(0.7, 0.9)]).Scaled(2.0);
         Check(!curve.HasV2Extensions &&
+            !diagInset.IsIdentity && diagInset.Progress > 0 &&
+            insertedOutside.Points[0] == new ToneCurvePoint(0.05, 0.05) && insertedOutside.Points[^1] == new ToneCurvePoint(0.95, 0.95) &&
+            Math.Abs(freeXHalf.Points[0].X - 0.06) < 1e-12 && Math.Abs(freeXHalf.Points[2].X - 0.94) < 1e-12 &&
+            crossing.Points[0].X < crossing.Points[1].X &&
             new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.2), new(1, 0.8)]).HasV2Extensions &&
+            new ToneCurveSettings(ToneCurveMode.Custom, [new(0.1, 0), new(1, 1)]).HasV2Extensions &&
             new ToneCurveSettings(channels: new ToneCurveChannels(
                 new ToneCurveShape(ToneCurveMode.Custom, [new(0, 0.1), new(1, 1)]),
+                new(), new())).HasV2Extensions &&
+            new ToneCurveSettings(channels: new ToneCurveChannels(
+                new ToneCurveShape(ToneCurveMode.Custom, [new(0.1, 0), new(0.9, 1)]),
                 new(), new())).HasV2Extensions,
-            "HasV2Extensions tracks unpinned endpoints on master and channel curves");
+            "HasV2Extensions, IsIdentity, Inserting, and Scaled handle unpinned X/Y endpoints on master and channel curves");
         try {
             AdjustmentPayload.Parse("""{"payload_version":1,"scope_version":1,"source":{"identifier":"a","is_raw":true,"processing_version":3},"values":{"light.curve":{"mode":"custom","points":[[0,0],[1,1]],"apply_to_luminosity":true}}}""");
             throw new Exception("Nested apply_to_luminosity accepted inside light.curve");
@@ -99,6 +131,13 @@ internal static class ToneCurveChecks
         Check(hdrPayload.Source.HdrProcessingVersion == 8 &&
             AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(hdrPayload.ToJson()), Edit(hdrTarget), context).Settings.HDR!.ToneSettings.Curve == channels,
             "HDR v8 channel transfer preserves independent curves");
+        // v10 只放开曲线端点 x；各作用域的捕获、解析与应用都必须接受它，不能因版本映射缺项抛异常。
+        foreach (var scope in new[] { AdjustmentScope.All, AdjustmentScope.Modified, AdjustmentScope.Custom([F.Curve]) }) {
+            var freeXPayload = AdjustmentTransfer.Capture(scope, Edit(new Adjustments { HDR = hdrFreeX }), context);
+            Check(freeXPayload.Source.HdrProcessingVersion == 10 &&
+                AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(freeXPayload.ToJson()), Edit(hdrTarget), context).Settings.HDR!.ToneSettings.Curve == hdrFreeX.ToneSettings.Curve,
+                $"HDR v10 free endpoint X transfer round-trips ({scope})");
+        }
         var all = AdjustmentTransfer.Capture(AdjustmentScope.Modified, Edit(state), context);
         Check(all.Fields.SetEquals([F.SCurve, F.Curve]), "Modified scope includes inactive scalar and selected custom mode");
         var target = new Adjustments(); target.Set(Parameter.ToneCurve, -.25);

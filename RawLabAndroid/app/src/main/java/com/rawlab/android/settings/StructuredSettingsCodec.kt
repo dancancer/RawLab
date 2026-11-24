@@ -197,6 +197,7 @@ internal object StructuredSettingsCodec {
                 fields.number("grain_size", 0.0..100.0), fields.number("grain_roughness", 0.0..100.0))
         } else null
         val version = when {
+            tone?.curve?.hasFreeEndpointX == true -> 10
             tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
             tone?.curve?.hasChannelCurves == true -> 8
             value.has("look") -> 7
@@ -220,7 +221,7 @@ internal object StructuredSettingsCodec {
         } else null
         val camera = if (value.has("camera_development")) decodeHDRCamera(value.getJSONObject("camera_development")) else null
         val expectedRecordVersion = when {
-            version >= 9 -> 10
+            version >= 9 -> version + 1
             version == 8 -> 9
             camera == null -> version
             else -> 8

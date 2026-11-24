@@ -104,5 +104,36 @@ import ImageIO
             require(nativeImage.dataProvider!.data! as Data == agentImage.dataProvider!.data! as Data,
                 "Mac v2 native and Agent FINAL 16-bit pixels agree exactly")
         }
+
+        var freeX = Adjustments()
+        freeX.curveSettings = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0.2, y: 0.0), .init(x: 0.8, y: 1.0)],
+            channels: ToneCurveChannels(red: ToneCurveShape(mode: .custom, points: [.init(x: 0.15, y: 0.05), .init(x: 0.85, y: 0.95)]))
+        )
+        let freeXSamples = freeX.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        require(freeXSamples[0].y == 0.0 && freeXSamples[255].y == 1.0,
+            "free-X RGB sampling clamps flat outside [x0, x1]")
+        let freeXRedSamples = freeX.curveSettings.sampledPoints(channel: .red, count: 256)
+        require(abs(freeXRedSamples[0].y - 0.05) < 1e-5 && abs(freeXRedSamples[255].y - 0.95) < 1e-5,
+            "free-X Red channel sampling clamps flat outside [x0, x1]")
+        let freeXBytes = try bytes(freeX)
+        require(freeXBytes != baseline && freeXBytes != v2RgbBytes, "free-X curve reaches Mac native render")
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_CLI"] {
+            let fxOut = directory.appendingPathComponent("freex-native.png")
+            let fxAgent = directory.appendingPathComponent("freex-agent.png")
+            let fxRecipe = directory.appendingPathComponent("freex-curve.json")
+            _ = try engine.render(url, settings: freeX, lut: nil, edge: nil, output: fxOut)
+            let data = try engine.agentRecipe(url, settings: freeX, lut: nil, output: fxAgent)
+            let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            require((obj["schema_version"] as? Int) == 18, "free-X Agent emits schema_version 18")
+            try data.write(to: fxRecipe)
+            let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = ["--recipe", fxRecipe.path]
+            try process.run(); process.waitUntilExit(); require(process.terminationStatus == 0, "Mac free-X Agent recipe succeeds")
+            let nativeImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(fxOut as CFURL, nil)!, 0, nil)!
+            let agentImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(fxAgent as CFURL, nil)!, 0, nil)!
+            require(nativeImage.dataProvider!.data! as Data == agentImage.dataProvider!.data! as Data,
+                "Mac free-X native and Agent FINAL 16-bit pixels agree exactly")
+        }
     }
 }

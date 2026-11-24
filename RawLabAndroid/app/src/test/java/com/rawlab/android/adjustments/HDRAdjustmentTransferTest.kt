@@ -74,6 +74,21 @@ class HDRAdjustmentTransferTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun freeEndpointXCurveTransfersAsHdrProcessingVersion10() {
+        // v10 只放开曲线端点 x；捕获、编码、解码与应用都必须接受它，不能因版本映射缺项抛异常。
+        val neutral = EditSettings().withHDRMode(true, true)
+        val curve = ToneCurveSettings(com.rawlab.android.settings.ToneCurveMode.CUSTOM,
+            listOf(com.rawlab.android.settings.ToneCurvePoint(0.15, 0.0), com.rawlab.android.settings.ToneCurvePoint(0.85, 1.0)))
+        val source = neutral.withEditingCurve(curve)
+        assertEquals(10, source.hdr!!.processingVersion)
+        val context = AdjustmentTransferContext("hdr", false)
+        for (scope in listOf(AdjustmentScope.All, AdjustmentScope.Modified, AdjustmentScope.Custom(setOf(AdjustmentField.CURVE)))) {
+            val decoded = AdjustmentPayload.decode(AdjustmentTransfer.capture(scope, source, context).encode())
+            assertEquals(10, decoded.source.hdrProcessingVersion)
+            assertEquals(source.hdr, AdjustmentTransfer.prepare(decoded, neutral, context).hdr)
+        }
+    }
+
     @Test fun detailTransfersFourHdrValuesAndRejectsOrdinaryTargets() {
         val neutral = EditSettings().withHDRMode(true, true)
         val source = neutral.withEditingSharpening(1.25f).withEditingClarity(50f).withEditingDehaze(-25f).withHDRDenoise(.75f)

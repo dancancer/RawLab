@@ -27,6 +27,16 @@ import org.junit.Test
 import java.io.File
 
 class HDRNativeRequestTest {
+    @Test fun freeEndpointXSessionStateUsesSchema19() {
+        // 核心按 schema 校验端点：HDR 处理版本 10（端点 x 内移）必须写 schema 19，写 16 会被拒绝。
+        val curve = ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.15, 0.0), ToneCurvePoint(0.85, 1.0)))
+        val settings = HDRSettings().withTone(HDRToneSettings(curve = curve))
+        assertEquals(10, settings.processingVersion)
+        val root = JSONObject(settings.toHdrSessionStateJson())
+        assertEquals(19, root.getInt("schema_version"))
+        assertEquals(10, root.getJSONObject("processing").getInt("version"))
+    }
+
     @Test fun sessionStatePopulatesLookAndSharpeningFields() {
         val sha = "a".repeat(64)
         val lookDir = File("/tmp/looks")

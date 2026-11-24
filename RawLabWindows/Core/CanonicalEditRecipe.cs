@@ -131,7 +131,7 @@ internal static class CanonicalEditRecipe
             : null;
 
         var payload = new Payload(
-            SchemaVersion: hasV12Features ? 17 : (isRaster ? 5 : 7),
+            SchemaVersion: curve.HasFreeEndpointX ? 18 : hasV12Features ? 17 : (isRaster ? 5 : 7),
             X3fMode: isRaster ? null : (settings.X3fMode == X3fMode.Normal ? "normal-v1" : "legacy"),
             Processing: new ProcessingPayload("rawlab", processingVersion, "standard"),
             Input: new InputPayload(null, isRaster ? "raster" : "raw"),

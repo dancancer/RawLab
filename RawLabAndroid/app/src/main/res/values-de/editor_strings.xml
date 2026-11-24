@@ -86,7 +86,7 @@
     <string name="curve_darks">"Dunkle Mitteltöne"</string>
     <string name="curve_edit_point">"Punkt bearbeiten"</string>
     <string name="curve_fixed_endpoint">"Endpunkte sind fest"</string>
-    <string name="curve_hint">"Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen."</string>
+    <string name="curve_hint">"Zum Hinzufügen in die Kurvenfläche tippen. Kontrollpunkte zum Anpassen ziehen."</string>
     <string name="curve_input">"Eingabe"</string>
     <string name="curve_lights">"Helle Mitteltöne"</string>
     <string name="curve_luminosity_only">"Nur Luminanz"</string>

@@ -56,7 +56,7 @@ class SavePresetArguments(Arguments):
     processing_version: int = Field(default=3, ge=1, le=3, description="RawLab SDR processing version (1..3)")
     overwrite: bool = Field(default=False, description="Allow overwriting an existing preset with the same normalized name")
     recipe_context: dict[str, Any] | None = Field(default=None, description="Optional recipe context {id, strength, settings_version}")
-    hdr_processing_version: int | None = Field(default=None, ge=1, le=9, description="Optional HDR processing version when saving an HDR preset (1..9)")
+    hdr_processing_version: int | None = Field(default=None, ge=1, le=10, description="Optional HDR processing version when saving an HDR preset (1..10)")
 
 
 class SyncPhotoEditArguments(Arguments):

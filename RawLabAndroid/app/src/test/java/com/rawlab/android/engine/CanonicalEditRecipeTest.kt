@@ -154,6 +154,24 @@ class CanonicalEditRecipeTest {
             ),
         )
         assertEquals(17, JSONObject(unpinnedChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+
+        // 已发布的 v17 只放开端点 y；端点 x 内移必须升到 v18。
+        val freeXMaster = EditSettings(
+            curve = ToneCurveSettings(
+                mode = ToneCurveMode.CUSTOM,
+                points = listOf(ToneCurvePoint(0.15, 0.0), ToneCurvePoint(0.85, 1.0)),
+            ),
+        )
+        assertEquals(18, JSONObject(freeXMaster.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+        assertEquals(18, JSONObject(freeXMaster.toCanonicalRecipeJson(isRaster = true)).getInt("schema_version"))
+        val freeXChannel = EditSettings(
+            curve = ToneCurveSettings(
+                channels = ToneCurveChannels(
+                    blue = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.9, 1.0))),
+                ),
+            ),
+        )
+        assertEquals(18, JSONObject(freeXChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
     }
 
     @Test

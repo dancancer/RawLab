@@ -208,12 +208,12 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_capabilities_negotiate_hdr_recipe_versions(self):
         adapter = self.adapter(
-            FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18",
+            FAKE_VERSIONS="1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20",
             FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze,print_transfer",
         )
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17))
-        self.assertEqual(capabilities.result["recipe_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17])
+        self.assertEqual(capabilities.recipe_versions, tuple(range(1, 20)))
+        self.assertEqual(capabilities.result["recipe_versions"], list(range(1, 20)))
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer",
         ])

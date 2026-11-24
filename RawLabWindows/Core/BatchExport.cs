@@ -241,7 +241,7 @@ public sealed class BatchJournal
         if (IsFutureInteger(settings, "ProRAWDecodeVersion", HDRNative.ProRAWDecodeVersion)) return true;
         if (TryGetObject(settings, "HDR", out var hdr))
         {
-            if (IsFutureInteger(hdr, "hdr_processing_version", 9) || IsFutureInteger(hdr, "record_version", 10)) return true;
+            if (IsFutureInteger(hdr, "hdr_processing_version", 10) || IsFutureInteger(hdr, "record_version", 11)) return true;
             if (TryGetObject(hdr, "camera_development", out var camera) && IsFutureInteger(camera, "version", 1)) return true;
         }
         return false;

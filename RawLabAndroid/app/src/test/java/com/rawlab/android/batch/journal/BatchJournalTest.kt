@@ -377,7 +377,7 @@ class BatchJournalTest {
         assertTrue(settingsRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
     }
 
-    @Test fun hdrV9ProcessingVersionIsAcceptedWhileV10RefusesQuarantine() {
+    @Test fun hdrV9ProcessingVersionIsAcceptedWhileV11RefusesQuarantine() {
         val hdrRoot = temporary.newFolder("hdr-v9-case")
         val journal = BatchJournal(hdrRoot)
         val v9Curve = com.rawlab.android.settings.ToneCurveSettings(
@@ -399,12 +399,12 @@ class BatchJournalTest {
         val properties = Properties().also { record.inputStream().use(it::load) }
         val settings = properties.getProperty("source.settings")
         assertTrue(settings.contains("\"hdr_processing_version\":9"))
-        properties.setProperty("source.settings", settings.replace("\"hdr_processing_version\":9", "\"hdr_processing_version\":10"))
+        properties.setProperty("source.settings", settings.replace("\"hdr_processing_version\":9", "\"hdr_processing_version\":11"))
         record.outputStream().use { properties.store(it, null) }
 
         var thrown = false
         try { journal.pending() } catch (_: Exception) { thrown = true }
-        assertTrue("HDR processing version 10 must be refused as future without quarantine", thrown)
+        assertTrue("HDR processing version 11 must be refused as future without quarantine", thrown)
         assertTrue(record.exists())
         assertTrue(hdrRoot.listFiles()?.none { it.name.contains(".corrupt-") } ?: true)
     }

@@ -23,8 +23,8 @@ public enum BatchJournalVersionKey: String, CaseIterable, Sendable {
         case .frozen, .frozenSettings, .hdrCameraDevelopment: return 1
         case .processing: return ProcessingIdentity.current.version
         case .masterRecipeSettings: return 4
-        case .hdrProcessing: return 9
-        case .hdrRecord: return 10
+        case .hdrProcessing: return 10
+        case .hdrRecord: return 11
         }
     }
 }

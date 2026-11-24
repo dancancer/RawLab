@@ -220,7 +220,7 @@ private fun EditSettings.encodeSdrCore(
     val activeV012 = includeSessionState || renderCurve.hasV2Extensions || grading.hasV2Extensions ||
         rasterRelativeWb || outputSharpening != OutputSharpening.OFF
     val root = JSONObject()
-        .put("schema_version", if (activeV012) 17 else if (isRaster) 5 else 7)
+        .put("schema_version", if (renderCurve.hasFreeEndpointX) 18 else if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)
@@ -254,6 +254,7 @@ internal fun HDRSettings.toHdrSessionStateJson(
 ): String {
     val effectiveVersion = maxOf(processingVersion, if (outputSharpening != OutputSharpening.OFF) 9 else 1)
     val schemaVersion = when (effectiveVersion) {
+        10 -> 19
         9 -> 16
         8 -> 15
         1 -> 6

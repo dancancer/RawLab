@@ -83,6 +83,7 @@ object AdjustmentFieldSpec {
             const val customMaxPoints = 33
             const val coordMin = 0.0
             const val coordMax = 1.0
+            const val endpointsXUnpinned = true
             const val endpointsYUnpinned = true
             val allowedChannels = listOf("red", "green", "blue")
         }

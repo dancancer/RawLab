@@ -114,17 +114,53 @@ int main() {
         require(std::abs(curve.evaluate(tiny/2)-1.0625*tiny)<=4*std::numeric_limits<double>::denorm_min(),
             "subnormal PCHIP reference remains accurate");
 
-        // v2: unpinned endpoints
+        // v2: unpinned endpoints (both X and Y)
         const auto matteFade = config({{0.0, 0.12}, {0.5, 0.52}, {1.0, 0.88}});
-        require(!validToneCurve(matteFade, false), "v1 rejects unpinned endpoints");
-        require(validToneCurve(matteFade, true), "v2 accepts unpinned endpoints");
-        const ToneCurve matteCurve(matteFade, true);
+        require(!validToneCurve(matteFade, ToneCurveEndpoints::Pinned), "v1 rejects unpinned endpoints");
+        require(validToneCurve(matteFade, ToneCurveEndpoints::FreeY), "v2 accepts unpinned endpoints");
+        const ToneCurve matteCurve(matteFade, ToneCurveEndpoints::FreeY);
         require(matteCurve.active() && matteCurve.gpuSupported(), "unpinned curve active and GPU supported");
         require(std::abs(matteCurve.evaluate(-0.2) - 0.12) < 1e-12 &&
                 std::abs(matteCurve.evaluate(0.0) - 0.12) < 1e-12 &&
                 std::abs(matteCurve.evaluate(1.0) - 0.88) < 1e-12 &&
                 std::abs(matteCurve.evaluate(1.5) - 0.88) < 1e-12,
             "unpinned curve clamps outside [0,1] to y0 and y1");
+
+        const auto freeXClip = config({{0.15, 0.0}, {0.85, 1.0}});
+        require(!validToneCurve(freeXClip, ToneCurveEndpoints::Pinned), "v1 rejects unpinned X endpoints");
+        require(!validToneCurve(freeXClip, ToneCurveEndpoints::FreeY), "SDR v17 / HDR v9 rejects unpinned X endpoints");
+        require(validToneCurve(freeXClip, ToneCurveEndpoints::Free), "SDR v18 / HDR v10 accepts unpinned X endpoints");
+        const ToneCurve clipCurve(freeXClip, ToneCurveEndpoints::Free);
+        require(clipCurve.active() && clipCurve.gpuSupported(), "free-X clip curve active and GPU supported");
+        require(clipCurve.evaluate(0.0) == 0.0 && clipCurve.evaluate(0.15) == 0.0 &&
+                clipCurve.evaluate(0.85) == 1.0 && clipCurve.evaluate(1.0) == 1.0 &&
+                std::abs(clipCurve.evaluate(0.5) - 0.5) < 1e-12,
+            "free-X clip curve clamps flat outside [x0, x1] and interpolates inside");
+
+        const auto diagInset = config({{0.1, 0.1}, {0.9, 0.9}});
+        require(validToneCurve(diagInset, ToneCurveEndpoints::Free), "diagonal inset curve valid");
+        const ToneCurve diagCurve(diagInset, ToneCurveEndpoints::Free);
+        require(diagCurve.active(), "diagonal inset curve with x0!=0/x1!=1 must not bypass");
+        require(std::abs(diagCurve.evaluate(0.0) - 0.1) < 1e-12 &&
+                std::abs(diagCurve.evaluate(0.5) - 0.5) < 1e-12 &&
+                std::abs(diagCurve.evaluate(1.0) - 0.9) < 1e-12,
+            "diagonal inset curve clamps outside [0.1, 0.9]");
+
+        const auto freeXY = config({{0.15, 0.08}, {0.5, 0.55}, {0.85, 0.92}});
+        require(validToneCurve(freeXY, ToneCurveEndpoints::Free), "combined free X/Y endpoints valid");
+        const ToneCurve freeXYCurve(freeXY, ToneCurveEndpoints::Free);
+        require(std::abs(freeXYCurve.evaluate(0.05) - 0.08) < 1e-12 &&
+                std::abs(freeXYCurve.evaluate(0.95) - 0.92) < 1e-12,
+            "combined free X/Y curve clamps flat outside [x0, x_{n-1}]");
+
+        for (auto badFree : {
+            config({{-0.01, 0.0}, {1.0, 1.0}}),
+            config({{0.0, 0.0}, {1.01, 1.0}}),
+            config({{0.5, 0.0}, {0.5, 1.0}}),
+            config({{0.2, 0.8}, {0.8, 0.2}})
+        }) {
+            require(!validToneCurve(badFree, ToneCurveEndpoints::Free), "v2 still rejects out-of-range or non-monotone endpoints");
+        }
 
         // v2: parametric curve validation, zero-band bypass with custom splits, and strict monotonicity
         ToneCurveParametricConfig zeroCustomSplits{};

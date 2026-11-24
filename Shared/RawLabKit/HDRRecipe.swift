@@ -81,7 +81,7 @@ public enum HDRRecipe {
             outputPayload["output_sharpening"] = outputSharpening.rawValue
         }
         let document: [String:Any]=[
-            "schema_version": version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6,
+            "schema_version": version == 10 ? 19 : version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6,
             "processing":["family":"rawlab_hdr","version":version,"quality":"standard"],
             "input":["path":input.standardizedFileURL.path,"type":"hdr_raster"],
             "edits":edits,

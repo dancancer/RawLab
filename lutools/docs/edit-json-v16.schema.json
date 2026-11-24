@@ -659,7 +659,7 @@
                 "mode": "legacy",
                 "points": []
               },
-              "description": "Normalized luminance curve from -8 to +8 EV relative to SDR reference white (0.5); runtime checks fixed endpoints and monotone points."
+              "description": "Normalized luminance curve from -8 to +8 EV relative to SDR reference white (0.5); endpoint x is fixed at 0 and 1, endpoint y may move within [0,1], and the runtime checks monotone points."
             }
           },
           "allOf": [

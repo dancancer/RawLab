@@ -98,7 +98,7 @@ class BatchJournal internal constructor(
                         processing.optInt("version") > ProcessingIdentity.CURRENT.version) return true
                     if (settings.optInt("masterRecipeSettingsVersion", 3) > 4) return true
                     val hdr = settings.optJSONObject("hdr")
-                    return hdr != null && (hdr.optInt("hdr_processing_version") > 9 || hdr.optInt("record_version") > 10 ||
+                    return hdr != null && (hdr.optInt("hdr_processing_version") > 10 || hdr.optInt("record_version") > 11 ||
                         (hdr.optJSONObject("camera_development")?.optInt("version") ?: 0) > 1)
                 } catch (_: Exception) {
                     // Not valid JSON (e.g. legacy film ID like "v2:{custom-look}|..." or corrupt JSON).

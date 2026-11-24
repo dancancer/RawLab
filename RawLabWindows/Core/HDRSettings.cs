@@ -122,8 +122,9 @@ internal sealed record HDRCameraDevelopmentSettings(bool CustomWhiteBalance = fa
 [JsonConverter(typeof(HDRSettingsJsonConverter))]
 public sealed record HDRSettings
 {
-    public int RecordVersion => ProcessingVersion == 9 ? 10 : ProcessingVersion == 8 ? 9 : CameraDevelopment == null ? ProcessingVersion : 8;
-    public int ProcessingVersion => (Tone?.Curve.HasV2Extensions == true || Color?.Grading.HasV2Extensions == true) ? 9
+    public int RecordVersion => ProcessingVersion >= 9 ? ProcessingVersion + 1 : ProcessingVersion == 8 ? 9 : CameraDevelopment == null ? ProcessingVersion : 8;
+    public int ProcessingVersion => Tone?.Curve.HasFreeEndpointX == true ? 10
+        : (Tone?.Curve.HasV2Extensions == true || Color?.Grading.HasV2Extensions == true) ? 9
         : Tone?.Curve.HasChannelCurves == true ? 8 : Look != null ? 7 : Detail != null ? 6 : Effects != null ? 5 : Rendition != null ? 4 : Color != null ? 3 : Tone != null ? 2 : 1;
     public HDRMode Mode { get; init; } = HDRMode.Hdr;
     public double Exposure { get; init; }
@@ -248,7 +249,8 @@ public sealed record HDRSettings
             1 => 6,
             >= 2 and <= 7 => effectiveVersion + 6,
             8 => 15,
-            _ => 16
+            9 => 16,
+            _ => 19
         };
         var tone = ToneSettings;
         var color = ColorSettings;
@@ -513,10 +515,11 @@ internal sealed class HDRSettingsJsonConverter : JsonConverter<HDRSettings>
         double Number(string name) => value.GetProperty(name).GetDouble();
         var parsedTone = extended ? ReadTone(toneValue) : null;
         var parsedColor = color ? ReadColor(colorValue) : null;
-        var version = (parsedTone?.Curve.HasV2Extensions == true || parsedColor?.Grading.HasV2Extensions == true) ? 9
+        var version = parsedTone?.Curve.HasFreeEndpointX == true ? 10
+            : (parsedTone?.Curve.HasV2Extensions == true || parsedColor?.Grading.HasV2Extensions == true) ? 9
             : parsedTone?.Curve.HasChannelCurves == true ? 8 : look ? 7 : detail ? 6 : effects ? 5 : rendition ? 4 : color ? 3 : extended ? 2 : 1;
         if (look && !detail || detail && !effects || effects && !rendition || rendition && !color || color && !extended ||
-            Integer("record_version") != (version == 9 ? 10 : version == 8 ? 9 : camera ? 8 : version) || Integer("hdr_processing_version") != version)
+            Integer("record_version") != (version >= 9 ? version + 1 : version == 8 ? 9 : camera ? 8 : version) || Integer("hdr_processing_version") != version)
             throw new JsonException("Unsupported HDR settings version");
         var mode = value.GetProperty("mode").GetString() switch {
             "sdr" => HDRMode.Sdr, "hdr" => HDRMode.Hdr, _ => throw new JsonException("Invalid HDR mode")

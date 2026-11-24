@@ -207,8 +207,8 @@ struct Params {
 };
 
 inline float customToneCurve(float x, constant Params& p) {
-    if (x <= 0.0f) return p.curveRanges[0][2];
-    if (x >= 1.0f) return p.curveRanges[p.customCurveCount - 1u][3];
+    if (x <= p.curveRanges[0][0]) return p.curveRanges[0][2];
+    if (x >= p.curveRanges[p.customCurveCount - 1u][1]) return p.curveRanges[p.customCurveCount - 1u][3];
     uint i = 0;
     while (i + 1u < p.customCurveCount && x > p.curveRanges[i][1]) ++i;
     return pchipSegment(x, p.curveRanges[i][0], p.curveRanges[i][1], p.curveRanges[i][2],
@@ -218,8 +218,8 @@ inline float customToneCurve(float x, constant Params& p) {
 inline float channelToneCurve(float x, uint ch, constant Params& p) {
     uint count = p.channelCurveCount[ch];
     if (count == 0u) return x;
-    if (x <= 0.0f) return p.channelCurveRanges[ch][0][2];
-    if (x >= 1.0f) return p.channelCurveRanges[ch][count - 1u][3];
+    if (x <= p.channelCurveRanges[ch][0][0]) return p.channelCurveRanges[ch][0][2];
+    if (x >= p.channelCurveRanges[ch][count - 1u][1]) return p.channelCurveRanges[ch][count - 1u][3];
     uint i = 0;
     while (i + 1u < count && x > p.channelCurveRanges[ch][i][1]) ++i;
     return pchipSegment(x, p.channelCurveRanges[ch][i][0], p.channelCurveRanges[ch][i][1],

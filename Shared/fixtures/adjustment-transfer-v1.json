@@ -1617,7 +1617,7 @@
             "mode": "custom",
             "points": [
               [
-                0.05,
+                -0.05,
                 0
               ],
               [
@@ -1950,6 +1950,28 @@
             "split_shadow": 0.2,
             "split_midtone": 0.5,
             "split_highlight": 0.8
+          }
+        }
+      }
+    },
+    {
+      "id": "curve-unpinned-endpoint-x-valid",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-curve",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [0.15, 0],
+              [0.85, 1]
+            ]
           }
         }
       }

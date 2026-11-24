@@ -246,4 +246,27 @@ final class HDRSettingsTests: XCTestCase {
         XCTAssertTrue(look.isIdentity)
         XCTAssertEqual(look.processingVersion, 7)
     }
+
+    func testFreeEndpointXRequiresProcessingVersion10() throws {
+        var freeY = HDRSettings()
+        freeY.toneSettings.curve = ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0.1), .init(x: 1, y: 0.9)])
+        XCTAssertEqual(freeY.processingVersion, 9)
+        XCTAssertEqual(freeY.recordVersion, 10)
+
+        var freeX = HDRSettings()
+        freeX.toneSettings.curve.channels.green = ToneCurveShape(mode: .custom, points: [.init(x: 0.1, y: 0), .init(x: 0.9, y: 1)])
+        XCTAssertEqual(freeX.processingVersion, 10)
+        XCTAssertEqual(freeX.recordVersion, 11)
+        let encoded = try JSONEncoder().encode(freeX)
+        XCTAssertEqual(try JSONDecoder().decode(HDRSettings.self, from: encoded), freeX)
+
+        // 声称 v9 却带端点 x 内移的记录是不一致数据，必须拒绝而不是静默改写版本号。
+        var object = try XCTUnwrap(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["hdr_processing_version"] = 9
+        object["record_version"] = 10
+        XCTAssertThrowsError(try JSONDecoder().decode(HDRSettings.self, from: JSONSerialization.data(withJSONObject: object)))
+        object["hdr_processing_version"] = 11
+        object["record_version"] = 12
+        XCTAssertThrowsError(try JSONDecoder().decode(HDRSettings.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
 }

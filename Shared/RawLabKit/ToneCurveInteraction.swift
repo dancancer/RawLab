@@ -92,7 +92,8 @@ public final class ToneCurveInputSession {
         if remove {
             guard original.isInterior(config.selected) else { return }
         } else {
-            guard original.canMoveY(config.selected) else { return }
+            guard (horizontal == 0 || original.canMoveX(config.selected)) &&
+                  (vertical == 0 || original.canMoveY(config.selected)) else { return }
         }
         let point = original.points[config.selected], step = fine || config.fine ? 0.001 : 0.01
         let next = remove ? original.removing(index: config.selected) : original.moving(index: config.selected,

@@ -756,11 +756,11 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         maxHDR.colorSettings.grading.blending = 75
         maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
             mode: .custom,
-            points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
+            points: [ToneCurvePoint(x: 0.1, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
         )
         maxHDR.toneSettings.curve.applyToLuminosity = true
-        try check(maxHDR.processingVersion == 9 && maxHDR.recordVersion == 10,
-                  "v2 HDR settings exercise processingVersion 9 and recordVersion 10")
+        try check(maxHDR.processingVersion == 10 && maxHDR.recordVersion == 11,
+                  "free endpoint X HDR settings exercise processingVersion 10 and recordVersion 11")
         let expectedMax: (BatchJournalVersionKey) -> Int = { key in
             switch key {
             case .job: return 3

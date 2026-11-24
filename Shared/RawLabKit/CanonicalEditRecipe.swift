@@ -122,7 +122,7 @@ public enum CanonicalEditRecipe {
             state.outputSharpening != .off || rasterRelativeActive
 
         let payload = Payload(
-            schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
+            schemaVersion: state.toneCurve.hasFreeEndpointX ? 18 : hasV12Features ? 17 : (state.isRaster ? 5 : 7),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
@@ -641,8 +641,9 @@ public enum CanonicalEditRecipe {
             }
         }
 
+        // 会话状态同样按 schema 校验曲线端点：端点 x 内移只在 v18 合法。
         let payload = Payload(
-            schemaVersion: 17,
+            schemaVersion: state.toneCurve.hasFreeEndpointX ? 18 : 17,
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
@@ -775,7 +776,7 @@ public enum CanonicalEditRecipe {
         }
         let g = settings.geometry
         let version = max(settings.processingVersion, outputSharpening != .off ? 9 : 1)
-        let schemaVersion = version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6
+        let schemaVersion = version == 10 ? 19 : version == 9 ? 16 : version == 8 ? 15 : version == 1 ? 6 : version + 6
 
         var tone: [String: Any] = [
             "contrast": 1 + settings.contrast / 100,

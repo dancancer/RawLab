@@ -5503,13 +5503,13 @@
     "ja": "端点は固定されています",
     "zh-Hans": "端点固定"
   },
-  "点击曲线区域添加控制点，拖动中间点调整。": {
-    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen.",
-    "en": "Tap the curve area to add a point. Drag interior points to adjust.",
-    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.",
-    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.",
-    "ja": "カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。",
-    "zh-Hans": "点击曲线区域添加控制点，拖动中间点调整。"
+  "点击曲线区域添加控制点，拖动控制点调整。": {
+    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Kontrollpunkte zum Anpassen ziehen.",
+    "en": "Tap the curve area to add a point. Drag control points to adjust.",
+    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos de control para ajustar.",
+    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points de contrôle pour ajuster.",
+    "ja": "カーブ領域をタップして点を追加します。制御点をドラッグして調整します。",
+    "zh-Hans": "点击曲线区域添加控制点，拖动控制点调整。"
   },
   "曲线模式与控制点": {
     "de": "Kurvenmodus und Punkte",

@@ -88,6 +88,35 @@ internal static class ToneCurveRenderChecks
             check(process.ExitCode == 0, "Curve v2 CLI succeeds: " + stderr.GetAwaiter().GetResult());
         }
         check(Bytes(Load(v2Gui)).SequenceEqual(Bytes(Load(v2Agent))), "Native v2 export and Agent schema v17 FINAL pixels agree");
+        var freeX = new ToneCurveSettings(
+            ToneCurveMode.Custom,
+            [new(0.2, 0.0), new(0.8, 1.0)],
+            channels: new ToneCurveChannels(
+                new ToneCurveShape(ToneCurveMode.Custom, [new(0.15, 0.05), new(0.85, 0.95)]),
+                new(), new()));
+        var fxRgb = ToneCurveSampling.Samples(freeX, ToneCurveChannel.Rgb, count: 256);
+        var fxRed = ToneCurveSampling.Samples(freeX, ToneCurveChannel.Red, count: 256);
+        check(fxRgb[0].Y == 0.0 && fxRgb[^1].Y == 1.0 && Math.Abs(fxRed[0].Y - 0.05) < 1e-5 && Math.Abs(fxRed[^1].Y - 0.95) < 1e-5,
+            "Free-X sampling clamps flat outside [x0, x1]");
+        settings.Curve = freeX;
+        var fxGui = Path.Combine(output, "native-freex.png");
+        var fxAgent = Path.Combine(output, "agent-freex.png");
+        engine.Render(input, settings, null, 0, output: fxGui);
+        var fxRecipe = engine.AgentRecipe(input, settings, null, fxAgent);
+        using (var parsed = JsonDocument.Parse(fxRecipe)) {
+            check(parsed.RootElement.GetProperty("schema_version").GetInt32() == 18,
+                "Agent emits schema_version 18 for free-X curve endpoints");
+        }
+        var fxRecipeFile = Path.Combine(output, "curve-freex.json");
+        File.WriteAllText(fxRecipeFile, fxRecipe);
+        var fxStart = new ProcessStartInfo(cli){UseShellExecute=false,RedirectStandardOutput=true,RedirectStandardError=true,CreateNoWindow=true};
+        fxStart.ArgumentList.Add("--recipe"); fxStart.ArgumentList.Add(fxRecipeFile);
+        using (var process = Process.Start(fxStart)!) {
+            _ = process.StandardOutput.ReadToEndAsync(); var stderr = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(60000)) { process.Kill(true); throw new TimeoutException("Curve free-X CLI timeout"); }
+            check(process.ExitCode == 0, "Curve free-X CLI succeeds: " + stderr.GetAwaiter().GetResult());
+        }
+        check(Bytes(Load(fxGui)).SequenceEqual(Bytes(Load(fxAgent))), "Native free-X export and Agent schema v17 FINAL pixels agree");
         settings.Curve=new();check(Preview(settings).SequenceEqual(legacy),"Legacy clears the reused custom session");
         check(Preview(neutral).SequenceEqual(baseline),"Reset clears complete curve state");
     }

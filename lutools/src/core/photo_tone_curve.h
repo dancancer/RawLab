@@ -36,7 +36,15 @@ struct ToneCurveParametricConfig {
     bool active() const noexcept;
 };
 
-bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints = false);
+// 端点放开的程度随持久化版本递进：v1 固定 (0,0)/(1,1)；SDR v17 / HDR v9 只放开端点 y；
+// SDR v18 / HDR v10 起端点 x 也可内移，超出 [x0, x_{n-1}] 的输入平直截断。
+enum class ToneCurveEndpoints : uint8_t {
+    Pinned = 0,
+    FreeY = 1,
+    Free = 2
+};
+
+bool validToneCurve(const ToneCurveConfig& config, ToneCurveEndpoints endpoints = ToneCurveEndpoints::Pinned);
 
 // 归一化区间切线避免把很窄区间展开成溢出的三次多项式系数。
 struct ToneCurveSegment {
@@ -46,7 +54,7 @@ struct ToneCurveSegment {
 class ToneCurve {
 public:
     ToneCurve() = default;
-    explicit ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints = false);
+    explicit ToneCurve(const ToneCurveConfig& config, ToneCurveEndpoints endpoints = ToneCurveEndpoints::Pinned);
     bool custom() const { return custom_; }
     bool active() const { return active_; }
     bool gpuSupported() const { return gpuSupported_; }

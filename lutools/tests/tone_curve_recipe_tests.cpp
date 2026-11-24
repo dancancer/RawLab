@@ -16,7 +16,7 @@ int main() {
         require(recipe.toneCurve.count==4,"points preserved");
         const auto saved=serializeEditRecipe(recipe);
         require(Json::parse(saved)["edits"]["tone"]["curve"]==doc["edits"]["tone"]["curve"],"curve round trip exact");
-        for (int kind=0;kind<12;++kind) {
+        for (int kind=0;kind<13;++kind) {
             auto bad=doc;auto& curve=bad["edits"]["tone"]["curve"];
             if(kind==0)curve["mode"]="unknown";
             if(kind==1)curve["extra"]=0;
@@ -30,6 +30,7 @@ int main() {
             if(kind==9)curve["points"][1]={.1,.2,.3};
             if(kind==10)bad["edits"]["tone"]["s_curve"]=.1;
             if(kind==11)curve["mode"]="legacy";
+            if(kind==12)curve["points"][0]={.1,0};
             require(!parseEditRecipe(bad.dump(),recipe,error),"invalid curve rejected "+std::to_string(kind));
             require(serializeEditRecipe(recipe)==saved,"invalid parse retains previous recipe");
         }
@@ -53,25 +54,42 @@ int main() {
         require(parseEditRecipe(doc.dump(),recipe,error),"v4 remains valid");
         require(!Json::parse(serializeEditRecipe(recipe))["edits"]["tone"].contains("curve"),"v4 serialization stays unchanged");
 
-        Json v17={{"schema_version",17},{"processing",{{"family","rawlab"},{"version",3},{"quality","standard"}}},
+        Json v18={{"schema_version",18},{"processing",{{"family","rawlab"},{"version",3},{"quality","standard"}}},
             {"input",{{"path","input.dng"}}},{"edits",{{"exposure",{{"mode","sensor"}}},{"tone",{{"curve",{
                 {"mode","custom"},
-                {"points",{{0,0.12},{0.5,0.52},{1,0.88}}},
+                {"points",{{0.15,0.12},{0.5,0.52},{0.85,0.88}}},
                 {"apply_to_luminosity",true},
                 {"parametric",{{"shadows",25},{"darks",-15},{"lights",10},{"highlights",-20},
                     {"split_shadow",0.20},{"split_midtone",0.48},{"split_highlight",0.78}}},
-                {"channels",{{"red",{{"mode","custom"},{"points",{{0,0.05},{1,0.95}}}}}}}
+                {"channels",{{"red",{{"mode","custom"},{"points",{{0.1,0.05},{0.9,0.95}}}}}}}
             }}}}}},
             {"output",{{"path","output.png"},{"format","png"}}}};
-        require(parseEditRecipe(v17.dump(),recipe,error),"v17 v2 tone curve accepted: "+error);
-        require(recipe.curveApplyToLuminosity,"v17 apply_to_luminosity parsed");
-        require(recipe.parametricCurve.shadows==25 && recipe.parametricCurve.split_shadow==0.20f,"v17 parametric parsed");
-        require(recipe.toneCurve.points[0].y==0.12 && recipe.toneCurve.points[2].y==0.88,"v17 unpinned master endpoints parsed");
-        require(recipe.channelCurves[0].points[0].y==0.05 && recipe.channelCurves[0].points[1].y==0.95,"v17 unpinned channel endpoints parsed");
-        const auto savedV17=Json::parse(serializeEditRecipe(recipe));
-        require(savedV17["edits"]["tone"]["curve"]["apply_to_luminosity"]==true &&
-                savedV17["edits"]["tone"]["curve"]["parametric"]["shadows"]==25 &&
-                savedV17["edits"]["tone"]["curve"]["points"][0][1]==0.12,"v17 v2 tone curve roundtrips");
+        require(parseEditRecipe(v18.dump(),recipe,error),"v18 v2 tone curve accepted: "+error);
+        require(recipe.curveApplyToLuminosity,"v18 apply_to_luminosity parsed");
+        require(recipe.parametricCurve.shadows==25 && recipe.parametricCurve.split_shadow==0.20f,"v18 parametric parsed");
+        require(recipe.toneCurve.points[0].x==0.15 && recipe.toneCurve.points[0].y==0.12 &&
+                recipe.toneCurve.points[2].x==0.85 && recipe.toneCurve.points[2].y==0.88,"v18 unpinned master X/Y endpoints parsed");
+        require(recipe.channelCurves[0].points[0].x==0.1 && recipe.channelCurves[0].points[0].y==0.05 &&
+                recipe.channelCurves[0].points[1].x==0.9 && recipe.channelCurves[0].points[1].y==0.95,"v18 unpinned channel X/Y endpoints parsed");
+        const auto savedV18=Json::parse(serializeEditRecipe(recipe));
+        require(savedV18["schema_version"]==18 &&
+                savedV18["edits"]["tone"]["curve"]["apply_to_luminosity"]==true &&
+                savedV18["edits"]["tone"]["curve"]["parametric"]["shadows"]==25 &&
+                savedV18["edits"]["tone"]["curve"]["points"][0][0]==0.15 &&
+                savedV18["edits"]["tone"]["curve"]["points"][0][1]==0.12,"v18 v2 tone curve roundtrips");
+        auto v18AsV17=recipe; v18AsV17.schemaVersion=17;
+        bool v17SerializeRejected=false;
+        try { (void)serializeEditRecipe(v18AsV17); } catch (const std::invalid_argument&) { v17SerializeRejected=true; }
+        require(v17SerializeRejected,"v17 serialization rejects free endpoint X");
+
+        // 已发布的 v17 只放开端点 y：端点 x 内移必须升级到 v18，旧版本不会误读新数据。
+        auto v17=v18; v17["schema_version"]=17;
+        require(!parseEditRecipe(v17.dump(),recipe,error),"v17 rejects free master endpoint X");
+        auto v17Channel=v17; v17Channel["edits"]["tone"]["curve"]["points"]={{0,0.12},{0.5,0.52},{1,0.88}};
+        require(!parseEditRecipe(v17Channel.dump(),recipe,error),"v17 rejects free channel endpoint X");
+        v17Channel["edits"]["tone"]["curve"]["channels"]["red"]["points"]={{0,0.05},{1,0.95}};
+        require(parseEditRecipe(v17Channel.dump(),recipe,error),"v17 still accepts free endpoint Y: "+error);
+        require(Json::parse(serializeEditRecipe(recipe))["schema_version"]==17,"v17 free-Y recipe stays v17");
 
         std::cout<<"Tone curve recipe checks passed\n";return 0;
     }catch(const std::exception& error){std::cerr<<error.what()<<'\n';return 1;}

@@ -145,7 +145,7 @@ size_t requestSize(uint32_t v) {
     constexpr size_t sizes[] = {0, sizeof(sony2fuji_hdr_request_v1), sizeof(sony2fuji_hdr_request_v2),
         sizeof(sony2fuji_hdr_request_v3), sizeof(sony2fuji_hdr_request_v4), sizeof(sony2fuji_hdr_request_v5),
         sizeof(sony2fuji_hdr_request_v6), sizeof(sony2fuji_hdr_request_v7), sizeof(sony2fuji_hdr_request_v8),
-        sizeof(sony2fuji_hdr_request_v9)};
+        sizeof(sony2fuji_hdr_request_v9), sizeof(sony2fuji_hdr_request_v9)};
     return v < std::size(sizes) ? sizes[v] : 0;
 }
 void validateRequestVersion(const sony2fuji_hdr_request_v1* req) {
