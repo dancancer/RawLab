@@ -214,7 +214,7 @@ public static class AdjustmentFields
         cameraRaw ? HDRV9Supported.Append(AdjustmentField.HdrCameraDevelopment).ToHashSet() : HDRV9Supported;
     public static IReadOnlySet<AdjustmentField> HDRSupportedFor(int version) => version switch {
         1 => HDRV1Supported, 2 => HDRV2Supported, 3 => HDRV3Supported, 4 => HDRV4Supported,
-        5 => HDRV5Supported, 6 => HDRV6Supported, 7 or 8 => HDRSupported, 9 => HDRV9Supported,
+        5 => HDRV5Supported, 6 => HDRV6Supported, 7 or 8 => HDRSupported, 9 or 10 => HDRV9Supported,
         _ => throw new ArgumentOutOfRangeException(nameof(version))
     };
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };

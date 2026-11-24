@@ -662,7 +662,7 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) {
                 versions.push_back(6); formats.push_back("hdr_jpeg");
                 hdr={{"processing_version",1},{"recipe_min_version",6},{"probe",true},{"decode",true},
-                    {"processing_versions",{1,2,3,4,5,6,7,8,9}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
+                    {"processing_versions",{1,2,3,4,5,6,7,8,9,10}},{"tone_recipe_version",8},{"color_recipe_version",9},{"rendition_recipe_version",10},
                     {"effects_recipe_version",11},
                     {"detail_recipe_version",12},
                     {"look_recipe_version",13},{"look_profile","display-linear-srgb-v1"},

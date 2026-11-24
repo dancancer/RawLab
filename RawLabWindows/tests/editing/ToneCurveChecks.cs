@@ -126,6 +126,13 @@ internal static class ToneCurveChecks
         Check(hdrPayload.Source.HdrProcessingVersion == 8 &&
             AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(hdrPayload.ToJson()), Edit(hdrTarget), context).Settings.HDR!.ToneSettings.Curve == channels,
             "HDR v8 channel transfer preserves independent curves");
+        // v10 只放开曲线端点 x；各作用域的捕获、解析与应用都必须接受它，不能因版本映射缺项抛异常。
+        foreach (var scope in new[] { AdjustmentScope.All, AdjustmentScope.Modified, AdjustmentScope.Custom([F.Curve]) }) {
+            var freeXPayload = AdjustmentTransfer.Capture(scope, Edit(new Adjustments { HDR = hdrFreeX }), context);
+            Check(freeXPayload.Source.HdrProcessingVersion == 10 &&
+                AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(freeXPayload.ToJson()), Edit(hdrTarget), context).Settings.HDR!.ToneSettings.Curve == hdrFreeX.ToneSettings.Curve,
+                $"HDR v10 free endpoint X transfer round-trips ({scope})");
+        }
         var all = AdjustmentTransfer.Capture(AdjustmentScope.Modified, Edit(state), context);
         Check(all.Fields.SetEquals([F.SCurve, F.Curve]), "Modified scope includes inactive scalar and selected custom mode");
         var target = new Adjustments(); target.Set(Parameter.ToneCurve, -.25);

@@ -128,7 +128,7 @@ class AgentCommands(unittest.TestCase):
                     self.assertEqual(capabilities["input_types"], ["hdr_raster", "raw"]+(["proraw"] if proraw else []))
                     self.assertEqual(capabilities["output_formats"], ["hdr_jpeg", "jpeg", "png", "dng"])
                     self.assertEqual(capabilities["processing_version"], 1)
-                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9])
+                    self.assertEqual(capabilities["processing_versions"], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
                     self.assertEqual(capabilities["tone_recipe_version"], 8)
                     self.assertEqual(capabilities["tone_adjustments"], ["black_point", "white_point", "s_curve", "curve"])
                     self.assertEqual(capabilities["color_recipe_version"], 9)
