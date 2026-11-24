@@ -129,7 +129,7 @@ extension RawEditorViewModel {
                                 try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
                                 if rawHDR.isCameraRAW {
                                     context.validateHDRCameraRequest = { candidate in
-                                        guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
+                                        guard let hdr = candidate.hdr else { throw HDRNativeError.invalidSettings }
                                         _ = try file.withReadAccess {
                                             try processor.processHDR(url: $0, settings: hdr, previewLongEdge: 128,
                                                 processing: candidate.processing)

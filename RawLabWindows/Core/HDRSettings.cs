@@ -235,76 +235,213 @@ public sealed record HDRSettings
     private static double Percent(double value) =>
         Math.Round(Math.Clamp(value, -100, 100), 10, MidpointRounding.AwayFromZero);
 
-    internal Native.HDRRequestV9 NativeRenderRequest(HDRIntent intent, uint longEdge = 0, string? lookDirectory = null,
-        OutputSharpening outputSharpening = OutputSharpening.Off)
+    private static readonly JsonSerializerOptions CanonicalStateJsonOptions = new()
     {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
+    internal string ToCanonicalEditStateJson(string? lookDirectory = null, OutputSharpening outputSharpening = OutputSharpening.Off)
+    {
+        var effectiveVersion = Math.Max(ProcessingVersion, outputSharpening != OutputSharpening.Off ? 9 : ProcessingVersion);
+        var schemaVersion = effectiveVersion switch
+        {
+            1 => 6,
+            >= 2 and <= 7 => effectiveVersion + 6,
+            8 => 15,
+            _ => 16
+        };
         var tone = ToneSettings;
         var color = ColorSettings;
         var rendition = RenditionSettings;
-        var effectiveVersion = Math.Max(ProcessingVersion, outputSharpening != OutputSharpening.Off ? 9 : ProcessingVersion);
-        var effects = new Native.HDRRequestV5 {
-            Base = new() {
-                Base = new() {
-                    Base = new() {
-                        Base = NativeRequest(intent, longEdge, effectiveVersion),
-                        BlackPoint = (float)tone.BlackPoint, WhitePoint = (float)tone.WhitePoint, CurveStrength = (float)tone.CurveStrength,
-                        Curve = tone.Curve.NativeConfig()
-                    },
-                    Vibrance = (float)color.Vibrance, Hsl = color.Hsl.NativeConfig(), Grading = color.Grading.NativeConfig()
-                },
-                PeakLimitEV = (float)rendition.PeakLimitEV, SdrExposureEV = (float)rendition.SdrExposureEV,
-                SdrContrast = (float)rendition.SdrContrast, SdrSaturation = (float)rendition.SdrSaturation
-            },
-            Effects = EffectSettings.NativeConfig()
-        };
         var detail = DetailSettings;
         var look = LookSettings;
-        var fingerprint = new byte[65];
-        if (HDRLookSettings.IsFingerprint(look.Sha256)) Encoding.ASCII.GetBytes(look.Sha256!,fingerprint);
-        var lookRequest = new Native.HDRRequestV7 {
-            Base = new() { Base = effects, Sharpening = (float)detail.Sharpening, Clarity = (float)detail.Clarity,
-                Dehaze = (float)detail.Dehaze, Denoise = (float)detail.Denoise },
-            LookPath = look.AssetPath(lookDirectory), LookStrength = (float)look.Strength, LookSha256 = fingerprint
+        var effects = EffectSettings;
+        var hslValues = color.Hsl.Values;
+        var allowV12 = effectiveVersion >= 9;
+
+        object? toneCurveObj = effectiveVersion >= 2
+            ? new
+            {
+                mode = tone.Curve.Mode == ToneCurveMode.Custom ? "custom" : "legacy",
+                points = tone.Curve.Points.Select(p => new[] { p.X, p.Y }).ToArray(),
+                channels = effectiveVersion >= 8 && !tone.Curve.Channels.IsDefault
+                    ? new
+                    {
+                        red = new { mode = tone.Curve.Channels.Red.Mode == ToneCurveMode.Custom ? "custom" : "legacy", points = tone.Curve.Channels.Red.Points.Select(p => new[] { p.X, p.Y }).ToArray() },
+                        green = new { mode = tone.Curve.Channels.Green.Mode == ToneCurveMode.Custom ? "custom" : "legacy", points = tone.Curve.Channels.Green.Points.Select(p => new[] { p.X, p.Y }).ToArray() },
+                        blue = new { mode = tone.Curve.Channels.Blue.Mode == ToneCurveMode.Custom ? "custom" : "legacy", points = tone.Curve.Channels.Blue.Points.Select(p => new[] { p.X, p.Y }).ToArray() }
+                    }
+                    : null,
+                apply_to_luminosity = allowV12 && tone.Curve.ApplyToLuminosity ? (bool?)true : null,
+                parametric = allowV12 && !tone.Curve.Parametric.IsDefault
+                    ? new
+                    {
+                        highlights = tone.Curve.Parametric.Highlights,
+                        lights = tone.Curve.Parametric.Lights,
+                        darks = tone.Curve.Parametric.Darks,
+                        shadows = tone.Curve.Parametric.Shadows,
+                        split_shadow = tone.Curve.Parametric.SplitShadow,
+                        split_midtone = tone.Curve.Parametric.SplitMidtone,
+                        split_highlight = tone.Curve.Parametric.SplitHighlight
+                    }
+                    : null
+            }
+            : null;
+
+        object toneObj = effectiveVersion >= 2
+            ? new
+            {
+                contrast = 1.0 + Contrast / 100.0,
+                saturation = 1.0 + Saturation / 100.0,
+                highlights = -Highlights / 100.0,
+                shadows = Shadows / 100.0,
+                s_curve = tone.Curve.Mode == ToneCurveMode.Custom ? 0.0 : tone.CurveStrength / 100.0,
+                black_point = tone.BlackPoint / 100.0,
+                white_point = tone.WhitePoint / 100.0,
+                curve = toneCurveObj
+            }
+            : new
+            {
+                contrast = 1.0 + Contrast / 100.0,
+                saturation = 1.0 + Saturation / 100.0,
+                highlights = -Highlights / 100.0,
+                shadows = Shadows / 100.0
+            };
+
+        object WheelObj(ColorGradingWheel w) => allowV12 && w.Luminance != 0.0
+            ? new { hue = w.NativeHue, saturation = w.Saturation, luminance = (double?)w.Luminance }
+            : new { hue = w.NativeHue, saturation = w.Saturation, luminance = (double?)null };
+
+        var edits = new Dictionary<string, object?>
+        {
+            ["exposure"] = new { ev = Exposure },
+            ["white_balance"] = new { mode = "relative", relative_temperature = Temperature, relative_tint = Tint },
+            ["tone"] = toneObj,
+            ["geometry"] = new
+            {
+                crop = new { x = Geometry.CropX, y = Geometry.CropY, width = Geometry.CropWidth, height = Geometry.CropHeight },
+                quarter_turns = Geometry.QuarterTurns,
+                flip_horizontal = Geometry.FlipHorizontal,
+                flip_vertical = Geometry.FlipVertical,
+                straighten_degrees = Geometry.StraightenDegrees,
+                perspective = new { horizontal = Geometry.PerspectiveHorizontal, vertical = Geometry.PerspectiveVertical }
+            }
         };
-        var v8 = new Native.HDRRequestV8 {
-            Base = lookRequest,
-            Red = tone.Curve.Channels.Red.NativeConfig(),
-            Green = tone.Curve.Channels.Green.NativeConfig(),
-            Blue = tone.Curve.Channels.Blue.NativeConfig()
+
+        if (effectiveVersion >= 3)
+        {
+            edits["color"] = new { vibrance = color.Vibrance / 100.0 };
+            edits["hsl"] = new
+            {
+                hue = hslValues[0..8],
+                saturation = hslValues[8..16],
+                lightness = hslValues[16..24]
+            };
+            edits["color_grading"] = allowV12
+                ? (object)new
+                {
+                    shadows = WheelObj(color.Grading.Shadows),
+                    midtones = WheelObj(color.Grading.Midtones),
+                    highlights = WheelObj(color.Grading.Highlights),
+                    global = color.Grading.Global.IsDefault ? null : WheelObj(color.Grading.Global),
+                    blending = color.Grading.Blending == 50.0 ? null : (double?)color.Grading.Blending,
+                    balance = color.Grading.Balance == 0.0 ? null : (double?)color.Grading.Balance
+                }
+                : new
+                {
+                    shadows = WheelObj(color.Grading.Shadows),
+                    midtones = WheelObj(color.Grading.Midtones),
+                    highlights = WheelObj(color.Grading.Highlights)
+                };
+        }
+
+        if (effectiveVersion >= 4)
+        {
+            edits["rendition"] = new
+            {
+                peak_limit_ev = rendition.PeakLimitEV,
+                sdr_exposure_ev = rendition.SdrExposureEV,
+                sdr_contrast = rendition.SdrContrast / 100.0,
+                sdr_saturation = rendition.SdrSaturation / 100.0
+            };
+        }
+
+        if (effectiveVersion >= 5)
+        {
+            edits["effects"] = new
+            {
+                vignette_amount = effects.VignetteAmount,
+                vignette_midpoint = effects.VignetteMidpoint,
+                vignette_roundness = effects.VignetteRoundness,
+                vignette_feather = effects.VignetteFeather,
+                vignette_highlights = effects.VignetteHighlights,
+                grain_amount = effects.GrainAmount,
+                grain_size = effects.GrainSize,
+                grain_roughness = effects.GrainRoughness
+            };
+        }
+
+        if (effectiveVersion >= 6)
+        {
+            edits["detail"] = new
+            {
+                sharpening = detail.Sharpening,
+                clarity = detail.Clarity,
+                dehaze = detail.Dehaze,
+                denoise = detail.Denoise
+            };
+        }
+
+        if (effectiveVersion >= 7)
+        {
+            edits["look"] = new
+            {
+                path = look.AssetPath(lookDirectory),
+                sha256 = HDRLookSettings.IsFingerprint(look.Sha256) ? look.Sha256 : null,
+                strength = look.Strength
+            };
+        }
+
+        var state = new
+        {
+            schema_version = schemaVersion,
+            processing = new { family = "rawlab_hdr", version = effectiveVersion, quality = "standard" },
+            edits,
+            output = outputSharpening == OutputSharpening.Off
+                ? null
+                : new { output_sharpening = outputSharpening.WireValue() }
         };
-        return new() {
-            Base = v8,
-            CurveApplyToLuminosity = tone.Curve.ApplyToLuminosity ? 1 : 0,
-            OutputSharpening = (uint)outputSharpening,
-            ParametricCurve = tone.Curve.Parametric.NativeConfig(),
-            GradingV2 = color.Grading.NativeV2Config()
-        };
+        return JsonSerializer.Serialize(state, CanonicalStateJsonOptions);
     }
 
-    private Native.HDRRequest NativeRequest(HDRIntent intent, uint longEdge, int effectiveVersion) => new() {
-        Version = 1, StructSize = (uint)(effectiveVersion switch {
-            1 => Marshal.SizeOf<Native.HDRRequest>(),
-            2 => Marshal.SizeOf<Native.HDRRequestV2>(),
-            3 => Marshal.SizeOf<Native.HDRRequestV3>(),
-            4 => Marshal.SizeOf<Native.HDRRequestV4>(),
-            5 => Marshal.SizeOf<Native.HDRRequestV5>(),
-            6 => Marshal.SizeOf<Native.HDRRequestV6>(),
-            7 => Marshal.SizeOf<Native.HDRRequestV7>(),
-            8 => Marshal.SizeOf<Native.HDRRequestV8>(),
-            _ => Marshal.SizeOf<Native.HDRRequestV9>()
-        }),
-        HDRProcessingVersion = (uint)effectiveVersion, Intent = (uint)intent,
-        ExposureEv = (float)Exposure, Temperature = (float)Temperature, Tint = (float)Tint,
-        // The HDR renderer consumes the shared percentage contract directly.
-        Contrast = (float)Contrast, Highlights = (float)Highlights, Shadows = (float)Shadows,
-        Saturation = (float)Saturation,
-        CropX = (float)Geometry.CropX, CropY = (float)Geometry.CropY,
-        CropWidth = (float)Geometry.CropWidth, CropHeight = (float)Geometry.CropHeight,
-        QuarterTurns = Geometry.QuarterTurns, FlipHorizontal = Geometry.FlipHorizontal ? 1u : 0u,
-        FlipVertical = Geometry.FlipVertical ? 1u : 0u, StraightenDegrees = (float)Geometry.StraightenDegrees,
-        PerspectiveHorizontal = (float)Geometry.PerspectiveHorizontal,
-        PerspectiveVertical = (float)Geometry.PerspectiveVertical, LongEdge = longEdge
-    };
+    internal static string ToCameraDevelopmentEditStateJson(
+        int processingVersion,
+        HDRCameraDevelopmentSettings? development,
+        bool useAi,
+        string? cameraProfileDirectory = null)
+    {
+        var camera = development ?? new();
+        var cameraDev = new
+        {
+            version = 1,
+            wb_mode = camera.CustomWhiteBalance ? "temperature" : "as_shot",
+            temperature = camera.CustomWhiteBalance ? camera.Temperature : 0.0,
+            tint = camera.CustomWhiteBalance ? camera.Tint : 0.0,
+            exposure_reference = camera.SensorExposure ? "sensor" : "metadata",
+            fbdd_level = camera.FbddLevel,
+            lens_distortion = camera.LensDistortion,
+            lens_tca = camera.LensTca,
+            lens_vignetting = camera.LensVignetting,
+            lens_auto_crop = camera.LensAutoCrop,
+            lens_profile_id = camera.LensProfile,
+            camera_profile = camera.CameraProfile is { } profile
+                ? new { path = profile.RequireAsset(cameraProfileDirectory), sha256 = profile.Sha256 }
+                : null,
+            use_ai = useAi,
+            processing_version = Math.Clamp(processingVersion, 1, 3)
+        };
+        return JsonSerializer.Serialize(new { camera_development = cameraDev }, CanonicalStateJsonOptions);
+    }
 
     public static HDRSettings Enabling(HDRSettings? stored, HDRSettings initial, bool sourceIsHDR)
     {

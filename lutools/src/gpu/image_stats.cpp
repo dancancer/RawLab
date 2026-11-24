@@ -37,7 +37,8 @@ bool validateBuffer(const sony2fuji::PixelBufferView& buffer, ImageLayout& layou
 
     if (buffer.format == sony2fuji::PixelBufferFormat::RGB8) {
         layout.channels = 3;
-    } else if (buffer.format == sony2fuji::PixelBufferFormat::RGBA8) {
+    } else if (buffer.format == sony2fuji::PixelBufferFormat::RGBA8 ||
+               buffer.format == sony2fuji::PixelBufferFormat::BGRA8) {
         layout.channels = 4;
     } else {
         return false;
@@ -82,14 +83,15 @@ bool computeImageStatsCPU(const PixelBufferView& buffer, ImageStats& output, boo
         ImageStats result;
         if (includeClipping) result.clipping.assign(layout.maskBytes, 0);
 
+        const bool bgra = buffer.format == PixelBufferFormat::BGRA8;
         for (uint32_t y = 0; y < buffer.height; ++y) {
             const uint8_t* row = layout.data +
                 static_cast<size_t>(y) * static_cast<size_t>(buffer.strideBytes);
             for (uint32_t x = 0; x < buffer.width; ++x) {
                 const size_t pixelOffset = static_cast<size_t>(x) * layout.channels;
-                const uint8_t r = row[pixelOffset];
+                const uint8_t r = row[pixelOffset + (bgra ? 2 : 0)];
                 const uint8_t g = row[pixelOffset + 1];
-                const uint8_t b = row[pixelOffset + 2];
+                const uint8_t b = row[pixelOffset + (bgra ? 0 : 2)];
                 ++result.histogram[r];
                 ++result.histogram[256 + g];
                 ++result.histogram[512 + b];

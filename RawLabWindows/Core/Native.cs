@@ -85,72 +85,27 @@ internal static partial class Native
         public uint OutputNativeWidth, OutputNativeHeight;
     }
     [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequest
+    internal struct RenderOptions
     {
-        public uint Version, StructSize, HDRProcessingVersion, Intent;
-        public float ExposureEv, Temperature, Tint, Contrast, Highlights, Shadows, Saturation;
-        public float CropX, CropY, CropWidth, CropHeight;
-        public int QuarterTurns;
-        public uint FlipHorizontal, FlipVertical;
-        public float StraightenDegrees, PerspectiveHorizontal, PerspectiveVertical;
-        public uint LongEdge;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV2
-    {
-        public HDRRequest Base;
-        public float BlackPoint, WhitePoint, CurveStrength;
+        public uint Version, StructSize;
+        public int InputType, InputPixelFormat;
+        [MarshalAs(UnmanagedType.LPUTF8Str)] public string? InputPath;
+        public IntPtr InputPixels;
+        public uint InputWidth, InputHeight;
+        public int InputColorSpace, InputIsLinear;
+        public int Intent, SizeMode;
+        public uint TargetWidth, TargetHeight, LongEdge, ShortEdge, PreviewLongEdge;
+        public int InteractivePreview, ViewportPreview;
         public uint Reserved;
-        public ToneCurveConfig Curve;
+        public IntPtr ViewportRoi;
+        public int OutputTarget, OutputFormat;
+        [MarshalAs(UnmanagedType.LPUTF8Str)] public string? OutputPath;
+        public uint JpegQuality, Reserved2;
     }
     [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV3
+    internal struct HDRRenderOptions
     {
-        public HDRRequestV2 Base;
-        public float Vibrance;
-        public uint Reserved;
-        public HslConfig Hsl;
-        public ColorGradingConfig Grading;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV4
-    {
-        public HDRRequestV3 Base;
-        public float PeakLimitEV, SdrExposureEV, SdrContrast, SdrSaturation;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV5
-    {
-        public HDRRequestV4 Base;
-        public PhotoEffectsConfig Effects;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV6
-    {
-        public HDRRequestV5 Base;
-        public float Sharpening, Clarity, Dehaze, Denoise;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV7
-    {
-        public HDRRequestV6 Base;
-        [MarshalAs(UnmanagedType.LPUTF8Str)] public string? LookPath;
-        public float LookStrength;
-        public uint Reserved;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 65)] public byte[] LookSha256;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV8 {
-        public HDRRequestV7 Base;
-        public ToneCurveConfig Red, Green, Blue;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct HDRRequestV9 {
-        public HDRRequestV8 Base;
-        public int CurveApplyToLuminosity;
-        public uint OutputSharpening;
-        public ToneCurveParametricConfig ParametricCurve;
-        public ColorGradingV2Config GradingV2;
+        public uint Version, StructSize, Intent, LongEdge;
     }
     [StructLayout(LayoutKind.Sequential)]
     internal struct HDRLookInfo
@@ -480,11 +435,14 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report_v2(Session session, out LensReportV2 report);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report(Session session,out LensReport report);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_inspect_lens(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string input,out LensReport report,[Out] LensProfile[]? profiles,uint capacity,out uint count);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_create_hsl_probe(Session session,ref Request request,ulong sourceRevision,ulong requestRevision,out IntPtr probe);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_create_hsl_probe_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
+        ulong sourceRevision, ulong requestRevision, out IntPtr outProbe);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hsl_probe_sample(IntPtr probe,ref HslProbeQuery query,out HslProbeResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hsl_probe_destroy(IntPtr probe);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_geometry_size(Session session,out uint width,out uint height);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_estimate_auto_exposure(Session session,ref Request request,out float exposure);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_estimate_auto_exposure_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, out float exposure);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_gpu_config(Session session,ref GpuConfig config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_cancellation_callback(
         Session session, CancellationCallback? callback, IntPtr context);
@@ -492,8 +450,6 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_unsupported_reason(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_gpu_fallback_reason(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_gpu_error(Session session);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_interactive_preview(Session session,int enabled);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_viewport_preview(Session session,int enabled);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve_v2(
         ref ToneCurveConfig config, ref ToneCurveParametricConfig parametric, [In] double[] x, [Out] double[] y, uint count);
@@ -506,9 +462,15 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_effective_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_resolve_recipe_wb(Session session,ref RecipeWbRequest request,out RecipeWbResult result);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_sample_wb_probe(Session session, ref Request request, ref WbProbeQuery query, ref WbProbeResult result);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_process(Session session,ref Request request,out Buffer buffer);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_migrate_processing(Session session,ref Request request,ref ProcessingMigrationResult result);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_sample_wb_probe_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
+        ref WbProbeQuery query, ref WbProbeResult result);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_render(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
+        out Buffer outBuffer, IntPtr outRoi);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_migrate_processing_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
+        ref ProcessingMigrationResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_release_buffer(ref Buffer buffer);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_analyze_image(ref Buffer buffer,int mode,[Out] uint[] bins,out uint shadows,out uint highlights,out Buffer mask);
     [DllImport(Dll, EntryPoint="sony2fuji_analyze_image", CallingConvention=CallingConvention.Cdecl)] internal static extern int AnalyzeWithoutMask(ref Buffer buffer,int mode,[Out] uint[] bins,out uint shadows,out uint highlights,IntPtr mask);
@@ -522,16 +484,9 @@ internal static partial class Native
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, int processingVersion, ref HDRSourceInfo info, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_decode(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_decode_camera_raw(
-        Session? session, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options,
-        ref HDRImagePair result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_decode_camera_raw_with_development(
-        Session? session, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options,
-        ref HDRCameraDevelopment development, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, EntryPoint="sony2fuji_hdr_decode_camera_raw_with_development", CallingConvention=CallingConvention.Cdecl)]
-    internal static extern int DecodeWithHDRCameraProfile(Session? session,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options,
-        ref HDRCameraDevelopmentV2 development, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_decode_camera_raw_json(
+        Session? session, [MarshalAs(UnmanagedType.LPUTF8Str)] string file, ref HDRDecodeOptions options,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe_camera_profile(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRCameraProfileInfo info, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe_proraw(
@@ -539,27 +494,31 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_decode_proraw(
         Session? session, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_proraw(
-        Session session, [MarshalAs(UnmanagedType.LPUTF8Str)] string sourcePath, ref HDRRequestV9 request,
-        ref HDRExportConfig config, uint keepHdr, [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRStreamResult result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_geometry_size(
-        uint nativeWidth, uint nativeHeight, ref HDRRequest request, out uint width, out uint height, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_render(
-        Session session, ref HDRImagePair source, ref HDRRequestV9 request, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_create_hsl_probe(
-        Session session, ref HDRImagePair source, ref HDRRequestV9 request, ulong sourceRevision, ulong requestRevision,
-        out IntPtr probe, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_proraw_json(
+        Session session, [MarshalAs(UnmanagedType.LPUTF8Str)] string sourcePath, ref HDRRenderOptions options,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, ref HDRExportConfig config, uint keepHdr,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot, [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
+        ref HDRStreamResult result, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_geometry_size_json(
+        uint nativeWidth, uint nativeHeight, ref HDRRenderOptions options,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, out uint width, out uint height, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_render_json(
+        Session session, ref HDRImagePair source, ref HDRRenderOptions options,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, ref HDRImagePair result, ref HDRDiagnostic diagnostic);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_encode_rgba8(
+        ref HDRBuffer source, out Buffer outRgba8);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_encode_bgra8(
+        ref HDRBuffer source, out Buffer outBgra8);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_create_hsl_probe_json(
+        Session session, ref HDRImagePair source, ref HDRRenderOptions options,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, ulong sourceRevision, ulong requestRevision,
+        out IntPtr outProbe, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_estimate_auto_exposure(
         ref HDRImagePair source, float temperature, float tint, out float exposure, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_jpeg(
         ref HDRImagePair image, ref HDRExportConfig config, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_sdr(
         ref HDRImagePair image, ref HDRSdrExportConfig config, [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_export_stream(
-        Session session, ref HDRStreamSource source, ref HDRRequestV9 request, ref HDRExportConfig config, uint keepHdr,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string temporaryRoot, [MarshalAs(UnmanagedType.LPUTF8Str)] string path,
-        ref HDRStreamResult result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern void sony2fuji_hdr_release_pair(ref HDRImagePair image);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe_look(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRLookInfo info, ref HDRDiagnostic diagnostic);
@@ -569,10 +528,6 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
     internal static extern int sony2fuji_hdr_camera_ai_key(Session session,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, [Out] byte[] key, uint capacity, ref HDRDiagnostic diagnostic);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)]
-    internal static extern int sony2fuji_hdr_decode_camera_raw_with_ai(Session? session,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRDecodeOptions options, ref HDRCameraDevelopment development,
-        ref HDRImagePair result, ref HDRDiagnostic diagnostic);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_available();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_hardware_available();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_ai_get_devices();
@@ -580,12 +535,14 @@ internal static partial class Native
         Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string deviceID);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_diagnostics(Session session);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_denoise(Session session,ref AIConfig config);
-    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_denoise_blend(Session session, float strength);
-    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_prepare_ai(Session session,ref Request request,AIProgress progress,IntPtr context);
+    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_prepare_ai_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
+        AIProgress progress, IntPtr context);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_error(Session session);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_ai_backend(Session session);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern int sony2fuji_preview_lut_compatibility(Session session, ref Request request,
+    internal static extern int sony2fuji_preview_lut_compatibility_json(
+        Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string configuration, ref Buffer output);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int sony2fuji_compare_lut_previews(ref Buffer candidate, ref Buffer reference,

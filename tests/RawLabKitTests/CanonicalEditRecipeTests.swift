@@ -211,4 +211,46 @@ final class CanonicalEditRecipeTests: XCTestCase {
         XCTAssertEqual(macWb["relative_temperature"] as? Double, 7800)
         XCTAssertEqual(macWb["relative_tint"] as? Double, 22)
     }
+
+    func testSessionStateJSONBuildersEmitClosedStateWithoutDummyPaths() throws {
+        let procJSON = CanonicalEditRecipe.processingSessionStateJSON(processingVersion: 2)
+        XCTAssertFalse(procJSON.contains("session.raw"))
+        XCTAssertFalse(procJSON.contains("session.png"))
+        let procRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(procJSON.data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(Set(procRoot.keys), ["processing"])
+        XCTAssertEqual((procRoot["processing"] as? [String: Any])?["version"] as? Int, 2)
+
+        var sdr = Adjustments()
+        sdr.processing = .c5
+        sdr.lutID = nil
+        sdr.masterRecipeID = MasterRecipe.allRecipes.first?.id
+        sdr.masterRecipeSettingsVersion = 4
+        sdr.strength = 0.5
+        sdr.exposure = 1.0
+        sdr.tint = 10
+        sdr.aiDenoiseEnabled = true
+        sdr.aiDenoiseStrength = 40
+        let sdrJSON = try sdr.sdrSessionStateJSON(isRaster: false, lutPath: nil, includeDenoise: true, outputSharpening: .high)
+        XCTAssertFalse(sdrJSON.contains("session.raw"))
+        XCTAssertFalse(sdrJSON.contains("session.png"))
+        let sdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(sdrJSON.data(using: .utf8))
+        ) as? [String: Any])
+        let sdrInput = try XCTUnwrap(sdrRoot["input"] as? [String: Any])
+        XCTAssertNil(sdrInput["path"])
+        let sdrEdits = try XCTUnwrap(sdrRoot["edits"] as? [String: Any])
+        let master = try XCTUnwrap(sdrEdits["master_recipe"] as? [String: Any])
+        XCTAssertEqual(master["active"] as? Bool, true)
+        XCTAssertEqual(master["strength"] as? Double ?? 0, 0.5, accuracy: 1e-6)
+        XCTAssertEqual(master["uncalibrated_fallback"] as? String, "error")
+        let denoise = try XCTUnwrap(sdrEdits["denoise"] as? [String: Any])
+        XCTAssertEqual(denoise["ai_denoise_blend"] as? Double ?? 0, 0.4, accuracy: 1e-6)
+        let look = try XCTUnwrap(sdrEdits["look"] as? [String: Any])
+        XCTAssertEqual(look["strength"] as? Double ?? -1, 0, accuracy: 1e-6)
+        let output = try XCTUnwrap(sdrRoot["output"] as? [String: Any])
+        XCTAssertEqual(output["output_sharpening"] as? String, "high")
+        XCTAssertNil(output["path"])
+    }
 }

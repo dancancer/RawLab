@@ -43,9 +43,13 @@ extern "C" sony2fuji_status sony2fuji_compare_lut_previews(const sony2fuji_buffe
             view.width = buf.width;
             view.height = buf.height;
             view.strideBytes = buf.stride_bytes;
-            view.format = buf.pixel_format == SONY2FUJI_PIXEL_RGBA8 ? sony2fuji::PixelBufferFormat::RGBA8 :
-                (buf.pixel_format == SONY2FUJI_PIXEL_RGBA16 ? sony2fuji::PixelBufferFormat::RGBA16 :
-                    sony2fuji::PixelBufferFormat::RGB8);
+            view.format = buf.pixel_format == SONY2FUJI_PIXEL_RGBA8
+                ? sony2fuji::PixelBufferFormat::RGBA8
+                : (buf.pixel_format == SONY2FUJI_PIXEL_RGBA16
+                       ? sony2fuji::PixelBufferFormat::RGBA16
+                       : (buf.pixel_format == SONY2FUJI_PIXEL_BGRA8
+                              ? sony2fuji::PixelBufferFormat::BGRA8
+                              : sony2fuji::PixelBufferFormat::RGB8));
             return view;
         };
         const auto text=sony2fuji::compareLUTPreviews(toView(*candidate),toView(*reference),conditions);

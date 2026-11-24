@@ -585,6 +585,38 @@
       ]
     },
     {
+      "name": "sony2fuji_render_options_v1",
+      "size": 120,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "input_type", "offset": 8, "size": 4},
+        {"name": "input_pixel_format", "offset": 12, "size": 4},
+        {"name": "input_path", "offset": 16, "size": 8},
+        {"name": "input_pixels", "offset": 24, "size": 8},
+        {"name": "input_width", "offset": 32, "size": 4},
+        {"name": "input_height", "offset": 36, "size": 4},
+        {"name": "input_color_space", "offset": 40, "size": 4},
+        {"name": "input_is_linear", "offset": 44, "size": 4},
+        {"name": "intent", "offset": 48, "size": 4},
+        {"name": "size_mode", "offset": 52, "size": 4},
+        {"name": "target_width", "offset": 56, "size": 4},
+        {"name": "target_height", "offset": 60, "size": 4},
+        {"name": "long_edge", "offset": 64, "size": 4},
+        {"name": "short_edge", "offset": 68, "size": 4},
+        {"name": "preview_long_edge", "offset": 72, "size": 4},
+        {"name": "interactive_preview", "offset": 76, "size": 4},
+        {"name": "viewport_preview", "offset": 80, "size": 4},
+        {"name": "reserved", "offset": 84, "size": 4},
+        {"name": "viewport_roi", "offset": 88, "size": 8},
+        {"name": "output_target", "offset": 96, "size": 4},
+        {"name": "output_format", "offset": 100, "size": 4},
+        {"name": "output_path", "offset": 104, "size": 8},
+        {"name": "jpeg_quality", "offset": 112, "size": 4},
+        {"name": "reserved2", "offset": 116, "size": 4}
+      ]
+    },
+    {
       "name": "sony2fuji_hdr_diagnostic_v1",
       "size": 16,
       "fields": [
@@ -939,6 +971,16 @@
         {"name": "full_native_height", "offset": 44, "size": 4},
         {"name": "output_width", "offset": 48, "size": 4},
         {"name": "output_height", "offset": 52, "size": 4}
+      ]
+    },
+    {
+      "name": "sony2fuji_hdr_render_options_v1",
+      "size": 16,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "intent", "offset": 8, "size": 4},
+        {"name": "long_edge", "offset": 12, "size": 4}
       ]
     }
   ],
@@ -1454,6 +1496,54 @@
       "symbol": "sony2fuji_session_migrate_processing"
     },
     {
+      "name": "sony2fuji_session_render",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "sony2fuji_buffer*", "sony2fuji_viewport_roi_result*"],
+      "symbol": "sony2fuji_session_render"
+    },
+    {
+      "name": "sony2fuji_session_render_rgba16_with_options",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_session_render_rgba16_with_options"
+    },
+    {
+      "name": "sony2fuji_session_create_hsl_probe_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "uint64_t", "uint64_t", "sony2fuji_hsl_probe**"],
+      "symbol": "sony2fuji_session_create_hsl_probe_json"
+    },
+    {
+      "name": "sony2fuji_session_estimate_auto_exposure_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "float*"],
+      "symbol": "sony2fuji_session_estimate_auto_exposure_json"
+    },
+    {
+      "name": "sony2fuji_session_sample_wb_probe_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "const sony2fuji_wb_probe_query*", "sony2fuji_wb_probe_result*"],
+      "symbol": "sony2fuji_session_sample_wb_probe_json"
+    },
+    {
+      "name": "sony2fuji_session_prepare_ai_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "sony2fuji_ai_progress_callback", "void*"],
+      "symbol": "sony2fuji_session_prepare_ai_json"
+    },
+    {
+      "name": "sony2fuji_preview_lut_compatibility_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "const char*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_preview_lut_compatibility_json"
+    },
+    {
+      "name": "sony2fuji_session_migrate_processing_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_render_options_v1*", "const char*", "sony2fuji_processing_migration_result*"],
+      "symbol": "sony2fuji_session_migrate_processing_json"
+    },
+    {
       "name": "sony2fuji_compute_histogram",
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_buffer*", "uint32_t", "float*"],
@@ -1598,6 +1688,24 @@
       "symbol": "sony2fuji_hdr_encode_rgba16"
     },
     {
+      "name": "sony2fuji_hdr_encode_rgba8",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_hdr_encode_rgba8"
+    },
+    {
+      "name": "sony2fuji_hdr_encode_bgra8",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_hdr_encode_bgra8"
+    },
+    {
+      "name": "sony2fuji_hdr_encode_rgba8_into",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "void*", "uint64_t", "uint64_t"],
+      "symbol": "sony2fuji_hdr_encode_rgba8_into"
+    },
+    {
       "name": "sony2fuji_hdr_create_hsl_probe",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_request_v1*", "uint64_t", "uint64_t", "sony2fuji_hsl_probe**", "sony2fuji_hdr_diagnostic_v1*"],
@@ -1698,6 +1806,72 @@
       "return_type": "void",
       "params": ["sony2fuji_hdr_image_pair_v1*"],
       "symbol": "sony2fuji_hdr_release_pair"
+    },
+    {
+      "name": "sony2fuji_hdr_geometry_size_json",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_hdr_render_options_v1*", "const char*", "uint32_t*", "uint32_t*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_geometry_size_json"
+    },
+    {
+      "name": "sony2fuji_hdr_roi_source_bounds_json",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_roi_v1*", "sony2fuji_hdr_roi_source_bounds_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_roi_source_bounds_json"
+    },
+    {
+      "name": "sony2fuji_hdr_render_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_render_options_v1*", "const char*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_render_json"
+    },
+    {
+      "name": "sony2fuji_hdr_render_roi_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_roi_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_roi_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_render_roi_json"
+    },
+    {
+      "name": "sony2fuji_hdr_render_camera_raw_roi_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_roi_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_roi_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_render_camera_raw_roi_json"
+    },
+    {
+      "name": "sony2fuji_hdr_render_file_roi_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_roi_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_roi_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_render_file_roi_json"
+    },
+    {
+      "name": "sony2fuji_hdr_decode_camera_raw_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_decode_options_v1*", "const char*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_decode_camera_raw_json"
+    },
+    {
+      "name": "sony2fuji_hdr_export_stream_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_stream_source_v1*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_stream_json"
+    },
+    {
+      "name": "sony2fuji_hdr_export_tiled_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_stream_source_v1*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_tiled_json"
+    },
+    {
+      "name": "sony2fuji_hdr_export_proraw_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_proraw_json"
+    },
+    {
+      "name": "sony2fuji_hdr_create_hsl_probe_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_render_options_v1*", "const char*", "uint64_t", "uint64_t", "sony2fuji_hsl_probe**", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_create_hsl_probe_json"
     }
   ],
   "enums": [
@@ -1760,7 +1934,8 @@
       "values": [
         {"name": "SONY2FUJI_PIXEL_RGB8", "value": 0},
         {"name": "SONY2FUJI_PIXEL_RGBA8", "value": 1},
-        {"name": "SONY2FUJI_PIXEL_RGBA16", "value": 2}
+        {"name": "SONY2FUJI_PIXEL_RGBA16", "value": 2},
+        {"name": "SONY2FUJI_PIXEL_BGRA8", "value": 3}
       ]
     },
     {

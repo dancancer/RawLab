@@ -38,6 +38,7 @@ internal static class CanonicalEditRecipeChecks
 
         var rawJson = CanonicalEditRecipe.Encode(rawSettings, isRaster: false);
         var rawRoot = JsonNode.Parse(rawJson)!.AsObject();
+        Check(rawRoot["input"]!["path"] == null, "Strict canonical recipe omits synthetic file path placeholders");
         Check(rawRoot["schema_version"]!.GetValue<int>() == 7, "RAW canonical recipe uses schema_version 7");
         Check(rawRoot["x3f_mode"]!.GetValue<string>() == "legacy", "RAW canonical recipe preserves x3f_mode");
         Check(rawRoot["processing"]!["version"]!.GetValue<int>() == 2, "RAW canonical recipe uses integer processing version");
@@ -66,9 +67,28 @@ internal static class CanonicalEditRecipeChecks
         Check(!rasterRoot["edits"]!["lens_correction"]!.AsObject().ContainsKey("profile_id"), "Automatic lens omits profile_id");
         Check(rasterRoot["edits"]!["denoise"]!["chroma_mode"]!.GetValue<int>() == 0, "Disabled includeDenoise zeroes chroma_mode");
 
-        var procOnly = JsonNode.Parse(CanonicalEditRecipe.ProcessingOnlyJson(3))!.AsObject();
-        Check(procOnly["schema_version"]!.GetValue<int>() == 5, "Processing-only helper uses schema_version 5");
-        Check(procOnly["processing"]!["version"]!.GetValue<int>() == 3, "Processing-only helper preserves version");
+        var procOnly = JsonNode.Parse(CanonicalEditRecipe.ProcessingStateJson(3, "scene"))!.AsObject();
+        Check(procOnly["processing"]!["version"]!.GetValue<int>() == 3, "Processing-state helper preserves version");
+        Check(procOnly["edits"]!["exposure"]!["mode"]!.GetValue<string>() == "scene" && !procOnly.ContainsKey("input"),
+            "Processing-state helper preserves exposure mode without synthetic input");
+
+        var compatPreview = JsonNode.Parse(CanonicalEditRecipe.CompatibilityPreviewStateJson(2, "scene", "look.cube", 0.75))!.AsObject();
+        Check(compatPreview["edits"]!["look"]!["path"]!.GetValue<string>() == "look.cube" &&
+              compatPreview["edits"]!["look"]!["strength"]!.GetValue<double>() == 0.75,
+            "Compatibility preview helper serializes look path and strength");
+
+        var recipeState = new Adjustments { AIDenoiseEnabled = true, AIDenoiseStrength = 40 };
+        recipeState.ApplyMasterRecipe(MasterRecipe.All[0]);
+        recipeState.Set(Parameter.Strength, 0.8);
+        recipeState.Set(Parameter.Temperature, 5400);
+        recipeState.Set(Parameter.Tint, 12);
+        var stateJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(recipeState, isRaster: false, lutPath: "film.cube"))!.AsObject();
+        Check(stateJson["edits"]!["master_recipe"]!["active"]!.GetValue<bool>() &&
+              Math.Abs(stateJson["edits"]!["master_recipe"]!["strength"]!.GetValue<double>() - 0.8) < 1e-6 &&
+              stateJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 5400 &&
+              Math.Abs(stateJson["edits"]!["ai_denoise_blend"]!.GetValue<double>() - 0.4) < 1e-6 &&
+              stateJson["edits"]!["look"]!["path"]!.GetValue<string>() == "film.cube",
+            "Session state encoder populates master_recipe, ai_denoise_blend, and look path");
 
         var unpinnedMaster = new Adjustments
         {

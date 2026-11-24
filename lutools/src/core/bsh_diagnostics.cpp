@@ -1,9 +1,11 @@
 #include "core/bsh_diagnostics.h"
 
 #include "core/hdr_srgb_lut.h"
+#include "core/parallel_pixels.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -556,6 +558,122 @@ OwnedPixelBuffer encodeRgba16BufferFromImageData(
         static_cast<uint32_t>(image.height),
         static_cast<uint64_t>(image.width) * sizeof(RGB),
         linearToSrgb);
+}
+
+RenderStatus encodeDisplay8IntoFloatRgb(
+    const float* data,
+    uint32_t width,
+    uint32_t height,
+    uint64_t srcStrideBytes,
+    bool bgra,
+    void* dst,
+    uint64_t dstSizeBytes,
+    uint64_t dstStrideBytes
+) {
+    if (!data || !dst || width == 0 || height == 0 ||
+        width > UINT32_MAX / 4u ||
+        height > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        static_cast<uint64_t>(width) * static_cast<uint64_t>(height) > UINT32_MAX) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uint64_t minSrcRowBytes = static_cast<uint64_t>(width) * 3u * sizeof(float);
+    if (srcStrideBytes < minSrcRowBytes ||
+        (height > 1u && srcStrideBytes > (std::numeric_limits<uint64_t>::max() - minSrcRowBytes) / (height - 1u))) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uint64_t minDstRowBytes = static_cast<uint64_t>(width) * 4u;
+    if (dstStrideBytes < minDstRowBytes ||
+        (height > 1u && dstStrideBytes > (std::numeric_limits<uint64_t>::max() - minDstRowBytes) / (height - 1u))) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uint64_t requiredDstBytes = static_cast<uint64_t>(height - 1u) * dstStrideBytes + minDstRowBytes;
+    if (requiredDstBytes > dstSizeBytes) {
+        return RenderStatus::InvalidArgument;
+    }
+
+    (void)hdr::srgbToUInt8(0.5f);
+    const uint8_t* srcBase = reinterpret_cast<const uint8_t*>(data);
+    uint8_t* dstBase = static_cast<uint8_t*>(dst);
+    std::atomic<bool> invalidFloat{false};
+
+    parallelRowRanges(static_cast<int>(height), static_cast<int>(width), [&](int firstRow, int lastRow) {
+        if (invalidFloat.load(std::memory_order_acquire)) {
+            return;
+        }
+        for (int rowIndex = firstRow; rowIndex < lastRow; ++rowIndex) {
+            if (invalidFloat.load(std::memory_order_acquire)) {
+                return;
+            }
+            const uint8_t* srcRow = srcBase + static_cast<uint64_t>(rowIndex) * srcStrideBytes;
+            uint8_t* dstRow = dstBase + static_cast<uint64_t>(rowIndex) * dstStrideBytes;
+            for (uint32_t x = 0; x < width; ++x) {
+                float rgb[3]{};
+                std::memcpy(rgb, srcRow + static_cast<size_t>(x) * 3u * sizeof(float), sizeof(rgb));
+                if (!std::isfinite(rgb[0]) || !std::isfinite(rgb[1]) || !std::isfinite(rgb[2])) {
+                    invalidFloat.store(true, std::memory_order_release);
+                    return;
+                }
+                const uint8_t r8 = hdr::srgbToUInt8(rgb[0]);
+                const uint8_t g8 = hdr::srgbToUInt8(rgb[1]);
+                const uint8_t b8 = hdr::srgbToUInt8(rgb[2]);
+                uint8_t* outPx = dstRow + static_cast<size_t>(x) * 4u;
+                outPx[0] = bgra ? b8 : r8;
+                outPx[1] = g8;
+                outPx[2] = bgra ? r8 : b8;
+                outPx[3] = 255u;
+            }
+        }
+    });
+
+    if (invalidFloat.load(std::memory_order_acquire)) {
+        return RenderStatus::InvalidArgument;
+    }
+    return RenderStatus::Ok;
+}
+
+RenderStatus encodeDisplay8BufferFromFloatRgb(
+    const float* data,
+    uint32_t width,
+    uint32_t height,
+    uint64_t srcStrideBytes,
+    bool bgra,
+    OwnedPixelBuffer& outBuffer
+) {
+    outBuffer.reset();
+    if (!data || width == 0 || height == 0 ||
+        width > UINT32_MAX / 4u ||
+        height > static_cast<uint32_t>(std::numeric_limits<int>::max()) ||
+        static_cast<uint64_t>(width) * static_cast<uint64_t>(height) > UINT32_MAX) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uint64_t minSrcRowBytes = static_cast<uint64_t>(width) * 3u * sizeof(float);
+    if (srcStrideBytes < minSrcRowBytes ||
+        (height > 1u && srcStrideBytes > (std::numeric_limits<uint64_t>::max() - minSrcRowBytes) / (height - 1u))) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uint64_t dstStride64 = static_cast<uint64_t>(width) * 4u;
+    const uint64_t dstTotal64 = dstStride64 * static_cast<uint64_t>(height);
+    if (dstTotal64 > std::numeric_limits<size_t>::max()) {
+        return RenderStatus::InvalidArgument;
+    }
+    const size_t total = static_cast<size_t>(dstTotal64);
+    void* mem = std::malloc(total);
+    if (!mem) {
+        return RenderStatus::OutOfMemory;
+    }
+    const RenderStatus status = encodeDisplay8IntoFloatRgb(
+        data, width, height, srcStrideBytes, bgra, mem, dstTotal64, dstStride64);
+    if (status != RenderStatus::Ok) {
+        std::free(mem);
+        return status;
+    }
+    outBuffer.data = mem;
+    outBuffer.sizeBytes = total;
+    outBuffer.width = width;
+    outBuffer.height = height;
+    outBuffer.strideBytes = static_cast<uint32_t>(dstStride64);
+    outBuffer.format = bgra ? PixelBufferFormat::BGRA8 : PixelBufferFormat::RGBA8;
+    return RenderStatus::Ok;
 }
 
 } // namespace sony2fuji

@@ -3,6 +3,12 @@ import Foundation
 import ImageIO
 
 struct HDRNativeError: LocalizedError {
+    static let invalidSettings = HDRNativeError(
+        status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        reason: UInt32(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT),
+        field: UInt32(SONY2FUJI_HDR_FIELD_REQUEST)
+    )
+
     let status: sony2fuji_status
     let reason: UInt32
     let field: UInt32

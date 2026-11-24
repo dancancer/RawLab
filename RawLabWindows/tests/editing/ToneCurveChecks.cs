@@ -28,19 +28,24 @@ internal static class ToneCurveChecks
         var hdrChannels = new HDRSettings().WithTone(new HDRToneSettings { Curve = channels });
         Check(hdrChannels.ProcessingVersion == 8 && hdrChannels.RecordVersion == 9 &&
             JsonSerializer.Deserialize<HDRSettings>(JsonSerializer.Serialize(hdrChannels)) == hdrChannels, "HDR channels persist as record v9");
-        var hdrChannelRequest = hdrChannels.NativeRenderRequest(HDRIntent.Final);
-        Check(Marshal.SizeOf<Native.HDRRequestV8>() == 2584 && hdrChannelRequest.Base.Red.Count == 4 &&
-            hdrChannelRequest.Base.Base.Base.Base.Base.Base.Base.Base.HDRProcessingVersion == 8, "HDR channel ABI");
-        var hdrV2 = new HDRSettings().WithTone(new HDRToneSettings {
+        var hdrChannelsJson = JsonNode.Parse(hdrChannels.ToCanonicalEditStateJson())!.AsObject();
+        Check(hdrChannelsJson["processing"]!["version"]!.GetValue<int>() == 8 &&
+              hdrChannelsJson["edits"]!["tone"]!["curve"]!["channels"]!["red"]!["points"]!.AsArray().Count == 4,
+            "HDR channel canonical JSON");
+        var hdrV2 = new HDRSettings {
+            Color = new HDRColorSettings { Grading = new ColorGradingSettings { Blending = 75 } }
+        }.WithTone(new HDRToneSettings {
             Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.1), new(1, 0.9)],
                 applyToLuminosity: true, parametric: new ToneCurveParametric(15, 0, 0, -10))
         });
-        var hdrV2Req = hdrV2.NativeRenderRequest(HDRIntent.Final);
+        var hdrV2Json = JsonNode.Parse(hdrV2.ToCanonicalEditStateJson())!.AsObject();
         Check(hdrV2.ProcessingVersion == 9 && hdrV2.RecordVersion == 10 &&
-            hdrV2Req.Base.Base.Base.Base.Base.Base.Base.Base.HDRProcessingVersion == 9 &&
-            hdrV2Req.CurveApplyToLuminosity == 1 && hdrV2Req.ParametricCurve.Highlights == 15f &&
-            hdrV2Req.GradingV2.Version == 2 && hdrV2Req.GradingV2.StructSize == 64 && hdrV2Req.GradingV2.Blending == 50f,
-            "HDR v9 curve v2 ABI");
+            hdrV2Json["processing"]!["version"]!.GetValue<int>() == 9 &&
+            hdrV2Json["edits"]!["tone"]!["s_curve"]!.GetValue<double>() == 0 &&
+            hdrV2Json["edits"]!["tone"]!["curve"]!["apply_to_luminosity"]!.GetValue<bool>() &&
+            hdrV2Json["edits"]!["tone"]!["curve"]!["parametric"]!["highlights"]!.GetValue<double>() == 15 &&
+            hdrV2Json["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 75,
+            "HDR v9 curve v2 canonical JSON");
         Loc.Initialize("en");
         var coordinate = new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
         Check(coordinate.Parse("0.250000000000001") == curve.Points[1].X && coordinate.Parse("1.000001") == null &&
