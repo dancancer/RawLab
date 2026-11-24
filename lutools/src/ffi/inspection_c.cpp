@@ -242,7 +242,7 @@ sony2fuji_status sony2fuji_inspection_render_overlay(
     sony2fuji_inspection_overlay_mode mode,
     sony2fuji_buffer* dst
 ) {
-    if (!src || !dst) {
+    if (!src || !dst || src == dst || src->data == dst->data) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
     try {

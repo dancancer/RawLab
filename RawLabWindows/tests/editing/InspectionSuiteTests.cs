@@ -102,6 +102,10 @@ public sealed class InspectionSuiteTests
         var straddle = InspectionColorMath.SampleBgra32(buf, w, h, stride, 1.0 / 3.0, 0.5, radiusPx: 1);
         Assert.NotNull(straddle);
         Assert.Equal((byte)133, straddle!.Value.R);
+
+        Assert.Null(InspectionColorMath.SampleBgra32(buf.AsSpan(0, buf.Length - 1), w, h, stride, 0.5, 0.5, radiusPx: 1));
+        Assert.Throws<ArgumentException>(() =>
+            InspectionColorMath.ApplyOverlayBgra32(buf, buf, w, h, stride, stride, InspectionOverlayMode.SketchLuminance));
     }
 
     [Fact]

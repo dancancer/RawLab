@@ -3,8 +3,10 @@
 #include "core/parallel_pixels.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace sony2fuji {
 namespace {
@@ -72,6 +74,8 @@ inline bool validInspectionBufferBounds(
     size_t bytesPerPixel
 ) noexcept {
     if (!data || width == 0 || height == 0 ||
+        width > static_cast<uint32_t>(INT_MAX) ||
+        height > static_cast<uint32_t>(INT_MAX) ||
         width > UINT32_MAX / 8u ||
         static_cast<uint64_t>(width) * height > UINT32_MAX) {
         return false;
@@ -343,6 +347,22 @@ RenderStatus renderInspectionOverlay(
     }
     if (!validInspectionBufferBounds(src.data, src.sizeBytes, src.width, src.height, src.strideBytes, 4u) ||
         !validInspectionBufferBounds(dst.data, dst.sizeBytes, dst.width, dst.height, dst.strideBytes, 4u)) {
+        return RenderStatus::InvalidArgument;
+    }
+    if (src.data == dst.data) {
+        return RenderStatus::InvalidArgument;
+    }
+    const size_t srcSpan = static_cast<size_t>(src.strideBytes) * (src.height - 1u) + static_cast<size_t>(src.width) * 4u;
+    const size_t dstSpan = static_cast<size_t>(dst.strideBytes) * (dst.height - 1u) + static_cast<size_t>(dst.width) * 4u;
+    const auto srcStart = reinterpret_cast<uintptr_t>(src.data);
+    const auto dstStart = reinterpret_cast<uintptr_t>(dst.data);
+    if (srcStart > std::numeric_limits<uintptr_t>::max() - srcSpan ||
+        dstStart > std::numeric_limits<uintptr_t>::max() - dstSpan) {
+        return RenderStatus::InvalidArgument;
+    }
+    const uintptr_t srcEnd = srcStart + srcSpan;
+    const uintptr_t dstEnd = dstStart + dstSpan;
+    if (srcStart < dstEnd && dstStart < srcEnd) {
         return RenderStatus::InvalidArgument;
     }
 

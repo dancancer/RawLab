@@ -107,6 +107,39 @@ void testPatchSamplingAndFormats() {
     auto single = initSample();
     require(sony2fuji_inspection_sample_patch(&singleBuf, 0.5, 0.5, 1000000u, &single) == SONY2FUJI_STATUS_OK, "1x1 huge radius safe");
     require(single.r == 42 && single.g == 84 && single.b == 126, "1x1 sample exact");
+
+    // True .5 midpoint tie-breaking (half-away-from-zero std::llround vs round-half-to-even & truncation)
+    const uint8_t horizTiePx[3 * 4] = {
+        10, 0, 0, 255,
+        11, 0, 0, 255,
+        12, 0, 0, 255,
+    };
+    const sony2fuji_buffer horizTieBuf{const_cast<uint8_t*>(horizTiePx), sizeof(horizTiePx), 3, 1, 12, SONY2FUJI_PIXEL_RGBA8};
+    auto horizTie = initSample();
+    require(sony2fuji_inspection_sample_patch(&horizTieBuf, 0.25, 0.5, 0, &horizTie) == SONY2FUJI_STATUS_OK,
+        "3x1 coordinate 0.5 tie succeeds");
+    require(horizTie.r == 11, "0.25 * (3 - 1) = 0.5 rounds half-away-from-zero to pixel 1 (R==11)");
+
+    const uint8_t vertTiePx[3 * 4] = {
+        20, 0, 0, 255,
+        21, 0, 0, 255,
+        22, 0, 0, 255,
+    };
+    const sony2fuji_buffer vertTieBuf{const_cast<uint8_t*>(vertTiePx), sizeof(vertTiePx), 1, 3, 4, SONY2FUJI_PIXEL_RGBA8};
+    auto vertTie = initSample();
+    require(sony2fuji_inspection_sample_patch(&vertTieBuf, 0.5, 0.25, 0, &vertTie) == SONY2FUJI_STATUS_OK,
+        "1x3 coordinate 0.5 tie succeeds");
+    require(vertTie.r == 21, "0.25 * (3 - 1) = 0.5 rounds half-away-from-zero to row 1 (R==21)");
+
+    const uint8_t avgTiePx[2 * 4] = {
+        100, 0, 0, 255,
+        101, 0, 0, 255,
+    };
+    const sony2fuji_buffer avgTieBuf{const_cast<uint8_t*>(avgTiePx), sizeof(avgTiePx), 2, 1, 8, SONY2FUJI_PIXEL_RGBA8};
+    auto avgTie = initSample();
+    require(sony2fuji_inspection_sample_patch(&avgTieBuf, 0.0, 0.0, 1, &avgTie) == SONY2FUJI_STATUS_OK,
+        "2x1 average 100.5 tie succeeds");
+    require(avgTie.r == 101, "(100 + 101) / 2.0 = 100.5 rounds half-away-from-zero to 101");
 }
 
 void testAllFiveObservationOverlaysAndBufferRender() {
@@ -241,6 +274,52 @@ void testValidationErrors() {
     require(sony2fuji_inspection_overlay_pixel(10, 20, 30, static_cast<sony2fuji_inspection_overlay_mode>(99), &r, &g, &b) ==
             SONY2FUJI_STATUS_INVALID_ARGUMENT,
         "rejects invalid overlay mode enum");
+
+    // Aliasing, overlap, and INT_MAX dimension bounds regression tests
+    std::vector<uint8_t> aliasArena(32, 0x33);
+    for (size_t i = 0; i < aliasArena.size(); ++i) {
+        aliasArena[i] = static_cast<uint8_t>(10 + i);
+    }
+    const std::vector<uint8_t> aliasBaseline = aliasArena;
+
+    sony2fuji_buffer selfBuf{aliasArena.data(), 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_render_overlay(&selfBuf, SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE, &selfBuf) ==
+            SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects &buf == &buf aliasing");
+    require(aliasArena == aliasBaseline, "&buf == &buf leaves buffer unmodified");
+
+    const sony2fuji_buffer sameDataSrc{aliasArena.data(), 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    sony2fuji_buffer sameDataDst{aliasArena.data(), 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_render_overlay(&sameDataSrc, SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE, &sameDataDst) ==
+            SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects src.data == dst.data aliasing");
+    require(aliasArena == aliasBaseline, "src.data == dst.data leaves buffer unmodified");
+
+    sony2fuji_buffer shiftedDst{aliasArena.data() + 4, 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_render_overlay(&sameDataSrc, SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE, &shiftedDst) ==
+            SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects overlapping dst = src + 4");
+    require(aliasArena == aliasBaseline, "overlapping dst = src + 4 leaves buffer unmodified");
+
+    sony2fuji_buffer reverseSrc{aliasArena.data() + 4, 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_render_overlay(&reverseSrc, SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE, &selfBuf) ==
+            SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects overlapping src = dst + 4");
+    require(aliasArena == aliasBaseline, "overlapping src = dst + 4 leaves buffer unmodified");
+
+    sony2fuji_buffer adjacentDst{aliasArena.data() + 16, 16, 2, 2, 8, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_render_overlay(&sameDataSrc, SONY2FUJI_INSPECTION_OVERLAY_NEUTRAL_GRAY_50, &adjacentDst) ==
+            SONY2FUJI_STATUS_OK,
+        "allows adjacent non-overlapping slice in same backing allocation");
+
+    const uint32_t overIntMax = static_cast<uint32_t>(std::numeric_limits<int>::max()) + 1u;
+    const sony2fuji_buffer hugeHeightSrc{px, std::numeric_limits<size_t>::max(), 1, overIntMax, 4, SONY2FUJI_PIXEL_RGBA8};
+    sony2fuji_buffer hugeHeightDst{aliasArena.data(), std::numeric_limits<size_t>::max(), 1, overIntMax, 4, SONY2FUJI_PIXEL_RGBA8};
+    require(sony2fuji_inspection_sample_patch(&hugeHeightSrc, 0.5, 0.5, 0, &okOut) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects height > INT_MAX in sample_patch");
+    require(sony2fuji_inspection_render_overlay(&hugeHeightSrc, SONY2FUJI_INSPECTION_OVERLAY_NONE, &hugeHeightDst) ==
+            SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        "rejects height > INT_MAX in render_overlay");
 }
 
 } // namespace
