@@ -55,6 +55,14 @@ internal static class PhotoViewProjection
         var height=sourceHeight*(pixelScaleY>0 ? pixelScaleY : fit)*zoom;
         return new(areaWidth/2-focusX*width,areaHeight/2-focusY*height,width,height);
     }
+    internal static double ZoomFocus(double focus,double anchorNormalized,double oldZoom,double newZoom)
+    {
+        if(!double.IsFinite(focus) || !double.IsFinite(anchorNormalized) || !double.IsFinite(oldZoom) || !double.IsFinite(newZoom) || oldZoom<=0 || newZoom<=0)
+            return focus;
+        var clamped=Math.Clamp(anchorNormalized,0,1);
+        var ratio=oldZoom/newZoom;
+        return Math.Clamp(clamped-(clamped-focus)*ratio,0,1);
+    }
 }
 
 internal sealed record NeutralReferenceKey(OriginalIdentity Source,bool Raster,ProcessingIdentity Processing,

@@ -80,6 +80,7 @@ public partial class MainWindow
                         if(!OriginalIdentity.Read(path).SameFile(identity))throw new PhotoChangedException();
                         var context=new AdjustmentTransferContext(path,raw,looks,CameraWhiteBalance:calibration,
                             IsProRAW:cameraHDR?.IsProRAW == true,SupportsCameraHDR:cameraHDR?.IsCameraRaw == true,
+                            HdrLooksDirectory:appPaths.HdrLooksDirectory,
                             ValidateHDRCamera:candidate=>{
                                 if (PhotoInput.ProbeCameraRaw(path,out var source) != HDRProbeState.Supported ||
                                     source is not { IsCameraRaw: true, IsProRAW: false })

@@ -36,6 +36,22 @@ import Foundation
         let focused = viewport.focus
         viewport.zoom(by: 2)
         check(viewport.focus == focused, "zoom preserves the common photo focal point")
+        var anchored = PhotoViewport()
+        let cursorAnchor = CGPoint(x: 0.8, y: 0.25)
+        let panBefore = (cursorAnchor.x - anchored.focus.x) * anchored.magnification
+        anchored.zoom(by: 2, anchor: cursorAnchor)
+        let panAfterIn = (cursorAnchor.x - anchored.focus.x) * anchored.magnification
+        check(abs(panBefore - panAfterIn) < 1e-6 && anchored.focus.x > 0.5 && anchored.focus.y < 0.5,
+              "cursor-anchored zoom keeps the hovered pixel steady while shifting focus toward the cursor")
+        anchored.zoom(by: 0.5, anchor: cursorAnchor)
+        check(abs(anchored.focus.x - 0.5) < 1e-6 && abs(anchored.focus.y - 0.5) < 1e-6,
+              "cursor-anchored zoom out returns focus cleanly")
+        anchored.toggleActualPixels(anchor: cursorAnchor)
+        check(anchored.pixelMode && anchored.focus == cursorAnchor,
+              "double-click zoom to 100% centers on the clicked photo point")
+        anchored.toggleActualPixels(anchor: cursorAnchor)
+        check(!anchored.pixelMode && anchored.focus == CGPoint(x: 0.5, y: 0.5),
+              "double-click return to fit restores center focus")
         let source = CGSize(width: 6000, height: 4000), canvas = CGSize(width: 424, height: 624)
         check(viewport.previewLongEdge(canvas: canvas, displayScale: 2, source: source, margin: 0) >= viewport.previewLongEdge(canvas: canvas, displayScale: 2, source: source), "removing margin changes only viewport demand and keeps a complete fit")
         viewport.fit(); check(viewport.focus == CGPoint(x: 0.5, y: 0.5), "fit resets photo focus")

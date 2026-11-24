@@ -75,6 +75,7 @@ internal sealed class DcpImportOptionsDialog : Window
         actions.Children.Add(cancel);
         import = AdjustmentDialogLayout.Button("导入外观", "look.dcp-options.import", Confirm);
         import.IsDefault = true;
+        import.SetResourceReference(StyleProperty, "AccentButton");
         actions.Children.Add(import);
         Grid.SetRow(actions, 2);
         root.Children.Add(actions);

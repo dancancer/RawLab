@@ -39,6 +39,17 @@ internal static class ViewChecks
         check(original.SameAs(edited.Capture()),"Preparing a neutral reference does not edit the source settings");
         var raster=NeutralReference.Settings("fixture.jpg",edited);
         check(raster.ExposureMode==2 && raster.Lens==new LensSettings(false,false,false),"Raster reference follows sensor/none input rules without inventing camera correction");
+        var zoomedFocusX = PhotoViewProjection.ZoomFocus(0.5, 0.75, 1.0, 2.0);
+        check(Math.Abs(zoomedFocusX - 0.625) < 1e-9, "Cursor-anchored zoom shifts normalized focus toward the hovered cursor");
+        var zoomedOutFocusX = PhotoViewProjection.ZoomFocus(zoomedFocusX, 0.75, 2.0, 1.0);
+        check(Math.Abs(zoomedOutFocusX - 0.5) < 1e-9, "Cursor-anchored zoom out restores the prior focus cleanly");
+        var zoomedInBounds = PhotoViewProjection.Project(200, 100, 400, 200, 2.0, zoomedFocusX, 0.5);
+        var beforeCursorX = PhotoViewProjection.Project(200, 100, 400, 200, 1.0, 0.5, 0.5);
+        var cursorScreenBefore = beforeCursorX.X + 0.75 * beforeCursorX.Width;
+        var cursorScreenAfter = zoomedInBounds.X + 0.75 * zoomedInBounds.Width;
+        check(Math.Abs(cursorScreenBefore - cursorScreenAfter) < 1e-9, "Cursor-anchored zoom keeps the hovered normalized pixel stationary on screen");
+        check(PhotoViewProjection.ZoomFocus(0.5, 2.0, 1.0, 0.25) == 0 && PhotoViewProjection.ZoomFocus(0.5, -1.0, 1.0, 0.25) == 1,
+            "Cursor-anchored zoom clamps out-of-range normalized anchors inside [0, 1]");
         Console.WriteLine("PASS: view preference, hold/source cancellation, normalized projection, margins and neutral composition");
     }
 }

@@ -246,6 +246,13 @@ public partial class MainWindow : Window
             MarkEdited(); RefreshControls(); Schedule();
         };
         LookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
+        HdrLookStrengthRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active || settings.HDR is not { Mode: HDRMode.Hdr } hdr || hdr.LookSettings.Sha256 == null) return;
+            interacting = dragging;
+            settings.HDR = hdr.WithLook(hdr.LookSettings with { Strength = value / 100 });
+            MarkEdited(); RefreshControls(); Schedule();
+        };
+        HdrLookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
         SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();

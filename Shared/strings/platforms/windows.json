@@ -4588,6 +4588,10 @@
     "高光拆分": {
       "formats": [],
       "source": "高光拆分"
+    },
+    "更多工具": {
+      "formats": [],
+      "source": "更多工具"
     }
   },
   "overrides": {
@@ -6420,6 +6424,14 @@
       "es": "Restablecer perspectiva",
       "ja": "パース補正をリセット",
       "zh-Hans": "重置透视"
+    },
+    "更多工具": {
+      "zh-Hans": "更多工具",
+      "en": "More Tools",
+      "de": "Weitere Werkzeuge",
+      "fr": "Plus d’outils",
+      "ja": "その他のツール",
+      "es": "Más herramientas"
     }
   }
 }

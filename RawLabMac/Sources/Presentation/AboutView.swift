@@ -40,6 +40,7 @@ struct AboutView: View {
                 .font(.callout)
         }
         .padding(24).frame(width: 440).fixedSize(horizontal: false, vertical: true)
+        .preferredColorScheme(.dark)
         .navigationTitle(L10n.text("关于 RawLab"))
     }
 }

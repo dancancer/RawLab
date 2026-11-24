@@ -83,7 +83,7 @@ internal sealed class LUTCompatibilityDialog : Window
         }
         var actions = new WrapPanel { HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 16, 0, 0) };
         var cancel = AdjustmentDialogLayout.Button("取消", "look.compatibility.cancel", Close); cancel.IsCancel = true; actions.Children.Add(cancel);
-        confirm = AdjustmentDialogLayout.Button("确认兼容导入", "look.compatibility.confirm", () => DialogResult = true); confirm.IsDefault = true; actions.Children.Add(confirm);
+        confirm = AdjustmentDialogLayout.Button("确认兼容导入", "look.compatibility.confirm", () => DialogResult = true); confirm.IsDefault = true; confirm.SetResourceReference(StyleProperty, "AccentButton"); actions.Children.Add(confirm);
         Grid.SetRow(actions, 2); root.Children.Add(actions);
         BuildAdvanced(); BuildCandidates(); Update();
         Loaded += (_, _) => { if (photo != null) _ = LoadPhoto(photo); };

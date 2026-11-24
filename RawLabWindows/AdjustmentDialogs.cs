@@ -45,7 +45,7 @@ internal sealed class AdjustmentScopeDialog : Window
         var confirm = AdjustmentDialogLayout.Button(confirmTitle, "adjustment.copy.confirm", () => {
             error.Text = copy(SelectedScope) ?? ""; if (error.Text.Length == 0) DialogResult = true;
         });
-        confirm.IsDefault = true; actions.Children.Add(confirm); Grid.SetRow(footer, 2); root.Children.Add(footer);
+        confirm.IsDefault = true; confirm.SetResourceReference(StyleProperty, "AccentButton"); actions.Children.Add(confirm); Grid.SetRow(footer, 2); root.Children.Add(footer);
         void Update() { Height = editor.IsCustom ? 660 : preview != null ? 560 : 340; confirm.IsEnabled = editor.HasSelection; }
         editor.SelectionChanged += Update; Update();
     }
@@ -93,7 +93,7 @@ internal sealed class AdjustmentResultDialog : Window
         apply=AdjustmentDialogLayout.Button(preview ? "应用调整" : "重试","adjustment.results.apply",()=>{
             this.onInvalidateNotices?.Invoke();
             outcomes=run(skipping);this.preview=false;Refresh();
-        });apply.IsDefault=true;actions.Children.Add(apply);Grid.SetRow(actions,2);root.Children.Add(actions);
+        });apply.IsDefault=true;apply.SetResourceReference(StyleProperty,"AccentButton");actions.Children.Add(apply);Grid.SetRow(actions,2);root.Children.Add(actions);
         Closed+=(_,_)=>this.onDisposeNotices?.Invoke();
         Refresh();
     }

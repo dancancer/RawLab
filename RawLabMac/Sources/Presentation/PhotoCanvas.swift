@@ -15,6 +15,7 @@ struct PhotoCanvas: View {
     var canHold = false
     var onHold: (Bool) -> Void = { _ in }
     var onDoubleClick: () -> Void = {}
+    var onDoubleClickPoint: ((CGPoint?) -> Void)? = nil
     var sourceHeight: Int? = nil
     var onPreviewSizeChange: ((Int) -> Void)? = nil
     var cropSettings: GeometrySettings? = nil
@@ -33,6 +34,7 @@ struct PhotoCanvas: View {
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
     @State private var labelRects: [CGRect] = []
+    @State private var hoveringWipe = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -104,16 +106,68 @@ struct PhotoCanvas: View {
                                 if dragOrigin == nil { dragOrigin = viewport.focus }
                                 viewport.moveFocus(from: dragOrigin ?? viewport.focus, translation: translation, displayed: displayedSize)
                             }, onPanEnd: { dragOrigin = nil }, onDoubleClick: onDoubleClick,
+                            onDoubleClickPoint: onDoubleClickPoint,
+                            onMagnify: { multiplier, location in
+                                let anchor: CGPoint
+                                if sourceBounds.width > 0 && sourceBounds.height > 0 {
+                                    anchor = CGPoint(
+                                        x: min(1, max(0, (location.x - sourceBounds.minX) / sourceBounds.width)),
+                                        y: min(1, max(0, (location.y - sourceBounds.minY) / sourceBounds.height))
+                                    )
+                                } else {
+                                    anchor = CGPoint(x: 0.5, y: 0.5)
+                                }
+                                viewport.zoom(by: multiplier, anchor: anchor)
+                            },
+                            onScrollPan: { delta in
+                                if viewport.pixelMode || viewport.magnification > 1.001 {
+                                    viewport.panBy(delta: delta, displayed: displayedSize)
+                                }
+                            },
                             onHover: onInspectionHover, onPin: onInspectionPin)
                     }
                 }
                 .overlay {
                     if let split, beforeFrame != nil, !visibleImage.isNull {
                         let x = sourceBounds.minX + sourceBounds.width * split.wrappedValue
-                        Rectangle().fill(.white).frame(width: 1, height: visibleImage.height)
+                        Rectangle().fill(.black.opacity(0.65)).frame(width: 3, height: visibleImage.height)
                             .position(x: x, y: visibleImage.midY).allowsHitTesting(false)
-                        Color.clear.frame(width: 24, height: visibleImage.height).contentShape(Rectangle())
+                        Rectangle().fill(.white).frame(width: 1.5, height: visibleImage.height)
+                            .position(x: x, y: visibleImage.midY).allowsHitTesting(false)
+                        ZStack {
+                            Circle()
+                                .fill(.black.opacity(0.75))
+                                .frame(width: 30, height: 30)
+                            Circle()
+                                .stroke(.white, lineWidth: 1.5)
+                                .frame(width: 30, height: 30)
+                            HStack(spacing: 3) {
+                                Image(systemName: "chevron.left")
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                        }
+                        .position(x: x, y: visibleImage.midY)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                        Color.clear.frame(width: 28, height: visibleImage.height).contentShape(Rectangle())
                             .position(x: x, y: visibleImage.midY)
+                            .onHover { inside in
+                                if inside && !hoveringWipe {
+                                    hoveringWipe = true
+                                    NSCursor.resizeLeftRight.push()
+                                } else if !inside && hoveringWipe {
+                                    hoveringWipe = false
+                                    NSCursor.pop()
+                                }
+                            }
+                            .onDisappear {
+                                if hoveringWipe {
+                                    hoveringWipe = false
+                                    NSCursor.pop()
+                                }
+                            }
                             .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .named("photoCanvas"))
                                 .onChanged { hslTarget?.cancel(); split.wrappedValue = min(1, max(0, ($0.location.x - sourceBounds.minX) / max(1, sourceBounds.width))) })
                             .focusable().onKeyPress { key in

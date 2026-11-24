@@ -65,12 +65,10 @@ public sealed class EditorIcon : FrameworkElement
         ,["Adjust"]=Geometry.Parse("M3,6 H8 M12,6 H21 M3,12 H14 M18,12 H21 M3,18 H6 M10,18 H21 M8,3 V9 H12 V3 Z M14,9 V15 H18 V9 Z M6,15 V21 H10 V15 Z")
         ,["Export"]=Geometry.Parse("M12,3 V16 M7,11 L12,16 17,11 M3,16 V21 H21 V16")
         // ┌─ 以下各自对应一个功能，不与工具栏或工具条里的其他图标共用 ─────────────┐
-        // │ 设置：齿轮；关于：问号；HSL：三色交叠；自动：魔杖；                    │
+        // │ HSL：三色交叠；自动：魔杖；                                              │
         // │ 降噪、颗粒：点状圆与点状方块（与 Mac 的 circle.dotted / square.dotted 对应）；│
         // │ 暗角：四角压暗的画框                                                    │
         // └────────────────────────────────────────────────────────────────────────┘
-        ,["Settings"]=Geometry.Parse("M19.3,9.8 L21.9,10.3 L21.9,13.7 L19.3,14.3 L18.7,15.6 L20.2,17.8 L17.8,20.2 L15.6,18.7 L14.3,19.3 L13.7,21.9 L10.3,21.9 L9.8,19.3 L8.5,18.7 L6.2,20.2 L3.8,17.8 L5.3,15.6 L4.7,14.3 L2.1,13.7 L2.1,10.3 L4.7,9.8 L5.3,8.5 L3.8,6.2 L6.2,3.8 L8.5,5.3 L9.8,4.7 L10.3,2.1 L13.7,2.1 L14.3,4.7 L15.6,5.3 L17.8,3.8 L20.2,6.2 L18.7,8.5 Z M12,9 A3,3 0 1 1 11.99,9")
-        ,["Help"]=Geometry.Parse("M12,2 A10,10 0 1 1 11.99,2 M9.5,9.5 A2.5,2.5 0 1 1 13.2,11.7 C12.4,12.2 12,12.8 12,13.8 M12,17 V17.1")
         ,["Hsl"]=Geometry.Parse("M12,3 A5,5 0 1 1 11.99,3 M8.5,9 A5,5 0 1 1 8.49,9 M15.5,9 A5,5 0 1 1 15.49,9")
         ,["Auto"]=Geometry.Parse("M4,20 L14,10 M12.5,8.5 L15.5,11.5 M18,3 V7 M16,5 H20 M20,11 V14 M18.5,12.5 H21.5 M8,3 V6 M6.5,4.5 H9.5")
         ,["Denoise"]=Geometry.Parse("M20.8,10.1 A9,9 0 0 1 20.8,13.9 M19.6,16.9 A9,9 0 0 1 16.9,19.6 M13.9,20.8 A9,9 0 0 1 10.1,20.8 M7.1,19.6 A9,9 0 0 1 4.4,16.9 M3.2,13.9 A9,9 0 0 1 3.2,10.1 M4.4,7.1 A9,9 0 0 1 7.1,4.4 M10.1,3.2 A9,9 0 0 1 13.9,3.2 M16.9,4.4 A9,9 0 0 1 19.6,7.1 M12,12 H12.01")
@@ -78,6 +76,7 @@ public sealed class EditorIcon : FrameworkElement
         ,["Vignette"]=Geometry.Parse("M3,4 H21 V20 H3 Z M12,7.5 A5,4.5 0 1 1 11.99,7.5 M3,8 L7,4 M17,4 L21,8 M21,16 L17,20 M7,20 L3,16")
         ,["Inspection"]=Geometry.Parse("M12,2 V6 M12,18 V22 M2,12 H6 M18,12 H22 M12,6 A6,6 0 1 1 11.99,6 M12,10 A2,2 0 1 1 11.99,10")
         ,["Gray50"]=Geometry.Parse("M4,4 H20 V20 H4 Z M12,4 V20")
+        ,["More"]=Geometry.Parse("M5,12 A1.2,1.2 0 1 1 4.99,12 M12,12 A1.2,1.2 0 1 1 11.99,12 M19,12 A1.2,1.2 0 1 1 18.99,12")
     };
     protected override void OnRender(DrawingContext dc)
     {
@@ -86,7 +85,8 @@ public sealed class EditorIcon : FrameworkElement
         var scale=Math.Min(ActualWidth,ActualHeight)/24;
         dc.PushTransform(new TranslateTransform((ActualWidth-24*scale)/2,(ActualHeight-24*scale)/2));
         dc.PushTransform(new ScaleTransform(scale,scale));
-        dc.DrawGeometry(null,pen,Shapes.GetValueOrDefault(Kind,Shapes["Film"]));
+        if(Kind=="Gray50")dc.DrawRectangle(color,null,new Rect(4,4,8,16));
+        dc.DrawGeometry(Kind=="More" ? color : null,pen,Shapes.GetValueOrDefault(Kind,Shapes["Film"]));
         dc.Pop();dc.Pop();
     }
 }
