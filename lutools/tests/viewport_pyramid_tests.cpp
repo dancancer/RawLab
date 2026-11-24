@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "native_gpu_test_support.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "nlohmann/json.hpp"
 
@@ -112,6 +113,14 @@ sony2fuji_render_backend renderAndGetBackend(
                 std::string("session_render succeeded (") + sony2fuji_status_message(st) + ")");
     return sony2fuji_session_get_last_backend(session);
 }
+
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+bool isGpuBackend(sony2fuji_render_backend backend) noexcept {
+    return backend == SONY2FUJI_BACKEND_METAL ||
+           backend == SONY2FUJI_BACKEND_D3D11 ||
+           backend == SONY2FUJI_BACKEND_GLES;
+}
+#endif
 
 void testPyramidMathAndCoverage() {
     const double baseScale = 1280.0 / 6000.0;
@@ -295,27 +304,39 @@ void testFastFullResGpuAndParity() {
 
     const auto q = makeFastQuery(rawPath, SONY2FUJI_INPUT_RAW, 6000, 4000, 28000000);
     const std::string baseJson = baseSdrStateJson().dump();
+    const bool hasGpu = rawlabtest::nativeGpuAvailable();
 
     // Baseline session
     {
         auto session = makeSession(SONY2FUJI_GPU_AUTO);
-        const int32_t supported = queryFastGpu(session.get(), q, &baseJson);
+        const int32_t preSupported = queryFastGpu(session.get(), q, &baseJson);
         const auto backend = renderAndGetBackend(session.get(), rawPath, &baseJson);
-#ifdef SONY2FUJI_ENABLE_METAL
-        checkPass(supported == 1, "baseline SDR RAW supports fast full-res Metal GPU");
-        checkPass(backend == SONY2FUJI_BACKEND_METAL, "baseline render used Metal backend");
+        const int32_t postSupported = queryFastGpu(session.get(), q, &baseJson);
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+        const int32_t expected = isGpuBackend(backend) ? 1 : 0;
+        checkPass(postSupported == expected,
+                  "baseline SDR RAW fast full-res GPU capability matches runtime backend");
+        if (hasGpu) {
+            checkPass(expected == 1 && preSupported == 1 && backend == rawlabtest::nativeBackend,
+                      "baseline SDR RAW supports fast full-res GPU");
+        } else {
+            checkPass(expected == 0 && backend == SONY2FUJI_BACKEND_CPU,
+                      "baseline SDR RAW falls back to CPU without active GPU adapter");
+            (void)preSupported;
+        }
 #else
-        checkPass(supported == 0, "baseline returns 0 without GPU backend");
-        (void)backend;
+        checkPass(preSupported == 0 && postSupported == 0 && backend == SONY2FUJI_BACKEND_CPU,
+                  "baseline returns 0 without GPU backend");
+        (void)hasGpu;
 #endif
     }
 
     // Non-mutation invariant: passing edit_state_json must NOT mutate committed session state
     {
         auto session = makeSession(SONY2FUJI_GPU_AUTO);
-        const int32_t baselineSupported = queryFastGpu(session.get(), q, &baseJson);
-        // Commit baseline state via render
+        // Commit baseline state via render first so lazy GPU backend state is settled
         const auto initialBackend = renderAndGetBackend(session.get(), rawPath, &baseJson);
+        const int32_t baselineSupported = queryFastGpu(session.get(), q, &baseJson);
         checkPass(queryFastGpu(session.get(), q, nullptr) == baselineSupported,
                   "committed state matches baseline query");
 
@@ -338,14 +359,23 @@ void testFastFullResGpuAndParity() {
         auto checkPositiveParity = [&](const std::string& label, const Json& doc) {
             auto session = makeSession(SONY2FUJI_GPU_AUTO);
             const std::string s = doc.dump();
-            const int32_t supported = queryFastGpu(session.get(), q, &s);
+            const int32_t preSupported = queryFastGpu(session.get(), q, &s);
             const auto backend = renderAndGetBackend(session.get(), rawPath, &s);
-#ifdef SONY2FUJI_ENABLE_METAL
-            checkPass(supported == 1, label + " supported on fast full-res GPU");
-            checkPass(backend == SONY2FUJI_BACKEND_METAL, label + " rendered on Metal");
+            const int32_t postSupported = queryFastGpu(session.get(), q, &s);
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+            const int32_t expected = isGpuBackend(backend) ? 1 : 0;
+            checkPass(postSupported == expected, label + " capability matches runtime backend");
+            if (hasGpu) {
+                checkPass(expected == 1 && preSupported == 1 && backend == rawlabtest::nativeBackend,
+                          label + " supported on fast full-res GPU");
+            } else {
+                checkPass(expected == 0 && backend == SONY2FUJI_BACKEND_CPU,
+                          label + " CPU fallback parity");
+                (void)preSupported;
+            }
 #else
-            checkPass(supported == 0, label + " CPU build parity");
-            (void)backend;
+            checkPass(preSupported == 0 && postSupported == 0 && backend == SONY2FUJI_BACKEND_CPU,
+                      label + " CPU build parity");
 #endif
         };
 
