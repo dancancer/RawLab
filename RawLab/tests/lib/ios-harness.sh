@@ -97,14 +97,19 @@ rawlab_ios_core_shared_sources() {
     shift
     _rawlab_ios_validate_ident "$out_var"
     local _dirs=("$@")
+    local _include_editor_tool_draft=0
     if [ "${#_dirs[@]}" -eq 0 ]; then
         _dirs=("$ROOT/RawLab/RawLab/Core" "$ROOT/Shared")
+        _include_editor_tool_draft=1
     fi
     local _sources=()
     local _src
     while IFS= read -r -d '' _src; do
         _sources+=("$_src")
     done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' ! -path '*/RawLabInspectionNative/*' ! -path '*/RawLabNative/*' ! -path '*/RawLabNativeTypes/*' -print0 | LC_ALL=C sort -z)
+    if [ "$_include_editor_tool_draft" = 1 ]; then
+        _sources+=("$ROOT/RawLab/RawLab/UI/EditorState/EditorToolDraft.swift")
+    fi
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
 }
 

@@ -26,6 +26,7 @@ MAC_NATIVE_SWIFT_SOURCES=(
     "$ROOT/Shared/Native/HDRPresentation.swift"
     "$ROOT/Shared/Native/HDRCanvas.swift"
     "$ROOT/Shared/Native/HDRMonitoring.swift"
+    "$ROOT/Shared/Native/ViewportNative.swift"
 )
 MAC_SHARED_SWIFT_SOURCES=(
     "$ROOT"/Shared/*.swift

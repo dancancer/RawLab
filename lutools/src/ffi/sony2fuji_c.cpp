@@ -1485,3 +1485,39 @@ sony2fuji_status sony2fuji_session_migrate_processing_json(
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
+
+sony2fuji_status sony2fuji_session_supports_fast_full_res_gpu(
+    sony2fuji_session* handle,
+    const sony2fuji_fast_gpu_query_v1* query,
+    const char* edit_state_json,
+    int32_t* out_supported
+) {
+    if (out_supported) {
+        *out_supported = 0;
+    }
+    SessionLease lease;
+    if (!SessionLease::acquire(handle, lease) || !query || !out_supported ||
+        query->version != SONY2FUJI_FAST_GPU_QUERY_V1_VERSION ||
+        query->struct_size < sizeof(*query)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        sony2fuji::Pipeline::FastFullResGpuQuery coreQuery{};
+        coreQuery.inputType = static_cast<sony2fuji::RenderInputType>(query->input_type);
+        coreQuery.inputWidth = query->input_width;
+        coreQuery.inputHeight = query->input_height;
+        coreQuery.maxPixels = query->max_pixels;
+        coreQuery.inputPath = query->input_path ? query->input_path : "";
+        bool supported = false;
+        const auto status = lease.raw()->pipeline.supportsFastFullResGpu(coreQuery, edit_state_json, supported);
+        if (status != sony2fuji::RenderStatus::Ok) {
+            return toFfiStatus(status);
+        }
+        *out_supported = supported ? 1 : 0;
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}

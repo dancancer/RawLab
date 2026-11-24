@@ -263,6 +263,17 @@ bool D3D11PhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     GpuRenderOutcome outcome;
     return renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
 }
+
+bool D3D11PhotoRenderer::disabledByEnvironment() noexcept {
+    return GetEnvironmentVariableW(L"RAWLAB_DISABLE_D3D11", nullptr, 0) > 0;
+}
+
+bool D3D11PhotoRenderer::isReadyForQuery() const noexcept {
+    if (disabledByEnvironment()) {
+        return false;
+    }
+    return impl_ != nullptr || (!initUnavailable_ && retry_.ready(d3d11RetryNow()));
+}
 bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace,
     const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     GpuRenderOutcome& outcome) {

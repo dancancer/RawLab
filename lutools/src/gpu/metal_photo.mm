@@ -1498,6 +1498,29 @@ bool renderPhotoMetal(
     return result;
 }
 
+PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t width, uint32_t height) noexcept {
+    PhotoGpuCapabilities caps{};
+    caps.compiled = true;
+    @autoreleasepool {
+        MetalContext& context = metalContext();
+        if (!context.device || !context.ready) {
+            return caps;
+        }
+        caps.ready = true;
+        caps.supportsEffects = context.effectsPipeline != nil;
+        caps.supportsDcp = context.baseDcpPipeline != nil;
+        size_t pixelCount = 0;
+        if (!checkedCount(width, height, &pixelCount)) {
+            caps.dimensionsSupported = false;
+            return caps;
+        }
+        const size_t budget = std::min<size_t>(16u * 1024 * 1024, context.device.maxBufferLength);
+        const size_t rowBytes = static_cast<size_t>(width) * sizeof(RGB);
+        caps.dimensionsSupported = rowBytes > 0 && rowBytes <= budget;
+        return caps;
+    }
+}
+
 } // namespace sony2fuji
 
 #else
@@ -1524,6 +1547,10 @@ bool renderPhotoMetal(
     ImageData&
 ) {
     return false;
+}
+
+PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t, uint32_t) noexcept {
+    return {};
 }
 
 } // namespace sony2fuji

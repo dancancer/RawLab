@@ -2626,4 +2626,205 @@ RenderStatus Pipeline::processImpl(
     return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
 }
 
+RenderStatus Pipeline::supportsFastFullResGpu(
+    const FastFullResGpuQuery& query,
+    const char* editStateJson,
+    bool& outSupported
+) const {
+    outSupported = false;
+    if (query.inputType < RenderInputType::Raw || query.inputType > RenderInputType::DisplayBuffer) {
+        return RenderStatus::InvalidArgument;
+    }
+    if ((query.inputWidth == 0) != (query.inputHeight == 0)) {
+        return RenderStatus::InvalidArgument;
+    }
+
+    ProcessingVersion pv = processingVersion_;
+    X3fMode x3f = x3fMode_;
+    int32_t chroma = chromaDenoise_;
+    WaveletDenoiseOptions wavelet = waveletDenoise_;
+    PhotoEffectsOptions effects = photoEffects_;
+    AtmosphereOptions atmosphere = atmosphere_;
+    GeometryOptions geometry = geometry_;
+    bool masterCurveGpuSupported = toneCurve_.gpuSupported();
+    bool channelCurvesGpuSupported = std::all_of(channelCurves_.begin(), channelCurves_.end(),
+        [](const auto& curve) { return curve.gpuSupported(); });
+    std::string lookPath = hasCommittedEditState_ ? committedEditState_.lookPath : std::string{};
+    float lookStrength = hasCommittedEditState_ ? committedEditState_.lookStrength : 1.0f;
+    std::string stateInputPath = hasCommittedEditState_ ? committedEditState_.inputPath : std::string{};
+    bool isHdr = false;
+
+    if (editStateJson != nullptr) {
+        if (!*editStateJson) {
+            return RenderStatus::InvalidArgument;
+        }
+        CanonicalEditState parsed;
+        std::string error;
+        if (!parseCanonicalEditState(
+                editStateJson, parsed, error, {RecipeParseMode::SessionState, /*allowRasterLensCorrection=*/true})) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (parsed.isHdr) {
+            isHdr = true;
+        } else {
+            if (!validProcessingVersion(parsed.processingVersion) ||
+                (parsed.x3fMode != X3fMode::Legacy && parsed.x3fMode != X3fMode::Normal) ||
+                parsed.exposureMode < RawExposureMode::Scene ||
+                parsed.exposureMode > RawExposureMode::Sensor) {
+                return RenderStatus::InvalidArgument;
+            }
+            if (!std::isfinite(parsed.exposureEv) || std::abs(parsed.exposureEv) > 20.0f ||
+                !std::isfinite(parsed.brightness) || parsed.brightness <= 0.0f ||
+                !std::isfinite(parsed.contrast) || parsed.contrast < 0.0f || parsed.contrast > 2.0f ||
+                !std::isfinite(parsed.saturation) || parsed.saturation < 0.0f || parsed.saturation > 2.0f ||
+                !std::isfinite(parsed.highlights) || parsed.highlights < -1.0f || parsed.highlights > 1.0f ||
+                !std::isfinite(parsed.shadows) || parsed.shadows < -1.0f || parsed.shadows > 1.0f ||
+                !std::isfinite(parsed.sCurve) || parsed.sCurve < -1.0f || parsed.sCurve > 1.0f ||
+                !std::isfinite(parsed.sharpening) || parsed.sharpening < 0.0f || parsed.sharpening > 2.0f ||
+                !std::isfinite(parsed.lookStrength) || parsed.lookStrength < 0.0f || parsed.lookStrength > 2.0f ||
+                !std::isfinite(parsed.aiDenoiseBlend) || parsed.aiDenoiseBlend < 0.0f || parsed.aiDenoiseBlend > 1.0f ||
+                !std::isfinite(parsed.masterRecipe.strength) || parsed.masterRecipe.strength < 0.0f || parsed.masterRecipe.strength > 2.0f ||
+                !std::isfinite(parsed.masterRecipe.temperatureKelvin) || parsed.masterRecipe.temperatureKelvin < 2000.0f || parsed.masterRecipe.temperatureKelvin > 50000.0f ||
+                !std::isfinite(parsed.masterRecipe.tint) || std::abs(parsed.masterRecipe.tint) > 150.0f ||
+                parsed.rawNoiseReduction < 0 || parsed.rawNoiseReduction > 2 ||
+                parsed.chromaDenoise < 0 || parsed.chromaDenoise > 2) {
+                return RenderStatus::InvalidArgument;
+            }
+            WaveletDenoiseOptions parsedWavelet = parsed.wavelet;
+            parsedWavelet.processingVersion = parsed.processingVersion;
+            if (!validWaveletDenoiseOptions(parsedWavelet)) {
+                return RenderStatus::InvalidArgument;
+            }
+            const auto freeCurveEndpoints = parsed.schemaVersion >= 18 ? ToneCurveEndpoints::Free
+                : parsed.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+            if (!parsed.effects.valid() || !parsed.hsl.valid() || !parsed.toneControls.valid() ||
+                !parsed.atmosphere.valid() || !parsed.colorGrading.valid() || !parsed.parametricCurve.valid() ||
+                parsed.outputSharpening < OutputSharpening::Off || parsed.outputSharpening > OutputSharpening::High ||
+                !validToneCurve(parsed.toneCurve, freeCurveEndpoints) ||
+                !std::all_of(parsed.channelCurves.begin(), parsed.channelCurves.end(),
+                    [freeCurveEndpoints](const auto& c) { return validToneCurve(c, freeCurveEndpoints); })) {
+                return RenderStatus::InvalidArgument;
+            }
+            ToneCurve masterCurve(parsed.toneCurve, freeCurveEndpoints);
+            if (masterCurve.custom() && parsed.sCurve != 0.0f) {
+                return RenderStatus::InvalidArgument;
+            }
+            GeometryOptions parsedGeometry = parsed.geometry;
+            if (!parsedGeometry.valid() || !validProfileId(parsed.lensProfileId)) {
+                return RenderStatus::InvalidArgument;
+            }
+            parsedGeometry.crop_width = std::min(parsedGeometry.crop_width, 1.0f - parsedGeometry.crop_x);
+            parsedGeometry.crop_height = std::min(parsedGeometry.crop_height, 1.0f - parsedGeometry.crop_y);
+
+            pv = parsed.processingVersion;
+            x3f = parsed.x3fMode;
+            chroma = parsed.chromaDenoise;
+            wavelet = parsedWavelet;
+            effects = parsed.effects;
+            atmosphere = parsed.atmosphere;
+            geometry = parsedGeometry;
+            masterCurveGpuSupported = masterCurve.gpuSupported();
+            channelCurvesGpuSupported =
+                ToneCurve(parsed.channelCurves[0], freeCurveEndpoints).gpuSupported() &&
+                ToneCurve(parsed.channelCurves[1], freeCurveEndpoints).gpuSupported() &&
+                ToneCurve(parsed.channelCurves[2], freeCurveEndpoints).gpuSupported();
+            lookPath = std::move(parsed.lookPath);
+            lookStrength = parsed.lookStrength;
+            stateInputPath = std::move(parsed.inputPath);
+        }
+    }
+
+    if (isHdr || gpuConfig_.mode == GpuMode::Off) {
+        return RenderStatus::Ok;
+    }
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
+    return RenderStatus::Ok;
+#else
+    if (query.inputType != RenderInputType::Raw || aiEnabled()) {
+        return RenderStatus::Ok;
+    }
+    const std::string& effectiveInputPath = !query.inputPath.empty() ? query.inputPath : stateInputPath;
+    if (isNormalX3f(effectiveInputPath.c_str(), x3f)) {
+        return RenderStatus::Ok;
+    }
+    if (wavelet.active() || chroma != 0 || geometry.active() || atmosphere.active() ||
+        !masterCurveGpuSupported || !channelCurvesGpuSupported) {
+        return RenderStatus::Ok;
+    }
+
+    uint32_t checkW = query.inputWidth;
+    uint32_t checkH = query.inputHeight;
+    if ((checkW == 0 || checkH == 0) && !effectiveInputPath.empty()) {
+        uint32_t probedW = 0;
+        uint32_t probedH = 0;
+        if (probeInputHeaderSize(
+                effectiveInputPath.c_str(), sony2fuji::usesLegacySonyCrop(pv), x3f, probedW, probedH) ==
+            ProbeSizeResult::Probed) {
+            checkW = probedW;
+            checkH = probedH;
+        }
+    }
+    if (checkW > 0 && checkH > 0 && query.maxPixels > 0 &&
+        static_cast<uint64_t>(checkW) * static_cast<uint64_t>(checkH) > static_cast<uint64_t>(query.maxPixels)) {
+        return RenderStatus::Ok;
+    }
+    const uint32_t gpuCheckW = checkW > 0 ? checkW : 1u;
+    const uint32_t gpuCheckH = checkH > 0 ? checkH : 1u;
+
+    const float clampedStrength = clampFloat(lookStrength, 0.0f, 2.0f);
+    const bool useLook = !lookPath.empty() && clampedStrength > 0.0f;
+    bool useDcp = false;
+    if (useLook) {
+        if (LUTParser::detectFormat(lookPath) == "rlook") {
+            const auto dcp = DcpLook::loadCached(lookPath);
+            if (!dcp) {
+                return RenderStatus::Ok;
+            }
+#if !defined(SONY2FUJI_ENABLE_METAL)
+            return RenderStatus::Ok;
+#else
+            useDcp = true;
+#endif
+        } else {
+            std::shared_ptr<LUT3D> lut;
+            if (loadLUT(lookPath.c_str(), &lut) != RenderStatus::Ok || !lut || !lut->isPhotoLUT() || lut->requiresCPU()) {
+                return RenderStatus::Ok;
+            }
+        }
+    }
+
+#if defined(SONY2FUJI_ENABLE_METAL)
+    const PhotoGpuCapabilities caps = queryMetalPhotoCapabilities(gpuCheckW, gpuCheckH);
+    if (!caps.compiled || !caps.ready || !caps.dimensionsSupported) {
+        return RenderStatus::Ok;
+    }
+    if (effects.active() && !caps.supportsEffects) {
+        return RenderStatus::Ok;
+    }
+    if (useDcp && !caps.supportsDcp) {
+        return RenderStatus::Ok;
+    }
+#elif defined(SONY2FUJI_ENABLE_GLES)
+    if (gpuCheckW > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+        gpuCheckH > static_cast<uint32_t>(std::numeric_limits<int32_t>::max()) ||
+        static_cast<uint64_t>(gpuCheckW) * gpuCheckH > static_cast<uint64_t>(std::numeric_limits<int32_t>::max())) {
+        return RenderStatus::Ok;
+    }
+    if (runtime_ && runtime_->glesRenderer && !runtime_->glesRenderer->isReadyForQuery()) {
+        return RenderStatus::Ok;
+    }
+#elif defined(SONY2FUJI_ENABLE_D3D11)
+    if (gpuCheckW > 65535u || gpuCheckH > 65535u || D3D11PhotoRenderer::disabledByEnvironment()) {
+        return RenderStatus::Ok;
+    }
+    if (runtime_ && runtime_->d3dRenderer && !runtime_->d3dRenderer->isReadyForQuery()) {
+        return RenderStatus::Ok;
+    }
+#endif
+
+    outSupported = true;
+    return RenderStatus::Ok;
+#endif
+}
+
 } // namespace sony2fuji

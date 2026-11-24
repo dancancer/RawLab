@@ -763,49 +763,46 @@ struct Sony2FujiProcessor {
         }
     }
 
-    private static func isCustomCurveGpuSupported(_ curve: ToneCurveShape) -> Bool {
-        guard curve.mode == .custom && !curve.isIdentity else { return true }
-        guard curve.isValid else { return false }
-        for index in 0..<(curve.points.count - 1) {
-            let p0 = curve.points[index]
-            let p1 = curve.points[index + 1]
-            let gpuWidth = Float(p1.x) - Float(p0.x)
-            let dx = p1.x - p0.x
-            let dy = p1.y - p0.y
-            if gpuWidth < Float.leastNormalMagnitude || 3.0 * dy / dx > 16.0 {
-                return false
-            }
-        }
-        return true
-    }
-
-    func canFastMetalFullRes(url: URL, settings: RawSettings, lutURL: URL?) -> Bool {
+    func supportsFastFullResGpu(
+        url: URL,
+        settings: RawSettings,
+        lutURL: URL?,
+        nativeSize: CGSize,
+        maxPixels: Int
+    ) -> Bool {
         guard gpuMode != SONY2FUJI_GPU_OFF,
               !settings.isHDREditing,
-              !settings.denoise.enabled,
-              settings.displayChromaDenoise == 0 else {
+              nativeSize.width > 0, nativeSize.height > 0,
+              maxPixels >= 0 else {
             return false
         }
-        let resolved = settings.masterRecipeID == nil
-            ? settings
-            : settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
-        guard resolved.geometrySettings.isIdentity,
-              resolved.atmosphereSettings.isIdentity,
-              resolved.curveSettings.channels.isIdentity,
-              resolved.curveSettings.parametric.isIdentity,
-              (!resolved.curveSettings.applyToLuminosity ||
-                (resolved.toneCurve == 0 && resolved.curveSettings.master.isIdentity)),
-              Self.isCustomCurveGpuSupported(resolved.curveSettings.master),
-              !isNormalX3f(url, settings: resolved) else {
-            return false
-        }
-        if let lutURL {
-            let ext = lutURL.pathExtension.lowercased()
-            if ext != "cube" && ext != "rlook" {
-                return false
+        let fullW = UInt32(max(0, Int(nativeSize.width.rounded())))
+        let fullH = UInt32(max(0, Int(nativeSize.height.rounded())))
+        guard fullW > 0, fullH > 0 else { return false }
+        let cappedPixels = UInt32(min(Int(UInt32.max), maxPixels))
+        do {
+            let json = try encodeSessionState(settings, inputType: SONY2FUJI_INPUT_RAW, lutPath: lutURL?.path)
+            return try withRawSession(reuse: true) { session in
+                try configureGPU(session)
+                return url.path.withCString { pathPtr in
+                    var query = sony2fuji_fast_gpu_query_v1()
+                    query.version = SONY2FUJI_FAST_GPU_QUERY_V1_VERSION
+                    query.struct_size = UInt32(MemoryLayout<sony2fuji_fast_gpu_query_v1>.size)
+                    query.input_type = SONY2FUJI_INPUT_RAW
+                    query.input_width = fullW
+                    query.input_height = fullH
+                    query.max_pixels = cappedPixels
+                    query.input_path = pathPtr
+                    var supported: Int32 = 0
+                    return json.withCString { jsonPtr in
+                        let status = sony2fuji_session_supports_fast_full_res_gpu(session, &query, jsonPtr, &supported)
+                        return status == SONY2FUJI_STATUS_OK && supported != 0
+                    }
+                }
             }
+        } catch {
+            return false
         }
-        return true
     }
 
     func processRawDisplayBacking(

@@ -117,7 +117,9 @@ set(CORE_SOURCES
     src/core/pipeline_x3f.cpp
     src/core/pipeline_geometry.cpp
     src/core/pipeline_io.cpp
+    src/core/viewport_pyramid.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/viewport_pyramid_c.cpp
     src/ffi/edit_recipe.cpp
     src/ffi/sony2fuji_lens_c.cpp
     src/ffi/sony2fuji_buffer_c.cpp
@@ -1005,6 +1007,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/apply_params_api_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME viewport_pyramid
+        SOURCES tests/viewport_pyramid_tests.cpp
+        INCLUDES third_party
+        DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples" TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        LIBRARIES sony2fuji_core
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME hdr_recipe_roundtrip

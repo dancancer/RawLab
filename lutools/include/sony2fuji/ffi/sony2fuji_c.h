@@ -1338,6 +1338,102 @@ sony2fuji_status sony2fuji_compute_histogram(
     float* out_bins
 );
 
+/* === Wave W-E: Fast Full-Res GPU & Pyramid Grid === */
+#define SONY2FUJI_FAST_GPU_QUERY_V1_VERSION 1u
+typedef struct sony2fuji_fast_gpu_query_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_input_type input_type;
+    uint32_t input_width;
+    uint32_t input_height;
+    uint32_t max_pixels;
+    const char* input_path;
+} sony2fuji_fast_gpu_query_v1;
+
+// Evaluates whether the current/given CanonicalEditState and query can run on the
+// fast full-resolution SDR GPU path without mutating any session state.
+sony2fuji_status sony2fuji_session_supports_fast_full_res_gpu(
+    sony2fuji_session* session,
+    const sony2fuji_fast_gpu_query_v1* query,
+    const char* edit_state_json,
+    int32_t* out_supported
+);
+
+#define SONY2FUJI_PYRAMID_CONFIG_V1_VERSION 1u
+typedef struct sony2fuji_pyramid_config_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t full_width;
+    uint32_t full_height;
+    uint32_t tile_size;
+    uint32_t overscan_ring;
+    double zoom_scale;
+    double base_scale;
+    double visible_x0;
+    double visible_y0;
+    double visible_x1;
+    double visible_y1;
+} sony2fuji_pyramid_config_v1;
+
+typedef struct sony2fuji_pyramid_tile_v1 {
+    int32_t level;
+    int32_t col;
+    int32_t row;
+    uint32_t max_output_long_edge;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+} sony2fuji_pyramid_tile_v1;
+
+#define SONY2FUJI_DETAIL_COVERAGE_QUERY_V1_VERSION 1u
+typedef struct sony2fuji_detail_coverage_query_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t tile_pixel_width;
+    uint32_t tile_pixel_height;
+    uint32_t full_width;
+    uint32_t full_height;
+    uint32_t max_output_long_edge;
+    uint32_t reserved;
+    double tile_norm_x0;
+    double tile_norm_y0;
+    double tile_norm_x1;
+    double tile_norm_y1;
+    double visible_norm_x0;
+    double visible_norm_y0;
+    double visible_norm_x1;
+    double visible_norm_y1;
+    double required_zoom_scale;
+} sony2fuji_detail_coverage_query_v1;
+
+sony2fuji_status sony2fuji_pyramid_level(
+    double zoom_scale,
+    double base_scale,
+    int32_t* out_level
+);
+
+sony2fuji_status sony2fuji_pyramid_tiles(
+    const sony2fuji_pyramid_config_v1* config,
+    sony2fuji_pyramid_tile_v1* out_tiles,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_pyramid_level0_grid(
+    uint32_t full_width,
+    uint32_t full_height,
+    uint32_t tile_size,
+    sony2fuji_pyramid_tile_v1* out_tiles,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_detail_overlay_covers(
+    const sony2fuji_detail_coverage_query_v1* query,
+    int32_t* out_covers
+);
+
 void sony2fuji_release_buffer(sony2fuji_buffer* buffer);
 
 const char* sony2fuji_status_message(sony2fuji_status status);

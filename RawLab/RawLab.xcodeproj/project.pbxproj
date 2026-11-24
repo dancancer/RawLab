@@ -153,6 +153,7 @@
 		568E6B659A004F7792056543 /* UI/ContentView+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE93B9AEFEC48F9B6535407 /* UI/ContentView+Helpers.swift */; };
 		5925D383E992E267E84A557D /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BCB01F09DF53FD6D170136CB /* Foundation.framework */; };
 		7A32C02543E94D8D8AD059DA /* Core/ViewModel/RawEditorViewModel+Rendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893AFB855B8D4C46BF182760 /* Core/ViewModel/RawEditorViewModel+Rendering.swift */; };
+		WE1000000000000000000001 /* Core/ViewModel/ViewportRenderEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = WE1000000000000000000002 /* Core/ViewModel/ViewportRenderEngine.swift */; };
 		D883E2F5F205AC0EFBF9C319 /* Core/ViewModel/RawEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */; };
 		F985B27612A241E0BF2D3B6E /* Core/ViewModel/RawEditorViewModel+LUT.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEE59480F18546D2BD9AEB9E /* Core/ViewModel/RawEditorViewModel+LUT.swift */; };
 		8F3A1B2C3D4E5F6789012345 /* Core/RawProcessing/Sony2FujiProcessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F3A1B2C3D4E5F6789012346 /* Core/RawProcessing/Sony2FujiProcessor.swift */; };
@@ -205,6 +206,7 @@
         D14700000000000000000001 /* HDRPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14700000000000000000011; };
         D14800000000000000000001 /* HDRCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14800000000000000000011; };
         D14900000000000000000001 /* HDRMonitoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14900000000000000000011; };
+		WE1000000000000000000003 /* ViewportNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = WE1000000000000000000004; };
 		025457773222452EB536902E /* IOSLUTLibrarySelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */; };
 		4E29D1D654E1483A83C94DE9 /* IOSLUTCompatibilityView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */; };
 		FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA9E40BC0C5EEE673454CF3; };
@@ -400,6 +402,7 @@
 		AB1200000000000000000013 /* eterna.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = eterna.png; path = "../RawLabMac/Resources/FilmIcons/eterna.png"; sourceTree = SOURCE_ROOT; };
 		AB1200000000000000000014 /* eterna-bb.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "eterna-bb.png"; path = "../RawLabMac/Resources/FilmIcons/eterna-bb.png"; sourceTree = SOURCE_ROOT; };
 		5BBA826F203D41BCC1DF31C0 /* Core/ViewModel/RawEditorViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RawEditorViewModel.swift; sourceTree = "<group>"; };
+		WE1000000000000000000002 /* Core/ViewModel/ViewportRenderEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ViewportRenderEngine.swift; sourceTree = "<group>"; };
 		6CE93B9AEFEC48F9B6535407 = {
 			path = "RawLab/UI/Editor/ContentView+Helpers.swift";
 			isa = PBXFileReference;
@@ -526,6 +529,7 @@
         D14700000000000000000011 /* HDRPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRPresentation.swift; path = "../Shared/Native/HDRPresentation.swift"; sourceTree = SOURCE_ROOT; };
         D14800000000000000000011 /* HDRCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRCanvas.swift; path = "../Shared/Native/HDRCanvas.swift"; sourceTree = SOURCE_ROOT; };
         D14900000000000000000011 /* HDRMonitoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRMonitoring.swift; path = "../Shared/Native/HDRMonitoring.swift"; sourceTree = SOURCE_ROOT; };
+		WE1000000000000000000004 /* ViewportNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ViewportNative.swift; path = "../Shared/Native/ViewportNative.swift"; sourceTree = SOURCE_ROOT; };
 		82401F63082E43C6B11A2D97 /* IOSLUTLibrarySelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Looks/IOSLUTLibrarySelection.swift"; sourceTree = SOURCE_ROOT; };
 		AB5989AB770A48B8B6F7B0B0 /* IOSLUTCompatibilityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/Panels/IOSLUTCompatibilityView.swift"; sourceTree = SOURCE_ROOT; };
 		CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ProcessingMigrationNative.swift"; path = "../Shared/Native/ProcessingMigrationNative.swift"; sourceTree = SOURCE_ROOT; };
@@ -730,6 +734,7 @@
 				D14700000000000000000011,
 				D14800000000000000000011,
 				D14900000000000000000011,
+				WE1000000000000000000004 /* ViewportNative.swift */,
 				CFA9E40BC0C5EEE673454CF3 /* ProcessingMigrationNative.swift */,
 				D00700000000000000000016,
 				D00700000000000000000015,
@@ -804,6 +809,7 @@
 				AB2300000000000000000002 /* EditorResetTransaction.swift */,
 				AB2400000000000000000002 /* HDRResourceNotice.swift */,
 				5BBA826F203D41BCC1DF31C0,
+				WE1000000000000000000002,
 				893AFB855B8D4C46BF182760,
 				FEE59480F18546D2BD9AEB9E,
 				D12100000000000000000011,
@@ -1414,6 +1420,7 @@
 				D14700000000000000000001,
 				D14800000000000000000001,
 				D14900000000000000000001,
+				WE1000000000000000000003 /* ViewportNative.swift in Sources */,
 				DCB09DB35FA91EB64D2731A3 /* RawEditorViewModel+ProcessingMigration.swift in Sources */,
 				FC6F4EC8E39EB3F76F188D65 /* ProcessingMigrationNative.swift in Sources */,
 				D00700000000000000000006,
@@ -1451,6 +1458,7 @@
 				AB2400000000000000000001 /* HDRResourceNotice.swift in Sources */,
 				2C5BFAB858B74B81AFAC16D0,
 				D883E2F5F205AC0EFBF9C319,
+				WE1000000000000000000001,
 				7A32C02543E94D8D8AD059DA,
 				F985B27612A241E0BF2D3B6E,
 				2A9B3E15E0704167ABE93960,

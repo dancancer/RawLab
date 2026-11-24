@@ -39,6 +39,8 @@ internal static class AbiLayoutChecks
         "sony2fuji_bsh_sample_query",
         "sony2fuji_bsh_sample_result",
         "sony2fuji_curve_point",
+        "sony2fuji_detail_coverage_query_v1",
+        "sony2fuji_fast_gpu_query_v1",
         "sony2fuji_hdr_request_v1",
         "sony2fuji_hdr_request_v2",
         "sony2fuji_hdr_request_v3",
@@ -53,6 +55,8 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_roi_v1",
         "sony2fuji_lens_metadata",
         "sony2fuji_lens_profile_v2",
+        "sony2fuji_pyramid_config_v1",
+        "sony2fuji_pyramid_tile_v1",
         "sony2fuji_viewport_roi",
         "sony2fuji_viewport_roi_result",
     };
@@ -62,6 +66,7 @@ internal static class AbiLayoutChecks
     {
         "sony2fuji_compile_hdr_camera_dcp",
         "sony2fuji_compute_histogram",
+        "sony2fuji_detail_overlay_covers",
         "sony2fuji_diagnose_image",
         "sony2fuji_hdr_camera_ai_available",
         "sony2fuji_hdr_clear_session_cache",
@@ -96,6 +101,9 @@ internal static class AbiLayoutChecks
         "sony2fuji_inspect_sdr_jpeg_mpf",
         "sony2fuji_preview_lut_compatibility",
         "sony2fuji_process",
+        "sony2fuji_pyramid_level",
+        "sony2fuji_pyramid_level0_grid",
+        "sony2fuji_pyramid_tiles",
         "sony2fuji_sample_region_bsh",
         "sony2fuji_session_create_hsl_probe",
         "sony2fuji_session_estimate_auto_exposure",
@@ -134,6 +142,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_session_set_viewport_roi",
         "sony2fuji_session_set_wavelet_denoise",
         "sony2fuji_session_set_x3f_mode",
+        "sony2fuji_session_supports_fast_full_res_gpu",
         "sony2fuji_status_message",
     };
 
