@@ -25,7 +25,8 @@ internal sealed record ExternalReloadResult(
     ExternalReloadAction Action,
     ExternalReloadBannerState BannerState,
     PhotoEditState? AdoptedRecord = null,
-    PhotoEditState? PreviousRecord = null);
+    PhotoEditState? PreviousRecord = null,
+    bool FromManualAccept = false);
 
 internal sealed record ProcessingMigrationCommitResult(
     bool Applied,
@@ -53,6 +54,7 @@ internal sealed class EditorPersistenceCoordinator
     private long persistenceEpoch;
     private bool deferredExternalEditsCheck;
     private bool deferredExternalReloadAccept;
+    private int deferredNotificationPending;
 
     internal EditorPersistenceCoordinator(
         EditStore? initialStore,
@@ -234,7 +236,8 @@ internal sealed class EditorPersistenceCoordinator
                 return capturedStore.SaveState(baseline.Identity, desired, effectiveClear);
             },
             isStale: () => Volatile.Read(ref persistenceEpoch) != capturedEpoch ||
-                           Volatile.Read(ref openRevision) != capturedOpenRevision);
+                           Volatile.Read(ref openRevision) != capturedOpenRevision,
+            epoch: capturedEpoch);
 
         commit.QueueTask = queueTask;
         commitQueue.Enqueue(commit);
@@ -280,13 +283,20 @@ internal sealed class EditorPersistenceCoordinator
             }
             if (commitQueue.FirstPending is { CompletionTask: { } pending } firstCommit)
             {
-                if (!await pending && !commitQueue.HasNewerPendingOrSucceededCommit(firstCommit))
+                if (!await pending &&
+                    IsCurrentCommitPhoto(firstCommit) &&
+                    !commitQueue.HasNewerPendingOrSucceededCommit(firstCommit))
+                {
                     return false;
+                }
                 continue;
             }
             await saveQueue.FlushAsync();
-            if (!ApplyPendingCommits(onApplied, onFailed, onDeferredReloadReady))
+            if (!ApplyPendingCommits(onApplied, onFailed))
+            {
+                NotifyDeferredReloadIfReady(onDeferredReloadReady);
                 return false;
+            }
             if (EditDirty && CurrentPath != null && captureEdit != null)
                 continue;
             NotifyDeferredReloadIfReady(onDeferredReloadReady);
@@ -302,8 +312,11 @@ internal sealed class EditorPersistenceCoordinator
         if (HasPendingSaves)
         {
             saveQueue.FlushAsync().GetAwaiter().GetResult();
-            if (!ApplyPendingCommits(onApplied, onFailed, onDeferredReloadReady))
+            if (!ApplyPendingCommits(onApplied, onFailed))
+            {
+                NotifyDeferredReloadIfReady(onDeferredReloadReady);
                 return false;
+            }
         }
         NotifyDeferredReloadIfReady(onDeferredReloadReady);
         return true;
@@ -344,7 +357,7 @@ internal sealed class EditorPersistenceCoordinator
         if (HasPendingSaves)
         {
             saveQueue.FlushAsync().GetAwaiter().GetResult();
-            _ = ApplyPendingCommits(onApplied, onFailed, onDeferredReloadReady);
+            _ = ApplyPendingCommits(onApplied, onFailed);
         }
         var result = CommitSynchronouslyCore(candidate, defaultEdit, clearMigrationReceipt, out var previousLook);
         var saved = result.Saved!;
@@ -379,6 +392,7 @@ internal sealed class EditorPersistenceCoordinator
     {
         ArgumentNullException.ThrowIfNull(captureUiState);
         Volatile.Write(ref deferredExternalEditsCheck, false);
+        Volatile.Write(ref deferredNotificationPending, 0);
 
         if (CurrentPath == null)
             return new ExternalReloadResult(ExternalReloadAction.None, ExternalReloadBanner);
@@ -386,7 +400,12 @@ internal sealed class EditorPersistenceCoordinator
         if (HasPendingSaves)
         {
             Volatile.Write(ref deferredExternalEditsCheck, true);
-            return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredNotificationPending, 1);
+            Interlocked.MemoryBarrier();
+            if (HasPendingSaves)
+                return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredExternalEditsCheck, false);
+            Volatile.Write(ref deferredNotificationPending, 0);
         }
 
         EditStore activeStore;
@@ -434,7 +453,12 @@ internal sealed class EditorPersistenceCoordinator
         if (HasPendingSaves)
         {
             Volatile.Write(ref deferredExternalEditsCheck, true);
-            return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredNotificationPending, 1);
+            Interlocked.MemoryBarrier();
+            if (HasPendingSaves)
+                return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredExternalEditsCheck, false);
+            Volatile.Write(ref deferredNotificationPending, 0);
         }
 
         var evaluation = ExternalReloadBanner.Evaluate(
@@ -465,13 +489,20 @@ internal sealed class EditorPersistenceCoordinator
     {
         if (HasPendingSaves)
         {
-            Volatile.Write(ref deferredExternalEditsCheck, true);
             Volatile.Write(ref deferredExternalReloadAccept, true);
-            return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredExternalEditsCheck, true);
+            Volatile.Write(ref deferredNotificationPending, 1);
+            Interlocked.MemoryBarrier();
+            if (HasPendingSaves)
+                return new ExternalReloadResult(ExternalReloadAction.Deferred, ExternalReloadBanner);
+            Volatile.Write(ref deferredExternalReloadAccept, false);
+            Volatile.Write(ref deferredExternalEditsCheck, false);
+            Volatile.Write(ref deferredNotificationPending, 0);
         }
 
         Volatile.Write(ref deferredExternalReloadAccept, false);
         Volatile.Write(ref deferredExternalEditsCheck, false);
+        Volatile.Write(ref deferredNotificationPending, 0);
 
         if (!ExternalReloadBanner.TryAcceptReload(false, out var diskRecord) || diskRecord == null)
             return new ExternalReloadResult(ExternalReloadAction.None, ExternalReloadBanner);
@@ -483,7 +514,7 @@ internal sealed class EditorPersistenceCoordinator
         Interlocked.Increment(ref persistenceEpoch);
 
         if (TryAdoptExternalReloadRecord(diskRecord, out var adopted, out var previous))
-            return new ExternalReloadResult(ExternalReloadAction.AutoReload, ExternalReloadBanner, adopted, previous);
+            return new ExternalReloadResult(ExternalReloadAction.AutoReload, ExternalReloadBanner, adopted, previous, FromManualAccept: true);
 
         return new ExternalReloadResult(ExternalReloadAction.None, ExternalReloadBanner);
     }
@@ -683,21 +714,20 @@ internal sealed class EditorPersistenceCoordinator
             commit,
             IsCurrentCommitPhoto,
             IsCurrentCommitRevision,
-            (c, saved, isCurrentRev) => HandleCommitApplied(c, saved, isCurrentRev, onApplied, onDeferredReloadReady),
-            (c, error, shouldShow) => HandleCommitFailed(c, error, shouldShow, onFailed, onDeferredReloadReady));
+            (c, saved, isCurrentRev) => HandleCommitApplied(c, saved, isCurrentRev, onApplied),
+            (c, error, shouldShow) => HandleCommitFailed(c, error, shouldShow, onFailed));
         NotifyDeferredReloadIfReady(onDeferredReloadReady);
         return succeeded;
     }
 
     private bool ApplyPendingCommits(
         Action<EditSaveSuccess>? onApplied,
-        Action<EditSaveFailure>? onFailed,
-        Action? onDeferredReloadReady) =>
+        Action<EditSaveFailure>? onFailed) =>
         commitQueue.ApplyPending(
             IsCurrentCommitPhoto,
             IsCurrentCommitRevision,
-            (c, saved, isCurrentRev) => HandleCommitApplied(c, saved, isCurrentRev, onApplied, onDeferredReloadReady),
-            (c, error, shouldShow) => HandleCommitFailed(c, error, shouldShow, onFailed, onDeferredReloadReady));
+            (c, saved, isCurrentRev) => HandleCommitApplied(c, saved, isCurrentRev, onApplied),
+            (c, error, shouldShow) => HandleCommitFailed(c, error, shouldShow, onFailed));
 
     private bool IsCurrentCommitPhoto(PendingEditSaveCommit commit) =>
         SamePath(CurrentPath, commit.Path) &&
@@ -711,8 +741,7 @@ internal sealed class EditorPersistenceCoordinator
         PendingEditSaveCommit commit,
         PhotoEditState saved,
         bool isCurrentRevision,
-        Action<EditSaveSuccess>? onApplied,
-        Action? onDeferredReloadReady)
+        Action<EditSaveSuccess>? onApplied)
     {
         CurrentRecord = saved;
         var clearApplied = false;
@@ -723,24 +752,30 @@ internal sealed class EditorPersistenceCoordinator
             clearApplied = Volatile.Read(ref commit.ClearReceipt);
         }
         onApplied?.Invoke(new EditSaveSuccess(saved, commit.PreviousLook, isCurrentRevision, clearApplied));
-        NotifyDeferredReloadIfReady(onDeferredReloadReady);
     }
 
     private void HandleCommitFailed(
         PendingEditSaveCommit commit,
         Exception error,
         bool shouldShowNotice,
-        Action<EditSaveFailure>? onFailed,
-        Action? onDeferredReloadReady)
+        Action<EditSaveFailure>? onFailed)
     {
         onFailed?.Invoke(new EditSaveFailure(error, shouldShowNotice, IsCurrentCommitPhoto(commit)));
-        NotifyDeferredReloadIfReady(onDeferredReloadReady);
     }
 
     private void NotifyDeferredReloadIfReady(Action? onDeferredReloadReady)
     {
-        if (!HasPendingSaves && HasDeferredExternalCheck)
-            onDeferredReloadReady?.Invoke();
+        Interlocked.MemoryBarrier();
+        if (HasPendingSaves || !HasDeferredExternalCheck)
+            return;
+        if (onDeferredReloadReady != null)
+        {
+            onDeferredReloadReady.Invoke();
+            if (HasPendingSaves || !HasDeferredExternalCheck)
+                return;
+        }
+        if (Interlocked.Exchange(ref deferredNotificationPending, 0) == 1)
+            DeferredExternalCheckReady?.Invoke();
     }
 
     private void OnSaveQueueBecameIdle()
@@ -748,8 +783,11 @@ internal sealed class EditorPersistenceCoordinator
         if (!HasDeferredExternalCheck) return;
         DispatchToUi(() =>
         {
-            if (!HasPendingSaves && HasDeferredExternalCheck)
+            if (!HasPendingSaves && HasDeferredExternalCheck &&
+                Interlocked.Exchange(ref deferredNotificationPending, 0) == 1)
+            {
                 DeferredExternalCheckReady?.Invoke();
+            }
         });
     }
 
@@ -778,6 +816,7 @@ internal sealed class EditorPersistenceCoordinator
     {
         Volatile.Write(ref deferredExternalEditsCheck, false);
         Volatile.Write(ref deferredExternalReloadAccept, false);
+        Volatile.Write(ref deferredNotificationPending, 0);
     }
 
     private static bool SamePath(string? left, string? right) =>

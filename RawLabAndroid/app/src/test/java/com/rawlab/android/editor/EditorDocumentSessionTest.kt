@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
@@ -102,11 +104,49 @@ class EditorDocumentSessionTest {
                 )) {
                     session.storageRelease.release(participant)
                 }
+                val deadline = System.currentTimeMillis() + 5_000L
+                while (!session.storageRelease.isReleased() && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(10)
+                }
                 assertTrue(session.storageRelease.isReleased())
             } finally {
                 release.countDown()
                 session.disposed = true
                 session.adjustmentQueue.close()
+            }
+        }
+    }
+
+    @Test
+    fun editorViewModelPreservesReflectionFieldsUsedByInstrumentedTests() {
+        EditorViewModelTestHarness().use { harness ->
+            val model = harness.createViewModel()
+            try {
+                fun readField(name: String): Any? =
+                    EditorViewModel::class.java.getDeclaredField(name).apply { isAccessible = true }.get(model)
+
+                val requiredFields = listOf(
+                    "renderer",
+                    "editStore",
+                    "adjustmentHistory",
+                    "currentRevision",
+                    "sourceRevision",
+                    "queue",
+                    "adjustmentQueue",
+                )
+                for (name in requiredFields) {
+                    assertNotNull("Expected EditorViewModel field '$name' to be declared", EditorViewModel::class.java.getDeclaredField(name))
+                }
+                assertSame(model.session.editStore, readField("editStore"))
+                assertSame(model.session.adjustmentHistory, readField("adjustmentHistory"))
+                assertSame(model.session.adjustmentQueue, readField("adjustmentQueue"))
+                assertSame(model.viewport.queue, readField("queue"))
+                assertEquals(0L, readField("currentRevision"))
+                assertEquals(0L, readField("sourceRevision"))
+            } finally {
+                harness.onMain {
+                    EditorViewModel::class.java.getDeclaredMethod("onCleared").apply { isAccessible = true }.invoke(model)
+                }
             }
         }
     }

@@ -2,7 +2,7 @@ using System.IO;
 
 namespace RawLab.Windows;
 
-internal sealed record EditSaveKey(EditStore Store, string Path, long OpenRevision);
+internal sealed record EditSaveKey(EditStore Store, string Path, long OpenRevision, long Epoch);
 
 internal sealed record EditSaveWorkResult(bool Superseded, PhotoEditState? Saved = null);
 
@@ -43,13 +43,14 @@ internal sealed class EditSaveQueue
         long openRevision,
         bool clearMigrationReceipt,
         Func<bool, PhotoEditState> execute,
-        Func<bool>? isStale = null)
+        Func<bool>? isStale = null,
+        long epoch = 0)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(path);
         ArgumentNullException.ThrowIfNull(execute);
 
-        var key = new EditSaveKey(store, Path.GetFullPath(path), openRevision);
+        var key = new EditSaveKey(store, Path.GetFullPath(path), openRevision, epoch);
         TaskCompletionSource<EditSaveWorkResult>? superseded = null;
         var completion = new TaskCompletionSource<EditSaveWorkResult>(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -62,7 +63,8 @@ internal sealed class EditSaveQueue
                 if (last != null &&
                     ReferenceEquals(last.Key.Store, key.Store) &&
                     StringComparer.OrdinalIgnoreCase.Equals(last.Key.Path, key.Path) &&
-                    last.Key.OpenRevision == key.OpenRevision)
+                    last.Key.OpenRevision == key.OpenRevision &&
+                    last.Key.Epoch == key.Epoch)
                 {
                     superseded = last.Completion;
                     last.Execute = execute;
@@ -91,7 +93,7 @@ internal sealed class EditSaveQueue
         lock (gate)
         {
             queue.Enqueue(new PendingRequest(
-                new EditSaveKey(null!, "", -1),
+                new EditSaveKey(null!, "", -1, -1),
                 _ =>
                 {
                     try
@@ -325,7 +327,7 @@ internal sealed class EditSaveCommitQueue
 
         foreach (var (commit, succeeded) in results)
         {
-            if (succeeded) continue;
+            if (succeeded || !isCurrentPhoto(commit)) continue;
             var key = (commit.Path, commit.OpenRevision);
             if (!latestSucceededRevisions.TryGetValue(key, out var succeededRevision) || succeededRevision <= commit.Revision)
                 return false;

@@ -106,7 +106,7 @@ public partial class MainWindow
         if (reloadResult.Action != ExternalReloadAction.AutoReload || reloadResult.AdoptedRecord == null)
             return;
 
-        if (fromManualAccept)
+        if (fromManualAccept || reloadResult.FromManualAccept)
         {
             if (transform.Active)
             {

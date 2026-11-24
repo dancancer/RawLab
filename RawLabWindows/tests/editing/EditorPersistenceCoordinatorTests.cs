@@ -206,6 +206,7 @@ public sealed class EditorPersistenceCoordinatorTests
                 var reloaded = coordinator.HandleExternalEditsChange(
                     () => (MakeEdit(identity, currentExposure), coordinator.EditDirty, null));
                 Assert.Equal(ExternalReloadAction.AutoReload, reloaded.Action);
+                Assert.False(reloaded.FromManualAccept);
                 Assert.Equal(1.4, coordinator.CurrentRecord!.Edit!.Settings.Restore()[Parameter.Exposure]);
             });
         }
@@ -281,6 +282,7 @@ public sealed class EditorPersistenceCoordinatorTests
 
                 var applied = await idleTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
                 Assert.Equal(ExternalReloadAction.AutoReload, applied.Action);
+                Assert.True(applied.FromManualAccept);
                 Assert.False(coordinator.ExternalReloadBanner.Visible);
                 Assert.False(coordinator.EditDirty);
                 Assert.True(coordinator.PersistenceEpoch > epochBeforeDrain);
@@ -506,6 +508,295 @@ public sealed class EditorPersistenceCoordinatorTests
                 Assert.True(await t1);
                 Assert.True(await t2);
                 Assert.Equal(3, coordinator.AdjustmentSession!.Transactions.Count);
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public async Task DeferredExternalCheckReadyFiresInHeadlessContextAndWhenScheduleUiOutracesCompletion()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-coord-race1bc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var photo = Path.Combine(root, "photo.arw");
+            File.WriteAllText(photo, "raw-race1");
+            var identity = OriginalIdentity.Read(photo);
+            var editsDir = Path.Combine(root, "edits");
+
+            // Race1B: headless context (SynchronizationContext.Current == null) and onDeferredReloadReady == null.
+            for (var i = 0; i < 20; i++)
+            {
+                var iterEditsDir = Path.Combine(root, $"edits-1b-{i}");
+                using var writeEntered = new ManualResetEventSlim(false);
+                using var allowWrite = new ManualResetEventSlim(false);
+                var store = new EditStore(iterEditsDir, (path, payload) =>
+                {
+                    writeEntered.Set();
+                    Assert.True(allowWrite.Wait(TimeSpan.FromSeconds(5)));
+                    AtomicJson.Write(path, payload);
+                });
+                var coordinator = new EditorPersistenceCoordinator(store, () => store);
+                coordinator.BeginOpen(photo, new PhotoEditState(identity, null));
+                var readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                coordinator.DeferredExternalCheckReady += () =>
+                {
+                    _ = coordinator.FlushDeferredExternalReload(() => (MakeEdit(identity, 0.4), coordinator.EditDirty, null));
+                    readyTcs.TrySetResult(true);
+                };
+
+                coordinator.MarkEdited(canPersist: true);
+                var saveTask = coordinator.EnqueueSaveAsync(() => (MakeEdit(identity, 0.4), null));
+                Assert.True(writeEntered.Wait(TimeSpan.FromSeconds(5)));
+                Assert.Equal(
+                    ExternalReloadAction.Deferred,
+                    coordinator.HandleExternalEditsChange(() => (MakeEdit(identity, 0.4), coordinator.EditDirty, null)).Action);
+
+                allowWrite.Set();
+                Assert.True(await saveTask);
+                Assert.True(await readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+                Assert.False(coordinator.HasDeferredExternalCheck);
+            }
+
+            // Race1C: scheduleUi outraces CompleteQueuedSaveAsync's continuation before commitQueue drains.
+            for (var i = 0; i < 20; i++)
+            {
+                var race1cEditsDir = Path.Combine(root, $"edits-1c-{i}");
+                using var writeEntered = new ManualResetEventSlim(false);
+                using var allowWrite = new ManualResetEventSlim(false);
+                var store = new EditStore(race1cEditsDir, (path, payload) =>
+                {
+                    writeEntered.Set();
+                    Assert.True(allowWrite.Wait(TimeSpan.FromSeconds(5)));
+                    AtomicJson.Write(path, payload);
+                });
+                await RunOnSerialUiContext(async () =>
+                {
+                    var coordinator = new EditorPersistenceCoordinator(store, () => store, scheduleUi: action => action());
+                    coordinator.BeginOpen(photo, new PhotoEditState(identity, null));
+                    var readyCount = 0;
+                    var readyTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    coordinator.DeferredExternalCheckReady += () =>
+                    {
+                        Interlocked.Increment(ref readyCount);
+                        _ = coordinator.FlushDeferredExternalReload(() => (MakeEdit(identity, 0.7), coordinator.EditDirty, null));
+                        readyTcs.TrySetResult(true);
+                    };
+
+                    coordinator.MarkEdited(canPersist: true);
+                    var saveTask = coordinator.EnqueueSaveAsync(() => (MakeEdit(identity, 0.7), null));
+                    Assert.True(writeEntered.Wait(TimeSpan.FromSeconds(5)));
+                    Assert.Equal(
+                        ExternalReloadAction.Deferred,
+                        coordinator.HandleExternalEditsChange(() => (MakeEdit(identity, 0.7), coordinator.EditDirty, null)).Action);
+
+                    allowWrite.Set();
+                    Assert.True(await saveTask);
+                    Assert.True(await readyTcs.Task.WaitAsync(TimeSpan.FromSeconds(5)));
+                    Assert.Equal(1, Volatile.Read(ref readyCount));
+                    Assert.False(coordinator.HasDeferredExternalCheck);
+                });
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public async Task EpochBumpWithoutOpenRevisionBumpDoesNotCoalesceClearMigrationReceiptAcrossEpochs()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-coord-race2d-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var photo = Path.Combine(root, "photo.arw");
+            File.WriteAllText(photo, "raw-race2d");
+            var identity = OriginalIdentity.Read(photo);
+            var editsDir = Path.Combine(root, "edits");
+
+            using var firstWriteEntered = new ManualResetEventSlim(false);
+            using var allowFirstWrite = new ManualResetEventSlim(false);
+            var armed = false;
+            var writeCount = 0;
+
+            var store = new EditStore(editsDir, (path, payload) =>
+            {
+                if (Volatile.Read(ref armed) && Interlocked.Increment(ref writeCount) == 1)
+                {
+                    firstWriteEntered.Set();
+                    Assert.True(allowFirstWrite.Wait(TimeSpan.FromSeconds(5)));
+                }
+                AtomicJson.Write(path, payload);
+            });
+
+            var legacy = MakeEdit(identity, 0.1, processingVersion: 2);
+            var migrated = MakeEdit(identity, 0.1, processingVersion: 3);
+            store.SaveState(identity, legacy);
+            var migratedState = store.CommitProcessingMigration(identity, legacy, migrated, ProcessingMigrationReceipt.Migrated);
+            Assert.NotNull(store.ReadProcessingMigration(photo));
+
+            await RunOnSerialUiContext(async () =>
+            {
+                var coordinator = new EditorPersistenceCoordinator(store, () => store);
+                coordinator.BeginOpen(photo, migratedState);
+                var initialOpenRev = coordinator.OpenRevision;
+                Volatile.Write(ref armed, true);
+
+                // Save #1 blocks in worker.
+                coordinator.MarkEdited(canPersist: true);
+                var t1 = coordinator.EnqueueSaveAsync(() => (MakeEdit(identity, 0.5), null));
+                Assert.True(firstWriteEntered.Wait(TimeSpan.FromSeconds(5)));
+
+                // Save #2 queued at tail in Epoch E with clearMigrationReceipt: true.
+                coordinator.MarkEdited(canPersist: true, clearMigrationReceipt: true);
+                var t2 = coordinator.EnqueueSaveAsync(() => (MakeEdit(identity, 0.8), null), clearMigrationReceipt: true);
+
+                // Bump PersistenceEpoch without bumping OpenRevision (e.g., ApplyRestoredOpenState / CompleteTransformCommit).
+                coordinator.ApplyRestoredOpenState(photo, migratedState);
+                Assert.Equal(initialOpenRev, coordinator.OpenRevision);
+                Assert.False(coordinator.PendingMigrationReceiptClear);
+
+                // Save #3 in Epoch E+1 with clearMigrationReceipt: false must NOT coalesce into Save #2.
+                coordinator.MarkEdited(canPersist: true, clearMigrationReceipt: false);
+                var t3 = coordinator.EnqueueSaveAsync(() => (MakeEdit(identity, 1.2), null), clearMigrationReceipt: false);
+
+                allowFirstWrite.Set();
+                Assert.True(await t1);
+                Assert.True(await t2);
+                Assert.True(await t3);
+                Assert.True(await coordinator.FlushAsync(() => (MakeEdit(identity, 1.2), null)));
+
+                Assert.NotNull(store.ReadProcessingMigration(photo));
+                Assert.Equal(1.2, store.ReadState(photo).Edit!.Settings.Restore()[Parameter.Exposure]);
+
+                // Also verify CompleteTransformCommit epoch bump without OpenRevision bump stops coalescing.
+                var armed2 = false;
+                var writeCount2 = 0;
+                using var write4Entered = new ManualResetEventSlim(false);
+                using var allowWrite4 = new ManualResetEventSlim(false);
+                var store2 = new EditStore(Path.Combine(root, "edits2"), (path, payload) =>
+                {
+                    if (Volatile.Read(ref armed2) && Interlocked.Increment(ref writeCount2) == 1)
+                    {
+                        write4Entered.Set();
+                        Assert.True(allowWrite4.Wait(TimeSpan.FromSeconds(5)));
+                    }
+                    AtomicJson.Write(path, payload);
+                });
+                store2.SaveState(identity, legacy);
+                var migrated2 = store2.CommitProcessingMigration(identity, legacy, migrated, ProcessingMigrationReceipt.Migrated);
+                var coord2 = new EditorPersistenceCoordinator(store2, () => store2);
+                coord2.BeginOpen(photo, migrated2);
+                Volatile.Write(ref armed2, true);
+                coord2.MarkEdited(canPersist: true);
+                var t4 = coord2.EnqueueSaveAsync(() => (MakeEdit(identity, 0.3), null));
+                Assert.True(write4Entered.Wait(TimeSpan.FromSeconds(5)));
+                coord2.MarkEdited(canPersist: true, clearMigrationReceipt: true);
+                var t5 = coord2.EnqueueSaveAsync(() => (MakeEdit(identity, 0.6), null), clearMigrationReceipt: true);
+                coord2.CompleteTransformCommit(migrated2);
+                coord2.MarkEdited(canPersist: true, clearMigrationReceipt: false);
+                var t6 = coord2.EnqueueSaveAsync(() => (MakeEdit(identity, 0.9), null), clearMigrationReceipt: false);
+                allowWrite4.Set();
+                Assert.True(await t4);
+                Assert.True(await t5);
+                Assert.True(await t6);
+                Assert.True(await coord2.FlushAsync(() => (MakeEdit(identity, 0.9), null)));
+                Assert.NotNull(store2.ReadProcessingMigration(photo));
+            });
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public async Task ObsoleteFailedSaveFromPreviousPhotoOrStoreDoesNotPoisonFlushOrSaveSync()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-coord-race2ef-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var photoA = Path.Combine(root, "a.arw");
+            var photoB = Path.Combine(root, "b.arw");
+            File.WriteAllText(photoA, "raw-a");
+            File.WriteAllText(photoB, "raw-b");
+            var idA = OriginalIdentity.Read(photoA);
+            var idB = OriginalIdentity.Read(photoB);
+
+            // Race2E: Photo A save throws IOException after BeginOpen(photoB).
+            using var aEntered = new ManualResetEventSlim(false);
+            using var allowAFail = new ManualResetEventSlim(false);
+            var storeA = new EditStore(Path.Combine(root, "editsA"), (path, payload) =>
+            {
+                if (System.Text.Json.JsonSerializer.Serialize(payload).Contains("a.arw", StringComparison.OrdinalIgnoreCase))
+                {
+                    aEntered.Set();
+                    Assert.True(allowAFail.Wait(TimeSpan.FromSeconds(5)));
+                    throw new IOException("Simulated Photo A failure");
+                }
+                AtomicJson.Write(path, payload);
+            });
+
+            await RunOnSerialUiContext(async () =>
+            {
+                var coordinator = new EditorPersistenceCoordinator(storeA, () => storeA);
+                coordinator.BeginOpen(photoA, new PhotoEditState(idA, null));
+                coordinator.MarkEdited(canPersist: true);
+                var failures = new List<EditSaveFailure>();
+                var failedTaskA = coordinator.EnqueueSaveAsync(
+                    () => (MakeEdit(idA, 0.5), null),
+                    onFailed: f => failures.Add(f));
+                Assert.True(aEntered.Wait(TimeSpan.FromSeconds(5)));
+
+                coordinator.BeginOpen(photoB, new PhotoEditState(idB, null));
+                coordinator.MarkEdited(canPersist: true);
+                allowAFail.Set();
+
+                Assert.True(await coordinator.FlushAsync(() => (MakeEdit(idB, 1.1), null)));
+                Assert.False(await failedTaskA);
+                Assert.Single(failures);
+                Assert.False(failures[0].IsCurrentPhoto);
+                Assert.False(failures[0].ShouldShowNotice);
+                Assert.Equal(1.1, storeA.ReadState(photoB).Edit!.Settings.Restore()[Parameter.Exposure]);
+            });
+
+            // Race2F: Broken store save throws IOException after RebindStore(healthyStore), followed by SaveSync.
+            using var brokenEntered = new ManualResetEventSlim(false);
+            using var allowBrokenFail = new ManualResetEventSlim(false);
+            var brokenStore = new EditStore(Path.Combine(root, "editsBroken"), (path, payload) =>
+            {
+                brokenEntered.Set();
+                Assert.True(allowBrokenFail.Wait(TimeSpan.FromSeconds(5)));
+                throw new IOException("Simulated broken store failure");
+            });
+            var healthyStore = new EditStore(Path.Combine(root, "editsHealthy"));
+
+            await RunOnSerialUiContext(async () =>
+            {
+                var coordinator = new EditorPersistenceCoordinator(brokenStore, () => healthyStore);
+                coordinator.BeginOpen(photoA, new PhotoEditState(idA, null));
+                coordinator.MarkEdited(canPersist: true);
+                var failedBrokenTask = coordinator.EnqueueSaveAsync(() => (MakeEdit(idA, 0.4), null));
+                Assert.True(brokenEntered.Wait(TimeSpan.FromSeconds(5)));
+
+                coordinator.RebindStore(healthyStore);
+                coordinator.MarkEdited(canPersist: true);
+                allowBrokenFail.Set();
+
+                Assert.True(coordinator.SaveSync(() => (MakeEdit(idA, 1.8), null)));
+                Assert.False(await failedBrokenTask);
+                Assert.False(coordinator.EditDirty);
+                Assert.Equal(1.8, healthyStore.ReadState(photoA).Edit!.Settings.Restore()[Parameter.Exposure]);
             });
         }
         finally

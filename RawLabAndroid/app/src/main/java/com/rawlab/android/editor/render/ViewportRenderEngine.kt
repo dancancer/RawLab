@@ -52,7 +52,7 @@ internal class ViewportRenderEngine(
     private var detailDebounceJob: Job? = null
     private var lastNativeSize: Pair<Int, Int>? = null
 
-    private val queue = RenderQueue<Work, WorkResult>(
+    internal val queue = RenderQueue<Work, WorkResult>(
         session.dependencies.renderGateway::perform,
         { revision, result ->
             // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。

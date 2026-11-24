@@ -66,6 +66,7 @@ class EditorViewModel internal constructor(
     private val mutable = session.mutable
     val state = session.state
     internal val storageRelease = session.storageRelease
+    private val editStore = session.editStore
     private val adjustmentQueue = session.adjustmentQueue
     private val adjustmentHistory = session.adjustmentHistory
 
@@ -79,6 +80,7 @@ class EditorViewModel internal constructor(
             hdrHolder.onRenderSubmitted(work)
         },
     )
+    private val queue = viewport.queue
 
     private val systemPhotoHolder: EditorSystemPhotoStateHolder = EditorSystemPhotoStateHolder(session)
     private val lookHolder: EditorLookStateHolder = EditorLookStateHolder(session)
