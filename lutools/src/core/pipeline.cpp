@@ -696,6 +696,10 @@ RenderStatus Pipeline::applyEditState(const CanonicalEditState& state, bool pres
         masterRecipeWb_ = state.masterRecipe;
         committedEditState_ = state;
         committedEditState_.aiDenoiseBlend = aiDenoiseBlend_;
+        if (committedEditState_.whiteBalanceMode == RenderWhiteBalanceMode::Camera) {
+            committedEditState_.temperatureKelvin = 6500.0f;
+            committedEditState_.tint = 0.0f;
+        }
         hasCommittedEditState_ = true;
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
@@ -785,13 +789,20 @@ RenderStatus Pipeline::resolveStateWhiteBalanceIfNeeded(RenderParams& params) {
     const RenderStatus status = resolveRecipeWhiteBalance(wbReq, wbRes);
     if (status == RenderStatus::Ok) {
         params.wbMode = wbRes.wbMode;
-        params.temperature = wbRes.temperature;
-        params.tint = wbRes.tint;
+        if (wbRes.wbMode == RenderWhiteBalanceMode::Camera) {
+            params.temperature = 6500.0f;
+            params.tint = 0.0f;
+        } else {
+            params.temperature = wbRes.temperature;
+            params.tint = wbRes.tint;
+        }
         return RenderStatus::Ok;
     }
     if (status == RenderStatus::Unsupported &&
         masterRecipeWb_.uncalibratedFallback == UncalibratedWbPolicy::FallbackCamera) {
         params.wbMode = RenderWhiteBalanceMode::Camera;
+        params.temperature = 6500.0f;
+        params.tint = 0.0f;
         return RenderStatus::Ok;
     }
     return status;

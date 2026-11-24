@@ -983,8 +983,8 @@ RenderParams CanonicalSdrRecipe::toRenderParams() const {
     params.shadows = shadows;
     params.toneCurve = sCurve;
     params.sharpening = sharpening;
-    params.temperature = temperatureKelvin;
-    params.tint = tint;
+    params.temperature = whiteBalanceMode == RenderWhiteBalanceMode::Camera ? 6500.0f : temperatureKelvin;
+    params.tint = whiteBalanceMode == RenderWhiteBalanceMode::Camera ? 0.0f : tint;
     params.effects = effects;
     params.chromaDenoise = chromaDenoise;
     params.hsl = hsl;
@@ -1147,11 +1147,18 @@ hdr::CameraRawDevelopmentSpec CanonicalEditState::toCameraRawDevSpec(
         spec.hasDevelopment = true;
         spec.whiteBalance = static_cast<uint32_t>(dev.whiteBalance);
         spec.exposureReference = static_cast<uint32_t>(dev.exposureReference);
-        spec.temperature = dev.temperature;
-        spec.tint = dev.tint;
+        if (dev.whiteBalance == CameraDevelopmentWbMode::AsShot) {
+            spec.temperature = 0.0f;
+            spec.tint = 0.0f;
+        } else {
+            spec.temperature = dev.temperature;
+            spec.tint = dev.tint;
+        }
         spec.fbddLevel = dev.fbddLevel;
         spec.lensFlags = dev.lensFlags();
-        spec.lensProfileId = dev.lensProfileId.empty() ? nullptr : dev.lensProfileId.c_str();
+        spec.lensProfileId = (spec.lensFlags != 0u && !dev.lensProfileId.empty())
+            ? dev.lensProfileId.c_str()
+            : nullptr;
         spec.hasCameraProfile = !dev.cameraProfilePath.empty();
         spec.cameraProfilePath = spec.hasCameraProfile ? dev.cameraProfilePath.c_str() : nullptr;
         spec.cameraProfileSha256 = spec.hasCameraProfile ? dev.cameraProfileSha256.c_str() : nullptr;
@@ -1209,7 +1216,8 @@ bool parseCanonicalEditState(
                 else if (fam != "rawlab") throw std::invalid_argument("Unsupported processing.family");
             } else if (sessionMode && (root.contains("camera_development") ||
                        (root.contains("input") && root.at("input").is_object() &&
-                        (root.at("input").at("camera_development").is_object() ||
+                        ((root.at("input").contains("camera_development") &&
+                          root.at("input").at("camera_development").is_object()) ||
                          (root.at("input").contains("type") && root.at("input").at("type") == "hdr_raster"))))) {
                 isHdrFamily = true;
             }

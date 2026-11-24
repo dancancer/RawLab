@@ -105,13 +105,16 @@ internal static class CanonicalEditRecipe
         }
         else if (includeSessionState && settings.MasterRecipeID != null)
         {
+            var customWb = !settings.CameraWhiteBalance;
+            var strength = settings[Parameter.Strength];
+            var tint = settings[Parameter.Tint];
             whiteBalance = new WhiteBalancePayload("camera");
             masterRecipe = new MasterRecipePayload(
                 Active: true,
-                Strength: settings[Parameter.Strength],
-                CustomWb: !settings.CameraWhiteBalance,
-                TemperatureKelvin: settings[Parameter.Temperature],
-                Tint: settings[Parameter.Tint],
+                Strength: strength,
+                CustomWb: customWb,
+                TemperatureKelvin: customWb ? settings[Parameter.Temperature] : 6500.0,
+                Tint: (!customWb && (strength == 0.0 || tint == 0.0)) ? 0.0 : tint,
                 UncalibratedFallback: "error");
         }
         else if (includeSessionState && !settings.CameraWhiteBalance)

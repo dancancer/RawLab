@@ -266,6 +266,31 @@ void testOptionalFieldsAndStrictSeparation() {
     }).dump();
     require(!parseCanonicalEditState(badBlend, state, err, {RecipeParseMode::SessionState, true}),
         "ai_denoise_blend > 1.0 must fail", __FILE__, __LINE__);
+
+    // Schema-less SessionState JSON containing "input" without "camera_development" must parse cleanly.
+    const std::string schemaLessHdrRaster = Json({
+        {"input", {{"type", "hdr_raster"}}},
+        {"edits", {{"exposure", {{"ev", 0.25}}}}}
+    }).dump();
+    require(parseCanonicalEditState(schemaLessHdrRaster, state, err, {RecipeParseMode::SessionState, true}) &&
+            state.isHdr && std::abs(state.exposureEv - 0.25f) < 1e-5f,
+        ("Schema-less SessionState with input.type=hdr_raster must parse: " + err).c_str(), __FILE__, __LINE__);
+
+    const std::string schemaLessSdrRaster = Json({
+        {"input", {{"type", "raster"}}},
+        {"edits", {{"exposure", {{"ev", 0.25}}}}}
+    }).dump();
+    require(parseCanonicalEditState(schemaLessSdrRaster, state, err, {RecipeParseMode::SessionState, true}) &&
+            !state.isHdr && state.rasterInput && std::abs(state.exposureEv - 0.25f) < 1e-5f,
+        ("Schema-less SessionState with input.type=raster must parse: " + err).c_str(), __FILE__, __LINE__);
+
+    const std::string schemaLessInputPath = Json({
+        {"input", {{"path", (fs::path("dir") / "photo.dng").string()}}},
+        {"edits", {{"exposure", {{"ev", 0.25}}}}}
+    }).dump();
+    require(parseCanonicalEditState(schemaLessInputPath, state, err, {RecipeParseMode::SessionState, true}) &&
+            !state.isHdr && !state.rasterInput && std::abs(state.exposureEv - 0.25f) < 1e-5f,
+        ("Schema-less SessionState with input.path must parse: " + err).c_str(), __FILE__, __LINE__);
 }
 
 void testSdrParityAndStatelessNonLeakage() {
@@ -595,6 +620,117 @@ void testMasterRecipeWbInCore(const TempDir& dir) {
     require(sony2fuji_session_render(newSess.ptr, &uncalOpts, masterCamJson.c_str(), &uncalOkBuf.value, nullptr) == SONY2FUJI_STATUS_OK &&
             uncalOkBuf.value.data != nullptr,
         "uncalibrated_fallback=camera must fall back to camera WB cleanly on uncalibrated RAW", __FILE__, __LINE__);
+
+    // Neutral Camera WB baselines for calibrated & uncalibrated DNGs.
+    const std::string neutralCamJson = Json({
+        {"schema_version", 17},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"edits", {
+            {"exposure", {{"mode", "preview"}, {"ev", 0.0}, {"brightness", 1.0}}},
+            {"white_balance", {{"mode", "camera"}}}
+        }}
+    }).dump();
+    BufferGuard calNeutralBuf, uncalNeutralBuf;
+    require(sony2fuji_session_render(newSess.ptr, &rawOpts, neutralCamJson.c_str(), &calNeutralBuf.value, nullptr) == SONY2FUJI_STATUS_OK &&
+            sony2fuji_session_render(newSess.ptr, &uncalOpts, neutralCamJson.c_str(), &uncalNeutralBuf.value, nullptr) == SONY2FUJI_STATUS_OK,
+        "neutral Camera WB baseline renders failed", __FILE__, __LINE__);
+
+    // custom_wb=false with strength=0.0, temperature_kelvin=4800.0, tint=16.0 must render neutral Camera WB.
+    const std::string zeroStrengthMasterJson = Json({
+        {"schema_version", 17},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"edits", {
+            {"exposure", {{"mode", "preview"}, {"ev", 0.0}, {"brightness", 1.0}}},
+            {"white_balance", {{"mode", "camera"}}},
+            {"master_recipe", {
+                {"active", true},
+                {"strength", 0.0},
+                {"custom_wb", false},
+                {"temperature_kelvin", 4800.0},
+                {"tint", 16.0},
+                {"uncalibrated_fallback", "error"}
+            }}
+        }}
+    }).dump();
+    BufferGuard zeroStrengthBuf;
+    require(sony2fuji_session_render(newSess.ptr, &rawOpts, zeroStrengthMasterJson.c_str(), &zeroStrengthBuf.value, nullptr) == SONY2FUJI_STATUS_OK &&
+            bufferBytes(zeroStrengthBuf.value) == bufferBytes(calNeutralBuf.value),
+        "master_recipe custom_wb=false, strength=0.0 must match neutral Camera WB byte-for-byte", __FILE__, __LINE__);
+
+    // custom_wb=false with strength=0.75, temperature_kelvin=4800.0, tint=0.0 must render neutral Camera WB.
+    const std::string zeroTintMasterJson = Json({
+        {"schema_version", 17},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"edits", {
+            {"exposure", {{"mode", "preview"}, {"ev", 0.0}, {"brightness", 1.0}}},
+            {"white_balance", {{"mode", "camera"}}},
+            {"master_recipe", {
+                {"active", true},
+                {"strength", 0.75},
+                {"custom_wb", false},
+                {"temperature_kelvin", 4800.0},
+                {"tint", 0.0},
+                {"uncalibrated_fallback", "error"}
+            }}
+        }}
+    }).dump();
+    BufferGuard zeroTintBuf;
+    require(sony2fuji_session_render(newSess.ptr, &rawOpts, zeroTintMasterJson.c_str(), &zeroTintBuf.value, nullptr) == SONY2FUJI_STATUS_OK &&
+            bufferBytes(zeroTintBuf.value) == bufferBytes(calNeutralBuf.value),
+        "master_recipe custom_wb=false, tint=0.0 must match neutral Camera WB byte-for-byte", __FILE__, __LINE__);
+
+    // uncalibrated_fallback="camera" with non-default temperature_kelvin=4800.0, tint=16.0 must fall back to neutral Camera WB.
+    const std::string uncalNonNeutralFallbackJson = Json({
+        {"schema_version", 17},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"edits", {
+            {"exposure", {{"mode", "preview"}, {"ev", 0.0}, {"brightness", 1.0}}},
+            {"white_balance", {{"mode", "camera"}}},
+            {"master_recipe", {
+                {"active", true},
+                {"strength", 0.75},
+                {"custom_wb", false},
+                {"temperature_kelvin", 4800.0},
+                {"tint", 16.0},
+                {"uncalibrated_fallback", "camera"}
+            }}
+        }}
+    }).dump();
+    BufferGuard uncalFallbackNeutralBuf;
+    require(sony2fuji_session_render(newSess.ptr, &uncalOpts, uncalNonNeutralFallbackJson.c_str(), &uncalFallbackNeutralBuf.value, nullptr) == SONY2FUJI_STATUS_OK &&
+            bufferBytes(uncalFallbackNeutralBuf.value) == bufferBytes(uncalNeutralBuf.value),
+        "uncalibrated_fallback=camera must normalize temperature/tint to neutral Camera WB", __FILE__, __LINE__);
+
+    // Direct C++ CanonicalEditState with Camera WB without master_recipe must also normalize temperature/tint to (6500, 0).
+    {
+        sony2fuji::Pipeline directPipe;
+        sony2fuji::CanonicalEditState directState{};
+        directState.processingVersion = sony2fuji::ProcessingVersion::BasicV3;
+        directState.exposureMode = sony2fuji::RawExposureMode::Preview;
+        directState.whiteBalanceMode = sony2fuji::RenderWhiteBalanceMode::Camera;
+        directState.temperatureKelvin = 4800.0f;
+        directState.tint = 16.0f;
+        require(directPipe.applyEditState(directState, false) == sony2fuji::RenderStatus::Ok,
+            "direct applyEditState Camera WB failed", __FILE__, __LINE__);
+        sony2fuji::Pipeline::RenderExecutionOptions directOpts{};
+        directOpts.inputType = sony2fuji::RenderInputType::Raw;
+        directOpts.inputPath = calStr;
+        directOpts.intent = sony2fuji::RenderIntent::Final;
+        directOpts.sizeMode = sony2fuji::RenderSizeMode::Native;
+        directOpts.outputTarget = sony2fuji::RenderOutputTarget::Buffer;
+        directOpts.outputFormat = sony2fuji::RenderOutputFormat::RGBA8;
+        sony2fuji::OwnedPixelBuffer directBuf;
+        const bool directOk = directPipe.renderWithOptions(directOpts, nullptr, &directBuf, nullptr) == sony2fuji::RenderStatus::Ok &&
+                              directBuf.data != nullptr;
+        const std::vector<uint8_t> directBytes = directOk
+            ? std::vector<uint8_t>(static_cast<const uint8_t*>(directBuf.data),
+                                   static_cast<const uint8_t*>(directBuf.data) + directBuf.sizeBytes)
+            : std::vector<uint8_t>{};
+        std::free(directBuf.data);
+        directBuf.data = nullptr;
+        require(directOk && directBytes == bufferBytes(calNeutralBuf.value),
+            "Camera WB without master_recipe must ignore non-neutral temperature/tint", __FILE__, __LINE__);
+    }
 }
 
 void testHdrCanonicalEditStateParityAndCameraRaw(const TempDir& dir) {
@@ -982,6 +1118,72 @@ void testCameraDevelopmentLensFlagsContract(const TempDir& dir) {
             jsonDiag.reason == legacyDiag.reason &&
             jsonDiag.field == legacyDiag.field,
         "decode_camera_raw_json with lens_vignetting=true, lens_auto_crop=false must match legacy VIGNETTING=8",
+        __FILE__, __LINE__);
+
+    // 4. wb_mode="as_shot" with non-zero temperature/tint must zero them in toCameraRawDevSpec and match legacy AsShot decode.
+    auto devAsShot = hdrInit<sony2fuji_hdr_camera_development_v1>();
+    devAsShot.white_balance = SONY2FUJI_HDR_CAMERA_WB_AS_SHOT;
+    devAsShot.temperature = 0.0f;
+    devAsShot.tint = 0.0f;
+    const std::string asShotWithTempJson = Json({
+        {"camera_development", {
+            {"wb_mode", "as_shot"},
+            {"temperature", 6500.0},
+            {"tint", 5.0}
+        }}
+    }).dump();
+    HdrPairGuard asShotLegacyPair, asShotJsonPair;
+    auto asShotLegacyDiag = hdrInit<sony2fuji_hdr_diagnostic_v1>();
+    auto asShotJsonDiag = hdrInit<sony2fuji_hdr_diagnostic_v1>();
+    const auto asShotLegacyStatus = sony2fuji_hdr_decode_camera_raw_with_development(
+        hdrSess.ptr, hdrDngStr.c_str(), &decOpts, &devAsShot, &asShotLegacyPair.value, &asShotLegacyDiag);
+    const auto asShotJsonStatus = sony2fuji_hdr_decode_camera_raw_json(
+        hdrSess.ptr, hdrDngStr.c_str(), &decOpts, asShotWithTempJson.c_str(), &asShotJsonPair.value, &asShotJsonDiag);
+    require(asShotLegacyStatus == SONY2FUJI_STATUS_OK &&
+            asShotJsonStatus == SONY2FUJI_STATUS_OK &&
+            asShotLegacyPair.value.hdr.size_bytes == asShotJsonPair.value.hdr.size_bytes &&
+            std::memcmp(asShotLegacyPair.value.hdr.data, asShotJsonPair.value.hdr.data, asShotLegacyPair.value.hdr.size_bytes) == 0,
+        "decode_camera_raw_json with wb_mode=as_shot + non-zero temperature/tint must match legacy AsShot decode",
+        __FILE__, __LINE__);
+
+    const std::string missingDngStr = (dir.path / "missing_dummy.dng").string();
+    HdrPairGuard missingLegacyPair, missingJsonPair;
+    auto missingLegacyDiag = hdrInit<sony2fuji_hdr_diagnostic_v1>();
+    auto missingJsonDiag = hdrInit<sony2fuji_hdr_diagnostic_v1>();
+    const auto missingLegacyStatus = sony2fuji_hdr_decode_camera_raw_with_development(
+        hdrSess.ptr, missingDngStr.c_str(), &decOpts, &devAsShot, &missingLegacyPair.value, &missingLegacyDiag);
+    const auto missingJsonStatus = sony2fuji_hdr_decode_camera_raw_json(
+        hdrSess.ptr, missingDngStr.c_str(), &decOpts, asShotWithTempJson.c_str(), &missingJsonPair.value, &missingJsonDiag);
+    require(missingLegacyStatus != SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+            missingJsonStatus == missingLegacyStatus &&
+            missingJsonDiag.reason == missingLegacyDiag.reason &&
+            missingJsonDiag.field == missingLegacyDiag.field,
+        "decode_camera_raw_json with wb_mode=as_shot on missing path must match legacy AsShot failure, not INVALID_ARGUMENT",
+        __FILE__, __LINE__);
+
+    // 5. lens_profile_id with all lens correction toggles disabled (lensFlags == 0) must clear lensProfileId
+    //    in toCameraRawDevSpec and match legacy zero-lens-flags decode (not INVALID_ARGUMENT).
+    const std::string disabledLensWithProfileJson = Json({
+        {"camera_development", {
+            {"lens_distortion", false},
+            {"lens_tca", false},
+            {"lens_vignetting", false},
+            {"lens_profile_id", "sony-fe-35"}
+        }}
+    }).dump();
+    require(parseCanonicalEditState(disabledLensWithProfileJson, state, err, {RecipeParseMode::SessionState, true}) &&
+            state.toCameraRawDevSpec(false, 0, true).lensFlags == 0u &&
+            state.toCameraRawDevSpec(false, 0, true).lensProfileId == nullptr,
+        "toCameraRawDevSpec must clear lensProfileId when lensFlags == 0",
+        __FILE__, __LINE__);
+    HdrPairGuard disabledLensPair;
+    auto disabledLensDiag = hdrInit<sony2fuji_hdr_diagnostic_v1>();
+    const auto disabledLensStatus = sony2fuji_hdr_decode_camera_raw_json(
+        hdrSess.ptr, hdrDngStr.c_str(), &decOpts, disabledLensWithProfileJson.c_str(), &disabledLensPair.value, &disabledLensDiag);
+    require(disabledLensStatus == SONY2FUJI_STATUS_OK &&
+            disabledLensPair.value.hdr.size_bytes == asShotLegacyPair.value.hdr.size_bytes &&
+            std::memcmp(disabledLensPair.value.hdr.data, asShotLegacyPair.value.hdr.data, asShotLegacyPair.value.hdr.size_bytes) == 0,
+        "decode_camera_raw_json with lens_profile_id and disabled lens toggles must match legacy zero-lens-flags decode",
         __FILE__, __LINE__);
 }
 

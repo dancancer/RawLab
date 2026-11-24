@@ -90,6 +90,27 @@ internal static class CanonicalEditRecipeChecks
               stateJson["edits"]!["look"]!["path"]!.GetValue<string>() == "film.cube",
             "Session state encoder populates master_recipe, ai_denoise_blend, and look path");
 
+        var zeroStrengthRecipe = new Adjustments();
+        zeroStrengthRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        zeroStrengthRecipe.ResolveWhiteBalance((6955, 99));
+        zeroStrengthRecipe.Set(Parameter.Strength, 0.0);
+        var zeroStrengthJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(zeroStrengthRecipe, isRaster: false))!.AsObject();
+        Check(!zeroStrengthJson["edits"]!["master_recipe"]!["custom_wb"]!.GetValue<bool>() &&
+              zeroStrengthJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 6500 &&
+              zeroStrengthJson["edits"]!["master_recipe"]!["tint"]!.GetValue<double>() == 0,
+            "Zero-strength Camera WB master_recipe normalizes temperature_kelvin=6500 and tint=0");
+
+        var zeroTintRecipe = new Adjustments();
+        zeroTintRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        zeroTintRecipe.ResolveWhiteBalance((6955, 99));
+        zeroTintRecipe.SetRelativeWhiteBalance(6955, 0);
+        zeroTintRecipe.ResolveWhiteBalance((6955, 99));
+        var zeroTintJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(zeroTintRecipe, isRaster: false))!.AsObject();
+        Check(!zeroTintJson["edits"]!["master_recipe"]!["custom_wb"]!.GetValue<bool>() &&
+              zeroTintJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 6500 &&
+              zeroTintJson["edits"]!["master_recipe"]!["tint"]!.GetValue<double>() == 0,
+            "Zero-tint Camera WB master_recipe normalizes temperature_kelvin=6500 and tint=0");
+
         var unpinnedMaster = new Adjustments
         {
             Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.2), new(1, 0.8)])
