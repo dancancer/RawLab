@@ -163,7 +163,7 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
 fi
 SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}"
 SWIFTPM_BIN="$(SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --show-bin-path)"
-for spm_target in RawLabKit RawLabNativeTypes RawLabNative; do
+for spm_target in RawLabKit RawLabNativeTypes RawLabInspectionNative RawLabNative; do
     if [ ! -e "$SWIFTPM_BIN/$spm_target.swiftmodule" ] && [ ! -e "$SWIFTPM_BIN/Modules/$spm_target.swiftmodule" ]; then
         SDKROOT="$SDK" swift build "${SWIFTPM_FLAGS[@]}" --target "$spm_target"
     fi
@@ -190,7 +190,7 @@ swiftc -O -whole-module-optimization -num-threads "${JOBS:-$(sysctl -n hw.ncpu)}
     -F "$(dirname "$SPARKLE_FRAMEWORK")" -framework Sparkle \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_hdr.h" \
     "${APP_SOURCES[@]}" "$ROOT"/Shared/*.swift "$ROOT"/Shared/Native/*.swift \
-    "$SWIFTPM_BIN/libRawLabNative.a" "$SWIFTPM_BIN/libRawLabNativeTypes.a" "$SWIFTPM_BIN/libRawLabKit.a" "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
+    "$SWIFTPM_BIN/libRawLabNative.a" "$SWIFTPM_BIN/libRawLabInspectionNative.a" "$SWIFTPM_BIN/libRawLabNativeTypes.a" "$SWIFTPM_BIN/libRawLabKit.a" "$BUILD/libsony2fuji_core.a" ${AI_LINK_FLAGS[@]+"${AI_LINK_FLAGS[@]}"} ${X3F_LINK_FLAGS[@]+"${X3F_LINK_FLAGS[@]}"} \
     "$BUILD/hdr-codec/lib/libuhdr.a" "$BUILD/raw-jpeg/install/lib/libjpeg.a" \
     $(pkg-config --libs libraw_r rawlab-dng-sdk opencv4 wavelib lensfun libtiff-4) -lc++ -lz -framework SwiftUI -framework AppKit -framework ImageIO -framework CoreImage -framework Metal -framework MetalKit \
     -Xlinker -rpath -Xlinker @executable_path/../Frameworks \

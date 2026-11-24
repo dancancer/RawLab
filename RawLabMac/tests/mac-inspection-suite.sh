@@ -4,8 +4,14 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/lib/compile.sh"
 rawlab_mac_test_init
 rawlab_mac_make_temp_dir OUT rawlab-mac-inspection-suite
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -whole-module-optimization \
+for source in core/photo_geometry core/inspection_overlay ffi/inspection_c; do
+    rawlab_mac_clangxx -std=c++17 -O2 \
+        -I "$ROOT/lutools/include" -I "$ROOT/lutools/src" \
+        -c "$ROOT/lutools/src/$source.cpp" -o "$OUT/$(basename "$source").o"
+done
+rawlabnative_flags link "$OUT/swiftpm" macos 0 inspection
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -parse-as-library -whole-module-optimization \
+    -DRAWLAB_INSPECTION_NATIVE_ONLY \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
     "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
     "$ROOT/RawLabMac/Sources/Presentation/MacViewingState.swift" \
@@ -13,6 +19,7 @@ rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -whole-module
     "$ROOT/RawLabMac/Sources/Presentation/MacNeutralReference.swift" \
     "$ROOT/RawLabMac/Sources/Presentation/HistogramPresentation.swift" \
     "$ROOT/RawLabMac/tests/MacInspectionSuiteTests.swift" \
+    "$OUT"/*.o -lc++ \
     -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers -o "$OUT/test"
 "$OUT/test"
 

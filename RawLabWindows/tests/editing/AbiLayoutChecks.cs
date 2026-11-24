@@ -735,6 +735,22 @@ internal static class AbiLayoutChecks
                 ["intent"] = nameof(Native.HDRRenderOptions.Intent),
                 ["long_edge"] = nameof(Native.HDRRenderOptions.LongEdge),
             }),
+        ["sony2fuji_inspection_sample"] = new(
+            typeof(Native.InspectionSample),
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["version"] = nameof(Native.InspectionSample.Version),
+                ["struct_size"] = nameof(Native.InspectionSample.StructSize),
+                ["r"] = nameof(Native.InspectionSample.R),
+                ["g"] = nameof(Native.InspectionSample.G),
+                ["b"] = nameof(Native.InspectionSample.B),
+                ["reserved0"] = nameof(Native.InspectionSample.Reserved0),
+                ["reserved1"] = nameof(Native.InspectionSample.Reserved1),
+                ["hue_deg"] = nameof(Native.InspectionSample.HueDeg),
+                ["saturation_pct"] = nameof(Native.InspectionSample.SaturationPct),
+                ["brightness_pct"] = nameof(Native.InspectionSample.BrightnessPct),
+                ["luminance"] = nameof(Native.InspectionSample.Luminance),
+            }),
         ["sony2fuji_hdr_look_info_v1"] = new(
             typeof(Native.HDRLookInfo),
             new Dictionary<string, string>(StringComparer.Ordinal)

@@ -118,8 +118,8 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$TARGET" -isysro
     -F "$HARNESS/Frameworks" -framework sony2fuji -framework ImageIO -framework CoreGraphics -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks \
     -o "$HARNESS/Frameworks/libpreflight_counter.dylib"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$CACHE" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/tests/AdjustmentHistoryModelTests.swift" "$ROOT/RawLab/tests/IOSQuickPresetModelChecks.swift" "$ROOT/RawLab/tests/IOSBatchFlowModelChecks.swift" "$OUT/bridge.o" \

@@ -175,6 +175,8 @@ rawlabnative_flags() {
     local targets=(RawLabKit RawLabNativeTypes)
     if [ "$target_mode" = all ]; then
         targets+=(RawLabNative)
+    elif [ "$target_mode" = inspection ]; then
+        targets+=(RawLabInspectionNative)
     elif [ "$target_mode" != types_only ]; then
         echo "Unknown RawLabNative target mode: $target_mode" >&2
         return 2
@@ -213,6 +215,11 @@ rawlabnative_flags() {
             if [ "$mode" != typecheck ]; then
                 if [ "$target_mode" = all ]; then
                     RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabNative.a")
+                    if [ -f "$RAWLABNATIVE_BIN/libRawLabInspectionNative.a" ]; then
+                        RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabInspectionNative.a")
+                    fi
+                elif [ "$target_mode" = inspection ]; then
+                    RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabInspectionNative.a")
                 fi
                 RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabNativeTypes.a" "$RAWLABNATIVE_BIN/libRawLabKit.a")
             fi
@@ -269,6 +276,12 @@ rawlabnative_flags() {
         if [ "$target_mode" = all ]; then
             [ -f "$RAWLABNATIVE_BIN/libRawLabNative.a" ] || { echo "error: libRawLabNative.a not found under $RAWLABNATIVE_BIN" >&2; return 1; }
             RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabNative.a")
+            if [ -f "$RAWLABNATIVE_BIN/libRawLabInspectionNative.a" ]; then
+                RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabInspectionNative.a")
+            fi
+        elif [ "$target_mode" = inspection ]; then
+            [ -f "$RAWLABNATIVE_BIN/libRawLabInspectionNative.a" ] || { echo "error: libRawLabInspectionNative.a not found under $RAWLABNATIVE_BIN" >&2; return 1; }
+            RAWLABNATIVE_SWIFTC_FLAGS+=("$RAWLABNATIVE_BIN/libRawLabInspectionNative.a")
         fi
         [ -f "$RAWLABNATIVE_BIN/libRawLabNativeTypes.a" ] || { echo "error: libRawLabNativeTypes.a not found under $RAWLABNATIVE_BIN" >&2; return 1; }
         [ -f "$RAWLABNATIVE_BIN/libRawLabKit.a" ] || { echo "error: libRawLabKit.a not found under $RAWLABNATIVE_BIN" >&2; return 1; }

@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import RawLabKit
+import RawLabNative
 
 extension EditorModel {
     var inspectionAfterImage: CGImage? {

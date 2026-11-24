@@ -1,4 +1,9 @@
 import RawLabKit
+#if RAWLAB_INSPECTION_NATIVE_ONLY
+import RawLabInspectionNative
+#else
+import RawLabNative
+#endif
 import AppKit
 import CoreGraphics
 import Foundation
@@ -69,6 +74,34 @@ struct MacInspectionSuiteTests {
         check((afterWarm?.hueDeg ?? -1) < 30 && (afterWarm?.saturationPct ?? 0) > 40, "After warm skin-tone sample reports warm hue")
         check((afterCool?.hueDeg ?? 0) > 190 && (afterCool?.hueDeg ?? 0) < 230, "After cool sample reports blue hue")
         check((afterWarm?.luminance ?? 0) > (afterCool?.luminance ?? 1), "Rec.709 luminance ranks warm sample brighter than cool sample")
+
+        // 1b. Native RGB->HSB, Rec.709 luminance & (1/3, 0.5) straddle patch rounding parity
+        let red = InspectionColorSample(r: 255, g: 0, b: 0)
+        check(abs(red.hueDeg - 0) < 0.01 && abs(red.saturationPct - 100) < 0.01 && abs(red.luminance - 0.2126) < 1e-4,
+              "Red sample HSB and Rec.709 luminance match core contract")
+        let green = InspectionColorSample(r: 0, g: 255, b: 0)
+        check(abs(green.hueDeg - 120) < 0.01 && abs(green.luminance - 0.7152) < 1e-4, "Green sample matches core contract")
+        let blue = InspectionColorSample(r: 0, g: 0, b: 255)
+        check(abs(blue.hueDeg - 240) < 0.01 && abs(blue.luminance - 0.0722) < 1e-4, "Blue sample matches core contract")
+        let straddleImg = makeTestImage(width: 4, height: 4) { x, _ in x < 2 ? (100, 100, 100) : (200, 100, 50) }
+        let straddle = InspectionSamplerCache.shared.sample(straddleImg, atNormalized: CGPoint(x: 1.0 / 3.0, y: 0.5), radiusPixels: 1)
+        check(straddle?.r == 133, "3x3 straddle patch rounding matches core (R=133)")
+
+        // 1c. Native applyOverlayPixel across all 5 observation layers
+        let darkSketch = InspectionOverlayRenderer.applyOverlayPixel(r: 80, g: 80, b: 80, mode: .sketchLuminance)
+        let brightSketch = InspectionOverlayRenderer.applyOverlayPixel(r: 180, g: 180, b: 180, mode: .sketchLuminance)
+        check(darkSketch.0 == darkSketch.1 && darkSketch.1 == darkSketch.2 && darkSketch.0 < 80, "Sketch dark contrast")
+        check(brightSketch.0 == brightSketch.1 && brightSketch.1 == brightSketch.2 && brightSketch.0 > 180, "Sketch bright contrast")
+        let warmBW = InspectionOverlayRenderer.applyOverlayPixel(r: 180, g: 140, b: 60, mode: .warmCoolBW)
+        let coolBW = InspectionOverlayRenderer.applyOverlayPixel(r: 60, g: 140, b: 220, mode: .warmCoolBW)
+        check(warmBW.0 > coolBW.0, "Warm/cool B&W lifts warm tones")
+        let clipHeat = InspectionOverlayRenderer.applyOverlayPixel(r: 255, g: 100, b: 100, mode: .oversaturationHeatmap)
+        check(clipHeat.0 == 255 && clipHeat.2 > 100, "Oversaturation heatmap highlights single-channel clip")
+        let redSkin = InspectionOverlayRenderer.applyOverlayPixel(r: 210, g: 130, b: 120, mode: .skinHueAmplification)
+        let yellowSkin = InspectionOverlayRenderer.applyOverlayPixel(r: 210, g: 195, b: 120, mode: .skinHueAmplification)
+        check(yellowSkin.1 > redSkin.1, "Skin hue amplification separates reddish vs sallow skin")
+        let gray50Px = InspectionOverlayRenderer.applyOverlayPixel(r: 20, g: 200, b: 250, mode: .neutralGray50)
+        check(gray50Px == (128, 128, 128), "50% neutral gray exact (128,128,128)")
 
         // 2. 4-Anchor Cap + Source-Normalized Geometry Remapping + Cropped-out nil
         var session = InspectionSessionState()
@@ -170,8 +203,7 @@ struct MacInspectionSuiteTests {
         check(reopenedAdjustments.isHDREditing && reopenedAdjustments.geometrySettings == asymmetricGeom,
               "Reopened HDR state preserves asymmetric geometry")
 
-        let spec = GeometryCoordinateMapper.canvasFor(width: 3072, height: 3072, options: asymmetricGeom)
-        let postCropOutputSize = CGSize(width: spec.outputWidth, height: spec.outputHeight)
+        let postCropOutputSize = GeometryCoordinateMapper.outputSize(sourceSize: CGSize(width: 3072, height: 3072), geometry: asymmetricGeom)
         let inferredSourceSize = GeometryCoordinateMapper.inferSourceSize(
             outputSize: postCropOutputSize,
             geometry: reopenedAdjustments.geometrySettings

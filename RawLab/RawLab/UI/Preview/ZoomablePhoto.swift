@@ -1,4 +1,9 @@
 import RawLabKit
+#if RAWLAB_INSPECTION_NATIVE_ONLY
+import RawLabInspectionNative
+#else
+import RawLabNative
+#endif
 import SwiftUI
 import UIKit
 

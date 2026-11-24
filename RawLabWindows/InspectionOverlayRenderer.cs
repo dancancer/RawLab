@@ -150,18 +150,9 @@ internal static class InspectionOverlayRenderer
         var patch = new byte[stride * boxH];
         src.CopyPixels(new Int32Rect(x0, y0, boxW, boxH), patch, stride, 0);
 
-        long sumR = 0, sumG = 0, sumB = 0;
-        var count = boxW * boxH;
-        for (var i = 0; i < patch.Length; i += 4)
-        {
-            sumB += patch[i];
-            sumG += patch[i + 1];
-            sumR += patch[i + 2];
-        }
-        var avgR = (byte)Math.Clamp((int)Math.Round((double)sumR / count, MidpointRounding.AwayFromZero), 0, 255);
-        var avgG = (byte)Math.Clamp((int)Math.Round((double)sumG / count, MidpointRounding.AwayFromZero), 0, 255);
-        var avgB = (byte)Math.Clamp((int)Math.Round((double)sumB / count, MidpointRounding.AwayFromZero), 0, 255);
-        return InspectionColorSample.FromRgb(avgR, avgG, avgB);
+        var localNormX = boxW == 1 ? 0.0 : (double)(cx - x0) / (boxW - 1);
+        var localNormY = boxH == 1 ? 0.0 : (double)(cy - y0) / (boxH - 1);
+        return InspectionColorMath.SampleBgra32(patch, boxW, boxH, stride, localNormX, localNormY, r);
     }
 
     internal static BitmapSource CreateOverlayBitmap(BitmapSource source, InspectionOverlayMode mode)
@@ -183,23 +174,7 @@ internal static class InspectionOverlayRenderer
         var srcBytes = new byte[stride * h];
         var dstBytes = new byte[stride * h];
         src.CopyPixels(srcBytes, stride, 0);
-
-        const int chunkRows = 32;
-        var chunkCount = (h + chunkRows - 1) / chunkRows;
-        Parallel.For(0, chunkCount, chunk =>
-        {
-            var y0 = chunk * chunkRows;
-            var rows = Math.Min(chunkRows, h - y0);
-            var offset = y0 * stride;
-            InspectionColorMath.ApplyOverlayBgra32(
-                srcBytes.AsSpan(offset, rows * stride),
-                dstBytes.AsSpan(offset, rows * stride),
-                w,
-                rows,
-                stride,
-                stride,
-                mode);
-        });
+        InspectionColorMath.ApplyOverlayBgra32(srcBytes, dstBytes, w, h, stride, stride, mode);
 
         var result = BitmapSource.Create(w, h, src.DpiX, src.DpiY, PixelFormats.Pbgra32, null, dstBytes, stride);
         result.Freeze();

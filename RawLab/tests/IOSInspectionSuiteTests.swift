@@ -3,6 +3,11 @@ import Foundation
 import ImageIO
 import PhotosUI
 import RawLabKit
+#if RAWLAB_INSPECTION_NATIVE_ONLY
+import RawLabInspectionNative
+#else
+import RawLabNative
+#endif
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -140,6 +145,15 @@ func runIOSInspectionSuite() throws {
     let beforeSample = InspectionSamplerCache.shared.sample(beforeImg, atNormalized: CGPoint(x: 0.2, y: 0.5))
     let afterSample = InspectionSamplerCache.shared.sample(afterImg, atNormalized: CGPoint(x: 0.2, y: 0.5))
     check(beforeSample?.r == 110 && (afterSample?.r ?? 0) == 215, "Before/After iOS sampling reads unmasked buffers")
+
+    let red = InspectionColorSample(r: 255, g: 0, b: 0)
+    check(abs(red.hueDeg) < 0.01 && abs(red.saturationPct - 100) < 0.01 && abs(red.luminance - 0.2126) < 1e-4,
+          "iOS RGB->HSB and Rec.709 luminance match core contract")
+    let straddleImg = makeCGImage(width: 4, height: 4) { x, _ in x < 2 ? (100, 100, 100) : (200, 100, 50) }
+    let straddle = InspectionSamplerCache.shared.sample(straddleImg, atNormalized: CGPoint(x: 1.0 / 3.0, y: 0.5), radiusPixels: 1)
+    check(straddle?.r == 133, "iOS 3x3 straddle patch rounding matches core (R=133)")
+    let clipHeat = InspectionOverlayRenderer.applyOverlayPixel(r: 255, g: 100, b: 100, mode: .oversaturationHeatmap)
+    check(clipHeat.0 == 255 && clipHeat.2 > 100, "iOS native overlay pixel matches core")
 
     coordinator.inspection.selectOverlay(.oversaturationHeatmap)
     coordinator.inspection.toggleNeutralGray50()

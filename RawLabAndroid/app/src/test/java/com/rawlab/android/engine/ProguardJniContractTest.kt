@@ -68,6 +68,7 @@ class ProguardJniContractTest {
             "com.rawlab.android.engine.ToneCurveSampling",
             "com.rawlab.android.raster.NativeMpf",
             "com.rawlab.android.raster.NativePng16",
+            "com.rawlab.android.editor.inspection.InspectionNative",
         )) {
             assertTrue("proguard-rules.pro must keep native host $host", proguard.contains(host))
         }

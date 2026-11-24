@@ -13,6 +13,7 @@ class RawLabApplication : Application() {
         super.onTrimMemory(level)
         if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             com.rawlab.android.engine.HDRSourceCache.clearAsync()
+            com.rawlab.android.editor.inspection.InspectionBitmap.clearOverlayCache()
             com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
                 level = "warn",
                 category = "memory",
