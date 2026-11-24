@@ -191,7 +191,7 @@ std::string buildRawRecipeJson(const std::string& inputPath, const std::string& 
 
 void testSessionRenderRgba16FileAndBufferParity() {
     const std::string winInputSample = R"(D:\a\RawLab\RawLab\lutools\tests\fixtures\bayer-demosaic.dng)";
-    const std::string winOutputSample = R"(C:\Users\runneradmin\AppData\Local\Temp\rawlab_rgba16_api_test.png)";
+    const std::string winOutputSample = R"(C:\Temp\rawlab\AppData\Local\Temp\rawlab_rgba16_api_test.png)";
     const auto parsedWin = nlohmann::json::parse(buildRawRecipeJson(winInputSample, winOutputSample));
     require(parsedWin.at("input").at("path").get<std::string>() == winInputSample,
         "Windows backslash input path must round-trip through JSON", __FILE__, __LINE__);
