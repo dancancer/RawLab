@@ -268,7 +268,7 @@ struct ViewingRenderTests {
                 baseScale: 0.21,
                 maxOutputLongEdge: 2048
             )
-            let expectedA = PhotoDetailTilePlan.tiles(
+            let expectedA = ViewportNative.pyramidTiles(
                 visibleRect: regionA.visibleRect,
                 fullNativeSize: rawModel.viewportNativeSize ?? .zero,
                 zoomScale: regionA.zoomScale,
@@ -311,7 +311,7 @@ struct ViewingRenderTests {
                 baseScale: 0.21,
                 maxOutputLongEdge: 2048
             )
-            let expectedB = PhotoDetailTilePlan.tiles(
+            let expectedB = ViewportNative.pyramidTiles(
                 visibleRect: regionB.visibleRect,
                 fullNativeSize: rawModel.viewportNativeSize ?? .zero,
                 zoomScale: regionB.zoomScale,

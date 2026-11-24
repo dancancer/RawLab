@@ -162,8 +162,7 @@ extension RawEditorViewModel {
                        self.currentPreviewSettings.masterRecipeID == nil,
                        self.currentPreviewSettings.lutID == id {
                         self.lastPreviewRequest = nil
-                        self.completedPreviewCache.removeAll()
-                        self.completedPreviewCacheBytes = 0
+                        self.viewportEngine.clearPreviewCache()
                         self.updatePreview(settings: self.currentPreviewSettings)
                     }
                 case .failure(let error):

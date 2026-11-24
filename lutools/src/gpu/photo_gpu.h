@@ -48,6 +48,16 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+struct PhotoGpuCapabilities {
+    bool compiled = false;
+    bool ready = false;
+    bool supportsEffects = false;
+    bool supportsDcp = false;
+    bool dimensionsSupported = false;
+};
+
+PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t width, uint32_t height) noexcept;
+
 GpuRenderOutcome renderPhotoMetalWithOutcome(
     const ImageData& input,
     ColorSpace inputSpace,

@@ -21,6 +21,7 @@ public:
     bool render(const ImageData& input, ColorSpace inputSpace,
         const RenderParams& params, uint32_t width, uint32_t height,
         uint64_t decodeRevision, ImageData& output);
+    bool isReadyForQuery() const noexcept;
 
 private:
     bool renderImpl(const ImageData& input, ColorSpace inputSpace,

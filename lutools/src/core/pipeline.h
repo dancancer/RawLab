@@ -322,6 +322,20 @@ public:
         uint32_t jpegQuality = 95;
     };
 
+    struct FastFullResGpuQuery {
+        RenderInputType inputType = RenderInputType::Raw;
+        uint32_t inputWidth = 0;
+        uint32_t inputHeight = 0;
+        uint32_t maxPixels = 0;
+        std::string inputPath;
+    };
+
+    RenderStatus supportsFastFullResGpu(
+        const FastFullResGpuQuery& query,
+        const char* editStateJson,
+        bool& outSupported
+    ) const;
+
     // Core processing entry points
     RenderStatus process(const RenderParams& params, OwnedPixelBuffer* outBuffer);
     RenderStatus processToImageData(const RenderParams& params, ImageData& outImage);
