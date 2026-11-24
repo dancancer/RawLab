@@ -584,6 +584,11 @@ class WorkflowContractTests(unittest.TestCase):
             "assets-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "native-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "dep-archives-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "gradle-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "pip-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "cargo-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "x3f-rust-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
         }
         base_matrix = {"suite": "all"}
         for job_name, step in save_steps:
@@ -870,6 +875,108 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--no-rum", run)
         self.assertNotIn("apksigner sign", run)
         self.assertNotIn("RAWLAB_RELEASE_KEYSTORE", run)
+
+    def test_android_uses_split_gradle_cache_and_bounded_workers(self):
+        steps = self.workflow["jobs"]["android"]["steps"]
+        restores = [s for s in steps if s.get("id") == "gradle-cache"]
+        self.assertEqual(len(restores), 1)
+        restore = restores[0]
+        self.assertTrue(restore["uses"].startswith("actions/cache/restore@"))
+        self.assertEqual(restore.get("continue-on-error"), "true")
+        self.assertIn("~/.gradle/caches", restore["with"]["path"])
+        self.assertIn("~/.gradle/wrapper", restore["with"]["path"])
+
+        saves = [
+            s for s in steps
+            if s.get("uses", "").startswith("actions/cache/save@")
+            and s["with"].get("key") == restore["with"].get("key")
+        ]
+        self.assertEqual(len(saves), 1)
+        save_if = _strip_expr(saves[0]["if"])
+        self.assertIn("steps.gradle-cache.outcome == 'success'", save_if)
+        self.assertIn("steps.gradle-cache.outputs.cache-hit != 'true'", save_if)
+
+        models_step = [s for s in steps if "testDebugUnitTest" in s.get("run", "")]
+        self.assertEqual(len(models_step), 1)
+        self.assertIn("--max-workers=4", models_step[0]["run"])
+
+        build_step = [s for s in steps if ":app:assembleRelease" in s.get("run", "")]
+        self.assertEqual(len(build_step), 1)
+        self.assertIn("--max-workers=2", build_step[0]["run"])
+
+    def test_batch_selection_reuses_windows_native_cargo_and_pip_caches(self):
+        steps = self.workflow["jobs"]["windows-batch-selection"]["steps"]
+        restores = [s for s in steps if s.get("uses", "").startswith("actions/cache/restore@")]
+        saves = [s for s in steps if s.get("uses", "").startswith("actions/cache/save@")]
+
+        key_steps = [s for s in steps if s.get("id") == "native-key"]
+        self.assertEqual(len(key_steps), 1)
+        self.assertIn("native_cache.py key --platform windows --arch x86_64", key_steps[0]["run"])
+
+        by_id = {s.get("id"): s for s in restores}
+        for required_id in ("native-cache", "cargo-cache", "x3f-rust-cache", "pip-cache"):
+            self.assertIn(required_id, by_id, f"Missing restore step {required_id} in windows-batch-selection")
+            restore = by_id[required_id]
+            self.assertEqual(restore.get("continue-on-error"), "true")
+            matching_saves = [s for s in saves if s["with"].get("key") == restore["with"].get("key")]
+            self.assertEqual(len(matching_saves), 1, f"Expected single save step for {required_id}")
+            save_if = _strip_expr(matching_saves[0]["if"])
+            self.assertIn("success()", save_if)
+            self.assertIn(f"steps.{required_id}.outcome == 'success'", save_if)
+            self.assertIn(f"steps.{required_id}.outputs.cache-hit != 'true'", save_if)
+
+        self.assertEqual(_norm(by_id["native-cache"]["with"].get("lookup-only")), "${{ needs.changes.outputs.cold == 'true' }}")
+        self.assertNotIn("restore-keys", by_id["native-cache"]["with"])
+        self.assertNotIn("restore-keys", by_id["x3f-rust-cache"]["with"])
+
+        builds = [s for s in steps if "RawLabWindows/native" in s.get("run", "")]
+        self.assertEqual(len(builds), 1)
+        build = builds[0]
+        cache_hit_expr = _norm(build.get("env", {}).get("RAWLAB_CI_CACHE_HIT", ""))
+        self.assertIn("needs.changes.outputs.cold != 'true'", cache_hit_expr)
+        self.assertIn("steps.native-cache.outputs.cache-hit == 'true'", cache_hit_expr)
+        for restore in restores:
+            self.assertLess(steps.index(restore), steps.index(build))
+        for save in saves:
+            self.assertLess(steps.index(build), steps.index(save))
+
+        self.assertNotIn("rust-docs", build["run"])
+        self.assertIn("-DRAWLAB_COLLECT_X3F_LICENSES=OFF", build["run"])
+        self.assertIn("'inventory'", build["run"])
+
+        win_steps = self.workflow["jobs"]["windows"]["steps"]
+        win_rust = [s for s in win_steps if "rustup" in s.get("run", "")]
+        self.assertEqual(len(win_rust), 1)
+        self.assertIn("--component rust-docs", win_rust[0]["run"])
+        win_build = [s for s in win_steps if "RawLabWindows/build.ps1" in s.get("run", "")]
+        self.assertEqual(len(win_build), 1)
+        self.assertNotIn("RAWLAB_COLLECT_X3F_LICENSES=OFF", win_build[0]["run"])
+
+    def test_windows_native_ctest_runs_in_parallel_without_sccache(self):
+        steps = self.workflow["jobs"]["windows"]["steps"]
+        win_build = [s for s in steps if "RawLabWindows/build.ps1" in s.get("run", "")]
+        self.assertEqual(len(win_build), 1)
+        invocations = _ctest_invocations(win_build[0]["run"])
+        self.assertEqual(len(invocations), 1)
+        self.assertIn("--parallel", invocations[0])
+        self.assertIn("$env:JOBS", invocations[0])
+        self.assertNotIn("sccache", self.text)
+
+    def test_apple_jobs_wire_swiftpm_caches(self):
+        for job_name, expected_key_fragment in (
+            ("macos", "rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-"),
+            ("ios", "rawlab-swiftpm-v1-ios-xcode27-"),
+        ):
+            with self.subTest(job=job_name):
+                steps = self.workflow["jobs"][job_name]["steps"]
+                restores = [s for s in steps if s.get("id") == "swiftpm-cache"]
+                self.assertEqual(len(restores), 1)
+                restore = restores[0]
+                self.assertIn(expected_key_fragment, restore["with"]["key"])
+                model_steps = [s for s in steps if "apple-models.sh" in s.get("run", "")]
+                self.assertEqual(len(model_steps), 1)
+                self.assertEqual(model_steps[0].get("env", {}).get("RAWLAB_CI_SWIFTPM_CACHE"), ".cache/ci/swiftpm")
+                self.assertLess(steps.index(restore), steps.index(model_steps[0]))
 
 
 if __name__ == "__main__":

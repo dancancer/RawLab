@@ -22,6 +22,7 @@ LIBRAW_CMAKE_PATH = ROOT / "lutools/cmake/libraw/libraw.cmake"
 
 CONSUMER_FILES = (
     "lutools/CMakeLists.txt",
+    "lutools/cmake/ThirdPartyDeps.cmake",
     "lutools/cmake/libraw/CMakeLists.txt",
     "lutools/cmake/libraw/libraw.cmake",
     "RawLabMac/build.sh",
@@ -131,7 +132,8 @@ class LibRawSingleManifestTests(unittest.TestCase):
                     )
 
         # Verify each platform entrypoint actually binds to the shared manifest/module.
-        self.assertIn("cmake/libraw/libraw.cmake", (ROOT / "lutools/CMakeLists.txt").read_text(encoding="utf-8"))
+        self.assertIn("cmake/ThirdPartyDeps.cmake", (ROOT / "lutools/CMakeLists.txt").read_text(encoding="utf-8"))
+        self.assertIn("libraw/libraw.cmake", (ROOT / "lutools/cmake/ThirdPartyDeps.cmake").read_text(encoding="utf-8"))
         self.assertIn("libraw.cmake", (ROOT / "lutools/cmake/libraw/CMakeLists.txt").read_text(encoding="utf-8"))
         self.assertIn("lutools/cmake/libraw/libraw.cmake", (ROOT / "RawLabAndroid/app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8"))
         self.assertIn("rawlab_add_libraw_shared()", (ROOT / "RawLabAndroid/app/src/main/cpp/CMakeLists.txt").read_text(encoding="utf-8"))

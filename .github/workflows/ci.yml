@@ -196,9 +196,20 @@ jobs:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Restore SwiftPM cache
+        id: swiftpm-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
+          restore-keys: |
+            rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-
+          path: .cache/ci/swiftpm
       - name: Run standalone macOS models
         if: needs.changes.outputs.models == 'true' && matrix.arch == 'arm64'
         shell: bash
+        env:
+          RAWLAB_CI_SWIFTPM_CACHE: .cache/ci/swiftpm
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/macos-models.log) 2>&1
@@ -244,9 +255,11 @@ jobs:
             python scripts/ci/test_native_cache_xcode.py
           fi
           ci_timed app-build bash RawLabMac/build.sh
+          mkdir -p "$PWD/.cache/ci/swiftpm/deps" "$PWD/.cache/ci/swiftpm/tests"
+          export RAWLAB_SWIFTPM_CACHE="$PWD/.cache/ci/swiftpm/deps"
           lutprep_python="$(command -v python)"
           if in_suite core; then
-            ci_timed rawlabkit-tests swift test
+            ci_timed rawlabkit-tests swift test --scratch-path "$PWD/.cache/ci/swiftpm/tests"
             ci_timed hdr-bridge bash RawLabMac/tests/hdr-bridge.sh
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
@@ -301,6 +314,12 @@ jobs:
         with:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
+      - name: Save SwiftPM cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
+          path: .cache/ci/swiftpm
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -505,7 +524,7 @@ jobs:
             if ($env:RAWLAB_CI_NATIVE -eq 'true') {
               $aiArgs = if ($env:RAWLAB_DUALDN -eq '1') { @('--ai-enabled') } else { @() }
               Invoke-Checked python (@('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows') + $aiArgs)
-              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--output-on-failure', '--no-tests=error', '-L', '^ci_windows$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
+              Invoke-Checked ctest @('--test-dir', 'build/windows-native', '-C', 'Release', '--parallel', $env:JOBS, '--output-on-failure', '--no-tests=error', '-L', '^ci_windows$', '--output-junit', "$PWD/build/ci/windows-ctest.xml")
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', 'build/windows-native/bin/Release/dcp_compiler_tests.exe')
               $raw = Join-Path $PWD 'lutools/examples/DJI_20250602164503_0444_D.DNG'
               $env:RAWLAB_TEST_DCP_NATIVE_LIB = Join-Path $package 'sony2fuji.dll'
@@ -577,6 +596,7 @@ jobs:
       EnforceProcessCountAcrossBuilds: 'true'
       CL_MPCount: '4'
       RUSTUP_TOOLCHAIN: '1.99.1'
+      PIP_CACHE_DIR: ${{ runner.temp }}\rawlab-ci\cache\pip
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -584,6 +604,15 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
+      - name: Restore Python pip wheel cache
+        id: pip-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-pip-v1-${{ runner.os }}-3.12-${{ hashFiles('scripts/ci/requirements.txt', 'lutools/requirements-lutprep.txt') }}-libclang-18.1.1
+          restore-keys: |
+            rawlab-pip-v1-${{ runner.os }}-3.12-
+          path: ${{ runner.temp }}/rawlab-ci/cache/pip
       - name: Restore externalized asset cache
         id: assets-cache
         continue-on-error: true
@@ -603,13 +632,33 @@ jobs:
         id: dep-archives-key
         shell: pwsh
         run: |
-          $env:RAWLAB_SOURCE_ARCHIVE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/rawlab-deps'
-          $env:RAWLAB_LENS_SOURCE_CACHE = Join-Path $env:RUNNER_TEMP 'rawlab-ci/cache/lens-sources'
-          @("RAWLAB_SOURCE_ARCHIVE_CACHE=$env:RAWLAB_SOURCE_ARCHIVE_CACHE", "RAWLAB_LENS_SOURCE_CACHE=$env:RAWLAB_LENS_SOURCE_CACHE") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+          $ciRoot = Join-Path $env:RUNNER_TEMP 'rawlab-ci'
+          $env:RAWLAB_SOURCE_ARCHIVE_CACHE = "$ciRoot\cache\rawlab-deps"
+          $env:RAWLAB_LENS_SOURCE_CACHE = "$ciRoot\cache\lens-sources"
+          $env:RAWLAB_HDR_SOURCE_CACHE = "$ciRoot\cache"
+          @(
+            "RAWLAB_SOURCE_ARCHIVE_CACHE=$env:RAWLAB_SOURCE_ARCHIVE_CACHE"
+            "RAWLAB_LENS_SOURCE_CACHE=$env:RAWLAB_LENS_SOURCE_CACHE"
+            "RAWLAB_HDR_SOURCE_CACHE=$env:RAWLAB_HDR_SOURCE_CACHE"
+          ) | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           python -m pip install -r scripts/ci/requirements.txt
           if ($LASTEXITCODE -ne 0) { throw 'Cannot install CI Python requirements.' }
           python scripts/ci/native_cache.py archives --platform windows --arch x86_64
           if ($LASTEXITCODE -ne 0) { throw 'Cannot identify dependency archive cache.' }
+      - name: Identify native dependency cache
+        id: native-key
+        shell: pwsh
+        run: |
+          python scripts/ci/native_cache.py key --platform windows --arch x86_64
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify native dependency cache.' }
+      - name: Restore native dependencies, or only look them up for a cold build
+        id: native-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
+          lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Restore dependency archives
         id: dep-archives-cache
         continue-on-error: true
@@ -620,8 +669,29 @@ jobs:
             rawlab-dep-archives-v1-windows-x86_64-
             rawlab-dep-archives-v1-
           path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Restore Cargo registry and git cache
+        id: cargo-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          restore-keys: |
+            rawlab-cargo-v1-${{ runner.os }}-
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Restore X3F Rust build cache
+        id: x3f-rust-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-x3f-rust-v1-${{ runner.os }}-1.99.1-${{ hashFiles('lutools/x3f-bridge/**') }}
+          path: build/windows-native/core/x3f-rust
       - name: Build current-source native prerequisites for batch-selection
         shell: pwsh
+        env:
+          RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force build/ci, build/windows-batch-selection | Out-Null
@@ -632,7 +702,7 @@ jobs:
           }
           try {
             Invoke-Checked git @('rev-parse', 'HEAD')
-            Invoke-Checked rustup @('toolchain', 'install', '1.99.1', '--profile', 'minimal', '--component', 'rust-docs')
+            Invoke-Checked rustup @('toolchain', 'install', '1.99.1', '--profile', 'minimal')
             Invoke-Checked python @('-m', 'pip', 'install', '-r', 'lutools/requirements-lutprep.txt')
             $clang = Join-Path $env:RUNNER_TEMP 'rawlab-batch-libclang'
             Invoke-Checked python @('-m', 'pip', 'install', '--target', $clang, 'libclang==18.1.1')
@@ -646,7 +716,7 @@ jobs:
               if ($line -match '^([^=]+)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process') }
             }
             $python = (Get-Command python).Source
-            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=ON', '-DSONY2FUJI_TEST_PORTABLE_HDR=ON', "-DPython3_EXECUTABLE=$python")
+            Invoke-Checked cmake @('-S', 'RawLabWindows/native', '-B', 'build/windows-native', '-A', 'x64', '-DBUILD_TESTING=ON', '-DSONY2FUJI_TEST_PORTABLE_HDR=ON', '-DRAWLAB_COLLECT_X3F_LICENSES=OFF', "-DPython3_EXECUTABLE=$python")
             Invoke-Checked python @('scripts/ci/check_ctest_inventory.py', '--build-dir', 'build/windows-native', '--ci-label', 'ci_windows', '--platform', 'windows', '--skip-orphan-check')
             Invoke-Checked cmake @('--build', 'build/windows-native', '--config', 'Release', '--target', 'sony2fuji', 'windows_display_image_tests', 'edit_pixel_golden_tests', 'hdr_portable_tests', 'd3d11_shader_tests', '--parallel', '4')
             $package = Join-Path $PWD 'build/windows-batch-selection'
@@ -658,6 +728,7 @@ jobs:
               Copy-Item "$($runtime.FullName)/*.dll" $package
             }
             & ./RawLabWindows/build-exiftool.ps1 -Output $package
+            Invoke-Checked python @('scripts/ci/native_cache.py', 'inventory', '--platform', 'windows', '--arch', 'x86_64')
           }
           finally { Stop-Transcript }
       - name: Run only the batch-selection v08 suite
@@ -670,12 +741,39 @@ jobs:
             Copy-Item build/windows-v08-results/*.log build/ci
             Copy-Item build/windows-v08-results/summary.json build/ci/batch-selection-summary.json
           }
+      - name: Save successful native dependencies
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: ${{ steps.native-key.outputs.key }}
+          path: ${{ steps.native-key.outputs.paths }}
       - name: Save dependency archives
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.dep-archives-cache.outcome == 'success' && steps.dep-archives-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.dep-archives-key.outputs.key }}
           path: ${{ steps.dep-archives-key.outputs.path }}
+      - name: Save Cargo registry and git cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Save X3F Rust build cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.x3f-rust-cache.outcome == 'success' && steps.x3f-rust-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-x3f-rust-v1-${{ runner.os }}-1.99.1-${{ hashFiles('lutools/x3f-bridge/**') }}
+          path: build/windows-native/core/x3f-rust
+      - name: Save Python pip wheel cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.pip-cache.outcome == 'success' && steps.pip-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-pip-v1-${{ runner.os }}-3.12-${{ hashFiles('scripts/ci/requirements.txt', 'lutools/requirements-lutprep.txt') }}-libclang-18.1.1
+          path: ${{ runner.temp }}/rawlab-ci/cache/pip
       - name: Save externalized asset cache
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.assets-cache.outcome == 'success' && steps.assets-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -718,6 +816,17 @@ jobs:
       - name: Prepare externalized LUT assets
         shell: bash
         run: python scripts/assets/prepare.py --group luts
+      - name: Restore Gradle cache
+        id: gradle-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-gradle-v1-${{ runner.os }}-${{ hashFiles('RawLabAndroid/gradle/wrapper/gradle-wrapper.properties', 'RawLabAndroid/**/*.gradle.kts', 'RawLabAndroid/gradle.properties') }}
+          restore-keys: |
+            rawlab-gradle-v1-${{ runner.os }}-
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
       - name: Prepare X3F Rust renderer toolchain
         if: needs.changes.outputs.build == 'true'
         shell: bash
@@ -750,7 +859,7 @@ jobs:
           exec > >(tee build/ci/android-models.log) 2>&1
           git rev-parse HEAD
           cd RawLabAndroid
-          ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=2
+          ./gradlew :app:testDebugUnitTest --no-daemon --max-workers=4
           find app/build/test-results/testDebugUnitTest -name 'TEST-*.xml' -exec cp {} ../build/ci/ \;
           cd ..
           bash RawLabAndroid/tests/jni-session-lock.sh
@@ -799,6 +908,14 @@ jobs:
         with:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
+      - name: Save Gradle cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.gradle-cache.outcome == 'success' && steps.gradle-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-gradle-v1-${{ runner.os }}-${{ hashFiles('RawLabAndroid/gradle/wrapper/gradle-wrapper.properties', 'RawLabAndroid/**/*.gradle.kts', 'RawLabAndroid/gradle.properties') }}
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -868,9 +985,20 @@ jobs:
           key: ${{ steps.native-key.outputs.key }}
           path: ${{ steps.native-key.outputs.paths }}
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
+      - name: Restore SwiftPM cache
+        id: swiftpm-cache
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-swiftpm-v1-ios-xcode27-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
+          restore-keys: |
+            rawlab-swiftpm-v1-ios-xcode27-
+          path: .cache/ci/swiftpm
       - name: Run standalone iOS models
         if: needs.changes.outputs.models == 'true'
         shell: bash
+        env:
+          RAWLAB_CI_SWIFTPM_CACHE: .cache/ci/swiftpm
         run: |
           mkdir -p build/ci
           exec > >(tee build/ci/ios-models.log) 2>&1
@@ -913,6 +1041,12 @@ jobs:
         with:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
+      - name: Save SwiftPM cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-swiftpm-v1-ios-xcode27-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
+          path: .cache/ci/swiftpm
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
