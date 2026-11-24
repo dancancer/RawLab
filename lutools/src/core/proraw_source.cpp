@@ -2,8 +2,8 @@
 #include "core/hdr_progress.h"
 #include "core/hdr_storage.h"
 #include "core/processing_cancellation.h"
+#include "core/pinned_source_file.h"
 #include "core/sha256.h"
-#include "core/resource_file_stamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -293,8 +293,8 @@ public:
 };
 struct Source {
     fs::path path;
-    uintmax_t size;
-    ResourceFileStamp stamp{};
+    uintmax_t size = 0;
+    PinnedSourceFile pinned;
     Sniffer sniffer;
     Memory memory;
     Host host{&memory, &sniffer};
@@ -306,14 +306,11 @@ struct Source {
     std::array<uint8_t, 32> digest{};
     int renderedKind = -1;
     explicit Source(const char* file) : path(fs::u8path(file)) {
-        const auto before = resourceFileStamp(path);
-        if (!before || before->size < 8 || before->size > (512ull << 20)) unsupported();
-        stamp = *before; size = stamp.size;
-#ifdef _WIN32
+        if (PinnedSourceFile::pinIdentity(path, false, pinned) != SourcePinStatus::Ok ||
+            pinned.stamp().size < 8 || pinned.stamp().size > (512ull << 20)) unsupported();
+        size = pinned.stamp().size;
         stream = std::make_unique<dng_file_stream>(path.c_str());
-#else
-        stream = std::make_unique<dng_file_stream>(path.c_str());
-#endif
+        if (!pinned.verifyUnchanged()) changed();
         info.Parse(host, *stream); info.PostParse(host);
         if (!info.IsValidDNG() || info.fMainIndex < 0 || !info.fExif.Get()) unsupported();
         const auto& raw = *info.fIFD[info.fMainIndex];
@@ -394,8 +391,7 @@ struct Source {
     }
     void verify() const {
         checkProcessingCancellation();
-        const auto current = resourceFileStamp(path);
-        if (!current || !(*current == stamp)) changed();
+        if (!pinned.verifyUnchanged()) changed();
     }
     void finish() {
         rendered.Reset(); negative.Reset(); host.storage->check(); host.storage.reset();

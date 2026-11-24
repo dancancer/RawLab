@@ -2,6 +2,7 @@
 
 #include "core/hdr_rendering.h"
 #include "core/hdr_stream.h"
+#include "core/pinned_source_file.h"
 #include "core/pixel_buffer.h"
 #include <stdexcept>
 #include <vector>
@@ -62,12 +63,12 @@ void publishTiledHEIF(const HDRStreamFiles& image, const HDRExportConfig& config
     const char* path, const StreamSourcePin& pin);
 #endif
 
-// 平台适配器对元数据源执行整文件摘要的累计次数（测试注入计数，进程级）。
-uint64_t sourceHashPassCount();
-void resetSourceHashPassCount();
+// 平台适配器对元数据源执行整文件摘要的累计次数（由 core/pinned_source_file 统一维护）。
+using sony2fuji::sourceHashPassCount;
+using sony2fuji::resetSourceHashPassCount;
 
 // 测试注入缝：非空时，元数据源首块数据读取完成后恰好触发一次并置空，
 // 用于模拟「读后、快照夹逼前」路径被原子替换（B1 红锚）。生产恒为空。
-extern void (*sourceReadTestHook)();
+using sony2fuji::sourceReadTestHook;
 
 } // namespace sony2fuji::hdr

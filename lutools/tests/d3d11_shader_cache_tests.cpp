@@ -1,4 +1,5 @@
 #include "gpu/d3d11_shader_cache.h"
+#include "core/output_file_mode.h"
 
 #include <atomic>
 #include <chrono>
@@ -268,10 +269,52 @@ void concurrentWritersAndReadersNeverObserveBrokenBlob() {
     }
 }
 
+void foreignTempCollisionPreservesExistingTempFile() {
+    TempDir dir;
+    const auto key = makeD3D11ShaderCacheKey("RawLab collision", "void main() {}", "main", "cs_5_0", 0x101);
+    const std::vector<uint8_t> bytecode{0x44, 0x58, 0x42, 0x43, 0x11, 0x22, 0x33, 0x44};
+    const std::string foreignContent = "FOREIGN-SHADER-TEMP-DO-NOT-TOUCH";
+
+    const std::string probe = sony2fuji::stagingSuffix();
+    const auto dash = probe.find('-');
+    require(dash != std::string::npos, "unexpected stagingSuffix format");
+    const std::string pidPart = probe.substr(0, dash);
+    const uint64_t nextCounter = std::stoull(probe.substr(dash + 1)) + 1;
+
+    // Plant both the AtomicOutputTransaction next staging name AND the legacy non-exclusive temp name.
+    const auto atomicForeign = dir.path / (key.id + ".tmp-" + pidPart + "-" + std::to_string(nextCounter) + ".tmp");
+    const auto legacyForeign = dir.path / (key.id + ".tmp." + pidPart + ".0");
+    auto writeForeign = [&](const std::filesystem::path& p) {
+        std::ofstream out(p, std::ios::binary | std::ios::trunc);
+        out.write(foreignContent.data(), static_cast<std::streamsize>(foreignContent.size()));
+        out.close();
+        require(!out.fail(), "failed to plant foreign shader temp fixture");
+    };
+    auto readAll = [&](const std::filesystem::path& p) {
+        std::ifstream in(p, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    };
+    writeForeign(atomicForeign);
+    writeForeign(legacyForeign);
+
+    ShaderBytecodeCache cache(dir.path);
+    const auto compiled = cache.getOrCompile(key, [&]() { return bytecode; });
+    require(compiled == bytecode, "getOrCompile must return shader bytecode despite temp collisions");
+    ShaderBytecodeCache restarted(dir.path);
+    int compiles = 0;
+    const auto loaded = restarted.getOrCompile(key, [&]() { ++compiles; return bytecode; });
+    require(compiles == 0 && loaded == bytecode, "persisted shader blob must be readable after temp collision retry");
+    require(std::filesystem::exists(atomicForeign) && readAll(atomicForeign) == foreignContent,
+        "AtomicOutputTransaction must not overwrite or unlink a pre-existing foreign staging file");
+    require(std::filesystem::exists(legacyForeign) && readAll(legacyForeign) == foreignContent,
+        "ShaderBytecodeCache must not truncate or delete a pre-existing legacy temp file");
+}
+
 } // namespace
 
 int main() {
     try {
+        foreignTempCollisionPreservesExistingTempFile();
         inProcessAndCrossProcessCacheHits();
         distinctSourceDefinesProduceDistinctCachedShaders();
         keyAndVersionInvalidationAndCorruptionRecovery();

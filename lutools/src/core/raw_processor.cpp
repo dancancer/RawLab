@@ -6,7 +6,7 @@
 #include "quantize_dither.h"
 #include "white_balance.h"
 #include "file_path.h"
-#include "output_file_mode.h"
+#include "atomic_output_transaction.h"
 #include "parallel_pixels.h"
 #include <libraw/libraw.h>
 #include "x3f_processor.h"
@@ -1297,150 +1297,6 @@ ErrorCode ImageEncoder::saveImage(
 
 namespace {
 
-void removeStagingPathNoThrow(const std::filesystem::path& path) noexcept {
-    if (path.empty()) return;
-    std::error_code error;
-    std::filesystem::remove(path, error);
-}
-
-// 编码结果先写入目标目录内的临时文件，最后一次原子替换发布。这样取消或失败都不会
-// 破坏目标位置已有的文件，也不会留下半成品。
-class EncodedStagingFile final {
-public:
-    enum class Kind { Jpeg, Png };
-
-    explicit EncodedStagingFile(Kind kind) : kind_(kind) {}
-    EncodedStagingFile(const EncodedStagingFile&) = delete;
-    EncodedStagingFile& operator=(const EncodedStagingFile&) = delete;
-
-    ~EncodedStagingFile() { cleanup(); }
-
-    bool create(const std::filesystem::path& destination) {
-#ifdef _WIN32
-        // Mirror of the POSIX branch below: CREATE_NEW (_wopen O_EXCL) with a bounded
-        // retry. A collided name is never opened or deleted by us (foreign-name
-        // protection); GetTempFileNameW could return an already-existing name and
-        // the CRT "wb" open would truncate it. NTFS permissions follow the target
-        // directory's ACL inheritance, so this platform has no destination-mode copy.
-        std::wstring temporaryName;
-        int createdFd = -1;
-        try {
-            std::filesystem::path parent = destination.parent_path();
-            if (parent.empty()) parent = L".";
-            const std::wstring base = kind_ == Kind::Jpeg ? L".rawlab-jpeg" : L".rawlab-png";
-            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
-                const std::string suffix = stagingSuffix();
-                temporaryName = (parent / (base + L"-" + std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
-                createdFd = ::_wopen(
-                    temporaryName.c_str(),
-                    _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY | _O_NOINHERIT,
-                    _S_IREAD | _S_IWRITE);
-                if (createdFd < 0) {
-                    if (errno != EEXIST) return false;
-                    temporaryName.clear(); // the name belongs to someone else; never delete it
-                }
-            }
-            if (createdFd < 0) return false;
-
-            path_ = std::filesystem::path(temporaryName);
-            file_ = ::_fdopen(createdFd, "wb");
-            if (!file_) {
-                (void)::_close(createdFd);
-                createdFd = -1;
-                cleanup();
-                return false;
-            }
-            createdFd = -1; // file_ owns the descriptor after _fdopen succeeds.
-            return true;
-        } catch (...) {
-            if (createdFd >= 0) (void)::_close(createdFd);
-            cleanup();
-            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
-            throw;
-        }
-#else
-        std::string temporaryName;
-        int createdFd = -1;
-        try {
-            std::filesystem::path parent = destination.parent_path();
-            if (parent.empty()) parent = ".";
-            const std::string base = kind_ == Kind::Jpeg ? ".rawlab-jpeg" : ".rawlab-png";
-            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
-                temporaryName = (parent / (base + "-" + stagingSuffix() + ".tmp")).string();
-                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0666);
-                if (createdFd < 0) {
-                    if (errno != EEXIST) return false;
-                    temporaryName.clear(); // the name belongs to someone else; never unlink it
-                }
-            }
-            if (createdFd < 0) return false;
-            preserveDestinationMode(createdFd, destination);
-
-            path_ = std::filesystem::path(temporaryName);
-            file_ = ::fdopen(createdFd, "wb");
-            if (!file_) {
-                (void)::close(createdFd);
-                createdFd = -1;
-                cleanup();
-                return false;
-            }
-            createdFd = -1; // file_ owns the descriptor after fdopen succeeds.
-            return true;
-        } catch (...) {
-            if (createdFd >= 0) (void)::close(createdFd);
-            cleanup();
-            if (!temporaryName.empty()) (void)::unlink(temporaryName.c_str());
-            throw;
-        }
-#endif
-    }
-
-    std::FILE* file() const noexcept { return file_; }
-
-    bool finishAndPublish(const std::filesystem::path& destination) {
-        if (!file_) return false;
-        const bool flushed = (std::fflush(file_) == 0) && (std::ferror(file_) == 0);
-        const bool closed = (std::fclose(file_) == 0);
-        file_ = nullptr;
-        if (!flushed || !closed) {
-            cleanup();
-            return false;
-        }
-#ifdef _WIN32
-        const std::wstring source = path_.wstring();
-        const std::wstring target = destination.wstring();
-        const bool published = MoveFileExW(
-            source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-        const bool published = (::rename(path_.c_str(), destination.c_str()) == 0);
-#endif
-        if (!published) {
-            cleanup();
-            return false;
-        }
-        published_ = true;
-        path_.clear();
-        return true;
-    }
-
-private:
-    void cleanup() noexcept {
-        if (file_) {
-            (void)std::fclose(file_);
-            file_ = nullptr;
-        }
-        if (!published_) {
-            removeStagingPathNoThrow(path_);
-        }
-        path_.clear();
-    }
-
-    Kind kind_ = Kind::Jpeg;
-    std::filesystem::path path_;
-    std::FILE* file_ = nullptr;
-    bool published_ = false;
-};
-
 const std::vector<uint8_t>& srgbIccProfileBytes() {
     static const std::vector<uint8_t> cached = []() -> std::vector<uint8_t> {
 #if defined(__APPLE__)
@@ -1601,21 +1457,27 @@ ErrorCode ImageEncoder::saveJPEG(
             }
         });
 
-        EncodedStagingFile staging(EncodedStagingFile::Kind::Jpeg);
-        if (!staging.create(destination)) {
+        AtomicOutputOptions txOptions;
+        txOptions.stagingPrefix = ".rawlab-jpeg";
+        txOptions.modePolicy = OutputModePolicy::PreserveDestinationOrUmask;
+        txOptions.rejectSymlinkTarget = false;
+        txOptions.syncFile = true;
+        AtomicOutputTransaction staging(destination, txOptions);
+        std::FILE* stagingFile = nullptr;
+        if (staging.begin() != AtomicOutputStatus::Ok || !(stagingFile = staging.openStdioWrite())) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::IOError;
         }
 
-        TurboJpegEncoder encoder(staging.file());
+        TurboJpegEncoder encoder(stagingFile);
         if (!encoder.encode(image.width, image.height, data.data(), quality)) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             if (encoder.outOfMemory) return ErrorCode::OutOfMemory;
-            return std::ferror(staging.file()) != 0 ? ErrorCode::IOError : ErrorCode::ProcessingError;
+            return std::ferror(stagingFile) != 0 ? ErrorCode::IOError : ErrorCode::ProcessingError;
         }
         // 提交点：编码完成后、替换目标文件之前再看一次取消。
         checkProcessingCancellation();
-        if (!staging.finishAndPublish(destination)) {
+        if (staging.commit() != AtomicOutputStatus::Ok) {
             std::cerr << "保存 JPEG 失败: " << filepath << std::endl;
             return ErrorCode::IOError;
         }
@@ -1666,8 +1528,16 @@ ErrorCode ImageEncoder::savePNG(
     }
 
     try {
-        EncodedStagingFile staging(EncodedStagingFile::Kind::Png);
-        if (!staging.create(destination)) return ErrorCode::IOError;
+        AtomicOutputOptions txOptions;
+        txOptions.stagingPrefix = ".rawlab-png";
+        txOptions.modePolicy = OutputModePolicy::PreserveDestinationOrUmask;
+        txOptions.rejectSymlinkTarget = false;
+        txOptions.syncFile = true;
+        AtomicOutputTransaction staging(destination, txOptions);
+        std::FILE* stagingFile = nullptr;
+        if (staging.begin() != AtomicOutputStatus::Ok || !(stagingFile = staging.openStdioWrite())) {
+            return ErrorCode::IOError;
+        }
 
         struct SpngEncoderGuard {
             spng_ctx* ctx = nullptr;
@@ -1681,12 +1551,12 @@ ErrorCode ImageEncoder::savePNG(
         SpngEncoderGuard ctxGuard(ctx);
 
         auto mapSpngError = [&](int err) -> ErrorCode {
-            if (std::ferror(staging.file()) != 0) return ErrorCode::IOError;
+            if (std::ferror(stagingFile) != 0) return ErrorCode::IOError;
             if (err == SPNG_EMEM) return ErrorCode::OutOfMemory;
             return ErrorCode::ProcessingError;
         };
 
-        if (int err = spng_set_png_file(ctx, staging.file()); err != 0) {
+        if (int err = spng_set_png_file(ctx, stagingFile); err != 0) {
             return mapSpngError(err);
         }
 
@@ -1761,12 +1631,12 @@ ErrorCode ImageEncoder::savePNG(
             }
         }
 
-        if (std::fflush(staging.file()) != 0 || std::ferror(staging.file()) != 0) {
+        if (std::fflush(stagingFile) != 0 || std::ferror(stagingFile) != 0) {
             return ErrorCode::IOError;
         }
         // 提交点：编码完成后、替换目标文件之前再看一次取消。
         checkProcessingCancellation();
-        if (!staging.finishAndPublish(destination)) return ErrorCode::IOError;
+        if (staging.commit() != AtomicOutputStatus::Ok) return ErrorCode::IOError;
     } catch (const ProcessingCancelled&) {
         throw;
     } catch (const std::bad_alloc&) {

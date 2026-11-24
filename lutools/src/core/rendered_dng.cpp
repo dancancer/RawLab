@@ -1,6 +1,6 @@
 #include "rendered_dng.h"
 
-#include "output_file_mode.h"
+#include "atomic_output_transaction.h"
 #include "processing_cancellation.h"
 
 #include <cstddef>
@@ -108,160 +108,6 @@ bool registerCustomFields(TIFF* tif) {
     return TIFFMergeFieldInfo(tif, kCustomFields,
                               static_cast<uint32_t>(std::size(kCustomFields))) == 0;
 }
-
-#ifndef _WIN32
-void closeFileDescriptor(int fd) noexcept {
-    if (fd >= 0) ::close(fd);
-}
-#endif
-
-void removeFileNoThrow(const std::filesystem::path& path) noexcept {
-    if (path.empty()) return;
-    try {
-        std::error_code error;
-        std::filesystem::remove(path, error);
-    } catch (...) {
-        // Cleanup is best effort after an earlier failure. The staging file is
-        // never published unless the rename below succeeds.
-    }
-}
-
-class StagingFile final {
-public:
-    StagingFile() = default;
-    StagingFile(const StagingFile&) = delete;
-    StagingFile& operator=(const StagingFile&) = delete;
-
-    ~StagingFile() { cleanup(); }
-
-    bool create(const std::filesystem::path& destination) {
-#ifdef _WIN32
-        // Mirror of the POSIX branch below: CREATE_NEW with a bounded retry instead
-        // of GetTempFileNameW. A collided name is never opened or deleted by us
-        // (foreign-name protection); GetTempFileNameW could return an
-        // already-existing name that libtiff would then rewrite.
-        std::wstring temporaryName;
-        try {
-            std::filesystem::path parent = destination.parent_path();
-            if (parent.empty()) parent = L".";
-            std::wstring basename = destination.filename().wstring();
-            if (basename.empty()) basename = L"rendered";
-            for (int attempt = 0; attempt < 64 && handle_ == INVALID_HANDLE_VALUE; ++attempt) {
-                const std::string suffix = stagingSuffix();
-                temporaryName = (parent / (basename + L".rawlab-rendered-dng-" +
-                                           std::wstring(suffix.begin(), suffix.end()) + L".tmp")).wstring();
-                handle_ = ::CreateFileW(
-                    temporaryName.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr,
-                    CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY, nullptr);
-                if (handle_ == INVALID_HANDLE_VALUE) {
-                    if (GetLastError() != ERROR_FILE_EXISTS) return false;
-                    temporaryName.clear(); // the name belongs to someone else; never delete it
-                }
-            }
-            if (handle_ == INVALID_HANDLE_VALUE) return false;
-
-            path_ = std::filesystem::path(temporaryName);
-
-            // Win32 libtiff expects the native HANDLE's significant 32 bits,
-            // not a CRT descriptor produced by _open_osfhandle.
-            tif_ = TIFFFdOpen(static_cast<int>(reinterpret_cast<intptr_t>(handle_)),
-                             "rawlab-rendered-dng-staging", "w");
-            if (!tif_) return false;
-            handle_ = INVALID_HANDLE_VALUE; // libtiff owns the HANDLE on success.
-            return true;
-        } catch (...) {
-            cleanup();
-            if (!temporaryName.empty()) DeleteFileW(temporaryName.c_str());
-            throw;
-        }
-#else
-        std::string temporaryName;
-        int createdFd = -1;
-        try {
-            std::filesystem::path parent = destination.parent_path();
-            if (parent.empty()) parent = ".";
-            std::string basename = destination.filename().string();
-            if (basename.empty()) basename = "rendered";
-            for (int attempt = 0; attempt < 64 && createdFd < 0; ++attempt) {
-                temporaryName = (parent / (basename + ".rawlab-rendered-dng-" + stagingSuffix() + ".tmp")).string();
-                // libtiff opens the descriptor for read/write even in "w" mode.
-                createdFd = ::open(temporaryName.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0666);
-                if (createdFd < 0) {
-                    if (errno != EEXIST) return false;
-                    temporaryName.clear(); // the name belongs to someone else; never unlink it
-                }
-            }
-            if (createdFd < 0) return false;
-            preserveDestinationMode(createdFd, destination);
-
-            path_ = std::filesystem::path(temporaryName);
-            fd_ = createdFd;
-            createdFd = -1;
-            tif_ = TIFFFdOpen(fd_, path_.c_str(), "w");
-            if (!tif_) return false;
-            fd_ = -1; // libtiff owns the descriptor after TIFFFdOpen succeeds.
-            return true;
-        } catch (...) {
-            closeFileDescriptor(createdFd);
-            cleanup();
-            if (!temporaryName.empty()) ::unlink(temporaryName.c_str());
-            throw;
-        }
-#endif
-    }
-
-    TIFF* tif() const noexcept { return tif_; }
-
-    bool publish(const std::filesystem::path& destination) {
-        closeTiff();
-#ifdef _WIN32
-        const std::wstring source = path_.wstring();
-        const std::wstring target = destination.wstring();
-        const bool published = MoveFileExW(
-            source.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-        const bool published = ::rename(path_.c_str(), destination.c_str()) == 0;
-#endif
-        if (!published) return false;
-        published_ = true;
-        path_.clear();
-        return true;
-    }
-
-private:
-    void closeTiff() noexcept {
-        if (tif_) {
-            TIFFClose(tif_);
-            tif_ = nullptr;
-        }
-#ifdef _WIN32
-        if (handle_ != INVALID_HANDLE_VALUE) {
-            CloseHandle(handle_);
-            handle_ = INVALID_HANDLE_VALUE;
-        }
-#else
-        if (fd_ >= 0) {
-            closeFileDescriptor(fd_);
-            fd_ = -1;
-        }
-#endif
-    }
-
-    void cleanup() noexcept {
-        closeTiff();
-        if (!published_) removeFileNoThrow(path_);
-        path_.clear();
-    }
-
-    std::filesystem::path path_;
-    TIFF* tif_ = nullptr;
-#ifdef _WIN32
-    HANDLE handle_ = INVALID_HANDLE_VALUE;
-#else
-    int fd_ = -1;
-#endif
-    bool published_ = false;
-};
 
 float inverseSrgb(float encoded) {
     const double value = std::clamp(static_cast<double>(encoded), 0.0, 1.0);
@@ -554,24 +400,64 @@ ErrorCode saveRenderedDNGRows(const RenderedDNGRows& source, const std::string& 
 
     std::filesystem::path outputPath;
     try {
-#ifdef _WIN32
         outputPath = std::filesystem::u8path(filepath);
-#else
-        outputPath = std::filesystem::path(filepath);
-#endif
     } catch (...) {
         return ErrorCode::IOError;
     }
 
-    StagingFile staging;
+    AtomicOutputOptions txOptions;
+    txOptions.stagingPrefix = ".rawlab-rendered-dng";
+    txOptions.includeDestinationFilename = true;
+    txOptions.modePolicy = OutputModePolicy::PreserveDestinationOrUmask;
+    txOptions.rejectSymlinkTarget = false;
+    txOptions.syncFile = false;
+    txOptions.openReadWrite = true;
+    txOptions.fileAttributeTemporary = true;
+    AtomicOutputTransaction tx(outputPath, txOptions);
+    struct TiffHandleGuard {
+        AtomicOutputTransaction& tx;
+        TIFF* tif = nullptr;
+        ~TiffHandleGuard() { close(); }
+        void close() noexcept {
+            if (tif) {
+                TIFFClose(tif);
+                tif = nullptr;
+                tx.markExternalOwnerClosed();
+            }
+        }
+    } tiffGuard{tx};
+
     try {
-        if (!staging.create(outputPath)) return ErrorCode::IOError;
+        if (tx.begin() != AtomicOutputStatus::Ok) return ErrorCode::IOError;
+#ifdef _WIN32
+        HANDLE h = static_cast<HANDLE>(tx.releaseWin32HandleForExternalOwner());
+        if (h == INVALID_HANDLE_VALUE) return ErrorCode::IOError;
+        // Win32 libtiff expects the native HANDLE's significant 32 bits,
+        // not a CRT descriptor produced by _open_osfhandle.
+        TIFF* opened = TIFFFdOpen(static_cast<int>(reinterpret_cast<intptr_t>(h)),
+                                  "rawlab-rendered-dng-staging", "w");
+        if (!opened) {
+            ::CloseHandle(h);
+            tx.markExternalOwnerClosed();
+            return ErrorCode::IOError;
+        }
+#else
+        const int fd = tx.releasePosixFdForExternalOwner();
+        if (fd < 0) return ErrorCode::IOError;
+        TIFF* opened = TIFFFdOpen(fd, tx.stagingPath().c_str(), "w");
+        if (!opened) {
+            ::close(fd);
+            tx.markExternalOwnerClosed();
+            return ErrorCode::IOError;
+        }
+#endif
+        tiffGuard.tif = opened;
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     } catch (...) {
         return ErrorCode::IOError;
     }
-    TIFF* tif = staging.tif();
+    TIFF* tif = tiffGuard.tif;
 
     const PreviewSize thumbnail = previewSize(width, height, kThumbnailLongEdge);
     const PreviewSize fullPreview = previewSize(width, height, static_cast<uint32_t>(JPEG_MAX_DIMENSION));
@@ -702,11 +588,26 @@ ErrorCode saveRenderedDNGRows(const RenderedDNGRows& source, const std::string& 
         return ErrorCode::ProcessingError;
     }
     if (!TIFFWriteDirectory(tif) || !TIFFFlush(tif)) return ErrorCode::IOError;
+#ifndef _WIN32
+    const int tiffFd = TIFFFileno(tif);
+    if (tiffFd >= 0) {
+        while (::fsync(tiffFd) < 0) {
+            if (errno == EINTR) continue;
+            return ErrorCode::IOError;
+        }
+    }
+#else
+    const HANDLE tiffHandle = reinterpret_cast<HANDLE>(static_cast<intptr_t>(TIFFFileno(tif)));
+    if (tiffHandle != INVALID_HANDLE_VALUE && !::FlushFileBuffers(tiffHandle)) {
+        return ErrorCode::IOError;
+    }
+#endif
+    tiffGuard.close();
     // 提交点：编码完成后、替换目标文件之前再看一次取消。
     checkProcessingCancellation();
     if (beforePublish) beforePublish();
     try {
-        if (!staging.publish(outputPath)) return ErrorCode::IOError;
+        if (tx.commit() != AtomicOutputStatus::Ok) return ErrorCode::IOError;
     } catch (const std::bad_alloc&) {
         return ErrorCode::OutOfMemory;
     } catch (...) {

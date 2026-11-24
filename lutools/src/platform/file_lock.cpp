@@ -1,4 +1,5 @@
 #include "platform/file_lock.h"
+#include "core/atomic_output_transaction.h"
 
 #include <algorithm>
 #include <atomic>
@@ -45,8 +46,6 @@ constexpr int64_t kSwiftReferenceEpochOffset = 978307200LL; // 2001-01-01T00:00:
 #else
 constexpr int64_t kDotNetFileTimeOffset = 504911232000000000LL; // 1601-01-01 vs 0001-01-01 in 100ns ticks
 #endif
-
-std::atomic<uint64_t> gTempCounter{0};
 
 bool isPresetWhitespace(uint32_t cp) {
     if ((cp >= 0x0009 && cp <= 0x000D) || cp == 0x0020 || cp == 0x0085 || cp == 0x00A0 ||
@@ -446,108 +445,40 @@ std::string readFileBytes(const std::filesystem::path& path, int errorStatus, co
 }
 
 void atomicWriteBytes(const std::filesystem::path& targetPath, const std::string& bytes) {
-    if (isSymlinkOrReparse(targetPath)) {
-        throw StoreError(2, "invalid_argument", "Controlled store cannot be a symbolic link");
-    }
-    const auto parent = targetPath.parent_path();
-    std::error_code ec;
-    if (!parent.empty()) {
-        std::filesystem::create_directories(parent, ec);
-        if (ec) {
-            throw StoreError(6, "output_io_error", "Cannot create store directory: " + ec.message());
-        }
-    }
+    AtomicOutputOptions options;
+    options.stagingPrefix = ".rawlab-store";
+    options.stagingExtension = ".tmp";
+    options.includeDestinationFilename = true;
+    options.modePolicy = OutputModePolicy::Standard0644;
+    options.rejectSymlinkTarget = true;
+    options.createParentDirs = true;
+    options.syncFile = true;
+    options.syncParentDir = true;
+    options.winRetryOnTransient = true;
 
-    const uint64_t seq = gTempCounter.fetch_add(1, std::memory_order_relaxed);
-    const std::string base = pathToUtf8(targetPath.filename());
+    AtomicOutputTransaction tx(targetPath, options);
+    std::string errMsg;
+    auto mapFailure = [&](AtomicOutputStatus st) -> void {
+        if (st == AtomicOutputStatus::InvalidArgument) {
+            throw StoreError(2, "invalid_argument",
+                errMsg.empty() ? "Controlled store cannot be a symbolic link" : errMsg);
+        }
+        throw StoreError(6, "output_io_error",
+            errMsg.empty() ? "Failed atomic store write" : errMsg);
+    };
 
-#if defined(_WIN32)
-    const DWORD pid = GetCurrentProcessId();
-    const std::filesystem::path tmpPath = parent / pathFromUtf8("." + base + ".tmp-" + std::to_string(pid) + "-" + std::to_string(seq));
-    HANDLE h = CreateFileW(
-        tmpPath.c_str(),
-        GENERIC_WRITE,
-        0,
-        nullptr,
-        CREATE_NEW,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (h == INVALID_HANDLE_VALUE) {
-        throw StoreError(6, "output_io_error", "Failed to create temporary store file");
+    const AtomicOutputStatus beginStatus = tx.begin(&errMsg);
+    if (beginStatus != AtomicOutputStatus::Ok) {
+        mapFailure(beginStatus);
     }
-    size_t offset = 0;
-    while (offset < bytes.size()) {
-        const DWORD chunk = static_cast<DWORD>(std::min<size_t>(bytes.size() - offset, 1u << 24));
-        DWORD written = 0;
-        if (!WriteFile(h, bytes.data() + offset, chunk, &written, nullptr) || written == 0) {
-            CloseHandle(h);
-            DeleteFileW(tmpPath.c_str());
-            throw StoreError(6, "output_io_error", "Failed writing temporary store file");
-        }
-        offset += written;
+    const AtomicOutputStatus writeStatus = tx.writeAll(bytes.data(), bytes.size(), false, &errMsg);
+    if (writeStatus != AtomicOutputStatus::Ok) {
+        mapFailure(writeStatus);
     }
-    if (!FlushFileBuffers(h)) {
-        CloseHandle(h);
-        DeleteFileW(tmpPath.c_str());
-        throw StoreError(6, "output_io_error", "Failed flushing temporary store file");
+    const AtomicOutputStatus commitStatus = tx.commit({}, &errMsg);
+    if (commitStatus != AtomicOutputStatus::Ok) {
+        mapFailure(commitStatus);
     }
-    CloseHandle(h);
-
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (true) {
-        if (MoveFileExW(tmpPath.c_str(), targetPath.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            return;
-        }
-        const DWORD err = GetLastError();
-        if (isTransientWinError(err) && std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            continue;
-        }
-        DeleteFileW(tmpPath.c_str());
-        throw StoreError(6, "output_io_error", "Failed replacing store file: Win32 error " + std::to_string(err));
-    }
-#else
-    const long pid = static_cast<long>(getpid());
-    const std::filesystem::path tmpPath = parent / pathFromUtf8("." + base + ".tmp-" + std::to_string(pid) + "-" + std::to_string(seq));
-    const int fd = open(tmpPath.c_str(), O_CREAT | O_EXCL | O_WRONLY, 0644);
-    if (fd < 0) {
-        throw StoreError(6, "output_io_error", "Failed to create temporary store file: " + std::string(std::strerror(errno)));
-    }
-    size_t offset = 0;
-    while (offset < bytes.size()) {
-        const ssize_t n = write(fd, bytes.data() + offset, bytes.size() - offset);
-        if (n > 0) {
-            offset += static_cast<size_t>(n);
-        } else if (n < 0 && errno == EINTR) {
-            continue;
-        } else {
-            const int saved = errno;
-            close(fd);
-            unlink(tmpPath.c_str());
-            throw StoreError(6, "output_io_error", "Failed writing temporary store file: " + std::string(std::strerror(saved)));
-        }
-    }
-    while (fsync(fd) < 0) {
-        if (errno == EINTR) continue;
-        const int saved = errno;
-        close(fd);
-        unlink(tmpPath.c_str());
-        throw StoreError(6, "output_io_error", "Failed syncing temporary store file: " + std::string(std::strerror(saved)));
-    }
-    close(fd);
-    if (rename(tmpPath.c_str(), targetPath.c_str()) != 0) {
-        const int saved = errno;
-        unlink(tmpPath.c_str());
-        throw StoreError(6, "output_io_error", "Failed renaming temporary store file: " + std::string(std::strerror(saved)));
-    }
-    if (!parent.empty()) {
-        const int dfd = open(parent.c_str(), O_RDONLY);
-        if (dfd >= 0) {
-            (void)fsync(dfd);
-            close(dfd);
-        }
-    }
-#endif
 }
 
 MacFileIdentity readMacFileIdentity(const std::filesystem::path& photoPath) {
