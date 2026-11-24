@@ -78,13 +78,17 @@ class MainActivity : ComponentActivity() {
     val model: EditorViewModel by lazy { ViewModelProvider(this)[EditorViewModel::class.java] }
     internal val camera: CameraImportViewModel by lazy { ViewModelProvider(this)[CameraImportViewModel::class.java] }
     val updates: UpdateViewModel by lazy { ViewModelProvider(this)[UpdateViewModel::class.java] }
+    val diagnostics: com.rawlab.android.diagnostics.DiagnosticViewModel by lazy {
+        ViewModelProvider(this)[com.rawlab.android.diagnostics.DiagnosticViewModel::class.java]
+    }
     val usage: UsageAnalytics by lazy { UsageAnalyticsRegistry.get(applicationContext) }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        diagnostics.beginSession()
         usage.beginSession()
-        setContent { RawLabTheme { RawLabApp(model, updates, usage, camera) } }
+        setContent { RawLabTheme { RawLabApp(model, updates, usage, camera, diagnostics) } }
         if (savedInstanceState == null) receivePhotoIntent(intent)
     }
 
@@ -127,7 +131,13 @@ fun RawLabTheme(content: @Composable () -> Unit) {
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: UsageAnalytics, camera: CameraImportViewModel) {
+private fun RawLabApp(
+    model: EditorViewModel,
+    updates: UpdateViewModel,
+    usage: UsageAnalytics,
+    camera: CameraImportViewModel,
+    diagnostics: com.rawlab.android.diagnostics.DiagnosticViewModel,
+) {
     val state by model.state.collectAsStateWithLifecycle()
     val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
     var presetLibraryRevision by remember { mutableIntStateOf(0) }
@@ -425,8 +435,28 @@ private fun RawLabApp(model: EditorViewModel, updates: UpdateViewModel, usage: U
         }
     }
     if (licenses) LicenseDialog { licenses = false }
-    if (about) AboutDialog(updateState, updates::setAutomatic, { updates.check(manual = true) }, { about = false },
-        usageState = usageState, onUsage = usage::setEnabled)
+    if (about) {
+        val context = LocalContext.current
+        val diagnosticState by diagnostics.state.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { diagnostics.refresh() }
+        AboutDialog(
+            updateState,
+            updates::setAutomatic,
+            { updates.check(manual = true) },
+            { about = false },
+            usageState = usageState,
+            onUsage = usage::setEnabled,
+            diagnosticState = diagnosticState,
+            onDiagnosticRecording = diagnostics::setRecordingEnabled,
+            onDiagnosticNote = diagnostics::setUserNote,
+            onDiagnosticSaveToUri = { uri -> diagnostics.saveZipToUri(context, uri) },
+            onDiagnosticShare = { diagnostics.shareZip(context) },
+            onDiagnosticUpload = diagnostics::uploadToCloud,
+            onDiagnosticTogglePreview = diagnostics::togglePreview,
+            onDiagnosticClear = diagnostics::clearLogs,
+            onDiagnosticCodeCopied = diagnostics::markCodeCopied,
+        )
+    }
 }
 
 @Composable

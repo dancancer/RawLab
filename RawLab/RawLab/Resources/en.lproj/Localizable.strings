@@ -86,10 +86,12 @@
 "Wi-Fi 密码" = "Wi-Fi password";
 "X3F 显影" = "X3F rendering";
 "一并导入 %@ 个日期未知的文件" = "Include %@ undated files";
+"一键云端上传" = "Upload to Cloud";
 "三分网格" = "Rule of Thirds Grid";
 "三线性" = "Trilinear";
 "上一张" = "Previous photo";
 "上下拖动调整，方向键微调，Esc 取消" = "Drag up or down to adjust, use arrow keys for fine changes, Esc to cancel";
+"上传成功，请复制诊断码发送给开发者。" = "Upload succeeded. Copy the diagnostic code and share it with the developer.";
 "上次使用的外观不可用，请重新选择或导入外观。" = "The last used look is unavailable. Choose or import a look again.";
 "上次使用的相机 · 未连接" = "Last used camera · Disconnected";
 "上次同步结果与历史" = "Last sync results and history";
@@ -114,6 +116,7 @@
 "临时选择" = "Temporary Selection";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "To count active devices, the app stores a randomly generated installation ID on this device. It contains no personal information and is deleted when you turn analytics off.";
 "乡村秋日 · 古典油画" = "Countryside autumn · classical oil painting";
+"云端上传暂不可用，请先将诊断包保存到设备后发送。" = "Cloud upload is currently unavailable. Save the diagnostic package to your device and send it manually.";
 "交换横纵比例" = "Swap Aspect Orientation";
 "亮度降噪" = "Luma Noise Reduction";
 "亮部" = "Lights";
@@ -158,6 +161,7 @@
 "保存 SDR JPEG" = "Save SDR JPEG";
 "保存位置" = "Save location";
 "保存到" = "Save to";
+"保存到设备…" = "Save to Device…";
 "保存失败" = "Save failed";
 "保存失败，请重试。" = "Save Failed. Try Again.";
 "保存当前照片" = "Save Current Photo";
@@ -203,6 +207,7 @@
 "几何与镜头" = "Geometry & Lens";
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometry and lens settings are included only with All or an explicit selection.";
 "几何编辑" = "Geometry edits";
+"分享诊断包…" = "Share Diagnostic Package…";
 "分割位置" = "Split position";
 "分割线" = "Wipe";
 "切换" = "Switch";
@@ -283,6 +288,7 @@
 "处理版本与来源不同，已沿用当前照片的处理版本" = "Processing version differs from the source; the current photo's processing version is kept";
 "复制密码" = "Copy Password";
 "复制范围" = "Copy scope";
+"复制诊断码" = "Copy Code";
 "复制调整" = "Copy Adjustments";
 "外观" = "Looks";
 "外观不可用" = "Look unavailable";
@@ -391,9 +397,11 @@
 "已撤销 %@ 张 · 未完成 %@ 张" = "Undone %@ · Incomplete %@";
 "已收起" = "Collapsed";
 "已显影的照片（JPEG 等）" = "Rendered photo (JPEG, etc.)";
+"已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。" = "Local diagnostic entries are available to export; detailed recording is currently off.";
 "已校正%@" = "Corrected: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Some settings were filled from color information in the file. Please check them.";
 "已清理 %d 个文件，释放 %@。" = "Cleared %d files and freed %@.";
+"已清除本地诊断日志。" = "Local diagnostic logs cleared.";
 "已生成 %@ 个渲染型 DNG" = "Rendered DNG Files Created: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Rendered DNG Files Created: %@ (Not Saved to the Selected Location)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Rendered DNG Created, but Not Saved to the Selected Location.";
@@ -509,6 +517,8 @@
 "放弃此任务？已保存的照片会保留。" = "Discard this task? Saved photos will be kept.";
 "放弃草稿" = "Discard Draft";
 "放弃草稿并继续" = "Discard draft and continue";
+"故障诊断" = "Diagnostics";
+"故障诊断与错误日志" = "Diagnostics & Error Logs";
 "效果" = "Effects";
 "效果未验证" = "Appearance unverified";
 "数据与提供方" = "Data and provider";
@@ -548,6 +558,7 @@
 "无法创建新的预设标识，请重试。" = "Could not create a new preset identifier. Try again.";
 "无法加入最近打开：%@" = "Could not add to recently opened: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Unable to Retrieve the Original RAW. Authorize Access to This Photo in System Settings, Then Try Again.";
+"无法导出诊断包。" = "Could not export the diagnostic package.";
 "无法导出错误日志。" = "Could not export the error log.";
 "无法恢复编辑草稿，已保留已应用的调整。" = "Unable to restore the edit draft; applied adjustments were kept.";
 "无法按所选设置处理 JPEG。" = "Could not process the JPEG with these settings.";
@@ -579,6 +590,7 @@
 "无法重置调整" = "Cannot reset adjustments";
 "无配方" = "No Recipe";
 "日光" = "Daylight";
+"日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。" = "The log exceeds the single-upload size limit. Use Save to Device to export the diagnostic package.";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanese luminous skin, airy transparent blue-cyan, open shadows and soft highlights";
 "日系青空 · 高调日光" = "Japanese blue sky · high-key daylight";
 "旧版 FBDD" = "Legacy FBDD";
@@ -665,10 +677,12 @@
 "检查 %@ 的效果" = "Inspect %@ Result";
 "检查并查看最终调整" = "Check and review final adjustments";
 "检查目标" = "Check Photos";
+"检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Diagnostic logs from the previous session are ready to save to device or upload.";
 "横向色差" = "Lateral Chromatic Aberration";
 "横向色差未应用" = "Lateral Chromatic Aberration Not Applied";
 "横向色差标定不可用" = "Lateral Chromatic Aberration Calibration Unavailable";
 "橙" = "Orange";
+"正在上传…" = "Uploading…";
 "正在保存" = "Saving";
 "正在保存照片…" = "Saving photos…";
 "正在停止…" = "Stopping…";
@@ -695,6 +709,7 @@
 "正在检查预设…" = "Checking preset…";
 "正在生成效果预览…" = "Generating Result Preview…";
 "正在生成预览…" = "Generating previews…";
+"正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Recording detailed diagnostic logs (turns off automatically after 30 minutes or the next restart). Reproduce the issue, then save or upload.";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "正在连接相机…" = "Connecting to camera…";
 "正常显影" = "Normal rendering";
@@ -748,6 +763,7 @@
 "清理已导出的相机原件失败，请重试。" = "Couldn’t clear exported camera originals. Please try again.";
 "清空选择" = "Clear Selection";
 "清除搜索" = "Clear search";
+"清除日志" = "Clear Logs";
 "清除相机配置" = "Clear camera profile";
 "清除筛选" = "Clear Filters";
 "清除锚点" = "Clear Anchors";
@@ -907,7 +923,11 @@
 "观察层" = "Inspection Overlay";
 "视频范围（10 位 64–940）" = "Video range (10-bit 64–940)";
 "计算与参考的差异" = "Calculate difference from reference";
+"记录详细诊断日志" = "Record Detailed Diagnostic Logs";
 "设置结果未确认，请重新连接后检查。" = "The setting result was not confirmed. Reconnect and check again.";
+"诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Diagnostic packages contain only app version, system environment, step summaries, and error codes. Photo data, file names, and personal paths are excluded.";
+"诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Diagnostic package saved. You can share the ZIP file with the developer via GitHub Issues or messaging apps.";
+"诊断码：%@" = "Diagnostic Code: %@";
 "试用方案 · 无颜色依据" = "Trial option · No color basis";
 "试试其他编辑状态。" = "Try another edit status.";
 "语言" = "Language";
@@ -1067,6 +1087,7 @@
 "长边" = "Long edge";
 "长边 %@ px" = "Long Edge %@ px";
 "闪光灯" = "Flash";
+"问题简述（选填，勿填个人隐私）" = "Brief issue note (optional, omit personal info)";
 "阴天" = "Cloudy";
 "阴影" = "Shadows";
 "阿里云隐私政策" = "Aliyun privacy policy";
@@ -1090,6 +1111,7 @@
 "预览待更新" = "Preview updating";
 "预览方式" = "Preview Mode";
 "预览方式不会改变编辑或导出。" = "Preview mode does not change edits or exports.";
+"预览日志" = "Preview Logs";
 "预览未更新" = "Preview not updated";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Preview conditions: C5 development, camera white balance, normalized scene exposure, exposure 0, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Preview conditions: developed photo, no extra adjustments, LUT strength 100%, sRGB output, 512-pixel long edge.";
@@ -1122,4 +1144,5 @@
 "黑场" = "Black point";
 "默认" = "Default";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Default: %@; range: %@ to %@; increment: %@.";
+"默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。" = "Off by default. Turn this on when troubleshooting to reproduce an issue, then save the diagnostic package to your device or upload it.";
 "默认降噪设置" = "Default denoise settings";

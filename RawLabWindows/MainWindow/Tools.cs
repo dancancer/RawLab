@@ -864,6 +864,10 @@ public partial class MainWindow
         lookAvailability.Invalidate();
         Schedule();
     }
-    private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
-        ? Loc.Text("无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。") : error.Message,true);
+    private void Report(Exception error)
+    {
+        diagnosticSession.RecordError("editor","report",error);
+        SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
+            ? Loc.Text("无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。") : error.Message,true);
+    }
 }

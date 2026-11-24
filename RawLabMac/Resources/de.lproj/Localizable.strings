@@ -87,10 +87,13 @@
 "SDR 底图曝光" = "Belichtung der SDR-Basis";
 "SDR 底图饱和度" = "Sättigung der SDR-Basis";
 "X3F 显影" = "X3F-Entwicklung";
+"一键云端上传" = "In die Cloud hochladen";
 "三分网格" = "Drittelraster";
 "三线性" = "Trilinear";
 "上一级" = "Übergeordneter Ordner";
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
+"上传成功，请复制诊断码发送给开发者。" = "Upload erfolgreich. Kopieren Sie den Diagnosecode und teilen Sie ihn dem Entwickler mit.";
+"上传或预览日志…" = "Protokolle hochladen oder prüfen…";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
 "下次退出时安装" = "Beim nächsten Beenden installieren";
@@ -114,6 +117,7 @@
 "中间调拆分" = "Mitteltöne-Trennpunkt";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.";
 "乡村秋日 · 古典油画" = "Ländlicher Herbst · klassisches Ölgemälde";
+"云端上传暂不可用，请先将诊断包保存到设备后发送。" = "Cloud-Upload ist derzeit nicht verfügbar. Bitte speichern Sie das Diagnosepaket auf dem Gerät und senden Sie es manuell.";
 "交互预览… %@ × %@ · HDR" = "Interaktive Vorschau… %@ × %@ · HDR";
 "交互预览… %@ × %@ · sRGB" = "Interaktive Vorschau… %@ × %@ · sRGB";
 "交换横纵比例" = "Seitenverhältnis drehen";
@@ -155,6 +159,7 @@
 "保井崇志" = "Takashi Yasui";
 "保存" = "Speichern";
 "保存到" = "Speichern unter";
+"保存到设备…" = "Auf Gerät speichern…";
 "保存失败" = "Speichern fehlgeschlagen";
 "保存当前调整为预设…" = "Aktuelle Anpassungen als Vorgabe speichern…";
 "保存所选调整，之后可应用到其他照片。" = "Speichern Sie ausgewählte Anpassungen, um sie später auf andere Fotos anzuwenden.";
@@ -287,6 +292,7 @@
 "处理版本与来源不同，已沿用当前照片的处理版本" = "Verarbeitungsversion unterscheidet sich von der Quelle; die Verarbeitungsversion des aktuellen Fotos wird beibehalten";
 "处理结果为空" = "Das Verarbeitungsergebnis ist leer";
 "复制范围" = "Kopierumfang";
+"复制诊断码" = "Code kopieren";
 "复制调整" = "Anpassungen kopieren";
 "复制调整…" = "Anpassungen kopieren…";
 "外观" = "Looks";
@@ -373,6 +379,7 @@
 "已匹配镜头" = "Objektiv zugeordnet";
 "已启用" = "Aktiviert";
 "已回退，保留旧版本。" = "Wiederhergestellt. Die bisherige Version bleibt erhalten.";
+"已复制" = "Kopiert";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Importierte Looks: %@; nicht importierte Dateien: %@\n";
 "已导出" = "Exportiert";
 "已导出 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien exportiert: %@";
@@ -392,9 +399,11 @@
 "已撤销 %@ 张 · 未完成 %@ 张" = "Rückgängig %@ · Offen %@";
 "已收起" = "Eingeklappt";
 "已显影的照片（JPEG 等）" = "Entwickeltes Foto (JPEG usw.)";
+"已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。" = "Lokale Diagnoseeinträge sind zum Export verfügbar; die detaillierte Aufzeichnung ist derzeit deaktiviert.";
 "已有批量任务，请先完成或结束该任务。" = "Schließen Sie zuerst die vorhandene Stapelaufgabe ab oder beenden Sie sie.";
 "已校正%@" = "Korrigiert: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Einige Einstellungen wurden aus den Farbangaben der Datei übernommen. Bitte prüfen Sie diese.";
+"已清除本地诊断日志。" = "Lokale Diagnoseprotokolle wurden gelöscht.";
 "已生成 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien erstellt: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Entwickelte DNG-Dateien erstellt: %@ (nicht am gewählten Ort gespeichert)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.";
@@ -504,10 +513,13 @@
 "收起直方图" = "Histogramm ausblenden";
 "收起精细调整" = "Feinabstimmung einklappen";
 "收起调整栏" = "Anpassungsbereich einklappen";
+"收起预览" = "Vorschau ausblenden";
 "放大" = "Vergrößern";
 "放弃修改" = "Änderungen verwerfen";
 "放弃草稿" = "Entwurf verwerfen";
 "放弃输入" = "Eingabe verwerfen";
+"故障诊断…" = "Diagnose…";
+"故障诊断与错误日志" = "Diagnose & Fehlerprotokolle";
 "效果" = "Effekte";
 "效果未验证" = "Bildwirkung ungeprüft";
 "效果预览" = "Effektvorschau";
@@ -549,6 +561,7 @@
 "无法写入输出目录，请检查访问权限和剩余空间。" = "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.";
 "无法创建处理会话" = "Verarbeitungssitzung konnte nicht erstellt werden";
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
+"无法导出诊断包。" = "Das Diagnosepaket konnte nicht exportiert werden.";
 "无法恢复调整：%@" = "Anpassungen können nicht wiederhergestellt werden: %@";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
 "无法正常显影 X3F：%@" = "X3F konnte nicht normal entwickelt werden: %@";
@@ -576,6 +589,7 @@
 "无法重置调整" = "Anpassungen können nicht zurückgesetzt werden";
 "无照片" = "Keine Fotos";
 "无配方" = "Kein Rezept";
+"日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。" = "Das Protokoll überschreitet das Größenlimit für den Cloud-Upload. Verwenden Sie „Auf Gerät speichern“.";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
 "旧版 FBDD" = "Älteres FBDD";
@@ -595,6 +609,7 @@
 "显示输出高光与黑位裁切" = "Clipping der Ausgabe-Lichter und des Schwarzwerts anzeigen";
 "普通图片未使用 AI 降噪" = "Für normale Bilder wurde keine KI-Entrauschung verwendet";
 "普通降噪参数已保留，关闭 AI 降噪即可恢复。" = "Die üblichen Entrauschungseinstellungen bleiben erhalten. Deaktivieren Sie KI-Entrauschen, um sie wieder zu verwenden.";
+"暂无可导出的错误日志。" = "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.";
 "暂无编辑历史。" = "Noch kein Bearbeitungsverlauf.";
 "暖调日系 · 漫射金光" = "Warmer Japan-Look · diffuses goldenes Licht";
 "暖金光影 · 质感人像" = "Warmgoldenes Licht · charaktervolles Porträt";
@@ -669,12 +684,14 @@
 "检查最终调整" = "Endgültige Anpassungen prüfen";
 "检查目标" = "Fotos prüfen";
 "检查目标…" = "Zielfotos prüfen…";
+"检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Diagnoseprotokolle aus der vorherigen Sitzung stehen zum Speichern oder Hochladen bereit.";
 "检测到外部调色方案更新" = "Externes Update der Farbabstimmung erkannt";
 "横向色差" = "Laterale chromatische Aberration";
 "横向色差未应用" = "Laterale chromatische Aberration nicht korrigiert";
 "横向色差标定" = "Kalibrierung der lateralen chromatischen Aberration";
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
+"正在上传…" = "Wird hochgeladen…";
 "正在下载更新…" = "Update wird geladen…";
 "正在保存" = "Wird gespeichert";
 "正在保存 AI 结果" = "KI-Ergebnis wird gespeichert";
@@ -704,6 +721,7 @@
 "正在等待编辑和任务处理完成" = "Warte auf den Abschluss der Bearbeitung und Aufgaben";
 "正在等待预览、导出或批量任务结束" = "Warte auf den Abschluss der Vorschau, des Exports oder der Batch-Aufgabe";
 "正在编辑另一目录的照片" = "Ein Foto aus einem anderen Ordner wird bearbeitet";
+"正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Detaillierte Diagnoseprotokolle werden aufgezeichnet (wird nach 30 Minuten oder nach dem nächsten Neustart automatisch beendet). Reproduzieren Sie das Problem und speichern oder senden Sie das Paket.";
 "正在读取目录…" = "Ordner wird geladen…";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在预览镜头校正…" = "Vorschau der Objektivkorrektur…";
@@ -761,6 +779,7 @@
 "清晰度" = "Klarheit";
 "清空选择" = "Auswahl aufheben";
 "清除搜索" = "Suche löschen";
+"清除日志" = "Protokolle löschen";
 "清除相机配置" = "Kameraprofil entfernen";
 "清除锚点" = "Anker löschen";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warmer, satter Vintage-Stadtfilmlook, ruhige saubere Schatten, warme goldene Lichter und ein Gefühl des Umherschweifens";
@@ -916,6 +935,10 @@
 "观察层" = "Kontrollansicht";
 "视频范围（10 位 64–940）" = "Videobereich (10 Bit 64–940)";
 "计算与参考的差异" = "Abweichung von der Referenz berechnen";
+"记录详细诊断日志" = "Detaillierte Diagnoseprotokolle aufzeichnen";
+"诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Diagnosepakete enthalten nur App-Version, Systemumgebung, Schrittzusammenfassungen und Fehlercodes. Fotodaten, Dateinamen und persönliche Pfade sind ausgeschlossen.";
+"诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Diagnosepaket gespeichert. Sie können die ZIP-Datei über GitHub Issues oder Messenger an den Entwickler senden.";
+"诊断码：%@" = "Diagnosecode: %@";
 "试用方案 · 无颜色依据" = "Testoption · Keine Farbbasis";
 "语言" = "Sprache";
 "请使用 %@ 的步进。" = "Verwende eine Schrittweite von %@.";
@@ -1069,6 +1092,7 @@
 "镜头配置" = "Objektivprofile";
 "长边" = "Lange Seite";
 "长边 %@ px" = "Lange Seite %@ px";
+"问题简述（选填，勿填个人隐私）" = "Kurze Problembeschreibung (optional, keine persönlichen Daten)";
 "阴影" = "Schatten";
 "阴影拆分" = "Schatten-Trennpunkt";
 "阿里云隐私政策" = "Datenschutzerklärung von Aliyun";
@@ -1090,6 +1114,7 @@
 "预览待更新" = "Vorschau wird aktualisiert";
 "预览方式" = "Vorschaumodus";
 "预览方式不会改变编辑或导出。" = "Der Vorschaumodus ändert weder Bearbeitung noch Export.";
+"预览日志" = "Protokollvorschau";
 "预览未更新" = "Vorschau nicht aktualisiert";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Vorschau-Bedingungen: C5-Entwicklung, Kamera-Weißabgleich, normalisierte Szenenbelichtung, Belichtung 0, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Vorschau-Bedingungen: entwickeltes Foto, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.";
@@ -1121,4 +1146,5 @@
 "黑位 %@" = "Schwarzwert %@";
 "黑场" = "Schwarzpunkt";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";
+"默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。" = "Standardmäßig deaktiviert. Aktivieren Sie diese Option zur Fehlerreproduktion und speichern Sie das Diagnosepaket anschließend auf dem Gerät oder laden Sie es hoch.";
 "默认降噪设置" = "Standard-Rauschreduzierung";

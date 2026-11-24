@@ -33,6 +33,7 @@ public sealed class AppPathsTests
         AssertUnderRoot(expectedRoot, HDRLookSettings.Directory);
         AssertUnderRoot(expectedRoot, HDRCameraProfile.Directory);
         AssertUnderRoot(expectedRoot, AIDiagnosticStore.Default.DirectoryPath);
+        AssertUnderRoot(expectedRoot, DiagnosticSessionStore.Default.DirectoryPath);
         AssertUnderRoot(expectedRoot, EditStore.DefaultDirectory);
         AssertUnderRoot(expectedRoot, AdjustmentPresetStore.DefaultDirectory);
         AssertUnderRoot(expectedRoot, BatchJournal.DefaultDirectory);

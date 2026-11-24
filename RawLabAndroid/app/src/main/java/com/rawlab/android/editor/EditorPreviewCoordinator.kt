@@ -71,9 +71,31 @@ internal class EditorPreviewCoordinator(
         hdrHolder.onRenderResult()
         result.fold({ value ->
             when (value) {
-                is WorkResult.X3fImportFailure -> importRecoveryHolder.handleX3fFailure(value)
-                is WorkResult.UnusableEditImportFailure -> importRecoveryHolder.handleUnusableFailure(value)
-                is WorkResult.MissingLook -> importRecoveryHolder.handleMissingLook(value)
+                is WorkResult.X3fImportFailure -> {
+                    com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
+                        operation = "import",
+                        stage = "x3fImportFailure",
+                        error = value.error,
+                    )
+                    importRecoveryHolder.handleX3fFailure(value)
+                }
+                is WorkResult.UnusableEditImportFailure -> {
+                    com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
+                        operation = "import",
+                        stage = "unusableEditRecord",
+                        error = value.error,
+                    )
+                    importRecoveryHolder.handleUnusableFailure(value)
+                }
+                is WorkResult.MissingLook -> {
+                    com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+                        level = "warn",
+                        category = "look",
+                        stage = "missingLook",
+                        message = "Referenced look is unavailable on import",
+                    )
+                    importRecoveryHolder.handleMissingLook(value)
+                }
                 is WorkResult.HslProbe -> hslHolder.accept(value)
                 is WorkResult.WbProbe -> wbHolder?.accept(value)
                 is WorkResult.CameraHDRPreflight -> hdrHolder.onCameraHDRPreflight(value)
@@ -130,7 +152,18 @@ internal class EditorPreviewCoordinator(
             adjustmentHistory.acceptSource(request.photo, request.importedRecord)
             collectionHolder.opened(request.photo.identity.value)
         }
-        if (imported) recordUsage(UsageEvent.PhotoImported)
+        if (imported) {
+            recordUsage(UsageEvent.PhotoImported)
+            com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+                category = "import",
+                stage = "photoImported",
+                message = "Photo imported and initial preview delivered",
+                context = mapOf(
+                    "extension" to request.photo.file.extension,
+                    "hdr" to request.edits.isHDREditing.toString(),
+                ),
+            )
+        }
         val settings = if (!request.edits.customWb && value.pair.temperature.isFinite()) {
             request.edits.copy(
                 temperature = value.pair.temperature.coerceIn(2000f, 50000f),
@@ -175,7 +208,20 @@ internal class EditorPreviewCoordinator(
         }
         if (request.importing && mutable.value.draft == null) draftHolder.restoreEditorDraft()
         processingMigrationHolder.startIfNeeded()
-        if (!request.interactive) onExactPreviewAccepted()
+        if (!request.interactive) {
+            com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+                category = "preview",
+                stage = "exactPreviewRendered",
+                message = "Exact preview rendered",
+                context = mapOf(
+                    "width" to value.pair.result.width.toString(),
+                    "height" to value.pair.result.height.toString(),
+                    "gpuMode" to request.gpuMode.toString(),
+                    "hdr" to request.edits.isHDREditing.toString(),
+                ),
+            )
+            onExactPreviewAccepted()
+        }
     }
 
     private fun acceptAutoExposure(value: WorkResult.AutoExposure) {

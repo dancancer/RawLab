@@ -42,10 +42,19 @@ struct RawLabApp: App {
             ContentView().environment(\.locale, Locale(identifier: AppLanguage.resolve(
                 preference: languagePreference, preferredLanguages: Locale.preferredLanguages).rawValue))
                 .task {
+                    DiagnosticCenter.shared.beginSession()
 #if RAWLAB_RUM
                     if RawLabRUM.start() { return }
 #endif
                     UsageAnalytics.shared.beginSession()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    DiagnosticCenter.recordBreadcrumb(
+                        level: .warn,
+                        category: "memory",
+                        stage: "memoryWarning",
+                        message: "Received iOS memory warning"
+                    )
                 }
         }
     }
