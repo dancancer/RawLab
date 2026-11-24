@@ -41,6 +41,21 @@ internal static class ToneCurveChecks
             hdrV2Req.CurveApplyToLuminosity == 1 && hdrV2Req.ParametricCurve.Highlights == 15f &&
             hdrV2Req.GradingV2.Version == 2 && hdrV2Req.GradingV2.StructSize == 64 && hdrV2Req.GradingV2.Blending == 50f,
             "HDR v9 curve v2 ABI");
+        // 已发布的 v9 只放开端点 y；端点 x 内移升到 v10，沿用 v9 请求布局。
+        var hdrFreeX = new HDRSettings().WithTone(new HDRToneSettings {
+            Curve = new ToneCurveSettings(channels: new ToneCurveChannels(new(), new(ToneCurveMode.Custom, [new(0.1, 0), new(0.9, 1)]), new()))
+        });
+        var hdrFreeXReq = hdrFreeX.NativeRenderRequest(HDRIntent.Final);
+        Check(hdrFreeX.ProcessingVersion == 10 && hdrFreeX.RecordVersion == 11 &&
+            hdrFreeXReq.Base.Base.Base.Base.Base.Base.Base.Base.HDRProcessingVersion == 10 &&
+            hdrFreeXReq.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == Marshal.SizeOf<Native.HDRRequestV9>() &&
+            JsonSerializer.Deserialize<HDRSettings>(JsonSerializer.Serialize(hdrFreeX)) == hdrFreeX,
+            "HDR free endpoint X persists as processing v10 / record v11 on the v9 request layout");
+        var tamperedFreeX = JsonSerializer.Serialize(hdrFreeX)
+            .Replace("\"hdr_processing_version\":10", "\"hdr_processing_version\":9").Replace("\"record_version\":11", "\"record_version\":10");
+        var tamperedRejected = false;
+        try { JsonSerializer.Deserialize<HDRSettings>(tamperedFreeX); } catch (JsonException) { tamperedRejected = true; }
+        Check(tamperedRejected, "HDR v9 record with free endpoint X is rejected");
         Loc.Initialize("en");
         var coordinate = new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
         Check(coordinate.Parse("0.250000000000001") == curve.Points[1].X && coordinate.Parse("1.000001") == null &&

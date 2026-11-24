@@ -86,7 +86,7 @@ internal static class CanonicalEditRecipe
         var profileId = string.IsNullOrEmpty(settings.Lens.CoreProfileId) ? null : settings.Lens.CoreProfileId;
 
         var payload = new Payload(
-            SchemaVersion: hasV12Features ? 17 : (isRaster ? 5 : 7),
+            SchemaVersion: curve.HasFreeEndpointX ? 18 : hasV12Features ? 17 : (isRaster ? 5 : 7),
             X3fMode: isRaster ? null : (settings.X3fMode == X3fMode.Normal ? "normal-v1" : "legacy"),
             Processing: new ProcessingPayload("rawlab", processingVersion, "standard"),
             Input: new InputPayload(isRaster ? "session.png" : "session.raw", isRaster ? "raster" : "raw"),

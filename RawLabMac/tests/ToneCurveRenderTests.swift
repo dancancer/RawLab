@@ -126,7 +126,7 @@ import ImageIO
             _ = try engine.render(url, settings: freeX, lut: nil, edge: nil, output: fxOut)
             let data = try engine.agentRecipe(url, settings: freeX, lut: nil, output: fxAgent)
             let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
-            require((obj["schema_version"] as? Int) == 17, "free-X Agent emits schema_version 17")
+            require((obj["schema_version"] as? Int) == 18, "free-X Agent emits schema_version 18")
             try data.write(to: fxRecipe)
             let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = ["--recipe", fxRecipe.path]
             try process.run(); process.waitUntilExit(); require(process.terminationStatus == 0, "Mac free-X Agent recipe succeeds")

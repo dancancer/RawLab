@@ -82,7 +82,18 @@ void hslAxis(const Json& object, const char* key, float* destination) {
     }
 }
 
-void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config, bool allowFreeEndpoints) {
+// HDR 文档 v16 / SDR 文档 v17 只放开端点 y；HDR v19 / SDR v18 起端点 x 也放开。
+ToneCurveEndpoints recipeCurveEndpoints(const EditRecipe& recipe) {
+    const auto schema = recipe.schemaVersion;
+    if (recipe.hdr) {
+        if (schema >= 19) return ToneCurveEndpoints::Free;
+        return schema >= 16 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+    }
+    if (schema >= 18) return ToneCurveEndpoints::Free;
+    return schema >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+}
+
+void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config, ToneCurveEndpoints endpoints) {
     const std::string path = "edits.tone.curve";
     fields(curve, path, {"mode", "points"});
     const auto mode = text(required(curve, "mode", path), path + ".mode");
@@ -105,11 +116,11 @@ void readToneCurve(const Json& curve, sony2fuji_tone_curve_config& config, bool 
     for (uint32_t i = 0; i < std::min(config.count, kToneCurveMaxPoints); ++i)
         coreConfig.points[i] = {config.points[i].x, config.points[i].y};
     if (config.version != SONY2FUJI_TONE_CURVE_CONFIG_VERSION || config.struct_size != sizeof(config) ||
-        !validToneCurve(coreConfig, allowFreeEndpoints))
+        !validToneCurve(coreConfig, endpoints))
         throw std::invalid_argument(path + ".points are invalid for the selected mode");
 }
 
-bool validAbiToneCurve(const sony2fuji_tone_curve_config& config, bool allowFreeEndpoints = false) {
+bool validAbiToneCurve(const sony2fuji_tone_curve_config& config, ToneCurveEndpoints endpoints = ToneCurveEndpoints::Pinned) {
     if (config.version != SONY2FUJI_TONE_CURVE_CONFIG_VERSION || config.struct_size != sizeof(config)) return false;
     if (config.mode != SONY2FUJI_CURVE_LEGACY && config.mode != SONY2FUJI_CURVE_CUSTOM) return false;
     ToneCurveConfig coreConfig;
@@ -117,7 +128,7 @@ bool validAbiToneCurve(const sony2fuji_tone_curve_config& config, bool allowFree
     coreConfig.count = config.count;
     for (uint32_t i = 0; i < std::min(config.count, kToneCurveMaxPoints); ++i)
         coreConfig.points[i] = {config.points[i].x, config.points[i].y};
-    return validToneCurve(coreConfig, allowFreeEndpoints);
+    return validToneCurve(coreConfig, endpoints);
 }
 
 ToneCurveParametricConfig toCoreParametricCurve(const sony2fuji_tone_curve_parametric_config& src) {
@@ -274,7 +285,7 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
                 fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
                 const char* names[]{"red", "green", "blue"};
                 for (size_t i = 0; i < 3; ++i)
-                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], allowV12);
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], recipeCurveEndpoints(parsed));
                 master.erase("channels");
             }
             if (allowV12 && root.contains("apply_to_luminosity")) {
@@ -285,7 +296,7 @@ void completeEdits(const Json& edits, EditRecipe& parsed) {
                 readParametricCurve(root.at("parametric"), parsed.parametricCurve);
                 master.erase("parametric");
             }
-            readToneCurve(master, parsed.toneCurve, allowV12);
+            readToneCurve(master, parsed.toneCurve, recipeCurveEndpoints(parsed));
             if (parsed.toneCurve.mode == SONY2FUJI_CURVE_CUSTOM && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -385,6 +396,7 @@ uint32_t hdrProcessingVersionForSchema(uint32_t schema) {
     case 14: return SONY2FUJI_HDR_PROCESSING_LOOK_VERSION;
     case 15: return SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
     case 16: return SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
+    case 19: return SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION;
     default: return 0;
     }
 }
@@ -667,9 +679,10 @@ std::string serializeHDR(const EditRecipe& recipe) {
     if (!recipe.hdr) throw std::invalid_argument("HDR recipe requires HDR settings");
     const auto& h=*recipe.hdr; const auto& g=recipe.geometry;
     const bool allowV12 = recipe.schemaVersion >= 16;
-    if (!validAbiToneCurve(recipe.toneCurve, allowV12) ||
+    const auto endpoints = recipeCurveEndpoints(recipe);
+    if (!validAbiToneCurve(recipe.toneCurve, endpoints) ||
         !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
-            [allowV12](const auto& c) { return validAbiToneCurve(c, allowV12); }))
+            [endpoints](const auto& c) { return validAbiToneCurve(c, endpoints); }))
         throw std::invalid_argument("Invalid HDR tone curve configuration");
     if (!validAbiParametricCurve(recipe.parametricCurve))
         throw std::invalid_argument("Invalid HDR parametric curve configuration");
@@ -946,9 +959,10 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (hdrProcessingVersionForSchema(recipe.schemaVersion)) return serializeHDR(recipe);
     if (recipe.hdr) throw std::invalid_argument("HDR settings require an HDR recipe schema");
     const bool allowV12 = recipe.schemaVersion >= 17;
-    if (!validAbiToneCurve(recipe.toneCurve, allowV12) ||
+    const auto endpoints = recipeCurveEndpoints(recipe);
+    if (!validAbiToneCurve(recipe.toneCurve, endpoints) ||
         !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
-            [allowV12](const auto& c) { return validAbiToneCurve(c, allowV12); }))
+            [endpoints](const auto& c) { return validAbiToneCurve(c, endpoints); }))
         throw std::invalid_argument("Invalid tone curve configuration");
     if (!validAbiParametricCurve(recipe.parametricCurve))
         throw std::invalid_argument("Invalid parametric curve configuration");
@@ -959,13 +973,13 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
     if (hasChannelCurves(recipe) && recipe.schemaVersion < 5)
         throw std::invalid_argument("Channel curves require schema_version 5");
-    if (recipe.schemaVersion != 17 && (recipe.schemaVersion < 1 || recipe.schemaVersion > 7))
+    if (recipe.schemaVersion != 17 && recipe.schemaVersion != 18 && (recipe.schemaVersion < 1 || recipe.schemaVersion > 7))
         throw std::invalid_argument("Unsupported schema_version");
     if (recipe.x3fMode != SONY2FUJI_X3F_LEGACY && recipe.x3fMode != SONY2FUJI_X3F_NORMAL)
         throw std::invalid_argument("Unsupported x3f_mode");
     if (recipe.schemaVersion < 7 && recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
         throw std::invalid_argument("Normal X3F rendering requires schema_version 7");
-    if ((recipe.schemaVersion == 7 || recipe.schemaVersion == 17) && recipe.rasterInput &&
+    if ((recipe.schemaVersion == 7 || recipe.schemaVersion >= 17) && recipe.rasterInput &&
         recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
         throw std::invalid_argument("Normal X3F rendering requires a raw input");
     if (recipe.schemaVersion == 7 && recipe.rasterInput)
@@ -1053,7 +1067,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (recipe.schemaVersion >= 5)
         document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
             {"quality", "standard"}};
-    if (recipe.schemaVersion == 7 || (recipe.schemaVersion == 17 && !recipe.rasterInput && recipe.x3fMode == SONY2FUJI_X3F_NORMAL))
+    if (recipe.schemaVersion == 7 || (recipe.schemaVersion >= 17 && !recipe.rasterInput && recipe.x3fMode == SONY2FUJI_X3F_NORMAL))
         document["x3f_mode"] = recipe.x3fMode == SONY2FUJI_X3F_NORMAL ? "normal-v1" : "legacy";
     if (recipe.schemaVersion >= 2) {
         const auto& geo = recipe.geometry;

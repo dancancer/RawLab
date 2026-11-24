@@ -58,9 +58,9 @@ int main(int argc, char** argv) {
         sony2fuji::ToneCurve reference(coreCustom);
         // Free-endpoint Y validation & active_ check (Wave 0).
         sony2fuji::ToneCurveConfig freeEnd{sony2fuji::ToneCurveMode::Custom, 2, {{{0, 0}, {1, 0.9}}}};
-        require(!sony2fuji::validToneCurve(freeEnd, false), "v1 rejects unpinned endpoint Y");
-        require(sony2fuji::validToneCurve(freeEnd, true), "v2 allows unpinned endpoint Y");
-        sony2fuji::ToneCurve freeEndCurve(freeEnd, true);
+        require(!sony2fuji::validToneCurve(freeEnd, sony2fuji::ToneCurveEndpoints::Pinned), "v1 rejects unpinned endpoint Y");
+        require(sony2fuji::validToneCurve(freeEnd, sony2fuji::ToneCurveEndpoints::FreeY), "v2 allows unpinned endpoint Y");
+        sony2fuji::ToneCurve freeEndCurve(freeEnd, sony2fuji::ToneCurveEndpoints::FreeY);
         require(freeEndCurve.active(), "2-point curve with y1 < 1 must be active");
         require(std::abs(freeEndCurve.evaluate(0.0) - 0.0) < 1e-9 &&
                 std::abs(freeEndCurve.evaluate(1.0) - 0.9) < 1e-9, "evaluate clamps to endpoint Y");

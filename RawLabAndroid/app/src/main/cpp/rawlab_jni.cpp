@@ -1122,7 +1122,15 @@ void marshalHdrRenderRequest(JNIEnv* env, jobject requestObj, MarshalledHdrReque
             v9.grading_v2 = marshalColorGradingV2(env, cache, gradingV2Ref.get(), color.grading);
         }
         request.struct_size = sizeof(v9);
-        request.hdr_processing_version = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
+        // 端点 x 内移只在 v10 合法；v10 沿用 v9 请求布局。
+        const auto freeEndpointX = [](const sony2fuji_tone_curve_config& c) {
+            return c.mode == SONY2FUJI_CURVE_CUSTOM && c.count >= 2 &&
+                (c.points[0].x != 0.0 || c.points[c.count - 1].x != 1.0);
+        };
+        const bool needsV10 = freeEndpointX(tone.curve) ||
+            std::any_of(std::begin(channelCurves.channels), std::end(channelCurves.channels), freeEndpointX);
+        request.hdr_processing_version = needsV10 ? SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION
+                                                  : SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION;
     }
 }
 

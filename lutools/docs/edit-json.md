@@ -634,3 +634,20 @@ For JPEG outputs (`jpeg` and `hdr_jpeg`), although historical JSON schemas v6–
 declare `output.size.long_edge` with `maximum: 65535`, the effective JPEG
 encode/decode dimension ceiling is **65500** pixels per edge (`JPEG_MAX_DIMENSION`);
 final JPEG dimensions exceeding 65500 are rejected before rendering.
+
+## v18 / v19: free curve endpoint x
+
+SDR [schema 17](edit-json-v17.schema.json) and HDR [schema 16](edit-json-v16.schema.json)
+(`rawlab_hdr` processing version 9) let curve endpoints move along y only:
+`x0` stays `0` and `x_{n-1}` stays `1`. SDR [schema 18](edit-json-v18.schema.json)
+and HDR [schema 19](edit-json-v19.schema.json) (`rawlab_hdr` processing version 10)
+also let the endpoints move inward along x, for the master curve and every RGB
+channel curve. Inputs below `x0` or above `x_{n-1}` clamp flat to that endpoint's y.
+Points still stay in `[0,1]` with strictly increasing x and nondecreasing y.
+
+Writers pick the lowest version that represents the curve: an endpoint x other
+than `0`/`1` requires schema 18 (SDR) or 19 (HDR). Clients released with v17 or
+HDR v9 reject these documents by version instead of misreading the curve. Schema
+18 keeps every other v17 field; schema 19 keeps every other v16 field. HDR
+processing version 10 reuses the `sony2fuji_hdr_request_v9` layout. The CLI
+advertises 18 and, when HDR is available, 19 in `recipe_versions`.

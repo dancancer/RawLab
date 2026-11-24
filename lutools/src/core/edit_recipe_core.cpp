@@ -76,7 +76,12 @@ void hslAxis(const Json& object, const char* key, std::array<float, 8>& destinat
     }
 }
 
-void readToneCurve(const Json& curve, ToneCurveConfig& config, bool allowFreeEndpoints) {
+ToneCurveEndpoints sdrCurveEndpoints(uint32_t schemaVersion) {
+    if (schemaVersion >= 18) return ToneCurveEndpoints::Free;
+    return schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+}
+
+void readToneCurve(const Json& curve, ToneCurveConfig& config, ToneCurveEndpoints endpoints) {
     const std::string path = "edits.tone.curve";
     fields(curve, path, {"mode", "points"});
     const auto mode = text(required(curve, "mode", path), path + ".mode");
@@ -93,7 +98,7 @@ void readToneCurve(const Json& curve, ToneCurveConfig& config, bool allowFreeEnd
             throw std::invalid_argument(path + ".points must contain [x,y] pairs");
         config.points[i] = {point[0].get<double>(), point[1].get<double>()};
     }
-    if (!validToneCurve(config, allowFreeEndpoints))
+    if (!validToneCurve(config, endpoints))
         throw std::invalid_argument(path + ".points are invalid for the selected mode");
 }
 
@@ -171,7 +176,7 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
                 fields(channels, "edits.tone.curve.channels", {"red", "green", "blue"});
                 const char* names[]{"red", "green", "blue"};
                 for (size_t i = 0; i < 3; ++i)
-                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], allowV12);
+                    if (channels.contains(names[i])) readToneCurve(channels.at(names[i]), parsed.channelCurves[i], sdrCurveEndpoints(parsed.schemaVersion));
                 master.erase("channels");
             }
             if (allowV12 && root.contains("apply_to_luminosity")) {
@@ -182,7 +187,7 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
                 readParametricCurve(root.at("parametric"), parsed.parametricCurve);
                 master.erase("parametric");
             }
-            readToneCurve(master, parsed.toneCurve, allowV12);
+            readToneCurve(master, parsed.toneCurve, sdrCurveEndpoints(parsed.schemaVersion));
             if (parsed.toneCurve.mode == ToneCurveMode::Custom && parsed.sCurve != 0)
                 throw std::invalid_argument("edits.tone.curve conflicts with nonzero edits.tone.s_curve");
         }
@@ -256,7 +261,7 @@ void completeEdits(const Json& edits, CanonicalSdrRecipe& parsed) {
 }
 
 bool isHdrSchemaVersion(uint32_t schema) {
-    return schema == 6 || (schema >= 8 && schema <= 16);
+    return schema == 6 || (schema >= 8 && schema <= 16) || schema == 19;
 }
 
 } // namespace
@@ -267,7 +272,7 @@ bool validProfileId(const std::string& id) {
 }
 
 RenderParams CanonicalSdrRecipe::toRenderParams() const {
-    const bool freeEndpoints = schemaVersion >= 17;
+    const auto freeEndpoints = sdrCurveEndpoints(schemaVersion);
     RenderParams params{};
     params.inputType = rasterInput ? RenderInputType::DisplayBuffer : RenderInputType::Raw;
     params.inputPath = inputPath;
@@ -327,9 +332,9 @@ bool parseCanonicalSdrRecipe(
         const auto root = Json::parse(document, checkKeys);
         const auto version = integer(required(root, "schema_version", "recipe"), 1,
                                      std::numeric_limits<uint32_t>::max(), "schema_version");
-        if (isHdrSchemaVersion(version) || (version != 17 && (version < 1 || version > 7)))
+        if (isHdrSchemaVersion(version) || (version != 17 && version != 18 && (version < 1 || version > 7)))
             throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
-        if (version == 7 || version == 17) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
+        if (version == 7 || version >= 17) fields(root, "recipe", {"schema_version", "processing", "x3f_mode", "input", "edits", "output"});
         else if (version >= 5) fields(root, "recipe", {"schema_version", "processing", "input", "edits", "output"});
         else fields(root, "recipe", {"schema_version", "input", "edits", "output"});
 
@@ -339,7 +344,7 @@ bool parseCanonicalSdrRecipe(
             const auto mode = text(required(root, "x3f_mode", "recipe"), "x3f_mode");
             if (mode == "normal-v1") parsed.x3fMode = X3fMode::Normal;
             else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
-        } else if (version == 17 && root.contains("x3f_mode")) {
+        } else if (version >= 17 && root.contains("x3f_mode")) {
             const auto mode = text(root.at("x3f_mode"), "x3f_mode");
             if (mode == "normal-v1") parsed.x3fMode = X3fMode::Normal;
             else if (mode != "legacy") throw std::invalid_argument("Unsupported x3f_mode");
@@ -366,7 +371,7 @@ bool parseCanonicalSdrRecipe(
         }
         if (version == 7 && parsed.rasterInput)
             throw std::invalid_argument("schema_version 7 requires an X3F raw input");
-        if (version == 17 && parsed.rasterInput && root.contains("x3f_mode"))
+        if (version >= 17 && parsed.rasterInput && root.contains("x3f_mode"))
             throw std::invalid_argument("x3f_mode requires a raw input");
 
         const auto& edits = required(root, "edits", "recipe");

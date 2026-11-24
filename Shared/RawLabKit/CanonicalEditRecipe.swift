@@ -140,7 +140,7 @@ public enum CanonicalEditRecipe {
             state.outputSharpening != .off || rasterRelativeActive
 
         let payload = Payload(
-            schemaVersion: hasV12Features ? 17 : (state.isRaster ? 5 : 7),
+            schemaVersion: state.toneCurve.hasFreeEndpointX ? 18 : hasV12Features ? 17 : (state.isRaster ? 5 : 7),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: state.isRaster ? "session.png" : "session.raw", type: state.isRaster ? "raster" : "raw"),

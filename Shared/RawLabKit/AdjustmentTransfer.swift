@@ -417,7 +417,7 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
         guard (payloadVersion == 1 && scopeVersion == 1 && !source.isHDR) ||
             (payloadVersion == 2 && scopeVersion == 2 && source.isHDR) else { throw AdjustmentTransferError.unsupportedVersion }
         if source.isHDR {
-            guard let version = source.hdrProcessingVersion, (1...9).contains(version) else {
+            guard let version = source.hdrProcessingVersion, (1...10).contains(version) else {
                 throw AdjustmentTransferError.unsupportedVersion
             }
             let supported = AdjustmentTransferField.hdrSupported(version: version).union([.hdrCameraDevelopment])

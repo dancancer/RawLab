@@ -204,17 +204,27 @@ void tone() {
         "HDR v9 unpinned endpoints affect HDR tone curve");
 
     options.tone.curve = {ToneCurveMode::Custom, 2, {{{0.2, 0.0}, {0.8, 1.0}}}};
-    const auto v9FreeX = renderHDRPair(source, options);
-    require(v9FreeX.hdr.pixels[1].r < v9Base.hdr.pixels[1].r && v9FreeX.hdr.pixels[4].r > v9Base.hdr.pixels[4].r,
-        "HDR v9 free-X endpoints affect HDR tone curve");
-    auto v8FreeX = options;
-    v8FreeX.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
-    bool v8OptRejected = false;
-    try { validateHDRRenderOptions(v8FreeX); } catch (const std::invalid_argument&) { v8OptRejected = true; }
-    require(v8OptRejected, "HDR v8 rejects free-X endpoints");
-    bool v8Rejected = false;
-    try { renderHDRPair(source, v8FreeX); } catch (const std::invalid_argument&) { v8Rejected = true; }
-    require(v8Rejected, "HDR v8 render rejects free-X endpoints");
+    // 已发布的 v9 只放开端点 y；端点 x 内移必须使用 v10。
+    for (const auto version : {SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION, SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION}) {
+        auto older = options;
+        older.processingVersion = version;
+        bool optionsRejected = false;
+        try { validateHDRRenderOptions(older); } catch (const std::invalid_argument&) { optionsRejected = true; }
+        require(optionsRejected, "HDR v8/v9 reject free-X endpoints");
+        bool renderRejected = false;
+        try { renderHDRPair(source, older); } catch (const std::invalid_argument&) { renderRejected = true; }
+        require(renderRejected, "HDR v8/v9 render rejects free-X endpoints");
+    }
+    options.processingVersion = SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION;
+    const auto v10Base = [&] { auto base = options; base.tone.curve = {}; return renderHDRPair(source, base); }();
+    const auto v10FreeX = renderHDRPair(source, options);
+    require(v10FreeX.hdr.pixels[1].r < v10Base.hdr.pixels[1].r && v10FreeX.hdr.pixels[4].r > v10Base.hdr.pixels[4].r,
+        "HDR v10 free-X endpoints affect HDR tone curve");
+    auto v11 = options;
+    v11.processingVersion = SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION + 1;
+    bool v11Rejected = false;
+    try { validateHDRRenderOptions(v11); } catch (const std::invalid_argument&) { v11Rejected = true; }
+    require(v11Rejected, "HDR processing version above v10 is rejected");
 }
 
 void color() {
@@ -657,7 +667,7 @@ void geometry() {
 
 void validation() {
     auto source = fixture();
-    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION + 1;
+    HDRRenderOptions options; options.processingVersion = SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION + 1;
     rejects([&] { renderHDRPair(source, options); }, "unknown HDR processing version accepted");
     options = {}; options.exposureEV = 5;
     rejects([&] { renderHDRPair(source, options); }, "exposure range not enforced");

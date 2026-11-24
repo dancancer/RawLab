@@ -104,8 +104,8 @@ internal static class ToneCurveRenderChecks
         engine.Render(input, settings, null, 0, output: fxGui);
         var fxRecipe = engine.AgentRecipe(input, settings, null, fxAgent);
         using (var parsed = JsonDocument.Parse(fxRecipe)) {
-            check(parsed.RootElement.GetProperty("schema_version").GetInt32() == 17,
-                "Agent emits schema_version 17 for free-X curve endpoints");
+            check(parsed.RootElement.GetProperty("schema_version").GetInt32() == 18,
+                "Agent emits schema_version 18 for free-X curve endpoints");
         }
         var fxRecipeFile = Path.Combine(output, "curve-freex.json");
         File.WriteAllText(fxRecipeFile, fxRecipe);

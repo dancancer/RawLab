@@ -714,10 +714,21 @@ Json validateToneCurveShape(const Json& obj, const std::string& fieldName) {
         prevY = y;
         outPoints.push_back(Json::array({x, y}));
     }
-    if (outPoints[0][0].get<double>() != 0.0 || outPoints[outPoints.size() - 1][0].get<double>() != 1.0) {
-        throw StoreError(2, "invalid_argument", fieldName + ".points must start at x=0 and end at x=1");
-    }
     return Json{{"mode", "custom"}, {"points", std::move(outPoints)}};
+}
+
+// HDR 记录的端点放开程度由处理版本决定：v9 只放开 y，v10 起 x 也可内移。
+void requireHdrCurveEndpoints(const Json& curve, const std::string& fieldName, int hdrProcessingVersion) {
+    if (curve.at("mode") != "custom") return;
+    const auto& pts = curve.at("points");
+    const auto& first = pts[0];
+    const auto& last = pts[pts.size() - 1];
+    if (hdrProcessingVersion < 9 && (first[1].get<double>() != 0.0 || last[1].get<double>() != 1.0)) {
+        throw StoreError(2, "invalid_argument", "Free curve endpoints on " + fieldName + " require hdr_processing_version >= 9");
+    }
+    if (hdrProcessingVersion < 10 && (first[0].get<double>() != 0.0 || last[0].get<double>() != 1.0)) {
+        throw StoreError(2, "invalid_argument", "Free curve endpoint x on " + fieldName + " requires hdr_processing_version >= 10");
+    }
 }
 
 Json validateParametricCurve(const Json& pIn, const std::string& fieldName) {
@@ -957,13 +968,8 @@ void validateTransferValues(
             const Json masterCurve = validateToneCurveShape(
                 Json{{"mode", val.at("mode")}, {"points", val.at("points")}},
                 "light.curve");
-            if (isHdr && hdrProcessingVersion.has_value() && *hdrProcessingVersion < 9 &&
-                masterCurve.at("mode") == "custom") {
-                const auto& pts = masterCurve.at("points");
-                if (pts[0][1].get<double>() != 0.0 || pts[pts.size() - 1][1].get<double>() != 1.0) {
-                    throw StoreError(2, "invalid_argument",
-                        "Free curve endpoints on light.curve require hdr_processing_version >= 9");
-                }
+            if (isHdr && hdrProcessingVersion.has_value()) {
+                requireHdrCurveEndpoints(masterCurve, "light.curve", *hdrProcessingVersion);
             }
             if (val.contains("channels")) {
                 if (isHdr && hdrProcessingVersion.has_value() && *hdrProcessingVersion < 8) {
@@ -979,13 +985,8 @@ void validateTransferValues(
                         throw StoreError(2, "invalid_argument", "light.curve.channels keys must be a subset of red, green, blue");
                     }
                     const Json chCurve = validateToneCurveShape(cItem.value(), "light.curve.channels." + cItem.key());
-                    if (isHdr && hdrProcessingVersion.has_value() && *hdrProcessingVersion < 9 &&
-                        chCurve.at("mode") == "custom") {
-                        const auto& pts = chCurve.at("points");
-                        if (pts[0][1].get<double>() != 0.0 || pts[pts.size() - 1][1].get<double>() != 1.0) {
-                            throw StoreError(2, "invalid_argument",
-                                "Free curve endpoints on light.curve.channels." + cItem.key() + " require hdr_processing_version >= 9");
-                        }
+                    if (isHdr && hdrProcessingVersion.has_value()) {
+                        requireHdrCurveEndpoints(chCurve, "light.curve.channels." + cItem.key(), *hdrProcessingVersion);
                     }
                 }
             }
@@ -1206,7 +1207,7 @@ bool isCanonicalPresetEntry(const Json& entry) {
     if ((pv == 2) != hasHdrField) return false;
     if (hasHdrField) {
         int64_t hv = 0;
-        if (!isStrictIntJson(source.at("hdr_processing_version"), hv) || hv < 1 || hv > 9) return false;
+        if (!isStrictIntJson(source.at("hdr_processing_version"), hv) || hv < 1 || hv > 10) return false;
         hdrVer = static_cast<int>(hv);
     }
 
@@ -2651,8 +2652,8 @@ GuiStoreResult savePresetFromRequestJson(const std::string& requestJson, const G
         std::optional<int> hdrProcVer;
         if (req.contains("hdr_processing_version") && !req.at("hdr_processing_version").is_null()) {
             int64_t hv = 0;
-            if (!isStrictIntJson(req.at("hdr_processing_version"), hv) || hv < 1 || hv > 9) {
-                throw StoreError(2, "invalid_argument", "hdr_processing_version must be 1..9");
+            if (!isStrictIntJson(req.at("hdr_processing_version"), hv) || hv < 1 || hv > 10) {
+                throw StoreError(2, "invalid_argument", "hdr_processing_version must be 1..10");
             }
             hdrProcVer = static_cast<int>(hv);
         }

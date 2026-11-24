@@ -137,6 +137,31 @@ final class CanonicalEditRecipeTests: XCTestCase {
         XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
     }
 
+    func testFreeEndpointXEmitsSchemaVersion18AndHDRSchema19() throws {
+        func schema(_ curve: ToneCurveSettings, isRaster: Bool = false) throws -> Int? {
+            var settings = RawSettings.default
+            settings.toneCurveConfig = curve
+            let root = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: XCTUnwrap(settings.canonicalParamsJSON(isRaster: isRaster).data(using: .utf8))
+            ) as? [String: Any])
+            return root["schema_version"] as? Int
+        }
+        // 已发布的 v17 只放开端点 y；端点 x 内移必须写成 v18，旧客户端按版本拒绝而不是误判数据损坏。
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0.1), .init(x: 1, y: 0.9)])), 17)
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0.15, y: 0), .init(x: 0.85, y: 1)])), 18)
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0.1, y: 0.1), .init(x: 0.9, y: 0.9)]), isRaster: true), 18)
+        XCTAssertEqual(try schema(ToneCurveSettings(channels: ToneCurveChannels(
+            blue: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.95, y: 1)])))), 18)
+
+        var hdr = HDRSettings()
+        hdr.toneSettings.curve = ToneCurveSettings(mode: .custom, points: [.init(x: 0.2, y: 0), .init(x: 0.8, y: 1)])
+        let hdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: HDRRecipe.document(
+            settings: hdr, input: URL(fileURLWithPath: "/tmp/source.heic"),
+            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)) as? [String: Any])
+        XCTAssertEqual(hdrRoot["schema_version"] as? Int, 19)
+        XCTAssertEqual((hdrRoot["processing"] as? [String: Any])?["version"] as? Int, 10)
+    }
+
     func testOutputSharpeningCanonicalJSONAndHDRRecipeAndSRGBICCProfile() throws {
         let settings = RawSettings.default
         let rawData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .standard).data(using: .utf8))

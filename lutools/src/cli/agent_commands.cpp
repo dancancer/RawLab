@@ -704,6 +704,8 @@ int runAgentCommands(int argc, char* argv[]) {
             versions.push_back(7);
             if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14, 15, 16}) versions.push_back(version);
             versions.push_back(17);
+            versions.push_back(18);
+            if (hdrAvailable()) versions.push_back(19);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer", "save_preset", "sync_photo_edit"}},
                 {"input_types", inputs},

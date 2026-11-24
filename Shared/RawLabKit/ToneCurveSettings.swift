@@ -30,6 +30,10 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         mode == .custom && points.count >= 2 &&
             (points[0].x != 0 || points[0].y != 0 || points[points.count - 1].x != 1 || points[points.count - 1].y != 1)
     }
+    /// 端点 x 内移需要 SDR 配方 v18 / HDR 处理 v10；已发布的 v17 / v9 只放开端点 y。
+    public var hasFreeEndpointX: Bool {
+        mode == .custom && points.count >= 2 && (points[0].x != 0 || points[points.count - 1].x != 1)
+    }
     public var isValid: Bool {
         let sub = AdjustmentFieldSpec.SubFields.LightCurve.self
         if mode == .legacy { return points.count == sub.legacyPointsCount }
@@ -169,6 +173,7 @@ public struct ToneCurveChannels: Equatable, Hashable, Codable {
     public var hasUnpinnedEndpoints: Bool {
         red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
     }
+    public var hasFreeEndpointX: Bool { red.hasFreeEndpointX || green.hasFreeEndpointX || blue.hasFreeEndpointX }
     public var progress: Double { max(red.progress, green.progress, blue.progress) }
     public func scaled(by strength: Double) -> Self {
         Self(red: red.scaled(by: strength), green: green.scaled(by: strength), blue: blue.scaled(by: strength))
@@ -292,6 +297,7 @@ public struct ToneCurveSettings: Equatable, Hashable, Codable {
     public var hasV2Extensions: Bool {
         applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
     }
+    public var hasFreeEndpointX: Bool { master.hasFreeEndpointX || channels.hasFreeEndpointX }
     public var labeledPoints: [(channel: ToneCurveChannel, point: ToneCurvePoint)] {
         ToneCurveChannel.allCases.flatMap { channel in shape(channel).points.map { (channel, $0) } }
     }

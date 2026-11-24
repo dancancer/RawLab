@@ -28,7 +28,7 @@ bool curveGpuBoundary(Render render) {
         if (shape==3) { config.points[1]={.4,0};config.points[2]={.6,1}; }
         if (shape==4) { config.count=33;for(int i=0;i<33;++i)config.points[i]={i/32.0,std::pow(i/32.0,2)}; }
         if (shape==5) { config.count=3;config.points[0]={.15,.05};config.points[1]={.5,.55};config.points[2]={.85,.95}; }
-        const ToneCurve curve(config, shape==5);
+        const ToneCurve curve(config, shape==5 ? ToneCurveEndpoints::Free : ToneCurveEndpoints::Pinned);
         if (!curve.gpuSupported()) return false;
         ImageData actual;
         if (!render(input,params,curve,actual) || actual.pixels.size()!=input.pixels.size()) return false;

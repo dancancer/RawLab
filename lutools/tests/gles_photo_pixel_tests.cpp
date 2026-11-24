@@ -559,11 +559,11 @@ void testShaderBranchesPixelParity() {
     {
         auto reqV2 = makeBaseRequest(8, 6);
         const sony2fuji::ToneCurve freeMaster(
-            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.12}, {0.45, 0.72}, {1.0, 0.88}}}}, true);
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.12}, {0.45, 0.72}, {1.0, 0.88}}}}, sony2fuji::ToneCurveEndpoints::Free);
         const std::array<sony2fuji::ToneCurve, 3> channels = {
-            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.05}, {0.5, 0.62}, {1.0, 0.95}}}}, true),
-            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.4, 0.36}, {1.0, 1.0}}}}, true),
-            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.6, 0.55}, {1.0, 0.92}}}}, true)
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.05}, {0.5, 0.62}, {1.0, 0.95}}}}, sony2fuji::ToneCurveEndpoints::Free),
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.4, 0.36}, {1.0, 1.0}}}}, sony2fuji::ToneCurveEndpoints::Free),
+            sony2fuji::ToneCurve({sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.6, 0.55}, {1.0, 0.92}}}}, sony2fuji::ToneCurveEndpoints::Free)
         };
         const sony2fuji::ToneCurveParametricConfig paramCfg{ -30.f, 40.f, -25.f, 50.f, 0.22f, 0.48f, 0.78f };
 
@@ -871,11 +871,11 @@ void testBasicV3AndToneFieldParity() {
     {
         auto combo = params;
         combo.customCurve = sony2fuji::ToneCurve(
-            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.08}, {0.5, 0.64}, {1.0, 0.92}}}}, true);
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.08}, {0.5, 0.64}, {1.0, 0.92}}}}, sony2fuji::ToneCurveEndpoints::Free);
         combo.channelCurves[0] = sony2fuji::ToneCurve(
-            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.5, 0.56}, {1.0, 0.96}}}}, true);
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.02}, {0.5, 0.56}, {1.0, 0.96}}}}, sony2fuji::ToneCurveEndpoints::Free);
         combo.channelCurves[2] = sony2fuji::ToneCurve(
-            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.5, 0.44}, {1.0, 1.0}}}}, true);
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0.0, 0.0}, {0.5, 0.44}, {1.0, 1.0}}}}, sony2fuji::ToneCurveEndpoints::Free);
         combo.parametricCurve = {30.0f, -20.0f, 25.0f, -15.0f, 0.25f, 0.50f, 0.75f};
         combo.curveApplyToLuminosity = true;
         combo.colorGrading.wheels[0] = {215.0f, 28.0f, -15.0f};

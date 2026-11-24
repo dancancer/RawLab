@@ -355,7 +355,7 @@ public sealed class AdjustmentPayload
     }
     public void Validate()
     {
-        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 9)
+        if (Source.IsHDR ? PayloadVersion != 2 || ScopeVersion != 2 || Source.HdrProcessingVersion is not (>= 1 and <= 10)
             : PayloadVersion != 1 || ScopeVersion != 1)
             throw new AdjustmentTransferException(AdjustmentFailure.UnsupportedVersion);
         if (Values.Count==0) throw new AdjustmentTransferException(AdjustmentFailure.EmptyScope);

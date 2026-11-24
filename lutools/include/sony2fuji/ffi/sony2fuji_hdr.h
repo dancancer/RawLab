@@ -16,6 +16,8 @@ extern "C" {
 #define SONY2FUJI_HDR_PROCESSING_LOOK_VERSION 7u
 #define SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION 8u
 #define SONY2FUJI_HDR_PROCESSING_V2_GRADING_CURVE_VERSION 9u
+// 仅放开曲线端点 x；沿用 sony2fuji_hdr_request_v9 布局，不新增字段。
+#define SONY2FUJI_HDR_PROCESSING_FREE_CURVE_X_VERSION 10u
 
 // 独立枚举；不重解释旧 request v2 的 pixel_format/input_type。
 enum {

@@ -185,7 +185,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
     }
 
     val root = JSONObject()
-        .put("schema_version", if (activeV012) 17 else if (isRaster) 5 else 7)
+        .put("schema_version", if (renderCurve.hasFreeEndpointX) 18 else if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)

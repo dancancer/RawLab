@@ -167,12 +167,13 @@ data class HDRSettings(
     }
 
     val recordVersion get() = when {
-        processingVersion >= 9 -> 10
+        processingVersion >= 9 -> processingVersion + 1
         processingVersion == 8 -> 9
         cameraDevelopment == null -> processingVersion
         else -> 8
     }
     val processingVersion get() = when {
+        tone?.curve?.hasFreeEndpointX == true -> 10
         tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
         tone?.curve?.hasChannelCurves == true -> 8
         look != null -> 7

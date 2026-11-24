@@ -204,6 +204,37 @@ void testHdrVersionsAndValidation() {
     const auto res = savePresetFromRequestJson(hdrV9Ok.dump());
     assert(res.ok);
 
+    // 端点 x 内移：v9 必须拒绝（已发布客户端读不懂），v10 接受；主曲线与分通道同规则。
+    auto freeXMaster = hdrV9Ok;
+    freeXMaster["name"] = "HDR free X master";
+    freeXMaster["values"]["light.curve"]["points"] = Json::array({{0.15, 0.0}, {0.5, 0.52}, {0.85, 1.0}});
+    assert(!savePresetFromRequestJson(freeXMaster.dump()).ok);
+    auto freeXChannel = hdrV9Ok;
+    freeXChannel["name"] = "HDR free X channel";
+    freeXChannel["values"]["light.curve"]["channels"]["red"]["points"] = Json::array({{0.1, 0.0}, {0.9, 1.0}});
+    assert(!savePresetFromRequestJson(freeXChannel.dump()).ok);
+    freeXMaster["hdr_processing_version"] = 10;
+    assert(savePresetFromRequestJson(freeXMaster.dump()).ok);
+    freeXChannel["hdr_processing_version"] = 10;
+    assert(savePresetFromRequestJson(freeXChannel.dump()).ok);
+    auto hdrV11 = freeXMaster;
+    hdrV11["name"] = "HDR v11";
+    hdrV11["hdr_processing_version"] = 11;
+    assert(!savePresetFromRequestJson(hdrV11.dump()).ok);
+
+    // SDR 预设没有处理版本门槛，端点 x 内移直接接受；越界仍拒绝。
+    const Json sdrFreeX = {
+        {"data_dir", pathToUtf8(dataDir)},
+        {"name", "SDR free X"},
+        {"is_raw", false},
+        {"values", {{"light.curve", {{"mode", "custom"}, {"points", Json::array({{0.15, 0.0}, {0.85, 1.0}})}}}}},
+    };
+    assert(savePresetFromRequestJson(sdrFreeX.dump()).ok);
+    auto sdrOutOfRange = sdrFreeX;
+    sdrOutOfRange["name"] = "SDR out of range";
+    sdrOutOfRange["values"]["light.curve"]["points"] = Json::array({{-0.05, 0.0}, {1.0, 1.0}});
+    assert(!savePresetFromRequestJson(sdrOutOfRange.dump()).ok);
+
     // recipe_context mismatch rejected
     const Json recipeBad = {
         {"data_dir", pathToUtf8(dataDir)},

@@ -22,6 +22,8 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
     public bool IsIdentity => IsDefault || (!HasUnpinnedEndpoints && Points.All(p => p.X == p.Y));
     internal bool HasUnpinnedEndpoints => Mode == ToneCurveMode.Custom && Points.Count >= 2 &&
         (Points[0].X != 0 || Points[0].Y != 0 || Points[^1].X != 1 || Points[^1].Y != 1);
+    // 端点 x 内移需要 SDR 配方 v18 / HDR 处理 v10；已发布的 v17 / v9 只放开端点 y。
+    internal bool HasFreeEndpointX => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (Points[0].X != 0 || Points[^1].X != 1);
     public double Progress => Mode != ToneCurveMode.Custom || Points.Count == 0 ? 0 :
         Math.Max(Points.Max(p => Math.Abs(p.Y - p.X)), Math.Max(Points[0].Y, 1.0 - Points[^1].Y));
     public ToneCurveShape Scaled(double strength)
@@ -164,6 +166,7 @@ public sealed record ToneCurveChannels(ToneCurveShape Red, ToneCurveShape Green,
     public bool IsDefault => Red.IsDefault && Green.IsDefault && Blue.IsDefault;
     public bool IsIdentity => Red.IsIdentity && Green.IsIdentity && Blue.IsIdentity;
     internal bool HasUnpinnedEndpoints => Red.HasUnpinnedEndpoints || Green.HasUnpinnedEndpoints || Blue.HasUnpinnedEndpoints;
+    internal bool HasFreeEndpointX => Red.HasFreeEndpointX || Green.HasFreeEndpointX || Blue.HasFreeEndpointX;
     public ToneCurveChannels Scaled(double strength) => new(Red.Scaled(strength), Green.Scaled(strength), Blue.Scaled(strength));
 }
 
@@ -270,6 +273,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity && Parametric.IsIdentity;
     public bool HasChannelCurves => !Channels.IsDefault;
     public bool HasV2Extensions => ApplyToLuminosity || !Parametric.IsDefault || Master.HasUnpinnedEndpoints || Channels.HasUnpinnedEndpoints;
+    public bool HasFreeEndpointX => Master.HasFreeEndpointX || Channels.HasFreeEndpointX;
     public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress, Parametric.Progress }.Max();
     public ToneCurveShape Shape(ToneCurveChannel channel) => channel switch {
         ToneCurveChannel.Rgb => Master, ToneCurveChannel.Red => Channels.Red, ToneCurveChannel.Green => Channels.Green, _ => Channels.Blue };

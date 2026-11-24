@@ -409,10 +409,11 @@ public struct HDRSettings: Equatable, Codable {
     public enum ModeError: Error, Equatable { case unsupportedSource, invalidSettings }
 
     public var recordVersion: Int {
-        if processingVersion == 9 { return 10 }
+        if processingVersion >= 9 { return processingVersion + 1 }
         return processingVersion == 8 ? 9 : cameraDevelopment == nil ? processingVersion : 8
     }
     public var processingVersion: Int {
+        if tone?.curve.hasFreeEndpointX == true { return 10 }
         if tone?.curve.hasV2Extensions == true || color?.grading.hasV2Extensions == true { return 9 }
         if tone?.curve.hasChannelCurves == true { return 8 }
         if look != nil { return 7 }
@@ -585,8 +586,8 @@ public struct HDRSettings: Equatable, Codable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let version = try values.decode(Int.self, forKey: .recordVersion)
         let processing = try values.decode(Int.self, forKey: .processingVersion)
-        guard (1...9).contains(processing),
-              version == (processing == 9 ? 10 : processing == 8 ? 9 : values.contains(.cameraDevelopment) ? 8 : processing),
+        guard (1...10).contains(processing),
+              version == (processing >= 9 ? processing + 1 : processing == 8 ? 9 : values.contains(.cameraDevelopment) ? 8 : processing),
               values.contains(.tone) == (processing >= 2), values.contains(.color) == (processing >= 3),
               values.contains(.rendition) == (processing >= 4), values.contains(.effects) == (processing >= 5),
               values.contains(.detail) == (processing >= 6), values.contains(.look) == (processing >= 7) else {

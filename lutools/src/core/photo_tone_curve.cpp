@@ -59,7 +59,7 @@ bool ToneCurveParametricConfig::active() const noexcept {
     return highlights != 0.0f || lights != 0.0f || darks != 0.0f || shadows != 0.0f;
 }
 
-bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
+bool validToneCurve(const ToneCurveConfig& config, ToneCurveEndpoints endpoints) {
     if (config.mode == ToneCurveMode::Legacy) return config.count == 0;
     if (config.mode != ToneCurveMode::Custom || config.count < 2 || config.count > kToneCurveMaxPoints) return false;
     for (uint32_t i = 0; i < config.count; ++i) {
@@ -67,15 +67,14 @@ bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return false;
         if (i && (p.x <= config.points[i - 1].x || p.y < config.points[i - 1].y)) return false;
     }
-    if (allowFreeEndpoints) {
-        return true;
-    }
     const auto first = config.points[0], last = config.points[config.count - 1];
-    return first.x == 0 && first.y == 0 && last.x == 1 && last.y == 1;
+    if (endpoints == ToneCurveEndpoints::Free) return true;
+    if (first.x != 0 || last.x != 1) return false;
+    return endpoints == ToneCurveEndpoints::FreeY || (first.y == 0 && last.y == 1);
 }
 
-ToneCurve::ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
-    if (!validToneCurve(config, allowFreeEndpoints)) throw std::invalid_argument("invalid tone curve");
+ToneCurve::ToneCurve(const ToneCurveConfig& config, ToneCurveEndpoints endpoints) {
+    if (!validToneCurve(config, endpoints)) throw std::invalid_argument("invalid tone curve");
     custom_ = config.mode == ToneCurveMode::Custom;
     if (!custom_) return;
     count_ = config.count - 1;

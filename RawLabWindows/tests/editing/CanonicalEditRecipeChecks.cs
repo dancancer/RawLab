@@ -76,6 +76,13 @@ internal static class CanonicalEditRecipeChecks
         };
         Check(JsonNode.Parse(CanonicalEditRecipe.Encode(unpinnedMaster, isRaster: false))!["schema_version"]!.GetValue<int>() == 17,
             "Unpinned curve endpoints promote canonical recipe to schema_version 17");
+        var freeXMaster = new Adjustments
+        {
+            Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.15, 0), new(0.85, 1)])
+        };
+        Check(JsonNode.Parse(CanonicalEditRecipe.Encode(freeXMaster, isRaster: false))!["schema_version"]!.GetValue<int>() == 18 &&
+            JsonNode.Parse(CanonicalEditRecipe.Encode(freeXMaster, isRaster: true))!["schema_version"]!.GetValue<int>() == 18,
+            "Free endpoint X promotes canonical recipe to schema_version 18");
 
         var sharpenedJson = CanonicalEditRecipe.Encode(new Adjustments(), isRaster: false, outputSharpening: OutputSharpening.Standard);
         var sharpenedRoot = JsonNode.Parse(sharpenedJson)!.AsObject();

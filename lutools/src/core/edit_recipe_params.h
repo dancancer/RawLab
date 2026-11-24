@@ -68,7 +68,7 @@ struct CanonicalSdrRecipe {
 
 bool validProfileId(const std::string& id);
 
-// Parses canonical SDR recipe JSON (schema_version 1..5, 7, or 17).
+// Parses canonical SDR recipe JSON (schema_version 1..5, 7, 17, or 18).
 // When allowRasterLensCorrection is false (CLI/Agent JSON contract), active lens
 // correction on raster inputs is rejected. Invalid documents leave out unchanged.
 bool parseCanonicalSdrRecipe(

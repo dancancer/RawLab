@@ -142,7 +142,11 @@ class ToneCurveSettingsTest {
         assertEquals(ToneCurvePoint(0.05, 0.05), insertedOutside.points.first())
         assertEquals(ToneCurvePoint(0.95, 0.95), insertedOutside.points.last())
         val xOnlyHdr = HDRSettings().withTone(HDRToneSettings(curve = ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.15, 0.0), ToneCurvePoint(0.85, 1.0)))))
-        assertEquals(9, xOnlyHdr.processingVersion)
+        assertEquals(10, xOnlyHdr.processingVersion); assertEquals(11, xOnlyHdr.recordVersion)
+        assertEquals(xOnlyHdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = xOnlyHdr))).hdr)
+        // 已发布的 v9 只放开端点 y：端点 y 内移仍保持 v9，端点 x 内移才升到 v10。
+        val yOnlyHdr = HDRSettings().withTone(HDRToneSettings(curve = ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.1), ToneCurvePoint(1.0, 0.9)))))
+        assertEquals(9, yOnlyHdr.processingVersion); assertEquals(10, yOnlyHdr.recordVersion)
         val freeXHalf = ToneCurveSettings(ToneCurveMode.CUSTOM, unpinned.points).scaled(0.5)
         assertEquals(0.06, freeXHalf.points[0].x, 1e-12)
         assertEquals(0.04, freeXHalf.points[0].y, 1e-12)
@@ -155,7 +159,7 @@ class ToneCurveSettingsTest {
         val source = EditSettings(curve = v2Curve)
         assertEquals(source, SettingsCodec.decode(SettingsCodec.encode(source)))
         val hdr = HDRSettings().withTone(HDRToneSettings(curve = v2Curve))
-        assertEquals(9, hdr.processingVersion); assertEquals(10, hdr.recordVersion)
+        assertEquals(10, hdr.processingVersion); assertEquals(11, hdr.recordVersion)
         assertEquals(hdr, SettingsCodec.decode(SettingsCodec.encode(EditSettings(hdr = hdr))).hdr)
         val context = AdjustmentTransferContext("v2curve", false)
         val payload = AdjustmentTransfer.capture(

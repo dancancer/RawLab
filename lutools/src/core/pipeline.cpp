@@ -167,7 +167,7 @@ RenderStatus Pipeline::sampleToneCurveV2(
     double* y,
     uint32_t count
 ) {
-    if (!x || !y || count == 0 || !validToneCurve(config, /*allowFreeEndpoints=*/true)) {
+    if (!x || !y || count == 0 || !validToneCurve(config, ToneCurveEndpoints::Free)) {
         return RenderStatus::InvalidArgument;
     }
     if (parametric && !parametric->valid()) {
@@ -180,7 +180,7 @@ RenderStatus Pipeline::sampleToneCurveV2(
         if (!std::isfinite(x[i])) return RenderStatus::InvalidArgument;
     }
     try {
-        const ToneCurve curve(config, /*allowFreeEndpoints=*/true);
+        const ToneCurve curve(config, ToneCurveEndpoints::Free);
         const ToneCurveParametric parametricEval = parametric
             ? ToneCurveParametric(*parametric)
             : ToneCurveParametric{};
@@ -466,18 +466,18 @@ RenderStatus Pipeline::setToneCurvesV2(
     bool applyToLuminosity,
     const ToneCurveParametricConfig& parametric
 ) {
-    if (!validToneCurve(masterConfig, /*allowFreeEndpoints=*/true) ||
+    if (!validToneCurve(masterConfig, ToneCurveEndpoints::Free) ||
         !std::all_of(channelConfigs.begin(), channelConfigs.end(),
-            [](const auto& c) { return validToneCurve(c, /*allowFreeEndpoints=*/true); }) ||
+            [](const auto& c) { return validToneCurve(c, ToneCurveEndpoints::Free); }) ||
         !parametric.valid()) {
         return RenderStatus::InvalidArgument;
     }
     try {
-        ToneCurve master(masterConfig, /*allowFreeEndpoints=*/true);
+        ToneCurve master(masterConfig, ToneCurveEndpoints::Free);
         std::array<ToneCurve, 3> channels = {
-            ToneCurve(channelConfigs[0], /*allowFreeEndpoints=*/true),
-            ToneCurve(channelConfigs[1], /*allowFreeEndpoints=*/true),
-            ToneCurve(channelConfigs[2], /*allowFreeEndpoints=*/true)
+            ToneCurve(channelConfigs[0], ToneCurveEndpoints::Free),
+            ToneCurve(channelConfigs[1], ToneCurveEndpoints::Free),
+            ToneCurve(channelConfigs[2], ToneCurveEndpoints::Free)
         };
         toneCurve_ = std::move(master);
         channelCurves_ = std::move(channels);
@@ -543,7 +543,8 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         if (wavelet.active() && !waveletDenoiseAvailable()) {
             return RenderStatus::Unsupported;
         }
-        const bool freeCurveEndpoints = recipe.schemaVersion >= 17;
+        const auto freeCurveEndpoints = recipe.schemaVersion >= 18 ? ToneCurveEndpoints::Free
+            : recipe.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
         if (!recipe.effects.valid() || !recipe.hsl.valid() || !recipe.toneControls.valid() ||
             !recipe.atmosphere.valid() || !recipe.colorGrading.valid() || !recipe.parametricCurve.valid() ||
             recipe.outputSharpening < OutputSharpening::Off || recipe.outputSharpening > OutputSharpening::High) {

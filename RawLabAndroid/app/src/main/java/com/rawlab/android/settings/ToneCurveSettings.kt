@@ -22,6 +22,9 @@ class ToneCurveShape(val mode: ToneCurveMode = ToneCurveMode.LEGACY, points: Lis
     val isDefault get() = mode == ToneCurveMode.LEGACY
     val hasUnpinnedEndpoints get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 &&
         (points.first().x != 0.0 || points.first().y != 0.0 || points.last().x != 1.0 || points.last().y != 1.0)
+    /** 端点 x 内移需要 SDR 配方 v18 / HDR 处理 v10；已发布的 v17 / v9 只放开端点 y。 */
+    val hasFreeEndpointX get() = mode == ToneCurveMode.CUSTOM && points.size >= 2 &&
+        (points.first().x != 0.0 || points.last().x != 1.0)
     val isIdentity get() = isDefault || (!hasUnpinnedEndpoints && points.all { it.x == it.y })
     val progress get() = if (mode != ToneCurveMode.CUSTOM || points.isEmpty()) 0.0 else
         maxOf(points.maxOf { kotlin.math.abs(it.y - it.x) }, points.first().y, 1.0 - points.last().y)
@@ -139,6 +142,7 @@ data class ToneCurveChannels(
     val isDefault get() = red.isDefault && green.isDefault && blue.isDefault
     val isIdentity get() = red.isIdentity && green.isIdentity && blue.isIdentity
     val hasUnpinnedEndpoints get() = red.hasUnpinnedEndpoints || green.hasUnpinnedEndpoints || blue.hasUnpinnedEndpoints
+    val hasFreeEndpointX get() = red.hasFreeEndpointX || green.hasFreeEndpointX || blue.hasFreeEndpointX
     val progress get() = maxOf(red.progress, green.progress, blue.progress)
     fun scaled(strength: Double) = ToneCurveChannels(red.scaled(strength), green.scaled(strength), blue.scaled(strength))
     fun json() = JSONObject().put("red", red.json()).put("green", green.json()).put("blue", blue.json())
@@ -241,6 +245,7 @@ class ToneCurveSettings(
     val isIdentity get() = master.isIdentity && channels.isIdentity && parametric.isIdentity
     val hasChannelCurves get() = !channels.isDefault
     val hasV2Extensions get() = applyToLuminosity || !parametric.isDefault || master.hasUnpinnedEndpoints || channels.hasUnpinnedEndpoints
+    val hasFreeEndpointX get() = master.hasFreeEndpointX || channels.hasFreeEndpointX
     val progress get() = maxOf(master.progress, channels.progress, parametric.progress)
     fun shape(channel: ToneCurveChannel) = when (channel) {
         ToneCurveChannel.RGB -> master; ToneCurveChannel.RED -> channels.red
