@@ -32,7 +32,7 @@
 
 #if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
-#elif !defined(_WIN32)
+#elif !defined(_WIN32) && (!defined(__ANDROID__) || (defined(__ANDROID_API__) && __ANDROID_API__ >= 28))
 #include <sys/random.h>
 #endif
 
@@ -713,12 +713,14 @@ std::string generateUuidV4Lowercase() {
     arc4random_buf(b, sizeof(b));
 #else
     size_t got = 0;
+#if !defined(__ANDROID__) || (defined(__ANDROID_API__) && __ANDROID_API__ >= 28)
     while (got < sizeof(b)) {
         const ssize_t n = getrandom(b + got, sizeof(b) - got, 0);
         if (n > 0) got += static_cast<size_t>(n);
         else if (n < 0 && errno == EINTR) continue;
         else break;
     }
+#endif
     if (got < sizeof(b)) {
         const int fd = open("/dev/urandom", O_RDONLY);
         if (fd < 0) throw StoreError(6, "output_io_error", "Failed to generate UUID");

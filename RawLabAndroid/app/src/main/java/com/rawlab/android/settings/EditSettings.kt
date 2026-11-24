@@ -300,7 +300,7 @@ internal data class ResetRenderValues(
 
 /**
  * 重置外观前捕获 JNI 非外观 Float 值。
- * 计算顺序对应 rawlab_jni.cpp 的 prepareRecipeWb/recipeActive 分支及 render_request.h；
+ * 计算顺序对应 Core CanonicalEditState 的 master_recipe WB 解析与渲染钳位规则；
  * HSL 直接消费既有 renderHsl，避免把旧记录的小数再次送进输入控件量化。
  */
 internal fun EditSettings.resetRenderValues(

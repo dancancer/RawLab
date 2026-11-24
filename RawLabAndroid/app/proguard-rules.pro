@@ -17,13 +17,13 @@
 -keep class com.alibabacloud.rum.config.** { *; }
 -keep class com.alibabacloud.rum.producer.** { *; }
 
-# Keep all 22 classes, constructors, static callbacks, and fields looked up by initJniCache in rawlab_jni.cpp.
+# Keep all 19 app classes, constructors, and callbacks looked up by initJniCache in jni_sdr.cpp.
 -keep class com.rawlab.android.engine.NativeFrame {
     <init>(int, int, android.graphics.Bitmap, float, float, int, int[]);
     static android.graphics.Bitmap allocateBitmap(int, int, android.graphics.Bitmap);
 }
 -keep class com.rawlab.android.engine.NativeProcessingException {
-    <init>(...);
+    <init>(int, java.lang.String, int);
 }
 -keep class com.rawlab.android.engine.HDRProcessingException {
     <init>(int, int, int);
@@ -31,27 +31,60 @@
 -keep class com.rawlab.android.looks.DcpCompilationException {
     <init>(int);
 }
-
--keep class com.rawlab.android.engine.NativeProcessInput { <fields>; }
--keep class com.rawlab.android.engine.NativeProcessOutput { <fields>; }
--keep class com.rawlab.android.engine.NativeProcessWhiteBalance { <fields>; }
--keep class com.rawlab.android.engine.NativeProcessTone { <fields>; }
--keep class com.rawlab.android.engine.NativeDenoiseConfig { <fields>; }
--keep class com.rawlab.android.engine.NativePhotoEffectsConfig { <fields>; }
--keep class com.rawlab.android.engine.NativeHslProbeTarget { <fields>; }
--keep class com.rawlab.android.engine.NativeProcessRequest { <fields>; }
--keep class com.rawlab.android.engine.NativeGeometry { <fields>; }
--keep class com.rawlab.android.engine.NativeToneCurve { <fields>; }
--keep class com.rawlab.android.engine.NativeToneCurveParametric { <fields>; }
--keep class com.rawlab.android.engine.NativeColorGrading { <fields>; }
--keep class com.rawlab.android.engine.NativeColorGradingV2 { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRTone { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRColor { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRRendition { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRDetail { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRLook { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRChannelCurves { <fields>; }
--keep class com.rawlab.android.engine.NativeHDRRenderRequest { <fields>; }
+-keep class com.rawlab.android.engine.LUTColorContractException {
+    <init>(int);
+}
+-keep class com.rawlab.android.photo.HDRSourceInfo {
+    <init>(int, int, int, int, int, int, float, int, byte[], boolean, int);
+}
+-keep class com.rawlab.android.engine.NativeRoiBounds {
+    <init>(int, int, int, int, int, int);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeRoiFrame {
+    <init>(com.rawlab.android.engine.NativeFrame, com.rawlab.android.engine.NativeRoiBounds);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeWbProbeResult {
+    <init>(int, float, float, int, int);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeHslProbeResult {
+    <init>(int, boolean, float[], float[]);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeMigrationResult {
+    <init>(int, int, int, int, float, float, float, float, float, float, float, float, float, float, float, float, float, float);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.LensCandidate {
+    <init>(java.lang.String, java.lang.String, java.lang.String, boolean, boolean, boolean, boolean);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeLensReport {
+    <init>(int, java.lang.String, java.lang.String, boolean, boolean, float, boolean);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeLensInspection {
+    <init>(boolean, boolean, boolean);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeLookValidation {
+    <init>(int, int, int);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeCameraWhiteBalance {
+    <init>(float, float);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeHDRPairInfo {
+    <init>(int, int, int, int, int, int, float, float);
+    <fields>;
+}
+-keep class com.rawlab.android.engine.NativeHDRRoiPair {
+    <init>(long, com.rawlab.android.engine.NativeRoiBounds);
+    <fields>;
+}
 
 # Keep standard Serializable members for LUTCompatibility models.
 -keepclassmembers class * implements java.io.Serializable {
