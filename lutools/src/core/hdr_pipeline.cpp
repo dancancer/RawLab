@@ -845,7 +845,7 @@ RoiRenderOutput renderFileROI(RoiSessionCache& cache, const char* file,
     validateHDRRenderOptions(options);
 #if defined(__APPLE__)
     (void)cache;
-    const auto info = probeFile(file);
+    const auto info = probeFileOrAppleProRAW(file);
     const bool swapped = info.orientation >= 5;
     const uint32_t nativeWidth = swapped ? info.height : info.width;
     const uint32_t nativeHeight = swapped ? info.width : info.height;
@@ -1071,6 +1071,41 @@ HDRStreamResult exportRowStream(const StreamSourceSpec& source, const HDRRenderO
 }
 
 #if defined(__APPLE__)
+ProRAWStreamExportResult exportAppleProRAWStream(const char* sourceFile, const HDRRenderOptions& options,
+                                                 const std::string& lookPath, const HDRExportConfig& config,
+                                                 bool keepHDR, const char* temporaryRoot, const char* targetFile) {
+    if (options.intent != HDRQuality::Final || config.metadataPolicy != kHdrMetadataIsoXmp) {
+        fail(kHdrReasonInvalidArgument, kHdrFieldExport, "Invalid ProRAW export configuration");
+    }
+    if (!config.metadataSourcePath || !*config.metadataSourcePath ||
+        std::filesystem::weakly_canonical(std::filesystem::u8path(sourceFile)) !=
+            std::filesystem::weakly_canonical(std::filesystem::u8path(config.metadataSourcePath))) {
+        fail(kHdrReasonSourceChanged, kHdrFieldSource, "ProRAW export requires a frozen source");
+    }
+    ensureDifferentFile(std::string(sourceFile), targetFile);
+    ensureDifferentFile(lookPath, targetFile);
+    checkProcessingCancellation();
+    const auto info = probeAppleProRAW(sourceFile);
+    StreamSourcePin pin;
+    uint64_t decodeRevision = 0;
+    reportHdrProgress(20, 1000);
+    HDRRowSource source = openAppleProRAWRows(sourceFile, config.sourceSha256, pin, decodeRevision);
+    reportHdrProgress(50, 1000);
+    HDRStreamResult encoded;
+    {
+        HdrProgressSubrangeScope sub(50, 950);
+        auto makeTransform = [&](uint32_t w, uint32_t h) {
+            return keepHDR ? makeStreamBaseTransform(config, w, h, targetFile, pin) : JPEGTransformBase{};
+        };
+        encoded = encodeStream(source, options, keepHDR, config.jpegQuality ? config.jpegQuality : 95,
+                               config.baseColor, std::filesystem::u8path(temporaryRoot), makeTransform);
+    }
+    reportHdrProgress(950, 1000);
+    publishStreamJPEG(std::move(encoded.jpeg), encoded.width, encoded.height, config, keepHDR, targetFile, pin, keepHDR);
+    reportHdrProgress(1000, 1000);
+    return {std::move(encoded), info.width, info.height};
+}
+
 TiledExportOutput exportTiledStream(const TiledSourceInput& input, const char* sourceFile,
                                     const HDRRenderOptions& options, const std::string& lookPath,
                                     const HDRExportConfig& config, bool encodeHeif,
@@ -1129,7 +1164,7 @@ TiledExportOutput exportTiledStream(const TiledSourceInput& input, const char* s
         }
         if (std::filesystem::weakly_canonical(std::filesystem::u8path(sourceFile)) !=
                 std::filesystem::weakly_canonical(std::filesystem::u8path(config.metadataSourcePath)) ||
-            std::all_of(config.sourceSha256, config.sourceSha256 + 32, [](uint8_t value) { return value == 0; })) {
+            (input.stream && std::all_of(config.sourceSha256, config.sourceSha256 + 32, [](uint8_t value) { return value == 0; }))) {
             fail(kHdrReasonSourceChanged, kHdrFieldSource, "Tiled raster export requires its frozen original");
         }
         if (input.stream) {

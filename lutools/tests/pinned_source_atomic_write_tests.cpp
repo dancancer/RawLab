@@ -243,7 +243,57 @@ void testPinnedSourceTamperClamping() {
             "pinIdentity + verifyUnchanged detects in-place write with restored mtime (ctime/ChangeTime)");
     }
 
-    // 5. Symlink rejection vs allowed symlink and isSameFile.
+    // 5. pinAndHash streams 1 MiB chunks with zero full-buffer alloc and matches pinAndRead SHA-256.
+    {
+        const fs::path source = dir.path / "hashed.bin";
+        writeBytes(source, payload);
+        PinnedSourceOptions readOpts;
+        readOpts.computeSha256 = true;
+        PinnedSourceFile readPinned;
+        std::vector<uint8_t> readBytes;
+        RAWLAB_REQUIRE(PinnedSourceFile::pinAndRead(source, readOpts, readPinned, readBytes) == SourcePinStatus::Ok,
+            "pinAndRead baseline for pinAndHash");
+
+        sony2fuji::resetSourceHashPassCount();
+        PinnedSourceFile hashPinned;
+        RAWLAB_CHECK(PinnedSourceFile::pinAndHash(source, readOpts, hashPinned) == SourcePinStatus::Ok,
+            "pinAndHash succeeds on regular file");
+        RAWLAB_CHECK(hashPinned.valid() && hashPinned.hasSha256() &&
+            hashPinned.sha256() == readPinned.sha256() &&
+            sony2fuji::sourceHashPassCount() == 1,
+            "pinAndHash matches pinAndRead SHA-256 in 1 pass");
+
+        std::array<uint8_t, 32> expected = readPinned.sha256();
+        PinnedSourceOptions matchOpts = readOpts;
+        matchOpts.expectedSha256 = expected.data();
+        PinnedSourceFile matched;
+        RAWLAB_CHECK(PinnedSourceFile::pinAndHash(source, matchOpts, matched) == SourcePinStatus::Ok,
+            "pinAndHash accepts matching expectedSha256");
+        expected[0] ^= 0xFF;
+        PinnedSourceFile mismatched;
+        RAWLAB_CHECK(PinnedSourceFile::pinAndHash(source, matchOpts, mismatched) == SourcePinStatus::SourceChanged,
+            "pinAndHash rejects mismatched expectedSha256");
+
+        // Atomic swap during pinAndHash via sourceReadTestHook returns SourceChanged with 0 hash passes.
+        const fs::path staged = dir.path / "hash-staged.bin";
+        writeBytes(staged, payload);
+        gHookSwapFrom = staged;
+        gHookSwapTo = source;
+        gHookFired = false;
+        gHookSwapError.clear();
+        sony2fuji::resetSourceHashPassCount();
+        sony2fuji::sourceReadTestHook = hookSwapSourceDuringRead;
+        PinnedSourceFile swapped;
+        const auto swapSt = PinnedSourceFile::pinAndHash(source, readOpts, swapped);
+        sony2fuji::sourceReadTestHook = nullptr;
+        RAWLAB_CHECK(gHookFired && !gHookSwapError &&
+            swapSt == SourcePinStatus::SourceChanged &&
+            !swapped.valid() &&
+            sony2fuji::sourceHashPassCount() == 0,
+            "pinAndHash rejects atomic swap during read with 0 sourceHashPassCount");
+    }
+
+    // 6. Symlink rejection vs allowed symlink and isSameFile.
     {
         const fs::path realFile = dir.path / "real.bin";
         writeText(realFile, "hello");

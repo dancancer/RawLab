@@ -280,6 +280,64 @@ int main() {
                   preview.width == 6 && preview.height == 8 &&
                   count == 1,
                   "loadDisplayPreview 8-bit JPEG ori=6 single bounded decode");
+
+        // C ABI sony2fuji_load_display_preview parity + opaque alpha + error/stale-buffer checks
+        sony2fuji::resetDisplayImageDecodeCount();
+        sony2fuji_buffer cPreview{};
+        uint32_t cW = 0, cH = 0;
+        const auto cStatus = sony2fuji_load_display_preview(
+            jpg16x12.u8string().c_str(), 8, &cPreview, &cW, &cH);
+        const uint64_t cCount = sony2fuji::displayImageDecodeCount();
+        bool cOpaque = cPreview.data != nullptr && cPreview.size_bytes == 6u * 8u * 4u;
+        if (cOpaque) {
+            const auto* bytes = static_cast<const uint8_t*>(cPreview.data);
+            for (size_t i = 3; i < cPreview.size_bytes; i += 4) {
+                if (bytes[i] != 255) { cOpaque = false; break; }
+            }
+        }
+        checkPass(cStatus == SONY2FUJI_STATUS_OK && cCount == 1 &&
+                  cW == 12 && cH == 16 &&
+                  cPreview.width == 6 && cPreview.height == 8 &&
+                  cPreview.pixel_format == SONY2FUJI_PIXEL_RGBA8 && cOpaque,
+                  "C ABI sony2fuji_load_display_preview decodes 8-bit JPEG ori=6 in 1 bounded pass");
+        sony2fuji_release_buffer(&cPreview);
+
+        sony2fuji_buffer zeroEdge{std::malloc(4), 4, 9, 9, 4, SONY2FUJI_PIXEL_RGBA8};
+        uint32_t zeroW = 7, zeroH = 8;
+        const auto zeroSt = sony2fuji_load_display_preview(
+            jpg16x12.u8string().c_str(), 0, &zeroEdge, &zeroW, &zeroH);
+        checkPass(zeroSt == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+                  zeroEdge.data == nullptr && zeroEdge.size_bytes == 0 &&
+                  zeroW == 0 && zeroH == 0,
+                  "C ABI sony2fuji_load_display_preview edge=0 clears stale buffer");
+        sony2fuji_release_buffer(&zeroEdge);
+        checkPass(sony2fuji_load_display_preview(jpg16x12.u8string().c_str(), 8, nullptr, &zeroW, &zeroH) ==
+                  SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                  "C ABI sony2fuji_load_display_preview rejects nullptr out_buffer");
+
+        // Transparent alpha PNG rejection via C ABI
+        CGColorSpaceRef rgbaSpace = sRGB;
+        CGContextRef alphaCtx = CGBitmapContextCreate(
+            nullptr, 4, 4, 8, 16, rgbaSpace,
+            kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+        checkPass(alphaCtx != nullptr, "create alpha PNG context");
+        if (alphaCtx) {
+            auto* ptr = static_cast<uint8_t*>(CGBitmapContextGetData(alphaCtx));
+            std::memset(ptr, 128, 4 * 4 * 4);
+            CGImageRef alphaCg = CGBitmapContextCreateImage(alphaCtx);
+            const auto alphaPng = dir / "alpha.png";
+            checkPass(alphaCg && writeImage(alphaPng, CFSTR("public.png"), alphaCg), "write alpha PNG");
+            if (alphaCg) CGImageRelease(alphaCg);
+            CGContextRelease(alphaCtx);
+            sony2fuji_buffer alphaBuf{std::malloc(4), 4, 9, 9, 4, SONY2FUJI_PIXEL_RGBA8};
+            uint32_t aW = 5, aH = 6;
+            const auto aSt = sony2fuji_load_display_preview(alphaPng.u8string().c_str(), 2, &alphaBuf, &aW, &aH);
+            checkPass(aSt == SONY2FUJI_STATUS_UNSUPPORTED &&
+                      alphaBuf.data == nullptr && alphaBuf.size_bytes == 0 &&
+                      aW == 0 && aH == 0,
+                      "C ABI sony2fuji_load_display_preview rejects alpha PNG and clears stale outputs");
+            sony2fuji_release_buffer(&alphaBuf);
+        }
     }
 
     // loadDisplayPreview on 16-bit PNG -> always RGBA8, single decode
@@ -294,6 +352,18 @@ int main() {
                   preview16.width == 2 && preview16.height == 1 &&
                   sony2fuji::displayImageDecodeCount() == 1,
                   "loadDisplayPreview 16-bit PNG returns RGBA8 in 1 decode");
+
+        sony2fuji::resetDisplayImageDecodeCount();
+        sony2fuji_buffer cPrev16{};
+        uint32_t cW16 = 0, cH16 = 0;
+        const auto cSt16 = sony2fuji_load_display_preview(png16.u8string().c_str(), 2, &cPrev16, &cW16, &cH16);
+        checkPass(cSt16 == SONY2FUJI_STATUS_OK &&
+                  cPrev16.pixel_format == SONY2FUJI_PIXEL_RGBA8 &&
+                  cW16 == 2 && cH16 == 1 &&
+                  cPrev16.width == 2 && cPrev16.height == 1 &&
+                  sony2fuji::displayImageDecodeCount() == 1,
+                  "C ABI sony2fuji_load_display_preview 16-bit PNG returns RGBA8 in 1 decode");
+        sony2fuji_release_buffer(&cPrev16);
     }
 
     // CMYK TIFF rejection in both loadDisplayImage and loadDisplayPreview

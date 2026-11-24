@@ -693,6 +693,22 @@ int main(int argc, char** argv) {
         }
 
         sony2fuji_session_destroy(session);
+#if !defined(__APPLE__)
+        {
+            auto info = init<sony2fuji_hdr_source_info_v1>();
+            auto diag = init<sony2fuji_hdr_diagnostic_v1>();
+            require(sony2fuji_hdr_probe_apple_proraw("sample.dng", &info, &diag) == SONY2FUJI_STATUS_UNSUPPORTED &&
+                    diag.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+                "non-Apple sony2fuji_hdr_probe_apple_proraw must return UNSUPPORTED_SYSTEM");
+            auto cfg = init<sony2fuji_hdr_export_config_v1>();
+            auto res = init<sony2fuji_hdr_stream_result_v1>();
+            diag = init<sony2fuji_hdr_diagnostic_v1>();
+            require(sony2fuji_hdr_export_apple_proraw_json(nullptr, "sample.dng", nullptr, nullptr, &cfg, 1,
+                        "/tmp", "out.jpg", &res, &diag) == SONY2FUJI_STATUS_UNSUPPORTED &&
+                    diag.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM,
+                "non-Apple sony2fuji_hdr_export_apple_proraw_json must return UNSUPPORTED_SYSTEM");
+        }
+#endif
         std::cout << "PASS hdr_api_validation\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }

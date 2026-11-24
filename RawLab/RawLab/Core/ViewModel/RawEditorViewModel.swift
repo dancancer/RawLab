@@ -20,7 +20,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceIsHDR=false
     @Published var rawHDRSource: HDRSourceInfo?
     var sourceSupportsCameraHDR: Bool { rawHDRSource != nil }
-    var sourceProRAW: ProRAWSource? { rawHDRSource?.proRAW }
+    var sourceIsProRAW: Bool { rawHDRSource?.isProRAW == true }
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?

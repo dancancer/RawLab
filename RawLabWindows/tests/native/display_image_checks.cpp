@@ -28,10 +28,6 @@
 using Microsoft::WRL::ComPtr;
 namespace fs = std::filesystem;
 
-extern "C" sony2fuji_status rawlab_display_preview(
-    const char* path, uint32_t edge, sony2fuji_buffer* out_buffer,
-    uint32_t* oriented_source_width, uint32_t* oriented_source_height);
-
 namespace {
 int checks = 0;
 void check(bool success, const char* message) {
@@ -217,7 +213,7 @@ void checkPreview16(const fs::path& path, uint32_t edge, unsigned sourceWidth, u
                     unsigned width, unsigned height) {
     sony2fuji_buffer buffer{};
     uint32_t actualWidth = 0, actualHeight = 0;
-    const auto status = rawlab_display_preview(path.u8string().c_str(), edge, &buffer, &actualWidth, &actualHeight);
+    const auto status = sony2fuji_load_display_preview(path.u8string().c_str(), edge, &buffer, &actualWidth, &actualHeight);
     check(status == SONY2FUJI_STATUS_OK && actualWidth == sourceWidth && actualHeight == sourceHeight &&
         buffer.width == width && buffer.height == height && buffer.pixel_format == SONY2FUJI_PIXEL_RGBA8 &&
         buffer.stride_bytes == width * 4 && buffer.size_bytes == static_cast<size_t>(width) * height * 4,
@@ -371,7 +367,7 @@ void checkPreview(const fs::path& path, uint32_t edge, unsigned sourceWidth, uns
                   unsigned width, unsigned height) {
     sony2fuji_buffer buffer{};
     uint32_t actualSourceWidth = 0, actualSourceHeight = 0;
-    const auto status = rawlab_display_preview(path.u8string().c_str(), edge, &buffer,
+    const auto status = sony2fuji_load_display_preview(path.u8string().c_str(), edge, &buffer,
         &actualSourceWidth, &actualSourceHeight);
     const bool valid = status == SONY2FUJI_STATUS_OK && actualSourceWidth == sourceWidth &&
         actualSourceHeight == sourceHeight && buffer.width == width && buffer.height == height &&
@@ -406,7 +402,7 @@ void rejectPreview(const fs::path& path) {
     };
     if (!buffer.data) throw std::runtime_error("Cannot allocate stale preview fixture");
     uint32_t sourceWidth = 99, sourceHeight = 98;
-    const auto status = rawlab_display_preview(path.u8string().c_str(), 1, &buffer,
+    const auto status = sony2fuji_load_display_preview(path.u8string().c_str(), 1, &buffer,
         &sourceWidth, &sourceHeight);
     const bool clean = status == SONY2FUJI_STATUS_UNSUPPORTED && sourceWidth == 0 &&
         sourceHeight == 0 && buffer.data == nullptr && buffer.size_bytes == 0 &&
@@ -422,7 +418,7 @@ void rejectPreviewZeroEdge(const fs::path& path) {
     };
     if (!buffer.data) throw std::runtime_error("Cannot allocate zero-edge preview fixture");
     uint32_t sourceWidth = 99, sourceHeight = 98;
-    const auto status = rawlab_display_preview(path.u8string().c_str(), 0, &buffer,
+    const auto status = sony2fuji_load_display_preview(path.u8string().c_str(), 0, &buffer,
         &sourceWidth, &sourceHeight);
     const bool clean = status == SONY2FUJI_STATUS_INVALID_ARGUMENT && sourceWidth == 0 &&
         sourceHeight == 0 && buffer.data == nullptr && buffer.size_bytes == 0 &&

@@ -340,6 +340,12 @@ sony2fuji_status sony2fuji_hdr_decode_camera_raw_with_ai(sony2fuji_session* sess
 // temporary_root 是现有可写缓存目录；成功、失败和取消均回收本次解码文件。
 sony2fuji_status sony2fuji_hdr_probe_proraw(const char* path, sony2fuji_hdr_source_info_v1* info,
     sony2fuji_hdr_diagnostic_v1* diagnostic);
+// Probes an Apple LinearRaw ProRAW DNG via Core Image (Apple-only; UNSUPPORTED elsewhere).
+sony2fuji_status sony2fuji_hdr_probe_apple_proraw(
+    const char* path,
+    sony2fuji_hdr_source_info_v1* info,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
 sony2fuji_status sony2fuji_hdr_decode_proraw(sony2fuji_session* session, const char* path,
     const sony2fuji_hdr_decode_options_v1* options, const char* temporary_root,
     sony2fuji_hdr_image_pair_v1* result, sony2fuji_hdr_diagnostic_v1* diagnostic);
@@ -600,6 +606,19 @@ sony2fuji_status sony2fuji_hdr_export_tiled_json(
 );
 
 sony2fuji_status sony2fuji_hdr_export_proraw_json(
+    sony2fuji_session* session,
+    const char* source_path,
+    const sony2fuji_hdr_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_export_config_v1* config,
+    uint32_t keep_hdr,
+    const char* temporary_root,
+    const char* path,
+    sony2fuji_hdr_stream_result_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+);
+
+sony2fuji_status sony2fuji_hdr_export_apple_proraw_json(
     sony2fuji_session* session,
     const char* source_path,
     const sony2fuji_hdr_render_options_v1* options,

@@ -587,6 +587,15 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
+// Decodes a bounded display-sRGB RGBA8 preview scaled to fit `edge` (> 0) along
+// the oriented long edge, optionally reporting the oriented full-source size.
+sony2fuji_status sony2fuji_load_display_preview(
+    const char* path,
+    uint32_t edge,
+    sony2fuji_buffer* out_buffer,
+    uint32_t* oriented_source_width,
+    uint32_t* oriented_source_height
+);
 // Inspects a display file for JPEG MPF secondary images (image count > 1 for MPF, 0 for single-image/non-MPF, -1 = error).
 int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path);
 

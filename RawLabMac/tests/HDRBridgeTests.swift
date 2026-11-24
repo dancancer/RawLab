@@ -172,7 +172,7 @@ import ImageIO
         for path in CommandLine.arguments.dropFirst(3) {
             try autoreleasepool {
                 let url = URL(fileURLWithPath: path)
-                guard let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil else { fatalError("ProRAW fixture was not recognized") }
+                guard let info = try HDRSourceInfo.probeRAW(url), info.isProRAW else { fatalError("ProRAW fixture was not recognized") }
                 let allocationCount = HDRImage.liveAllocations.count
                 var checkpoints = 0
                 do {

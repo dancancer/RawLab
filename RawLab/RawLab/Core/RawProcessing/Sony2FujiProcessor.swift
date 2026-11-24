@@ -39,11 +39,11 @@ struct Sony2FujiProcessor {
             return
         }
         if (format == .sdrJPEG || format == .hdrJPEG), url.pathExtension.lowercased() == "dng",
-           let info = try HDRSourceInfo.probeRAW(url), info.proRAW != nil {
-            try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
+           let info = try HDRSourceInfo.probeRAW(url), info.isProRAW {
+            try HDRSourceInfo.validatedProRAWDecodeVersion(proRAWDecodeVersion)
             hdrSources.clear()
             try withRawSession(reuse: false, inputType: SONY2FUJI_INPUT_DISPLAY_BUFFER) { session in
-                _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
+                _ = try HDRImage.exportProRAWStream(url: url, info: info, settings: settings, output: output,
                     longEdge: longEdge, outputSharpening: outputSharpening,
                     keepHDR: format == .hdrJPEG, session: session,
                     cancelled: cancelled, progress: progress)
@@ -101,18 +101,13 @@ struct Sony2FujiProcessor {
         let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
         try withRawSession(reuse: false, inputType: inputType) { session in
             let effectiveSharpening: OutputSharpening = format == UInt32(SONY2FUJI_HDR_TILED_SDR_DNG) ? .off : outputSharpening
-            if info.proRAW != nil {
-                try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion)
+            if info.isProRAW {
+                try HDRSourceInfo.validatedProRAWDecodeVersion(proRAWDecodeVersion)
                 hdrSources.clear()
-                _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output, longEdge: longEdge,
-                    outputSharpening: effectiveSharpening,
-                    format: format == UInt32(SONY2FUJI_HDR_TILED_HEIF) ? .hdrHEIF : .renderedDNG,
-                    session: session, cancelled: cancelled, progress: progress)
-            } else {
-                _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
-                    longEdge: longEdge, outputSharpening: effectiveSharpening, format: format,
-                    session: session, cancelled: cancelled, progress: progress)
             }
+            _ = try HDRImage.exportTiled(url, info: info, settings: settings, output: output,
+                longEdge: longEdge, outputSharpening: effectiveSharpening, format: format,
+                session: session, cancelled: cancelled, progress: progress)
         }
     }
 
@@ -166,8 +161,8 @@ struct Sony2FujiProcessor {
             guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
                 throw HDRSettings.ModeError.unsupportedSource
             }
-            if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
-            if previewLongEdge == nil, info.proRAW != nil { hdrSources.clear() }
+            if info.isProRAW { try HDRSourceInfo.validatedProRAWDecodeVersion(proRAWDecodeVersion) }
+            if previewLongEdge == nil, info.isProRAW { hdrSources.clear() }
             let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
             let effectiveSharpening: OutputSharpening = previewLongEdge == nil ? outputSharpening : .off
             let run: (OpaquePointer) throws -> HDRImage = { session in
@@ -216,32 +211,10 @@ struct Sony2FujiProcessor {
         guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
             throw HDRSettings.ModeError.unsupportedSource
         }
-        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
+        if info.isProRAW { try HDRSourceInfo.validatedProRAWDecodeVersion(proRAWDecodeVersion) }
         if cancelled() { throw CancellationError() }
         let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
         return try withRawSession(reuse: true, inputType: inputType) { session in
-            if let proRAW = info.proRAW, let stamp = info.cameraStamp {
-                let bounds = try HDRImage.roiSourceBounds(
-                    nativeWidth: proRAW.width, nativeHeight: proRAW.height,
-                    settings: settings, roi: roi, longEdge: nil
-                )
-                if cancelled() { throw CancellationError() }
-                let decoded = try proRAW.decodeROI(
-                    url, stamp: stamp,
-                    sourceX0: bounds.sourceX0, sourceY0: bounds.sourceY0,
-                    sourceX1: bounds.sourceX1, sourceY1: bounds.sourceY1,
-                    cancelled: cancelled
-                )
-                let tile = HDRImage.fromProRAW(pair: decoded.pair, url: url, info: info,
-                                              buffers: (decoded.hdr, decoded.sdr))
-                var tileRoi = roi
-                tileRoi.sourceX0 = bounds.sourceX0
-                tileRoi.sourceY0 = bounds.sourceY0
-                tileRoi.fullSourceWidth = proRAW.width
-                tileRoi.fullSourceHeight = proRAW.height
-                let rendered = try tile.renderedROI(session: session, settings: settings, roi: tileRoi, longEdge: nil)
-                return HDRROIRenderOutput(image: rendered.image, roi: rendered.result)
-            }
             if info.isCameraRAW {
                 let rendered = try HDRImage.renderCameraRawROI(
                     session: session, url: url, info: info,
@@ -264,7 +237,7 @@ struct Sony2FujiProcessor {
     private func hdrPreviewSource(_ url: URL, info: HDRSourceInfo, settings: HDRSettings, edge: Int,
                                   session: OpaquePointer, cancelled: () -> Bool = { false }) throws -> HDRImage {
         // 几何编辑沿用固定的 ProRAW 来源尺寸，避免预览随裁剪反复缩小。
-        let sourceEdge = info.proRAW == nil ? edge : settings.geometry.isIdentity ? max(1280, edge) : ProRAWSource.previewLimit
+        let sourceEdge = !info.isProRAW ? edge : settings.geometry.isIdentity ? max(1280, edge) : HDRSourceInfo.proRAWPreviewLimit
         return try hdrSources.preview(url, info: info, longEdge: sourceEdge,
             session: info.isCameraRAW ? session : nil, camera: settings.cameraDevelopmentSettings,
             lensDatabase: lensDatabaseURL, cancelled: cancelled)
@@ -280,7 +253,7 @@ struct Sony2FujiProcessor {
         guard let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: processing.core) else {
             throw HDRSettings.ModeError.unsupportedSource
         }
-        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(proRAWDecodeVersion) }
+        if info.isProRAW { try HDRSourceInfo.validatedProRAWDecodeVersion(proRAWDecodeVersion) }
         let inputType = info.isCameraRAW ? SONY2FUJI_INPUT_RAW : SONY2FUJI_INPUT_DISPLAY_BUFFER
         return try withRawSession(reuse: false, inputType: inputType) { session in
             let source = try hdrPreviewSource(url, info: info, settings: settings, edge: previewLongEdge, session: session)
@@ -362,12 +335,13 @@ struct Sony2FujiProcessor {
         let semantic: Semantic
         var nativeSize: CGSize? = nil
         var isProxy: Bool = false
+        var hasFullBitDepth: Bool = true
         var sourceLensMetadata: DisplayLensMetadata? = nil
         var lensInfo: LensInfo? = nil
 
         init(data: Data, width: Int, height: Int, stride: Int,
              pixelFormat: sony2fuji_pixel_format, semantic: Semantic = .legacy,
-             nativeSize: CGSize? = nil, isProxy: Bool = false) {
+             nativeSize: CGSize? = nil, isProxy: Bool = false, hasFullBitDepth: Bool = true) {
             self.data = data
             self.width = width
             self.height = height
@@ -376,12 +350,14 @@ struct Sony2FujiProcessor {
             self.semantic = semantic
             self.nativeSize = nativeSize
             self.isProxy = isProxy
+            self.hasFullBitDepth = hasFullBitDepth
         }
 
         func withSemantic(_ semantic: Semantic) -> Buffer {
             var result = self
             result = Buffer(data: data, width: width, height: height, stride: stride,
-                            pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize, isProxy: isProxy)
+                            pixelFormat: pixelFormat, semantic: semantic, nativeSize: nativeSize,
+                            isProxy: isProxy, hasFullBitDepth: hasFullBitDepth)
             result.sourceLensMetadata = semantic == .display ? sourceLensMetadata : nil
             result.lensInfo = semantic == .display ? lensInfo : nil
             return result
@@ -1269,79 +1245,31 @@ struct Sony2FujiProcessor {
         }
         _ = applyingOrientation
         if let edge = previewLongEdge {
-            let meta = try validateDisplayImageMetadata(url: url)
-            if meta.orientedMax > edge {
-                let nativeSize = CGSize(width: meta.orientedWidth, height: meta.orientedHeight)
-                if !meta.rgb16 && !meta.hasAlpha && !meta.tiffPair {
-                    let buffer = try autoreleasepool { () throws -> Buffer in
-                        let options: [CFString: Any] = [
-                            kCGImageSourceCreateThumbnailFromImageAlways: true,
-                            kCGImageSourceCreateThumbnailWithTransform: true,
-                            kCGImageSourceThumbnailMaxPixelSize: edge,
-                            kCGImageSourceShouldCacheImmediately: true
-                        ]
-                        guard var image = CGImageSourceCreateThumbnailAtIndex(meta.imageSource, 0, options as CFDictionary) else {
-                            throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
-                        }
-                        guard image.bitsPerComponent == 8,
-                              !image.bitmapInfo.contains(.floatComponents),
-                              let decodedSpace = image.colorSpace,
-                              decodedSpace.model == .rgb,
-                              !isHDRColorSpace(decodedSpace) else {
-                            throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
-                        }
-                        if let expectedName = meta.pngColorSpaceName {
-                            guard let expectedSpace = CGColorSpace(name: expectedName),
-                                  expectedSpace == decodedSpace else {
-                                throw displayImageFailure(SONY2FUJI_STATUS_UNSUPPORTED)
-                            }
-                        }
-                        if !meta.hasProfile && meta.pngColorSpaceName == nil {
-                            guard let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
-                                  let retagged = image.copy(colorSpace: sRGB) else {
-                                throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
-                            }
-                            image = retagged
-                        }
-                        return try renderDisplayRGBA8Buffer(
-                            from: image,
-                            targetWidth: image.width,
-                            targetHeight: image.height,
-                            checkOpaqueAlpha: !isOpaqueAlphaInfo(image.alphaInfo),
-                            nativeSize: nativeSize,
-                            isProxy: true,
-                            sourceURL: url
-                        )
-                    }
-                    return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
-                }
-                var native = sony2fuji_buffer()
-                defer { sony2fuji_release_buffer(&native) }
-                let status = url.path.withCString { path in
-                    sony2fuji_load_display_image(path, &native)
-                }
-                guard status == SONY2FUJI_STATUS_OK else {
-                    throw displayImageFailure(status)
-                }
-                let buffer = try autoreleasepool { () throws -> Buffer in
-                    guard let fullImage = makeDisplayCGImage(from: native) else {
-                        throw displayImageFailure(SONY2FUJI_STATUS_PROCESSING_ERROR)
-                    }
-                    let scale = Double(edge) / Double(max(Int(native.width), Int(native.height)))
-                    let targetWidth = max(1, Int((Double(native.width) * scale).rounded()))
-                    let targetHeight = max(1, Int((Double(native.height) * scale).rounded()))
-                    return try renderDisplayRGBA8Buffer(
-                        from: fullImage,
-                        targetWidth: targetWidth,
-                        targetHeight: targetHeight,
-                        checkOpaqueAlpha: false,
-                        nativeSize: nativeSize,
-                        isProxy: true,
-                        sourceURL: url
-                    )
-                }
-                return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
+            var native = sony2fuji_buffer()
+            defer { sony2fuji_release_buffer(&native) }
+            var sourceWidth: UInt32 = 0
+            var sourceHeight: UInt32 = 0
+            let status = url.path.withCString { path in
+                sony2fuji_load_display_preview(path, UInt32(edge), &native, &sourceWidth, &sourceHeight)
             }
+            guard status == SONY2FUJI_STATUS_OK else {
+                throw displayImageFailure(status)
+            }
+            let nativeSize = CGSize(width: Int(sourceWidth), height: Int(sourceHeight))
+            let isProxy = max(Int(sourceWidth), Int(sourceHeight)) > edge
+            var hasFullBitDepth = true
+            if !isProxy,
+               let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any],
+               (props[kCGImagePropertyDepth] as? NSNumber)?.intValue == 16 {
+                hasFullBitDepth = false
+            }
+            var buffer = try takeBuffer(&native, semantic: .display)
+            buffer.nativeSize = nativeSize
+            buffer.isProxy = isProxy
+            buffer.hasFullBitDepth = hasFullBitDepth
+            buffer.sourceLensMetadata = DisplayLensMetadata.read(url)
+            return ProcessResult(buffer: buffer, orientation: .up, rawWhiteBalance: nil)
         }
         var native = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&native) }

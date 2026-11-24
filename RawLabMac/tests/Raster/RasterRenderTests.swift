@@ -168,6 +168,66 @@ func runMixedBatch(_ context: RasterContext, raster: URL, expectedRaster: URL,
               "mixed batch leaves raster source identity unchanged")
 }
 
+func writeNonHDRJPEG(to url: URL, width: Int, height: Int) throws {
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    for y in 0..<height {
+        for x in 0..<width {
+            let idx = (y * width + x) * 4
+            bytes[idx] = UInt8((x * 255) / max(1, width - 1))
+            bytes[idx + 1] = UInt8((y * 255) / max(1, height - 1))
+            bytes[idx + 2] = 128
+            bytes[idx + 3] = 255
+        }
+    }
+    let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
+    let bitmap = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue).union(.byteOrder32Big)
+    guard let ctx = CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                              bytesPerRow: width * 4, space: srgb, bitmapInfo: bitmap),
+          let cgImage = ctx.makeImage(),
+          let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else {
+        throw fail("Cannot create non-HDR JPEG fixture")
+    }
+    CGImageDestinationAddImage(dest, cgImage, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+    guard CGImageDestinationFinalize(dest) else {
+        throw fail("Cannot finalize non-HDR JPEG fixture")
+    }
+}
+
+func testNonHDRRasterPreviewDownsampling(in root: URL) throws {
+    let jpeg = root.appendingPathComponent("sdr-2000x1500.jpg")
+    try writeNonHDRJPEG(to: jpeg, width: 2000, height: 1500)
+
+    let engine = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF)
+    let preview = try engine.render(jpeg, settings: Adjustments(), lut: nil, edge: 256)!
+    try check(max(preview.image.width, preview.image.height) == 256,
+              "non-HDR SDR preview output is bounded")
+    try check(engine.cachedRasterBytes > 0 && engine.cachedRasterBytes <= 256 * 256 * 4,
+              "non-HDR SDR preview does not retain full-resolution raster (\(engine.cachedRasterBytes) bytes)")
+    try check(preview.nativeWidth == 2000 && preview.nativeHeight == 1500,
+              "non-HDR SDR preview preserves native dimensions")
+
+    var settings = Adjustments()
+    settings.geometry = GeometrySettings()
+    settings.geometry?.quarterTurns = 1
+    settings.geometry?.cropWidth = 0.5
+    let cropped = try engine.render(jpeg, settings: settings, lut: nil, edge: 256)!
+    try check(cropped.nativeWidth == 1500 / 2 && cropped.nativeHeight == 2000,
+              "non-HDR SDR proxy computes native crop bounds from original dimensions")
+
+    let final = try engine.render(jpeg, settings: Adjustments(), lut: nil, edge: nil)!
+    try check(final.image.width == 2000 && final.image.height == 1500 && final.isFullResolution,
+              "non-HDR FINAL rendering does not reuse SDR preview proxy")
+    try check(engine.cachedRasterBytes == 2000 * 1500 * 4,
+              "non-HDR FINAL rendering caches full-res buffer (\(engine.cachedRasterBytes) bytes)")
+
+    let ev = try engine.autoExposure(jpeg, settings: Adjustments())
+    try check(ev.isFinite && (-4...4).contains(ev),
+              "non-HDR autoExposure returns valid value")
+    try check(engine.cachedRasterBytes > 0 && engine.cachedRasterBytes <= 1280 * 1280 * 4,
+              "non-HDR autoExposure after FINAL invalidates full-resolution raster cache (\(engine.cachedRasterBytes) bytes)")
+    print("PASS Mac non-HDR SDR preview downsampling, cropped native bounds, and FINAL -> autoExposure cache invalidation")
+}
+
 @main
 struct RasterRenderTests {
     static func main() throws {
@@ -198,6 +258,7 @@ struct RasterRenderTests {
         try assertMacFailureSemantics(context, raster: primary.url, engine: cpu)
         try assertNeutralNoDoubleGamma(primary.url, primary.label, engine: cpu, root: contextRoot)
         try runRejectedRasterCases(context, engine: cpu)
+        try testNonHDRRasterPreviewDownsampling(in: contextRoot)
         let settings = mixedSettings()
         var outputs: [String: URL] = [:]
         for fixture in fixtures {

@@ -128,8 +128,25 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
     PinnedSourceFile& outPinned,
     std::vector<uint8_t>& outBytes,
     std::string* outMessage) {
+    return pinAndStream(path, options, outPinned, &outBytes, outMessage);
+}
+
+SourcePinStatus PinnedSourceFile::pinAndHash(
+    const std::filesystem::path& path,
+    const PinnedSourceOptions& options,
+    PinnedSourceFile& outPinned,
+    std::string* outMessage) {
+    return pinAndStream(path, options, outPinned, nullptr, outMessage);
+}
+
+SourcePinStatus PinnedSourceFile::pinAndStream(
+    const std::filesystem::path& path,
+    const PinnedSourceOptions& options,
+    PinnedSourceFile& outPinned,
+    std::vector<uint8_t>* outBytes,
+    std::string* outMessage) {
     outPinned = PinnedSourceFile{};
-    outBytes.clear();
+    if (outBytes) outBytes->clear();
     setMessage(outMessage, "");
 
     if (path.empty()) {
@@ -143,6 +160,10 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
 
     ResourceFileStamp beforeStamp{};
     uint64_t size = 0;
+    const bool needHash = options.computeSha256 || options.expectedSha256 != nullptr;
+    const bool streamHashInLoop = (outBytes == nullptr) && needHash;
+    hash::Sha256 streamHasher;
+    std::vector<uint8_t> chunkScratch;
 
 #ifndef _WIN32
     const int openFlags = O_RDONLY | O_CLOEXEC | (options.rejectSymlink ? O_NOFOLLOW : 0);
@@ -175,11 +196,15 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
         setMessage(outMessage, "Source file is empty");
         return SourcePinStatus::IoError;
     }
-    if (options.beforeAlloc) {
-        options.beforeAlloc(size);
+    if (outBytes) {
+        if (options.beforeAlloc) {
+            options.beforeAlloc(size);
+        }
+        outBytes->resize(static_cast<size_t>(size));
+    } else if (size > 0) {
+        chunkScratch.resize(static_cast<size_t>(std::min<uint64_t>(size, 1024ull * 1024ull)));
     }
 
-    outBytes.resize(static_cast<size_t>(size));
     uint64_t filled = 0;
     bool firstChunk = true;
     while (true) {
@@ -187,7 +212,7 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
             try {
                 checkProcessingCancellation();
             } catch (const ProcessingCancelled&) {
-                outBytes.clear();
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Processing cancelled");
                 throw;
             }
@@ -195,14 +220,19 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
         ssize_t got = -1;
         errno = 0;
         if (filled < size) {
-            const size_t remaining = static_cast<size_t>(size - filled);
-            const size_t chunk = std::min<size_t>(4u * 1024u * 1024u, remaining);
-            got = ::read(descriptor, outBytes.data() + filled, chunk);
+            if (outBytes) {
+                const size_t remaining = static_cast<size_t>(size - filled);
+                const size_t chunk = std::min<size_t>(4u * 1024u * 1024u, remaining);
+                got = ::read(descriptor, outBytes->data() + filled, chunk);
+            } else {
+                const size_t remaining = static_cast<size_t>(std::min<uint64_t>(chunkScratch.size(), size - filled));
+                got = ::read(descriptor, chunkScratch.data(), remaining);
+            }
         } else {
             unsigned char probe = 0;
             got = ::read(descriptor, &probe, 1);
             if (got > 0) {
-                outBytes.clear();
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Source changed during read");
                 return SourcePinStatus::SourceChanged;
             }
@@ -210,11 +240,14 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
         }
         if (got < 0 && errno == EINTR) continue;
         if (got < 0) {
-            outBytes.clear();
+            if (outBytes) outBytes->clear();
             setMessage(outMessage, "Failed reading source file");
             return SourcePinStatus::IoError;
         }
         if (got == 0) break;
+        if (streamHashInLoop) {
+            streamHasher.update(chunkScratch.data(), static_cast<size_t>(got));
+        }
         filled += static_cast<uint64_t>(got);
         if (firstChunk) {
             firstChunk = false;
@@ -225,7 +258,7 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
     struct stat afterStat{};
     if (::fstat(descriptor, &afterStat) != 0 || filled != size ||
         !(beforeStamp == stampFromStat(afterStat))) {
-        outBytes.clear();
+        if (outBytes) outBytes->clear();
         setMessage(outMessage, "Source changed during read");
         return SourcePinStatus::SourceChanged;
     }
@@ -282,11 +315,15 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
         setMessage(outMessage, "Source file is empty");
         return SourcePinStatus::IoError;
     }
-    if (options.beforeAlloc) {
-        options.beforeAlloc(size);
+    if (outBytes) {
+        if (options.beforeAlloc) {
+            options.beforeAlloc(size);
+        }
+        outBytes->resize(static_cast<size_t>(size));
+    } else if (size > 0) {
+        chunkScratch.resize(static_cast<size_t>(std::min<uint64_t>(size, 1024ull * 1024ull)));
     }
 
-    outBytes.resize(static_cast<size_t>(size));
     uint64_t filled = 0;
     bool firstChunk = true;
     while (true) {
@@ -294,20 +331,30 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
             try {
                 checkProcessingCancellation();
             } catch (const ProcessingCancelled&) {
-                outBytes.clear();
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Processing cancelled");
                 throw;
             }
         }
         if (filled < size) {
-            const DWORD chunk = static_cast<DWORD>((std::min<uint64_t>)(4u * 1024u * 1024u, size - filled));
             DWORD got = 0;
-            if (!::ReadFile(handle, outBytes.data() + filled, chunk, &got, nullptr)) {
-                outBytes.clear();
+            BOOL ok = FALSE;
+            if (outBytes) {
+                const DWORD chunk = static_cast<DWORD>((std::min<uint64_t>)(4u * 1024u * 1024u, size - filled));
+                ok = ::ReadFile(handle, outBytes->data() + filled, chunk, &got, nullptr);
+            } else {
+                const DWORD chunk = static_cast<DWORD>((std::min<uint64_t>)(chunkScratch.size(), size - filled));
+                ok = ::ReadFile(handle, chunkScratch.data(), chunk, &got, nullptr);
+            }
+            if (!ok) {
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Failed reading source file");
                 return SourcePinStatus::IoError;
             }
             if (got == 0) break;
+            if (streamHashInLoop) {
+                streamHasher.update(chunkScratch.data(), static_cast<size_t>(got));
+            }
             filled += static_cast<uint64_t>(got);
             if (firstChunk) {
                 firstChunk = false;
@@ -319,12 +366,12 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
             unsigned char probe = 0;
             DWORD got = 0;
             if (!::ReadFile(handle, &probe, 1, &got, nullptr)) {
-                outBytes.clear();
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Failed reading source file");
                 return SourcePinStatus::IoError;
             }
             if (got > 0) {
-                outBytes.clear();
+                if (outBytes) outBytes->clear();
                 setMessage(outMessage, "Source changed during read");
                 return SourcePinStatus::SourceChanged;
             }
@@ -334,7 +381,7 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
 
     const auto afterHandleStamp = resourceFileStampFromHandle(handle);
     if (!afterHandleStamp || filled != size || !(*afterHandleStamp == beforeStamp)) {
-        outBytes.clear();
+        if (outBytes) outBytes->clear();
         setMessage(outMessage, "Source changed during read");
         return SourcePinStatus::SourceChanged;
     }
@@ -348,53 +395,58 @@ SourcePinStatus PinnedSourceFile::pinAndRead(
 
     // Verify path identity still refers to the same pinned file (catches atomic rename swaps during read).
     if (options.rejectSymlink && isSymlinkOrReparse(path)) {
-        outBytes.clear();
+        if (outBytes) outBytes->clear();
         setMessage(outMessage, "Source changed to a symbolic link");
         return SourcePinStatus::SourceChanged;
     }
     const auto afterPathStamp = resourceFileStamp(path);
     if (!afterPathStamp || !(*afterPathStamp == beforeStamp)) {
-        outBytes.clear();
+        if (outBytes) outBytes->clear();
         setMessage(outMessage, "Source changed during read");
         return SourcePinStatus::SourceChanged;
     }
 
     std::array<uint8_t, 32> digest{};
     bool computedSha = false;
-    if (options.computeSha256 || options.expectedSha256 != nullptr) {
+    if (needHash) {
         recordSourceHashPass();
-        hash::Sha256 hasher;
-        size_t offset = 0;
-        while (offset < outBytes.size()) {
-            if (options.checkCancellation) {
-                try {
-                    checkProcessingCancellation();
-                } catch (const ProcessingCancelled&) {
-                    outBytes.clear();
-                    setMessage(outMessage, "Processing cancelled");
-                    throw;
+        std::string hex;
+        if (outBytes) {
+            hash::Sha256 hasher;
+            size_t offset = 0;
+            while (offset < outBytes->size()) {
+                if (options.checkCancellation) {
+                    try {
+                        checkProcessingCancellation();
+                    } catch (const ProcessingCancelled&) {
+                        outBytes->clear();
+                        setMessage(outMessage, "Processing cancelled");
+                        throw;
+                    }
                 }
+                const size_t count = std::min<size_t>(outBytes->size() - offset, 1024u * 1024u);
+                hasher.update(outBytes->data() + offset, count);
+                offset += count;
             }
-            const size_t count = std::min<size_t>(outBytes.size() - offset, 1024u * 1024u);
-            hasher.update(outBytes.data() + offset, count);
-            offset += count;
+            hex = hasher.finish();
+        } else {
+            hex = streamHasher.finish();
         }
-        const std::string hex = hasher.finish();
         if (!decodeHexDigest(hex, digest)) {
-            outBytes.clear();
+            if (outBytes) outBytes->clear();
             setMessage(outMessage, "Failed computing source SHA-256");
             return SourcePinStatus::IoError;
         }
         computedSha = true;
         if (options.expectedSha256 && std::memcmp(digest.data(), options.expectedSha256, 32) != 0) {
-            outBytes.clear();
+            if (outBytes) outBytes->clear();
             setMessage(outMessage, "Source SHA-256 mismatch");
             return SourcePinStatus::SourceChanged;
         }
     }
 
     if (size == 0 && !options.allowEmpty) {
-        outBytes.clear();
+        if (outBytes) outBytes->clear();
         setMessage(outMessage, "Source file is empty");
         return SourcePinStatus::IoError;
     }

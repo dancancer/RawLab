@@ -91,6 +91,7 @@ set(provenance_sources hdr_codec_probe.mm hdr_device_main.mm hdr_native_probe.mm
     ${production_sources}
     ../../src/core/hdr_rendering.h ../../src/core/hdr_jpeg.h ../../src/core/jpeg_mpf.h
     ../../src/core/pinned_source_file.h ../../src/core/atomic_output_transaction.h
+    ../../src/core/tiff_ifd.h
     ../../src/core/output_file_mode.h ../../src/core/resource_file_stamp.h
     ../../src/core/processing_cancellation.h ../../src/core/sha256.h
     ../../src/core/hdr_storage.h ../../src/core/hdr_stream.h ../../src/platform/hdr_image.h

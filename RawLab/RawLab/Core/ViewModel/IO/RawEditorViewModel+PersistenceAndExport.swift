@@ -205,7 +205,7 @@ extension RawEditorViewModel {
             file: sourceFile,
             kind: sourceKind,
             hasBuffer: draftBuffer != nil,
-            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            fullBuffer: draftBuffer.flatMap { (!$0.isProxy && $0.hasFullBitDepth) ? $0 : nil },
             orientation: sourceOrientation
         )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
@@ -369,7 +369,7 @@ extension RawEditorViewModel {
             file: sourceFile,
             kind: sourceKind,
             hasBuffer: draftBuffer != nil,
-            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            fullBuffer: draftBuffer.flatMap { (!$0.isProxy && $0.hasFullBitDepth) ? $0 : nil },
             orientation: sourceOrientation
         )
         guard let sourceFile = source.file, let sourceKind = source.kind else {

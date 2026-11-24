@@ -56,6 +56,10 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
     bool baseMetadataApplied = false);
 
 #if defined(__APPLE__)
+inline constexpr uint64_t appleProRAWRevision = 1;
+HDRSourceInfo probeAppleProRAW(const char* path);
+HDRSourceInfo probeFileOrAppleProRAW(const char* path);
+HDRRowSource openAppleProRAWRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);
 HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);
 void freezeStreamSourceFile(const char* path, StreamSourcePin& pin);
 void verifyStreamSource(const StreamSourcePin& pin);

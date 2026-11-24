@@ -592,7 +592,7 @@ extension ContentView {
                         ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                             .id(viewModel.sourceRevision)
                             .disabled(isEditorDraftActive || editorBusy)
-                        if viewModel.sourceSupportsCameraHDR, viewModel.sourceProRAW == nil, let hdr = settings.hdr {
+                        if viewModel.sourceSupportsCameraHDR, !viewModel.sourceIsProRAW, let hdr = settings.hdr {
                             HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
                                 supportsBayerDevelopment: viewModel.rawHDRSource?.supportsBayerDevelopment == true,
                                 apply: applyHDRCameraDevelopment,

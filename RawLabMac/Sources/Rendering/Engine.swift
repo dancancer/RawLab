@@ -101,6 +101,7 @@ final class RenderEngine {
         var buffer = sony2fuji_buffer()
         var nativeSize: CGSize?
         var isProxy=false
+        var isHDR = false
         init(_ url: URL,edge: Int?,sources: HDRSourceCache) throws {
             if let info=try HDRSourceInfo.probe(url) {
                 let image: HDRImage
@@ -115,9 +116,22 @@ final class RenderEngine {
                 buffer.stride_bytes=UInt32(image.width*4); buffer.size_bytes=count
                 buffer.pixel_format=SONY2FUJI_PIXEL_RGBA8
                 nativeSize=CGSize(width:image.nativeWidth,height:image.nativeHeight); isProxy=image.isProxy
+                isHDR = true
                 return
             }
             sources.clear()
+            if let edge {
+                var sourceWidth: UInt32 = 0, sourceHeight: UInt32 = 0
+                let status = url.path.withCString {
+                    sony2fuji_load_display_preview($0, UInt32(edge), &buffer, &sourceWidth, &sourceHeight)
+                }
+                guard status == SONY2FUJI_STATUS_OK else {
+                    throw RenderError.displayImage(status)
+                }
+                nativeSize = CGSize(width: Int(sourceWidth), height: Int(sourceHeight))
+                isProxy = max(Int(sourceWidth), Int(sourceHeight)) > edge
+                return
+            }
             let status = url.path.withCString { sony2fuji_load_display_image($0, &buffer) }
             guard status == SONY2FUJI_STATUS_OK else {
                 throw RenderError.displayImage(status)
@@ -138,10 +152,10 @@ final class RenderEngine {
         if Self.isRasterInput(url) {
             let key = try RawWhiteBalanceCacheKey(url)
             let edge=options.intent==SONY2FUJI_INTENT_PREVIEW && options.preview_long_edge>0 ? Int(options.preview_long_edge) : nil
-            if displayCache?.key != key || (displayCache?.image.nativeSize != nil && displayCache?.edge != edge) {
+            if displayCache?.key != key || displayCache?.edge != edge {
                 displayCache = (key,edge,try DisplayImage(url,edge:edge,sources:hdrSources))
             }
-            if displayCache?.image.nativeSize == nil { hdrSources.clear() }
+            if displayCache?.image.isHDR == false { hdrSources.clear() }
             let image = displayCache!.image.buffer
             options.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER
             options.input_pixels = image.data.map(UnsafeRawPointer.init)
@@ -593,7 +607,7 @@ final class RenderEngine {
                   let info = try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: settings.processing.core) else {
                 throw HDRSettings.ModeError.unsupportedSource
             }
-            if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }
+            if info.isProRAW { try HDRSourceInfo.validatedProRAWDecodeVersion(settings.proRAWDecodeVersion) }
             let previewEdge = edge ?? 2000
             let source = try withHDRCameraAI(url, settings: settings, info: info) { key in
                 try hdrSources.preview(url, info: info, longEdge: previewEdge, session: session,
@@ -817,7 +831,7 @@ final class RenderEngine {
               let info=try HDRSourceInfo.probe(url) ?? HDRSourceInfo.probeRAW(url, processing: settings.processing.core) else {
             throw RenderError.failed(L10n.text("此照片没有可编辑的 HDR 增益图。"))
         }
-        if info.proRAW != nil { try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion) }
+        if info.isProRAW { try HDRSourceInfo.validatedProRAWDecodeVersion(settings.proRAWDecodeVersion) }
         displayCache=nil
         let previewEdge = edge ?? (info.isDevelopedRAW && output == nil ? 2000 : nil)
         let final = previewEdge == nil
@@ -827,9 +841,9 @@ final class RenderEngine {
         if selected == .hdrHEIF && !HDRImage.heifExportAvailable {
             throw RenderError.failed(L10n.text("不支持此 HDR 格式或颜色描述。"))
         }
-        if info.proRAW != nil, !settings.hdrCameraAIEnabled, let output, let selected {
+        if info.isProRAW, !settings.hdrCameraAIEnabled, let output, let selected {
             if selected == .hdrJPEG || selected == .jpeg {
-                try ProRAWExporter.export(url: url, info: info, settings: record, output: output,
+                try HDRImage.exportProRAWStream(url: url, info: info, settings: record, output: output,
                     longEdge: longEdge, outputSharpening: effectiveSharpening,
                     keepHDR: selected == .hdrJPEG, session: session)
                 return nil

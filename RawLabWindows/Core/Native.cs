@@ -500,7 +500,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_thumbnail([MarshalAs(UnmanagedType.LPUTF8Str)] string path,out Buffer buffer,out int kind,out int flip);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string path,out Buffer buffer,out int kind,out int flip,out int width,out int height);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_load_display_image([MarshalAs(UnmanagedType.LPUTF8Str)] string path,ref Buffer buffer);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int rawlab_display_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string path,uint edge,ref Buffer buffer,out uint width,out uint height);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_load_display_preview([MarshalAs(UnmanagedType.LPUTF8Str)] string path,uint edge,ref Buffer buffer,out uint width,out uint height);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe(
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, ref HDRSourceInfo info, ref HDRDiagnostic diagnostic);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_probe_camera_raw_with_processing(
