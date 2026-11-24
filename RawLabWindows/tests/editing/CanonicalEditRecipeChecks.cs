@@ -151,5 +151,26 @@ internal static class CanonicalEditRecipeChecks
               gradingV2Json["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 75 &&
               gradingV2Json["edits"]!["color_grading"]!["balance"]!.GetValue<double>() == -20,
             "CanonicalEditRecipe encodes Color Grading v2 global, luminance, blending, and balance under schema_version 17");
+
+        var masterRecipe = MasterRecipe.All.First(recipe => recipe.TintDelta != 0);
+        var masterTwo = new Adjustments();
+        masterTwo.ApplyMasterRecipe(masterRecipe);
+        masterTwo.Set(Parameter.Strength, 2.0);
+        masterTwo.ResolveWhiteBalance((2000, -150));
+        var masterTwoRequest = masterTwo.Request("fixture.dng", masterRecipe.LutPath, 0, "out.png", 128);
+        var masterTwoState = JsonNode.Parse(CanonicalEditRecipe.EncodeState(masterTwo, isRaster: false, lutPath: masterRecipe.LutPath))!.AsObject();
+        var canonicalContrast = (float)masterTwoState["edits"]!["tone"]!["contrast"]!.GetValue<double>();
+        var canonicalSaturation = (float)masterTwoState["edits"]!["tone"]!["saturation"]!.GetValue<double>();
+        Check(BitConverter.SingleToInt32Bits(masterTwoRequest.Contrast) == BitConverter.SingleToInt32Bits(canonicalContrast) &&
+              BitConverter.SingleToInt32Bits(masterTwoRequest.Saturation) == BitConverter.SingleToInt32Bits(canonicalSaturation),
+            "Adjustments.Request Contrast and Saturation match CanonicalEditRecipe.EncodeState bit-for-bit at master strength 2.0");
+
+        var contrastParity = masterTwo.Clone();
+        contrastParity.Set(Parameter.Contrast, 0.92);
+        var contrastParityRequest = contrastParity.Request("fixture.dng", masterRecipe.LutPath, 0, "out.png", 128);
+        var contrastParityState = JsonNode.Parse(CanonicalEditRecipe.EncodeState(contrastParity, isRaster: false, lutPath: masterRecipe.LutPath))!.AsObject();
+        var canonicalContrast92 = (float)contrastParityState["edits"]!["tone"]!["contrast"]!.GetValue<double>();
+        Check(BitConverter.SingleToInt32Bits(contrastParityRequest.Contrast) == BitConverter.SingleToInt32Bits(canonicalContrast92),
+            "Adjustments.Request Contrast matches CanonicalEditRecipe.EncodeState bit-for-bit without float addition 1-ULP drift");
     }
 }
