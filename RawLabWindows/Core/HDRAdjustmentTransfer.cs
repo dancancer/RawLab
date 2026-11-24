@@ -55,16 +55,16 @@ internal static class HDRAdjustmentTransfer
         return fields;
     }
 
-    internal static SavedEdit Prepare(AdjustmentPayload payload, SavedEdit target, bool cameraRaw)
+    internal static SavedEdit Prepare(AdjustmentPayload payload, SavedEdit target, bool cameraRaw, string? hdrLooksDirectory = null)
     {
         if (target.Settings.HDR is not { } current)
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible, "hdr.target");
-        var hdr = PrepareSettings(payload,current,cameraRaw);
+        var hdr = PrepareSettings(payload, current, cameraRaw, hdrLooksDirectory);
         return target with { Settings = target.Settings with { HDR = hdr,
             HDRCameraAIEnabled = target.Settings.HDRCameraAIEnabled && hdr.CameraSettings.AllowsAI } };
     }
 
-    internal static HDRSettings PrepareSettings(AdjustmentPayload payload, HDRSettings current,bool cameraRaw = false)
+    internal static HDRSettings PrepareSettings(AdjustmentPayload payload, HDRSettings current, bool cameraRaw = false, string? hdrLooksDirectory = null)
     {
         payload.Validate();
         if (current.Mode != HDRMode.Hdr || !current.IsValid)
@@ -174,7 +174,7 @@ internal static class HDRAdjustmentTransfer
                 SensorExposure = camera.SensorExposure, FbddLevel = camera.FbddLevel
             });
         }
-        if (!result.LookSettings.AssetIsAvailable()) throw new AdjustmentTransferException(AdjustmentFailure.MissingLook, result.LookSettings.Name ?? "HDR LUT");
+        if (!result.LookSettings.AssetIsAvailable(hdrLooksDirectory)) throw new AdjustmentTransferException(AdjustmentFailure.MissingLook, result.LookSettings.Name ?? "HDR LUT");
         if (!result.IsValid) throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable, "hdr.parameters");
         return result;
     }

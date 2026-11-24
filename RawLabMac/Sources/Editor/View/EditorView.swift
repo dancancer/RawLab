@@ -303,6 +303,11 @@ struct EditorView: View {
                     model.inspection.toggleNeutralGray50()
                 }
             },
+            onZoomIn: {
+                guard model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace else { return false }
+                zoom(1.25)
+                return true
+            },
             onEscape: {
                 if workspaceLayout.dismissDrawer() { return true }
                 if model.quickPresetsVisible { model.closeQuickPresets(); return true }
@@ -320,7 +325,9 @@ struct EditorView: View {
                 if viewing.enabled { viewing.close(); return true }
                 return false
             }).frame(width: 0, height: 0))
-        .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
+        .background(MacGeometryWindowGuard(model: model) { window in
+            viewCommands?.attachEditorWindow(window)
+        }.frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }

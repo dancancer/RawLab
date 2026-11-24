@@ -41,6 +41,42 @@ internal static class EditorShellChecks
             check(window.ResultCanvas.ToolTip == null, "Empty canvas has no zoom instructions");
             check(Descendants(window.Welcome).OfType<TextBlock>().Any(t => t.Text == Loc.Text("打开照片")),
                 "Exact approved empty-state heading");
+
+            var toolbar = window.ToolbarGrid;
+            check(toolbar.ColumnDefinitions.Count == 3 &&
+                  toolbar.ColumnDefinitions[0].Width.IsStar &&
+                  toolbar.ColumnDefinitions[1].Width.IsAuto &&
+                  toolbar.ColumnDefinitions[2].Width.IsStar,
+                "Toolbar uses 3-column star/auto/star centering layout");
+            var toolbarGroups = toolbar.Children.OfType<StackPanel>().ToArray();
+            check(toolbarGroups.Length == 3 &&
+                  Grid.GetColumn(toolbarGroups[0]) == 0 &&
+                  Grid.GetColumn(toolbarGroups[1]) == 1 &&
+                  Grid.GetColumn(toolbarGroups[2]) == 2,
+                "Toolbar places left, centered mode, and right action groups into dedicated columns");
+            window.RefreshWorkspaceForTests();
+            check(window.ClippingButton.Visibility == Visibility.Collapsed &&
+                  window.InfoButton.Visibility == Visibility.Collapsed &&
+                  window.ToolbarOverflowButton.Visibility == Visibility.Visible &&
+                  !window.ToolbarOverflowButton.IsEnabled &&
+                  !window.OverflowClippingMenu.IsEnabled &&
+                  !window.OverflowInfoMenu.IsEnabled,
+                "Compact toolbar (1024px) collapses clipping/info into disabled overflow menu before a photo opens");
+
+            WpfTestHost.ArrangeLayout(window, new Size(1440, 820));
+            window.RefreshWorkspaceForTests();
+            check(window.ClippingButton.Visibility == Visibility.Visible &&
+                  window.InfoButton.Visibility == Visibility.Visible &&
+                  window.ToolbarOverflowButton.Visibility == Visibility.Collapsed,
+                "Wide toolbar (1440px) exposes clipping/info directly and hides overflow button");
+
+            WpfTestHost.ArrangeLayout(window, new Size(1024, 720));
+            window.RefreshWorkspaceForTests();
+            check(window.ClippingButton.Visibility == Visibility.Collapsed &&
+                  window.InfoButton.Visibility == Visibility.Collapsed &&
+                  window.ToolbarOverflowButton.Visibility == Visibility.Visible,
+                "Returning to compact width restores the overflow toolbar button");
+
             window.Close();
             window = null;
 

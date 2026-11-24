@@ -314,6 +314,20 @@ private struct BatchCollectionExportView: View {
 struct MacBatchSettingsSummaryView: View {
     let settings: Adjustments
     var perPhotoAdaptive = false
+    var omitTopSummaryFields = false
+
+    static func showsSDRBaselineHeaders(for settings: Adjustments, omitTopSummaryFields: Bool = false) -> Bool {
+        !settings.isHDREditing && !omitTopSummaryFields
+    }
+
+    static func summaryParameters(for settings: Adjustments, omitTopSummaryFields: Bool = false) -> [AdjustmentParameter] {
+        let curve = settings.editingCurveSettings
+        return AdjustmentParameter.allCases.filter { parameter in
+            if settings.isHDREditing { return parameter.hdrKeyPath != nil }
+            if omitTopSummaryFields && parameter == .exposure { return false }
+            return curve.mode == .legacy || parameter != .toneCurve
+        }
+    }
 
     var body: some View {
         let curve = settings.editingCurveSettings
@@ -333,13 +347,11 @@ struct MacBatchSettingsSummaryView: View {
                 if settings.hdrCameraAIEnabled {
                     summary("AI 降噪", enabled(true))
                 }
-            } else {
+            } else if Self.showsSDRBaselineHeaders(for: settings, omitTopSummaryFields: omitTopSummaryFields) {
                 Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
                 Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
             }
-            ForEach(AdjustmentParameter.allCases.filter { parameter in
-                settings.isHDREditing ? parameter.hdrKeyPath != nil : (curve.mode == .legacy || parameter != .toneCurve)
-            }) { parameter in
+            ForEach(Self.summaryParameters(for: settings, omitTopSummaryFields: omitTopSummaryFields)) { parameter in
                 let spec = parameter.spec(for: settings)
                 let adaptive = perPhotoAdaptive && !settings.isHDREditing && parameter.isWhiteBalance && settings.whiteBalanceMode == .asShot
                 HStack {

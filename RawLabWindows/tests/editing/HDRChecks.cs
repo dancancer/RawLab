@@ -544,6 +544,28 @@ internal static class HDRChecks
             AdjustmentTransfer.Prepare(payload,saved,context);
             throw new Exception("Missing HDR look was accepted");
         } catch (AdjustmentTransferException error) when (error.Failure == AdjustmentFailure.MissingLook) { }
+        var isolatedLooksDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rawlab-hdr-looks-" + Guid.NewGuid().ToString("N"));
+        try {
+            System.IO.Directory.CreateDirectory(isolatedLooksDir);
+            var cubeBytes = System.Text.Encoding.ASCII.GetBytes("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n");
+            var isolatedDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cubeBytes)).ToLowerInvariant();
+            var isolatedLook = new HDRLookSettings(isolatedDigest, "Isolated HDR LUT", .75);
+            System.IO.File.WriteAllBytes(isolatedLook.AssetPath(isolatedLooksDir)!, cubeBytes);
+            var isolatedSaved = new SavedEdit(new OriginalIdentity("hdr.jpg",1,2,3),
+                new Adjustments { HDR = new HDRSettings().WithLook(isolatedLook) }.Capture(), null);
+            var isolatedPayload = AdjustmentTransfer.Capture(AdjustmentScope.Modified, isolatedSaved, context);
+            var isolatedTarget = new SavedEdit(new OriginalIdentity("hdr.jpg",1,2,3),
+                new Adjustments { HDR = new HDRSettings() }.Capture(), null);
+            try {
+                AdjustmentTransfer.Prepare(isolatedPayload, isolatedTarget, context);
+                throw new Exception("Default look directory unexpectedly resolved isolated HDR look");
+            } catch (AdjustmentTransferException error) when (error.Failure == AdjustmentFailure.MissingLook) { }
+            var prepared = AdjustmentTransfer.Prepare(isolatedPayload, isolatedTarget, context with { HdrLooksDirectory = isolatedLooksDir });
+            Check(prepared.Settings.HDR?.LookSettings == isolatedLook,
+                "HDR look transfer honors custom HdrLooksDirectory");
+        } finally {
+            if (System.IO.Directory.Exists(isolatedLooksDir)) System.IO.Directory.Delete(isolatedLooksDir, true);
+        }
         Check(state.HDR.Reset() is { ProcessingVersion: 7, IsIdentity: true },
             "Clearing the look keeps HDR v7");
     }

@@ -251,7 +251,14 @@ struct MacViewingKeyboard: NSViewRepresentable {
     var onHold: (Bool) -> Void
     var onInformation: () -> Void
     var onToggleGray50: (() -> Void)? = nil
+    var onZoomIn: (() -> Bool)? = nil
     var onEscape: () -> Bool
+
+    static func isCommandEqualsZoomShortcut(modifiers: NSEvent.ModifierFlags, charactersIgnoringModifiers: String?) -> Bool {
+        modifiers.intersection([.command, .option, .control, .shift]) == .command &&
+            charactersIgnoringModifiers == "="
+    }
+
     func makeNSView(context: Context) -> KeyboardView { KeyboardView() }
     func updateNSView(_ view: KeyboardView, context: Context) { view.owner = self }
     static func dismantleNSView(_ view: KeyboardView, coordinator: ()) { view.stop() }
@@ -269,8 +276,14 @@ struct MacViewingKeyboard: NSViewRepresentable {
                 if event.type == .keyUp && event.keyCode == self.heldKeyCode { self.heldKeyCode = nil; owner.onHold(false); return event }
                 guard event.type == .keyDown else { return event }
                 guard event.window === self.window, self.window?.isKeyWindow == true, NSApp.isActive,
-                      self.window?.attachedSheet == nil, !self.menuActive,
-                      !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
+                      self.window?.attachedSheet == nil, !self.menuActive else { return event }
+                if MacViewingKeyboard.isCommandEqualsZoomShortcut(
+                    modifiers: event.modifierFlags,
+                    charactersIgnoringModifiers: event.charactersIgnoringModifiers
+                ), let onZoomIn = owner.onZoomIn, onZoomIn() {
+                    return nil
+                }
+                guard !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
                       event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
                 if event.keyCode == 53, event.modifierFlags.intersection([.option, .shift]).isEmpty,
                    !event.isARepeat, owner.onEscape() { return nil }

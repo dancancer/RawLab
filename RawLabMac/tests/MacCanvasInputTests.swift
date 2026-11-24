@@ -85,6 +85,14 @@ import SwiftUI
         input.mouseDown(with: barePointer(.leftMouseDown, CGPoint(x: 150, y: 120)))
         input.mouseUp(with: barePointer(.leftMouseUp, CGPoint(x: 170, y: 120)))
         guard pinned.count == 1 else { fatalError("Drag in pinMode spuriously pinned an anchor") }
-        print("PASS: native cancel, subsequent pan, pinMode tap-vs-drag, and dismantle lifecycle; Escape exits HSL target mode")
+
+        guard MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: .command, charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [.command, .shift], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [.command, .option], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: .command, charactersIgnoringModifiers: "-") else {
+            fatalError("Command+= zoom-in shortcut matching failed")
+        }
+        print("PASS: native cancel, subsequent pan, pinMode tap-vs-drag, Command+= shortcut, and dismantle lifecycle; Escape exits HSL target mode")
     }
 }

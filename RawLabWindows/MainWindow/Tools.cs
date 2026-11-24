@@ -542,7 +542,7 @@ public partial class MainWindow
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
             var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : spec.ToDisplay(settings[selectedParameter]);
             var inputRange=extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec);
-            if(settings.IsHDREditing && selectedParameter==Parameter.Exposure)
+            if(settings.IsHDREditing && !extensionControl && hdrRenditionSpec==null && selectedParameter==Parameter.Exposure)
                 inputRange=inputRange with { Min=-4, Max=4 };
             if(hdrRenditionSpec!=null) {
                 title=hdrRenditionSpec.Title;unit=hdrRenditionSpec.Unit;

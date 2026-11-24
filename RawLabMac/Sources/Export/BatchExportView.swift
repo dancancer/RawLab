@@ -161,7 +161,7 @@ struct BatchExportView: View {
             valueRow(L10n.text("白平衡"), model.job.settings.whiteBalanceMode.title)
             valueRow(L10n.text("曝光基准"), model.job.settings.exposureMode.title)
             DisclosureGroup(L10n.text("全部调整")) {
-                MacBatchSettingsSummaryView(settings: model.job.settings, perPhotoAdaptive: true)
+                MacBatchSettingsSummaryView(settings: model.job.settings, perPhotoAdaptive: true, omitTopSummaryFields: true)
                     .padding(.top, 10)
             }
             }

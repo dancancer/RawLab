@@ -9,8 +9,11 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private HDRSourceInfo? hdrSource;
-    private bool hdrSdrPreview, hdrFalseColor, cameraHDRPreflight, syncingHdrControls, hdrLookLoading;
+    private bool hdrSdrPreview, hdrFalseColor, cameraHDRPreflight, hdrModeSwitching, syncingHdrControls, hdrLookLoading;
     private string? hdrLookError;
+    internal Func<Task>? InlineHdrLookPrepared;
+    internal Task ImportInlineHDRLookForTestsAsync(string path) =>
+        ApplyInlineHDRLookAsync(target => target.WithLook(HDRNative.ImportLook(path, appPaths.HdrLooksDirectory)));
     private readonly DispatcherTimer hdrDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Dictionary<HDRFloatImage, BitmapSource> hdrFalseColorCache = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<HDRFloatImage> hdrFalseColorPending = new(ReferenceEqualityComparer.Instance);
@@ -119,7 +122,7 @@ public partial class MainWindow
         try
         {
             HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active &&
-                !cameraHDRPreflight;
+                !cameraHDRPreflight && !hdrModeSwitching;
             HDREditMenu.IsChecked = settings.IsHDREditing;
             HDRPreviewMenu.IsEnabled = HDRSdrPreviewMenu.IsEnabled = HDRFalseColorMenu.IsEnabled = settings.IsHDREditing;
             HDRRenditionMenu.IsEnabled = HDREditMenu.IsEnabled && settings.IsHDREditing;
@@ -146,66 +149,80 @@ public partial class MainWindow
 
     private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
+        if (file == null || hdrSource == null || cameraHDRPreflight || hdrModeSwitching) { RefreshHDRControls(); return; }
         var initialPath = file;
         var initialOpened = openRevision;
-        CancelParameterInputs();
-        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
-        if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
-        {
-            RefreshHDRControls();
-            return;
-        }
-        var before = settings;
-        var candidate = before.Clone();
         var enabled = HDREditMenu.IsChecked;
-        var cameraRaw = hdrSource.IsCameraRaw;
+        hdrModeSwitching = true;
+        RefreshHDRControls();
         try
         {
-            candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
-        }
-        catch (Exception error) { RefreshControls(); Report(error); return; }
-
-        if (enabled && cameraRaw)
-        {
-            var path = file;
-            var opened = openRevision;
-            var revision = editRevision;
-            var edge = previewLongEdge;
-            var gpu = GpuMode.SelectedIndex == 0 ? 1 : GpuMode.SelectedIndex == 1 ? 0 : 2;
-            bool IsCurrent() => !closing && !exporting && !transform.Active && file == path &&
-                openRevision == opened && editRevision == revision;
-            cameraHDRPreflight = true;
-            RefreshHDRControls();
-            try
+            CancelParameterInputs();
+            if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
+            if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
             {
-                await Task.Run(() =>
-                {
-                    using var validator = CreateRenderEngine(gpuMode: gpu);
-                    var preflight = candidate.Clone();
-                    preflight.HDRCameraAIEnabled = false;
-                    validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
-                });
-                if (!IsCurrent()) return;
-            }
-            catch (Exception error)
-            {
-                if (IsCurrent()) Report(error);
+                RefreshHDRControls();
                 return;
             }
-            finally
+            var before = settings;
+            var candidate = before.Clone();
+            var cameraRaw = hdrSource.IsCameraRaw;
+            try
             {
-                cameraHDRPreflight = false;
+                candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
+            }
+            catch (Exception error) { RefreshControls(); Report(error); return; }
+
+            if (enabled && cameraRaw)
+            {
+                var path = file;
+                var opened = openRevision;
+                var revision = editRevision;
+                var edge = previewLongEdge;
+                var gpu = GpuMode.SelectedIndex == 0 ? 1 : GpuMode.SelectedIndex == 1 ? 0 : 2;
+                bool IsCurrent() => !closing && !exporting && !transform.Active && file == path &&
+                    openRevision == opened && editRevision == revision;
+                cameraHDRPreflight = true;
+                RefreshHDRControls();
+                try
+                {
+                    await Task.Run(() =>
+                    {
+                        using var validator = CreateRenderEngine(gpuMode: gpu);
+                        var preflight = candidate.Clone();
+                        preflight.HDRCameraAIEnabled = false;
+                        validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
+                    });
+                    if (!IsCurrent()) return;
+                }
+                catch (Exception error)
+                {
+                    if (IsCurrent()) Report(error);
+                    return;
+                }
+                finally
+                {
+                    cameraHDRPreflight = false;
+                    if (!closing) RefreshHDRControls();
+                }
+            }
+
+            ResetAITask();
+            settings = candidate;
+            MarkEdited();
+            if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
+            hdrModeSwitching = false;
+            RefreshControls();
+            Schedule();
+        }
+        finally
+        {
+            if (hdrModeSwitching)
+            {
+                hdrModeSwitching = false;
                 if (!closing) RefreshHDRControls();
             }
         }
-
-        ResetAITask();
-        settings = candidate;
-        MarkEdited();
-        if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
-        RefreshControls();
-        Schedule();
     }
 
     private void HDRPreviewClicked(object sender, RoutedEventArgs e) { hdrSdrPreview = false; RefreshHDRControls(); RefreshViewingFrames(); }
@@ -240,7 +257,7 @@ public partial class MainWindow
         if (!applyMaster) return target.WithLook(look);
         var payload = AdjustmentPayload.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory, "HDR Silver Master.json")));
         if (AdjustmentPayload.HDRLookValue(payload[AdjustmentField.HdrLook]) != look) throw new HDRSourceException(1, 18, 10);
-        return HDRAdjustmentTransfer.PrepareSettings(payload, target);
+        return HDRAdjustmentTransfer.PrepareSettings(payload, target, hdrLooksDirectory: looksDirectory);
     }
 
     private void RefreshInlineHDRLook()
@@ -285,6 +302,7 @@ public partial class MainWindow
         try
         {
             var next = await Task.Run(() => load(hdr));
+            if (InlineHdrLookPrepared is { } prepared) await prepared();
             if (closing || file != currentPath || opened != openRevision || revision != editRevision ||
                 settings.HDR is not { Mode: HDRMode.Hdr }) return;
             settings.HDR = next;
@@ -292,7 +310,7 @@ public partial class MainWindow
             MarkEdited();
             applied = true;
         }
-        catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or AdjustmentTransferException)
         {
             if (!closing && file == currentPath && opened == openRevision)
                 hdrLookError = Loc.Text("无法读取外观文件。");
@@ -361,7 +379,7 @@ public partial class MainWindow
         async Task Load(Func<HDRSettings> load) {
             pick.IsEnabled=clear.IsEnabled=silver.IsEnabled=master.IsEnabled=apply.IsEnabled=strength.IsEnabled=false;
             try { draft=await Task.Run(load); error.Text=""; }
-            catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException) {
+            catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or AdjustmentTransferException) {
                 error.Text=Loc.Text("无法读取外观文件。");
             }
             finally { pick.IsEnabled=silver.IsEnabled=master.IsEnabled=apply.IsEnabled=strength.IsEnabled=true; RefreshDraft(); }

@@ -114,8 +114,15 @@ struct RawLabMacApp: App {
         }.defaultSize(width: 1320, height: 850)
             .commands {
                 if let model = runtime.model, !installationActive {
+                    FileMenuCommands(
+                        model: model,
+                        openBatchSelection: { openWindow(id: "batch-selection") },
+                        openBatchExport: { openWindow(id: "batch-export") }
+                    )
                     AdjustmentCommands(model: model)
                     ViewCommands(model: model, commands: viewCommands)
+                } else {
+                    CommandGroup(replacing: .newItem) {}
                 }
                 CommandGroup(replacing: .appSettings) {
                     Button(L10n.text("软件更新…")) { showUpdateWindow("software-update") }.disabled(runtime.controller == nil)
@@ -129,34 +136,6 @@ struct RawLabMacApp: App {
                         showUpdateWindow("update-prompt")
                         runtime.controller?.check(manual: true)
                     }.disabled(runtime.controller == nil)
-                }
-                CommandGroup(replacing: .newItem) {
-                    if let model = runtime.model, !installationActive {
-                        Button(L10n.text("打开照片"), action: model.openPanel).keyboardShortcut("o")
-                        Button(L10n.text("导入外观…"), action: model.importLUT)
-                            .disabled(model.lookLibraryBusy || model.exporting || model.geometryDraft != nil)
-                        Divider()
-                        if model.settings.isHDREditing {
-                            Button(L10n.text("导出 HDR JPEG…")) { model.export(format: .hdrJPEG) }
-                                .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(!model.canExport)
-                            if HDRImage.heifExportAvailable {
-                                Button(L10n.text("导出 HDR HEIF…")) { model.export(format: .hdrHEIF) }
-                                    .disabled(!model.canExport)
-                            }
-                            Button(L10n.text("导出 JPEG…")) { model.export(format: .jpeg) }.disabled(!model.canExport)
-                        } else {
-                            Button(L10n.text("导出 JPEG…")) { model.export(format: .jpeg) }
-                                .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(!model.canExport)
-                        }
-                        Button(L10n.text("导出 16 位 PNG…")) { model.export(format: .png) }.disabled(!model.canExport)
-                        Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }.disabled(!model.canExport)
-                        Divider()
-                        Button(L10n.text("使用当前调整批量导出…")) {
-                            if model.prepareBatch() { openWindow(id: "batch-export") }
-                        }.disabled(!model.canExport)
-                        Button(L10n.text("批量编辑…")) { openWindow(id: "batch-selection") }.disabled(model.exporting)
-                        Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
-                    }
                 }
             }
         Window(L10n.text("关于 RawLab"), id: "about") {

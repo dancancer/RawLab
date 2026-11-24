@@ -177,7 +177,8 @@ public readonly record struct AdjustmentTransferNoticeBannerState(
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
     (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,
-    Action<Adjustments>? ValidateHDRCamera=null,Action<AdjustmentTransferNotice>? OnTransferNotice=null)
+    Action<Adjustments>? ValidateHDRCamera=null,Action<AdjustmentTransferNotice>? OnTransferNotice=null,
+    string? HdrLooksDirectory = null)
 {
     internal bool SupportsHDRCameraDevelopment => IsRaw && SupportsCameraHDR && !IsProRAW;
 }
@@ -239,7 +240,7 @@ public static class AdjustmentTransfer
         if (target.Settings.HDR is { Mode: HDRMode.Hdr })
         {
             ValidateHDRContext(target,context,"hdr.target");
-            var candidate = HDRAdjustmentTransfer.Prepare(p,target,context.SupportsHDRCameraDevelopment);
+            var candidate = HDRAdjustmentTransfer.Prepare(p, target, context.SupportsHDRCameraDevelopment, context.HdrLooksDirectory);
             if (p.Fields.Contains(F.HdrCameraDevelopment)) {
                 var validate = context.ValidateHDRCamera ?? throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
                 validate(candidate.Settings.Restore());

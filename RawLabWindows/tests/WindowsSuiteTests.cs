@@ -292,6 +292,24 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrRenditionInlineWorks() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunRendition(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrEffectsWork() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunEffects(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrInlineLookAndProcessingWork() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunInlineLookAndProcessing(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
     [Trait("Suite", "first-preview")]
     public void FirstPreviewWorks() =>
         WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
