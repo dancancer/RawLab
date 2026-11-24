@@ -106,7 +106,7 @@ internal static class CanonicalEditRecipe
         else if (includeSessionState && settings.MasterRecipeID != null)
         {
             var customWb = !settings.CameraWhiteBalance;
-            var strength = settings[Parameter.Strength];
+            var strength = Math.Clamp(settings[Parameter.Strength], 0.0, 2.0);
             var tint = settings[Parameter.Tint];
             whiteBalance = new WhiteBalancePayload("camera");
             masterRecipe = new MasterRecipePayload(
@@ -143,7 +143,7 @@ internal static class CanonicalEditRecipe
                 WhiteBalance: whiteBalance,
                 Look: new LookPayload(
                     includeSessionState ? lutPath : null,
-                    includeSessionState && lutPath != null ? settings[Parameter.Strength] : 1),
+                    includeSessionState && lutPath != null ? Math.Clamp(settings[Parameter.Strength], 0.0, 2.0) : 1),
                 Geometry: new GeometryPayload(
                     Crop: new CropPayload(geometry.CropX, geometry.CropY, geometry.CropWidth, geometry.CropHeight),
                     QuarterTurns: geometry.QuarterTurns,
@@ -152,10 +152,10 @@ internal static class CanonicalEditRecipe
                     StraightenDegrees: geometry.StraightenDegrees,
                     Perspective: new PerspectivePayload(geometry.PerspectiveHorizontal, geometry.PerspectiveVertical)),
                 Tone: new TonePayload(
-                    Contrast: includeSessionState ? 1.0 + (settings[Parameter.Contrast] - 1.0) * scale : 1,
-                    Saturation: includeSessionState ? 1.0 + (settings[Parameter.Saturation] - 1.0) * scale : 1,
-                    Highlights: includeSessionState ? settings[Parameter.Highlights] * scale : 0,
-                    Shadows: includeSessionState ? settings[Parameter.Shadows] * scale : 0,
+                    Contrast: includeSessionState ? Math.Clamp(1.0 + (settings[Parameter.Contrast] - 1.0) * scale, 0.0, 2.0) : 1,
+                    Saturation: includeSessionState ? Math.Clamp(1.0 + (settings[Parameter.Saturation] - 1.0) * scale, 0.0, 2.0) : 1,
+                    Highlights: includeSessionState ? Math.Clamp(settings[Parameter.Highlights] * scale, -1.0, 1.0) : 0,
+                    Shadows: includeSessionState ? Math.Clamp(settings[Parameter.Shadows] * scale, -1.0, 1.0) : 0,
                     SCurve: includeSessionState && curve.Mode != ToneCurveMode.Custom
                         ? Math.Clamp(settings[Parameter.ToneCurve] * settings.RefinementScale, -1, 1)
                         : 0,
@@ -175,7 +175,7 @@ internal static class CanonicalEditRecipe
                     Global: grading.Global.IsDefault ? null : ToWheelPayload(grading.Global),
                     Blending: grading.Blending == 50.0 ? null : grading.Blending,
                     Balance: grading.Balance == 0.0 ? null : grading.Balance),
-                Detail: new DetailPayload(includeSessionState ? settings[Parameter.Sharpening] : 0),
+                Detail: new DetailPayload(includeSessionState ? Math.Clamp(settings[Parameter.Sharpening], 0.0, 2.0) : 0),
                 Hsl: new HslPayload(
                     Hue: hslValues.Take(8).ToArray(),
                     Saturation: hslValues.Skip(8).Take(8).ToArray(),

@@ -161,11 +161,7 @@ internal static class HDRNative
                 : Native.sony2fuji_hdr_decode(path, ref options, ref pair, ref diagnostic);
         int DecodeCameraRaw()
         {
-            if (!cameraAI && development is not { IsDefault: false })
-                return Native.sony2fuji_hdr_decode_camera_raw_json(session, path, ref options, null, ref pair, ref diagnostic);
-            var camera = development ?? new();
-            if (cameraAI && !camera.AllowsAI) throw new HDRSourceException(2, ReasonCameraAI, 11);
-            var editStateJson = HDRSettings.ToCameraDevelopmentEditStateJson(3, camera, cameraAI, cameraProfileDirectory);
+            var editStateJson = BuildCameraRawDecodeJson(expected, development, cameraAI, cameraProfileDirectory);
             return Native.sony2fuji_hdr_decode_camera_raw_json(session, path, ref options, editStateJson, ref pair, ref diagnostic);
         }
         if (status != StatusOk)
@@ -194,6 +190,18 @@ internal static class HDRNative
             throw new HDRSourceException(1, 9, 1);
         }
         return new(pair);
+    }
+
+    internal static string BuildCameraRawDecodeJson(
+        HDRSourceInfo expected,
+        HDRCameraDevelopmentSettings? development,
+        bool cameraAI,
+        string? cameraProfileDirectory = null)
+    {
+        var camera = development ?? new();
+        if (cameraAI && !camera.AllowsAI) throw new HDRSourceException(2, ReasonCameraAI, 11);
+        return HDRSettings.ToCameraDevelopmentEditStateJson(
+            expected.CameraProcessingVersion, camera, cameraAI, cameraProfileDirectory);
     }
 
     private static Native.HDRRenderOptions RenderOptions(HDRIntent intent, uint longEdge = 0) => new()

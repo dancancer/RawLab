@@ -878,13 +878,21 @@ internal static class HDRWorkflowChecks
                 "HDR-as-SDR export applies OutputSharpening for PNG and completes for RenderedDng");
             var v9State = System.Text.Json.Nodes.JsonNode.Parse(
                 neutral.HDR!.ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
+            var v9ParametricState = System.Text.Json.Nodes.JsonNode.Parse(
+                neutral.HDR!.WithTone(neutral.HDR.ToneSettings with
+                {
+                    Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0), new(1, 1)],
+                        parametric: new ToneCurveParametric(Shadows: 15))
+                }).ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
             check(v9State["schema_version"]!.GetValue<int>() == 16 &&
                   v9State["processing"]!["version"]!.GetValue<int>() == 9 &&
                   v9State["output"]!["output_sharpening"]!.GetValue<string>() == "high" &&
-                  Math.Abs(v9State["edits"]!["tone"]!["curve"]!["parametric"]!["split_shadow"]!.GetValue<double>() - 0.25) < 1e-6 &&
-                  Math.Abs(v9State["edits"]!["tone"]!["curve"]!["parametric"]!["split_midtone"]!.GetValue<double>() - 0.50) < 1e-6 &&
-                  Math.Abs(v9State["edits"]!["tone"]!["curve"]!["parametric"]!["split_highlight"]!.GetValue<double>() - 0.75) < 1e-6,
-                "HDR canonical JSON populates output_sharpening, processing v9, and parametric splits");
+                  v9State["edits"]!["tone"]!["curve"]!["parametric"] == null &&
+                  v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["shadows"]!.GetValue<double>() == 15 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_shadow"]!.GetValue<double>() - 0.25) < 1e-6 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_midtone"]!.GetValue<double>() - 0.50) < 1e-6 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_highlight"]!.GetValue<double>() - 0.75) < 1e-6,
+                "HDR canonical JSON populates output_sharpening, processing v9, default omission, and parametric splits");
             var created=File.GetCreationTimeUtc(source);var modified=File.GetLastWriteTimeUtc(source);
             var originalBytes=File.ReadAllBytes(source);var invalidBytes=originalBytes.ToArray();invalidBytes[0]^=0xff;
             try {
