@@ -1,35 +1,24 @@
 package com.rawlab.android.editor
 
 import android.app.Application
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.rawlab.android.R
-import com.rawlab.android.adjustments.AdjustmentFailure
 import com.rawlab.android.adjustments.AdjustmentHistoryTransaction
 import com.rawlab.android.adjustments.AdjustmentOutcome
 import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.adjustments.AdjustmentScope
-import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.adjustments.PreparedAdjustmentTransfer
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.CollectionExportReview
-import com.rawlab.android.editor.canvas.DetailTileKey
-import com.rawlab.android.editor.canvas.DetailTileSpec
 import com.rawlab.android.editor.canvas.ViewportRoiRequest
-import com.rawlab.android.editor.canvas.detailTileSpecs
 import com.rawlab.android.editor.render.EditorRenderer
-import com.rawlab.android.editor.render.PreviewDetailOverlay
-import com.rawlab.android.editor.render.PreviewPair
-import com.rawlab.android.editor.render.RenderQueue
-import com.rawlab.android.editor.render.SerialWorkQueue
-import com.rawlab.android.editor.render.Work
-import com.rawlab.android.editor.render.WorkResult
-import com.rawlab.android.editor.render.canFinishPreviewBefore
-import com.rawlab.android.editor.render.discardPendingWork
-import com.rawlab.android.editor.render.isExportCancellation
+import com.rawlab.android.editor.render.ViewportRenderEngine
 import com.rawlab.android.engine.NativeProcessor
 import com.rawlab.android.format.ExportFormat
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.LUTCompatibility
@@ -39,23 +28,17 @@ import com.rawlab.android.presets.AdjustmentPresetStore
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.rawlab.android.settings.ToneCurveChannel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.UUID
 
-private const val DETAIL_TILE_MAX_BYTES = 64L * 1024L * 1024L
-private const val DETAIL_TILE_MAX_COUNT = 24
-
 class EditorViewModel internal constructor(
-    application: Application,
+    private val appContext: Application,
     private val dependencies: EditorDependencies,
-) : AndroidViewModel(application) {
+) : AndroidViewModel(appContext) {
 
     @JvmOverloads
     constructor(
@@ -65,230 +48,60 @@ class EditorViewModel internal constructor(
     ) : this(application, EditorDependencies.production(application, editStoreFactory, batchProcessorFactory))
 
     private val scope = dependencies.scope ?: viewModelScope
-    private val strings = dependencies.strings
     val storage = dependencies.storage
     private val renderer: EditorRenderer? = dependencies.renderer
-    private val renderGateway = dependencies.renderGateway
     private val previewCache = dependencies.previewCache
     private val photoPreviewOwner = UUID.randomUUID().toString()
     val presetStore: AdjustmentPresetStore by lazy { dependencies.presetStoreFactory() }
-    private val editStore = dependencies.editStore
-    private val draftStore = dependencies.draftStore
-    private val adjustmentHistory = EditorAdjustmentHistory(editStore, dependencies.sourceValidator)
 
-    private val mutable = MutableStateFlow(EditorState())
-    val state = mutable.asStateFlow()
-
-    @Volatile private var disposed = false
-    private var currentRevision = 0L
-    private var latestRender: Work? = null
-    private var progressivePreviewFloor = 0L
     @Volatile private var sourceRevision = 0L
-        set(value) { if (field != value) processingMigrationHolder.onSourceRevisionChanged(); field = value }
-    @Volatile private var editRevision = 0L
-        set(value) { if (field != value) processingMigrationHolder.onEditRevisionChanged(); field = value }
-    private var previewLongEdge = 1600
-    private var editorActivationRevision = 0L
-    private var editorActive = true
-    private var detailDebounceJob: Job? = null
-    private var lastDetailRequest: ViewportRoiRequest? = null
-    private var detailNeedsBefore = false
-    private var inFlightDetailTileKey: DetailTileKey? = null
-    private var scheduledDetailTileKey: DetailTileKey? = null
-    private val detailRevisions = HashSet<Long>()
-    private val detailTileCache = LinkedHashMap<DetailTileKey, PreviewDetailOverlay>(32, 0.75f, true)
-    private var detailTileCacheBytes = 0L
-    private var detailTileSourceRevision = -1L
-    private var detailTileEditRevision = -1L
-    private val hdrDetailCache = ArrayList<PreviewDetailOverlay>(4)
+    private var currentRevision = 0L
 
-    internal val storageRelease = StorageReleaseManifest(
-        setOf("renderQueue", "lookQueue", "adjustmentQueue", "adjustmentPreparationQueue", "processingMigrationQueue", "collections"),
-        storage::close,
+    internal val session = EditorDocumentSession(
+        dependencies = dependencies,
+        scope = scope,
+        onSourceRevisionSynced = { sourceRevision = it },
+        onCurrentRevisionSynced = { currentRevision = it },
     )
+    private val mutable = session.mutable
+    val state = session.state
+    internal val storageRelease = session.storageRelease
+    private val editStore = session.editStore
+    private val adjustmentQueue = session.adjustmentQueue
+    private val adjustmentHistory = session.adjustmentHistory
 
-    private val queue = RenderQueue<Work, WorkResult>(
-        renderGateway::perform,
-        { revision, result ->
-            // 结果持有临时输入；即使 ViewModel scope 已取消，也要在主线程完成移交或释放。
-            dependencies.mainDelivery {
-                val isDetail = detailRevisions.remove(revision)
-                if (isDetail) {
-                    if (revision == currentRevision) {
-                        inFlightDetailTileKey = null
-                        if (!disposed && result.isSuccess) {
-                            previewCoordinator.accept(result)
-                        }
-                    }
-                    return@mainDelivery
-                }
-                val preview = result.getOrNull() as? WorkResult.Preview
-                if (!disposed && revision == currentRevision) previewCoordinator.accept(result)
-                else if (!disposed && revision >= progressivePreviewFloor && preview != null &&
-                    latestRender?.let(preview.request::canFinishPreviewBefore) == true
-                ) {
-                    mutable.value = mutable.value.copy(preview = preview.pair, exact = false)
-                } else {
-                    result.fold({ exportHolder.onLateExportCompleted(it) }, { error ->
-                        if (!disposed && !isExportCancellation(error)) mutable.value = mutable.value.copy(error = failure(error))
-                    })
-                }
-            }
-        },
-        { renderGateway.close(); storageRelease.release("renderQueue") },
-        { exportHolder.onLateExportCompleted(it) },
-        { work -> work.discardPendingWork(dependencies.exportCleanup) },
-        canFinishInFlight = Work::canFinishPreviewBefore,
-    )
-
-    private val adjustmentQueue = SerialWorkQueue(storageRelease.releaserFor("adjustmentQueue"))
-
-    private val systemPhotoHolder = EditorSystemPhotoStateHolder(
-        storage, scope, dependencies.ioDispatcher, dependencies.systemPhotoPreferencesFactory,
-        onError = { error -> mutable.value = mutable.value.copy(error = failure(error)) },
-        parseUri = dependencies.parseSystemPhotoUri,
-        retainUri = dependencies.retainSystemPhoto ?: { uri ->
-            if (storage.isRetainedSystemPhoto(uri)) uri else storage.retainSystemPhoto(uri)
+    internal val viewport = ViewportRenderEngine(
+        session = session,
+        onPreviewAccepted = { result -> previewCoordinator.accept(result) },
+        onLateExportCompleted = { result -> exportHolder.onLateExportCompleted(result) },
+        onRenderSubmittedHook = { work ->
+            if (work !is com.rawlab.android.editor.render.Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
+            if (work !is com.rawlab.android.editor.render.Work.WbProbe && wbHolder.isWaiting) wbHolder.clear()
+            hdrHolder.onRenderSubmitted(work)
         },
     )
+    private val queue = viewport.queue
 
-    private val lookHolder: EditorLookStateHolder = EditorLookStateHolder(
-        mutable, scope, strings, dependencies.lookPreferencesFactory, dependencies.masterRecipesLoader,
-        dependencies.lookWorkRunner, storageRelease.releaserFor("lookQueue"), { disposed }, { sourceRevision },
-        { draftHolder.draftRevision }, { previewLongEdge }, { draftHolder.requestedPreviewLongEdge }, ::gpuMode,
-        onEdit = { settings, interactive -> previewCoordinator.edit(settings, interactive) },
-        onRenderDraft = { draftHolder.renderDraft(it) },
-        onClearPendingResetMigration = { processingMigrationHolder.clearPendingReset() },
-        onPersist = { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        onIncrementEditRevision = { editRevision += 1 },
-        onClearDurablePreview = { draftHolder.clearDurablePreview() },
-        onSubmitPreview = { work -> currentRevision = submitRender(work) },
-        onUpdatePreviewSize = { draftHolder.updatePreviewSize(it) },
-    )
+    private val systemPhotoHolder: EditorSystemPhotoStateHolder = EditorSystemPhotoStateHolder(session)
+    private val lookHolder: EditorLookStateHolder = EditorLookStateHolder(session)
+    private val hslHolder: EditorHslEyedropperStateHolder = EditorHslEyedropperStateHolder(session)
+    private val wbHolder: EditorWbEyedropperStateHolder = EditorWbEyedropperStateHolder(session)
+    private val hdrHolder: EditorHdrStateHolder = EditorHdrStateHolder(session)
+    private val exportHolder: EditorExportStateHolder = EditorExportStateHolder(session)
+    private val processingMigrationHolder: EditorProcessingMigrationStateHolder = EditorProcessingMigrationStateHolder(session)
+    private val adjustmentTransferHolder: EditorAdjustmentTransferStateHolder = EditorAdjustmentTransferStateHolder(appContext, session)
+    private val batchHolder: EditorBatchStateHolder = EditorBatchStateHolder(appContext, session)
+    private val collectionHolder: EditorCollectionStateHolder = EditorCollectionStateHolder(session, File(appContext.filesDir, "RawLab/BatchJobs"))
+    private val importRecoveryHolder: EditorImportRecoveryStateHolder = EditorImportRecoveryStateHolder(session)
+    private val draftHolder: EditorDraftStateHolder = EditorDraftStateHolder(session)
+    private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(session, viewport)
 
-    private val hslHolder: EditorHslEyedropperStateHolder = EditorHslEyedropperStateHolder(
-        mutable, { sourceRevision }, { currentRevision }, { work -> currentRevision = submitRender(work) },
-        { edits, interactive -> draftHolder.changeDraft(edits, interactive) },
-        { draftHolder.incrementDraftRevision() }, { draftHolder.renderDraft(it) },
-        dependencies.curveSampler,
-        dependencies.curveParametricSampler,
-    )
-
-    private val wbHolder: EditorWbEyedropperStateHolder = EditorWbEyedropperStateHolder(
-        mutable, { sourceRevision }, { currentRevision },
-        { work -> submitRender(work).also { currentRevision = it } },
-        { edits -> previewCoordinator.edit(edits, false) },
-    )
-
-    private val hdrHolder: EditorHdrStateHolder = EditorHdrStateHolder(
-        mutable, scope, dependencies.ioDispatcher, strings, { storage.hdrLookDirectory },
-        dependencies.hdrLookImporter, dependencies.hdrSilverInstaller, dependencies.hdrSilverMasterLoader,
-        dependencies.hdrCameraProfileImporter, { disposed }, { sourceRevision }, { editRevision },
-        { draftHolder.draftRevision }, { previewLongEdge }, ::gpuMode,
-        onEdit = { previewCoordinator.edit(it) }, onSubmitPreflight = { work -> currentRevision = submitRender(work) },
-    )
-
-    private val exportHolder: EditorExportStateHolder = EditorExportStateHolder(
-        mutable, dependencies.exportCleanup, strings, dependencies.mainDelivery, dependencies.recordUsage,
-        { disposed }, ::gpuMode, { draftHolder.requestedPreviewLongEdge },
-        onPersist = { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        onSubmitExport = { work -> currentRevision = submitRender(work) },
-        onInvalidateRender = { currentRevision = invalidateRender() },
-        onReleaseDeferredCollections = { collectionHolder.releaseDeferred() },
-        onUpdatePreviewSize = { draftHolder.updatePreviewSize(it) },
-    )
-
-    private val processingMigrationHolder: EditorProcessingMigrationStateHolder = EditorProcessingMigrationStateHolder(
-        mutable, storage, editStore, adjustmentHistory, strings, dependencies.mainDelivery,
-        dependencies.migrationProcessorFactory, storageRelease.releaserFor("processingMigrationQueue"),
-        { disposed }, { editorActive }, { sourceRevision }, { editRevision }, ::gpuMode,
-        onCommitAdjustments = { work, publishBeforeUnlock, completed -> commitAdjustments(work, publishBeforeUnlock, completed) },
-        onIncrementEditRevision = { editRevision += 1 },
-        onInvalidateRender = { currentRevision = invalidateRender() },
-        onCancelPreviewResize = { draftHolder.cancelResize() },
-        onClearDurableAndNavigationPreview = { draftHolder.clearDurableAndNavigationPreview() },
-        onIncludeIndependentRecipeLook = lookHolder::includeIndependentRecipeLook,
-        onRenderCommittedForNavigation = { draftHolder.renderCommittedForNavigation() },
-    )
-
-    private val adjustmentTransferHolder: EditorAdjustmentTransferStateHolder = EditorAdjustmentTransferStateHolder(
-        application, storage, editStore, adjustmentHistory, mutable, scope, strings,
-        dependencies.masterRecipesLoader, dependencies.adjustmentPreparationRunner,
-        storageRelease.releaserFor("adjustmentPreparationQueue"), { disposed }, { sourceRevision }, { editRevision },
-        { id -> collectionHolder.photo(id) }, { collectionHolder.state.value.photos },
-        { target -> collectionHolder.validate(target) }, { id, changed -> collectionHolder.synchronized(id, changed) },
-        { collectionHolder.releaseDeferred() }, { work, completed -> commitAdjustments(work, completed = completed) },
-        { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        { hslHolder.clear(); wbHolder.clear() }, { processingMigrationHolder.cancel(skipCurrentSource = true) },
-        { processingMigrationHolder.clearPendingReset() }, { editRevision += 1 },
-        lookHolder::includeIndependentRecipeLook, lookHolder::updateRecentLooks,
-        { draftHolder.renderCommittedForNavigation() },
-    )
-
-    private val batchHolder: EditorBatchStateHolder = EditorBatchStateHolder(
-        application, storage, scope, dependencies.batchProcessorFactory, dependencies.usageFactory, strings, mutable,
-        { disposed }, ::gpuMode, ::failure, { processingMigrationHolder.cancel(skipCurrentSource = true) },
-        queue::performAfterPending, adjustmentTransferHolder::finishClose, { collectionHolder.releaseDeferred() },
-        renderGateway::releaseDecodedRaster,
-    )
-
-    private val collectionHolder: EditorCollectionStateHolder = EditorCollectionStateHolder(
-        storage, scope, File(application.filesDir, "RawLab/BatchJobs"), mutable, editStore, adjustmentHistory,
-        strings, { disposed }, { sourceRevision }, adjustmentTransferHolder::hasActivePreparations,
-        { importRecoveryHolder.ownsFailedRecovery(it) }, adjustmentTransferHolder::targetIsCurrent,
-        batchHolder::hasActiveOrPending, batchHolder::retain, batchHolder::resumeAttached,
-        batchHolder::releaseEditorRasterForBatch, { work, completed -> commitAdjustments(work, completed = completed) },
-        ::importPhoto, ::capturePresetAdjustments, adjustmentTransferHolder::cancelInteraction,
-        { settings, interactive -> previewCoordinator.edit(settings, interactive) },
-        ::applyDraft, ::discardDraft, ::retrySave, { processingMigrationHolder.clearPendingReset() },
-        { editRevision += 1 }, lookHolder::includeIndependentRecipeLook,
-        { draftHolder.renderCommittedForNavigation() },
-    )
-
-    private val importRecoveryHolder: EditorImportRecoveryStateHolder = EditorImportRecoveryStateHolder(
-        mutable, editStore, draftStore, strings, { disposed }, ::gpuMode, ::failure,
-        collectionHolder::photo, collectionHolder::owns, collectionHolder::releaseDeferred,
-        adjustmentTransferHolder::cancelInteraction,
-        { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        onBeforeStartImport = {
-            adjustmentTransferHolder.closeQuickPresets()
-            sourceRevision += 1
-            adjustmentTransferHolder.closeOperation()
-            draftHolder.resetForImport()
-        },
-        onSubmitImport = { work -> currentRevision = submitRender(work) },
-        onAcceptHistorySource = adjustmentHistory::acceptSource,
-        onCollectionOpened = collectionHolder::opened,
-        onIncludeIndependentRecipeLook = lookHolder::includeIndependentRecipeLook,
-        onCommitAdjustments = { work, completed -> commitAdjustments(work, completed = completed) },
-    )
-
-    private val draftHolder: EditorDraftStateHolder = EditorDraftStateHolder(
-        mutable, draftStore, scope, strings, dependencies.uptimeMillis, dependencies.previewResizedDelayMs,
-        dependencies.masterRecipesLoader, dependencies.uncroppedGeometrySize, { disposed },
-        { sourceRevision }, { editRevision }, { currentRevision }, { previewLongEdge }, { previewLongEdge = it },
-        ::gpuMode, { hdrHolder.cameraHDRPreflightPending }, { quickPreset.value.phase == QuickPresetPhase.PREPARING },
-        adjustmentTransferHolder::cancelQuickPreset, hslHolder::cancel, hslHolder::clear,
-        { processingMigrationHolder.clearPendingReset() }, { processingMigrationHolder.clearDeferredPreview() },
-        { editRevision += 1 }, { work -> submitRender(work).also { currentRevision = it } },
-        { photo, edits, completed -> previewCoordinator.persist(photo, edits, completed = completed) },
-        { settings, interactive, clearMigration -> previewCoordinator.edit(settings, interactive, clearMigration) },
-        wbHolder::cancel, wbHolder::clear,
-    )
-
-    private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(
-        mutable, scope, strings, editStore, adjustmentHistory, previewCache, dependencies.saveNoticeFadeDelayMs,
-        dependencies.recordUsage, { disposed }, { editorActive }, { editorActivationRevision },
-        { sourceRevision }, { editRevision }, { currentRevision }, { previewLongEdge }, { previewLongEdge = it },
-        { editRevision += 1 }, { work -> submitRender(work).also { currentRevision = it } },
-        { work, completed -> commitAdjustments(work, completed = completed) },
-        { work, completed -> commitAdjustments(work, completed = completed) },
-        lookHolder, importRecoveryHolder, hslHolder, hdrHolder, exportHolder,
-        processingMigrationHolder, adjustmentTransferHolder, collectionHolder, batchHolder, draftHolder, ::failure,
-        { scheduleDetailIfNeeded() },
-        ::handleDetailAccepted,
-        wbHolder,
-    )
+    private val memoryCallbacks = object : ComponentCallbacks2 {
+        override fun onTrimMemory(level: Int) = viewport.reclaimMemory(level, keepLastRequest = true)
+        override fun onConfigurationChanged(newConfig: Configuration) = Unit
+        @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
+        override fun onLowMemory() = viewport.reclaimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, keepLastRequest = true)
+    }
 
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
     val canUndoAdjustment get() = mutable.value.photo?.identity?.let { adjustmentHistory.session?.canUndoPhoto(it) } == true
@@ -320,17 +133,19 @@ class EditorViewModel internal constructor(
         set(value) { batchHolder.releaseEditorRasterOperation = value }
 
     init {
+        wireSessionActions()
+        appContext.registerComponentCallbacks(memoryCallbacks)
         scope.launch {
             state.map { it.rendering || it.operation != Operation.NONE || it.committingAdjustments }
                 .distinctUntilChanged().collect { previewCache.setForegroundBusy(photoPreviewOwner, it) }
         }
-        editStore.initialResult.let {
-            mutable.value = mutable.value.copy(saveState = it.state, saveError = it.formatMessage(strings))
+        session.editStore.initialResult.let {
+            mutable.value = mutable.value.copy(saveState = it.state, saveError = it.formatMessage(session.strings))
         }
-        renderGateway.setExportProgressListener { work, fraction ->
+        dependencies.renderGateway.setExportProgressListener { work, fraction ->
             dependencies.mainDelivery {
                 val current = mutable.value
-                if (!disposed && current.operation == Operation.EXPORT && work === latestRender) {
+                if (!session.disposed && current.operation == Operation.EXPORT && work === viewport.latestRender) {
                     mutable.value = current.copy(exportProgress = fraction.coerceIn(0f, 1f))
                 }
             }
@@ -340,409 +155,101 @@ class EditorViewModel internal constructor(
         systemPhotoHolder.restorePending()
     }
 
-    // 提交期单槽契约（k161 定性，勿改为"completed 后再解锁"或计数队列）：
-    private fun <T> commitAdjustments(work: () -> T, publishBeforeUnlock: Boolean = false, completed: (Result<T>) -> Unit) {
-        if (disposed || mutable.value.committingAdjustments) {
-            completed(Result.failure(AdjustmentTransferException(AdjustmentFailure.DRAFT)))
-            return
-        }
-        mutable.value = mutable.value.copy(committingAdjustments = true)
-        adjustmentQueue.submit(work) { result ->
-            scope.launch {
-                if (!disposed) {
-                    if (!publishBeforeUnlock) mutable.value = mutable.value.copy(committingAdjustments = false)
-                    try {
-                        completed(result)
-                    } finally {
-                        if (publishBeforeUnlock) {
-                            mutable.value = mutable.value.copy(committingAdjustments = false)
-                            processingMigrationHolder.resumeDeferredPreviewIfReady()
-                        }
-                        adjustmentTransferHolder.finishClose()
-                        collectionHolder.releaseDeferred()
-                    }
-                }
-            }
-        }
+    private fun wireSessionActions() = session.actions.apply {
+        submitRender = viewport::submitPreview
+        invalidateRender = viewport::invalidate
+        performAfterPendingRender = viewport::performAfterPending
+        scheduleDetailIfNeeded = viewport::scheduleDetailIfNeeded
+        handleDetailAccepted = viewport::handleDetailAccepted
+        edit = previewCoordinator::edit
+        persist = previewCoordinator::persist
+        renderDraft = draftHolder::renderDraft
+        renderCommittedForNavigation = draftHolder::renderCommittedForNavigation
+        updatePreviewSize = draftHolder::updatePreviewSize
+        cancelPreviewResize = draftHolder::cancelResize
+        clearDurablePreview = draftHolder::clearDurablePreview
+        clearDurableAndNavigationPreview = draftHolder::clearDurableAndNavigationPreview
+        fitGeometryDraft = draftHolder::fitGeometryDraft
+        consumeDurableMatch = draftHolder::consumeDurableMatch
+        consumeNavigationMatch = draftHolder::consumeNavigationMatch
+        restoreEditorDraft = draftHolder::restoreEditorDraft
+        resetDraftForImport = draftHolder::resetForImport
+        requestedPreviewLongEdge = draftHolder::requestedPreviewLongEdge
+        draftRevision = draftHolder::draftRevision
+        incrementDraftRevision = draftHolder::incrementDraftRevision
+        hasPreviewResizePending = draftHolder::hasResizePending
+        interactiveEdge = draftHolder::interactiveEdge
+        changeDraft = draftHolder::changeDraft
+        failedDraftSave = draftHolder::failedDraftSave
+        applyDraft = draftHolder::applyDraft
+        discardDraft = draftHolder::discardDraft
+        retrySave = previewCoordinator::retrySave
+        preserveEditorDraft = draftHolder::preserveEditorDraft
+        includeIndependentRecipeLook = lookHolder::includeIndependentRecipeLook
+        updateRecentLooks = lookHolder::updateRecentLooks
+        clearPendingResetMigration = processingMigrationHolder::clearPendingReset
+        scheduleResetClear = processingMigrationHolder::scheduleResetClear
+        shouldClearMigrationOnPersist = processingMigrationHolder::shouldClearOnPersist
+        clearDeferredMigrationPreview = processingMigrationHolder::clearDeferredPreview
+        startMigrationIfNeeded = processingMigrationHolder::startIfNeeded
+        cancelMigration = processingMigrationHolder::cancel
+        resumeDeferredMigrationPreviewIfReady = processingMigrationHolder::resumeDeferredPreviewIfReady
+        onSourceRevisionChanged = processingMigrationHolder::onSourceRevisionChanged
+        onEditRevisionChanged = processingMigrationHolder::onEditRevisionChanged
+        cancelHslTarget = hslHolder::cancel
+        clearHslTarget = hslHolder::clear
+        recordHslAcceptedPreview = hslHolder::recordAcceptedPreview
+        acceptedHslPreviewRequest = hslHolder::acceptedPreviewRequest
+        isHslWaiting = { hslHolder.isWaiting }
+        acceptHslProbe = hslHolder::accept
+        cancelWbProbe = wbHolder::cancel
+        clearWbProbe = wbHolder::clear
+        recordWbAcceptedPreview = wbHolder::recordAcceptedPreview
+        isWbWaiting = { wbHolder.isWaiting }
+        acceptWbProbe = wbHolder::accept
+        cancelQuickPreset = adjustmentTransferHolder::cancelQuickPreset
+        closeQuickPresets = adjustmentTransferHolder::closeQuickPresets
+        closeAdjustmentOperation = adjustmentTransferHolder::closeOperation
+        cancelAdjustmentInteraction = adjustmentTransferHolder::cancelInteraction
+        finishAdjustmentClose = adjustmentTransferHolder::finishClose
+        isQuickPresetPreparing = { quickPreset.value.phase == QuickPresetPhase.PREPARING }
+        hasActiveAdjustmentPreparations = adjustmentTransferHolder::hasActivePreparations
+        adjustmentTargetIsCurrent = adjustmentTransferHolder::targetIsCurrent
+        collectionPhoto = collectionHolder::photo
+        collectionTargets = { collectionHolder.state.value.photos }
+        validateCollectionTarget = collectionHolder::validate
+        onCollectionSynchronized = collectionHolder::synchronized
+        collectionOpened = collectionHolder::opened
+        collectionOwns = collectionHolder::owns
+        releaseDeferredCollections = collectionHolder::releaseDeferred
+        cancelCollectionExport = collectionHolder::cancelExport
+        ownsFailedImportRecovery = importRecoveryHolder::ownsFailedRecovery
+        hasActiveOrPendingBatch = batchHolder::hasActiveOrPending
+        retainBatch = batchHolder::retain
+        resumeAttachedBatch = batchHolder::resumeAttached
+        releaseEditorRasterForBatch = batchHolder::releaseEditorRasterForBatch
+        cancelBatchForBackground = batchHolder::cancelForBackground
+        importPhoto = importRecoveryHolder::importPhoto
+        capturePresetAdjustments = adjustmentTransferHolder::capturePreset
+        isCameraHDRPreflightPending = { hdrHolder.cameraHDRPreflightPending }
+        onRenderSubmittedForHdr = hdrHolder::onRenderSubmitted
+        onRenderResultForHdr = hdrHolder::onRenderResult
+        onCameraHDRPreflight = hdrHolder::onCameraHDRPreflight
+        handleX3fFailure = importRecoveryHolder::handleX3fFailure
+        handleUnusableFailure = importRecoveryHolder::handleUnusableFailure
+        handleMissingLook = importRecoveryHolder::handleMissingLook
+        completePendingImport = importRecoveryHolder::completePendingImport
+        releasePreviousPhoto = importRecoveryHolder::releasePreviousPhoto
+        clearPendingImport = importRecoveryHolder::clearPendingImport
+        retryX3fIfPresent = importRecoveryHolder::retryX3fIfPresent
+        onExportCompleted = exportHolder::onExportCompleted
+        onLateExportCompleted = exportHolder::onLateExportCompleted
+        fadeSaveNotice = previewCoordinator::fadeSaveNotice
+        setEditorActive = ::setEditorActive
     }
 
-    private fun submitRender(work: Work): Long {
-        if (work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe) {
-            clearDetailState(keepRequest = work is Work.Preview && !work.importing)
-        }
-        if (work !is Work.DetailPreview) {
-            if (work !is Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
-            if (work !is Work.WbProbe && wbHolder.isWaiting) wbHolder.clear()
-            hdrHolder.onRenderSubmitted(work)
-        }
-        val continuesInteraction = latestRender?.canFinishPreviewBefore(work) == true
-        if (work !is Work.DetailPreview && work !is Work.HslProbe && work !is Work.WbProbe) {
-            latestRender = work
-        }
-        return queue.submit(work).also { submitted ->
-            if (work is Work.DetailPreview) {
-                inFlightDetailTileKey = work.tileKey
-                detailRevisions.add(submitted)
-                detailRevisions.removeAll { it < submitted - 32 }
-            } else {
-                inFlightDetailTileKey = null
-            }
-            if (!continuesInteraction && work !is Work.DetailPreview) progressivePreviewFloor = submitted
-        }
-    }
-
-    private fun invalidateRender(): Long {
-        clearDetailState(keepRequest = false)
-        latestRender = null
-        return queue.invalidate().also { progressivePreviewFloor = it }
-    }
-
-    private data class DetailTilePlan(
-        val visible: List<DetailTileSpec>,
-        val desired: List<DetailTileSpec>,
-    )
-
-    private fun detailTileBytes(overlay: PreviewDetailOverlay): Long {
-        val single = overlay.pixelWidth.toLong().coerceAtLeast(1L) * overlay.pixelHeight.toLong().coerceAtLeast(1L) * 4L
-        return if (overlay.neutral != null && overlay.neutral !== overlay.result) single * 2L else single
-    }
-
-    private fun estimatedDetailTileBytes(spec: DetailTileSpec, includeNeutral: Boolean): Long {
-        val edge = spec.maxOutputLongEdge.toLong().coerceAtLeast(1L)
-        val single = edge * edge * 4L
-        return if (includeNeutral) single * 2L else single
-    }
-
-    private fun touchDetailTiles(orderedSpecs: List<DetailTileSpec>) {
-        // 逆序访问以保证中心可见瓦片留在 access-order LinkedHashMap 尾部（最后被淘汰）。
-        for (spec in orderedSpecs.asReversed()) {
-            detailTileCache[spec.key]
-        }
-    }
-
-    private fun planDetailTiles(request: ViewportRoiRequest, preview: PreviewPair): DetailTilePlan {
-        val visible = detailTileSpecs(
-            request.visibleRect,
-            preview.nativeWidth,
-            preview.nativeHeight,
-            request.zoomScale,
-            request.baseScale,
-            overscanRing = 0,
-        )
-        if (visible.isEmpty()) return DetailTilePlan(emptyList(), emptyList())
-        if (dependencies.detailOverscanRing <= 0) return DetailTilePlan(visible, visible)
-        val all = detailTileSpecs(
-            request.visibleRect,
-            preview.nativeWidth,
-            preview.nativeHeight,
-            request.zoomScale,
-            request.baseScale,
-            overscanRing = dependencies.detailOverscanRing,
-        )
-        val visibleKeys = visible.mapTo(HashSet(visible.size)) { it.key }
-        fun plannedTileBytes(spec: DetailTileSpec): Long {
-            val estimated = estimatedDetailTileBytes(spec, detailNeedsBefore)
-            val cached = detailTileCache[spec.key]?.let(::detailTileBytes) ?: 0L
-            return maxOf(estimated, cached)
-        }
-        val desired = ArrayList<DetailTileSpec>(all.size)
-        var plannedBytes = 0L
-        for (spec in visible) {
-            desired += spec
-            plannedBytes += plannedTileBytes(spec)
-        }
-        for (spec in all) {
-            if (spec.key in visibleKeys) continue
-            val tileBytes = plannedTileBytes(spec)
-            if (desired.size + 1 > DETAIL_TILE_MAX_COUNT || plannedBytes + tileBytes > DETAIL_TILE_MAX_BYTES) {
-                break
-            }
-            desired += spec
-            plannedBytes += tileBytes
-        }
-        return DetailTilePlan(visible, desired)
-    }
-
-    private fun syncDetailCacheRevision() {
-        if (detailTileSourceRevision != sourceRevision || detailTileEditRevision != editRevision) {
-            detailTileCache.clear()
-            detailTileCacheBytes = 0L
-            hdrDetailCache.clear()
-            detailTileSourceRevision = sourceRevision
-            detailTileEditRevision = editRevision
-        }
-    }
-
-    private fun sortedCachedDetailTiles(): List<PreviewDetailOverlay> =
-        detailTileCache.values.sortedWith(
-            compareByDescending<PreviewDetailOverlay> { it.tileKey?.level ?: 0 }
-                .thenBy { it.tileKey?.row ?: 0 }
-                .thenBy { it.tileKey?.col ?: 0 },
-        )
-
-    private fun detailTilesMatch(lhs: List<PreviewDetailOverlay>, rhs: List<PreviewDetailOverlay>): Boolean {
-        if (lhs.size != rhs.size) return false
-        for (i in lhs.indices) {
-            if (lhs[i].tileKey != rhs[i].tileKey ||
-                lhs[i].sourceRevision != rhs[i].sourceRevision ||
-                lhs[i].editRevision != rhs[i].editRevision ||
-                lhs[i].result !== rhs[i].result ||
-                lhs[i].neutral !== rhs[i].neutral
-            ) {
-                return false
-            }
-        }
-        return true
-    }
-
-    private fun tileNeedsRender(key: DetailTileKey): Boolean {
-        val cached = detailTileCache[key] ?: return true
-        return detailNeedsBefore && cached.neutral == null
-    }
-
-    private fun storeDetailTile(overlay: PreviewDetailOverlay, plan: DetailTilePlan) {
-        syncDetailCacheRevision()
-        val key = overlay.tileKey ?: return
-        detailTileCache.remove(key)?.let { old ->
-            detailTileCacheBytes = (detailTileCacheBytes - detailTileBytes(old)).coerceAtLeast(0L)
-        }
-        detailTileCache[key] = overlay
-        detailTileCacheBytes += detailTileBytes(overlay)
-
-        touchDetailTiles(plan.desired)
-        val visibleKeys = plan.visible.mapTo(HashSet(plan.visible.size)) { it.key }
-        val desiredKeys = plan.desired.mapTo(HashSet(plan.desired.size)) { it.key }
-        while (detailTileCacheBytes > DETAIL_TILE_MAX_BYTES || detailTileCache.size > DETAIL_TILE_MAX_COUNT) {
-            val victimKey = detailTileCache.keys.firstOrNull { it !in desiredKeys }
-                ?: detailTileCache.keys.firstOrNull { it !in visibleKeys }
-                ?: break
-            val removed = detailTileCache.remove(victimKey) ?: break
-            detailTileCacheBytes = (detailTileCacheBytes - detailTileBytes(removed)).coerceAtLeast(0L)
-        }
-    }
-
-    private fun storeHDRDetail(overlay: PreviewDetailOverlay) {
-        syncDetailCacheRevision()
-        hdrDetailCache.removeAll { it.normalizedRect == overlay.normalizedRect && it.pixelWidth == overlay.pixelWidth }
-        hdrDetailCache.add(overlay)
-        while (hdrDetailCache.size > 4) hdrDetailCache.removeAt(0)
-    }
-
-    private fun handleDetailAccepted(value: WorkResult.DetailPreview) {
-        inFlightDetailTileKey = null
-        val overlay = value.overlay ?: return
-        val req = value.request
-        if (req.sourceRevision != sourceRevision || req.editRevision != editRevision) return
-        if (overlay.tileKey != null) {
-            val activeRequest = lastDetailRequest
-            val preview = mutable.value.preview
-            val plan = if (activeRequest != null && preview != null) {
-                planDetailTiles(activeRequest, preview)
-            } else {
-                DetailTilePlan(emptyList(), emptyList())
-            }
-            storeDetailTile(overlay, plan)
-            if (activeRequest != null) {
-                val sorted = sortedCachedDetailTiles()
-                if (!detailTilesMatch(mutable.value.detailTiles, sorted) || mutable.value.detail !== overlay) {
-                    mutable.value = mutable.value.copy(detailTiles = sorted, detail = overlay)
-                }
-                val remaining = if (preview != null && preview.hdr == null) {
-                    plan.desired.firstOrNull { tileNeedsRender(it.key) }
-                } else null
-                if (remaining != null) {
-                    scheduleDetailWork(activeRequest, remaining, delayMs = 0L)
-                }
-            }
-            return
-        }
-        if (overlay.hdrResult != null) storeHDRDetail(overlay)
-        if (lastDetailRequest != null) {
-            mutable.value = mutable.value.copy(detail = overlay, detailTiles = emptyList())
-        }
-    }
-
-    private fun clearDetailState(keepRequest: Boolean = false) {
-        detailDebounceJob?.cancel()
-        detailDebounceJob = null
-        scheduledDetailTileKey = null
-        inFlightDetailTileKey = null
-        if (!keepRequest) lastDetailRequest = null
-        detailTileCache.clear()
-        detailTileCacheBytes = 0L
-        hdrDetailCache.clear()
-        if (mutable.value.detail != null || mutable.value.detailTiles.isNotEmpty()) {
-            mutable.value = mutable.value.copy(detail = null, detailTiles = emptyList())
-        }
-    }
-
-    fun setDetailNeedsBefore(needed: Boolean) {
-        if (disposed || detailNeedsBefore == needed) return
-        detailNeedsBefore = needed
-        if (needed && lastDetailRequest != null) {
-            updateDetailRequest(lastDetailRequest)
-        }
-    }
-
-    private fun scheduleDetailIfNeeded() {
-        val request = lastDetailRequest ?: return
-        if (disposed) return
-        val current = mutable.value
-        val preview = current.preview
-        if (preview != null && preview.hdr == null) {
-            syncDetailCacheRevision()
-            val plan = planDetailTiles(request, preview)
-            if (plan.desired.isNotEmpty()) {
-                val firstMissing = plan.desired.firstOrNull { tileNeedsRender(it.key) } ?: return
-                scheduleDetailWork(request, firstMissing, dependencies.detailDebounceDelayMs)
-                return
-            }
-        }
-        scheduleDetailWork(request, tileSpec = null, delayMs = dependencies.detailDebounceDelayMs)
-    }
-
-    private fun scheduleDetailWork(
-        request: ViewportRoiRequest,
-        tileSpec: DetailTileSpec?,
-        delayMs: Long,
-    ) {
-        if (disposed) return
-        detailDebounceJob?.cancel()
-        scheduledDetailTileKey = tileSpec?.key
-        detailDebounceJob = scope.launch {
-            if (delayMs > 0L) delay(delayMs)
-            detailDebounceJob = null
-            scheduledDetailTileKey = null
-            if (disposed) return@launch
-            val current = mutable.value
-            val photo = current.photo ?: return@launch
-            val preview = current.preview ?: return@launch
-            if (!current.controlsEnabled || !current.exact || current.rendering ||
-                current.previewResizePending || current.operation != Operation.NONE ||
-                current.draft?.group == AdjustmentGroup.GEOMETRY || hslHolder.isWaiting || wbHolder.isWaiting
-            ) {
-                return@launch
-            }
-            val effectiveRoi = if (tileSpec != null) {
-                request.copy(
-                    visibleRect = tileSpec.rect,
-                    overscanRect = tileSpec.rect,
-                    maxOutputLongEdge = tileSpec.maxOutputLongEdge,
-                )
-            } else {
-                val edgeLimit = if (preview.hdr != null) minOf(1280, request.maxOutputLongEdge) else request.maxOutputLongEdge
-                if (hdrDetailCache.any {
-                    it.sourceRevision == sourceRevision &&
-                    it.editRevision == editRevision &&
-                    it.covers(request.visibleRect, request.zoomScale, edgeLimit)
-                }) {
-                    return@launch
-                }
-                request
-            }
-            val baseResultHeadroom = preview.hdr?.result?.statistics?.headroom ?: 0f
-            val baseNeutralHeadroom = preview.hdr?.neutral?.statistics?.headroom ?: 0f
-            currentRevision = submitRender(
-                Work.DetailPreview(
-                    photo = photo,
-                    edits = current.visibleEdits,
-                    roi = effectiveRoi,
-                    gpuMode = gpuMode(),
-                    sourceRevision = sourceRevision,
-                    editRevision = editRevision,
-                    baseResultHeadroom = baseResultHeadroom,
-                    baseNeutralHeadroom = baseNeutralHeadroom,
-                    includeNeutral = detailNeedsBefore,
-                    tileKey = tileSpec?.key,
-                )
-            )
-        }
-    }
-
-    fun updateDetailRequest(request: ViewportRoiRequest?) {
-        if (disposed) return
-        if (request == null) {
-            detailDebounceJob?.cancel()
-            detailDebounceJob = null
-            scheduledDetailTileKey = null
-            lastDetailRequest = null
-            if (mutable.value.detail != null || mutable.value.detailTiles.isNotEmpty()) {
-                mutable.value = mutable.value.copy(detail = null, detailTiles = emptyList())
-            }
-            return
-        }
-        lastDetailRequest = request
-        val current = mutable.value
-        val preview = current.preview
-        if (preview != null && preview.hdr == null) {
-            syncDetailCacheRevision()
-            if (com.rawlab.android.editor.canvas.detailTileLevel(request.zoomScale, request.baseScale) == null) {
-                detailDebounceJob?.cancel()
-                detailDebounceJob = null
-                scheduledDetailTileKey = null
-                return
-            }
-            val plan = planDetailTiles(request, preview)
-            if (plan.desired.isNotEmpty()) {
-                touchDetailTiles(plan.desired)
-                val cached = sortedCachedDetailTiles()
-                if (cached.isNotEmpty() && !detailTilesMatch(current.detailTiles, cached)) {
-                    mutable.value = current.copy(detailTiles = cached, detail = cached.last())
-                }
-                val missing = plan.desired.filter { tileNeedsRender(it.key) }
-                if (missing.isEmpty()) {
-                    detailDebounceJob?.cancel()
-                    detailDebounceJob = null
-                    scheduledDetailTileKey = null
-                    return
-                }
-                val missingKeys = missing.mapTo(HashSet()) { it.key }
-                if (inFlightDetailTileKey != null && inFlightDetailTileKey in missingKeys) {
-                    return
-                }
-                val nextSpec = missing.first()
-                if (detailDebounceJob?.isActive == true && scheduledDetailTileKey == nextSpec.key) {
-                    return
-                }
-                scheduleDetailWork(request, nextSpec, dependencies.detailDebounceDelayMs)
-                return
-            }
-        }
-        syncDetailCacheRevision()
-        val edgeLimit = if (preview?.hdr != null) minOf(1280, request.maxOutputLongEdge) else request.maxOutputLongEdge
-        val hitIdx = hdrDetailCache.indexOfLast {
-            it.sourceRevision == sourceRevision &&
-            it.editRevision == editRevision &&
-            it.covers(request.visibleRect, request.zoomScale, edgeLimit)
-        }
-        if (hitIdx >= 0) {
-            val hit = hdrDetailCache.removeAt(hitIdx)
-            hdrDetailCache.add(hit)
-            detailDebounceJob?.cancel()
-            detailDebounceJob = null
-            scheduledDetailTileKey = null
-            if (current.detail !== hit || current.detailTiles.isNotEmpty()) {
-                mutable.value = current.copy(detail = hit, detailTiles = emptyList())
-            }
-            return
-        }
-        scheduleDetailIfNeeded()
-    }
-
-    private fun gpuMode() = if (mutable.value.gpuEnabled) NativeProcessor.AUTO else NativeProcessor.CPU
-    private fun failure(error: Throwable): String {
-        com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
-            operation = "editor",
-            stage = "renderOrExportFailure",
-            error = error,
-        )
-        return when {
-            error is OutOfMemoryError -> strings.text(R.string.memory_error)
-            error is com.rawlab.android.engine.NativeProcessingException && error.isForceGpuUnsupported ->
-                strings.text(R.string.force_gpu_unsupported)
-            else -> strings.text(R.string.process_error) + "\n" + (error.message ?: error.javaClass.simpleName)
-        }
-    }
+    fun setDetailNeedsBefore(needed: Boolean) = viewport.setCompareBefore(needed)
+    fun updateDetailRequest(request: ViewportRoiRequest?) = viewport.updateViewport(request)
 
     fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) = systemPhotoHolder.receive(uris, requestID)
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)
@@ -751,7 +258,7 @@ class EditorViewModel internal constructor(
         hslHolder.setEnabled(enabled)
     }
     fun setHslTargetAxis(axis: Int) = hslHolder.setAxis(axis)
-    fun setCurveTargetChannel(channel: com.rawlab.android.settings.ToneCurveChannel) = hslHolder.setCurveChannel(channel)
+    fun setCurveTargetChannel(channel: ToneCurveChannel) = hslHolder.setCurveChannel(channel)
     fun beginHslTarget(x: Float, y: Float, keyDelta: Float? = null) = hslHolder.begin(x, y, keyDelta)
     fun moveHslTarget(delta: Float) = hslHolder.move(delta)
     fun endHslTarget() = hslHolder.end()
@@ -811,8 +318,8 @@ class EditorViewModel internal constructor(
     fun prepareReset(scope: EditorResetScope): EditorResetPreparation = draftHolder.prepareReset(scope)
     fun commitReset(prepared: PreparedEditorReset): Boolean = draftHolder.commitReset(prepared)
     fun setEditorActive(active: Boolean) {
-        if (editorActive != active) editorActivationRevision += 1
-        editorActive = active
+        if (session.editorActive != active) session.activationRevision += 1
+        session.editorActive = active
         if (!active) processingMigrationHolder.cancel(skipCurrentSource = true)
         else {
             processingMigrationHolder.resumeDeferredPreviewIfReady()
@@ -835,7 +342,7 @@ class EditorViewModel internal constructor(
         adjustmentTransferHolder.acceptOutcomes(results, cachedTargets, expectedSourceToken)
     fun copyAdjustments(scope: AdjustmentScope): AdjustmentPayload? = adjustmentTransferHolder.copy(scope)
     fun capturePresetAdjustments(scope: AdjustmentScope, completed: (Result<AdjustmentPayload>) -> Unit) =
-        adjustmentTransferHolder.capturePreset(scope, { work, done -> commitAdjustments(work, completed = done) }, completed)
+        adjustmentTransferHolder.capturePreset(scope, completed)
     fun previewAdjustmentPayload(scope: AdjustmentScope): Result<AdjustmentPayload> = adjustmentTransferHolder.previewPayload(scope)
     fun adjustmentSummaryLookName(kind: String, id: String): String? = adjustmentTransferHolder.summaryLookName(kind, id)
     fun prepareAdjustmentPaste(payload: AdjustmentPayload, uris: List<Uri>,
@@ -856,12 +363,9 @@ class EditorViewModel internal constructor(
     fun beginExportDestinationPick() = exportHolder.beginExportDestinationPick()
     fun returnToExportOptions() = exportHolder.returnToExportOptions()
     fun cancelExport() = exportHolder.cancelExport()
-    fun export(
-        destination: Uri?,
-        format: ExportFormat,
-        longEdge: Int? = null,
-        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
-    ) = exportHolder.export(destination, format, longEdge, outputSharpening)
+    fun export(destination: Uri?, format: ExportFormat, longEdge: Int? = null,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF) =
+        exportHolder.export(destination, format, longEdge, outputSharpening)
     fun dismissMessage() { mutable.value = mutable.value.copy(message = null) }
 
     fun addCollectionPhotos(uris: List<Uri>) = collectionHolder.addPhotos(uris)
@@ -878,35 +382,34 @@ class EditorViewModel internal constructor(
     fun captureCollectionSynchronization(scope: AdjustmentScope, completed: (CollectionSynchronization?) -> Unit) =
         collectionHolder.captureSynchronization(scope, completed)
     fun prepareCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF,
         completed: (CollectionExportReview?) -> Unit) = collectionHolder.prepareExport(skipping, format, longEdge, destination, completed, outputSharpening)
     fun freezeCollectionExport(review: CollectionExportReview, completed: (Boolean) -> Unit) =
         collectionHolder.freezeExport(review, completed)
     fun cancelCollectionExport() = collectionHolder.cancelExport()
     fun startCollectionExport(skipping: Set<String>, format: ExportFormat, longEdge: Int?, destination: Uri?,
-        outputSharpening: com.rawlab.android.format.OutputSharpening = com.rawlab.android.format.OutputSharpening.OFF,
+        outputSharpening: OutputSharpening = OutputSharpening.OFF,
         completed: (Boolean) -> Unit = {}) = collectionHolder.startExport(skipping, format, longEdge, destination, outputSharpening, completed)
 
     fun beginBatch() = batchHolder.beginBatch()
     fun resumeBatch(job: BatchJob) = batchHolder.resumeBatch(job)
     fun closeBatch() = batchHolder.closeBatch()
-    fun onBackground() = previewCoordinator.onBackground(::setEditorActive)
+    fun onBackground() = previewCoordinator.onBackground()
 
     override fun onCleared() {
+        appContext.unregisterComponentCallbacks(memoryCallbacks)
         draftHolder.preserveEditorDraft()
         previewCache.setForegroundBusy(photoPreviewOwner, false)
         previewCache.close()
         processingMigrationHolder.cancel()
         importRecoveryHolder.clearAll()
-        disposed = true
+        session.disposed = true
         adjustmentTransferHolder.onDisposed()
         draftHolder.cancelResize()
-        detailDebounceJob?.cancel()
-        detailDebounceJob = null
         batchHolder.dispose()
         collectionHolder.close(storageRelease.releaserFor("collections"))
         lookHolder.close()
-        queue.close()
+        viewport.close()
         adjustmentQueue.close()
         adjustmentTransferHolder.close()
         processingMigrationHolder.close()

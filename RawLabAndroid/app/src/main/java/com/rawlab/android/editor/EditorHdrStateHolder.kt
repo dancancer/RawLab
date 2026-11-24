@@ -3,7 +3,6 @@ package com.rawlab.android.editor
 import android.net.Uri
 import com.rawlab.android.R
 import com.rawlab.android.adjustments.AdjustmentField
-import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.adjustments.AdjustmentTransfer
 import com.rawlab.android.adjustments.AdjustmentTransferContext
 import com.rawlab.android.adjustments.hdrLook
@@ -14,38 +13,22 @@ import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
-import com.rawlab.android.settings.HDRCameraProfile
-import com.rawlab.android.settings.HDRLookSettings
 import com.rawlab.android.settings.withHDRMode
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.File
 
 internal class EditorHdrStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val scope: CoroutineScope,
-    private val ioDispatcher: CoroutineDispatcher,
-    private val strings: EditorStrings,
-    private val hdrLookDirectory: () -> File,
-    private val importHDRLook: (Uri) -> HDRLookSettings,
-    private val installHDRSilver: () -> HDRLookSettings,
-    private val loadHDRSilverMaster: () -> AdjustmentPayload,
-    private val importHDRCameraProfile: (Uri) -> HDRCameraProfile,
-    private val isDisposed: () -> Boolean,
-    private val currentSourceRevision: () -> Long,
-    private val currentEditRevision: () -> Long,
-    private val currentDraftRevision: () -> Long,
-    private val currentPreviewLongEdge: () -> Int,
-    private val gpuMode: () -> Int,
-    private val onEdit: (EditSettings) -> Unit,
-    private val onSubmitPreflight: (Work.CameraHDRPreflight) -> Unit,
+    private val session: EditorDocumentSession,
 ) {
+    private val mutable get() = session.mutable
+    private val scope get() = session.scope
+    private val ioDispatcher get() = session.dependencies.ioDispatcher
+    private val strings get() = session.strings
+    private val deps get() = session.dependencies
+
     var cameraHDRPreflightPending: Boolean = false
         private set
     private var pendingHDRLookImport: Triple<Long, Long, Long>? = null
@@ -64,12 +47,12 @@ internal class EditorHdrStateHolder(
         val request = value.request
         val current = mutable.value
         if (current.photo?.identity == request.photo.identity &&
-            currentSourceRevision() == request.sourceRevision &&
+            session.sourceRevision == request.sourceRevision &&
             current.edits == request.before &&
             current.operation == Operation.NONE &&
             current.draft == null
         ) {
-            onEdit(request.edits)
+            session.actions.edit(request.edits, false, false)
         }
     }
 
@@ -78,21 +61,21 @@ internal class EditorHdrStateHolder(
         if (!current.controlsEnabled || !current.edits.isHDREditing ||
             (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)
         ) return false
-        pendingHDRLookImport = Triple(currentSourceRevision(), currentEditRevision(), currentDraftRevision())
+        pendingHDRLookImport = Triple(session.sourceRevision, session.editRevision, session.actions.draftRevision())
         return true
     }
 
     fun finishHDRLookImport(uri: Uri?) {
         val expected = pendingHDRLookImport
         pendingHDRLookImport = null
-        if (uri == null || expected != Triple(currentSourceRevision(), currentEditRevision(), currentDraftRevision())) return
-        applyHDRLook { _, target -> target.copy(hdr = target.hdr!!.withLook(importHDRLook(uri))) }
+        if (uri == null || expected != Triple(session.sourceRevision, session.editRevision, session.actions.draftRevision())) return
+        applyHDRLook { _, target -> target.copy(hdr = target.hdr!!.withLook(deps.hdrLookImporter(uri))) }
     }
 
     fun applyHDRSilver(master: Boolean) = applyHDRLook { photo, target ->
-        val look = installHDRSilver()
+        val look = deps.hdrSilverInstaller()
         if (master) {
-            val payload = loadHDRSilverMaster()
+            val payload = deps.hdrSilverMasterLoader()
             require(payload[AdjustmentField.HDR_LOOK]?.hdrLook() == look)
             AdjustmentTransfer.prepare(
                 payload,
@@ -102,7 +85,7 @@ internal class EditorHdrStateHolder(
                     photo.inputKind == PhotoInputKind.RAW,
                     sourceSupportsCameraHDR = photo.isCameraRawHDR,
                     sourceIsProRAW = photo.hdrSource?.isProRAW == true,
-                    hdrLookDirectory = hdrLookDirectory(),
+                    hdrLookDirectory = session.storage.hdrLookDirectory,
                 ),
             )
         } else target.copy(hdr = target.hdr!!.withLook(look))
@@ -114,7 +97,7 @@ internal class EditorHdrStateHolder(
         if (!current.controlsEnabled || !current.edits.isHDREditing ||
             (current.draft != null && current.draft.group != AdjustmentGroup.LOOK)
         ) return
-        val expected = Triple(currentSourceRevision(), currentEditRevision(), currentDraftRevision())
+        val expected = Triple(session.sourceRevision, session.editRevision, session.actions.draftRevision())
         mutable.value = current.copy(
             operation = Operation.IMPORT_LOOK,
             exportStep = SingleExportStep.NONE,
@@ -126,15 +109,15 @@ internal class EditorHdrStateHolder(
             runHDRLookImport(
                 { withContext(ioDispatcher) { prepare(photo, current.visibleEdits) } },
                 {
-                    expected == Triple(currentSourceRevision(), currentEditRevision(), currentDraftRevision()) &&
+                    expected == Triple(session.sourceRevision, session.editRevision, session.actions.draftRevision()) &&
                         mutable.value.operation == Operation.IMPORT_LOOK
                 },
             ) { imported ->
                 // 返回键已放弃本次导入时，迟到的结果不再改动界面。
-                if (isDisposed() || hdrLookJob !== self) return@runHDRLookImport
+                if (session.disposed || hdrLookJob !== self) return@runHDRLookImport
                 hdrLookJob = null
                 mutable.value = finishedHDRLook(imported)
-                imported.onSuccess { settings -> onEdit(settings) }
+                imported.onSuccess { settings -> session.actions.edit(settings, false, false) }
             }
         }
         hdrLookJob = job
@@ -171,7 +154,7 @@ internal class EditorHdrStateHolder(
             mutable.value = current.copy(error = strings.text(R.string.hdr_unsupported))
             return
         }
-        if (enabled && photo.isCameraRawHDR) preflightHDRCamera(photo, current, candidate) else onEdit(candidate)
+        if (enabled && photo.isCameraRawHDR) preflightHDRCamera(photo, current, candidate) else session.actions.edit(candidate, false, false)
     }
 
     fun applyHDRCameraDevelopment(development: HDRCameraDevelopmentSettings) {
@@ -199,7 +182,7 @@ internal class EditorHdrStateHolder(
             current.importingHDRCameraProfile || pendingHDRCameraProfileImport != null ||
             current.photo?.isCameraRawHDR != true || current.photo.hdrSource?.isProRAW == true
         ) return false
-        pendingHDRCameraProfileImport = currentSourceRevision() to currentEditRevision()
+        pendingHDRCameraProfileImport = session.sourceRevision to session.editRevision
         return true
     }
 
@@ -207,7 +190,7 @@ internal class EditorHdrStateHolder(
         val revision = pendingHDRCameraProfileImport
         pendingHDRCameraProfileImport = null
         if (uri == null || revision == null) return
-        if (revision != (currentSourceRevision() to currentEditRevision())) {
+        if (revision != (session.sourceRevision to session.editRevision)) {
             mutable.value = mutable.value.copy(message = strings.text(R.string.hdr_camera_profile_changed))
             return
         }
@@ -215,10 +198,10 @@ internal class EditorHdrStateHolder(
         scope.launch {
             try {
                 val imported = readHDRCameraProfile(
-                    { withContext(ioDispatcher) { importHDRCameraProfile(uri) } },
-                    { revision == (currentSourceRevision() to currentEditRevision()) && mutable.value.controlsEnabled },
+                    { withContext(ioDispatcher) { deps.hdrCameraProfileImporter(uri) } },
+                    { revision == (session.sourceRevision to session.editRevision) && mutable.value.controlsEnabled },
                 )
-                if (isDisposed()) return@launch
+                if (session.disposed) return@launch
                 imported.onSuccess { profile ->
                     val current = mutable.value
                     val photo = current.photo ?: return@onSuccess
@@ -231,7 +214,7 @@ internal class EditorHdrStateHolder(
                     else mutable.value = mutable.value.copy(error = strings.text(R.string.hdr_camera_profile_invalid))
                 }
             } finally {
-                if (!isDisposed()) mutable.value = mutable.value.copy(importingHDRCameraProfile = false)
+                if (!session.disposed) mutable.value = mutable.value.copy(importingHDRCameraProfile = false)
             }
         }
     }
@@ -239,14 +222,14 @@ internal class EditorHdrStateHolder(
     private fun preflightHDRCamera(photo: ImportedPhoto, current: EditorState, candidate: EditSettings) {
         // Preserve the committed frame and saved settings until decoding succeeds.
         mutable.value = current.copy(rendering = true, error = null)
-        onSubmitPreflight(
+        session.actions.submitRender(
             Work.CameraHDRPreflight(
                 photo,
                 current.edits,
                 candidate,
-                gpuMode(),
-                currentSourceRevision(),
-                currentPreviewLongEdge(),
+                session.gpuMode(),
+                session.sourceRevision,
+                session.previewLongEdge,
             ),
         )
     }

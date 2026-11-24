@@ -13,6 +13,8 @@ import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageEvent
 import com.rawlab.android.analytics.setup.UsageAnalyticsRegistry
+import com.rawlab.android.editor.canvas.NativeViewportTilePlanner
+import com.rawlab.android.editor.canvas.ViewportTilePlanner
 import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.LookResult
@@ -160,6 +162,7 @@ internal class EditorDependencies(
     val curveParametricSampler: (com.rawlab.android.settings.ToneCurveSettings, Double) -> Double = { settings, x ->
         com.rawlab.android.engine.ToneCurveSampling.sampleParametricValue(settings, x)
     },
+    val viewportTilePlanner: ViewportTilePlanner = NativeViewportTilePlanner,
 ) {
     companion object {
         fun production(

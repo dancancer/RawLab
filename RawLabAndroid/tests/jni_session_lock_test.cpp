@@ -80,6 +80,18 @@ jint JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeOv
     JNIEnv*, jclass, jint, jint, jint, jint);
 jboolean JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeRenderOverlay(
     JNIEnv*, jclass, jobject, jobject, jint);
+jboolean JNICALL Java_com_rawlab_android_engine_NativeProcessor_nativeSupportsFastFullResGpu(
+    JNIEnv*, jobject, jlong, jint, jint, jint, jint, jstring, jstring);
+jint JNICALL Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel(
+    JNIEnv*, jclass, jdouble, jdouble);
+jdoubleArray JNICALL Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidTiles(
+    JNIEnv*, jclass, jint, jint, jint, jint, jdouble, jdouble, jdouble, jdouble, jdouble, jdouble);
+jdoubleArray JNICALL Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel0Grid(
+    JNIEnv*, jclass, jint, jint, jint);
+jboolean JNICALL Java_com_rawlab_android_editor_canvas_ViewportNative_nativeDetailOverlayCovers(
+    JNIEnv*, jclass, jint, jint, jint, jint, jint,
+    jdouble, jdouble, jdouble, jdouble,
+    jdouble, jdouble, jdouble, jdouble, jdouble);
 }
 
 namespace {
@@ -815,6 +827,12 @@ float gMockEffectiveWbTemp = 5500.0f;
 float gMockEffectiveWbTint = 0.0f;
 bool gLastProcessSawViewportRoi = false;
 bool gInjectNonFiniteSdr = false;
+sony2fuji_fast_gpu_query_v1 gCapturedFastGpuQuery{};
+std::string gCapturedFastGpuInputPath;
+std::string gCapturedFastGpuEditJson;
+bool gCapturedFastGpuEditJsonPresent = false;
+int32_t gMockFastGpuSupported = 1;
+sony2fuji_status gMockFastGpuStatus = SONY2FUJI_STATUS_OK;
 
 void unblockAllWaitersForCleanup() {
     std::lock_guard<std::mutex> lock(gCoreMutex);
@@ -915,6 +933,12 @@ void resetMocks() {
     gMockEffectiveWbTint = 0.0f;
     gLastProcessSawViewportRoi = false;
     gInjectNonFiniteSdr = false;
+    gCapturedFastGpuQuery = {};
+    gCapturedFastGpuInputPath.clear();
+    gCapturedFastGpuEditJson.clear();
+    gCapturedFastGpuEditJsonPresent = false;
+    gMockFastGpuSupported = 1;
+    gMockFastGpuStatus = SONY2FUJI_STATUS_OK;
 }
 
 class SessionCallScope {
@@ -1148,6 +1172,30 @@ sony2fuji_status sony2fuji_session_set_cancellation_callback(sony2fuji_session* 
     }
     gCoreCv.notify_all();
     return SONY2FUJI_STATUS_OK;
+}
+sony2fuji_status sony2fuji_session_supports_fast_full_res_gpu(
+    sony2fuji_session* s,
+    const sony2fuji_fast_gpu_query_v1* query,
+    const char* edit_state_json,
+    int32_t* out_supported) {
+    SessionCallScope scope(s);
+    if (out_supported) *out_supported = 0;
+    if (!query || !out_supported || query->version != SONY2FUJI_FAST_GPU_QUERY_V1_VERSION ||
+        query->struct_size < sizeof(sony2fuji_fast_gpu_query_v1)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (edit_state_json && !*edit_state_json) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    std::lock_guard<std::mutex> lock(gCoreMutex);
+    gCapturedFastGpuQuery = *query;
+    gCapturedFastGpuInputPath = query->input_path ? query->input_path : "";
+    gCapturedFastGpuEditJsonPresent = (edit_state_json != nullptr);
+    gCapturedFastGpuEditJson = edit_state_json ? edit_state_json : "";
+    if (gMockFastGpuStatus == SONY2FUJI_STATUS_OK) {
+        *out_supported = gMockFastGpuSupported;
+    }
+    return gMockFastGpuStatus;
 }
 sony2fuji_status sony2fuji_session_set_hdr_progress_callback(sony2fuji_session* s,
     sony2fuji_hdr_progress_callback cb, void* ctx) {
@@ -2853,6 +2901,107 @@ void testInspectionJniRoundTripAndPaddedBitmapHooks() {
     std::cout << "PASS: testInspectionJniRoundTripAndPaddedBitmapHooks" << std::endl;
 }
 
+void testViewportJniRoundTripAndSessionGuard() {
+    resetMocks();
+    LocalEnv env;
+
+    // 1. nativeSupportsFastFullResGpu SessionGuard + marshalling + null vs json + error handling
+    const jlong s = Java_com_rawlab_android_engine_NativeProcessor_nativeCreate(env.ptr(), nullptr, 1);
+    require(s > 0 && !consumeException().active, "Failed to create session for viewport JNI test");
+
+    gMockFastGpuSupported = 1;
+    jboolean ok = Java_com_rawlab_android_engine_NativeProcessor_nativeSupportsFastFullResGpu(
+        env.ptr(), nullptr, s, 0, 6000, 4000, 28000000, makeJString("photo.arw"), nullptr);
+    auto ex = consumeException();
+    require(ok == JNI_TRUE && !ex.active, "nativeSupportsFastFullResGpu succeeds with null editStateJson");
+    require(gCapturedFastGpuQuery.version == SONY2FUJI_FAST_GPU_QUERY_V1_VERSION &&
+            gCapturedFastGpuQuery.input_width == 6000 && gCapturedFastGpuQuery.input_height == 4000 &&
+            gCapturedFastGpuQuery.max_pixels == 28000000 && gCapturedFastGpuInputPath == "photo.arw" &&
+            !gCapturedFastGpuEditJsonPresent,
+        "nativeSupportsFastFullResGpu forwarded query fields and null JSON");
+
+    gMockFastGpuSupported = 0;
+    ok = Java_com_rawlab_android_engine_NativeProcessor_nativeSupportsFastFullResGpu(
+        env.ptr(), nullptr, s, 0, 6000, 4000, 12000000, nullptr,
+        makeJString(R"({"schema_version":17,"processing":{"family":"rawlab","version":3}})"));
+    ex = consumeException();
+    require(ok == JNI_FALSE && !ex.active, "nativeSupportsFastFullResGpu returns false when core reports unsupported");
+    require(gCapturedFastGpuEditJsonPresent && gCapturedFastGpuEditJson.find("schema_version") != std::string::npos,
+        "nativeSupportsFastFullResGpu forwarded explicit editStateJson");
+
+    ok = Java_com_rawlab_android_engine_NativeProcessor_nativeSupportsFastFullResGpu(
+        env.ptr(), nullptr, s, 0, -1, 4000, 12000000, nullptr, nullptr);
+    ex = consumeException();
+    require(ok == JNI_FALSE && ex.active && ex.className == "java/lang/IllegalArgumentException",
+        "nativeSupportsFastFullResGpu rejects negative dimensions with IllegalArgumentException");
+
+    Java_com_rawlab_android_engine_NativeProcessor_nativeDestroy(env.ptr(), nullptr, s);
+    ok = Java_com_rawlab_android_engine_NativeProcessor_nativeSupportsFastFullResGpu(
+        env.ptr(), nullptr, s, 0, 6000, 4000, 28000000, nullptr, nullptr);
+    ex = consumeException();
+    require(ok == JNI_FALSE && ex.active && ex.className == "java/lang/IllegalArgumentException",
+        "nativeSupportsFastFullResGpu rejects destroyed session via SessionGuard");
+
+    // 2. ViewportNative stateless math against REAL lutools viewport_pyramid.cpp + viewport_pyramid_c.cpp
+    const double baseScale = 1600.0 / 6000.0;
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel(
+                env.ptr(), nullptr, baseScale * 1.04, baseScale) == -1,
+        "nativePyramidLevel returns -1 below 1.05 * baseScale");
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel(
+                env.ptr(), nullptr, 0.45, baseScale) == 1,
+        "nativePyramidLevel selects level 1 at 0.45");
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel(
+                env.ptr(), nullptr, 1.0, baseScale) == 0,
+        "nativePyramidLevel selects level 0 at 1.0");
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel(
+                env.ptr(), nullptr, 0.5, 3072.0 / 8064.0) == 0,
+        "nativePyramidLevel jumps to level 0 for 48MP 3072px backing");
+
+    jdoubleArray edgeTiles = Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidTiles(
+        env.ptr(), nullptr, 6000, 4000, 1024, 0, 1.0, baseScale, 0.90, 0.85, 1.0, 1.0);
+    require(edgeTiles != nullptr && asFake(edgeTiles)->doubles.size() == 8, "Edge query returns 1 tile (8 doubles)");
+    const auto& ed = asFake(edgeTiles)->doubles;
+    require(static_cast<int>(ed[0]) == 0 && static_cast<int>(ed[1]) == 5 &&
+            static_cast<int>(ed[2]) == 3 && static_cast<int>(ed[3]) == 928,
+        "Edge tile (0,5,3) clamps maxOutputLongEdge to 928");
+
+    jdoubleArray visibleOnly = Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidTiles(
+        env.ptr(), nullptr, 6000, 4000, 1024, 0, 1.0, baseScale, 0.40, 0.35, 0.60, 0.65);
+    jdoubleArray withRing = Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidTiles(
+        env.ptr(), nullptr, 6000, 4000, 1024, 1, 1.0, baseScale, 0.40, 0.35, 0.60, 0.65);
+    require(visibleOnly != nullptr && withRing != nullptr, "Center tile queries succeed");
+    const size_t visCount = asFake(visibleOnly)->doubles.size() / 8;
+    const size_t ringCount = asFake(withRing)->doubles.size() / 8;
+    require(visCount > 0 && ringCount > visCount, "Overscan ring adds neighbor tiles strictly after visible tiles");
+    for (size_t i = 0; i < asFake(visibleOnly)->doubles.size(); ++i) {
+        require(std::abs(asFake(visibleOnly)->doubles[i] - asFake(withRing)->doubles[i]) < 1e-12,
+            "Overscan ring preserves visible prefix identically");
+    }
+
+    jdoubleArray grid = Java_com_rawlab_android_editor_canvas_ViewportNative_nativePyramidLevel0Grid(
+        env.ptr(), nullptr, 6000, 4000, 1024);
+    require(grid != nullptr && asFake(grid)->doubles.size() == 24 * 8,
+        "Level-0 grid for 6000x4000 @ 1024 produces 6x4=24 tiles");
+
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativeDetailOverlayCovers(
+                env.ptr(), nullptr, 1440, 2160, 6000, 4000, 0,
+                0.38, 0.23, 0.62, 0.77,
+                0.385, 0.235, 0.585, 0.685, 1.0) == JNI_TRUE,
+        "nativeDetailOverlayCovers returns true inside overscan with matching density");
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativeDetailOverlayCovers(
+                env.ptr(), nullptr, 1440, 2160, 6000, 4000, 0,
+                0.38, 0.23, 0.62, 0.77,
+                0.35, 0.235, 0.55, 0.685, 1.0) == JNI_FALSE,
+        "nativeDetailOverlayCovers returns false when panned outside tile");
+    require(Java_com_rawlab_android_editor_canvas_ViewportNative_nativeDetailOverlayCovers(
+                env.ptr(), nullptr, 1280, 853, 6000, 4000, 1280,
+                0.2, 0.2, 0.6, 0.6,
+                0.25, 0.25, 0.55, 0.55, 1.0) == JNI_TRUE,
+        "nativeDetailOverlayCovers honors capped maxOutputLongEdge");
+
+    std::cout << "PASS: testViewportJniRoundTripAndSessionGuard" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2882,6 +3031,7 @@ int main() {
         {"testHdrV9GradingV2AndWbProbe", testHdrV9GradingV2AndWbProbe},
         {"testNativeProcessRoiClearsViewportRoiForSubsequentProcess", testNativeProcessRoiClearsViewportRoiForSubsequentProcess},
         {"testInspectionJniRoundTripAndPaddedBitmapHooks", testInspectionJniRoundTripAndPaddedBitmapHooks},
+        {"testViewportJniRoundTripAndSessionGuard", testViewportJniRoundTripAndSessionGuard},
     };
     int failures = 0;
     for (const auto& c : cases) {

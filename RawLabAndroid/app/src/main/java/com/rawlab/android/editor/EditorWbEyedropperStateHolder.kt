@@ -13,12 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 internal class EditorWbEyedropperStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val currentSourceRevision: () -> Long,
-    private val currentRenderRevision: () -> Long,
-    private val onSubmitProbe: (Work.WbProbe) -> Long,
-    private val onApplyEdit: (EditSettings) -> Unit,
+    private val session: EditorDocumentSession,
 ) {
+    private val mutable get() = session.mutable
     private data class AcceptedPreview(
         val request: Work.Preview,
         val edits: EditSettings,
@@ -56,7 +53,7 @@ internal class EditorWbEyedropperStateHolder(
             return
         }
         val accepted = acceptedPreview
-        val revision = HslTargetRevision(currentSourceRevision(), currentRenderRevision())
+        val revision = HslTargetRevision(session.sourceRevision, session.currentRevision)
         if (accepted == null || accepted.request.photo != photo || accepted.revision.source != revision.source ||
             accepted.edits != current.visibleEdits
         ) {
@@ -66,7 +63,7 @@ internal class EditorWbEyedropperStateHolder(
         activeToken += 1
         val token = activeToken
         mutableState.value = probe.copy(x = x, y = y, waiting = true, notice = null)
-        onSubmitProbe(Work.WbProbe(accepted.request, current.visibleEdits, accepted.revision, token, x, y))
+        session.actions.submitRender(Work.WbProbe(accepted.request, current.visibleEdits, accepted.revision, token, x, y))
     }
 
     fun accept(result: WorkResult.WbProbe) {
@@ -75,7 +72,7 @@ internal class EditorWbEyedropperStateHolder(
         val current = mutable.value
         val photo = current.photo
         if (photo == null || photo != result.request.preview.photo ||
-            currentSourceRevision() != result.request.revision.source ||
+            session.sourceRevision != result.request.revision.source ||
             current.visibleEdits != result.request.before
         ) {
             mutableState.value = probe.copy(waiting = false, notice = WbProbeNotice.STALE)
@@ -104,7 +101,7 @@ internal class EditorWbEyedropperStateHolder(
             tint = tint,
         )
         mutableState.value = probe.copy(waiting = false, notice = null)
-        onApplyEdit(next)
+        session.actions.edit(next, false, false)
     }
 
     fun cancel() {

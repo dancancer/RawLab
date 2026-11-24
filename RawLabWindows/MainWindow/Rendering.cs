@@ -52,7 +52,7 @@ public partial class MainWindow
             RefreshPhotoInfo();
             BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BackendLabel.ToolTip=BackendLabel.Text;BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
-            var nextOpenRevision = Interlocked.Increment(ref openRevision);
+            var nextOpenRevision = persistence.AdvanceOpenRevision();
             embeddedScheduler.Submit(new(path, nextOpenRevision));PumpEmbedded();
             TrackOpenViewSource(path, nextOpenRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));
             EnsureLookWatch(lut);
@@ -208,7 +208,7 @@ public partial class MainWindow
                 Func<bool> shouldCancel = () =>
                     Volatile.Read(ref closing) ||
                     ticket.Id != scheduler.Revision ||
-                    Volatile.Read(ref openRevision) != w.OpenRevision;
+                    openRevision != w.OpenRevision;
                 if(w.Probe is {} probe) {
                     engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);

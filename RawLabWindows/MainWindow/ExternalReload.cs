@@ -7,16 +7,17 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private ExternalStoreWatcher? externalStoreWatcher;
-    private ExternalReloadBannerState externalReloadBanner = ExternalReloadBannerState.Empty;
-    private bool deferredExternalEditsCheck;
-    private bool deferredExternalReloadAccept;
 
     private bool HasUnsavedManualDraft =>
         editDirty || transform.Active || editGesture != null || interacting || editSaveTimer.IsEnabled ||
         HasPendingEditSaves || ParameterRows(AdjustmentPanel).Any(row => row.HasPendingInput);
 
-    private bool HasPendingEditSaves =>
-        pendingEditSaves.HasPending || editSaveQueue.HasPendingWork;
+    private bool HasPendingEditSaves => persistence.HasPendingSaves;
+
+    private (SavedEdit? CurrentUi, bool HasUnsavedManualDraft, (double Temperature, double Tint)? AsShot) CaptureExternalUiState() =>
+        (currentEditRecord != null ? new SavedEdit(currentEditRecord.Identity, settings.Capture(), CurrentLookIdentity()) : null,
+            HasUnsavedManualDraft,
+            settings.AsShot);
 
     private void StartExternalStoreWatcher()
     {
@@ -52,127 +53,46 @@ public partial class MainWindow
 
     private void FlushDeferredExternalEditsCheckIfNeeded()
     {
-        if (HasPendingEditSaves)
-            return;
-        if (deferredExternalReloadAccept)
-        {
-            deferredExternalReloadAccept = false;
-            deferredExternalEditsCheck = false;
-            ReloadExternalUpdate();
-            return;
-        }
-        if (!deferredExternalEditsCheck)
-            return;
-        deferredExternalEditsCheck = false;
-        HandleExternalEditsFileChange();
+        if (closing) return;
+        var reloadResult = persistence.FlushDeferredExternalReload(CaptureExternalUiState, () => PhotoPreviewReady(""));
+        ApplyExternalReloadResult(reloadResult);
     }
 
     private void HandleExternalEditsFileChange()
     {
         if (closing) return;
-        EditStore store;
-        try
-        {
-            store = editStore ?? new EditStore(appPaths.EditsDirectory);
-            editStore = store;
-        }
-        catch
-        {
-            return;
-        }
-        var editsPath = Path.GetFullPath(store.RegistryPath);
-        var currentStamp = PathStatStamp.Capture(editsPath);
-        if (store.LastWriteStamp is { } lastWrite && lastWrite == currentStamp)
-            return;
-
-        PhotoPreviewReady("");
-        if (file == null) return;
-
-        if (HasPendingEditSaves)
-        {
-            deferredExternalEditsCheck = true;
-            return;
-        }
-
-        PhotoEditState diskRecord;
-        try { diskRecord = store.ReadState(file); }
-        catch { return; }
-
-        EvaluateExternalEditsRecord(diskRecord, currentStamp);
+        var reloadResult = persistence.HandleExternalEditsChange(CaptureExternalUiState, () => PhotoPreviewReady(""));
+        ApplyExternalReloadResult(reloadResult);
     }
 
     internal void EvaluateExternalEditsRecord(PhotoEditState diskRecord, PathStatStamp? stamp = null)
     {
-        if (file == null || currentEditRecord == null) return;
-        if (HasPendingEditSaves)
-        {
-            deferredExternalEditsCheck = true;
-            return;
-        }
-        var currentUi = new SavedEdit(currentEditRecord.Identity, settings.Capture(), CurrentLookIdentity());
-        var evaluation = externalReloadBanner.Evaluate(
-            currentEditRecord,
-            currentUi,
-            diskRecord,
-            stamp,
-            HasUnsavedManualDraft,
-            HasPendingEditSaves,
-            settings.AsShot);
-
-        externalReloadBanner = evaluation.NextState;
-        RefreshExternalReloadBanner();
-
-        if (evaluation.Decision == ExternalReloadDecision.AutoReload)
-            ApplyExternalReloadRecord(diskRecord);
+        var (currentUi, hasManualDraft, asShot) = CaptureExternalUiState();
+        var reloadResult = persistence.EvaluateExternalEditsRecord(diskRecord, stamp, currentUi, hasManualDraft, asShot);
+        ApplyExternalReloadResult(reloadResult);
     }
 
     internal void ReloadExternalUpdate()
     {
-        if (HasPendingEditSaves)
-        {
-            deferredExternalEditsCheck = true;
-            deferredExternalReloadAccept = true;
-            return;
-        }
-        deferredExternalReloadAccept = false;
-        if (!externalReloadBanner.TryAcceptReload(HasPendingEditSaves, out var diskRecord) || diskRecord == null)
-            return;
-        externalReloadBanner = externalReloadBanner.AcceptReload();
-        RefreshExternalReloadBanner();
-
-        if (transform.Active)
-        {
-            transform.Cancel();
-            EndTransform();
-        }
-        CancelParameterInputs();
-        editSaveTimer.Stop();
-        editGesture = null;
-        interacting = false;
-        editDirty = false;
-        pendingMigrationReceiptClear = false;
-        ++editRevision;
-        ApplyExternalReloadRecord(diskRecord);
+        var reloadResult = persistence.RequestExternalReloadAccept();
+        ApplyExternalReloadResult(reloadResult, fromManualAccept: true);
     }
 
     internal void KeepManualDraftOnExternalUpdate()
     {
-        deferredExternalReloadAccept = false;
-        externalReloadBanner = externalReloadBanner.KeepManualDraft();
+        persistence.KeepManualDraft();
         RefreshExternalReloadBanner();
     }
 
     private void ClearExternalReloadOnSourceChange()
     {
-        deferredExternalEditsCheck = false;
-        deferredExternalReloadAccept = false;
-        externalReloadBanner = externalReloadBanner.ClearOnSourceChange();
+        persistence.ClearExternalReloadOnSourceChange();
         RefreshExternalReloadBanner();
     }
 
     private void RefreshExternalReloadBanner()
     {
-        ExternalReloadBanner.Visibility = externalReloadBanner.Visible ? Visibility.Visible : Visibility.Collapsed;
+        ExternalReloadBanner.Visibility = persistence.ExternalReloadBanner.Visible ? Visibility.Visible : Visibility.Collapsed;
         RefreshHDRPresentation();
     }
 
@@ -180,20 +100,31 @@ public partial class MainWindow
 
     private void KeepManualDraftClicked(object sender, RoutedEventArgs e) => KeepManualDraftOnExternalUpdate();
 
-    private void ApplyExternalReloadRecord(PhotoEditState diskRecord)
+    private void ApplyExternalReloadResult(ExternalReloadResult reloadResult, bool fromManualAccept = false)
     {
-        if (file == null || currentEditRecord == null) return;
-        var outcome = TransferSession.AdoptExternalReload(currentEditRecord, diskRecord);
-        if (outcome.Status != AdjustmentStatus.Applied)
+        RefreshExternalReloadBanner();
+        if (reloadResult.Action != ExternalReloadAction.AutoReload || reloadResult.AdoptedRecord == null)
             return;
+
+        if (fromManualAccept || reloadResult.FromManualAccept)
+        {
+            if (transform.Active)
+            {
+                transform.Cancel();
+                EndTransform();
+            }
+            CancelParameterInputs();
+            editSaveTimer.Stop();
+            editGesture = null;
+            interacting = false;
+        }
 
         CancelHslTarget();
         CancelCurveTarget();
         CancelWbProbe();
         CancelProcessingMigration();
-        var saved = outcome.Saved ?? diskRecord;
-        AdoptSavedEdit(saved);
-        processingMigrationReceipt = editStore?.ReadProcessingMigration(file);
+        ApplyAdoptedEditToUi(reloadResult.AdoptedRecord, reloadResult.PreviousRecord);
+        processingMigrationReceipt = file != null ? editStore?.ReadProcessingMigration(file) : null;
         RefreshProcessingMigrationControls();
     }
 }

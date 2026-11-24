@@ -9,7 +9,6 @@ import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.PhotoIdentity
 import com.rawlab.android.settings.WbProbeNotice
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -29,68 +28,72 @@ class EditorWbEyedropperStateHolderTest {
     @Test
     fun appliesRawFixedAndRasterRelativeWhiteBalanceFromProbe() {
         for (kind in listOf(PhotoInputKind.RAW, PhotoInputKind.RASTER)) {
-            val photo = makePhoto(kind)
-            val edits = EditSettings()
-            val state = MutableStateFlow(EditorState(photo = photo, edits = edits, exact = true))
-            val submitted = mutableListOf<Work.WbProbe>()
-            val applied = mutableListOf<EditSettings>()
-            val holder = EditorWbEyedropperStateHolder(
-                mutable = state,
-                currentSourceRevision = { 1L },
-                currentRenderRevision = { 2L },
-                onSubmitProbe = { work -> submitted += work; 3L },
-                onApplyEdit = { next -> applied += next },
-            )
-            val preview = Work.Preview(photo, edits, interactive = false, gpuMode = NativeProcessor.AUTO, edge = 1600)
-            holder.recordAcceptedPreview(preview, edits, 1L, 2L)
-            holder.setEnabled(true)
-            holder.begin(0.4f, 0.6f)
-            assertEquals(1, submitted.size)
-            assertTrue(holder.state.value.waiting)
+            EditorViewModelTestHarness().use { harness ->
+                val photo = makePhoto(kind)
+                val edits = EditSettings()
+                val session = EditorDocumentSession(harness.createDependencies(), harness.scope).apply {
+                    mutable.value = EditorState(photo = photo, edits = edits, exact = true)
+                    incrementSourceRevision()
+                    updateCurrentRevision(2L)
+                }
+                val submitted = mutableListOf<Work.WbProbe>()
+                val applied = mutableListOf<EditSettings>()
+                session.actions.submitRender = { work -> submitted += work as Work.WbProbe; 3L }
+                session.actions.edit = { next, _, _ -> applied += next }
+                val holder = EditorWbEyedropperStateHolder(session)
+                val preview = Work.Preview(photo, edits, interactive = false, gpuMode = NativeProcessor.AUTO, edge = 1600)
+                holder.recordAcceptedPreview(preview, edits, 1L, 2L)
+                holder.setEnabled(true)
+                holder.begin(0.4f, 0.6f)
+                assertEquals(1, submitted.size)
+                assertTrue(holder.state.value.waiting)
 
-            holder.accept(
-                WorkResult.WbProbe(
-                    submitted.single(),
-                    NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.AVAILABLE, 5300f, -11f, 25, 0),
-                ),
-            )
-            assertFalse(holder.state.value.waiting)
-            assertNull(holder.state.value.notice)
-            val next = applied.single()
-            assertEquals(kind == PhotoInputKind.RAW, next.customWb)
-            assertEquals(5300f, next.temperature, 0f)
-            assertEquals(-11f, next.tint, 0f)
+                holder.accept(
+                    WorkResult.WbProbe(
+                        submitted.single(),
+                        NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.AVAILABLE, 5300f, -11f, 25, 0),
+                    ),
+                )
+                assertFalse(holder.state.value.waiting)
+                assertNull(holder.state.value.notice)
+                val next = applied.single()
+                assertEquals(kind == PhotoInputKind.RAW, next.customWb)
+                assertEquals(5300f, next.temperature, 0f)
+                assertEquals(-11f, next.tint, 0f)
+            }
         }
     }
 
     @Test
     fun rejectsOverexposedAndOutsideSamplesWithoutApplyingEdits() {
-        val photo = makePhoto(PhotoInputKind.RASTER)
-        val edits = EditSettings()
-        val state = MutableStateFlow(EditorState(photo = photo, edits = edits, exact = true))
-        val submitted = mutableListOf<Work.WbProbe>()
-        val applied = mutableListOf<EditSettings>()
-        val holder = EditorWbEyedropperStateHolder(
-            mutable = state,
-            currentSourceRevision = { 1L },
-            currentRenderRevision = { 2L },
-            onSubmitProbe = { work -> submitted += work; 3L },
-            onApplyEdit = { next -> applied += next },
-        )
-        holder.recordAcceptedPreview(Work.Preview(photo, edits, false, NativeProcessor.AUTO, edge = 1600), edits, 1L, 2L)
-        holder.setEnabled(true)
-        holder.begin(1.5f, 0.5f)
-        assertEquals(WbProbeNotice.OUTSIDE, holder.state.value.notice)
-        assertTrue(submitted.isEmpty())
+        EditorViewModelTestHarness().use { harness ->
+            val photo = makePhoto(PhotoInputKind.RASTER)
+            val edits = EditSettings()
+            val session = EditorDocumentSession(harness.createDependencies(), harness.scope).apply {
+                mutable.value = EditorState(photo = photo, edits = edits, exact = true)
+                incrementSourceRevision()
+                updateCurrentRevision(2L)
+            }
+            val submitted = mutableListOf<Work.WbProbe>()
+            val applied = mutableListOf<EditSettings>()
+            session.actions.submitRender = { work -> submitted += work as Work.WbProbe; 3L }
+            session.actions.edit = { next, _, _ -> applied += next }
+            val holder = EditorWbEyedropperStateHolder(session)
+            holder.recordAcceptedPreview(Work.Preview(photo, edits, false, NativeProcessor.AUTO, edge = 1600), edits, 1L, 2L)
+            holder.setEnabled(true)
+            holder.begin(1.5f, 0.5f)
+            assertEquals(WbProbeNotice.OUTSIDE, holder.state.value.notice)
+            assertTrue(submitted.isEmpty())
 
-        holder.begin(0.5f, 0.5f)
-        holder.accept(
-            WorkResult.WbProbe(
-                submitted.single(),
-                NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.OVEREXPOSED, 6500f, 0f, 0, 81),
-            ),
-        )
-        assertEquals(WbProbeNotice.OVEREXPOSED, holder.state.value.notice)
-        assertTrue(applied.isEmpty())
+            holder.begin(0.5f, 0.5f)
+            holder.accept(
+                WorkResult.WbProbe(
+                    submitted.single(),
+                    NativeProcessor.WbProbeSample(NativeProcessor.WbProbeAvailability.OVEREXPOSED, 6500f, 0f, 0, 81),
+                ),
+            )
+            assertEquals(WbProbeNotice.OVEREXPOSED, holder.state.value.notice)
+            assertTrue(applied.isEmpty())
+        }
     }
 }

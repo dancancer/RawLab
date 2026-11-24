@@ -1,47 +1,31 @@
 package com.rawlab.android.editor
 
 import android.app.Application
-import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.BatchSourceSnapshot
-import com.rawlab.android.engine.NativeProcessor
-import com.rawlab.android.photo.PhotoStorage
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.io.File
 
 internal class EditorBatchStateHolder(
     application: Application,
-    storage: PhotoStorage,
-    private val scope: CoroutineScope,
-    batchProcessorFactory: (Int, File?) -> NativeProcessor,
-    usageProvider: () -> UsageAnalytics,
-    strings: EditorStrings = EditorStrings(),
-    private val mutable: MutableStateFlow<EditorState>,
-    private val isDisposed: () -> Boolean,
-    private val gpuMode: () -> Int,
-    private val formatFailure: (Throwable) -> String,
-    private val onCancelProcessingMigration: () -> Unit,
-    private val onPerformAfterPendingRender: (() -> Unit) -> Unit,
-    private val onFinishAdjustmentClose: () -> Unit,
-    private val onReleaseDeferredCollections: () -> Unit,
-    defaultReleaseRaster: () -> Unit,
+    private val session: EditorDocumentSession,
 ) {
+    private val mutable get() = session.mutable
+    private val scope get() = session.scope
+
     private val batches = EditorBatches(
         application,
-        storage,
-        scope,
-        batchProcessorFactory,
-        usageProvider,
-        strings,
+        session.storage,
+        session.scope,
+        session.dependencies.batchProcessorFactory,
+        session.dependencies.usageFactory,
+        session.strings,
     ) { error -> mutable.value = mutable.value.copy(error = error) }
 
     val active = batches.active
     val pending = batches.pending
 
-    internal var releaseEditorRasterOperation: () -> Unit = defaultReleaseRaster
+    internal var releaseEditorRasterOperation: () -> Unit = session.dependencies.renderGateway::releaseDecodedRaster
 
     fun refreshPending() = batches.refreshPending()
     fun retain(job: BatchJob) = batches.retain(job)
@@ -55,26 +39,26 @@ internal class EditorBatchStateHolder(
         if (!current.canExport || active.value != null) return
         val photo = current.photo ?: return
         val source = BatchSourceSnapshot(photo.identity, photo.file, current.edits, photo.name, inputKind = photo.inputKind)
-        releaseEditorRasterForBatch { if (it) batches.begin(source, gpuMode()) }
+        releaseEditorRasterForBatch { if (it) batches.begin(source, session.gpuMode()) }
     }
 
     fun resumeBatch(job: BatchJob) {
         if (active.value != null || mutable.value.committingAdjustments ||
             mutable.value.draft != null || mutable.value.operation != Operation.NONE
         ) return
-        releaseEditorRasterForBatch { if (it) batches.resume(job, gpuMode()) }
+        releaseEditorRasterForBatch { if (it) batches.resume(job, session.gpuMode()) }
     }
 
     fun resumeAttached(job: BatchJob, startAutomatically: Boolean) {
-        batches.resume(job, gpuMode(), startAutomatically = startAutomatically)
+        batches.resume(job, session.gpuMode(), startAutomatically = startAutomatically)
     }
 
     fun releaseEditorRasterForBatch(completed: (Boolean) -> Unit) {
-        if (isDisposed()) {
+        if (session.disposed) {
             completed(false)
             return
         }
-        onCancelProcessingMigration()
+        session.actions.cancelMigration(true)
         if (mutable.value.committingAdjustments) {
             scope.launch {
                 mutable.first { !it.committingAdjustments }
@@ -84,17 +68,17 @@ internal class EditorBatchStateHolder(
         }
         // 页面切换沿用存储动作的输入门禁；只在渲染队列上释放完整解码图，保留仍在显示的预览。
         mutable.value = mutable.value.copy(committingAdjustments = true)
-        onPerformAfterPendingRender {
+        session.actions.performAfterPendingRender {
             val result = runCatching { releaseEditorRasterOperation() }
             scope.launch {
-                if (!isDisposed()) {
+                if (!session.disposed) {
                     mutable.value = mutable.value.copy(committingAdjustments = false)
                     try {
-                        result.exceptionOrNull()?.let { mutable.value = mutable.value.copy(error = formatFailure(it)) }
+                        result.exceptionOrNull()?.let { mutable.value = mutable.value.copy(error = session.failure(it)) }
                         completed(result.isSuccess)
                     } finally {
-                        onFinishAdjustmentClose()
-                        onReleaseDeferredCollections()
+                        session.actions.finishAdjustmentClose()
+                        session.actions.releaseDeferredCollections()
                     }
                 }
             }
