@@ -17,7 +17,7 @@ from .errors import AdapterError
 
 
 REQUIRED_COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-OPTIONAL_COMMANDS = {"analyze", "print_transfer"}
+OPTIONAL_COMMANDS = {"analyze", "print_transfer", "save_preset", "sync_photo_edit"}
 COMMANDS = REQUIRED_COMMANDS | OPTIONAL_COMMANDS
 RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
 MAX_JSON_BYTES = 4 * 1024 * 1024
@@ -450,8 +450,7 @@ class CliAdapter:
 
         try:
             data_dir = self.config.data_dir or default_data_dir()
-            result = await asyncio.to_thread(
-                gui_sync.save_preset,
+            result = await gui_sync.save_preset_async(
                 data_dir=data_dir,
                 name=name,
                 values=values,
@@ -460,6 +459,7 @@ class CliAdapter:
                 overwrite=overwrite,
                 recipe_context=recipe_context,
                 hdr_processing_version=hdr_processing_version,
+                cli_runner=self._run,
             )
             return Envelope("save_preset", True, result)
         except AdapterError as e:
@@ -481,14 +481,14 @@ class CliAdapter:
             checked = self._read_path(photo_path)
             is_raster = checked.canonical.suffix.lower() in _RASTER_SUFFIXES
             data_dir = self.config.data_dir or default_data_dir()
-            result = await asyncio.to_thread(
-                gui_sync.sync_photo_edit,
+            result = await gui_sync.sync_photo_edit_async(
                 data_dir=data_dir,
                 photo_canonical=checked.canonical,
                 adjustments=adjustments,
                 is_raster=is_raster,
                 film_id=film_id,
                 master_recipe_id=master_recipe_id,
+                cli_runner=self._run,
             )
             return Envelope("sync_photo_edit", True, result)
         except AdapterError as e:

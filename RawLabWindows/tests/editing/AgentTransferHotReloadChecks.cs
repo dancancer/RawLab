@@ -22,6 +22,10 @@ public sealed class AgentTransferHotReloadChecks
         AdoptExternalReloadUndoRedoChecks();
         ExternalReloadBannerStateChecks();
         ExternalStoreWatcherChecks();
+        CliSchemaEditsAndPresetsDecodeChecks();
+        FileShareNoneContentionChecks();
+        ExternalStoreWatcherErrorRecoveryChecks();
+        AsShotHydrationCalibrationChecks();
     }
 
     private static void TransferJsonRoundTripChecks()
@@ -239,5 +243,258 @@ public sealed class AgentTransferHotReloadChecks
         {
             try { Directory.Delete(root, recursive: true); } catch { }
         }
+    }
+
+    private static void CliSchemaEditsAndPresetsDecodeChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-win-cli-schema-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var photo = Path.Combine(root, "IMG_0100.ARW");
+            File.WriteAllBytes(photo, [1, 2, 3, 4, 5, 6]);
+            var identity = OriginalIdentity.Read(photo);
+            var lowerPath = identity.Path.ToLowerInvariant();
+
+            var editsDir = Path.Combine(root, "Edits");
+            Directory.CreateDirectory(editsDir);
+            // Match exact sony2fuji Windows codec output (OrdinalIgnoreCase key, SettingsVersion=2, Values[10],
+            // PascalCase Denoise/Effects/Hsl/Lens/Geometry/ToneControls/Atmosphere/ColorGrading, lowercase Curve/Processing).
+            var hslValues = string.Join(",", Enumerable.Range(0, 24).Select(i => i == 0 ? "12" : i == 8 ? "-5" : "0"));
+            var escapedLowerPath = System.Text.Json.JsonSerializer.Serialize(lowerPath);
+            var escapedFileId = System.Text.Json.JsonSerializer.Serialize(identity.FileID);
+            var editsJson = $$"""
+            {
+              "CustomTier1": true,
+              "Records": {
+                {{escapedLowerPath}}: {
+                  "Identity": {
+                    "Path": {{escapedLowerPath}},
+                    "Length": {{identity.Length}},
+                    "Modified": {{identity.Modified}},
+                    "Created": {{identity.Created}},
+                    "FileID": {{escapedFileId}}
+                  },
+                  "Look": "builtin:classic_chrome",
+                  "Settings": {
+                    "SettingsVersion": 2,
+                    "Values": [0.85, 0.75, 5800, 12, 1.25, -0.35, 0.4, 0.0, 1.15, 0.5],
+                    "ExposureMode": 0,
+                    "CameraWhiteBalance": false,
+                    "AsShotTemperature": null,
+                    "AsShotTint": null,
+                    "Processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+                    "X3fMode": "normal-v1",
+                    "AIDenoiseEnabled": false,
+                    "DisplayChromaDenoise": 1,
+                    "Denoise": {"Enabled": true, "Luma": 12, "Chroma": 50, "Coarse": 40},
+                    "Effects": {"VignetteAmount": -15, "VignetteMidpoint": 50, "VignetteRoundness": 0, "VignetteFeather": 50, "VignetteHighlights": 0, "GrainAmount": 10, "GrainSize": 25, "GrainRoughness": 50},
+                    "Hsl": {"Values": [{{hslValues}}]},
+                    "MasterRecipeID": null,
+                    "MasterRecipeSettingsVersion": 3,
+                    "Lens": {"Distortion": true, "Tca": true, "AutoCrop": true, "Manual": false, "ProfileId": null, "FocalLength": null, "CropFactor": null, "Vignetting": false},
+                    "Geometry": {"CropX": 0.1, "CropY": 0.0, "CropWidth": 0.9, "CropHeight": 1.0, "QuarterTurns": 1, "FlipHorizontal": false, "FlipVertical": true, "StraightenDegrees": 1.5, "PerspectiveHorizontal": -0.2, "PerspectiveVertical": 0.1},
+                    "ToneControls": {"BlackPoint": -10, "WhitePoint": 12, "Vibrance": 18},
+                    "Atmosphere": {"Clarity": 20, "Dehaze": -5},
+                    "ColorGrading": {
+                      "Shadows": {"Hue": 210, "Saturation": 15},
+                      "Midtones": {"Hue": 0, "Saturation": 0},
+                      "Highlights": {"Hue": 40, "Saturation": 12, "Luminance": 5},
+                      "Blending": 65
+                    },
+                    "Curve": {
+                      "mode": "custom",
+                      "points": [[0, 0], [0.5, 0.58], [1, 1]],
+                      "apply_to_luminosity": true
+                    }
+                  }
+                }
+              },
+              "Version": 1
+            }
+            """;
+            File.WriteAllText(Path.Combine(editsDir, "edits.json"), editsJson);
+
+            var store = new EditStore(editsDir);
+            var read = store.ReadState(photo);
+            Check(read.Edit != null, "EditStore decodes CLI-written Windows edits.json via OrdinalIgnoreCase");
+            Check(read.Edit!.Look == "builtin:classic_chrome", "EditStore preserves CLI Look field");
+            var restored = read.Edit.Settings.Restore();
+            Check(Math.Abs(restored[Parameter.Exposure] - 0.75) < 1e-6, "CLI exposure decoded");
+            Check(Math.Abs(restored[Parameter.Contrast] - 1.25) < 1e-6, "CLI contrast decoded");
+            Check(Math.Abs(restored[Parameter.Highlights] - (-0.35)) < 1e-6, "CLI highlights decoded");
+            Check(restored.ExposureMode == 0 && !restored.CameraWhiteBalance, "CLI exposureMode and WB flags decoded");
+            Check(restored.ToneControls.BlackPoint == -10 && restored.Atmosphere.Clarity == 20, "CLI ToneControls and Atmosphere decoded");
+            Check(restored.Curve.ApplyToLuminosity && restored.ColorGrading.Highlights.Luminance == 5, "CLI Curve and ColorGrading decoded");
+            Check(restored.Hsl.Value(0, 0) == 12 && restored.Hsl.Value(1, 0) == -5, "CLI Hsl decoded");
+            Check(restored.Denoise.Enabled && restored.Denoise.Luma == 12, "CLI Denoise decoded");
+            Check(restored.Geometry.QuarterTurns == 1 && restored.Geometry.FlipVertical, "CLI Geometry decoded");
+
+            var presetsDir = Path.Combine(root, "Presets");
+            Directory.CreateDirectory(presetsDir);
+            var futureSlice = "{\"id\":\"99999999-9999-4999-8999-999999999999\",\"name\":\"Future\",\"future\":true}";
+            var presetsJson = $$"""
+            {
+              "presets": [
+                {
+                  "id": "11111111-1111-4111-8111-111111111111",
+                  "name": "CLI SDR Preset",
+                  "created_at": 1700000000000,
+                  "updated_at": 1700000000000,
+                  "payload": {
+                    "payload_version": 1,
+                    "scope_version": 1,
+                    "source": {"identifier": "preset:11111111-1111-4111-8111-111111111111", "is_raw": true, "processing_version": 3, "recipe": null},
+                    "values": {"light.exposure": 0.5, "light.curve.apply_to_luminosity": true}
+                  }
+                },
+                {{futureSlice}}
+              ],
+              "registry_version": 1,
+              "retired_ids": ["22222222-2222-4222-8222-222222222222"]
+            }
+            """;
+            File.WriteAllText(Path.Combine(presetsDir, "presets.json"), presetsJson);
+
+            var presetStore = new AdjustmentPresetStore(presetsDir);
+            var (presets, unreadable) = presetStore.LoadSnapshot();
+            Check(presets.Count == 1 && presets[0].Name == "CLI SDR Preset", "AdjustmentPresetStore decodes CLI presets.json");
+            Check(unreadable.Count == 1 && unreadable[0].Json == futureSlice, "AdjustmentPresetStore isolates future preset");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    private static void FileShareNoneContentionChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-win-lock-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var photo = Path.Combine(root, "photo.png");
+            File.WriteAllBytes(photo, [1, 2, 3, 4]);
+            var identity = OriginalIdentity.Read(photo);
+
+            var editsDir = Path.Combine(root, "Edits");
+            Directory.CreateDirectory(editsDir);
+            var lockPath = Path.Combine(editsDir, "edits.json.lock");
+            var store = new EditStore(editsDir);
+
+            using var acquired = new ManualResetEventSlim(false);
+            var holder = new System.Threading.Thread(() =>
+            {
+                using var fs = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                acquired.Set();
+                System.Threading.Thread.Sleep(120);
+            });
+            holder.Start();
+            Check(acquired.Wait(TimeSpan.FromSeconds(2)), "Contention test lock holder acquired edits.json.lock");
+
+            var adj = new Adjustments { ExposureMode = 2 };
+            adj.Set(Parameter.Exposure, 0.9);
+            var saved = store.SaveState(identity, new SavedEdit(identity, adj.Capture(), null));
+            holder.Join();
+            Check(Math.Abs(saved.Edit!.Settings.Values[(int)Parameter.Exposure] - 0.9) < 1e-6,
+                "EditStore retries and succeeds after FileShare.None lock release");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    private static void ExternalStoreWatcherErrorRecoveryChecks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "rawlab-win-watch-err-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var editsDir = Path.Combine(root, "Edits");
+            Directory.CreateDirectory(editsDir);
+            var editsFile = Path.Combine(editsDir, "edits.json");
+            File.WriteAllText(editsFile, "{\"Records\":{},\"Version\":1}");
+
+            using var recoveredSignal = new ManualResetEventSlim(false);
+            using var watcher = new ExternalStoreWatcher([editsFile], _ => recoveredSignal.Set(), debounceMs: 25);
+
+            // Simulate FileSystemWatcher.Error -> must recreate watcher and trigger ScheduleCheck(null)
+            watcher.SimulateErrorForTests();
+            Check(recoveredSignal.Wait(TimeSpan.FromSeconds(4)), "ExternalStoreWatcher recovers and emits check after Error event");
+
+            recoveredSignal.Reset();
+            var tmp = editsFile + ".tmp";
+            File.WriteAllText(tmp, "{\"Records\":{},\"Version\":1,\"Tag\":2}");
+            File.Move(tmp, editsFile, overwrite: true);
+            Check(recoveredSignal.Wait(TimeSpan.FromSeconds(4)), "ExternalStoreWatcher still observes subsequent writes after Error recovery");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { }
+        }
+    }
+
+    private static void AsShotHydrationCalibrationChecks()
+    {
+        var identity = new OriginalIdentity("C:\\photos\\IMG_0200.ARW", 100, 200, 300);
+        var calibration = (Temperature: 5200.0, Tint: 8.0);
+
+        // 1. CLI-synced RAW record (AsShotTemperature=null, AsShotTint=null, CameraWhiteBalance=true)
+        var cliAdj = new Adjustments { ExposureMode = 0 };
+        var diskSnap = cliAdj.Capture();
+        Check(diskSnap.CameraWhiteBalance && diskSnap.AsShotTemperature == null && diskSnap.AsShotTint == null,
+            "CLI-style RAW snapshot starts with CameraWhiteBalance=true and null AsShot calibration");
+        var diskRecord = new PhotoEditState(identity, new SavedEdit(identity, diskSnap, null));
+
+        var hydratedAdj = diskSnap.Restore();
+        hydratedAdj.ResolveWhiteBalance(calibration);
+        var hydratedSnap = hydratedAdj.Capture();
+        var hydratedUi = new SavedEdit(identity, hydratedSnap, null);
+
+        // CacheCurrentPhotoPreview check: normalized disk snapshot matches hydrated hslAcceptedSettings
+        Check(diskSnap.WithAsShotCalibration(calibration).SameAs(hydratedSnap),
+            "WithAsShotCalibration normalizes null-AsShot CLI snapshot to match hydrated render snapshot");
+
+        // Evaluate check: unrelated edits.json change must yield None (no spurious AutoReload)
+        var state = ExternalReloadBannerState.Empty;
+        var unchangedEval = state.Evaluate(
+            diskRecord,
+            hydratedUi,
+            diskRecord,
+            stamp: null,
+            hasUnsavedManualDraft: false,
+            asShotCalibration: calibration);
+        Check(unchangedEval.Decision == ExternalReloadDecision.None && !unchangedEval.NextState.Visible,
+            "AsShot-only hydration mismatch does not trigger spurious AutoReload");
+
+        // 2. Real external edit on CLI-synced RAW record (still null AsShot) must still AutoReload / ShowBanner
+        var updatedCliAdj = new Adjustments { ExposureMode = 0 };
+        updatedCliAdj.Set(Parameter.Exposure, 0.45);
+        updatedCliAdj.Set(Parameter.Temperature, 5800);
+        updatedCliAdj.Set(Parameter.Tint, 12);
+        Check(!updatedCliAdj.CameraWhiteBalance, "Setting custom Temperature/Tint clears CameraWhiteBalance");
+        var updatedDisk = new PhotoEditState(identity, new SavedEdit(identity, updatedCliAdj.Capture(), null));
+
+        var reloadEval = state.Evaluate(
+            diskRecord,
+            hydratedUi,
+            updatedDisk,
+            stamp: null,
+            hasUnsavedManualDraft: false,
+            asShotCalibration: calibration);
+        Check(reloadEval.Decision == ExternalReloadDecision.AutoReload,
+            "Real external update on CLI-synced RAW record still triggers AutoReload");
+
+        var bannerEval = state.Evaluate(
+            diskRecord,
+            hydratedUi,
+            updatedDisk,
+            stamp: null,
+            hasUnsavedManualDraft: true,
+            asShotCalibration: calibration);
+        Check(bannerEval.Decision == ExternalReloadDecision.ShowBanner &&
+              bannerEval.NextState.PendingRecord!.SameAs(updatedDisk),
+            "Banner PendingRecord preserves original unhydrated disk record when manual draft is active");
     }
 }

@@ -185,131 +185,164 @@ final class ExternalReloadAndTransferTests: XCTestCase {
         let presetsDir = dataDir.appendingPathComponent("Presets", isDirectory: true)
         let editsDir = dataDir.appendingPathComponent("Edits", isDirectory: true)
         try FileManager.default.createDirectory(at: presetsDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: editsDir, withIntermediateDirectories: true)
 
         let rawUnreadable = #"{  "name" : "Future V99",  "id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "created_at": 1, "updated_at": 1, "payload": { "payload_version": 99, "ratio": 1.000, "extra": [ 1, 2 ] }  }"#
-        let initialPresets = "{\"registry_version\":1,\"presets\":[\(rawUnreadable)],\"retired_ids\":[\"11111111-2222-4333-8444-555555555555\"]}"
-        try Data(initialPresets.utf8).write(to: presetsDir.appendingPathComponent("presets.json"))
+        let sdrPresetID = "10000000-0000-4000-8000-000000000001"
+        let hdrPresetID = "20000000-0000-4000-8000-000000000002"
+        let sdrPresetObject: [String: Any] = [
+            "id": sdrPresetID,
+            "name": "CLI SDR V013",
+            "created_at": 1_700_000_000_000 as Int64,
+            "updated_at": 1_700_000_000_000 as Int64,
+            "payload": [
+                "payload_version": 1,
+                "scope_version": 1,
+                "source": [
+                    "identifier": "preset:\(sdrPresetID)",
+                    "is_raw": true,
+                    "processing_version": 3,
+                    "recipe": NSNull(),
+                ],
+                "values": [
+                    "looks.reference": ["kind": "neutral", "id": NSNull()],
+                    "looks.strength": 1.5,
+                    "light.exposure": -2.5,
+                    "light.contrast": 1.2,
+                    "light.highlights": -0.3,
+                    "light.shadows": 0.4,
+                    "color.saturation": 1.15,
+                    "color.hsl.hue.red": 65.0,
+                    "light.curve": [
+                        "mode": "custom",
+                        "points": [[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]],
+                        "channels": ["red": ["mode": "custom", "points": [[0.0, 0.0], [0.5, 0.65], [1.0, 1.0]]]],
+                    ],
+                    "light.curve.apply_to_luminosity": true,
+                    "light.curve.parametric": [
+                        "highlights": -10.0, "lights": 8.0, "darks": -4.0, "shadows": 12.0,
+                        "split_shadow": 0.2, "split_midtone": 0.5, "split_highlight": 0.8,
+                    ],
+                    "color.grading.shadows": ["hue": 220.0, "saturation": 25.0, "luminance": -6.0],
+                    "color.grading.global": ["hue": 180.0, "saturation": 10.0, "luminance": 2.0],
+                    "color.grading.blending": 62.0,
+                    "color.grading.balance": -8.0,
+                ],
+            ],
+        ]
+        let hdrPresetObject: [String: Any] = [
+            "id": hdrPresetID,
+            "name": "CLI HDR V9",
+            "created_at": 1_700_000_000_100 as Int64,
+            "updated_at": 1_700_000_000_100 as Int64,
+            "payload": [
+                "payload_version": 2,
+                "scope_version": 2,
+                "source": [
+                    "identifier": "preset:\(hdrPresetID)",
+                    "is_raw": false,
+                    "processing_version": 3,
+                    "hdr_processing_version": 9,
+                    "recipe": NSNull(),
+                ],
+                "values": [
+                    "light.exposure": 1.25,
+                    "hdr.relative_temperature": 6000.0,
+                    "hdr.relative_tint": -5.0,
+                    "hdr.peak_limit_ev": 2.5,
+                    "hdr.sdr_exposure_ev": -0.5,
+                    "hdr.sdr_contrast": 10.0,
+                    "hdr.sdr_saturation": 15.0,
+                    "hdr.look": ["sha256": String(repeating: "a", count: 64), "name": "HDR Silver", "strength": 1.5],
+                    "hdr.camera_development": [
+                        "version": 1,
+                        "white_balance_mode": "as_shot",
+                        "temperature": 0.0,
+                        "tint": 0.0,
+                        "exposure_reference": "metadata",
+                        "fbdd_level": 0,
+                    ],
+                    "light.curve.parametric": [
+                        "highlights": 5.0, "lights": 0.0, "darks": 0.0, "shadows": -5.0,
+                        "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
+                    ],
+                ],
+            ],
+        ]
+        let sdrData = try JSONSerialization.data(withJSONObject: sdrPresetObject, options: [.sortedKeys])
+        let hdrData = try JSONSerialization.data(withJSONObject: hdrPresetObject, options: [.sortedKeys])
+        let presetsPayload = "{\"presets\":[\(String(decoding: sdrData, as: UTF8.self)),\(String(decoding: hdrData, as: UTF8.self)),\(rawUnreadable)],\"registry_version\":1,\"retired_ids\":[\"11111111-2222-4333-8444-555555555555\"]}"
+        try Data(presetsPayload.utf8).write(to: presetsDir.appendingPathComponent("presets.json"))
 
-        let mcpSrc = RawLabKitTestSupport.repoRoot.appendingPathComponent("tools/mcp/src").path
-        let pyScript = """
-        import json, os
-        from pathlib import Path
-        import rawlab_mcp.gui_sync as gui_sync
-
-        data_dir = Path(os.environ["PROBE_DATA_DIR"])
-        photo = Path(os.environ["PROBE_PHOTO"])
-
-        gui_sync.save_preset(
-            data_dir=data_dir,
-            name="MCP SDR V012",
-            values={
-                "looks.reference": {"kind": "neutral", "id": None},
-                "looks.strength": 1.5,
-                "light.exposure": -2.5,
-                "light.contrast": 1.2,
-                "light.highlights": -0.3,
-                "light.shadows": 0.4,
-                "color.saturation": 1.15,
-                "color.hsl.hue.red": 65.0,
-                "light.curve": {
-                    "mode": "custom",
-                    "points": [[0.0, 0.0], [0.5, 0.55], [1.0, 1.0]],
-                    "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.65], [1.0, 1.0]]}},
-                },
-                "light.curve.apply_to_luminosity": True,
-                "light.curve.parametric": {
-                    "highlights": -10.0, "lights": 8.0, "darks": -4.0, "shadows": 12.0,
-                    "split_shadow": 0.2, "split_midtone": 0.5, "split_highlight": 0.8,
-                },
-                "color.grading.shadows": {"hue": 220.0, "saturation": 25.0, "luminance": -6.0},
-                "color.grading.global": {"hue": 180.0, "saturation": 10.0, "luminance": 2.0},
-                "color.grading.blending": 62.0,
-                "color.grading.balance": -8.0,
-            },
-        )
-
-        gui_sync.save_preset(
-            data_dir=data_dir,
-            name="MCP HDR V9",
-            hdr_processing_version=9,
-            values={
-                "light.exposure": 1.25,
-                "hdr.relative_temperature": 6000.0,
-                "hdr.relative_tint": -5.0,
-                "hdr.peak_limit_ev": 2.5,
-                "hdr.sdr_exposure_ev": -0.5,
-                "hdr.sdr_contrast": 10.0,
-                "hdr.sdr_saturation": 15.0,
-                "hdr.look": {"sha256": "a" * 64, "name": "HDR Silver", "strength": 1.5},
-                "hdr.camera_development": {
-                    "version": 1,
-                    "white_balance_mode": "as_shot",
-                    "temperature": 0.0,
-                    "tint": 0.0,
-                    "exposure_reference": "metadata",
-                    "fbdd_level": 0,
-                },
-                "light.curve.parametric": {
-                    "highlights": 5.0, "lights": 0.0, "darks": 0.0, "shadows": -5.0,
-                    "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
-                },
-            },
-        )
-
-        gui_sync.sync_photo_edit(
-            data_dir=data_dir,
-            photo_canonical=photo,
-            is_raster=False,
-            adjustments={
+        let identity = try OriginalFileIdentity(photoURL)
+        let editStateObject: [String: Any] = [
+            "filmID": "",
+            "masterRecipeID": NSNull(),
+            "settings": [
+                "processing": ["family": "rawlab", "quality": "standard", "version": 3],
+                "x3fMode": "normal-v1",
+                "exposureMode": "匹配内嵌预览",
                 "exposure": -4.5,
-                "s_curve": 25.0,
+                "temperature": 6500.0,
+                "tint": 0.0,
+                "whiteBalanceMode": "拍摄时设置",
+                "strength": 1.0,
+                "contrast": 0.0,
+                "highlights": 0.0,
+                "shadows": 0.0,
+                "toneCurve": 25.0,
+                "saturation": 0.0,
                 "sharpening": 150.0,
-                "hsl": {
+                "rawNoiseReduction": 0.0,
+                "aiDenoiseEnabled": false,
+                "supportsRawNoiseReduction": true,
+                "masterRecipeSettingsVersion": 3,
+                "hsl": [
                     "hue": [85.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     "saturation": [10.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
                     "lightness": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-                },
-                "tone_curve": {
+                ],
+                "toneCurveConfig": [
                     "mode": "legacy",
-                    "points": [],
-                    "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.65], [1.0, 1.0]]}},
-                    "apply_to_luminosity": True,
-                    "parametric": {
+                    "points": [] as [Any],
+                    "channels": ["red": ["mode": "custom", "points": [[0.0, 0.0], [0.5, 0.65], [1.0, 1.0]]]],
+                    "apply_to_luminosity": true,
+                    "parametric": [
                         "highlights": -10.0, "lights": 5.0, "darks": -3.0, "shadows": 8.0,
                         "split_shadow": 0.2, "split_midtone": 0.5, "split_highlight": 0.8,
-                    },
-                },
-                "color_grading": {
-                    "shadows": {"hue": 220.0, "saturation": 30.0},
-                    "global": {"hue": 190.0, "saturation": 12.0, "luminance": 3.0},
+                    ],
+                ],
+                "colorGrading": [
+                    "shadows": ["hue": 220.0, "saturation": 30.0, "luminance": 0.0],
+                    "midtones": ["hue": 0.0, "saturation": 0.0, "luminance": 0.0],
+                    "highlights": ["hue": 0.0, "saturation": 0.0, "luminance": 0.0],
+                    "global": ["hue": 190.0, "saturation": 12.0, "luminance": 3.0],
                     "blending": 65.0,
                     "balance": -10.0,
-                },
-                "geometry": {
-                    "crop_x": 0.1,
-                    "crop_y": 0.2,
-                    "crop_width": 0.9,
-                    "crop_height": 0.8,
-                    "perspective_horizontal": -0.75,
-                },
-            },
-        )
-        """
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        proc.arguments = ["python3", "-c", pyScript]
-        var env = ProcessInfo.processInfo.environment
-        env["PYTHONPATH"] = mcpSrc
-        env["PROBE_DATA_DIR"] = dataDir.path
-        env["PROBE_PHOTO"] = photoURL.path
-        proc.environment = env
-        let errPipe = Pipe()
-        proc.standardError = errPipe
-        try proc.run()
-        proc.waitUntilExit()
-        let errText = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        XCTAssertEqual(proc.terminationStatus, 0, "Python gui_sync helper failed: \(errText)")
+                ],
+                "geometry": [
+                    "cropX": 0.1, "cropY": 0.2, "cropWidth": 0.9, "cropHeight": 0.8,
+                    "quarterTurns": 0, "flipHorizontal": false, "flipVertical": false,
+                    "straightenDegrees": 0.0, "perspectiveHorizontal": -0.75, "perspectiveVertical": 0.0,
+                ],
+            ],
+        ]
+        let editsObject: [String: Any] = [
+            "version": 1,
+            "records": [
+                identity.path: [
+                    "identity": [
+                        "fileNumber": identity.fileNumber,
+                        "modified": identity.modified.timeIntervalSinceReferenceDate,
+                        "path": identity.path,
+                        "size": identity.size,
+                    ],
+                    "state": editStateObject,
+                ],
+            ],
+        ]
+        let editsData = try JSONSerialization.data(withJSONObject: editsObject, options: [.sortedKeys])
+        try editsData.write(to: editsDir.appendingPathComponent("edits.json"))
 
         let presetStore = AdjustmentPresetStore(directory: presetsDir)
         let presets = try presetStore.list()
@@ -317,8 +350,8 @@ final class ExternalReloadAndTransferTests: XCTestCase {
         XCTAssertEqual(presets.count, 2)
         XCTAssertEqual(unreadable.count, 1)
         XCTAssertEqual(unreadable.first?.json, rawUnreadable)
-        XCTAssertEqual(Set(presets.map(\.name)), ["MCP SDR V012", "MCP HDR V9"])
-        let hdrPreset = try XCTUnwrap(presets.first { $0.name == "MCP HDR V9" })
+        XCTAssertEqual(Set(presets.map(\.name)), ["CLI SDR V013", "CLI HDR V9"])
+        let hdrPreset = try XCTUnwrap(presets.first { $0.name == "CLI HDR V9" })
         XCTAssertEqual(hdrPreset.payload.source.hdrProcessingVersion, 9)
         XCTAssertFalse(hdrPreset.payload.source.isRaw)
 
