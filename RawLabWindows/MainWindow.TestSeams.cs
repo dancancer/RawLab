@@ -187,5 +187,21 @@ public partial class MainWindow
         aiPreference = new AIGpuPreference();
         library.SettingsPath = isolatedPaths.FoldersPath;
         library.Roots.Clear();
+        if (photoPreviews != null && !ReferenceEquals(photoPreviews.Store, editStore))
+        {
+            photoPreviews.Store.Changed -= PhotoEditChanged;
+            photoPreviews.Ready -= PhotoPreviewReady;
+            _ = photoPreviews.DisposeAsync();
+            photoPreviews = null;
+        }
+        StartExternalStoreWatcher();
     }
+
+    internal bool HasActiveExternalReloadBannerForTests => ExternalReloadBanner.Visibility == Visibility.Visible;
+    internal bool HasUnsavedManualDraftForTests => HasUnsavedManualDraft;
+    internal void ReloadExternalUpdateForTests() => ReloadExternalUpdate();
+    internal void KeepManualDraftOnExternalUpdateForTests() => KeepManualDraftOnExternalUpdate();
+    internal void HandleExternalPresetsFileChangeForTests() => HandleExternalPresetsFileChange();
+    internal void HandleExternalEditsFileChangeForTests() => HandleExternalEditsFileChange();
+    internal EditedPhotoPreviews? PhotoPreviewsForTests() => PhotoPreviews();
 }

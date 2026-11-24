@@ -13,7 +13,7 @@ if(!$DenoiseRaw){$DenoiseRaw=Join-Path $repo 'build/windows-fixtures/denoise.dng
 New-Item -ItemType Directory -Force $results | Out-Null
 $summary=@()
 $selected=@()
-$names=@('build','editing','looks','denoise-model','localization','updates','comparison','about','default-isolation','localization-admission','profile-isolation','localization-ui','unhandled-ui','entry-selection','ai-panel','ai-window','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection','recipe-white-balance','atmosphere-render','tone-render','grading-render','curve-render','hsl-target-render','inspection-suite','x3f','hdr-workflow','first-preview','hdr-look-import')
+$names=@('build','editing','looks','denoise-model','localization','updates','comparison','about','default-isolation','localization-admission','profile-isolation','localization-ui','unhandled-ui','entry-selection','ai-panel','ai-window','editor-shell','geometry','master-recipes','rendered-dng','denoise','lens','agent-recipe','raster','batch-selection','recipe-white-balance','atmosphere-render','tone-render','grading-render','curve-render','hsl-target-render','inspection-suite','x3f','hdr-workflow','first-preview','hdr-look-import','agent-hot-reload')
 [IO.File]::WriteAllText((Join-Path $results 'summary.json'),'[]')
 $savedEnv=@{}
 foreach($key in @('RAWLAB_TEST_REPO','RAWLAB_TEST_RAW','RAWLAB_TEST_DENOISE_RAW','RAWLAB_TEST_CLI','RAWLAB_TEST_RESULTS','RAWLAB_APPDATA_ROOT')) {

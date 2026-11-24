@@ -2,6 +2,7 @@
 #include "bsh_cli_report.h"
 #include "raw_info.h"
 #include "sony2fuji/edit_recipe.h"
+#include "sony2fuji/gui_store.h"
 #include "nlohmann/json.hpp"
 #include <filesystem>
 #include <charconv>
@@ -571,7 +572,8 @@ private:
 int runAgentCommands(int argc, char* argv[]) {
     bool jsonOutput = false, capabilities = false, printRecipe = false, printTransfer = false;
     bool info = false, preview = false, analyze = false;
-    std::string recipeFile, inputFile, infoFile, previewFile, lensDatabase;
+    bool savePreset = false, syncPhotoEdit = false;
+    std::string recipeFile, inputFile, infoFile, previewFile, lensDatabase, requestFile;
     std::vector<std::string> rawSamples;
     uint32_t previewEdge = 1280;
     for (int i = 1; i < argc; ++i) {
@@ -583,11 +585,15 @@ int runAgentCommands(int argc, char* argv[]) {
         info |= arg == "--info";
         preview |= arg == "--preview";
         analyze |= arg == "--analyze";
+        savePreset |= arg == "--save-preset";
+        syncPhotoEdit |= arg == "--sync-photo-edit";
     }
     const std::string command = capabilities ? "capabilities"
         : info ? "info"
         : printRecipe ? "validate_recipe"
         : printTransfer ? "print_transfer"
+        : savePreset ? "save_preset"
+        : syncPhotoEdit ? "sync_photo_edit"
         : preview ? "preview"
         : analyze ? "analyze"
         : "export";
@@ -595,11 +601,24 @@ int runAgentCommands(int argc, char* argv[]) {
         if (jsonOutput || capabilities || info)
             std::cout << machineJson(envelope(command, nullptr, {{"code", code}, {"message", message}, {"status", status}})) << '\n';
         else std::cerr << message << '\n';
+        if (savePreset || syncPhotoEdit) {
+            if (status.is_number_integer()) {
+                const int codeVal = status.get<int>();
+                if (codeVal >= 1 && codeVal <= 8) return codeVal;
+            }
+            if (code == "invalid_argument") return 2;
+            if (code == "io_error") return 3;
+            if (code == "unsupported") return 4;
+            if (code == "out_of_memory") return 5;
+            if (code == "output_io_error") return 6;
+            if (code == "cancelled") return 7;
+            if (code == "ai_not_ready") return 8;
+        }
         return 1;
     };
     try {
         bool seenJson = false, seenCapabilities = false, seenPrint = false, seenPrintTransfer = false;
-        bool seenAnalyze = false, seenEdge = false;
+        bool seenAnalyze = false, seenEdge = false, seenSavePreset = false, seenSyncPhotoEdit = false;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
             if (arg == "--json" && !seenJson) seenJson = true;
@@ -607,6 +626,10 @@ int runAgentCommands(int argc, char* argv[]) {
             else if (arg == "--print-recipe" && !seenPrint) seenPrint = true;
             else if (arg == "--print-transfer" && !seenPrintTransfer) seenPrintTransfer = true;
             else if (arg == "--analyze" && !seenAnalyze) seenAnalyze = true;
+            else if (arg == "--save-preset" && !seenSavePreset) seenSavePreset = true;
+            else if (arg == "--sync-photo-edit" && !seenSyncPhotoEdit) seenSyncPhotoEdit = true;
+            else if (arg == "--request" && requestFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
+                requestFile = argv[++i];
             else if (arg == "--recipe" && recipeFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
                 recipeFile = argv[++i];
             else if (arg == "--input" && inputFile.empty() && i + 1 < argc && argv[i + 1][0] != '-')
@@ -623,14 +646,15 @@ int runAgentCommands(int argc, char* argv[]) {
                 const std::string value = argv[++i];
                 const auto parsed = std::from_chars(value.data(), value.data() + value.size(), previewEdge);
                 if (parsed.ec != std::errc() || parsed.ptr != value.data() + value.size() || previewEdge == 0)
-                    return fail("invalid_argument", "--long-edge must be a positive uint32 integer");
+                    return fail("invalid_argument", "--long-edge must be a positive uint32 integer", 2);
                 seenEdge = true;
             }
-            else return fail("invalid_argument", "Unexpected, duplicate or incomplete argument: " + arg);
+            else return fail("invalid_argument", "Unexpected, duplicate or incomplete argument: " + arg, 2);
         }
         if (capabilities) {
             if (!recipeFile.empty() || !inputFile.empty() || printRecipe || printTransfer || info || preview ||
-                analyze || !rawSamples.empty() || seenEdge || !lensDatabase.empty())
+                analyze || !rawSamples.empty() || seenEdge || !lensDatabase.empty() ||
+                savePreset || syncPhotoEdit || !requestFile.empty())
                 return fail("invalid_argument", "Capabilities cannot be combined with another command");
             Json inputs = {"raw"};
             Json raster = nullptr;
@@ -681,7 +705,7 @@ int runAgentCommands(int argc, char* argv[]) {
             if (hdrAvailable()) for (int version : {8, 9, 10, 11, 12, 13, 14, 15, 16}) versions.push_back(version);
             versions.push_back(17);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
-                {"commands", {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"}},
+                {"commands", {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer", "save_preset", "sync_photo_edit"}},
                 {"input_types", inputs},
                 {"raster_input", raster},
                 {"hdr",hdr},
@@ -708,6 +732,37 @@ int runAgentCommands(int argc, char* argv[]) {
                 {"optional_features", optionalFeatures()}})) << '\n';
             return 0;
         }
+        if (savePreset || syncPhotoEdit) {
+            if (savePreset && syncPhotoEdit)
+                return fail("invalid_argument", "--save-preset and --sync-photo-edit cannot be combined", 2);
+            if (!recipeFile.empty() || !inputFile.empty() || printRecipe || printTransfer || info || preview ||
+                analyze || !rawSamples.empty() || seenEdge || !lensDatabase.empty())
+                return fail("invalid_argument", "Store persistence commands cannot be combined with image commands", 2);
+            if (requestFile.empty())
+                return fail("invalid_argument", std::string(savePreset ? "--save-preset" : "--sync-photo-edit") + " requires --request <file>", 2);
+            std::ifstream reqStream(std::filesystem::u8path(requestFile), std::ios::binary);
+            if (!reqStream)
+                return fail("io_error", "Cannot read request file: " + requestFile, 3);
+            std::string requestJson((std::istreambuf_iterator<char>(reqStream)), std::istreambuf_iterator<char>());
+            if (reqStream.bad())
+                return fail("io_error", "Failed reading request file: " + requestFile, 3);
+            const auto res = savePreset
+                ? gui_store::savePresetFromRequestJson(requestJson)
+                : gui_store::syncPhotoEditFromRequestJson(requestJson);
+            if (!res.ok) {
+                return fail(res.code, res.message, static_cast<int>(res.status));
+            }
+            Json result = Json::parse(res.resultJson);
+            if (jsonOutput) {
+                std::cout << machineJson(envelope(command, result)) << '\n';
+            } else {
+                result["protocol_version"] = 1;
+                std::cout << machineJson(result) << '\n';
+            }
+            return 0;
+        }
+        if (!requestFile.empty())
+            return fail("invalid_argument", "--request requires --save-preset or --sync-photo-edit");
         if (info) {
             if (infoFile.empty() || !recipeFile.empty() || !inputFile.empty() || printRecipe || printTransfer ||
                 preview || analyze || !rawSamples.empty() || seenEdge || !lensDatabase.empty())

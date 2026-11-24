@@ -18,7 +18,10 @@ ERROR_CODES = {
     "invalid_argument", "invalid_recipe", "io_error", "processing_error",
     "unsupported", "out_of_memory", "output_io_error",
 }
-COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"}
+COMMANDS = {
+    "capabilities", "validate_recipe", "info", "preview", "export",
+    "analyze", "print_transfer", "save_preset", "sync_photo_edit",
+}
 
 
 class AgentCommands(unittest.TestCase):
@@ -104,7 +107,10 @@ class AgentCommands(unittest.TestCase):
         proraw = "proraw" in declared["input_types"]
         expected = {
             "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15, 16] if hdr else []) + [17],
-            "commands": ["capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer"],
+            "commands": [
+                "capabilities", "validate_recipe", "info", "preview", "export",
+                "analyze", "print_transfer", "save_preset", "sync_photo_edit",
+            ],
             "input_types": (["raw", "raster"] if sys.platform in ("darwin", "win32") else ["raw"])+(["hdr_raster"] if hdr else [])+(["proraw"] if proraw else []),
             "output_formats": ["jpeg", "png", "dng"]+(["hdr_jpeg"] if hdr else []),
             "exposure_modes": ["scene", "preview", "sensor"],
@@ -451,6 +457,75 @@ class AgentCommands(unittest.TestCase):
         self.assertEqual(result["error"]["status"], 6)
         self.assertTrue(target.is_dir())
         self.assertEqual(list(target.iterdir()), [])
+
+    def test_save_preset_and_sync_photo_edit_cli_subcommands(self):
+        data_dir = self.root / "gui-data"
+        preset_req = self.root / "preset_req.json"
+        preset_req.write_text(
+            json.dumps({
+                "data_dir": str(data_dir),
+                "name": "CLI Look",
+                "is_raw": True,
+                "processing_version": 3,
+                "values": {"light.exposure": 0.5, "looks.reference": {"kind": "builtin", "id": "classic_chrome"}},
+            }),
+            encoding="utf-8",
+        )
+        # 1. --save-preset --json
+        saved_env = self.envelope(self.run_cli("--save-preset", "--request", preset_req, "--json"), "save_preset")
+        self.assertEqual(saved_env["result"]["action"], "created")
+        self.assertEqual(saved_env["result"]["name"], "CLI Look")
+        self.assertTrue((data_dir / "Presets" / "presets.json").is_file())
+
+        # 2. Direct invocation without --json emits protocol_version=1 JSON
+        preset_req2 = self.root / "preset_req2.json"
+        preset_req2.write_text(
+            json.dumps({
+                "data_dir": str(data_dir),
+                "name": "CLI Look Direct",
+                "values": {"light.exposure": 0.25},
+            }),
+            encoding="utf-8",
+        )
+        direct_proc = self.run_cli("--save-preset", "--request", preset_req2)
+        self.assertEqual(direct_proc.returncode, 0, direct_proc.stderr)
+        direct_json = json.loads(direct_proc.stdout)
+        self.assertEqual(direct_json["protocol_version"], 1)
+        self.assertEqual(direct_json["action"], "created")
+
+        # 3. Missing --request exits 2 (invalid_argument)
+        bad_arg = self.run_cli("--save-preset", "--json")
+        self.assertEqual(bad_arg.returncode, 2)
+        self.envelope(bad_arg, "save_preset", "invalid_argument")
+
+        # 4. Missing request file exits 3 (io_error)
+        missing_req = self.run_cli("--save-preset", "--request", self.root / "missing.json", "--json")
+        self.assertEqual(missing_req.returncode, 3)
+        self.envelope(missing_req, "save_preset", "io_error")
+
+        # 5. --sync-photo-edit on desktop OS or unsupported (4) on non-desktop
+        photo = self.root / "sample.jpg"
+        photo.write_bytes(b"fake-jpg")
+        sync_req = self.root / "sync_req.json"
+        sync_req.write_text(
+            json.dumps({
+                "data_dir": str(data_dir),
+                "photo_path": str(photo),
+                "is_raster": True,
+                "adjustments": {"exposure": 0.75, "white_balance_mode": "relative", "temperature": 6200, "tint": 5},
+                "film_id": "builtin:classic_chrome",
+            }),
+            encoding="utf-8",
+        )
+        sync_proc = self.run_cli("--sync-photo-edit", "--request", sync_req, "--json")
+        if sys.platform in ("darwin", "win32"):
+            sync_env = self.envelope(sync_proc, "sync_photo_edit")
+            self.assertEqual(sync_env["result"]["action"], "created")
+            self.assertEqual(sync_env["result"]["filmID"], "builtin:classic_chrome")
+            self.assertTrue((data_dir / "Edits" / "edits.json").is_file())
+        else:
+            self.assertEqual(sync_proc.returncode, 4)
+            self.envelope(sync_proc, "sync_photo_edit", "unsupported")
 
 
 if __name__ == "__main__":

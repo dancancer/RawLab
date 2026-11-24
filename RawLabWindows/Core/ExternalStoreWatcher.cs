@@ -42,13 +42,17 @@ internal sealed class ExternalReloadBannerState
         this.dismissedStamps = new HashSet<PathStatStamp>(dismissedStamps);
     }
 
+    private static SavedEdit? NormalizeForComparison(SavedEdit? edit, (double Temperature, double Tint)? asShotCalibration) =>
+        edit == null ? null : edit with { Settings = edit.Settings.WithAsShotCalibration(asShotCalibration) };
+
     internal ExternalReloadEvaluation Evaluate(
         PhotoEditState currentCommitted,
         SavedEdit? currentUiEdit,
         PhotoEditState diskRecord,
         PathStatStamp? stamp,
         bool hasUnsavedManualDraft,
-        bool hasPendingAsyncSave = false)
+        bool hasPendingAsyncSave = false,
+        (double Temperature, double Tint)? asShotCalibration = null)
     {
         if (!currentCommitted.Identity.SameFile(diskRecord.Identity))
             return new(ExternalReloadDecision.None, this);
@@ -56,10 +60,14 @@ internal sealed class ExternalReloadBannerState
         if (hasPendingAsyncSave)
             return new(ExternalReloadDecision.None, this);
 
+        var comparableCommitted = NormalizeForComparison(currentCommitted.Edit, asShotCalibration);
+        var comparableUi = NormalizeForComparison(currentUiEdit, asShotCalibration);
+        var comparableDisk = NormalizeForComparison(diskRecord.Edit, asShotCalibration);
+
         if (!hasUnsavedManualDraft)
         {
-            var uiMatchesDisk = SavedEdit.Same(currentUiEdit, diskRecord.Edit);
-            var committedMatchesDisk = SavedEdit.Same(currentCommitted.Edit, diskRecord.Edit);
+            var uiMatchesDisk = SavedEdit.Same(comparableUi, comparableDisk);
+            var committedMatchesDisk = SavedEdit.Same(comparableCommitted, comparableDisk);
             if (uiMatchesDisk && committedMatchesDisk)
             {
                 return new(ExternalReloadDecision.None,
@@ -69,7 +77,7 @@ internal sealed class ExternalReloadBannerState
                 new(false, null, null, dismissedStamps));
         }
 
-        if (SavedEdit.Same(currentCommitted.Edit, diskRecord.Edit))
+        if (SavedEdit.Same(comparableCommitted, comparableDisk))
             return new(ExternalReloadDecision.None, this);
 
         if (stamp is { } s && dismissedStamps.Contains(s) && !Visible)
@@ -175,10 +183,11 @@ internal sealed class ExternalStoreWatcher : IDisposable
                 watcher.Created += OnWatcherEvent;
                 watcher.Deleted += OnWatcherEvent;
                 watcher.Renamed += OnWatcherRenamed;
+                watcher.Error += OnWatcherError;
                 watcher.EnableRaisingEvents = true;
                 watchers[dir] = watcher;
             }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or System.ComponentModel.Win32Exception)
             {
             }
         }
@@ -203,6 +212,32 @@ internal sealed class ExternalStoreWatcher : IDisposable
     {
         ScheduleCheck(args.OldFullPath);
         ScheduleCheck(args.FullPath);
+    }
+
+    private void OnWatcherError(object sender, ErrorEventArgs args)
+    {
+        lock (gate)
+        {
+            if (disposed) return;
+            foreach (var pair in watchers.Where(pair => ReferenceEquals(pair.Value, sender)).ToArray())
+            {
+                pair.Value.Dispose();
+                watchers.Remove(pair.Key);
+            }
+            lastStamps.Clear();
+            RefreshWatchersLocked();
+        }
+        ScheduleCheck(null);
+    }
+
+    internal void SimulateErrorForTests()
+    {
+        FileSystemWatcher? first;
+        lock (gate) first = watchers.Values.FirstOrDefault();
+        if (first != null)
+            OnWatcherError(first, new ErrorEventArgs(new IOException("Simulated buffer overflow")));
+        else
+            ScheduleCheck(null);
     }
 
     private void ScheduleCheck(string? changedPath)

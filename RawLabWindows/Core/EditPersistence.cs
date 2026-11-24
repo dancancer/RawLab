@@ -93,6 +93,14 @@ public sealed record AdjustmentSnapshot(
         HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion &&
         AIDenoiseStrength == other.AIDenoiseStrength;
     internal AdjustmentSnapshot Normalized() => SettingsVersion < CurrentSettingsVersion ? Restore().Capture() : this;
+    internal AdjustmentSnapshot WithAsShotCalibration((double Temperature, double Tint)? calibration)
+    {
+        if (calibration is not { } wb || (AsShotTemperature != null && AsShotTint != null))
+            return this;
+        var restored = Restore();
+        restored.ResolveWhiteBalance(wb);
+        return restored.Capture();
+    }
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 
