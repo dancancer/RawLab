@@ -102,6 +102,8 @@ set(CORE_SOURCES
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
+    src/core/pinned_source_file.cpp
+    src/core/atomic_output_transaction.cpp
     src/core/render_params.cpp
     src/core/edit_recipe_core.cpp
     src/core/gui_store.cpp
@@ -405,6 +407,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/tiff_ifd_tests.cpp
         INCLUDES src
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME pinned_source_atomic_write
+        SOURCES tests/pinned_source_atomic_write_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME jpeg_mpf
@@ -1439,7 +1449,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     rawlab_add_test(
         NAME d3d11_shader_cache
-        SOURCES tests/d3d11_shader_cache_tests.cpp
+        SOURCES tests/d3d11_shader_cache_tests.cpp src/core/atomic_output_transaction.cpp
         LIBRARIES ${d3d11_cache_libs}
         COMPILE_OPTIONS ${d3d11_cache_opts}
         LABELS gpu d3d11 ci_macos_arm64 ci_macos_x86_64 ci_windows
@@ -2053,6 +2063,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
 endif()
 
 include(cmake/ai-denoise.cmake)
+
+if(TARGET rawlab_dualdn_core)
+    target_sources(rawlab_dualdn_core PRIVATE src/core/atomic_output_transaction.cpp)
+endif()
 
 if(BUILD_TESTING)
     get_property(_rawlab_registered_test_targets GLOBAL PROPERTY RAWLAB_REGISTERED_TEST_TARGETS)

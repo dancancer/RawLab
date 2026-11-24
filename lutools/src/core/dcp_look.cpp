@@ -3,12 +3,12 @@
 // See third_party/Adobe-DNG-SDK-LICENSE.txt for the retained Adobe license.
 #include "sony2fuji/dcp_look.h"
 #include "core/parsed_resource_cache.h"
+#include "core/pinned_source_file.h"
 #include "core/resource_file_stamp.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <type_traits>
 
@@ -66,15 +66,16 @@ bool tableCells(const DcpTable& table, bool optional, uint64_t& count) {
 std::shared_ptr<const DcpLook> DcpLook::loadCached(const std::string& path) {
     static ParsedResourceCache<std::shared_ptr<const DcpLook>> cache;
     const auto file = std::filesystem::u8path(path);
-    const auto stamp = resourceFileStamp(file);
-    if (!stamp || stamp->size < 40 || stamp->size > maxBytes) {
+    PinnedSourceFile pinned;
+    if (PinnedSourceFile::pinIdentity(file, false, pinned) != SourcePinStatus::Ok ||
+        pinned.stamp().size < 40 || pinned.stamp().size > maxBytes) {
         cache.evict(path);
         return nullptr;
     }
-    std::string fingerprint = resourceFileStampKey(*stamp);
+    std::string fingerprint = resourceFileStampKey(pinned.stamp());
     if (auto cached = cache.find(path, fingerprint)) return *cached;
     auto result = std::shared_ptr<DcpLook>(new DcpLook);
-    if (!result->load(path, stamp->size) || !(resourceFileStamp(file) == stamp)) {
+    if (!result->load(path, pinned.stamp().size) || !pinned.verifyUnchanged()) {
         cache.evict(path);
         return nullptr;
     }
@@ -82,11 +83,17 @@ std::shared_ptr<const DcpLook> DcpLook::loadCached(const std::string& path) {
 }
 
 bool DcpLook::load(const std::string& path, uintmax_t size) {
-    std::ifstream stream(std::filesystem::u8path(path), std::ios::binary);
-    if (!stream) return false;
-    std::vector<unsigned char> bytes(static_cast<size_t>(size));
-    stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
-    if (stream.gcount() != static_cast<std::streamsize>(size) || stream.peek() != std::char_traits<char>::eof()) return false;
+    PinnedSourceOptions opts;
+    opts.maxBytes = size;
+    opts.allowEmpty = false;
+    opts.checkCancellation = false;
+    opts.computeSha256 = false;
+    PinnedSourceFile pinned;
+    std::vector<unsigned char> bytes;
+    if (PinnedSourceFile::pinAndRead(std::filesystem::u8path(path), opts, pinned, bytes) != SourcePinStatus::Ok ||
+        bytes.size() != size) {
+        return false;
+    }
     if (std::memcmp(bytes.data(), "RLOOKDCP", 8) != 0) return false;
     const unsigned char* cursor = bytes.data() + 8;
     const auto version = integer(cursor, 4), flags = integer(cursor, 4);

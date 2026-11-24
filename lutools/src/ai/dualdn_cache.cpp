@@ -3,6 +3,7 @@
 #include "model_package.h"
 #include "noise_profile.h"
 #include "scene_rgb_adapter.h"
+#include "core/atomic_output_transaction.h"
 #include "core/sha256.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
@@ -11,7 +12,6 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
-#include <random>
 #include <map>
 #include <mutex>
 #include <thread>
@@ -374,42 +374,43 @@ void DenoiseCache::store(const std::string& key, CacheKind kind, int width, int 
         producer.size() > 128 || !std::all_of(values, values + count, [](float x) { return std::isfinite(x); }))
         throw std::invalid_argument("invalid AI cache payload");
     const auto root = std::filesystem::u8path(directory_);
-    std::filesystem::create_directories(root);
     const auto target = root / (key + suffix(kind));
-    std::random_device random;
-    const auto temporary = root / (key + suffix(kind) + ".part-" + std::to_string(random()) + "-" + std::to_string(random()));
     const auto digest = sha256Bytes(values, count * 4);
     Json header = {{"format", "rawlab-dualdn-cache-v1"}, {"key", key}, {"width", width}, {"height", height},
         {"channels", kind == CacheKind::Raw ? 1 : 3}, {"sha256", digest},
         {"dependency", dependency}, {"producer", producer}};
     header["header_sha256"] = digestJson(header);
-    const auto text = header.dump(); const uint32_t length = static_cast<uint32_t>(text.size());
-    try {
-        std::ofstream output(temporary, std::ios::binary);
-        output.write(reinterpret_cast<const char*>(&length), sizeof(length));
-        output.write(text.data(), text.size());
-        output.write(reinterpret_cast<const char*>(values), count * 4); output.close();
-        if (!output) throw std::runtime_error("Cannot write AI cache");
-        if (beforePublish) beforePublish();
-#ifdef _WIN32
-        // 原子替换整个文件，确保相同张量的新 producer 和依赖信息也一起更新。
-        // Windows 即使允许共享删除，也可能在旧读者关闭前拒绝替换；保留原子发布，有限等待短暂读取。
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-        while (!MoveFileExW(temporary.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING)) {
-            const auto error = GetLastError();
-            if ((error != ERROR_ACCESS_DENIED && error != ERROR_SHARING_VIOLATION) ||
-                std::chrono::steady_clock::now() >= deadline)
-                throw std::system_error(error, std::system_category(), "Cannot replace AI cache");
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            if (beforePublish) beforePublish();
-        }
-#else
-        std::filesystem::rename(temporary, target);
-#endif
-        if (payloadDigest) *payloadDigest = digest;
-    } catch (...) {
-        std::error_code ignored; std::filesystem::remove(temporary, ignored); throw;
+    const auto text = header.dump();
+    const uint32_t length = static_cast<uint32_t>(text.size());
+
+    AtomicOutputOptions options;
+    options.includeDestinationFilename = true;
+    options.stagingPrefix = ".part";
+    options.stagingExtension = ".tmp";
+    options.modePolicy = OutputModePolicy::Standard0644;
+    options.rejectSymlinkTarget = true;
+    options.createParentDirs = true;
+    options.syncFile = true;
+    options.winRetryOnTransient = true;
+
+    AtomicOutputTransaction tx(target, options);
+    std::string errMsg;
+    if (tx.begin(&errMsg) != AtomicOutputStatus::Ok) {
+        throw std::runtime_error(errMsg.empty() ? "Cannot create AI cache staging file" : errMsg);
     }
+    if (tx.writeAll(&length, sizeof(length), false, &errMsg) != AtomicOutputStatus::Ok ||
+        tx.writeAll(text.data(), text.size(), false, &errMsg) != AtomicOutputStatus::Ok ||
+        tx.writeAll(values, count * 4, false, &errMsg) != AtomicOutputStatus::Ok) {
+        throw std::runtime_error(errMsg.empty() ? "Cannot write AI cache" : errMsg);
+    }
+    const auto commitStatus = tx.commit([&]() {
+        if (beforePublish) beforePublish();
+        return true;
+    }, &errMsg);
+    if (commitStatus != AtomicOutputStatus::Ok) {
+        throw std::runtime_error(errMsg.empty() ? "Cannot replace AI cache" : errMsg);
+    }
+    if (payloadDigest) *payloadDigest = digest;
 }
 
 void DenoiseCache::prune(uint64_t byteLimit, const std::set<std::string>& protectedKeys) const {

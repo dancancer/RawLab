@@ -348,6 +348,160 @@ void traversalLimits() {
     RAWLAB_CHECK(expandedCount == 64 && offset == 0, "configured Traversal supports 64 main IFDs");
     RAWLAB_CHECK(!expandedTraversal.open(reader, first, 0, dir), "configured Traversal still detects cycles");
 }
+
+void malformedEdgeCases(bool little) {
+    // 1. SubIFD (0x014A) & ExifIFD (0x8769) shared-cycle, null, and header-overlap attacks.
+    {
+        // Classic TIFF: IFD0 at 8 (2 entries: 0x014A -> 38, 0x8769 -> 38), IFD1/SubIFD at 38 (1 entry: 0x014A -> 8)
+        Bytes bytes(64, 0);
+        bytes[0] = bytes[1] = little ? 'I' : 'M';
+        put(bytes, 2, 42, 2, little);
+        put(bytes, 4, 8, 4, little);
+        // IFD0 at 8: count = 2
+        put(bytes, 8, 2, 2, little);
+        put(bytes, 10, 0x014a, 2, little);
+        put(bytes, 12, 4, 2, little);
+        put(bytes, 14, 1, 4, little);
+        put(bytes, 18, 38, 4, little);
+        put(bytes, 22, 0x8769, 2, little);
+        put(bytes, 24, 4, 2, little);
+        put(bytes, 26, 1, 4, little);
+        put(bytes, 30, 38, 4, little);
+        put(bytes, 34, 0, 4, little);
+        // SubIFD at 38: count = 1, points back to IFD0 (8)
+        put(bytes, 38, 1, 2, little);
+        put(bytes, 40, 0x014a, 2, little);
+        put(bytes, 42, 4, 2, little);
+        put(bytes, 44, 1, 4, little);
+        put(bytes, 48, 8, 4, little);
+        put(bytes, 52, 0, 4, little);
+
+        Reader reader(bytes.data(), bytes.size());
+        uint32_t first = 0;
+        RAWLAB_REQUIRE(reader.header(first), "open cyclic SubIFD header");
+        Traversal traversal;
+        Directory ifd0;
+        RAWLAB_REQUIRE(traversal.open(reader, first, 0, ifd0), "open IFD0");
+        uint64_t subOffset = 0, exifOffset = 0;
+        RAWLAB_CHECK(reader.entries(ifd0, [&](const Entry& e) {
+            Payload p;
+            uint64_t v = 0;
+            if (!reader.payload(e, p) || !reader.integer(p.offset, p.width, v)) return false;
+            if (e.tag == 0x014a) subOffset = v;
+            if (e.tag == 0x8769) exifOffset = v;
+            return true;
+        }), "read SubIFD and ExifIFD offsets");
+        Directory subIfd;
+        RAWLAB_REQUIRE(traversal.open(reader, subOffset, 1, subIfd), "open first SubIFD");
+        // ExifIFD pointing to the same already-visited offset must be rejected by shared visited_ tracking.
+        Directory dupIfd;
+        RAWLAB_CHECK(!traversal.open(reader, exifOffset, 1, dupIfd),
+            "shared Traversal rejects duplicate SubIFD/ExifIFD target");
+        uint64_t backToRoot = 0;
+        RAWLAB_CHECK(reader.entries(subIfd, [&](const Entry& e) {
+            Payload p;
+            return reader.payload(e, p) && reader.integer(p.offset, p.width, backToRoot);
+        }) && backToRoot == 8, "extract cyclic back-pointer from SubIFD");
+        Directory cycleDir;
+        RAWLAB_CHECK(!traversal.open(reader, backToRoot, 2, cycleDir),
+            "SubIFD pointing back to IFD0 is rejected");
+    }
+
+    // 2. IFD offset overlapping TIFF header (offset 0, 2, 4) rejected even on large buffers where bytes[2..3] == 42 <= 4096.
+    {
+        Bytes bytes(1024, 0);
+        bytes[0] = bytes[1] = little ? 'I' : 'M';
+        put(bytes, 2, 42, 2, little);
+        put(bytes, 4, 8, 4, little);
+        put(bytes, 8, 0, 2, little);
+        put(bytes, 10, 2, 4, little); // nextOffset = 2 (inside header!)
+        Reader reader(bytes.data(), bytes.size());
+        uint32_t first = 0;
+        RAWLAB_REQUIRE(reader.header(first), "header valid for header-overlap test");
+        Directory dir;
+        RAWLAB_CHECK(!reader.directory(0, dir), "reject IFD at offset 0");
+        RAWLAB_CHECK(!reader.directory(2, dir), "reject IFD overlapping classic TIFF header at offset 2");
+        Traversal traversal;
+        RAWLAB_REQUIRE(traversal.open(reader, first, 0, dir), "open IFD0");
+        Directory headerOverlap;
+        RAWLAB_CHECK(!traversal.open(reader, dir.nextOffset, 1, headerOverlap),
+            "Traversal rejects nextOffset overlapping TIFF header");
+    }
+
+    // 3. Unsupported / gap / zero TIFF types rejected while count == 0 with valid type is accepted.
+    {
+        auto bytes = fixture(little);
+        Reader reader(bytes.data(), bytes.size());
+        uint32_t first = 0;
+        Directory dir;
+        RAWLAB_REQUIRE(reader.header(first) && reader.directory(first, dir), "fixture ready for type checks");
+        for (uint16_t badType : {uint16_t{0}, uint16_t{14}, uint16_t{15}, uint16_t{17}, uint16_t{19}, uint16_t{255}}) {
+            Entry e{};
+            e.tag = 0x1000;
+            e.type = badType;
+            e.count = 1;
+            e.count64 = 1;
+            e.inlineOffset = 18;
+            Payload p;
+            RAWLAB_CHECK(!reader.payload(e, p), "reject zero/gap/unknown TIFF element type");
+        }
+        Entry zeroCount{};
+        zeroCount.tag = 0x1000;
+        zeroCount.type = 7;
+        zeroCount.count = 0;
+        zeroCount.count64 = 0;
+        zeroCount.inlineOffset = 18;
+        Payload zeroPayload;
+        RAWLAB_CHECK(reader.payload(zeroCount, zeroPayload) && zeroPayload.size == 0,
+            "accept valid type with zero count");
+    }
+
+    // 4. 64-bit integer overflow & wrap-around in payload() / contains() and BigTIFF count64 > UINT32_MAX.
+    {
+        auto big = bigTiffFixture(little);
+        // Entry with count64 == 0x100000000ULL (low 32 bits == 0!) must NOT be treated as count == 0.
+        put(big, 68, 0x100000000ULL, 8, little);
+        Reader bigReader(big.data(), big.size());
+        uint64_t first = 0;
+        Directory dir;
+        RAWLAB_REQUIRE(bigReader.header(first) && bigReader.directory(first, dir), "open BigTIFF directory");
+        bool checkedHighCount = false;
+        RAWLAB_CHECK(bigReader.entries(dir, [&](const Entry& e) {
+            if (e.tag == 0x1234) {
+                checkedHighCount = true;
+                RAWLAB_CHECK(e.count == 0 && e.count64 == 0x100000000ULL, "preserve 64-bit count above UINT32_MAX");
+                Payload p;
+                RAWLAB_CHECK(!bigReader.payload(e, p),
+                    "reject BigTIFF entry whose count64 > UINT32_MAX exceeds backing buffer");
+            }
+            return true;
+        }) && checkedHighCount, "checked BigTIFF count64 > UINT32_MAX");
+
+        // BigTIFF header rejected when allowBigTiff == false, and IFD overlapping 16-byte BigTIFF header rejected.
+        Reader disallowReader(big.data(), big.size());
+        uint64_t disallowedFirst = 0;
+        RAWLAB_CHECK(!disallowReader.header(disallowedFirst, false), "reject BigTIFF when allowBigTiff=false");
+        RAWLAB_CHECK(!bigReader.directory(8, dir), "reject BigTIFF IFD overlapping 16-byte header");
+
+        // BigTIFF directory count > 4096 rejected.
+        auto tooManyBig = big;
+        put(tooManyBig, 16, 4097, 8, little);
+        Reader tooManyReader(tooManyBig.data(), tooManyBig.size());
+        RAWLAB_REQUIRE(tooManyReader.header(first), "open BigTIFF header for count > 4096");
+        RAWLAB_CHECK(!tooManyReader.directory(first, dir), "reject BigTIFF directory count > 4096");
+
+        // Wrap-around offset near UINT64_MAX/SIZE_MAX in contains() via payload() (external payload > 8 bytes).
+        Entry wrapEntry{};
+        wrapEntry.tag = 0x1234;
+        wrapEntry.type = 4; // LONG (width 4)
+        wrapEntry.count = 3;
+        wrapEntry.count64 = 3; // length = 12 (> BigTIFF 8-byte inline limit)
+        wrapEntry.value64 = std::numeric_limits<uint64_t>::max() - 4;
+        wrapEntry.value = std::numeric_limits<uint32_t>::max() - 4;
+        Payload wrapPayload;
+        RAWLAB_CHECK(!bigReader.payload(wrapEntry, wrapPayload), "reject wrap-around 64-bit payload offset");
+    }
+}
 }
 
 TEST_MAIN(
@@ -363,5 +517,6 @@ TEST_MAIN(
         validReader(file, little);
         boundaries(little);
         bigTiffTests(little);
+        malformedEdgeCases(little);
     }
 )
