@@ -2,8 +2,10 @@
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 import unittest
 
 
@@ -340,6 +342,218 @@ printf 'PASS: %s line 2\n' "$suite"
                     self.assertIn("::warning::SKIP: accessibility is not trusted here", result.stdout)
                 else:
                     self.assertIn("error: RawLab/tests/hdr-model.sh logged SKIP (forbidden by CI invariant 7)", result.stderr)
+
+    def test_swiftpm_waiter_sigterm_does_not_steal_active_lock_or_build_concurrently(self):
+        helper = ROOT / "scripts/ci/swiftpm-rawlabkit.sh"
+        for fn_call in (
+            'rawlabkit_flags link "$SCRATCH" macos 0',
+            'rawlabnative_flags link "$SCRATCH" macos 0 all',
+        ):
+            with self.subTest(fn_call=fn_call):
+                with tempfile.TemporaryDirectory(prefix="rawlab swiftpm lock ") as directory:
+                    root = Path(directory)
+                    tools = root / "bin"
+                    tools.mkdir()
+                    sdk = root / "MacOSX.sdk"
+                    sdk.mkdir()
+                    scratch = root / "scratch"
+                    bin_dir = root / "bin_out"
+                    bin_dir.mkdir()
+                    for mod in ("RawLabKit", "RawLabNativeTypes", "RawLabNative"):
+                        (bin_dir / f"{mod}.swiftmodule").write_text("mod")
+                        (bin_dir / f"lib{mod}.a").write_text("lib")
+
+                    swift_log = root / "swift_events.log"
+                    swift_tool = tools / "swift"
+                    swift_tool.write_text('''#!/bin/bash
+set -eu
+if [[ "$*" == *"--show-bin-path"* ]]; then
+    printf '%s\\n' "$FAKE_BIN_DIR"
+    exit 0
+fi
+printf 'START:%s\\n' "$CALLER_ID" >> "$SWIFT_LOG"
+sleep 1.0
+printf 'END:%s\\n' "$CALLER_ID" >> "$SWIFT_LOG"
+''')
+                    swift_tool.chmod(0o755)
+                    xcrun_tool = tools / "xcrun"
+                    xcrun_tool.write_text(f"#!/bin/sh\necho '{sdk}'\n")
+                    xcrun_tool.chmod(0o755)
+
+                    cmd_tpl = (
+                        f'export ROOT="{ROOT}" SDK="{sdk}" SCRATCH="{scratch}"; '
+                        f'source "{helper}" && {fn_call}'
+                    )
+                    base_env = {
+                        k: v for k, v in os.environ.items()
+                        if k not in ("RAWLAB_SWIFTPM_CACHE", "RAWLAB_SWIFTPM_PREBUILT", "RAWLAB_SWIFTPM_PREBUILT_MACOS")
+                    }
+                    base_env.update({
+                        "PATH": f"{tools}:{os.environ['PATH']}",
+                        "FAKE_BIN_DIR": str(bin_dir),
+                        "SWIFT_LOG": str(swift_log),
+                        "RAWLAB_ARCH": "arm64",
+                    })
+                    holder = subprocess.Popen(
+                        ["/bin/bash", "-c", cmd_tpl],
+                        env={**base_env, "CALLER_ID": "A"},
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    waiter = None
+                    try:
+                        lock_dir = scratch / "macos-arm64-MacOSX.lock"
+                        deadline = time.monotonic() + 5.0
+                        while time.monotonic() < deadline:
+                            if lock_dir.is_dir() and swift_log.exists() and "START:A" in swift_log.read_text():
+                                break
+                            time.sleep(0.02)
+                        self.assertTrue(lock_dir.is_dir(), "Holder A never acquired lock_dir")
+
+                        waiter = subprocess.Popen(
+                            ["/bin/bash", "-c", cmd_tpl],
+                            env={**base_env, "CALLER_ID": "B"},
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            start_new_session=True,
+                        )
+                        time.sleep(0.25)
+                        self.assertIsNone(waiter.poll(), "Waiter B should still be waiting on A's lock")
+                        os.killpg(waiter.pid, signal.SIGTERM)
+                        waiter_out, waiter_err = waiter.communicate(timeout=5)
+                        self.assertNotEqual(waiter.returncode, 0, waiter_out + waiter_err)
+                        self.assertTrue(lock_dir.is_dir(), "Interrupted waiter B must NOT remove holder A's lock_dir")
+
+                        holder_out, holder_err = holder.communicate(timeout=5)
+                        self.assertEqual(holder.returncode, 0, holder_out + holder_err)
+                        self.assertFalse(lock_dir.exists(), "Holder A must release lock_dir after finishing")
+                        events = swift_log.read_text().splitlines()
+                        self.assertEqual(events, ["START:A", "END:A"], f"Waiter B must not run concurrent swift build: {events}")
+                    finally:
+                        for proc in (waiter, holder):
+                            if proc is not None and proc.poll() is None:
+                                proc.kill()
+                            if proc is not None:
+                                proc.communicate()
+
+    def test_sigterm_terminates_child_suites_without_post_exit_sentinels(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab sigterm tree ") as directory:
+            root = Path(directory)
+            runner = root / "scripts/ci/apple-models.sh"
+            runner.parent.mkdir(parents=True)
+            shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+            tools = root / "bin"
+            tools.mkdir()
+            for name in ("xcode-select", "xcrun", "python3"):
+                tool = tools / name
+                tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+                tool.chmod(0o755)
+            swift_tool = tools / "swift"
+            swift_tool.write_text("#!/bin/sh\necho 'PASS: simulated swift test'\n")
+            swift_tool.chmod(0o755)
+
+            started_dir = root / "started"
+            sentinel_dir = root / "sentinels"
+            started_dir.mkdir()
+            sentinel_dir.mkdir()
+            child = tools / "bash"
+            child.write_text('''#!/bin/bash
+suite_name="$(basename "$1" .sh)"
+: > "$PROBE_STARTED/$suite_name"
+/bin/sleep 1.2
+: > "$PROBE_SENTINELS/$suite_name"
+''')
+            child.chmod(0o755)
+
+            proc = subprocess.Popen(
+                ["/bin/bash", str(runner), "macos"],
+                env={
+                    **os.environ,
+                    "PATH": f"{tools}:{os.environ['PATH']}",
+                    "TMPDIR": str(root),
+                    "PROBE_STARTED": str(started_dir),
+                    "PROBE_SENTINELS": str(sentinel_dir),
+                },
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            try:
+                deadline = time.monotonic() + 10.0
+                while time.monotonic() < deadline:
+                    if len(list(started_dir.iterdir())) >= 4:
+                        break
+                    time.sleep(0.02)
+                self.assertGreaterEqual(len(list(started_dir.iterdir())), 4, "Expected 4 concurrent suites to start")
+
+                proc.send_signal(signal.SIGTERM)
+                proc.communicate(timeout=5)
+                self.assertNotEqual(proc.returncode, 0)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                proc.communicate()
+            time.sleep(1.5)
+            self.assertEqual(
+                [p.name for p in sentinel_dir.iterdir()],
+                [],
+                "SIGTERM must terminate descendant suite processes without post-exit sentinels",
+            )
+
+    def test_multi_trailing_slash_tmpdir_and_relative_swiftpm_cache_resolve_cleanly(self):
+        root, runner, tools = self._parallel_probe_root()
+        tmp_base = root / "probe_slash"
+        tmp_base.mkdir()
+        records = root / "records"
+        counts = root / "counts"
+        active = root / "active"
+        active.mkdir()
+        swift_log = root / "swift_calls.log"
+        tools_swift = tools / "swift"
+        tools_swift.write_text('''#!/bin/bash
+printf '%s\\n' "$*" >> "$SWIFT_LOG"
+echo 'PASS: simulated swift test'
+''')
+        tools_swift.chmod(0o755)
+        child = tools / "bash"
+        child.write_text('''#!/bin/bash
+set -eu
+suite="$1"
+printf '%s|%s|%s|%s\\n' "$suite" "$TMPDIR" "$RAWLAB_TEST_TMP_DIR" "$RAWLAB_SWIFTPM_CACHE" >> "$PROBE_RECORDS"
+printf 'PASS: %s\\n' "$suite"
+''')
+        child.chmod(0o755)
+
+        result = subprocess.run(
+            ["/bin/bash", str(runner), "macos"],
+            env={
+                **os.environ,
+                "PATH": f"{tools}:{os.environ['PATH']}",
+                "TMPDIR": f"{tmp_base}///",
+                "RAWLAB_CI_SWIFTPM_CACHE": ".cache/rel-swiftpm",
+                "PROBE_RECORDS": str(records),
+                "PROBE_COUNTS": str(counts),
+                "PROBE_ACTIVE": str(active),
+                "SWIFT_LOG": str(swift_log),
+            },
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lines = records.read_text().splitlines()
+        self.assertGreater(len(lines), 1)
+        expected_cache = str(root / ".cache/rel-swiftpm/deps")
+        for line in lines:
+            _, suite_tmp, rawlab_tmp, cache_dir = line.split("|")
+            self.assertNotIn("//", suite_tmp)
+            self.assertNotIn("//", rawlab_tmp)
+            self.assertEqual(suite_tmp, rawlab_tmp)
+            self.assertEqual(cache_dir, expected_cache)
+        self.assertTrue((root / ".cache/rel-swiftpm/deps").is_dir())
+        self.assertTrue((root / ".cache/rel-swiftpm/tests").is_dir())
+        self.assertIn(f"--scratch-path {root / '.cache/rel-swiftpm/tests'}", swift_log.read_text())
 
 
 if __name__ == "__main__":

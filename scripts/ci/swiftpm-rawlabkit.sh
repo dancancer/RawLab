@@ -83,10 +83,17 @@ rawlabkit_flags() {
 
     local lock_dir="$scratch.lock"
     (
-        trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
+        lock_owned=0
+        cleanup_lock() {
+            [ "$lock_owned" -eq 1 ] && rmdir "$lock_dir" 2>/dev/null || true
+        }
+        trap 'cleanup_lock' EXIT
+        trap 'cleanup_lock; exit 130' INT
+        trap 'cleanup_lock; exit 143' TERM
         while ! mkdir "$lock_dir" 2>/dev/null; do
             sleep 0.05
         done
+        lock_owned=1
         local bin_dir
         if [ "$platform" = macos ]; then
             SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" >&2
@@ -215,10 +222,17 @@ rawlabnative_flags() {
 
     local lock_dir="$scratch.lock"
     (
-        trap 'rmdir "$lock_dir" 2>/dev/null || true' EXIT INT TERM
+        lock_owned=0
+        cleanup_lock() {
+            [ "$lock_owned" -eq 1 ] && rmdir "$lock_dir" 2>/dev/null || true
+        }
+        trap 'cleanup_lock' EXIT
+        trap 'cleanup_lock; exit 130' INT
+        trap 'cleanup_lock; exit 143' TERM
         while ! mkdir "$lock_dir" 2>/dev/null; do
             sleep 0.05
         done
+        lock_owned=1
         local bin_dir t
         if [ "$platform" = macos ]; then
             SDKROOT="$sdk" swift build "${build_args[@]}" --scratch-path "$scratch" >&2

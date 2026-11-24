@@ -198,6 +198,7 @@ jobs:
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Restore SwiftPM cache
         id: swiftpm-cache
+        if: (needs.changes.outputs.checks == 'models' && matrix.arch == 'arm64') || ((needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && (matrix.suite == 'all' || matrix.suite == 'core'))
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -255,10 +256,10 @@ jobs:
             python scripts/ci/test_native_cache_xcode.py
           fi
           ci_timed app-build bash RawLabMac/build.sh
-          mkdir -p "$PWD/.cache/ci/swiftpm/deps" "$PWD/.cache/ci/swiftpm/tests"
-          export RAWLAB_SWIFTPM_CACHE="$PWD/.cache/ci/swiftpm/deps"
           lutprep_python="$(command -v python)"
           if in_suite core; then
+            mkdir -p "$PWD/.cache/ci/swiftpm/deps" "$PWD/.cache/ci/swiftpm/tests"
+            export RAWLAB_SWIFTPM_CACHE="$PWD/.cache/ci/swiftpm/deps"
             ci_timed rawlabkit-tests swift test --scratch-path "$PWD/.cache/ci/swiftpm/tests"
             ci_timed hdr-bridge bash RawLabMac/tests/hdr-bridge.sh
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
@@ -315,7 +316,7 @@ jobs:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
       - name: Save SwiftPM cache
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.checks != 'build' && needs.changes.outputs.checks != 'contracts' && (matrix.suite == 'all' || matrix.suite == 'core') && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
@@ -987,6 +988,7 @@ jobs:
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Restore SwiftPM cache
         id: swiftpm-cache
+        if: needs.changes.outputs.checks == 'models' || needs.changes.outputs.checks == 'full'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -1042,7 +1044,7 @@ jobs:
           key: rawlab-assets-v1-${{ runner.os }}-luts-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
       - name: Save SwiftPM cache
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.checks != 'build' && needs.changes.outputs.checks != 'native' && needs.changes.outputs.checks != 'contracts' && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-swiftpm-v1-ios-xcode27-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}

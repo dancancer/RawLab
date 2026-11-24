@@ -978,6 +978,96 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertEqual(model_steps[0].get("env", {}).get("RAWLAB_CI_SWIFTPM_CACHE"), ".cache/ci/swiftpm")
                 self.assertLess(steps.index(restore), steps.index(model_steps[0]))
 
+    def test_apple_swiftpm_cache_is_never_saved_when_unpopulated(self):
+        base_github = {
+            "repository": "dancancer/RawLab",
+            "event_name": "workflow_dispatch",
+            "event": {},
+        }
+        for checks in ("models", "build", "native", "full"):
+            changes_outputs = {
+                "checks": checks,
+                "models": "true" if checks in ("models", "full") else "false",
+                "build": "true" if checks in ("build", "native", "full") else "false",
+                "native": "true" if checks in ("native", "full") else "false",
+            }
+            for row in macos_matrix(checks):
+                with self.subTest(job="macos", checks=checks, arch=row["arch"], suite=row["suite"]):
+                    steps = self.workflow["jobs"]["macos"]["steps"]
+                    restore = next(s for s in steps if s.get("id") == "swiftpm-cache")
+                    save = next(
+                        s for s in steps
+                        if s.get("uses", "").startswith("actions/cache/save@")
+                        and s["with"].get("key") == restore["with"].get("key")
+                    )
+                    ctx = {
+                        "_success": True,
+                        "github": base_github,
+                        "needs": {"changes": {"outputs": changes_outputs}},
+                        "matrix": row,
+                    }
+                    restore_runs = _gha_truthy(_eval_gha_expr(_strip_expr(restore["if"]), ctx))
+                    expected = (checks == "models" and row["arch"] == "arm64") or (
+                        checks in ("native", "full") and row["suite"] in ("all", "core")
+                    )
+                    self.assertEqual(restore_runs, expected)
+
+                    save_expr = _strip_expr(save["if"])
+                    sim_ctx = {
+                        **ctx,
+                        "steps": {"swiftpm-cache": {"outcome": "success" if restore_runs else "skipped", "outputs": {"cache-hit": "false"}}},
+                    }
+                    standalone_ctx = {
+                        **ctx,
+                        "steps": {"swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}}},
+                    }
+                    self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)), expected)
+                    self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)), expected)
+                    if checks == "build" or row["suite"] in ("build", "agent", "render"):
+                        self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)))
+                        self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)))
+
+            with self.subTest(job="ios", checks=checks):
+                steps = self.workflow["jobs"]["ios"]["steps"]
+                restore = next(s for s in steps if s.get("id") == "swiftpm-cache")
+                save = next(
+                    s for s in steps
+                    if s.get("uses", "").startswith("actions/cache/save@")
+                    and s["with"].get("key") == restore["with"].get("key")
+                )
+                ctx = {
+                    "_success": True,
+                    "github": base_github,
+                    "needs": {"changes": {"outputs": changes_outputs}},
+                }
+                restore_runs = _gha_truthy(_eval_gha_expr(_strip_expr(restore["if"]), ctx))
+                expected = checks in ("models", "full")
+                self.assertEqual(restore_runs, expected)
+
+                save_expr = _strip_expr(save["if"])
+                sim_ctx = {
+                    **ctx,
+                    "steps": {"swiftpm-cache": {"outcome": "success" if restore_runs else "skipped", "outputs": {"cache-hit": "false"}}},
+                }
+                standalone_ctx = {
+                    **ctx,
+                    "steps": {"swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}}},
+                }
+                self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)), expected)
+                self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)), expected)
+                if checks in ("build", "native"):
+                    self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)))
+                    self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)))
+
+        mac_build = next(
+            s for s in self.workflow["jobs"]["macos"]["steps"]
+            if "RawLabMac/build.sh" in s.get("run", "")
+        )
+        run_lines = mac_build["run"].splitlines()
+        core_idx = next(i for i, line in enumerate(run_lines) if "if in_suite core; then" in line)
+        mkdir_idx = next(i for i, line in enumerate(run_lines) if ".cache/ci/swiftpm/deps" in line)
+        self.assertGreater(mkdir_idx, core_idx)
+
 
 if __name__ == "__main__":
     unittest.main()

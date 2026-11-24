@@ -75,27 +75,72 @@ case "${1:-}" in
 esac
 # 仅复用本次运行的编译器模块；测试程序和结果仍由各脚本重新生成。
 _tmp_base="${TMPDIR:-/tmp}"
-_tmp_base="${_tmp_base%/}"
+while [[ "$_tmp_base" == */ && "$_tmp_base" != "/" ]]; do
+    _tmp_base="${_tmp_base%/}"
+done
 : "${_tmp_base:=/}"
-MODEL_CACHE="$(mktemp -d "$_tmp_base/rawlab-apple-models.XXXXXX")"
+MODEL_CACHE="$(mktemp -d "${_tmp_base%/}/rawlab-apple-models.XXXXXX")"
 pids=()
 idxs=()
+_apple_models_cleaned=0
+_collect_process_tree() {
+    local target="$1"
+    local child children
+    printf '%s\n' "$target"
+    children="$(pgrep -P "$target" 2>/dev/null || true)"
+    if [[ -n "$children" ]]; then
+        while IFS= read -r child; do
+            [[ -n "$child" ]] || continue
+            _collect_process_tree "$child"
+        done <<< "$children"
+    fi
+}
 cleanup_apple_models() {
-    local pid
+    local pid p tree_line
+    local all_pids=()
+    if [ "$_apple_models_cleaned" -eq 1 ]; then
+        return 0
+    fi
+    _apple_models_cleaned=1
     for pid in ${pids[@]+"${pids[@]}"}; do
-        kill "$pid" 2>/dev/null || true
+        while IFS= read -r tree_line; do
+            [[ -n "$tree_line" ]] || continue
+            all_pids+=("$tree_line")
+        done <<< "$(_collect_process_tree "$pid")"
+    done
+    for p in ${all_pids[@]+"${all_pids[@]}"}; do
+        kill -TERM "$p" 2>/dev/null || true
     done
     for pid in ${pids[@]+"${pids[@]}"}; do
         wait "$pid" 2>/dev/null || true
     done
+    local tries=0
+    while [ "$tries" -lt 50 ]; do
+        local any_alive=0
+        for p in ${all_pids[@]+"${all_pids[@]}"}; do
+            if kill -0 "$p" 2>/dev/null; then
+                any_alive=1
+                break
+            fi
+        done
+        [ "$any_alive" -eq 0 ] && break
+        sleep 0.02
+        tries=$((tries + 1))
+    done
     rm -rf "$MODEL_CACHE"
 }
 trap cleanup_apple_models EXIT
+trap 'cleanup_apple_models; exit 130' INT
+trap 'cleanup_apple_models; exit 143' TERM
 export RAWLAB_TRANSFER_MODULE_CACHE="$MODEL_CACHE/transfer"
 if [[ -n "${RAWLAB_CI_SWIFTPM_CACHE:-}" ]]; then
-    mkdir -p "$RAWLAB_CI_SWIFTPM_CACHE/deps" "$RAWLAB_CI_SWIFTPM_CACHE/tests"
-    export RAWLAB_SWIFTPM_CACHE="$RAWLAB_CI_SWIFTPM_CACHE/deps"
-    SWIFTPM_TEST_SCRATCH="$RAWLAB_CI_SWIFTPM_CACHE/tests"
+    _ci_swiftpm_cache="$RAWLAB_CI_SWIFTPM_CACHE"
+    if [[ "$_ci_swiftpm_cache" != /* ]]; then
+        _ci_swiftpm_cache="$ROOT/$_ci_swiftpm_cache"
+    fi
+    mkdir -p "$_ci_swiftpm_cache/deps" "$_ci_swiftpm_cache/tests"
+    export RAWLAB_SWIFTPM_CACHE="$_ci_swiftpm_cache/deps"
+    SWIFTPM_TEST_SCRATCH="$_ci_swiftpm_cache/tests"
 else
     export RAWLAB_SWIFTPM_CACHE="$MODEL_CACHE/swiftpm"
     SWIFTPM_TEST_SCRATCH="$MODEL_CACHE/swiftpm-tests"
@@ -145,7 +190,7 @@ launch_suite() {
     (
         export TMPDIR="$suite_tmp"
         export RAWLAB_TEST_TMP_DIR="$suite_tmp"
-        bash "$suite" > "$suite_log" 2>&1
+        exec bash "$suite" > "$suite_log" 2>&1
     ) &
     pids+=("$!")
     idxs+=("$idx")

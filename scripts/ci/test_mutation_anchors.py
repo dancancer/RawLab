@@ -209,6 +209,7 @@ class MutationAnchorTests(unittest.TestCase):
     def test_anchor_7_parallel_skip_swallow_fails_test_apple_models(self) -> None:
         files = (
             "scripts/ci/apple-models.sh",
+            "scripts/ci/swiftpm-rawlabkit.sh",
             "scripts/ci/test_apple_models.py",
         )
         with tempfile.TemporaryDirectory(prefix="rawlab-mut-apple-skip-") as tmp:
