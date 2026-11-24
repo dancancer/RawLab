@@ -71,7 +71,7 @@ internal suspend fun openCameraImportSession(
             val canRetryWithRemoteInit =
                 !remoteInitialized &&
                     opened is SonyMobileSession &&
-                    error.operation == 0x923c &&
+                    error.operation in REMOTE_INIT_RETRY_OPS &&
                     error.code in REMOTE_INIT_RETRY_CODES &&
                     info.operations.containsAll(listOf(0x9201, 0x9202))
             if (!canRetryWithRemoteInit) throw error
@@ -85,6 +85,7 @@ internal suspend fun openCameraImportSession(
     }
 }
 
+private val REMOTE_INIT_RETRY_OPS = setOf(0x923b, 0x923c)
 private val REMOTE_INIT_RETRY_CODES = setOf(0x2002, 0x2005, 0x201e)
 
 internal data class CameraSessionQueueResult(

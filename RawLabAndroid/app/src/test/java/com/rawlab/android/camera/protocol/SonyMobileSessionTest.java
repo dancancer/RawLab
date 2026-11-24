@@ -534,6 +534,7 @@ public final class SonyMobileSessionTest {
         List<int[]> previewParams = new CopyOnWriteArrayList<>();
         List<int[]> readParams = new CopyOnWriteArrayList<>();
         List<Integer> hasAssetSlots = new CopyOnWriteArrayList<>();
+        List<Integer> probedSlots = new CopyOnWriteArrayList<>();
         byte[] sampleBytes = "II*\0sample-slot-two-payload".getBytes("US-ASCII");
         try (FakeServer server = new FakeServer(command -> {
             while (true) {
@@ -547,7 +548,9 @@ public final class SonyMobileSessionTest {
                     SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
                 } else if (request.operation == 0x923b) {
                     assertEquals(1, request.parameters.length);
-                    assertEquals(2, request.parameters[0]);
+                    int slot = request.parameters[0];
+                    assertTrue(slot == 1 || slot == 2);
+                    probedSlots.add(slot);
                     byte[] slotInfo = concat(SonyMobileSession.u32(1), SonyMobileSession.u32(0), SonyMobileSession.u32(0));
                     sendData(command, request.transaction, slotInfo, slotInfo.length);
                 } else if (request.operation == 0x923c) {
@@ -592,6 +595,7 @@ public final class SonyMobileSessionTest {
                 assertArrayEquals(sampleBytes, read);
                 assertEquals((2 << 24) | 1, readParams.get(0)[1]);
                 assertTrue(hasAssetSlots.contains(2));
+                assertEquals(Arrays.asList(1, 2), probedSlots);
             }
             server.finish();
         }
@@ -666,6 +670,215 @@ public final class SonyMobileSessionTest {
                 "0x9201:[2, 0, 0]",
                 "0x9202:[300, 1]",
                 "0x9201:[3, 0, 0]"), sequence);
+    }
+
+    @Test
+    public void listsSlot2WhenSlot1IsEmpty() throws Exception {
+        List<Integer> listSlots = new CopyOnWriteArrayList<>();
+        List<int[]> downloadParams = new CopyOnWriteArrayList<>();
+        byte[] sampleBytes = "II*\0slot-2-only-arw".getBytes("US-ASCII");
+        try (FakeServer server = new FakeServer(command -> {
+            while (true) {
+                Request request;
+                try {
+                    request = readRequest(command);
+                } catch (java.io.EOFException done) {
+                    return;
+                }
+                if (request.operation == 0x1002) {
+                    SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
+                } else if (request.operation == 0x923b) {
+                    int slot = request.parameters[0];
+                    if (slot == 1) {
+                        SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x201d), SonyMobileSession.u32(request.transaction)));
+                    } else {
+                        byte[] slotInfo = concat(SonyMobileSession.u32(1), SonyMobileSession.u32(0), SonyMobileSession.u32(0));
+                        sendData(command, request.transaction, slotInfo, slotInfo.length);
+                    }
+                } else if (request.operation == 0x923c) {
+                    int slot = request.parameters[3];
+                    listSlots.add(slot);
+                    assertEquals(2, slot);
+                    byte[] page = contentsPage(10, 1, "DSC00002.ARW", sampleBytes.length, 2000L);
+                    sendData(command, request.transaction, page, page.length);
+                } else if (request.operation == 0x923d) {
+                    downloadParams.add(request.parameters);
+                    sendData(command, request.transaction, sampleBytes, sampleBytes.length);
+                } else {
+                    throw new AssertionError("unexpected op " + request.operation);
+                }
+            }
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7M5",
+                        "1.00", new java.util.HashSet<>(Arrays.asList(0x1001, 0x1002, 0x923b, 0x923c, 0x923d)));
+                session.openSession();
+                List<SonyMobileSession.Asset> listed = session.listPhotos(device);
+                assertEquals(1, listed.size());
+                assertEquals(2, listed.get(0).slot);
+                assertFalse(listSlots.contains(1));
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                session.download(device, listed.get(0), out);
+                assertArrayEquals(sampleBytes, out.toByteArray());
+                assertEquals((2 << 24) | 1, downloadParams.get(0)[1]);
+            }
+            server.finish();
+        }
+    }
+
+    @Test
+    public void handlesLargeDateListIn0x923b() throws Exception {
+        ByteArrayOutputStream largeDates = new ByteArrayOutputStream();
+        largeDates.write(SonyMobileSession.u32(200));
+        for (int i = 0; i < 200; i++) {
+            largeDates.write(new byte[8]);
+        }
+        byte[] datePayload = largeDates.toByteArray();
+        assertTrue(datePayload.length > 1024);
+
+        try (FakeServer server = new FakeServer(command -> {
+            while (true) {
+                Request request;
+                try {
+                    request = readRequest(command);
+                } catch (java.io.EOFException done) {
+                    return;
+                }
+                if (request.operation == 0x1002) {
+                    SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
+                } else if (request.operation == 0x923b) {
+                    if (request.parameters[0] == 1) {
+                        sendData(command, request.transaction, datePayload, datePayload.length);
+                    } else {
+                        SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x201d), SonyMobileSession.u32(request.transaction)));
+                    }
+                } else if (request.operation == 0x923c) {
+                    byte[] page = contentsPage(10, 1, "DSC00001.ARW", 128L, 1000L);
+                    sendData(command, request.transaction, page, page.length);
+                } else {
+                    throw new AssertionError("unexpected op " + request.operation);
+                }
+            }
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7M5",
+                        "1.00", new java.util.HashSet<>(Arrays.asList(0x1001, 0x1002, 0x923b, 0x923c, 0x923d)));
+                session.openSession();
+                List<SonyMobileSession.Asset> listed = session.listPhotos(device);
+                assertEquals(1, listed.size());
+                assertEquals("DSC00001.ARW", listed.get(0).name);
+            }
+            server.finish();
+        }
+    }
+
+    @Test
+    public void initializeRemoteContentsRetriesEmpty9202() throws Exception {
+        final int[] attempts9202 = {0};
+        try (FakeServer server = new FakeServer(command -> {
+            while (true) {
+                Request request;
+                try {
+                    request = readRequest(command);
+                } catch (java.io.EOFException done) {
+                    return;
+                }
+                if (request.operation == 0x9202) {
+                    attempts9202[0]++;
+                    if (attempts9202[0] < 3) {
+                        SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
+                    } else {
+                        sendData(command, request.transaction, SonyMobileSession.u16(0x12c), 2);
+                    }
+                } else {
+                    SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
+                }
+            }
+        })) {
+            try (SonyMobileSession session = new SonyMobileSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {})) {
+                SonyMobileSession.Device device = new SonyMobileSession.Device("Sony Corporation", "ILCE-7M5",
+                        "1.00", new java.util.HashSet<>(Arrays.asList(0x1001, 0x1002, 0x9201, 0x9202, 0x923c, 0x923d)));
+                session.openSession(device, true);
+                assertEquals(3, attempts9202[0]);
+            }
+            server.finish();
+        }
+    }
+
+    @Test
+    public void tetherListsSlot2WhenSlot1IsEmptyAndDownloadsSlot2() throws Exception {
+        List<Integer> listSlots = new CopyOnWriteArrayList<>();
+        List<int[]> downloadParams = new CopyOnWriteArrayList<>();
+        byte[] sampleBytes = "II*\0tether-slot-2-arw".getBytes("US-ASCII");
+        try (FakeServer server = new FakeServer(command -> {
+            while (true) {
+                Request request;
+                try {
+                    request = readRequest(command);
+                } catch (java.io.EOFException done) {
+                    return;
+                }
+                if (request.operation == 0x1001) {
+                    int[] ops = new int[]{0x1001, 0x1002, 0x9201, 0x9202, 0x9209, 0x923b, 0x923c, 0x923d};
+                    ByteArrayOutputStream opsOut = new ByteArrayOutputStream();
+                    opsOut.write(SonyMobileSession.u32(ops.length));
+                    for (int op : ops) opsOut.write(SonyMobileSession.u16(op));
+                    byte[] deviceInfo = concat(
+                            SonyMobileSession.u16(100), SonyMobileSession.u32(17), SonyMobileSession.u16(100),
+                            ptpText("Sony"), SonyMobileSession.u16(0), opsOut.toByteArray(), new byte[16],
+                            ptpText("Sony Corporation"), ptpText("ILCE-7M5"), ptpText("1.00"), ptpText("fixture"));
+                    sendData(command, request.transaction, deviceInfo, deviceInfo.length);
+                } else if (request.operation == 0x1002 || request.operation == 0x9201) {
+                    SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x2001), SonyMobileSession.u32(request.transaction)));
+                } else if (request.operation == 0x9202) {
+                    byte[] desc = concat(SonyMobileSession.u16(0x12c), SonyMobileSession.u32(0), SonyMobileSession.u32(0));
+                    sendData(command, request.transaction, desc, desc.length);
+                } else if (request.operation == 0x923b) {
+                    int slot = request.parameters[0];
+                    if (slot == 1) {
+                        SonyMobileSession.writePacket(command, 7, concat(SonyMobileSession.u16(0x201d), SonyMobileSession.u32(request.transaction)));
+                    } else {
+                        byte[] slotInfo = concat(SonyMobileSession.u32(1), SonyMobileSession.u32(0), SonyMobileSession.u32(0));
+                        sendData(command, request.transaction, slotInfo, slotInfo.length);
+                    }
+                } else if (request.operation == 0x923c) {
+                    int slot = request.parameters[3];
+                    listSlots.add(slot);
+                    assertEquals(2, slot);
+                    byte[] page = contentsPage(10, 1, "DSC00002.ARW", sampleBytes.length, 2000L);
+                    sendData(command, request.transaction, page, page.length);
+                } else if (request.operation == 0x923d) {
+                    downloadParams.add(request.parameters);
+                    sendData(command, request.transaction, sampleBytes, sampleBytes.length);
+                } else {
+                    throw new AssertionError("unexpected tether op " + request.operation);
+                }
+            }
+        })) {
+            try (SonyTetherSession session = new SonyTetherSession(server.factory(),
+                    InetAddress.getLoopbackAddress(), UUID.randomUUID(), message -> {}, SonyTetherSession.Purpose.TETHER)) {
+                session.connectRemote();
+                List<SonyMobileSession.Asset> listed = session.listPhotos();
+                assertEquals(1, listed.size());
+                assertEquals(2, listed.get(0).slot);
+                assertFalse(listSlots.contains(1));
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                session.download(listed.get(0), out);
+                assertArrayEquals(sampleBytes, out.toByteArray());
+                assertEquals((2 << 24) | 1, downloadParams.get(0)[1]);
+            }
+            server.finish();
+        }
+    }
+
+    private static byte[] ptpText(String value) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(value.length() + 1);
+        out.write((value + "\0").getBytes("UTF-16LE"));
+        return out.toByteArray();
     }
 
     private static Request readRequest(Socket command) throws Exception {

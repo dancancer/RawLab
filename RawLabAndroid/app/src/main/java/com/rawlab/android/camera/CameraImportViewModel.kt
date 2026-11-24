@@ -468,6 +468,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                             null
                         }
                     },
+                    onDiagnostic = { debugCameraLog(SonySshTunnel.redactIps(it)) },
                 )
             }
 
@@ -647,7 +648,10 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                             )
                         }
                     }
-                    else -> onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                    else -> {
+                        debugCameraLog("submitAccessAuth failed: ${error.javaClass.simpleName}: ${SonySshTunnel.redactIps(error.message)}")
+                        onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                    }
                 }
             }
         }
@@ -1112,10 +1116,16 @@ internal suspend fun resolveCameraAccessAuth(
     probeSsh: () -> SshHostProbe,
     connectSsh: (user: String, password: String, expectedFingerprint: String) -> SonySshTunnel,
     tryDirect: suspend () -> ConnectedCameraImport?,
+    onDiagnostic: (String) -> Unit = {},
 ): CameraAuthResolution {
     val saved = cameraId.takeIf { it.isNotBlank() }?.let(loadSaved)
     if (saved != null) {
-        val probe = runCatching { probeSsh() }.getOrNull()
+        val probe = try {
+            probeSsh()
+        } catch (error: Throwable) {
+            onDiagnostic("probeSsh failed: ${error.javaClass.simpleName}: ${error.message}")
+            null
+        }
         if (probe != null) {
             val savedFingerprint = normalizeSha256Fingerprint(saved.fingerprint)
             if (savedFingerprint == null || !MessageDigest.isEqual(
@@ -1162,7 +1172,8 @@ internal suspend fun resolveCameraAccessAuth(
                         errorMessage = R.string.camera_auth_failed,
                     ),
                 )
-            } catch (_: Throwable) {
+            } catch (error: Throwable) {
+                onDiagnostic("connectSsh failed: ${error.javaClass.simpleName}: ${error.message}")
                 CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
             }
         }
@@ -1172,8 +1183,14 @@ internal suspend fun resolveCameraAccessAuth(
         CameraAuthResolution.Direct(tryDirect())
     } catch (_: CameraMediaSession.UnsupportedCameraException) {
         CameraAuthResolution.Failed(SonyCameraConnection.Failure.UNSUPPORTED)
-    } catch (_: IOException) {
-        val probe = runCatching { probeSsh() }.getOrNull()
+    } catch (error: IOException) {
+        onDiagnostic("tryDirect failed: ${error.javaClass.simpleName}")
+        val probe = try {
+            probeSsh()
+        } catch (probeError: Throwable) {
+            onDiagnostic("probeSsh failed: ${probeError.javaClass.simpleName}: ${probeError.message}")
+            null
+        }
         if (probe != null) {
             CameraAuthResolution.PromptAuth(
                 CameraAccessAuthPrompt(
@@ -1187,7 +1204,8 @@ internal suspend fun resolveCameraAccessAuth(
         } else {
             CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
         }
-    } catch (_: Throwable) {
+    } catch (error: Throwable) {
+        onDiagnostic("tryDirect failed: ${error.javaClass.simpleName}: ${error.message}")
         CameraAuthResolution.Failed(SonyCameraConnection.Failure.DISCONNECTED)
     }
 }

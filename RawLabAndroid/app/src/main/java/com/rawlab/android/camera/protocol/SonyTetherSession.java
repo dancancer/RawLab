@@ -15,6 +15,7 @@ public final class SonyTetherSession implements Closeable {
     public enum Profile { A7CII_2_00, ZVE10_2_02, GENERIC }
     public enum Purpose { IMPORT, TETHER }
     private static final int LIMIT = 8 << 20;
+    private static final int SLOT_DATES_LIMIT = 256 << 10;
     private final Socket command, event;
     private final Reporter reporter;
     private final Purpose purpose;
@@ -742,31 +743,58 @@ public final class SonyTetherSession implements Closeable {
         return listPhotosFrom(0L).assets;
     }
 
+    private boolean shouldListSlot(int slot, boolean defaultWhenUnknown) throws IOException {
+        if (!operations.contains(0x923b)) return slot == 1;
+        try {
+            byte[] info = call(0x923b, new int[]{slot}, null, SLOT_DATES_LIMIT, true);
+            if (info.length < 4) return false;
+            return leU32(info, 0) > 0;
+        } catch (RemoteResponseException error) {
+            if (error.code == 0x201d || error.code == 0x2013) return false;
+            return defaultWhenUnknown;
+        }
+    }
+
     public synchronized IncrementalContents listPhotosFrom(long startCursor) throws IOException {
         if (!remoteReady) throw new IOException("Remote handshake incomplete");
-        List<Asset> result = new ArrayList<>(); Set<String> seen = new HashSet<>(); long cursor = Math.max(0L, startCursor);
-        long latestCursor = 0L; boolean hasEntries = false;
-        boolean exceeded = false;
-        for (int page=0;page<1000;page++) {
-            byte[] bytes=call(0x923c,new int[]{(int)cursor,(int)(cursor>>>32),100,1,0},null,LIMIT,true);
+        List<Asset> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        long[] latestCursor = {0L};
+        boolean[] hasEntries = {false};
+        boolean[] exceeded = {false};
+        if (shouldListSlot(1, true)) {
+            listSlotFrom(1, startCursor, result, seen, latestCursor, hasEntries, exceeded);
+        }
+        if (shouldListSlot(2, false)) {
+            listSlotFrom(2, startCursor, result, seen, latestCursor, hasEntries, exceeded);
+        }
+        if (exceeded[0]) SonyMobileSession.trimRecentAssets(result);
+        rememberAssets(result);
+        // 超过枚举上限时返回最近窗口并保持连接，由调用方提示截断，而不是断开会话。
+        return new IncrementalContents(result, hasEntries[0] ? latestCursor[0] : 0L, hasEntries[0], exceeded[0]);
+    }
+
+    private void listSlotFrom(int slot, long startCursor, List<Asset> result, Set<String> seen,
+                              long[] latestCursorOut, boolean[] hasEntriesOut, boolean[] exceededOut) throws IOException {
+        long cursor = Math.max(0L, startCursor);
+        for (int page = 0; page < 1000; page++) {
+            byte[] bytes = call(0x923c, new int[]{(int) cursor, (int) (cursor >>> 32), 100, slot, 0}, null, LIMIT, true);
             SonyMobileSession.Page data;
-            try { data=parseContents(bytes,this); } catch(IOException invalid) { close();throw invalid; }
-            if (data.count > 0) { hasEntries = true; latestCursor = data.cursor; }
+            try { data = parseContents(bytes, this, slot); } catch (IOException invalid) { close(); throw invalid; }
+            if (data.count > 0) {
+                hasEntriesOut[0] = true;
+                latestCursorOut[0] = Math.max(latestCursorOut[0], data.cursor);
+            }
             for (Asset asset : data.assets) if (seen.add(asset.key())) {
                 result.add(asset);
-                if (result.size()>CameraMediaSession.MAX_LISTED_PHOTOS) {
-                    exceeded = true;
-                    if (result.size()>=CameraMediaSession.MAX_LISTED_PHOTOS*2) SonyMobileSession.trimRecentAssets(result);
+                if (result.size() > CameraMediaSession.MAX_LISTED_PHOTOS) {
+                    exceededOut[0] = true;
+                    if (result.size() >= CameraMediaSession.MAX_LISTED_PHOTOS * 2) SonyMobileSession.trimRecentAssets(result);
                 }
             }
-            if (data.count<100) {
-                if (exceeded) SonyMobileSession.trimRecentAssets(result);
-                rememberAssets(result);
-                // 超过枚举上限时返回最近窗口并保持连接，由调用方提示截断，而不是断开会话。
-                return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries, exceeded);
-            }
-            if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
-            cursor=data.cursor;
+            if (data.count < 100) return;
+            if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
+            cursor = data.cursor;
         }
         // 1000 页仍未到卡尾时游标停在卡中段，不能当增量起点静默放行：继续按上限拒绝，避免把卡内既有照片当新拍下载。
         SonyMobileSession.trimRecentAssets(result);
@@ -782,9 +810,9 @@ public final class SonyTetherSession implements Closeable {
     private boolean hasRemoteAsset(Asset target) throws IOException {
         long cursor = target.created > 0 ? target.created - 1 : 0;
         for (int page = 0; page < 1000; page++) {
-            byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, 1, 0}, null, LIMIT, true);
+            byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, target.slot, 0}, null, LIMIT, true);
             SonyMobileSession.Page data;
-            try { data = parseContents(bytes, this); } catch (IOException invalid) { close(); throw invalid; }
+            try { data = parseContents(bytes, this, target.slot); } catch (IOException invalid) { close(); throw invalid; }
             for (Asset candidate : data.assets) if (target.same(candidate)) return true;
             if (data.count < 100 || data.cursor > target.created) return false;
             if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
@@ -800,7 +828,7 @@ public final class SonyTetherSession implements Closeable {
         try { digest=MessageDigest.getInstance("SHA-256"); } catch (NoSuchAlgorithmException e) { throw new IOException(e); }
         for (long offset=0;offset<asset.size;) {
             int count=(int)Math.min(3<<20,asset.size-offset);
-            byte[] bytes=call(0x923d,new int[]{asset.content,(1<<24)|asset.file,(int)offset,(int)(offset>>>32),count},null,count,true);
+            byte[] bytes=call(0x923d,new int[]{asset.content,(asset.slot<<24)|asset.file,(int)offset,(int)(offset>>>32),count},null,count,true);
             if (bytes.length!=count) throw new CameraMediaSession.PhotoTransferException("Remote original chunk truncated");
             if (offset==0) {
                 boolean tiff=bytes.length>=4 && ((bytes[0]==73 && bytes[1]==73 && bytes[2]==42 && bytes[3]==0) ||
@@ -818,7 +846,7 @@ public final class SonyTetherSession implements Closeable {
 
     private synchronized byte[] call(int op,int[] params,byte[] outgoing,int limit,boolean required) throws IOException {
         if (closed) throw new IOException("Remote session closed");
-        if (!Arrays.asList(0x1001,0x1002,0x1004,0x1007,0x1008,0x100a,0x101b,0x9201,0x9202,0x9205,0x9207,0x9209,0x9212,0x923c,0x923d).contains(op) || params.length>5 || limit<0 || limit>LIMIT)
+        if (!Arrays.asList(0x1001,0x1002,0x1004,0x1007,0x1008,0x100a,0x101b,0x9201,0x9202,0x9205,0x9207,0x9209,0x9212,0x923b,0x923c,0x923d).contains(op) || params.length>5 || limit<0 || limit>LIMIT)
             throw new IOException("Operation outside the remote profile");
         if(outgoing!=null) {
             if(purpose!=Purpose.TETHER || !remoteReady || params.length!=1) throw new IOException("Write outside tether ownership");
