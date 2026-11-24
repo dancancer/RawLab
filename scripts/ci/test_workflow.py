@@ -230,6 +230,53 @@ def _eval_gha_template(template, context):
     return re.sub(r"\$\{\{(.*?)\}\}", repl, str(template))
 
 
+def _expr_root_contexts(expr):
+    contexts = set()
+    i = 0
+    n = len(expr)
+    while i < n:
+        ch = expr[i]
+        if ch == "'":
+            i += 1
+            while i < n:
+                if expr[i] == "'":
+                    if i + 1 < n and expr[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (expr[j].isalnum() or expr[j] in "._-"):
+                j += 1
+            ident = expr[i:j]
+            k = j
+            while k < n and expr[k].isspace():
+                k += 1
+            is_call = k < n and expr[k] == "("
+            prev_is_dot = i > 0 and expr[i - 1] == "."
+            if not is_call and not prev_is_dot and ident not in {"true", "false", "null"}:
+                contexts.add(ident.split(".", 1)[0])
+            i = j
+            continue
+        i += 1
+    return contexts
+
+
+def _env_expr_root_contexts(env_map):
+    refs = []
+    if not isinstance(env_map, dict):
+        return refs
+    for key, value in env_map.items():
+        for field, raw in (("key", key), ("value", value)):
+            for match in re.finditer(r"\$\{\{(.*?)\}\}", str(raw), re.S):
+                expr = match.group(1)
+                refs.append((str(key), field, expr.strip(), _expr_root_contexts(expr)))
+    return refs
+
+
 def _needs_set(job):
     needs = job.get("needs", [])
     if isinstance(needs, str):
@@ -944,6 +991,18 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("-DRAWLAB_COLLECT_X3F_LICENSES=OFF", build["run"])
         self.assertIn("'inventory'", build["run"])
 
+        job_env = self.workflow["jobs"]["windows-batch-selection"].get("env", {})
+        self.assertNotIn("PIP_CACHE_DIR", job_env)
+        pip_restore_path = by_id["pip-cache"]["with"]["path"]
+        self.assertEqual(pip_restore_path, "${{ runner.temp }}/rawlab-ci/cache/pip")
+        dep_key_steps = [s for s in steps if s.get("id") == "dep-archives-key"]
+        self.assertEqual(len(dep_key_steps), 1)
+        dep_key_run = dep_key_steps[0]["run"]
+        self.assertIn("$env:PIP_CACHE_DIR = \"$ciRoot\\cache\\pip\"", dep_key_run)
+        self.assertIn("\"PIP_CACHE_DIR=$env:PIP_CACHE_DIR\"", dep_key_run)
+        self.assertLess(dep_key_run.index("PIP_CACHE_DIR=$env:PIP_CACHE_DIR"), dep_key_run.index("pip install"))
+        self.assertLess(steps.index(dep_key_steps[0]), steps.index(build))
+
         win_steps = self.workflow["jobs"]["windows"]["steps"]
         win_rust = [s for s in win_steps if "rustup" in s.get("run", "")]
         self.assertEqual(len(win_rust), 1)
@@ -1067,6 +1126,41 @@ class WorkflowContractTests(unittest.TestCase):
         core_idx = next(i for i, line in enumerate(run_lines) if "if in_suite core; then" in line)
         mkdir_idx = next(i for i, line in enumerate(run_lines) if ".cache/ci/swiftpm/deps" in line)
         self.assertGreater(mkdir_idx, core_idx)
+
+    def test_workflow_and_job_env_do_not_reference_invalid_contexts(self):
+        workflow_files = sorted(
+            list((ROOT / ".github/workflows").glob("*.yml"))
+            + list((ROOT / ".github/workflows").glob("*.yaml"))
+        )
+        self.assertTrue(workflow_files, "No GitHub workflow files found")
+
+        workflow_forbidden = {"runner", "steps", "job", "needs", "strategy", "matrix"}
+        job_forbidden = {"runner", "steps", "job"}
+
+        for wf_path in workflow_files:
+            wf_data = yaml.load(wf_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+            rel = wf_path.relative_to(ROOT).as_posix()
+            with self.subTest(workflow=rel):
+                for key, field, expr, roots in _env_expr_root_contexts(wf_data.get("env")):
+                    bad = sorted(roots & workflow_forbidden)
+                    self.assertEqual(
+                        bad,
+                        [],
+                        f"{rel} workflow-level env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}",
+                    )
+                for job_id, job in (wf_data.get("jobs") or {}).items():
+                    for key, field, expr, roots in _env_expr_root_contexts(job.get("env")):
+                        bad = sorted(roots & job_forbidden)
+                        self.assertEqual(
+                            bad,
+                            [],
+                            f"{rel} jobs.{job_id}.env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}",
+                        )
+
+        self.assertEqual(_expr_root_contexts("runner.temp"), {"runner"})
+        self.assertEqual(_expr_root_contexts("runner['temp']"), {"runner"})
+        self.assertEqual(_expr_root_contexts("format('{0}', steps.foo.outputs.bar)"), {"steps"})
+        self.assertEqual(_expr_root_contexts("'runner.temp'"), set())
 
 
 if __name__ == "__main__":
