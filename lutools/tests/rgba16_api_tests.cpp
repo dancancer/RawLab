@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
+#include "../third_party/nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -169,7 +170,34 @@ void testSessionRenderRgba16DisplayBuffer() {
         "Exposure +1 EV must increase RGBA16 pixel values", __FILE__, __LINE__);
 }
 
+std::string buildRawRecipeJson(const std::string& inputPath, const std::string& outputPath) {
+    const nlohmann::json recipe = {
+        {"schema_version", 5},
+        {"processing", {{"family", "rawlab"}, {"version", 3}, {"quality", "standard"}}},
+        {"input", {{"path", inputPath}, {"type", "raw"}}},
+        {"edits", {
+            {"exposure", {{"mode", "preview"}, {"ev", 0.25}, {"brightness", 1.0}}},
+            {"white_balance", {{"mode", "camera"}}},
+            {"look", {{"path", nullptr}, {"strength", 1.0}}},
+        }},
+        {"output", {
+            {"path", outputPath},
+            {"format", "png"},
+            {"size", {{"mode", "limit_long_edge"}, {"long_edge", 32}}},
+        }},
+    };
+    return recipe.dump();
+}
+
 void testSessionRenderRgba16FileAndBufferParity() {
+    const std::string winInputSample = R"(D:\a\RawLab\RawLab\lutools\tests\fixtures\bayer-demosaic.dng)";
+    const std::string winOutputSample = R"(C:\Users\runneradmin\AppData\Local\Temp\rawlab_rgba16_api_test.png)";
+    const auto parsedWin = nlohmann::json::parse(buildRawRecipeJson(winInputSample, winOutputSample));
+    require(parsedWin.at("input").at("path").get<std::string>() == winInputSample,
+        "Windows backslash input path must round-trip through JSON", __FILE__, __LINE__);
+    require(parsedWin.at("output").at("path").get<std::string>() == winOutputSample,
+        "Windows backslash output path must round-trip through JSON", __FILE__, __LINE__);
+
     const std::filesystem::path dngPath = std::filesystem::path(TEST_FIXTURE_DIR) / "bayer-demosaic.dng";
     require(std::filesystem::is_regular_file(dngPath), "Missing bayer-demosaic.dng fixture", __FILE__, __LINE__);
     const std::string dngUtf8 = dngPath.u8string();
@@ -181,17 +209,7 @@ void testSessionRenderRgba16FileAndBufferParity() {
     const std::string pngUtf8 = tempPng.path.u8string();
 
     SessionGuard session;
-    const std::string recipeJson = std::string(R"({
-        "schema_version": 5,
-        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
-        "input": {"path": ")") + dngUtf8 + R"(", "type": "raw"},
-        "edits": {
-            "exposure": {"mode": "preview", "ev": 0.25, "brightness": 1.0},
-            "white_balance": {"mode": "camera"},
-            "look": {"path": null, "strength": 1.0}
-        },
-        "output": {"path": ")" + pngUtf8 + R"(", "format": "png", "size": {"mode": "limit_long_edge", "long_edge": 32}}
-    })";
+    const std::string recipeJson = buildRawRecipeJson(dngUtf8, pngUtf8);
     require(sony2fuji_apply_params(session.ptr, recipeJson.c_str()) == SONY2FUJI_STATUS_OK,
         "apply_params RAW failed", __FILE__, __LINE__);
 
