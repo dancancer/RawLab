@@ -17,7 +17,7 @@ from affected_platforms import macos_matrix
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMON_INPUTS = (
-    "scripts/ci/native_cache.py", "scripts/ci/requirements.txt", "lutools/CMakeLists.txt",
+    "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",
     "lutools/cmake/**/*.cmake", "lutools/cmake/**/CMakeLists.txt",
     "lutools/cmake/**/*.py", "lutools/cmake/**/*.json", "lutools/cmake/**/*.in",
     "lutools/cmake/**/*.inc", "lutools/third_party/rawspeed-camera-calibration.inc",

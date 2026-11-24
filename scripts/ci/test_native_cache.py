@@ -1,6 +1,7 @@
 """Native cache identity and product-output isolation regressions."""
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -67,7 +68,7 @@ class NativeCacheTests(unittest.TestCase):
         for platform in ("macos", "windows", "android", "ios"):
             with self.subTest(platform=platform):
                 inputs = self.cache.dependency_inputs(ROOT, platform)
-                for path in ("lutools/CMakeLists.txt", "lutools/cmake/patch-libraw.cmake",
+                for path in ("lutools/cmake/ThirdPartyDeps.cmake", "lutools/cmake/patch-libraw.cmake",
                              "lutools/cmake/libraw/CMakeLists.txt", "lutools/cmake/libraw/libraw.cmake",
                              "lutools/cmake/libraw/manifest.json", "lutools/cmake/libraw/manifest.py",
                              "lutools/cmake/dng-sdk/CMakeLists.txt", "lutools/cmake/lens-dependencies.json",
@@ -79,8 +80,93 @@ class NativeCacheTests(unittest.TestCase):
                              "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",
                              ".github/workflows/ci.yml#" + platform):
                     self.assertIn(path, inputs)
+                self.assertNotIn("lutools/CMakeLists.txt", inputs)
                 self.assertNotIn("lutools/src/core/raw_processor.cpp", inputs)
                 self.assertNotIn("RawLabMac/Sources/App.swift", inputs)
+
+    def _copy_cache_inputs(self, dst_root):
+        patterns = set(self.cache.COMMON_INPUTS) | {"lutools/CMakeLists.txt", ".github/workflows/ci.yml"}
+        for p_list in self.cache.PLATFORM_INPUTS.values():
+            patterns.update(p_list)
+        for pattern in patterns:
+            for src in ROOT.glob(pattern):
+                if src.is_file():
+                    dst = dst_root / src.relative_to(ROOT)
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst)
+
+    def test_first_party_cmakelists_edits_preserve_cache_key_across_all_platforms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_cache_inputs(root)
+            env = {"compiler": "fixed", "sdk": "fixed"}
+            before = {
+                platform: self.cache.cache_key(platform, "x86_64", self.cache.dependency_inputs(root, platform, "arm64" if platform == "macos" else None), env)
+                for platform in self.cache.PLATFORM_INPUTS
+            }
+            cmakelists = root / "lutools/CMakeLists.txt"
+            cmakelists.write_text(
+                cmakelists.read_text(encoding="utf-8")
+                + "\n# simulated W-C first-party source and test\n"
+                + "rawlab_add_test(NAME synthetic_first_party SOURCES tests/synthetic.cpp LIBRARIES sony2fuji_core)\n",
+                encoding="utf-8",
+            )
+            for platform in self.cache.PLATFORM_INPUTS:
+                after = self.cache.cache_key(platform, "x86_64", self.cache.dependency_inputs(root, platform, "arm64" if platform == "macos" else None), env)
+                self.assertEqual(before[platform], after, f"First-party CMakeLists.txt edit busted {platform} cache key")
+
+    def test_third_party_cmake_edits_invalidate_cache_key_across_all_platforms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._copy_cache_inputs(root)
+            env = {"compiler": "fixed", "sdk": "fixed"}
+            for target_rel in ("lutools/cmake/ThirdPartyDeps.cmake", "lutools/cmake/dng-sdk.cmake"):
+                with self.subTest(edited=target_rel):
+                    before = {
+                        platform: self.cache.cache_key(platform, "x86_64", self.cache.dependency_inputs(root, platform, "arm64" if platform == "macos" else None), env)
+                        for platform in self.cache.PLATFORM_INPUTS
+                    }
+                    target = root / target_rel
+                    target.write_text(target.read_text(encoding="utf-8") + "\n# simulated third-party change\n", encoding="utf-8")
+                    for platform in self.cache.PLATFORM_INPUTS:
+                        after = self.cache.cache_key(platform, "x86_64", self.cache.dependency_inputs(root, platform, "arm64" if platform == "macos" else None), env)
+                        self.assertNotEqual(before[platform], after, f"Third-party edit to {target_rel} did not invalidate {platform}")
+
+    def test_lutools_cmakelists_delegates_third_party_deps_to_cmake_dir(self):
+        import re
+
+        text = (ROOT / "lutools/CMakeLists.txt").read_text(encoding="utf-8")
+        non_comment = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        self.assertIn("include(cmake/ThirdPartyDeps.cmake)", non_comment)
+        forbidden_patterns = (
+            r"\bFetchContent_",
+            r"\bExternalProject_",
+            r"\bpkg_check_modules\s*\(",
+            r"\bfind_package\s*\(\s*(?:PkgConfig|ZLIB|OpenMP|OpenCV)\b",
+            r"\bset\s*\(\s*CMAKE_(?:CXX|OBJCXX)_STANDARD\b",
+            r"\boption\s*\(\s*SONY2FUJI_BUILD_(?:RAW|LENS|TIFF|DENOISE)_DEPS\b",
+            r"\boption\s*\(\s*SONY2FUJI_ENABLE_(?:OPENMP|LENSFUN|DNGSDK|CHROMA_DENOISE|WAVELET_DENOISE)\b",
+            r"\boption\s*\(\s*SONY2FUJI_TEST_PORTABLE_HDR\b",
+            r"\binclude\s*\([^)]*(?:x3f|tiff-dependencies|libraw|lens-dependencies|denoise-dependencies|raw-png|hdr-codec|hdr-portable)\.cmake",
+            r"\badd_subdirectory\s*\([^)]*cmake/libraw",
+        )
+        for pattern in forbidden_patterns:
+            self.assertIsNone(
+                re.search(pattern, non_comment),
+                f"lutools/CMakeLists.txt must delegate third-party configuration ({pattern}) to lutools/cmake/ThirdPartyDeps.cmake",
+            )
+
+    def test_windows_batch_selection_edits_do_not_change_windows_native_cache_key(self):
+        workflow = yaml.load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / ".github/workflows/ci.yml"
+            path.parent.mkdir(parents=True)
+            path.write_text(yaml.safe_dump(workflow), encoding="utf-8")
+            before = self.cache.workflow_identity(root, "windows", "x86_64")
+            workflow["jobs"]["windows-batch-selection"]["steps"].append({"run": "echo mutated batch-selection"})
+            path.write_text(yaml.safe_dump(workflow), encoding="utf-8")
+            self.assertEqual(before, self.cache.workflow_identity(root, "windows", "x86_64"))
 
     def test_workflow_identity_is_platform_specific_and_keeps_shared_defaults(self):
         workflow = yaml.load((ROOT / '.github/workflows/ci.yml').read_text(), Loader=yaml.BaseLoader)
