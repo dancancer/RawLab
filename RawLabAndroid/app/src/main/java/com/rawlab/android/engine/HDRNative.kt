@@ -1,12 +1,12 @@
 package com.rawlab.android.engine
 
-import com.rawlab.android.photo.HDRSourceInfo
-import com.rawlab.android.format.OutputSharpening
-import com.rawlab.android.settings.HDRSettings
-import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import android.graphics.Bitmap
-import java.io.File
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.photo.HDRSourceInfo
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRSettings
+import java.io.File
 
 internal fun interface HDRProgressListener {
     fun onProgress(permille: Int)
@@ -16,28 +16,37 @@ internal fun interface HDRProgressListener {
 internal object NativeHDRBridge {
     init { System.loadLibrary("rawlab-jni") }
 
-    fun probe(file: File): HDRSourceInfo? = nativeProbe(file.absolutePath)?.let(HDRSourceInfo::decode)
+    fun probe(file: File): HDRSourceInfo? = nativeProbe(file.absolutePath)
     fun probeLook(file: File): String = nativeProbeLook(file.absolutePath)
     fun probeCameraProfile(file: File): String = nativeProbeCameraProfile(file.absolutePath)
-    fun probeCameraRaw(file: File, processingVersion: Int = 3): HDRSourceInfo? = nativeProbeCameraRaw(file.absolutePath, processingVersion)?.let {
-        val info = HDRSourceInfo.decode(it)
-        info.copy(cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()),
-            cameraProcessingVersion = if (info.isProRAW) 3 else processingVersion)
+    fun probeCameraRaw(file: File, processingVersion: Int = 3): HDRSourceInfo? =
+        nativeProbeCameraRaw(file.absolutePath, processingVersion)?.copy(
+            cameraStamp = HDRSourceInfo.CameraStamp(file.length(), file.lastModified()),
+        )
+
+    fun probeSource(file: File, raw: Boolean, processingVersion: Int = 3): HDRSourceInfo? = if (raw) {
+        probeCameraRaw(file, processingVersion)
+    } else if (HDRSourceInfo.mayContainGainMap(file)) {
+        probe(file)
+    } else {
+        null
     }
-    fun probeSource(file: File, raw: Boolean, processingVersion: Int = 3): HDRSourceInfo? = if (raw) probeCameraRaw(file, processingVersion)
-        else if (HDRSourceInfo.mayContainGainMap(file)) probe(file) else null
+
     fun cameraFraming(file: File, info: HDRSourceInfo, processingVersion: Int): HDRSourceInfo {
         if (!info.isCameraRaw || info.isProRAW || info.cameraProcessingVersion == processingVersion) return info
         val result = requireNotNull(probeCameraRaw(file, processingVersion)) { "Camera RAW is unavailable" }
         require(!result.isProRAW && (info.cameraStamp == null || result.cameraStamp == info.cameraStamp)) { "HDR source changed" }
         return result
     }
+
     fun geometrySize(info: HDRSourceInfo, geometry: GeometrySettings): IntArray = geometrySize(
         if (info.orientation >= 5) info.height else info.width,
         if (info.orientation >= 5) info.width else info.height,
-        geometry)
+        geometry,
+    )
+
     fun geometrySize(width: Int, height: Int, geometry: GeometrySettings): IntArray =
-        nativeGeometry(width, height, geometry.toNativeGeometry())
+        nativeGeometry(width, height, HDRSettings(geometry = geometry).toHdrSessionStateJson())
 
     fun decode(file: File, info: HDRSourceInfo, edge: Int, session: Long = 0L, cancellationGeneration: Long = -1L,
         progress: HDRProgressListener? = null): NativeHDRImage {
@@ -46,31 +55,26 @@ internal object NativeHDRBridge {
         if (handle == 0L) error("HDR decode returned an empty owner")
         try {
             require(nativeFingerprint(handle).contentEquals(info.fingerprint)) { "HDR source changed" }
-            return NativeHDRImage(handle, info, nativeMetadata(handle))
+            return NativeHDRImage(handle, info, checkNotNull(nativeMetadata(handle)))
         } catch (error: Throwable) {
             nativeRelease(handle)
             throw error
         }
     }
 
-    private fun cameraDevelopmentFlags(camera: HDRCameraDevelopmentSettings): Int =
-        (if (camera.lensDistortion) 1 else 0) or
-            (if (camera.lensTca) 2 else 0) or
-            (if (camera.lensVignetting) 8 else 0) or
-            (if (camera.lensActive && camera.lensAutoCrop) 4 else 0)
-
-    private fun wrapRoiHandle(handle: Long, info: HDRSourceInfo, bounds: IntArray): NativeHDRRoiImage {
-        if (handle == 0L) error("HDR ROI render returned an empty owner")
+    private fun wrapRoiPair(info: HDRSourceInfo, pair: NativeHDRRoiPair): NativeHDRRoiImage {
+        if (pair.handle == 0L) error("HDR ROI render returned an empty owner")
         try {
-            require(bounds.size == 6 && bounds[4] > 0 && bounds[5] > 0 && bounds[2] > bounds[0] && bounds[3] > bounds[1]) {
+            val bounds = pair.bounds
+            require(bounds.fullWidth > 0 && bounds.fullHeight > 0 && bounds.x1 > bounds.x0 && bounds.y1 > bounds.y0) {
                 "Invalid HDR ROI bounds"
             }
             return NativeHDRRoiImage(
-                NativeHDRImage(handle, info, nativeMetadata(handle)),
-                NativeRoiBounds(bounds[0], bounds[1], bounds[2], bounds[3], bounds[4], bounds[5]),
+                NativeHDRImage(pair.handle, info, checkNotNull(nativeMetadata(pair.handle))),
+                bounds,
             )
         } catch (error: Throwable) {
-            nativeRelease(handle)
+            nativeRelease(pair.handle)
             throw error
         }
     }
@@ -82,18 +86,18 @@ internal object NativeHDRBridge {
         require(!info.isProRAW || camera.isDefault) { "Camera development requires an ordinary Bayer RAW" }
         require(edge in 0..65535)
         if (edge == 0) HDRSourceCache.clear()
-        val flags = cameraDevelopmentFlags(camera)
+        val editStateJson = if (info.isProRAW) null else camera.toCameraDevelopmentJson(
+            processingVersion = info.cameraProcessingVersion,
+            profileDirectory = profileDirectory,
+        )
         val handle = nativeDecodeCameraRaw(processor, file.absolutePath, edge, cancellationGeneration,
-            info.isProRAW, requireNotNull(file.parentFile).absolutePath, camera.customWhiteBalance,
-            camera.temperature, camera.tint, camera.sensorExposure, camera.fbddLevel, flags, camera.lensProfile,
-            camera.cameraProfile?.requireAsset(profileDirectory)?.absolutePath, camera.cameraProfile?.sha256,
-            info.cameraProcessingVersion, progress)
+            info.isProRAW, requireNotNull(file.parentFile).absolutePath, editStateJson, progress)
         if (handle == 0L) error("Camera RAW HDR decode returned an empty owner")
         try {
             info.cameraStamp?.let { expected ->
                 require(expected == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" }
             }
-            return NativeHDRImage(handle, info, nativeMetadata(handle))
+            return NativeHDRImage(handle, info, checkNotNull(nativeMetadata(handle)))
         } catch (error: Throwable) {
             nativeRelease(handle)
             throw error
@@ -104,11 +108,11 @@ internal object NativeHDRBridge {
         lookDirectory: File?, progress: HDRProgressListener? = null,
         outputSharpening: OutputSharpening = OutputSharpening.OFF): NativeHDRImage {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
-        val handle = nativeRender(session, source.handle, settings.toNativeRequest(edge, lookDirectory, outputSharpening),
-            cancellationGeneration, progress)
+        val json = settings.toHdrSessionStateJson(lookDirectory = lookDirectory, outputSharpening = outputSharpening)
+        val handle = nativeRender(session, source.handle, json, edge, cancellationGeneration, progress)
         if (handle == 0L) error("HDR render returned an empty owner")
         try {
-            return NativeHDRImage(handle, source.sourceInfo, nativeMetadata(handle))
+            return NativeHDRImage(handle, source.sourceInfo, checkNotNull(nativeMetadata(handle)))
         } catch (error: Throwable) {
             nativeRelease(handle)
             throw error
@@ -120,32 +124,32 @@ internal object NativeHDRBridge {
         cancellationGeneration: Long, lookDirectory: File?): NativeHDRRoiImage {
         require(settings.cameraSettings.isDefault || source.sourceInfo.isCameraRaw && !source.sourceInfo.isProRAW)
         val clampedEdge = maxOutputLongEdge.coerceIn(1, 1280)
-        val bounds = IntArray(6)
-        val handle = nativeRenderRoi(session, source.handle, settings.toNativeRequest(clampedEdge, lookDirectory),
-            x0, y0, x1, y1, clampedEdge, baseContentHeadroom, bounds, cancellationGeneration)
-        return wrapRoiHandle(handle, source.sourceInfo, bounds)
+        val json = settings.toHdrSessionStateJson(lookDirectory = lookDirectory)
+        val pair = checkNotNull(nativeRenderRoi(session, source.handle, json, clampedEdge,
+            x0, y0, x1, y1, clampedEdge, baseContentHeadroom, cancellationGeneration))
+        return wrapRoiPair(source.sourceInfo, pair)
     }
 
     fun renderCameraRawRoi(session: Long, file: File, info: HDRSourceInfo, settings: HDRSettings,
         x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, baseContentHeadroom: Float,
         cancellationGeneration: Long, lookDirectory: File?, profileDirectory: File?): NativeHDRRoiImage {
         require(info.isCameraRaw && !info.isProRAW) { "Camera RAW HDR ROI requires a Bayer RAW source" }
-        val camera = settings.cameraSettings
         val clampedEdge = maxOutputLongEdge.coerceIn(1, 1280)
-        val flags = cameraDevelopmentFlags(camera)
-        val bounds = IntArray(6)
-        val handle = nativeRenderCameraRawRoi(session, file.absolutePath, settings.toNativeRequest(clampedEdge, lookDirectory),
-            camera.customWhiteBalance, camera.temperature, camera.tint, camera.sensorExposure, camera.fbddLevel,
-            flags, camera.lensProfile, camera.cameraProfile?.requireAsset(profileDirectory)?.absolutePath,
-            camera.cameraProfile?.sha256, info.cameraProcessingVersion,
-            x0, y0, x1, y1, clampedEdge, baseContentHeadroom, bounds, cancellationGeneration)
+        val json = settings.toHdrSessionStateJson(
+            lookDirectory = lookDirectory,
+            camera = settings.cameraSettings,
+            profileDirectory = profileDirectory,
+            cameraProcessingVersion = info.cameraProcessingVersion,
+        )
+        val pair = checkNotNull(nativeRenderCameraRawRoi(session, file.absolutePath, json, clampedEdge,
+            x0, y0, x1, y1, clampedEdge, baseContentHeadroom, cancellationGeneration))
         try {
             info.cameraStamp?.let { expected ->
                 require(expected == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" }
             }
-            return wrapRoiHandle(handle, info, bounds)
+            return wrapRoiPair(info, pair)
         } catch (error: Throwable) {
-            if (handle != 0L) nativeRelease(handle)
+            if (pair.handle != 0L) nativeRelease(pair.handle)
             throw error
         }
     }
@@ -155,11 +159,10 @@ internal object NativeHDRBridge {
         cancellationGeneration: Long, lookDirectory: File?): NativeHDRRoiImage {
         require(!info.isCameraRaw) { "File HDR ROI requires a gain-map file source" }
         val clampedEdge = maxOutputLongEdge.coerceIn(1, 1280)
-        val bounds = IntArray(6)
-        val handle = nativeRenderFileRoi(session, file.absolutePath, info.fingerprint,
-            settings.toNativeRequest(clampedEdge, lookDirectory), x0, y0, x1, y1, clampedEdge,
-            baseContentHeadroom, bounds, cancellationGeneration)
-        return wrapRoiHandle(handle, info, bounds)
+        val json = settings.toHdrSessionStateJson(lookDirectory = lookDirectory)
+        val pair = checkNotNull(nativeRenderFileRoi(session, file.absolutePath, info.fingerprint, json,
+            clampedEdge, x0, y0, x1, y1, clampedEdge, baseContentHeadroom, cancellationGeneration))
+        return wrapRoiPair(info, pair)
     }
 
     fun clearSessionCache(session: Long) = nativeClearHdrSessionCache(session)
@@ -167,17 +170,21 @@ internal object NativeHDRBridge {
     fun plane(pair: NativeHDRImage, hdr: Boolean): FloatArray = nativePlane(pair.handle, hdr)
     fun estimateAutoExposure(session: Long, source: NativeHDRImage, settings: HDRSettings, cancellationGeneration: Long): Float =
         nativeEstimateAutoExposure(session, source.handle, settings.temperature, settings.tint, cancellationGeneration)
+
     fun sampleHsl(session: Long, source: NativeHDRImage, settings: HDRSettings, edge: Int,
-        sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long, lookDirectory: File?) {
-        nativeSampleHsl(session, source.handle, settings.toNativeRequest(edge, lookDirectory),
-            sourceRevision, requestRevision, probe, cancellationGeneration)
-    }
+        sourceRevision: Long, requestRevision: Long, x: Float, y: Float, cancellationGeneration: Long,
+        lookDirectory: File?): NativeHslProbeResult = checkNotNull(
+        nativeSampleHsl(session, source.handle, settings.toHdrSessionStateJson(lookDirectory = lookDirectory),
+            edge, sourceRevision, requestRevision, x, y, cancellationGeneration),
+    )
+
     fun sdrBitmap(pair: NativeHDRImage, bitmap: Bitmap) = nativeSdrBitmap(pair.handle, bitmap)
     fun release(pair: Long) = nativeRelease(pair)
     fun exportJpeg(pair: NativeHDRImage, source: File?, output: File, baseColor: Int = 2,
         session: Long = 0L, cancellationGeneration: Long = -1L, progress: HDRProgressListener? = null) =
         nativeExportJpeg(pair.handle, session, source?.absolutePath, output.absolutePath, baseColor,
             cancellationGeneration, progress)
+
     fun exportSdr(pair: NativeHDRImage, source: File?, output: File, format: Int,
         session: Long = 0L, cancellationGeneration: Long = -1L, progress: HDRProgressListener? = null) =
         nativeExportSdr(pair.handle, session, source?.absolutePath, output.absolutePath, format,
@@ -189,61 +196,57 @@ internal object NativeHDRBridge {
         require(info.isProRAW && edge in 0..65535 && settings.cameraSettings.isDefault)
         info.cameraStamp?.let { require(it == HDRSourceInfo.CameraStamp(file.length(), file.lastModified())) { "HDR source changed" } }
         HDRSourceCache.clear()
+        val json = settings.toHdrSessionStateJson(lookDirectory = lookDirectory, outputSharpening = outputSharpening)
         // 全零 source_sha256：导出内部在 validateStreamSource 单次读取时自采冻结摘要，避免前置全盘扫读。
-        nativeExportProRAW(processor, file.absolutePath, settings.toNativeRequest(edge, lookDirectory, outputSharpening), keepHDR,
-            ByteArray(32), requireNotNull(output.parentFile).absolutePath, output.absolutePath,
-            cancellationGeneration, progress)
+        nativeExportProRAW(processor, file.absolutePath, json, edge, keepHDR, ByteArray(32),
+            requireNotNull(output.parentFile).absolutePath, output.absolutePath, cancellationGeneration, progress)
     }
 
     @JvmStatic
-    private external fun nativeProbe(path: String): ByteArray?
+    private external fun nativeProbe(path: String): HDRSourceInfo?
     @JvmStatic
     private external fun nativeProbeLook(path: String): String
     @JvmStatic
     private external fun nativeProbeCameraProfile(path: String): String
     @JvmStatic
-    private external fun nativeProbeCameraRaw(path: String, processingVersion: Int): ByteArray?
+    private external fun nativeProbeCameraRaw(path: String, processingVersion: Int): HDRSourceInfo?
     @JvmStatic
-    private external fun nativeGeometry(width: Int, height: Int, geometry: NativeGeometry): IntArray
+    private external fun nativeGeometry(width: Int, height: Int, editStateJson: String): IntArray
     @JvmStatic
     private external fun nativeDecode(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
         progress: HDRProgressListener?): Long
     @JvmStatic
     private external fun nativeDecodeCameraRaw(session: Long, path: String, longEdge: Int, cancellationGeneration: Long,
-        proRAW: Boolean, temporaryRoot: String, customWhiteBalance: Boolean, temperature: Float, tint: Float,
-        sensorExposure: Boolean, fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?,
-        processingVersion: Int, progress: HDRProgressListener?): Long
+        proRAW: Boolean, temporaryRoot: String, editStateJson: String?, progress: HDRProgressListener?): Long
     @JvmStatic
-    private external fun nativeExportProRAW(session: Long, path: String, request: NativeHDRRenderRequest,
+    private external fun nativeExportProRAW(session: Long, path: String, editStateJson: String, edge: Int,
         keepHDR: Boolean, fingerprint: ByteArray, temporaryRoot: String, output: String,
         cancellationGeneration: Long, progress: HDRProgressListener?)
     @JvmStatic
-    private external fun nativeRender(session: Long, source: Long, request: NativeHDRRenderRequest,
+    private external fun nativeRender(session: Long, source: Long, editStateJson: String, edge: Int,
         cancellationGeneration: Long, progress: HDRProgressListener?): Long
     @JvmStatic
-    private external fun nativeRenderRoi(session: Long, source: Long, request: NativeHDRRenderRequest,
+    private external fun nativeRenderRoi(session: Long, source: Long, editStateJson: String, edge: Int,
         x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, baseContentHeadroom: Float,
-        roiBoundsOut: IntArray, cancellationGeneration: Long): Long
+        cancellationGeneration: Long): NativeHDRRoiPair?
     @JvmStatic
-    private external fun nativeRenderCameraRawRoi(session: Long, path: String, request: NativeHDRRenderRequest,
-        customWhiteBalance: Boolean, temperature: Float, tint: Float, sensorExposure: Boolean,
-        fbddLevel: Int, lensFlags: Int, lensProfile: String?, profilePath: String?, profileDigest: String?,
-        processingVersion: Int, x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int,
-        baseContentHeadroom: Float, roiBoundsOut: IntArray, cancellationGeneration: Long): Long
+    private external fun nativeRenderCameraRawRoi(session: Long, path: String, editStateJson: String, edge: Int,
+        x0: Float, y0: Float, x1: Float, y1: Float, maxOutputLongEdge: Int, baseContentHeadroom: Float,
+        cancellationGeneration: Long): NativeHDRRoiPair?
     @JvmStatic
     private external fun nativeRenderFileRoi(session: Long, path: String, expectedFingerprint: ByteArray,
-        request: NativeHDRRenderRequest, x0: Float, y0: Float, x1: Float, y1: Float,
-        maxOutputLongEdge: Int, baseContentHeadroom: Float, roiBoundsOut: IntArray,
-        cancellationGeneration: Long): Long
+        editStateJson: String, edge: Int, x0: Float, y0: Float, x1: Float, y1: Float,
+        maxOutputLongEdge: Int, baseContentHeadroom: Float, cancellationGeneration: Long): NativeHDRRoiPair?
     @JvmStatic
     private external fun nativeClearHdrSessionCache(session: Long)
     @JvmStatic
-    private external fun nativeEstimateAutoExposure(session: Long, source: Long, temperature: Float, tint: Float, cancellationGeneration: Long): Float
+    private external fun nativeEstimateAutoExposure(session: Long, source: Long, temperature: Float, tint: Float,
+        cancellationGeneration: Long): Float
     @JvmStatic
-    private external fun nativeSampleHsl(session: Long, source: Long, request: NativeHDRRenderRequest,
-        sourceRevision: Long, requestRevision: Long, probe: FloatArray, cancellationGeneration: Long)
+    private external fun nativeSampleHsl(session: Long, source: Long, editStateJson: String, edge: Int,
+        sourceRevision: Long, requestRevision: Long, x: Float, y: Float, cancellationGeneration: Long): NativeHslProbeResult?
     @JvmStatic
-    private external fun nativeMetadata(pair: Long): FloatArray
+    private external fun nativeMetadata(pair: Long): NativeHDRPairInfo?
     @JvmStatic
     private external fun nativeFingerprint(pair: Long): ByteArray
     @JvmStatic
@@ -263,16 +266,16 @@ internal object NativeHDRBridge {
 internal class NativeHDRImage internal constructor(
     internal val handle: Long,
     val sourceInfo: HDRSourceInfo,
-    metadata: FloatArray,
+    metadata: NativeHDRPairInfo,
 ) : AutoCloseable {
-    val width = metadata[0].toInt()
-    val height = metadata[1].toInt()
-    val nativeWidth = metadata[2].toInt()
-    val nativeHeight = metadata[3].toInt()
-    val outputNativeWidth = metadata[4].toInt()
-    val outputNativeHeight = metadata[5].toInt()
-    val contentHeadroom = metadata[6]
-    val sourceHeadroom = metadata[7]
+    val width = metadata.width
+    val height = metadata.height
+    val nativeWidth = metadata.nativeWidth
+    val nativeHeight = metadata.nativeHeight
+    val outputNativeWidth = metadata.outputNativeWidth
+    val outputNativeHeight = metadata.outputNativeHeight
+    val contentHeadroom = metadata.contentHeadroom
+    val sourceHeadroom = metadata.sourceHeadroom
     @Volatile private var closed = false
 
     fun hdrPlane(): FloatArray { check(!closed); return NativeHDRBridge.plane(this, true) }
@@ -313,7 +316,6 @@ internal class NativeHDRImage internal constructor(
             NativeHDRBridge.release(handle)
         }
     }
-
 }
 
 internal class NativeHDRRoiImage(
