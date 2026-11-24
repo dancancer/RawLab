@@ -293,6 +293,114 @@ class CameraConnectionLifecycleTest {
         }
     }
 
+    @Test
+    fun openCameraImportSessionRetriesWithRemoteInitWhen0x923bRejects2005() {
+        runBlocking {
+        val observedOps = CopyOnWriteArrayList<Int>()
+        val serverFailure = AtomicReference<Throwable?>(null)
+        val remoteInitialized = AtomicBoolean(false)
+        val server = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val worker = Thread {
+            try {
+                server.accept().use { command ->
+                    val (initType, _) = readPtpPacket(command)
+                    assertEquals(1, initType)
+                    writePtpPacket(command, 2, ByteArray(24))
+                    server.accept().use { event ->
+                        val (eventType, _) = readPtpPacket(event)
+                        assertEquals(3, eventType)
+                        writePtpPacket(event, 4, ByteArray(0))
+
+                        var saw9202 = false
+                        while (true) {
+                            val (packetType, packetBytes) = try {
+                                readPtpPacket(command)
+                            } catch (_: IOException) {
+                                break
+                            }
+                            if (packetType != 6) continue
+                            val buf = ByteBuffer.wrap(packetBytes).order(ByteOrder.LITTLE_ENDIAN)
+                            buf.int
+                            val op = buf.short.toInt() and 0xFFFF
+                            val tid = buf.int
+                            observedOps += op
+                            when (op) {
+                                0x1001 -> {
+                                    val deviceData = buildSonyDeviceInfo(
+                                        intArrayOf(0x1001, 0x1002, 0x9201, 0x9202, 0x923b, 0x923c, 0x923d),
+                                    )
+                                    sendPtpData(command, tid, deviceData)
+                                    sendPtpResponse(command, 0x2001, tid)
+                                }
+                                0x1002 -> sendPtpResponse(command, 0x2001, tid)
+                                0x9201 -> {
+                                    val phase = buf.int
+                                    if (saw9202 && phase == 3) remoteInitialized.set(true)
+                                    sendPtpResponse(command, 0x2001, tid)
+                                }
+                                0x9202 -> {
+                                    saw9202 = true
+                                    sendPtpData(command, tid, leU16(0x12c))
+                                    sendPtpResponse(command, 0x2001, tid)
+                                }
+                                0x923b -> {
+                                    val slot = buf.int
+                                    if (!remoteInitialized.get()) {
+                                        sendPtpResponse(command, 0x2005, tid)
+                                    } else if (slot == 1) {
+                                        sendPtpData(command, tid, leU32(1) + ByteArray(8))
+                                        sendPtpResponse(command, 0x2001, tid)
+                                    } else {
+                                        sendPtpResponse(command, 0x201d, tid)
+                                    }
+                                }
+                                0x923c -> {
+                                    sendPtpData(command, tid, buildSingleArwPage("DSC00001.ARW", 128L, 1_700_000_000L))
+                                    sendPtpResponse(command, 0x2001, tid)
+                                }
+                                else -> sendPtpResponse(command, 0x2005, tid)
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                serverFailure.set(t)
+            }
+        }.apply { start() }
+
+        val factory = object : SocketFactory() {
+            override fun createSocket(): Socket = object : Socket() {
+                override fun connect(ignored: SocketAddress?, timeout: Int) {
+                    super.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), server.localPort), timeout)
+                }
+            }
+            override fun createSocket(host: String?, port: Int) = throw UnsupportedOperationException()
+            override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int) = throw UnsupportedOperationException()
+            override fun createSocket(host: InetAddress?, port: Int) = throw UnsupportedOperationException()
+            override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int) = throw UnsupportedOperationException()
+        }
+
+        try {
+            val connected = openCameraImportSession(
+                createMobile = { SonyMobileSession(factory, InetAddress.getLoopbackAddress(), UUID.randomUUID()) {} },
+                createLegacy = { error("should remain on mobile session") },
+                initializeRemote = false,
+            )
+            connected.session.close()
+            assertTrue(remoteInitialized.get())
+            assertEquals(1, connected.listing.assets.size)
+            assertEquals("DSC00001.ARW", connected.listing.assets.single().name)
+            assertEquals(listOf(0x1001, 0x1002, 0x923b), observedOps.take(3))
+            assertEquals(listOf(0x9201, 0x9201, 0x9202, 0x9201), observedOps.subList(3, 7))
+            server.close()
+            worker.join(3_000)
+            serverFailure.get()?.let { throw AssertionError("Server failed", it) }
+        } finally {
+            server.close()
+        }
+        }
+    }
+
     private fun leU16(v: Int): ByteArray = ByteBuffer.allocate(2).order(ByteOrder.LITTLE_ENDIAN).putShort(v.toShort()).array()
 
     private fun leU32(v: Int): ByteArray = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(v).array()

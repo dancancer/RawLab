@@ -770,9 +770,9 @@ internal class SonyCameraConnection internal constructor(
                     val shouldRetryWpa3 =
                         activeWifiSecurity == WifiSecurity.WPA2 &&
                             !retriedWpa3 &&
-                            advertisesWpa3Sae(latestCaps)
+                            (latestCaps.isBlank() || advertisesWpa3Sae(latestCaps))
                     if (shouldRetryWpa3) {
-                        debugLog("WifiNetworkCallbacks.onUnavailable under WPA2 on SAE AP; retrying with WPA3")
+                        debugLog("WifiNetworkCallbacks.onUnavailable under WPA2 (capsBlank=${latestCaps.isBlank()}); retrying with WPA3")
                         retriedWpa3 = true
                         networkHandle = null
                         cancelWifiRequestTimeout()

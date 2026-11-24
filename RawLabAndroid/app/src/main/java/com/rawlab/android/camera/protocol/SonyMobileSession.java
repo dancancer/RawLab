@@ -28,6 +28,7 @@ public final class SonyMobileSession implements CameraMediaSession {
     private volatile boolean closed;
     private static final int LIMIT = 8 << 20;
     private static final int MAX_SCAN_PAGES = 1000;
+    private static final int SLOT_DATES_LIMIT = 256 << 10;
     private static final int THUMBNAIL_LIMIT = 2 << 20;
     private static final int LARGE_PREVIEW_LIMIT = 8 << 20;
     private static final Set<Integer> ALLOWED = new HashSet<>(Arrays.asList(0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008, 0x1009, 0x9201, 0x9202, 0x923b, 0x923c, 0x923d, 0x923e));
@@ -88,7 +89,23 @@ public final class SonyMobileSession implements CameraMediaSession {
     public void initializeRemoteContents() throws IOException {
         operation(0x9201, new int[]{1, 0, 0}, false, 65536);
         operation(0x9201, new int[]{2, 0, 0}, false, 65536);
-        operation(0x9202, new int[]{0x12c, 1}, true, 65536);
+        boolean initialized = false;
+        for (int attempt = 0; attempt < 20; attempt++) {
+            if (closed) throw new IOException("Camera session is closed");
+            byte[] info = operation(0x9202, new int[]{0x12c, 1}, false, 65536);
+            if (info.length > 0) {
+                initialized = true;
+                break;
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                close();
+                throw new IOException("Remote initialization interrupted", interrupted);
+            }
+        }
+        if (!initialized) throw new IOException("Sony remote descriptor timed out");
         operation(0x9201, new int[]{3, 0, 0}, false, 65536);
     }
 
@@ -102,9 +119,12 @@ public final class SonyMobileSession implements CameraMediaSession {
         if (!device.operations.contains(0x923c)) throw new IOException("Mobile contents operation 0x923C not advertised");
         ArrayList<Asset> result = new ArrayList<>();
         HashSet<String> seen = new HashSet<>();
-        boolean exceeded = listSlot(1, result, seen);
-        if (device.operations.contains(0x923b) && hasSlotPhotos(2)) {
-            if (listSlot(2, result, seen)) exceeded = true;
+        boolean exceeded = false;
+        if (device.operations.contains(0x923b)) {
+            if (probeSlot(1) != SlotState.EMPTY && listSlot(1, result, seen)) exceeded = true;
+            if (probeSlot(2) == SlotState.HAS_PHOTOS && listSlot(2, result, seen)) exceeded = true;
+        } else {
+            exceeded = listSlot(1, result, seen);
         }
         if (exceeded) {
             trimRecentAssets(result);
@@ -113,14 +133,20 @@ public final class SonyMobileSession implements CameraMediaSession {
         return result;
     }
 
-    private boolean hasSlotPhotos(int slot) throws IOException {
+    private enum SlotState { HAS_PHOTOS, EMPTY, UNKNOWN }
+
+    private SlotState probeSlot(int slot) throws IOException {
         try {
-            byte[] info = operation(0x923b, new int[]{slot}, true, 1024);
-            if (info.length < 4) return false;
+            byte[] info = operation(0x923b, new int[]{slot}, true, SLOT_DATES_LIMIT);
+            if (info.length < 4) return SlotState.EMPTY;
             long count = ByteBuffer.wrap(info, 0, 4).order(ByteOrder.LITTLE_ENDIAN).getInt() & 0xFFFFFFFFL;
-            return count > 0;
-        } catch (ResponseException ignored) {
-            return false;
+            return count > 0 ? SlotState.HAS_PHOTOS : SlotState.EMPTY;
+        } catch (ResponseException error) {
+            if (error.code == 0x201d || error.code == 0x2013) return SlotState.EMPTY;
+            if (slot == 1 && (error.code == 0x2002 || error.code == 0x2005 || error.code == 0x201e)) {
+                throw error;
+            }
+            return slot == 1 ? SlotState.UNKNOWN : SlotState.EMPTY;
         }
     }
 

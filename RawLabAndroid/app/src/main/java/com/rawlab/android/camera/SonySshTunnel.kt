@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import android.util.Log
 import com.jcraft.jsch.ChannelDirectTCPIP
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
@@ -8,6 +9,7 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
+import com.rawlab.android.BuildConfig
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.EOFException
@@ -140,13 +142,22 @@ internal fun probeSshHostKey(
     try {
         session.connect(timeoutMs)
     } catch (error: Exception) {
-        probed?.let { return it }
+        probed?.let {
+            SonySshTunnel.debugLog("probeSsh succeeded keyType=${it.keyType}")
+            return it
+        }
+        SonySshTunnel.debugLog("probeSsh failed ${error.javaClass.simpleName}: ${SonySshTunnel.redactIps(error.message)}")
         throw IOException("Failed to probe camera SSH host key: ${error.message}", error)
     } finally {
         runCatching { session.disconnect() }
         runCatching { rawSocketHolder[0]?.close() }
     }
-    return probed ?: throw IOException("Camera SSH server did not present a host key")
+    return probed?.also {
+        SonySshTunnel.debugLog("probeSsh succeeded keyType=${it.keyType}")
+    } ?: run {
+        SonySshTunnel.debugLog("probeSsh failed: server did not present a host key")
+        throw IOException("Camera SSH server did not present a host key")
+    }
 }
 
 internal class SonySshTunnel private constructor(
@@ -312,7 +323,7 @@ internal class SonySshTunnel private constructor(
             val connectTimeout = if (timeout > 0) timeout else DEFAULT_TIMEOUT_MS
             val openedChannel = session.openChannel("direct-tcpip") as? ChannelDirectTCPIP
                 ?: throw IOException("Failed to open SSH direct-tcpip channel")
-            openedChannel.setHost("127.0.0.1")
+            openedChannel.setHost(FORWARD_TARGET_HOST)
             openedChannel.setPort(port)
             openedChannel.setOrgIPAddress("127.0.0.1")
             openedChannel.setOrgPort(0)
@@ -325,6 +336,7 @@ internal class SonySshTunnel private constructor(
                 rawOut = openedChannel.outputStream
                 openedChannel.connect(connectTimeout)
             } catch (error: Throwable) {
+                debugLog("SSH direct-tcpip to $FORWARD_TARGET_HOST:$port failed: ${error.javaClass.simpleName}: ${redactIps(error.message)}")
                 runCatching { openedChannel.disconnect() }
                 if (error is IOException) throw error
                 throw IOException("Failed to open forwarded channel to port $port: ${error.message}", error)
@@ -543,9 +555,20 @@ internal class SonySshTunnel private constructor(
     companion object {
         const val DEFAULT_SSH_PORT = 22
         const val DEFAULT_FORWARD_PORT = 15740
-        const val DEFAULT_TIMEOUT_MS = 5_000
+        const val DEFAULT_TIMEOUT_MS = 10_000
+        private const val FORWARD_TARGET_HOST = "localhost"
         private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
+        private val IPV4_REGEX = Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b""")
         private val CHANNEL_SEQ = AtomicInteger(0)
+
+        internal fun redactIps(message: String?): String =
+            message?.replace(IPV4_REGEX, "<ip>").orEmpty()
+
+        internal fun debugLog(message: String) {
+            if (BuildConfig.DEBUG) {
+                runCatching { Log.d("RawLabCamera", message) }
+            }
+        }
 
         fun connect(
             address: InetAddress,
@@ -573,7 +596,7 @@ internal class SonySshTunnel private constructor(
                 timeout = timeoutMs
                 setPassword(password)
                 setConfig("StrictHostKeyChecking", "yes")
-                setConfig("PreferredAuthentications", "password,keyboard-interactive")
+                setConfig("PreferredAuthentications", "keyboard-interactive,password")
                 setConfig("enable_auth_none", "yes")
                 setSocketFactory(BoundJschSocketFactory(address, rawSocketFactory, timeoutMs, rawSocketHolder))
                 setHostKeyRepository(object : HostKeyRepository {
@@ -612,8 +635,10 @@ internal class SonySshTunnel private constructor(
                         prompt: Array<out String>?,
                         echo: BooleanArray?,
                     ): Array<String>? {
-                        if (prompt == null || prompt.isEmpty() || kbAttempts.incrementAndGet() > 2) return null
-                        return Array(prompt.size) { idx -> if (idx == 0) password else "" }
+                        if (prompt == null) return null
+                        if (prompt.isEmpty()) return emptyArray()
+                        if (kbAttempts.incrementAndGet() > 2) return null
+                        return Array(prompt.size) { password }
                     }
                 })
             }
@@ -623,16 +648,22 @@ internal class SonySshTunnel private constructor(
             } catch (error: Exception) {
                 runCatching { session.disconnect() }
                 runCatching { rawSocketHolder[0]?.close() }
-                mismatchError?.let { throw it }
+                mismatchError?.let {
+                    debugLog("SSH host key mismatch keyType=${it.keyType}")
+                    throw it
+                }
                 if (isAuthenticationFailure(error)) {
+                    debugLog("SSH authentication failed: ${error.javaClass.simpleName}")
                     throw SshAuthenticationException("Camera SSH authentication failed", error)
                 }
+                debugLog("SSH connect failed: ${error.javaClass.simpleName}: ${redactIps(error.message)}")
                 throw IOException("Camera SSH connection failed: ${error.message}", error)
             }
 
             val probe = matchedProbe ?: run {
                 runCatching { session.disconnect() }
                 runCatching { rawSocketHolder[0]?.close() }
+                debugLog("SSH connect failed: host key missing after connect")
                 throw SshFingerprintMismatchException(expectedNormalized, "", "unknown")
             }
 
@@ -641,6 +672,7 @@ internal class SonySshTunnel private constructor(
                 runCatching { raw.soTimeout = 0 }
             }
             runCatching { session.timeout = 0 }
+            debugLog("SSH connect succeeded keyType=${probe.keyType}")
 
             return SonySshTunnel(address, port, session, rawSocketHolder[0], probe)
         }
