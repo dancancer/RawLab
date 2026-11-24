@@ -66,6 +66,20 @@ void JNICALL Java_com_rawlab_android_engine_NativeHDRBridge_nativeExportJpeg(
     JNIEnv*, jclass, jlong, jlong, jstring, jstring, jint, jlong, jobject);
 jdouble JNICALL Java_com_rawlab_android_engine_ToneCurveSampling_nativeSampleParametricValue(
     JNIEnv*, jclass, jdoubleArray, jdouble);
+jintArray JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeInferSourceSize(
+    JNIEnv*, jclass, jint, jint, jfloat, jfloat, jfloat, jfloat, jint, jboolean, jboolean, jfloat, jfloat, jfloat);
+jfloatArray JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeOutputNormToSourceNorm(
+    JNIEnv*, jclass, jint, jint, jfloat, jfloat, jfloat, jfloat, jint, jboolean, jboolean, jfloat, jfloat, jfloat, jdouble, jdouble);
+jfloatArray JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeSourceNormToOutputNorm(
+    JNIEnv*, jclass, jint, jint, jfloat, jfloat, jfloat, jfloat, jint, jboolean, jboolean, jfloat, jfloat, jfloat, jdouble, jdouble);
+jdoubleArray JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeColorFromRgb(
+    JNIEnv*, jclass, jint, jint, jint);
+jdoubleArray JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeSampleBitmapPatch(
+    JNIEnv*, jclass, jobject, jdouble, jdouble, jint);
+jint JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeOverlayPixel(
+    JNIEnv*, jclass, jint, jint, jint, jint);
+jboolean JNICALL Java_com_rawlab_android_editor_inspection_InspectionNative_nativeRenderOverlay(
+    JNIEnv*, jclass, jobject, jobject, jint);
 }
 
 namespace {
@@ -515,6 +529,16 @@ jfloatArray JNICALL mockNewFloatArray(JNIEnv*, jsize len) {
     return reinterpret_cast<jfloatArray>(obj);
 }
 
+jdoubleArray JNICALL mockNewDoubleArray(JNIEnv*, jsize len) {
+    auto* obj = reinterpret_cast<FakeJObject*>(allocObj(FakeObjKind::DoubleArray));
+    obj->doubles.resize(static_cast<size_t>(len));
+    return reinterpret_cast<jdoubleArray>(obj);
+}
+
+jboolean JNICALL mockIsSameObject(JNIEnv*, jobject a, jobject b) {
+    return a == b ? JNI_TRUE : JNI_FALSE;
+}
+
 void JNICALL mockGetByteArrayRegion(JNIEnv*, jbyteArray arr, jsize start, jsize len, jbyte* buf) {
     if (!arr || !buf) return;
     std::memcpy(buf, asFake(arr)->bytes.data() + start, static_cast<size_t>(len) * sizeof(jbyte));
@@ -553,6 +577,11 @@ void JNICALL mockSetFloatArrayRegion(JNIEnv*, jfloatArray arr, jsize start, jsiz
 void JNICALL mockGetDoubleArrayRegion(JNIEnv*, jdoubleArray arr, jsize start, jsize len, jdouble* buf) {
     if (!arr || !buf) return;
     std::memcpy(buf, asFake(arr)->doubles.data() + start, static_cast<size_t>(len) * sizeof(jdouble));
+}
+
+void JNICALL mockSetDoubleArrayRegion(JNIEnv*, jdoubleArray arr, jsize start, jsize len, const jdouble* buf) {
+    if (!arr || !buf) return;
+    std::memcpy(asFake(arr)->doubles.data() + start, buf, static_cast<size_t>(len) * sizeof(jdouble));
 }
 
 jobject JNICALL mockGetObjectArrayElement(JNIEnv*, jobjectArray arr, jsize index) {
@@ -621,6 +650,8 @@ JNINativeInterface_ makeEnvTable() {
     t.NewByteArray = mockNewByteArray;
     t.NewIntArray = mockNewIntArray;
     t.NewFloatArray = mockNewFloatArray;
+    t.NewDoubleArray = mockNewDoubleArray;
+    t.IsSameObject = mockIsSameObject;
     t.GetByteArrayElements = mockGetByteArrayElements;
     t.ReleaseByteArrayElements = mockReleaseByteArrayElements;
     t.GetByteArrayRegion = mockGetByteArrayRegion;
@@ -631,6 +662,7 @@ JNINativeInterface_ makeEnvTable() {
     t.GetFloatArrayRegion = mockGetFloatArrayRegion;
     t.SetFloatArrayRegion = mockSetFloatArrayRegion;
     t.GetDoubleArrayRegion = mockGetDoubleArrayRegion;
+    t.SetDoubleArrayRegion = mockSetDoubleArrayRegion;
     t.NewObjectArray = mockNewObjectArray;
     t.GetObjectArrayElement = mockGetObjectArrayElement;
     t.SetObjectArrayElement = mockSetObjectArrayElement;
@@ -2739,6 +2771,88 @@ void testNativeProcessRoiClearsViewportRoiForSubsequentProcess() {
     std::cout << "PASS: testNativeProcessRoiClearsViewportRoiForSubsequentProcess" << std::endl;
 }
 
+void testInspectionJniRoundTripAndPaddedBitmapHooks() {
+    resetMocks();
+    LocalEnv env;
+
+    // 1. Geometry projection & inferSourceSize via real photo_geometry.cpp + inspection_c.cpp
+    jfloatArray srcPt = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeOutputNormToSourceNorm(
+        env.ptr(), nullptr, 4000, 3000,
+        0.1f, 0.2f, 0.6f, 0.5f, 1, JNI_TRUE, JNI_FALSE, 7.5f, 0.35f, -0.25f,
+        0.35, 0.6);
+    require(srcPt != nullptr && asFake(srcPt)->floats.size() == 2, "nativeOutputNormToSourceNorm succeeds");
+
+    jfloatArray outPt = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeSourceNormToOutputNorm(
+        env.ptr(), nullptr, 4000, 3000,
+        0.1f, 0.2f, 0.6f, 0.5f, 1, JNI_TRUE, JNI_FALSE, 7.5f, 0.35f, -0.25f,
+        static_cast<jdouble>(asFake(srcPt)->floats[0]), static_cast<jdouble>(asFake(srcPt)->floats[1]));
+    require(outPt != nullptr && asFake(outPt)->floats.size() == 2, "nativeSourceNormToOutputNorm round-trips");
+    require(std::abs(asFake(outPt)->floats[0] - 0.35f) < 1e-4f && std::abs(asFake(outPt)->floats[1] - 0.6f) < 1e-4f,
+        "Android JNI geometry round-trip precision");
+
+    jfloatArray croppedOut = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeSourceNormToOutputNorm(
+        env.ptr(), nullptr, 4000, 3000,
+        0.25f, 0.25f, 0.5f, 0.5f, 0, JNI_FALSE, JNI_FALSE, 0.0f, 0.0f, 0.0f,
+        0.1, 0.1);
+    require(croppedOut == nullptr, "Out-of-crop source anchor returns null");
+
+    jintArray inferred = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeInferSourceSize(
+        env.ptr(), nullptr, 1500, 2400,
+        0.1f, 0.2f, 0.6f, 0.5f, 1, JNI_TRUE, JNI_FALSE, 7.5f, 0.35f, -0.25f);
+    require(inferred != nullptr && asFake(inferred)->ints.size() == 2 &&
+            asFake(inferred)->ints[0] > 0 && asFake(inferred)->ints[1] > 0,
+        "nativeInferSourceSize returns positive dimensions");
+
+    // 2. Color & overlay pixel
+    jdoubleArray red = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeColorFromRgb(
+        env.ptr(), nullptr, 255, 0, 0);
+    require(red != nullptr && asFake(red)->doubles.size() == 7, "nativeColorFromRgb returns 7 doubles");
+    require(std::abs(asFake(red)->doubles[3]) < 0.01 && std::abs(asFake(red)->doubles[6] - 0.2126) < 1e-4,
+        "nativeColorFromRgb HSB & luminance match core");
+
+    jint gray50 = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeOverlayPixel(
+        env.ptr(), nullptr, 20, 200, 250, 5);
+    require(gray50 == static_cast<jint>(0xff808080u), "nativeOverlayPixel NEUTRAL_GRAY_50");
+
+    // 3. Padded-stride bitmap sampling ((1/3, 0.5) -> R=133) + overlay rendering via RawLabHostBitmapHooks
+    const int w = 4;
+    const int h = 4;
+    const int stride = w * 4 + 8;
+    jobject srcBmp = makeFakeBitmap(w, h, 8);
+    jobject dstBmp = makeFakeBitmap(w, h, 8);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t off = static_cast<size_t>(y) * stride + x * 4;
+            asFake(srcBmp)->bitmapPixels[off + 0] = static_cast<uint8_t>(x < 2 ? 100 : 200);
+            asFake(srcBmp)->bitmapPixels[off + 1] = 100;
+            asFake(srcBmp)->bitmapPixels[off + 2] = static_cast<uint8_t>(x < 2 ? 100 : 50);
+            asFake(srcBmp)->bitmapPixels[off + 3] = 255;
+        }
+    }
+
+    jdoubleArray straddle = Java_com_rawlab_android_editor_inspection_InspectionNative_nativeSampleBitmapPatch(
+        env.ptr(), nullptr, srcBmp, 1.0 / 3.0, 0.5, 1);
+    require(straddle != nullptr && asFake(straddle)->doubles.size() == 7, "nativeSampleBitmapPatch succeeds");
+    require(static_cast<int>(asFake(straddle)->doubles[0]) == 133, "Android padded-stride 3x3 straddle R == 133");
+    require(asFake(srcBmp)->bitmapLockCount == 1 && asFake(srcBmp)->bitmapUnlockCount == 1,
+        "nativeSampleBitmapPatch unlocks bitmap symmetrically");
+
+    require(Java_com_rawlab_android_editor_inspection_InspectionNative_nativeRenderOverlay(
+                env.ptr(), nullptr, srcBmp, srcBmp, 1) == JNI_FALSE,
+        "nativeRenderOverlay rejects aliasing src==dst");
+    require(Java_com_rawlab_android_editor_inspection_InspectionNative_nativeRenderOverlay(
+                env.ptr(), nullptr, srcBmp, dstBmp, 5) == JNI_TRUE,
+        "nativeRenderOverlay succeeds with padded stride");
+    require(asFake(srcBmp)->bitmapLockCount == 2 && asFake(srcBmp)->bitmapUnlockCount == 2 &&
+            asFake(dstBmp)->bitmapLockCount == 1 && asFake(dstBmp)->bitmapUnlockCount == 1,
+        "nativeRenderOverlay unlocks both bitmaps symmetrically");
+    require(asFake(dstBmp)->bitmapPixels[0] == 128 && asFake(dstBmp)->bitmapPixels[1] == 128 &&
+            asFake(dstBmp)->bitmapPixels[2] == 128 && asFake(dstBmp)->bitmapPixels[3] == 255,
+        "nativeRenderOverlay writes gray50 RGBA8 pixels");
+
+    std::cout << "PASS: testInspectionJniRoundTripAndPaddedBitmapHooks" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -2767,6 +2881,7 @@ int main() {
         {"testHdrV9WithoutChannelCurvesInitializesLegacyChannels", testHdrV9WithoutChannelCurvesInitializesLegacyChannels},
         {"testHdrV9GradingV2AndWbProbe", testHdrV9GradingV2AndWbProbe},
         {"testNativeProcessRoiClearsViewportRoiForSubsequentProcess", testNativeProcessRoiClearsViewportRoiForSubsequentProcess},
+        {"testInspectionJniRoundTripAndPaddedBitmapHooks", testInspectionJniRoundTripAndPaddedBitmapHooks},
     };
     int failures = 0;
     for (const auto& c : cases) {

@@ -316,6 +316,29 @@ internal static partial class Native
         public int AppliedDistortion, AppliedTca;
         public float CropScale;
     }
+    internal const int PixelFormatRgba8 = 1;
+    internal const int PixelFormatBgra8 = 3;
+    internal const uint InspectionSampleVersion = 1u;
+
+    internal enum InspectionOverlayMode
+    {
+        None = 0,
+        SketchLuminance = 1,
+        WarmCoolBw = 2,
+        OversaturationHeatmap = 3,
+        SkinHueAmplification = 4,
+        NeutralGray50 = 5,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct InspectionSample
+    {
+        public uint Version, StructSize;
+        public byte R, G, B, Reserved0;
+        public uint Reserved1;
+        public double HueDeg, SaturationPct, BrightnessPct, Luminance;
+    }
+
     internal const int StatusOk = 0;
     internal const int StatusInvalidArgument = 1;
     internal const int StatusUnsupported = 2;
@@ -578,4 +601,32 @@ internal static partial class Native
     [DllImport(Dll, EntryPoint = "sony2fuji_prepare_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int PrepareLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string request, ref DcpBlob output);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_geometry_output_size(
+        uint sourceWidth, uint sourceHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
+        out uint outWidth, out uint outHeight);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_geometry_infer_source_size(
+        uint outputWidth, uint outputHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
+        out uint outSourceWidth, out uint outSourceHeight);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_geometry_output_norm_to_source_norm(
+        uint sourceWidth, uint sourceHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
+        double outX, double outY, out double outSourceX, out double outSourceY, out int outValid);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_geometry_source_norm_to_output_norm(
+        uint sourceWidth, uint sourceHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
+        double sourceX, double sourceY, out double outOutputX, out double outOutputY, out int outValid);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_inspection_color_from_rgb(
+        byte r, byte g, byte b, ref InspectionSample outSample);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_inspection_sample_patch(
+        ref Buffer image, double normX, double normY, uint radiusPx, ref InspectionSample outSample);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_inspection_overlay_pixel(
+        byte r, byte g, byte b, InspectionOverlayMode mode, out byte outR, out byte outG, out byte outB);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_inspection_render_overlay(
+        ref Buffer src, InspectionOverlayMode mode, ref Buffer dst);
 }

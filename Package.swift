@@ -19,6 +19,11 @@ let package = Package(
             targets: ["RawLabNativeTypes"]
         ),
         .library(
+            name: "RawLabInspectionNative",
+            type: .static,
+            targets: ["RawLabInspectionNative"]
+        ),
+        .library(
             name: "RawLabNative",
             type: .static,
             targets: ["RawLabNative"]
@@ -41,8 +46,14 @@ let package = Package(
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .target(
-            name: "RawLabNative",
+            name: "RawLabInspectionNative",
             dependencies: ["RawLabKit", "RawLabNativeTypes", "CSony2Fuji"],
+            path: "Shared/RawLabInspectionNative",
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
+        .target(
+            name: "RawLabNative",
+            dependencies: ["RawLabKit", "RawLabNativeTypes", "RawLabInspectionNative", "CSony2Fuji"],
             path: "Shared/RawLabNative",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),

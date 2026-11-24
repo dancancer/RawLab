@@ -1,4 +1,5 @@
 @_exported import CSony2Fuji
+@_exported import RawLabInspectionNative
 @_exported import RawLabNativeTypes
 import RawLabKit
 import Darwin

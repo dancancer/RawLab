@@ -1342,6 +1342,105 @@ void sony2fuji_release_buffer(sony2fuji_buffer* buffer);
 
 const char* sony2fuji_status_message(sony2fuji_status status);
 
+// Inspection & Geometry Projection
+
+typedef enum sony2fuji_inspection_overlay_mode {
+    SONY2FUJI_INSPECTION_OVERLAY_NONE = 0,
+    SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE = 1,
+    SONY2FUJI_INSPECTION_OVERLAY_WARM_COOL_BW = 2,
+    SONY2FUJI_INSPECTION_OVERLAY_OVERSATURATION_HEATMAP = 3,
+    SONY2FUJI_INSPECTION_OVERLAY_SKIN_HUE_AMPLIFICATION = 4,
+    SONY2FUJI_INSPECTION_OVERLAY_NEUTRAL_GRAY_50 = 5
+} sony2fuji_inspection_overlay_mode;
+
+#define SONY2FUJI_INSPECTION_SAMPLE_VERSION 1u
+typedef struct sony2fuji_inspection_sample {
+    uint32_t version;
+    uint32_t struct_size;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t reserved0;
+    uint32_t reserved1;
+    double hue_deg;
+    double saturation_pct;
+    double brightness_pct;
+    double luminance;
+} sony2fuji_inspection_sample;
+
+sony2fuji_status sony2fuji_geometry_output_size(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    uint32_t* out_width,
+    uint32_t* out_height
+);
+
+sony2fuji_status sony2fuji_geometry_infer_source_size(
+    uint32_t output_width,
+    uint32_t output_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    uint32_t* out_source_width,
+    uint32_t* out_source_height
+);
+
+sony2fuji_status sony2fuji_geometry_output_norm_to_source_norm(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    double out_x,
+    double out_y,
+    double* out_source_x,
+    double* out_source_y,
+    int32_t* out_valid
+);
+
+sony2fuji_status sony2fuji_geometry_source_norm_to_output_norm(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    double source_x,
+    double source_y,
+    double* out_output_x,
+    double* out_output_y,
+    int32_t* out_valid
+);
+
+sony2fuji_status sony2fuji_inspection_color_from_rgb(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    sony2fuji_inspection_sample* out_sample
+);
+
+sony2fuji_status sony2fuji_inspection_sample_patch(
+    const sony2fuji_buffer* image,
+    double norm_x,
+    double norm_y,
+    uint32_t radius_px,
+    sony2fuji_inspection_sample* out_sample
+);
+
+sony2fuji_status sony2fuji_inspection_overlay_pixel(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    sony2fuji_inspection_overlay_mode mode,
+    uint8_t* out_r,
+    uint8_t* out_g,
+    uint8_t* out_b
+);
+
+sony2fuji_status sony2fuji_inspection_render_overlay(
+    const sony2fuji_buffer* src,
+    sony2fuji_inspection_overlay_mode mode,
+    sony2fuji_buffer* dst
+);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

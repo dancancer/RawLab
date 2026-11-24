@@ -532,6 +532,7 @@ class BuildEnvironmentTests(unittest.TestCase):
                     "mkdir -p \"$bin/Modules\"\n"
                     "touch \"$bin/Modules/RawLabKit.swiftmodule\" \"$bin/libRawLabKit.a\" "
                     "\"$bin/Modules/RawLabNativeTypes.swiftmodule\" \"$bin/libRawLabNativeTypes.a\" "
+                    "\"$bin/Modules/RawLabInspectionNative.swiftmodule\" \"$bin/libRawLabInspectionNative.a\" "
                     "\"$bin/Modules/RawLabNative.swiftmodule\" \"$bin/libRawLabNative.a\"\n"
                 ),
                 "swiftc": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\nmkdir -p \"$(dirname \"$out\")\"\ntouch \"$out\"\nchmod +x \"$out\"\n",

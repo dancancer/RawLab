@@ -390,6 +390,8 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(direct_img.returncode, 0, direct_img.stderr)
             direct_img_json = json.loads(direct_img.stdout)
             self.assertTrue(direct_img_json["ok"])
+            self.assertNotIn("auto_diagnostics", direct_img_json["result"])
+            self.assertNotIn("portrait_skin_check", direct_img_json["result"]["samples"][0])
 
             direct_recipe = subprocess.run(
                 [CLI, "--recipe", str(recipe), "--analyze", "--sample", "0.5,0.5,skin", "--long-edge", "512", "--json"],
@@ -398,6 +400,8 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(direct_recipe.returncode, 0, direct_recipe.stderr)
             direct_recipe_json = json.loads(direct_recipe.stdout)
             self.assertTrue(direct_recipe_json["ok"])
+            self.assertNotIn("auto_diagnostics", direct_recipe_json["result"])
+            self.assertNotIn("portrait_skin_check", direct_recipe_json["result"]["samples"][0])
 
             params = StdioServerParameters(command=sys.executable, args=[
                 "-m", "rawlab_mcp", "--cli", CLI,
@@ -414,7 +418,10 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                     "long_edge": 1024,
                 })
                 self.assertFalse(mcp_img.is_error, str(mcp_img))
-                self.assertEqual(mcp_img.structured_content["result"], direct_img_json["result"])
+                img_diag = mcp_img.structured_content["result"]
+                self.assertIsInstance(img_diag.get("auto_diagnostics"), list)
+                for key, val in direct_img_json["result"].items():
+                    self.assertEqual(img_diag[key], val)
 
                 mcp_recipe = await client.call_tool("diagnose_image", {
                     "recipe_path": str(recipe),
@@ -422,8 +429,14 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                     "long_edge": 512,
                 })
                 self.assertFalse(mcp_recipe.is_error, str(mcp_recipe))
-                self.assertEqual(mcp_recipe.structured_content["result"], direct_recipe_json["result"])
                 diag = mcp_recipe.structured_content["result"]
+                self.assertIsInstance(diag.get("auto_diagnostics"), list)
+                for key, val in direct_recipe_json["result"].items():
+                    if key != "samples":
+                        self.assertEqual(diag[key], val)
+                self.assertEqual(len(diag["samples"]), 1)
+                for key, val in direct_recipe_json["result"]["samples"][0].items():
+                    self.assertEqual(diag["samples"][0][key], val)
                 self.assertIn("luma_zones", diag)
                 self.assertIn("color_balance", diag)
                 self.assertIn("saturation", diag)

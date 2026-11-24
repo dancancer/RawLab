@@ -299,8 +299,9 @@ class BshCliTests(unittest.TestCase):
         self.assertEqual(env["command"], "analyze")
         diag = env["result"]
         self.assertEqual(len(diag["samples"]), 2)
-        self.assertIn("portrait_skin_check", diag["samples"][1])
         self.assertNotIn("portrait_skin_check", diag["samples"][0])
+        self.assertNotIn("portrait_skin_check", diag["samples"][1])
+        self.assertNotIn("auto_diagnostics", diag)
 
         # 2. Combined --preview + --analyze writes PNG and matches Python reference within <0.2%
         proc2 = self.run_cli("--recipe", recipe, "--preview", preview_png, "--analyze", "--sample", "0.5,0.5,center", "--long-edge", "64", "--json")
@@ -351,7 +352,8 @@ class BshCliTests(unittest.TestCase):
             self.assertEqual(env["command"], "analyze")
             ref = _ref_analyze_png(png, [_ref_parse_sample_arg("0.25,0.5,face")])
             self.assert_parity(env["result"], ref)
-            self.assertIn("portrait_skin_check", env["result"]["samples"][0])
+            self.assertNotIn("portrait_skin_check", env["result"]["samples"][0])
+            self.assertNotIn("auto_diagnostics", env["result"])
 
         # --sample without --analyze fails cleanly
         bad1 = self.run_cli("--recipe", self.root / "missing.json", "--sample", "0.5,0.5", "--json")

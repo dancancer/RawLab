@@ -87,6 +87,7 @@ set(CORE_SOURCES
     src/core/wavelet_denoise.cpp
     src/core/photo_effects.cpp
     src/core/photo_geometry.cpp
+    src/core/inspection_overlay.cpp
     src/core/hdr_rendering.cpp
     src/core/hdr_pipeline.cpp
     src/core/hdr_detail.cpp
@@ -120,6 +121,7 @@ set(CORE_SOURCES
     src/ffi/edit_recipe.cpp
     src/ffi/sony2fuji_lens_c.cpp
     src/ffi/sony2fuji_buffer_c.cpp
+    src/ffi/inspection_c.cpp
     src/ffi/sony2fuji_hdr.cpp
     src/ffi/dcp_compiler_c.cpp
     src/ffi/lut_compatibility_c.cpp
@@ -930,9 +932,15 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     )
     rawlab_add_test(
         NAME inspection_geometry_parity
-        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp
+        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp src/core/inspection_overlay.cpp src/ffi/inspection_c.cpp
         LIBRARIES ${geometry_libs}
         LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME inspection_overlay
+        SOURCES tests/inspection_overlay_tests.cpp src/core/photo_geometry.cpp src/core/inspection_overlay.cpp src/ffi/inspection_c.cpp
+        LIBRARIES ${geometry_libs}
+        LABELS inspection ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME perspective_api

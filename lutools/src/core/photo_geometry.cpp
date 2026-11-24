@@ -82,10 +82,25 @@ template<class Reader> RGB sampleBilinear(int width, int height, const Reader& r
         interpolate(read(left, bottom), read(right, bottom), dx), dy);
 }
 
-Point transformedPoint(int x, int y, const Canvas& canvas, const GeometryOptions& options) {
+bool tryTransformedPoint(double x, double y, const Canvas& canvas, const GeometryOptions& options, Point& out) {
     const double dy = canvas.top + y - (canvas.height - 1) * .5;
     const double dx = canvas.left + x - (canvas.width - 1) * .5;
     // 两种存储路径共用乘加顺序，不累加坐标或改用倒数。
+    const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
+    const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
+    const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
+        .25 * options.perspective_vertical * (2 * rotated_y / canvas.rotated_height);
+    if (std::abs(denominator) <= 1e-6) return false;
+    out = {(canvas.rotated_width - 1) * .5 + rotated_x / denominator,
+        (canvas.rotated_height - 1) * .5 + rotated_y / denominator};
+    return true;
+}
+
+Point transformedPoint(double x, double y, const Canvas& canvas, const GeometryOptions& options) {
+    Point out{};
+    if (tryTransformedPoint(x, y, canvas, options, out)) return out;
+    const double dy = canvas.top + y - (canvas.height - 1) * .5;
+    const double dx = canvas.left + x - (canvas.width - 1) * .5;
     const double rotated_x = canvas.cosine * dx + canvas.sine * dy;
     const double rotated_y = -canvas.sine * dx + canvas.cosine * dy;
     const double denominator = 1 + .25 * options.perspective_horizontal * (2 * rotated_x / canvas.rotated_width) +
@@ -182,6 +197,130 @@ std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOpti
     if (width <= 0 || height <= 0 || !options.valid()) return {0, 0};
     const auto canvas = canvasFor(width, height, options);
     return {canvas.right - canvas.left, canvas.bottom - canvas.top};
+}
+
+std::pair<int, int> geometryInferSourceSize(int outputWidth, int outputHeight,
+    const GeometryOptions& options) {
+    if (outputWidth <= 0 || outputHeight <= 0 || !options.valid()) return {0, 0};
+    if (!options.active()) return {outputWidth, outputHeight};
+    constexpr double radiansPerDeg = 3.14159265358979323846 / 180.0;
+    const double radians = double(options.straighten_degrees) * radiansPerDeg;
+    const double cosine = std::cos(radians);
+    const double absSine = std::abs(std::sin(radians));
+    const double perspScale = 1.0 / (1.0 + 0.25 * std::abs(double(options.perspective_horizontal)) +
+        0.25 * std::abs(double(options.perspective_vertical)));
+    const double cw = double(outputWidth) / std::max(0.0001, double(options.crop_width));
+    const double ch = double(outputHeight) / std::max(0.0001, double(options.crop_height));
+    const double straightenScale = std::min(cw / (cw * cosine + ch * absSine),
+        ch / (cw * absSine + ch * cosine));
+    const double denomScale = std::max(1e-4, perspScale * straightenScale);
+    const int rw = std::max(1, static_cast<int>(std::llround(cw / denomScale)));
+    const int rh = std::max(1, static_cast<int>(std::llround(ch / denomScale)));
+    const int turns = ((options.quarter_turns % 4) + 4) % 4;
+    return (turns % 2 != 0) ? std::make_pair(rh, rw) : std::make_pair(rw, rh);
+}
+
+bool geometryOutputNormToSourceNorm(int sourceWidth, int sourceHeight,
+    const GeometryOptions& options, double outX, double outY,
+    double& outSourceX, double& outSourceY) {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || !options.valid() ||
+        !std::isfinite(outX) || !std::isfinite(outY) ||
+        outX < -1e-4 || outX > 1.0 + 1e-4 || outY < -1e-4 || outY > 1.0 + 1e-4) {
+        return false;
+    }
+    const double clampedOutX = std::clamp(outX, 0.0, 1.0);
+    const double clampedOutY = std::clamp(outY, 0.0, 1.0);
+    if (!options.active()) {
+        outSourceX = clampedOutX;
+        outSourceY = clampedOutY;
+        return true;
+    }
+    const Canvas canvas = canvasFor(sourceWidth, sourceHeight, options);
+    const double outW = double(canvas.right - canvas.left);
+    const double outH = double(canvas.bottom - canvas.top);
+    const double x = clampedOutX * outW - 0.5;
+    const double y = clampedOutY * outH - 0.5;
+    Point perspectivePt{};
+    if (!tryTransformedPoint(x, y, canvas, options, perspectivePt)) {
+        return false;
+    }
+    const Point src = sourcePoint(perspectivePt, canvas, options, sourceWidth, sourceHeight);
+    const double uSrc = (src.x + 0.5) / double(sourceWidth);
+    const double vSrc = (src.y + 0.5) / double(sourceHeight);
+    if (uSrc < -1e-3 || uSrc > 1.0 + 1e-3 || vSrc < -1e-3 || vSrc > 1.0 + 1e-3) {
+        return false;
+    }
+    outSourceX = std::clamp(uSrc, 0.0, 1.0);
+    outSourceY = std::clamp(vSrc, 0.0, 1.0);
+    return true;
+}
+
+bool geometrySourceNormToOutputNorm(int sourceWidth, int sourceHeight,
+    const GeometryOptions& options, double srcX, double srcY,
+    double& outOutputX, double& outOutputY) {
+    if (sourceWidth <= 0 || sourceHeight <= 0 || !options.valid() ||
+        !std::isfinite(srcX) || !std::isfinite(srcY) ||
+        srcX < -1e-4 || srcX > 1.0 + 1e-4 || srcY < -1e-4 || srcY > 1.0 + 1.0e-4) {
+        return false;
+    }
+    const double clampedSrcX = std::clamp(srcX, 0.0, 1.0);
+    const double clampedSrcY = std::clamp(srcY, 0.0, 1.0);
+    if (!options.active()) {
+        outOutputX = clampedSrcX;
+        outOutputY = clampedSrcY;
+        return true;
+    }
+    const Canvas canvas = canvasFor(sourceWidth, sourceHeight, options);
+    const double sx = clampedSrcX * double(sourceWidth) - 0.5;
+    const double sy = clampedSrcY * double(sourceHeight) - 0.5;
+    const int turns = ((options.quarter_turns % 4) + 4) % 4;
+    double px = sx;
+    double py = sy;
+    switch (turns) {
+        case 1:
+            px = double(sourceHeight - 1) - sy;
+            py = sx;
+            break;
+        case 2:
+            px = double(sourceWidth - 1) - sx;
+            py = double(sourceHeight - 1) - sy;
+            break;
+        case 3:
+            px = sy;
+            py = double(sourceWidth - 1) - sx;
+            break;
+        default:
+            break;
+    }
+    if (options.flip_horizontal) px = double(canvas.rotated_width - 1) - px;
+    if (options.flip_vertical) py = double(canvas.rotated_height - 1) - py;
+
+    const double ax = px - double(canvas.rotated_width - 1) * 0.5;
+    const double ay = py - double(canvas.rotated_height - 1) * 0.5;
+    const double ch = 0.5 * double(options.perspective_horizontal) / double(canvas.rotated_width);
+    const double cv = 0.5 * double(options.perspective_vertical) / double(canvas.rotated_height);
+    const double denom = 1.0 - ch * ax - cv * ay;
+    if (denom <= 1e-6) {
+        return false;
+    }
+    const double rx = ax / denom;
+    const double ry = ay / denom;
+    const double dx = canvas.cosine * rx - canvas.sine * ry;
+    const double dy = canvas.sine * rx + canvas.cosine * ry;
+    const double cx = dx + double(canvas.width - 1) * 0.5;
+    const double cy = dy + double(canvas.height - 1) * 0.5;
+    const double x = cx - double(canvas.left);
+    const double y = cy - double(canvas.top);
+    const double outW = double(canvas.right - canvas.left);
+    const double outH = double(canvas.bottom - canvas.top);
+    const double uOut = (x + 0.5) / outW;
+    const double vOut = (y + 0.5) / outH;
+    if (uOut < -1e-4 || uOut > 1.0 + 1e-4 || vOut < -1e-4 || vOut > 1.0 + 1e-4) {
+        return false;
+    }
+    outOutputX = std::clamp(uOut, 0.0, 1.0);
+    outOutputY = std::clamp(vOut, 0.0, 1.0);
+    return true;
 }
 
 OutputRoiPlan computeOutputRoiPlan(int fullNativeWidth, int fullNativeHeight,

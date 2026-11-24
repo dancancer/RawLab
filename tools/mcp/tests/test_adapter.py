@@ -98,6 +98,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 emit(envelope("info", {"input_path": str(path), "identified_size": {"width": 2, "height": 2}}))
 
             if "--analyze" in args:
+                if os.environ.get("FAKE_ANALYZE_JSON"):
+                    emit(envelope("analyze", json.loads(os.environ["FAKE_ANALYZE_JSON"])))
                 target = args[args.index("--input") + 1] if "--input" in args else args[args.index("--recipe") + 1]
                 samples = [args[i + 1] for i, a in enumerate(args) if a == "--sample" and i + 1 < len(args)]
                 long_edge = int(args[args.index("--long-edge") + 1]) if "--long-edge" in args else 1024
@@ -1000,6 +1002,70 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
         escaped = await adapter.diagnose_image(image_path=str(escape))
         self.assertFalse(escaped.ok)
         self.assertEqual(escaped.error.code, "invalid_argument")
+
+    async def test_diagnose_image_enriches_portrait_and_auto_diagnostics(self):
+        payload = {
+            "dimensions": {"width": 64, "height": 64, "bit_depth": 16, "channels": 4, "sampled_pixels": 4096},
+            "luma_zones": {
+                "blacks_0_10_pct": 0.4,
+                "shadows_10_35_pct": 12.0,
+                "midtones_35_65_pct": 52.0,
+                "lights_65_90_pct": 28.0,
+                "highlights_90_100_pct": 7.6,
+                "mean_luma_0_1": 0.5,
+                "percentiles_0_1": {"p01": 0.08, "p05": 0.18, "p25": 0.35, "p50": 0.5, "p75": 0.7, "p95": 0.92, "p99": 0.98},
+                "percentiles_0_255": {"p01": 20, "p05": 46, "p50": 128, "p95": 235, "p99": 250},
+                "dynamic_spread_p95_minus_p05": 0.74,
+            },
+            "clipping": {
+                "shadow_crush_pct": 0.2,
+                "white_blowout_pct": 2.4,
+                "channel_clip_high_pct": {"any": 4.1, "r": 3.5, "g": 2.8, "b": 1.2},
+            },
+            "color_balance": {"neutral_midtone_coverage_pct": 18.0, "r_over_g": 0.92, "b_over_g": 0.94, "cast_hint": "green_cast"},
+            "saturation": {"mean_s_pct": 25.0, "p95_s_pct": 68.0, "low_sat_pct": 20.0, "melting_saturation_pct": 3.2, "melting_warning": True},
+            "hsl_channels": {},
+            "samples": [
+                {"label": "center", "hsb": {"h_deg": 20.0, "s_pct": 25.0, "b_pct": 78.0}},
+                {"label": "face_in_window", "hsb": {"h_deg": 20.0, "s_pct": 25.0, "b_pct": 78.0}},
+                {"label": "肤色偏黄暗", "hsb": {"h_deg": 31.0, "s_pct": 42.0, "b_pct": 62.0}},
+                {"label": "脸颊偏红亮", "hsb": {"h_deg": 11.0, "s_pct": 12.0, "b_pct": 90.0}},
+            ],
+        }
+        adapter = self.adapter(
+            FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze",
+            FAKE_ANALYZE_JSON=json.dumps(payload),
+        )
+        await adapter.start()
+        res = await adapter.diagnose_image(image_path=str(self.input_path))
+        self.assertTrue(res.ok, str(res.error))
+        samples = res.result["samples"]
+        self.assertNotIn("portrait_skin_check", samples[0])
+        self.assertTrue(samples[1]["portrait_skin_check"]["in_window"])
+        self.assertEqual(samples[1]["portrait_skin_check"]["hints"], [])
+        self.assertFalse(samples[2]["portrait_skin_check"]["in_window"])
+        self.assertEqual(len(samples[2]["portrait_skin_check"]["hints"]), 3)
+        self.assertFalse(samples[3]["portrait_skin_check"]["in_window"])
+        self.assertEqual(len(samples[3]["portrait_skin_check"]["hints"]), 3)
+        alerts = res.result["auto_diagnostics"]
+        self.assertEqual(len(alerts), 4)
+        self.assertIn("Highlight clipping", alerts[0])
+        self.assertIn("Weak dark anchor (p05=0.180", alerts[1])
+        self.assertIn("Melting saturation risk", alerts[2])
+        self.assertIn("Midtone neutral cast detected (green_cast", alerts[3])
+
+        # Also verify shadow crush + magenta cast branch
+        payload["clipping"]["shadow_crush_pct"] = 4.5
+        payload["color_balance"]["cast_hint"] = "magenta_cast"
+        adapter2 = self.adapter(
+            FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze",
+            FAKE_ANALYZE_JSON=json.dumps(payload),
+        )
+        await adapter2.start()
+        res2 = await adapter2.diagnose_image(image_path=str(self.input_path))
+        self.assertTrue(res2.ok)
+        self.assertIn("Shadow crush (4.5%", res2.result["auto_diagnostics"][1])
+        self.assertIn("magenta_cast", res2.result["auto_diagnostics"][3])
 
     async def test_list_catalog_looks_filters_and_isolates(self):
         adapter = self.adapter()

@@ -22,8 +22,8 @@ for p in files:
 PY_SOURCES
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o" "$OUT/source/RawLab/RawLab/Support/RawMetadataBridge.mm"
 rawlab_ios_core_shared_sources SOURCES "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI/Preview" "$OUT/source/Shared"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
 codesign --force --deep --sign - "$APP" >/dev/null
 STATUS=0
 xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" "${RAWLAB_TEST_HDR:-}" || STATUS=$?

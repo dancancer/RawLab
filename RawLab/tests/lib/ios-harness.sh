@@ -104,7 +104,7 @@ rawlab_ios_core_shared_sources() {
     local _src
     while IFS= read -r -d '' _src; do
         _sources+=("$_src")
-    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' ! -path '*/RawLabNative/*' ! -path '*/RawLabNativeTypes/*' -print0 | LC_ALL=C sort -z)
+    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' ! -path '*/RawLabInspectionNative/*' ! -path '*/RawLabNative/*' ! -path '*/RawLabNativeTypes/*' -print0 | LC_ALL=C sort -z)
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
 }
 

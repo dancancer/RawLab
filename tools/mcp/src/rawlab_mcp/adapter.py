@@ -12,6 +12,7 @@ import tempfile
 import anyio
 
 from . import catalog
+from .bsh_guidance import enrich_bsh_diagnosis
 from .config import ServerConfig, default_data_dir
 from .errors import AdapterError
 
@@ -406,19 +407,27 @@ class CliAdapter:
 
             if image_path is not None:
                 source = self._read_path(image_path)
-                return await self._run(
+                envelope = await self._run(
                     "analyze",
                     ["--input", source.lexical, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
                 )
-
-            with tempfile.TemporaryDirectory(prefix="rawlab-mcp-analyze-") as tmpdir:
-                _, recipe, _ = await self._recipe(recipe_path, validating=False, ignore_output=True)
-                private_recipe = Path(tmpdir) / "recipe.json"
-                private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
-                return await self._run(
-                    "analyze",
-                    ["--recipe", private_recipe, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+            else:
+                with tempfile.TemporaryDirectory(prefix="rawlab-mcp-analyze-") as tmpdir:
+                    _, recipe, _ = await self._recipe(recipe_path, validating=False, ignore_output=True)
+                    private_recipe = Path(tmpdir) / "recipe.json"
+                    private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+                    envelope = await self._run(
+                        "analyze",
+                        ["--recipe", private_recipe, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+                    )
+            if envelope.ok and isinstance(envelope.result, dict):
+                return Envelope(
+                    ok=envelope.ok,
+                    command=envelope.command,
+                    result=enrich_bsh_diagnosis(envelope.result),
+                    error=envelope.error,
                 )
+            return envelope
         except AdapterError as e:
             return failure("analyze", e)
 

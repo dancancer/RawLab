@@ -674,6 +674,23 @@ int main() {
                 ABI_FIELD(sony2fuji_render_options_v1, reserved2),
             },
         },
+        {
+            "sony2fuji_inspection_sample",
+            sizeof(sony2fuji_inspection_sample),
+            {
+                ABI_FIELD(sony2fuji_inspection_sample, version),
+                ABI_FIELD(sony2fuji_inspection_sample, struct_size),
+                ABI_FIELD(sony2fuji_inspection_sample, r),
+                ABI_FIELD(sony2fuji_inspection_sample, g),
+                ABI_FIELD(sony2fuji_inspection_sample, b),
+                ABI_FIELD(sony2fuji_inspection_sample, reserved0),
+                ABI_FIELD(sony2fuji_inspection_sample, reserved1),
+                ABI_FIELD(sony2fuji_inspection_sample, hue_deg),
+                ABI_FIELD(sony2fuji_inspection_sample, saturation_pct),
+                ABI_FIELD(sony2fuji_inspection_sample, brightness_pct),
+                ABI_FIELD(sony2fuji_inspection_sample, luminance),
+            },
+        },
 
         // lutools/include/sony2fuji/ffi/sony2fuji_hdr.h
         {

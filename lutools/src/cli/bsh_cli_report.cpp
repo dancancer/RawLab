@@ -8,8 +8,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <iomanip>
-#include <sstream>
 
 namespace sony2fuji {
 namespace {
@@ -43,30 +41,6 @@ std::string trimAsciiWhitespace(const std::string& s) {
         --end;
     }
     return s.substr(start, end - start);
-}
-
-std::string toLowerAscii(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-    return s;
-}
-
-std::string formatCompactPyFloat(double v) {
-    std::ostringstream oss;
-    oss << std::setprecision(15) << v;
-    std::string str = oss.str();
-    if (str.find('.') == std::string::npos && str.find('e') == std::string::npos &&
-        str.find('E') == std::string::npos) {
-        str += ".0";
-    }
-    return str;
-}
-
-std::string formatFixed3(double v) {
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(3) << v;
-    return oss.str();
 }
 
 } // namespace
@@ -203,63 +177,7 @@ std::string bshDiagnosisToJsonString(
             {"hsb", {{"h_deg", hDeg}, {"s_pct", sPct}, {"b_pct", bPct}}},
             {"hsl_channel", hslChannelName(s.result.nearest_hsl_channel)},
         };
-        const std::string lowLbl = toLowerAscii(s.label);
-        const bool isSkin =
-            lowLbl.find("skin") != std::string::npos ||
-            lowLbl.find("face") != std::string::npos ||
-            lowLbl.find("cheek") != std::string::npos ||
-            lowLbl.find("portrait") != std::string::npos ||
-            s.label.find("\xe8\x82\xa4") != std::string::npos ||
-            s.label.find("\xe8\x84\xb8") != std::string::npos;
-        if (isSkin) {
-            Json hints = Json::array();
-            if (bPct < 70.0) {
-                hints.push_back("B=" + formatCompactPyFloat(bPct) + "% < 70%: consider lifting exposure or hsl.orange.l/red.l");
-            } else if (bPct > 85.0) {
-                hints.push_back("B=" + formatCompactPyFloat(bPct) + "% > 85%: consider recovering highlights or pulling orange.l slightly down");
-            }
-            if (sPct > 35.0) {
-                hints.push_back("S=" + formatCompactPyFloat(sPct) + "% > 35%: skin over-saturated/muddy; pull hsl.orange.s/red.s negative");
-            } else if (sPct < 15.0) {
-                hints.push_back("S=" + formatCompactPyFloat(sPct) + "% < 15%: skin pale; check vibrance or warm skin slightly");
-            }
-            if (hDeg < 15.0) {
-                hints.push_back("H=" + formatCompactPyFloat(hDeg) + "deg < 15deg: skin too red/magenta; shift hsl.red.h positive or warm tint toward yellow");
-            } else if (hDeg > 26.0) {
-                hints.push_back("H=" + formatCompactPyFloat(hDeg) + "deg > 26deg: skin too yellow/greenish; shift hsl.orange.h negative toward peach");
-            }
-            item["portrait_skin_check"] = {
-                {"target_east_asian_hsb", {{"h_deg", "15..26"}, {"s_pct", "15..35"}, {"b_pct", "70..85"}}},
-                {"in_window", hints.empty()},
-                {"hints", std::move(hints)},
-            };
-        }
         samplesArr.push_back(std::move(item));
-    }
-
-    Json alerts = Json::array();
-    if (wbPct > 1.5 || clipAnyPct > 3.0) {
-        alerts.push_back("Highlight clipping (" + formatCompactPyFloat(wbPct) + "% white blowout, " +
-                         formatCompactPyFloat(clipAnyPct) +
-                         "% single-channel clip): reduce UI highlights (negative) or exposure_ev.");
-    }
-    if (scPct > 3.0) {
-        alerts.push_back("Shadow crush (" + formatCompactPyFloat(scPct) +
-                         "% pure black): lift shadows (+), black_point (+), or soften blacks toe.");
-    } else if (p05 > 0.14 && blacksPct < 1.0) {
-        alerts.push_back("Weak dark anchor (p05=" + formatFixed3(p05) + ", blacks=" +
-                         formatCompactPyFloat(blacksPct) +
-                         "%): image may look hazy/unanchored; lower black_point or anchor dark toe unless flat look is intended.");
-    }
-    if (meltPct > 2.0) {
-        alerts.push_back("Melting saturation risk (" + formatCompactPyFloat(meltPct) +
-                         "% pixels S>85% & V>35%): reduce global saturation/look strength or pull offending HSL channel saturation.");
-    }
-    if (diag.cast_hint == SONY2FUJI_BSH_CAST_GREEN || diag.cast_hint == SONY2FUJI_BSH_CAST_MAGENTA) {
-        alerts.push_back(std::string("Midtone neutral cast detected (") + castHintStr +
-                         ": R/G=" + formatCompactPyFloat(rOverG) +
-                         ", B/G=" + formatCompactPyFloat(bOverG) +
-                         "): check white_balance tint or color grading.");
     }
 
     auto to255 = [](double p) -> int {
@@ -313,7 +231,6 @@ std::string bshDiagnosisToJsonString(
         }},
         {"hsl_channels", std::move(hslObj)},
         {"samples", std::move(samplesArr)},
-        {"auto_diagnostics", std::move(alerts)},
     };
     return doc.dump(-1, ' ', false, Json::error_handler_t::replace);
 }

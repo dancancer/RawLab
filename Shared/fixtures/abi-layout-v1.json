@@ -617,6 +617,23 @@
       ]
     },
     {
+      "name": "sony2fuji_inspection_sample",
+      "size": 48,
+      "fields": [
+        {"name": "version", "offset": 0, "size": 4},
+        {"name": "struct_size", "offset": 4, "size": 4},
+        {"name": "r", "offset": 8, "size": 1},
+        {"name": "g", "offset": 9, "size": 1},
+        {"name": "b", "offset": 10, "size": 1},
+        {"name": "reserved0", "offset": 11, "size": 1},
+        {"name": "reserved1", "offset": 12, "size": 4},
+        {"name": "hue_deg", "offset": 16, "size": 8},
+        {"name": "saturation_pct", "offset": 24, "size": 8},
+        {"name": "brightness_pct", "offset": 32, "size": 8},
+        {"name": "luminance", "offset": 40, "size": 8}
+      ]
+    },
+    {
       "name": "sony2fuji_hdr_diagnostic_v1",
       "size": 16,
       "fields": [
@@ -1562,6 +1579,54 @@
       "symbol": "sony2fuji_status_message"
     },
     {
+      "name": "sony2fuji_geometry_output_size",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_geometry_config*", "const sony2fuji_perspective_config*", "uint32_t*", "uint32_t*"],
+      "symbol": "sony2fuji_geometry_output_size"
+    },
+    {
+      "name": "sony2fuji_geometry_infer_source_size",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_geometry_config*", "const sony2fuji_perspective_config*", "uint32_t*", "uint32_t*"],
+      "symbol": "sony2fuji_geometry_infer_source_size"
+    },
+    {
+      "name": "sony2fuji_geometry_output_norm_to_source_norm",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_geometry_config*", "const sony2fuji_perspective_config*", "double", "double", "double*", "double*", "int32_t*"],
+      "symbol": "sony2fuji_geometry_output_norm_to_source_norm"
+    },
+    {
+      "name": "sony2fuji_geometry_source_norm_to_output_norm",
+      "return_type": "sony2fuji_status",
+      "params": ["uint32_t", "uint32_t", "const sony2fuji_geometry_config*", "const sony2fuji_perspective_config*", "double", "double", "double*", "double*", "int32_t*"],
+      "symbol": "sony2fuji_geometry_source_norm_to_output_norm"
+    },
+    {
+      "name": "sony2fuji_inspection_color_from_rgb",
+      "return_type": "sony2fuji_status",
+      "params": ["uint8_t", "uint8_t", "uint8_t", "sony2fuji_inspection_sample*"],
+      "symbol": "sony2fuji_inspection_color_from_rgb"
+    },
+    {
+      "name": "sony2fuji_inspection_sample_patch",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_buffer*", "double", "double", "uint32_t", "sony2fuji_inspection_sample*"],
+      "symbol": "sony2fuji_inspection_sample_patch"
+    },
+    {
+      "name": "sony2fuji_inspection_overlay_pixel",
+      "return_type": "sony2fuji_status",
+      "params": ["uint8_t", "uint8_t", "uint8_t", "sony2fuji_inspection_overlay_mode", "uint8_t*", "uint8_t*", "uint8_t*"],
+      "symbol": "sony2fuji_inspection_overlay_pixel"
+    },
+    {
+      "name": "sony2fuji_inspection_render_overlay",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_buffer*", "sony2fuji_inspection_overlay_mode", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_inspection_render_overlay"
+    },
+    {
       "name": "sony2fuji_hdr_probe",
       "return_type": "sony2fuji_status",
       "params": ["const char*", "sony2fuji_hdr_source_info_v1*", "sony2fuji_hdr_diagnostic_v1*"],
@@ -2190,6 +2255,18 @@
         {"name": "SONY2FUJI_MIGRATION_UNCHANGED", "value": 0},
         {"name": "SONY2FUJI_MIGRATION_ACCEPTED", "value": 1},
         {"name": "SONY2FUJI_MIGRATION_REJECTED", "value": 2}
+      ]
+    },
+    {
+      "enum": "sony2fuji_inspection_overlay_mode",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_NONE", "value": 0},
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE", "value": 1},
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_WARM_COOL_BW", "value": 2},
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_OVERSATURATION_HEATMAP", "value": 3},
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_SKIN_HUE_AMPLIFICATION", "value": 4},
+        {"name": "SONY2FUJI_INSPECTION_OVERLAY_NEUTRAL_GRAY_50", "value": 5}
       ]
     }
   ],

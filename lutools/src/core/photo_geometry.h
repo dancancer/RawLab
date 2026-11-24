@@ -41,6 +41,14 @@ GeometryPixelSampler makeGeometrySampler(int width, int height, const GeometryOp
 std::pair<int, int> geometryOutputSize(int width, int height, const GeometryOptions& options);
 std::pair<int, int> geometryViewportSourceSize(int width, int height,
     const GeometryOptions& options, int target_width, int target_height);
+std::pair<int, int> geometryInferSourceSize(int outputWidth, int outputHeight,
+    const GeometryOptions& options);
+bool geometryOutputNormToSourceNorm(int sourceWidth, int sourceHeight,
+    const GeometryOptions& options, double outX, double outY,
+    double& outSourceX, double& outSourceY);
+bool geometrySourceNormToOutputNorm(int sourceWidth, int sourceHeight,
+    const GeometryOptions& options, double srcX, double srcY,
+    double& outOutputX, double& outOutputY);
 
 struct RoiSubRect {
     int x0 = 0;
