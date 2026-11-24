@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -144,6 +145,10 @@ public static class SLSDiagnosticWebTracking
     private const int MaxBodyBytes = 950_000;
     private static readonly Regex LogstoreRegex = new(@"^[a-z0-9][a-z0-9_-]{1,62}$", RegexOptions.Compiled);
     private static readonly Regex ReportIdRegex = new(@"^RL-\d{8}-[0-9A-F]{8}$", RegexOptions.Compiled);
+    private static readonly JsonSerializerOptions CompactRelaxedJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     public static string GenerateReportId(DateTimeOffset now) =>
         $"RL-{now.UtcDateTime:yyyyMMdd}-{Guid.NewGuid().ToString("N")[..8].ToUpperInvariant()}";
@@ -226,7 +231,7 @@ public static class SLSDiagnosticWebTracking
             },
             ["__logs__"] = logs,
         };
-        var bytes = Encoding.UTF8.GetBytes(envelope.ToJsonString());
+        var bytes = Encoding.UTF8.GetBytes(envelope.ToJsonString(CompactRelaxedJson));
         if (bytes.Length > MaxBodyBytes)
         {
             throw new DiagnosticUploadException(DiagnosticUploadFailure.PayloadTooLarge);
@@ -273,6 +278,9 @@ public sealed class DiagnosticSessionStore
     public const int MaxRecentErrors = 64;
     private const int PreservedHeadCount = 10;
 
+    private const string PathTailPattern =
+        @"(?:[\\/](?:[^\s\\/\r\n""'<>:*?|](?:[^\r\n\\/""'<>:*?|]{0,80}?[^\s\\/\r\n""'<>:*?|])?[\\/])*(?:[^\s\\/\r\n""'<>:*?|][^\r\n\\/""'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n""'<>()\[\]{}:*?|]*))?";
+
     private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         "3fr", "arq", "arw", "cr2", "cr3", "crw", "dcr", "dng", "erf", "fff", "heic", "heif",
@@ -281,9 +289,26 @@ public sealed class DiagnosticSessionStore
     };
 
     private static readonly Regex FileUriRegex = new(@"(?i)(?:file|content)://[^\s""'<>()\[\]{}]+", RegexOptions.Compiled);
-    private static readonly Regex WindowsPathRegex = new(@"(?i)(?:[a-z]:[\\/]|\\\\)[^\s""'<>()\[\]{}]+", RegexOptions.Compiled);
-    private static readonly Regex PosixPathRegex = new(@"/(?:Users|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|storage/emulated)/[^\s""'<>()\[\]{}]+", RegexOptions.Compiled);
+    private static readonly Regex WindowsPathRegex = new(
+        @"(?i)(?:[a-z]:|\\\\[^\\/\s""'<>:*?|]+)(?:[\\/](?:[^\s\\/\r\n""'<>:*?|](?:[^\r\n\\/""'<>:*?|]{0,80}?[^\s\\/\r\n""'<>:*?|])?[\\/])*(?:[^\s\\/\r\n""'<>:*?|][^\r\n\\/""'<>:*?|]{0,120}?\.[a-z0-9]{1,10}\b|[^\s\\/\r\n""'<>()\[\]{}:*?|]+))+",
+        RegexOptions.Compiled);
+    private static readonly Regex PosixPathRegex = new(
+        @"/(?:[Uu]sers|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|data/data|storage|sdcard|mnt)(?:[\\/](?:[^\s\\/\r\n""'<>:*?|](?:[^\r\n\\/""'<>:*?|]{0,80}?[^\s\\/\r\n""'<>:*?|])?[\\/])*(?:[^\s\\/\r\n""'<>:*?|][^\r\n\\/""'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n""'<>()\[\]{}:*?|]+))+",
+        RegexOptions.Compiled);
+    private static readonly Regex BareMediaFilenameRegex = new(
+        @"(?i)(?<![A-Za-z0-9_<>])(?:[A-Za-z0-9_\u0080-\uFFFF][^\s\\/""'<>()\[\]{}:*?|]*)\.(3fr|arq|arw|cr2|cr3|crw|dcr|dng|erf|fff|heic|heif|iiq|jpeg|jpg|kdc|mos|mrw|nef|nrw|orf|pef|png|raf|raw|rw2|rwl|sr2|srf|srw|tif|tiff|x3f|cube|dcp)\b",
+        RegexOptions.Compiled);
     private static readonly Regex UnsafeIdRegex = new(@"[^A-Za-z0-9._-]", RegexOptions.Compiled);
+
+    private static readonly JsonSerializerOptions IndentedRelaxedJson = new()
+    {
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+    private static readonly JsonSerializerOptions CompactRelaxedJson = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
 
     public sealed record Snapshot(
         bool IsRecording,
@@ -319,10 +344,14 @@ public sealed class DiagnosticSessionStore
     private readonly TimeSpan leaseDuration;
     private readonly Func<DateTimeOffset> clock;
     private readonly object gate = new();
+    private readonly object writeChainGate = new();
+    private Task writeChain = Task.CompletedTask;
     private long fastActiveUntilTicks;
 
     private bool loaded;
+    private bool launchResumedInProcess;
     private string? sessionId;
+    private string? pendingReportId;
     private DateTimeOffset? startedAt;
     private DateTimeOffset? expiresAt;
     private int remainingLaunches;
@@ -356,16 +385,26 @@ public sealed class DiagnosticSessionStore
         }
     }
 
+    /// Evaluates persistent lease at most once per store instance so window reopening never consumes remainingLaunches.
     public Snapshot ResumeOnLaunch()
     {
+        FlushPendingWrites();
         lock (gate)
         {
             EnsureLoadedLocked();
             var now = clock();
+            if (launchResumedInProcess)
+            {
+                ExpireIfNeededLocked(now);
+                return SnapshotLocked(now);
+            }
+            launchResumedInProcess = true;
+
             var lease = ReadLeaseLocked();
             if (lease is { } active && now < active.ExpiresAt && active.RemainingLaunches > 0)
             {
                 sessionId = active.SessionId;
+                pendingReportId ??= active.SessionId;
                 startedAt = active.StartedAt;
                 expiresAt = active.ExpiresAt;
                 remainingLaunches = active.RemainingLaunches - 1;
@@ -377,7 +416,8 @@ public sealed class DiagnosticSessionStore
                     "relaunch",
                     "Diagnostic recording resumed across launch",
                     new() { ["remainingLaunches"] = remainingLaunches.ToString() },
-                    now);
+                    now,
+                    persistSynchronously: true);
             }
             else
             {
@@ -400,15 +440,18 @@ public sealed class DiagnosticSessionStore
 
     public Snapshot SetRecordingEnabled(bool enabled)
     {
+        FlushPendingWrites();
         lock (gate)
         {
             EnsureLoadedLocked();
+            launchResumedInProcess = true;
             var now = clock();
             if (enabled)
             {
                 var freshId = SLSDiagnosticWebTracking.GenerateReportId(now);
                 var until = now + leaseDuration;
                 sessionId = freshId;
+                pendingReportId = freshId;
                 startedAt = now;
                 expiresAt = until;
                 remainingLaunches = 1;
@@ -432,13 +475,21 @@ public sealed class DiagnosticSessionStore
                         ["osVersion"] = osVersion,
                         ["deviceModel"] = deviceModel,
                     },
-                    now);
+                    now,
+                    persistSynchronously: true);
             }
             else
             {
                 if (expiresAt != null)
                 {
-                    AppendBreadcrumbLocked("info", "lifecycle", "recordingStopped", "User stopped diagnostic recording", [], now);
+                    AppendBreadcrumbLocked(
+                        "info",
+                        "lifecycle",
+                        "recordingStopped",
+                        "User stopped diagnostic recording",
+                        [],
+                        now,
+                        persistSynchronously: true);
                 }
                 expiresAt = null;
                 remainingLaunches = 0;
@@ -461,20 +512,26 @@ public sealed class DiagnosticSessionStore
         var now = clock();
         if (now.UtcTicks >= until)
         {
-            lock (gate) { EnsureLoadedLocked(); ExpireIfNeededLocked(now); }
+            EnqueueBackground(() =>
+            {
+                lock (gate) { EnsureLoadedLocked(); ExpireIfNeededLocked(now); }
+            });
             return;
         }
         var safeCategory = CleanIdentifier(category, "general");
         var safeStage = CleanIdentifier(stage, "step");
         var safeMessage = CleanText(message, 512);
         var safeContext = CleanContext(context);
-        lock (gate)
+        EnqueueBackground(() =>
         {
-            EnsureLoadedLocked();
-            ExpireIfNeededLocked(now);
-            if (expiresAt == null) return;
-            AppendBreadcrumbLocked(level, safeCategory, safeStage, safeMessage, safeContext, now);
-        }
+            lock (gate)
+            {
+                EnsureLoadedLocked();
+                ExpireIfNeededLocked(now);
+                if (expiresAt == null) return;
+                AppendBreadcrumbLocked(level, safeCategory, safeStage, safeMessage, safeContext, now, persistSynchronously: true);
+            }
+        });
     }
 
     public void RecordError(
@@ -490,22 +547,33 @@ public sealed class DiagnosticSessionStore
         var safeType = CleanIdentifier(error.GetType().FullName ?? error.GetType().Name, "Exception");
         var safeMsg = CleanText(error.Message, 512);
         var safeCtx = CleanContext(context);
-        lock (gate)
+        EnqueueBackground(() =>
         {
-            EnsureLoadedLocked();
-            ExpireIfNeededLocked(now);
-            recentErrors.Add(new(now.UtcDateTime.ToString("O"), safeOp, safeStage, safeType, safeMsg, safeCtx));
-            while (recentErrors.Count > MaxRecentErrors) recentErrors.RemoveAt(0);
-            PersistErrorsLocked();
-            if (expiresAt != null)
+            lock (gate)
             {
-                AppendBreadcrumbLocked("error", safeOp, safeStage, $"{safeType}: {safeMsg}", safeCtx, now);
+                EnsureLoadedLocked();
+                ExpireIfNeededLocked(now);
+                recentErrors.Add(new(now.UtcDateTime.ToString("O"), safeOp, safeStage, safeType, safeMsg, safeCtx));
+                while (recentErrors.Count > MaxRecentErrors) recentErrors.RemoveAt(0);
+                PersistErrorsLocked();
+                if (expiresAt != null)
+                {
+                    AppendBreadcrumbLocked("error", safeOp, safeStage, $"{safeType}: {safeMsg}", safeCtx, now, persistSynchronously: true);
+                }
             }
-        }
+        });
+    }
+
+    public void FlushPendingWrites()
+    {
+        Task pending;
+        lock (writeChainGate) pending = writeChain;
+        pending.GetAwaiter().GetResult();
     }
 
     public Snapshot GetSnapshot()
     {
+        FlushPendingWrites();
         lock (gate)
         {
             EnsureLoadedLocked();
@@ -515,8 +583,12 @@ public sealed class DiagnosticSessionStore
         }
     }
 
-    public DiagnosticReportPackage BuildReportPackage(string? userNote = null, bool stopActiveRecording = false)
+    public DiagnosticReportPackage BuildReportPackage(
+        string? userNote = null,
+        bool stopActiveRecording = false,
+        bool consumeReportId = false)
     {
+        FlushPendingWrites();
         lock (gate)
         {
             EnsureLoadedLocked();
@@ -524,7 +596,14 @@ public sealed class DiagnosticSessionStore
             ExpireIfNeededLocked(now);
             if (stopActiveRecording && expiresAt != null)
             {
-                AppendBreadcrumbLocked("info", "lifecycle", "recordingSealedForReport", "Diagnostic recording sealed for export/upload", [], now);
+                AppendBreadcrumbLocked(
+                    "info",
+                    "lifecycle",
+                    "recordingSealedForReport",
+                    "Diagnostic recording sealed for export/upload",
+                    [],
+                    now,
+                    persistSynchronously: true);
                 expiresAt = null;
                 remainingLaunches = 0;
                 Interlocked.Exchange(ref fastActiveUntilTicks, 0);
@@ -534,9 +613,26 @@ public sealed class DiagnosticSessionStore
             {
                 throw new DiagnosticUploadException(DiagnosticUploadFailure.Empty);
             }
-            var reportId = SLSDiagnosticWebTracking.IsValidReportId(sessionId)
-                ? sessionId!
-                : SLSDiagnosticWebTracking.GenerateReportId(now);
+            string reportId;
+            if (SLSDiagnosticWebTracking.IsValidReportId(pendingReportId))
+            {
+                reportId = pendingReportId!;
+            }
+            else
+            {
+                reportId = SLSDiagnosticWebTracking.GenerateReportId(now);
+                if (!consumeReportId)
+                {
+                    pendingReportId = reportId;
+                    PersistMetaOnlyLocked();
+                }
+            }
+            if (consumeReportId)
+            {
+                pendingReportId = null;
+                PersistMetaOnlyLocked();
+            }
+
             var cleanedNote = CleanUserNote(userNote);
             var (appVersion, build, osVersion, deviceModel) = EnvironmentSummary();
             var manifest = new JsonObject
@@ -557,12 +653,13 @@ public sealed class DiagnosticSessionStore
                 ["droppedBreadcrumbs"] = droppedBreadcrumbs,
                 ["recentErrorCount"] = recentErrors.Count,
             };
+            if (!string.IsNullOrEmpty(sessionId)) manifest["sessionID"] = sessionId;
             if (startedAt is { } start) manifest["sessionStartedAt"] = start.UtcDateTime.ToString("O");
             if (!string.IsNullOrEmpty(cleanedNote)) manifest["userNote"] = cleanedNote;
 
-            var manifestJson = manifest.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var manifestJson = manifest.ToJsonString(IndentedRelaxedJson);
             var breadcrumbsJsonl = EncodeBreadcrumbsLocked();
-            var recentErrorsJson = EncodeErrorsLocked().ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            var recentErrorsJson = EncodeErrorsLocked().ToJsonString(IndentedRelaxedJson);
             var readme =
                 $"RawLab Diagnostic Package ({reportId})\n" +
                 "========================================\n" +
@@ -591,22 +688,27 @@ public sealed class DiagnosticSessionStore
         Uri? endpointOverride = null,
         CancellationToken cancellationToken = default)
     {
-        var package = await Task.Run(() => BuildReportPackage(userNote, stopActiveRecording: true), cancellationToken).ConfigureAwait(false);
+        var package = await Task.Run(
+            () => BuildReportPackage(userNote, stopActiveRecording: true, consumeReportId: false),
+            cancellationToken).ConfigureAwait(false);
         var (appVersion, build, osVersion, deviceModel) = EnvironmentSummary();
         var body = SLSDiagnosticWebTracking.BuildPayload(package, appVersion, build, osVersion, deviceModel);
         var endpoint = endpointOverride ?? SLSDiagnosticWebTracking.ValidateEndpoint(
             Environment.GetEnvironmentVariable("RAWLAB_DIAGNOSTIC_UPLOAD_URL"));
         var sender = transport ?? new HttpClientDiagnosticUploadTransport();
         await sender.UploadAsync(endpoint, body, cancellationToken).ConfigureAwait(false);
+        _ = BuildReportPackage(userNote, stopActiveRecording: false, consumeReportId: true);
         return package.ReportId;
     }
 
     public Snapshot ClearAll()
     {
+        FlushPendingWrites();
         lock (gate)
         {
             EnsureLoadedLocked();
             sessionId = null;
+            pendingReportId = null;
             startedAt = null;
             expiresAt = null;
             remainingLaunches = 0;
@@ -627,7 +729,7 @@ public sealed class DiagnosticSessionStore
     public static string CleanText(string? input, int maxLength = 512)
     {
         if (string.IsNullOrEmpty(input)) return "";
-        var text = input;
+        var text = FileUriRegex.Replace(input, "<uri>");
         var replacements = new (string Path, string Token)[]
         {
             (Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "<user>"),
@@ -635,16 +737,32 @@ public sealed class DiagnosticSessionStore
             (AppContext.BaseDirectory, "<app>"),
             (Path.GetTempPath(), "<temp>"),
         };
-        foreach (var (path, token) in replacements.Where(p => !string.IsNullOrWhiteSpace(p.Path) && p.Path.Length > 2)
+        foreach (var (rawPrefix, token) in replacements
+                     .Where(p => !string.IsNullOrWhiteSpace(p.Path) && p.Path.Trim('/', '\\').Length > 1)
                      .OrderByDescending(p => p.Path.Length))
         {
-            text = text.Replace(path, token, StringComparison.OrdinalIgnoreCase)
-                .Replace(path.Replace('\\', '/'), token, StringComparison.OrdinalIgnoreCase);
+            var prefixRegex = BuildPrefixRegex(rawPrefix.Trim('/', '\\'));
+            if (prefixRegex != null)
+            {
+                text = prefixRegex.Replace(text, token);
+            }
         }
-        text = FileUriRegex.Replace(text, "<uri>");
         text = WindowsPathRegex.Replace(text, "<path>");
         text = PosixPathRegex.Replace(text, "<path>");
+        text = BareMediaFilenameRegex.Replace(text, "<file>.$1");
         return text.Length > maxLength ? text[..maxLength] + " [truncated]" : text;
+    }
+
+    private static Regex? BuildPrefixRegex(string trimmedPrefix)
+    {
+        var leadingSlash = trimmedPrefix.StartsWith('/') || trimmedPrefix.StartsWith('\\');
+        var parts = trimmedPrefix
+            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .Select(Regex.Escape)
+            .ToArray();
+        if (parts.Length == 0) return null;
+        var pattern = (leadingSlash ? @"[\\/]" : "") + string.Join(@"[\\/]", parts) + PathTailPattern;
+        return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     public static string? CleanUserNote(string? note)
@@ -686,12 +804,35 @@ public sealed class DiagnosticSessionStore
     private static (string AppVersion, string Build, string OsVersion, string DeviceModel) EnvironmentSummary()
     {
         var asm = typeof(DiagnosticSessionStore).Assembly;
-        var version = asm.GetName().Version;
-        var appVersion = version?.ToString(3) ?? "0.12.1";
-        var build = version?.Revision > 0 ? version.Revision.ToString() : "24";
+        var infoVersion = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        var fileVersion = asm.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version;
+        var appVersion = asm.GetName().Version?.ToString(3) ?? "unknown";
+        var build = "unknown";
+        if (!string.IsNullOrEmpty(fileVersion))
+        {
+            var parts = fileVersion.Split('.');
+            if (parts.Length >= 4 && !string.IsNullOrEmpty(parts[3])) build = parts[3];
+        }
+        else if (!string.IsNullOrEmpty(infoVersion))
+        {
+            var buildMarker = infoVersion.IndexOf("build.", StringComparison.OrdinalIgnoreCase);
+            if (buildMarker >= 0) build = CleanIdentifier(infoVersion[(buildMarker + 6)..], "unknown");
+        }
         var osVersion = Environment.OSVersion.Version.ToString();
         var arch = RuntimeInformation.OSArchitecture.ToString();
         return (appVersion, build, osVersion, CleanIdentifier(arch, "x64"));
+    }
+
+    private void EnqueueBackground(Action work)
+    {
+        lock (writeChainGate)
+        {
+            writeChain = writeChain.ContinueWith(
+                _ => { try { work(); } catch { } },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default);
+        }
     }
 
     private sealed record LeaseRecord(string SessionId, DateTimeOffset StartedAt, DateTimeOffset ExpiresAt, int RemainingLaunches);
@@ -706,6 +847,7 @@ public sealed class DiagnosticSessionStore
                 (int?)meta["schemaVersion"] == 1)
             {
                 sessionId = (string?)meta["sessionID"];
+                pendingReportId = (string?)meta["pendingReportID"];
                 if (DateTimeOffset.TryParse((string?)meta["startedAt"], out var parsedStart)) startedAt = parsedStart;
                 droppedBreadcrumbs = (int?)meta["droppedBreadcrumbs"] ?? 0;
             }
@@ -768,7 +910,14 @@ public sealed class DiagnosticSessionStore
     private void ExpireIfNeededLocked(DateTimeOffset now)
     {
         if (expiresAt is not { } until || now < until) return;
-        AppendBreadcrumbLocked("info", "lifecycle", "leaseExpired", "Diagnostic recording automatically stopped after lease window", [], now);
+        AppendBreadcrumbLocked(
+            "info",
+            "lifecycle",
+            "leaseExpired",
+            "Diagnostic recording automatically stopped after lease window",
+            [],
+            now,
+            persistSynchronously: true);
         expiresAt = null;
         remainingLaunches = 0;
         Interlocked.Exchange(ref fastActiveUntilTicks, 0);
@@ -781,11 +930,12 @@ public sealed class DiagnosticSessionStore
         string stage,
         string message,
         Dictionary<string, string> context,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool persistSynchronously)
     {
         breadcrumbs.Add(new(now.UtcDateTime.ToString("O"), nextSeq++, level, category, stage, message, context));
         TrimBreadcrumbsLocked();
-        PersistSessionLocked();
+        if (persistSynchronously) PersistSessionLocked();
     }
 
     private void TrimBreadcrumbsLocked()
@@ -824,7 +974,7 @@ public sealed class DiagnosticSessionStore
                 ["message"] = entry.Message,
                 ["context"] = ctx,
             };
-            sb.Append(obj.ToJsonString());
+            sb.Append(obj.ToJsonString(CompactRelaxedJson));
             sb.Append('\n');
         }
         return sb.ToString();
@@ -860,12 +1010,23 @@ public sealed class DiagnosticSessionStore
         {
             Directory.CreateDirectory(DirectoryPath);
             WriteAtomicText(BreadcrumbsPath, EncodeBreadcrumbsLocked());
+            PersistMetaOnlyLocked();
+        }
+        catch { }
+    }
+
+    private void PersistMetaOnlyLocked()
+    {
+        try
+        {
+            Directory.CreateDirectory(DirectoryPath);
             var meta = new JsonObject
             {
                 ["schemaVersion"] = 1,
                 ["droppedBreadcrumbs"] = droppedBreadcrumbs,
             };
             if (sessionId != null) meta["sessionID"] = sessionId;
+            if (pendingReportId != null) meta["pendingReportID"] = pendingReportId;
             if (startedAt is { } s) meta["startedAt"] = s.UtcDateTime.ToString("O");
             AtomicJson.Write(MetaPath, meta);
         }

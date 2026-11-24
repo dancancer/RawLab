@@ -57,9 +57,12 @@ export function reassembleReportRows(rows, expectedReportId) {
         if (!Number.isInteger(idx) || idx < 0 || idx >= 16 || !Number.isInteger(count) || count < 1 || count > 16) {
             throw new Error(`Invalid chunk metadata on report ${targetId}`);
         }
-        declaredCount = Math.max(declaredCount, count);
-        if (!byIndex.has(idx)) {
+        const rowTime = Number(row.__time__ ?? -1);
+        const existing = byIndex.get(idx);
+        const existingTime = existing ? Number(existing.__time__ ?? -1) : -2;
+        if (!existing || rowTime > existingTime) {
             byIndex.set(idx, row);
+            declaredCount = Math.max(declaredCount, count);
         }
     }
 
@@ -187,9 +190,9 @@ async function runCli() {
             {
                 query: `report_id:"${reportId}"`,
                 topic: 'rawlab-diagnostic-v1',
-                line: 20,
+                line: 50,
                 offset: 0,
-                reverse: false,
+                reverse: true,
                 powersql: false,
             },
             {timeout: 15000}

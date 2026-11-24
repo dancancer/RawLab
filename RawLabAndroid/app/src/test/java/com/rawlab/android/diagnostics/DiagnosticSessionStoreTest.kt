@@ -3,6 +3,7 @@ package com.rawlab.android.diagnostics
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -25,7 +26,7 @@ class DiagnosticSessionStoreTest {
     )
 
     @Test
-    fun defaultOffRecordsZeroBreadcrumbsAndLeaseExpiresAutomatically() {
+    fun defaultOffActivityRecreateIdempotenceAndLeaseAutoExpiry() {
         var nowMs = 1_795_000_000_000L
         val dir = tempFolder.newFolder("diag-lease")
 
@@ -36,16 +37,21 @@ class DiagnosticSessionStoreTest {
 
         val enabled = store1.setRecordingEnabled(true)
         assertTrue(enabled.isRecording)
+        // Simulate multiple MainActivity recreations (rotation / language change) in the same process
+        repeat(5) {
+            assertTrue("Activity recreation in same process must keep recording on", store1.resumeOnLaunch().isRecording)
+        }
         store1.recordBreadcrumb(category = "import", stage = "open", message = "Opened RAW", context = mapOf("extension" to "arw"))
         assertTrue(store1.stateSnapshot().breadcrumbCount >= 2)
 
-        // First relaunch within 30 minutes stays active
+        // True process relaunch #1 within 30 minutes stays active even across repeated Activity recreations
         nowMs += 60_000L
         val store2 = DiagnosticSessionStore(dir, env, leaseDurationMs = 1_800_000L, clockMs = { nowMs })
-        val relaunch1 = store2.resumeOnLaunch()
-        assertTrue(relaunch1.isRecording)
+        repeat(4) {
+            assertTrue(store2.resumeOnLaunch().isRecording)
+        }
 
-        // Second relaunch auto-resets switch to off while keeping logs exportable
+        // True process relaunch #2 auto-resets switch to off while keeping logs exportable
         nowMs += 60_000L
         val store3 = DiagnosticSessionStore(dir, env, leaseDurationMs = 1_800_000L, clockMs = { nowMs })
         val relaunch2 = store3.resumeOnLaunch()
@@ -55,49 +61,75 @@ class DiagnosticSessionStoreTest {
     }
 
     @Test
-    fun redactionZipIntegrityAndSlsPayloadContract() {
+    fun redactionSpacedPathsSdCardRealHomeZipIntegrityAndFreshReportIds() {
         val dir = tempFolder.newFolder("diag-zip")
+        val appFilesRoot = tempFolder.newFolder("app-files").absolutePath
+        val realHome = System.getProperty("user.home").orEmpty()
+        val winPath = listOf("D:", "My Photos", "Wedding 2026", "IMG_01.CR3").joinToString("\\")
+        val sdCardPath = "/storage/1234-5678/DCIM/Trip Paris/DSC 0002.ARW"
+        val homePhotoPath = "$realHome/Pictures/SecretVacation/DSC0001.ARW"
+
         val store = DiagnosticSessionStore(
             directory = dir,
             environment = env,
-            extraRedactedPaths = listOf("/custom/app/files" to "<files>"),
+            extraRedactedPaths = listOf(appFilesRoot to "<files>"),
         )
         store.setRecordingEnabled(true)
         store.recordBreadcrumb(
             level = "warn",
             category = "preview",
             stage = "openUri",
-            message = "Failed reading content://media/external/images/media/9999 and /storage/emulated/0/DCIM/Camera/DSC0001.ARW",
+            message = "Failed reading content://media/external/images/media/9999 and $sdCardPath and $homePhotoPath and $winPath; bare_shot.dng",
             context = mapOf(
                 "extension" to "privateext",
-                "localFile" to "/custom/app/files/retained/secret.arw",
+                "localFile" to "$appFilesRoot/retained/My Folder/secret_copy.arw",
             ),
         )
         store.recordError(
             operation = "export",
             stage = "writeFile",
-            error = IllegalStateException("Failed writing /data/user/0/com.rawlab.android/cache/photo.jpg"),
+            error = IllegalStateException("Failed writing /data/user/0/com.rawlab.android/cache/export_out.jpg"),
             context = mapOf("extension" to "jpg"),
         )
 
-        val pkg = store.buildReportPackage(
-            userNote = "导出 /storage/emulated/0/Pictures/secret.jpg 失败",
+        val pkg1 = store.buildReportPackage(
+            userNote = "导出 $sdCardPath 失败",
             stopActiveRecording = true,
+            consumeReportID = true,
         )
         assertFalse(store.isRecording)
-        assertTrue(DiagnosticReportIds.isValid(pkg.reportID))
+        assertTrue(DiagnosticReportIds.isValid(pkg1.reportID))
 
-        val allText = pkg.manifestJSON + "\n" + pkg.breadcrumbsJSONL + "\n" + pkg.recentErrorsJSON
-        assertFalse(allText.contains("DSC0001"))
-        assertFalse(allText.contains("content://media"))
-        assertFalse(allText.contains("/storage/emulated"))
-        assertFalse(allText.contains("/data/user/0"))
-        assertFalse(allText.contains("privateext"))
+        val allText = pkg1.manifestJSON + "\n" + pkg1.breadcrumbsJSONL + "\n" + pkg1.recentErrorsJSON
+        for (forbidden in listOf(
+            "DSC0001",
+            "SecretVacation",
+            "1234-5678",
+            "Trip Paris",
+            "DSC 0002",
+            "My Photos",
+            "Wedding 2026",
+            "IMG_01",
+            "My Folder",
+            "secret_copy",
+            "export_out",
+            "bare_shot",
+            "content://media",
+            "/data/user/0",
+            "privateext",
+        )) {
+            assertFalse("Leaked '$forbidden' in:\n$allText", allText.contains(forbidden))
+        }
+        assertTrue(allText.contains("<files>"))
+        assertTrue(allText.contains("<file>.dng"))
         assertTrue(allText.contains("\"extension\": \"unknown\"") || allText.contains("\"extension\":\"unknown\""))
 
-        // Verify ZIP entries
+        // Subsequent report after consuming reportID gets a brand-new reportID
+        val pkg2 = store.buildReportPackage(stopActiveRecording = false, consumeReportID = true)
+        assertNotEquals(pkg1.reportID, pkg2.reportID)
+
         val zipEntries = linkedMapOf<String, String>()
-        ZipInputStream(ByteArrayInputStream(pkg.toZipBytes())).use { zis ->
+        ZipInputStream(ByteArrayInputStream(pkg1.toZipBytes())).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 zipEntries[entry.name] = zis.readBytes().toString(StandardCharsets.UTF_8)
@@ -106,7 +138,6 @@ class DiagnosticSessionStoreTest {
         }
         assertEquals(setOf("manifest.json", "breadcrumbs.jsonl", "recent-errors.json", "README.txt"), zipEntries.keys)
 
-        // Verify SLS WebTracking endpoint guard & payload
         SLSDiagnosticWebTracking.validateEndpoint(SLSDiagnosticWebTracking.PRODUCTION_URL)
         assertThrows(DiagnosticUploadException::class.java) {
             SLSDiagnosticWebTracking.validateEndpoint("http://proj-x.cn-shanghai.log.aliyuncs.com/logstores/diag/track")
@@ -115,12 +146,12 @@ class DiagnosticSessionStoreTest {
             SLSDiagnosticWebTracking.validateEndpoint("https://attacker.invalid/logstores/diag/track")
         }
 
-        val payloadBytes = SLSDiagnosticWebTracking.buildPayload(pkg, env)
+        val payloadBytes = SLSDiagnosticWebTracking.buildPayload(pkg1, env)
         val envelope = JSONObject(payloadBytes.toString(StandardCharsets.UTF_8))
         assertEquals("rawlab-diagnostic-v1", envelope.getString("__topic__"))
         assertEquals("android", envelope.getString("__source__"))
         val logs = envelope.getJSONArray("__logs__")
         assertEquals(1, logs.length())
-        assertEquals(pkg.reportID, logs.getJSONObject(0).getString("report_id"))
+        assertEquals(pkg1.reportID, logs.getJSONObject(0).getString("report_id"))
     }
 }

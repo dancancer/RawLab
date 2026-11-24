@@ -134,23 +134,47 @@ object DiagnosticRedactor {
         "iiq", "jpeg", "jpg", "kdc", "mos", "mrw", "nef", "nrw", "orf", "pef", "png", "raf", "raw",
         "rw2", "rwl", "sr2", "srf", "srw", "tif", "tiff", "x3f",
     )
+    private const val PATH_TAIL_PATTERN =
+        """(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]*))?"""
     private val fileUrlRegex = Regex("""(?i)(?:file|content)://[^\s"'<>()\[\]{}]+""")
-    private val windowsPathRegex = Regex("""(?i)(?:[a-z]:[\\/]|\\\\)[^\s"'<>()\[\]{}]+""")
-    private val posixPathRegex = Regex("""/(?:Users|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|data/data|storage/emulated|sdcard|mnt)/[^\s"'<>()\[\]{}]+""")
+    private val windowsPathRegex = Regex(
+        """(?i)(?:[a-z]:|\\\\[^\\/\s"'<>:*?|]+)(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[a-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]+))+"""
+    )
+    private val posixPathRegex = Regex(
+        """/(?:[Uu]sers|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|data/data|storage|sdcard|mnt)(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]+))+"""
+    )
+    private val bareMediaFilenameRegex = Regex(
+        """(?i)(?<![A-Za-z0-9_<>])(?:[A-Za-z0-9_\u0080-\uFFFF][^\s\\/"'<>()\[\]{}:*?|]*)\.(3fr|arq|arw|cr2|cr3|crw|dcr|dng|erf|fff|heic|heif|iiq|jpeg|jpg|kdc|mos|mrw|nef|nrw|orf|pef|png|raf|raw|rw2|rwl|sr2|srf|srw|tif|tiff|x3f|cube|dcp)\b"""
+    )
     private val identifierAllowed = Regex("""[^A-Za-z0-9._-]""")
 
     fun cleanText(input: String?, maxLength: Int = 512, extraPaths: List<Pair<String, String>> = emptyList()): String {
         if (input == null || input.isEmpty()) return ""
-        var text: String = input
-        for ((path, token) in extraPaths.sortedByDescending { it.first.length }) {
-            if (path.length > 1) {
-                text = text.replace(path, token, ignoreCase = true)
+        var text: String = fileUrlRegex.replace(input, "<uri>")
+        val defaults = listOfNotNull(
+            System.getProperty("user.home")?.let { it to "<user>" },
+            System.getProperty("java.io.tmpdir")?.let { it to "<temp>" },
+        )
+        for ((rawPrefix, token) in (defaults + extraPaths).sortedByDescending { it.first.length }) {
+            val trimmed = rawPrefix.trim('/', '\\')
+            if (trimmed.length > 1) {
+                buildPrefixRegex(trimmed)?.let { regex ->
+                    text = regex.replace(text, token)
+                }
             }
         }
-        text = fileUrlRegex.replace(text, "<uri>")
         text = windowsPathRegex.replace(text, "<path>")
         text = posixPathRegex.replace(text, "<path>")
+        text = bareMediaFilenameRegex.replace(text, "<file>.$1")
         return if (text.length > maxLength) text.take(maxLength) + " [truncated]" else text
+    }
+
+    private fun buildPrefixRegex(trimmedPrefix: String): Regex? {
+        val leadingSlash = trimmedPrefix.startsWith('/') || trimmedPrefix.startsWith('\\')
+        val parts = trimmedPrefix.split('/', '\\').filter { it.isNotEmpty() }.map(Regex::escape)
+        if (parts.isEmpty()) return null
+        val pattern = (if (leadingSlash) """[\\/]""" else "") + parts.joinToString("""[\\/]""") + PATH_TAIL_PATTERN
+        return runCatching { Regex(pattern, RegexOption.IGNORE_CASE) }.getOrNull()
     }
 
     fun cleanUserNote(note: String?, extraPaths: List<Pair<String, String>> = emptyList()): String? {
@@ -356,7 +380,9 @@ class DiagnosticSessionStore(
     }
 
     private var loaded = false
+    private var launchResumedInProcess = false
     private var sessionID: String? = null
+    private var pendingReportID: String? = null
     private var startedAtMs: Long? = null
     private var expiresAtMs: Long? = null
     private var remainingLaunches: Int = 0
@@ -377,12 +403,19 @@ class DiagnosticSessionStore(
             return until > 0L && clockMs() < until
         }
 
+    /** Runs at most once per process/store instance so Activity configuration changes never consume remainingLaunches. */
     fun resumeOnLaunch(): Snapshot = synchronized(lock) {
         ensureLoadedLocked()
         val now = clockMs()
+        if (launchResumedInProcess) {
+            expireIfNeededLocked(now)
+            return@synchronized snapshotLocked(now)
+        }
+        launchResumedInProcess = true
         val lease = readLeaseLocked()
         if (lease != null && now < lease.expiresAtMs && lease.remainingLaunches > 0) {
             sessionID = lease.sessionID
+            if (pendingReportID == null) pendingReportID = lease.sessionID
             startedAtMs = lease.startedAtMs
             expiresAtMs = lease.expiresAtMs
             remainingLaunches = lease.remainingLaunches - 1
@@ -412,11 +445,13 @@ class DiagnosticSessionStore(
 
     fun setRecordingEnabled(enabled: Boolean): Snapshot = synchronized(lock) {
         ensureLoadedLocked()
+        launchResumedInProcess = true
         val now = clockMs()
         if (enabled) {
             val freshId = DiagnosticReportIds.generate(now)
             val until = now + leaseDurationMs
             sessionID = freshId
+            pendingReportID = freshId
             startedAtMs = now
             expiresAtMs = until
             remainingLaunches = 1
@@ -545,7 +580,11 @@ class DiagnosticSessionStore(
         }
     }
 
-    fun buildReportPackage(userNote: String? = null, stopActiveRecording: Boolean = false): DiagnosticReportPackage {
+    fun buildReportPackage(
+        userNote: String? = null,
+        stopActiveRecording: Boolean = false,
+        consumeReportID: Boolean = false,
+    ): DiagnosticReportPackage {
         flushPendingWrites()
         return synchronized(lock) {
             ensureLoadedLocked()
@@ -568,11 +607,19 @@ class DiagnosticSessionStore(
             if (breadcrumbs.isEmpty() && recentErrors.isEmpty()) {
                 throw DiagnosticUploadException(DiagnosticUploadFailure.EMPTY)
             }
-            val reportID = sessionID?.takeIf(DiagnosticReportIds::isValid) ?: DiagnosticReportIds.generate(now)
+            val reportID = pendingReportID?.takeIf(DiagnosticReportIds::isValid)
+                ?: DiagnosticReportIds.generate(now).also { generated ->
+                    if (!consumeReportID) pendingReportID = generated
+                }
+            if (consumeReportID) {
+                pendingReportID = null
+                persistMetaOnlyLocked()
+            }
             val cleanedNote = DiagnosticRedactor.cleanUserNote(userNote, extraRedactedPaths)
             val manifest = JSONObject().apply {
                 put("schemaVersion", 1)
                 put("reportID", reportID)
+                sessionID?.let { put("sessionID", it) }
                 put("createdAt", formatIso(now))
                 put("environment", JSONObject().apply {
                     put("platform", environment.platform)
@@ -619,6 +666,7 @@ class DiagnosticSessionStore(
         return synchronized(lock) {
             ensureLoadedLocked()
             sessionID = null
+            pendingReportID = null
             startedAtMs = null
             expiresAtMs = null
             remainingLaunches = 0
@@ -651,6 +699,7 @@ class DiagnosticSessionStore(
                 val obj = JSONObject(metaFile.readText(StandardCharsets.UTF_8))
                 if (obj.optInt("schemaVersion") == 1) {
                     sessionID = obj.optString("sessionID").takeIf { it.isNotEmpty() }
+                    pendingReportID = obj.optString("pendingReportID").takeIf { it.isNotEmpty() }
                     startedAtMs = obj.optLong("startedAtMs").takeIf { it > 0L }
                     droppedBreadcrumbs = obj.optInt("droppedBreadcrumbs", 0)
                 }
@@ -805,9 +854,17 @@ class DiagnosticSessionStore(
         runCatching {
             directory.mkdirs()
             writeAtomic(breadcrumbsFile, encodeBreadcrumbsLocked())
+            persistMetaOnlyLocked()
+        }
+    }
+
+    private fun persistMetaOnlyLocked() {
+        runCatching {
+            directory.mkdirs()
             val meta = JSONObject().apply {
                 put("schemaVersion", 1)
                 sessionID?.let { put("sessionID", it) }
+                pendingReportID?.let { put("pendingReportID", it) }
                 startedAtMs?.let { put("startedAtMs", it) }
                 put("droppedBreadcrumbs", droppedBreadcrumbs)
             }
@@ -1094,10 +1151,11 @@ class DiagnosticViewModel(
         mutable.update { it.copy(isUploading = true, copiedCode = false, feedbackRes = null, feedbackIsError = false) }
         viewModelScope.launch(ioDispatcher) {
             try {
-                val report = store.buildReportPackage(userNote = note, stopActiveRecording = true)
+                val report = store.buildReportPackage(userNote = note, stopActiveRecording = true, consumeReportID = false)
                 val payload = SLSDiagnosticWebTracking.buildPayload(report, store.environment)
                 val endpoint = uploadEndpointProvider()
                 transport.upload(endpoint, payload)
+                runCatching { store.buildReportPackage(userNote = note, stopActiveRecording = false, consumeReportID = true) }
                 val snap = store.stateSnapshot()
                 mutable.update {
                     it.copy(

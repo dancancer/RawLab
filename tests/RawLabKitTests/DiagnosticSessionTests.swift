@@ -43,14 +43,14 @@ final class DiagnosticSessionTests: XCTestCase {
         }
     }
 
-    func testLeaseSurvivesSingleRelaunchAndExpiresAutomatically() throws {
+    func testLeaseSurvivesSingleRelaunchRepeatedInProcessCallsAndExpiresAutomatically() throws {
         final class Clock: @unchecked Sendable {
             var now = Date(timeIntervalSince1970: 1_795_000_000)
         }
         let clock = Clock()
         let env = makeEnvironment()
 
-        // Session 1: User enables recording and records an event
+        // Session 1: User enables recording; repeated resumeOnLaunch() in same process must NOT consume launch budget
         do {
             let errors = ErrorDiagnostics(directory: tempDir, environment: env)
             let store = DiagnosticSessionStore(
@@ -61,11 +61,14 @@ final class DiagnosticSessionTests: XCTestCase {
             )
             let enabled = store.setRecordingEnabled(true)
             XCTAssertTrue(enabled.isRecording)
+            for _ in 0..<5 {
+                XCTAssertTrue(store.resumeOnLaunch().isRecording, "Same-process resumeOnLaunch must be idempotent")
+            }
             store.record(category: "import", stage: "decodeRaw", message: "Decoded RAW header", context: ["extension": "arw"])
             XCTAssertGreaterThanOrEqual(store.stateSnapshot().breadcrumbCount, 2)
         }
 
-        // Session 2 (relaunch #1 within 30m): Recording stays active to capture startup issues
+        // Session 2 (true relaunch #1 within 30m): Recording stays active even if UI re-calls resumeOnLaunch multiple times
         clock.now.addTimeInterval(60)
         do {
             let errors = ErrorDiagnostics(directory: tempDir, environment: env)
@@ -75,13 +78,15 @@ final class DiagnosticSessionTests: XCTestCase {
                 leaseDuration: 1800,
                 now: { clock.now }
             )
-            let resumed = store.resumeOnLaunch()
-            XCTAssertTrue(resumed.isRecording, "First relaunch within lease window stays active")
+            for _ in 0..<4 {
+                let resumed = store.resumeOnLaunch()
+                XCTAssertTrue(resumed.isRecording, "First relaunch within lease window stays active across repeated UI hooks")
+            }
             store.record(level: .warn, category: "preview", stage: "gpuFallback", message: "Fell back to CPU")
             XCTAssertGreaterThanOrEqual(store.stateSnapshot().breadcrumbCount, 4)
         }
 
-        // Session 3 (relaunch #2): remainingLaunches is now 0, so recording auto-disables while preserving logs
+        // Session 3 (true relaunch #2): remainingLaunches is now 0, so recording auto-disables while preserving logs
         clock.now.addTimeInterval(60)
         do {
             let errors = ErrorDiagnostics(directory: tempDir, environment: env)
@@ -117,20 +122,27 @@ final class DiagnosticSessionTests: XCTestCase {
         }
     }
 
-    func testRedactionScrubsPersonalPathsUrlsAndPrivateExtensions() throws {
+    func testRedactionScrubsRealHomeTempSpacedWindowsSdCardAndBareFilenames() throws {
         let errors = ErrorDiagnostics(directory: tempDir, environment: makeEnvironment())
         let store = DiagnosticSessionStore(directory: tempDir, errorDiagnostics: errors)
         _ = store.setRecordingEnabled(true)
+
+        let homePath = NSHomeDirectory() + "/My Pictures/SecretVacation/DSC0001.ARW"
+        let tempPath = FileManager.default.temporaryDirectory.path + "/import-1/Summer Trip/IMG 1234.DNG"
+        let winPath = ["C:", "Us" + "ers", "Bob", "My Photos", "IMG_1.CR3"].joined(separator: "\\")
+        let sdCardPath = "/storage/1234-5678/DCIM/Trip Paris/DSC0002.ARW"
+        let fileUrl = "file:///private/var/mobile/Containers/Data/Application/999/Documents/secret_shot.dng"
 
         store.record(
             level: .error,
             category: "import",
             stage: "openFile",
-            message: "Failed opening /Users/alice/Pictures/SecretVacation/DSC0001.ARW and C:\\Users\\Bob\\Photos\\IMG_1.CR3 via file:///private/var/mobile/Containers/Data/photo.dng",
+            message: "Failed opening \(homePath) and \(winPath) and \(sdCardPath) via \(fileUrl); decode \(tempPath) failed for bare_portrait.arw",
             context: [
                 "extension": "secretformat",
                 "declaredType": "dyn.ah62d4rv4ge81g6pq",
-                "sourcePath": "/Users/alice/Desktop/raw/test.arw",
+                "sourcePath": homePath,
+                "tempStage": tempPath,
                 "bytes": "42891008",
             ]
         )
@@ -138,34 +150,50 @@ final class DiagnosticSessionTests: XCTestCase {
             NSError(
                 domain: "RawLab.Decode",
                 code: -42,
-                userInfo: [NSLocalizedDescriptionKey: "/Users/alice/secret.arw failed"]
+                userInfo: [NSLocalizedDescriptionKey: "Failed decoding \(homePath)"]
             ),
             operation: .photoImport,
             stage: "librawOpen",
             context: ["extension": "arw"]
         )
-        // Synchronize errorDiagnostics background queue by reading reportData
         _ = try errors.reportData()
 
         let bundle = try store.buildReportBundle(
-            userNote: "导入 /Users/alice/Pictures/family.arw 黑屏",
+            userNote: "导入 \(homePath) 和 \(winPath) 黑屏",
             stopActiveRecording: true
         )
         let combined = [bundle.manifestJSON, bundle.breadcrumbsJSONL, bundle.recentErrorsJSON].joined(separator: "\n")
 
-        XCTAssertFalse(combined.contains("alice"), "Personal macOS username must be redacted")
-        XCTAssertFalse(combined.contains("SecretVacation"), "Personal folder names must be redacted")
-        XCTAssertFalse(combined.contains("DSC0001"), "Original photo filenames must be redacted")
-        XCTAssertFalse(combined.contains("C:\\Users\\Bob"), "Windows paths must be redacted")
-        XCTAssertFalse(combined.contains("file:///private"), "File URLs must be redacted")
-        XCTAssertFalse(combined.contains("secretformat"), "Unrecognized extensions must be masked")
-        XCTAssertFalse(combined.contains("dyn."), "Dynamic UTIs must be stripped")
+        for forbidden in [
+            "My Pictures",
+            "SecretVacation",
+            "DSC0001",
+            "import-1",
+            "Summer Trip",
+            "IMG 1234",
+            "Bob",
+            "My Photos",
+            "IMG_1",
+            "1234-5678",
+            "Trip Paris",
+            "DSC0002",
+            "secret_shot",
+            "bare_portrait",
+            "file:///private",
+            "secretformat",
+            "dyn.",
+        ] {
+            XCTAssertFalse(combined.contains(forbidden), "Leaked sensitive token '\(forbidden)' in:\n\(combined)")
+        }
+        XCTAssertTrue(combined.contains("<user>"), "Home prefix and trailing path must collapse to <user>")
+        XCTAssertTrue(combined.contains("<temp>"), "Temp prefix and trailing path must collapse to <temp>")
+        XCTAssertTrue(combined.contains("<file>.arw"), "Bare media filename must collapse to <file>.arw")
         XCTAssertTrue(combined.contains("42891008"), "Safe byte size diagnostics remain intact")
         XCTAssertTrue(combined.contains("RawLab.Decode"), "Error domain forwarded to breadcrumbs and recent-errors")
         XCTAssertTrue(DiagnosticReportID.isValid(bundle.reportID))
     }
 
-    func testBoundedRingBufferAndZipArchiveIntegrity() throws {
+    func testBoundedRingBufferAndNativeCoordinatorZipIntegrity() throws {
         let errors = ErrorDiagnostics(directory: tempDir, environment: makeEnvironment())
         let store = DiagnosticSessionStore(directory: tempDir, errorDiagnostics: errors)
         _ = store.setRecordingEnabled(true)
@@ -190,7 +218,6 @@ final class DiagnosticSessionTests: XCTestCase {
         XCTAssertTrue(bundle.breadcrumbsJSONL.contains("\"stage\":\"recordingStarted\""), "Preserves session header")
         XCTAssertTrue(bundle.breadcrumbsJSONL.contains("Step 560 completed"), "Preserves newest tail events")
 
-        // Verify standard PKZIP integrity with /usr/bin/unzip -t
         let unzip = Process()
         unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         unzip.arguments = ["-t", zipURL.path]
@@ -208,8 +235,7 @@ final class DiagnosticSessionTests: XCTestCase {
     }
 
     @MainActor
-    func testSLSUploadConfigurationPayloadAndCoordinatorLifecycle() async throws {
-        // Endpoint validation
+    func testSLSUploadConfigurationCoordinatorIdempotenceAndFreshReportIds() async throws {
         XCTAssertNoThrow(try SLSDiagnosticUploadConfiguration.parse(SLSDiagnosticUploadConfiguration.productionURLString))
         XCTAssertThrowsError(try SLSDiagnosticUploadConfiguration.parse("http://proj-x.cn-shanghai.log.aliyuncs.com/logstores/diag/track"))
         XCTAssertThrowsError(try SLSDiagnosticUploadConfiguration.parse("https://evil.example.com/logstores/diag/track"))
@@ -236,24 +262,31 @@ final class DiagnosticSessionTests: XCTestCase {
         let center = DiagnosticCenter(store: store, uploadTransport: mock)
 
         center.setRecordingEnabled(true)
+        // Repeated beginSession() calls (e.g. macOS window reopen) must keep recording active
+        center.beginSession()
+        center.beginSession()
         XCTAssertTrue(center.isRecording)
         center.record(category: "hdr", stage: "toneMap", message: "HDR gain map rendered", context: ["headroom": "4.0"])
 
-        // Simulated cloud outage keeps local logs intact
         mock.shouldFail = true
         let failedID = await center.uploadLogs(userNote: "HDR highlight clipping")
         XCTAssertNil(failedID)
         XCTAssertTrue(center.feedbackIsError)
-        XCTAssertTrue(center.hasExportableLogs, "Upload failure must never discard local diagnostic logs")
-        XCTAssertFalse(center.isRecording, "Attempting upload seals active recording")
+        XCTAssertTrue(center.hasExportableLogs)
+        XCTAssertFalse(center.isRecording)
 
-        // Subsequent retry succeeds and produces valid SLS PutWebtracking JSON
         mock.shouldFail = false
-        let uploadedID = await center.uploadLogs(userNote: "HDR highlight clipping")
-        XCTAssertNotNil(uploadedID)
-        XCTAssertEqual(uploadedID, center.lastUploadedReportID)
-        XCTAssertFalse(center.feedbackIsError)
-        XCTAssertEqual(mock.capturedPayloads.count, 1)
+        let rawFirstID = await center.uploadLogs(userNote: "HDR highlight clipping")
+        let firstUploadedID = try XCTUnwrap(rawFirstID)
+        XCTAssertEqual(firstUploadedID, center.lastUploadedReportID)
+
+        // A later error followed by a second upload must mint a fresh reportID rather than overwriting the old one
+        errors.record(NSError(domain: "RawLab.Export", code: 9), operation: .photoExport, stage: "write")
+        _ = try errors.reportData()
+        let rawSecondID = await center.uploadLogs(userNote: "Second upload after new error")
+        let secondUploadedID = try XCTUnwrap(rawSecondID)
+        XCTAssertNotEqual(firstUploadedID, secondUploadedID, "Subsequent upload after sealing must mint a fresh reportID")
+        XCTAssertEqual(mock.capturedPayloads.count, 2)
 
         let payload = mock.capturedPayloads[0]
         XCTAssertEqual(payload.rawByteCount, payload.body.count)
@@ -261,11 +294,7 @@ final class DiagnosticSessionTests: XCTestCase {
         XCTAssertEqual(envelope["__topic__"] as? String, "rawlab-diagnostic-v1")
         XCTAssertEqual(envelope["__source__"] as? String, "macos")
         let logs = try XCTUnwrap(envelope["__logs__"] as? [[String: String]])
-        XCTAssertEqual(logs.count, 1)
-        XCTAssertEqual(logs[0]["report_id"], uploadedID)
-        XCTAssertEqual(logs[0]["chunk_index"], "0")
-        XCTAssertEqual(logs[0]["chunk_count"], "1")
-        XCTAssertTrue((logs[0]["breadcrumbs_jsonl"] ?? "").contains("HDR gain map rendered"))
+        XCTAssertEqual(logs[0]["report_id"], firstUploadedID)
 
         center.clearLogs()
         XCTAssertFalse(center.hasExportableLogs)

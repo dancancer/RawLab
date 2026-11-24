@@ -10,7 +10,7 @@ namespace RawLab.Windows.Tests;
 public sealed class DiagnosticSessionStoreTests
 {
     [Fact]
-    public void DefaultOffLeaseRelaunchAndAutoExpiryBehaveDeterministically()
+    public void DefaultOffIdempotentResumeAndLeaseAutoExpiryBehaveDeterministically()
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-win-diag-" + Guid.NewGuid().ToString("N"));
         try
@@ -22,12 +22,19 @@ public sealed class DiagnosticSessionStoreTests
             Assert.Equal(0, store1.GetSnapshot().BreadcrumbCount);
 
             Assert.True(store1.SetRecordingEnabled(true).IsRecording);
+            for (var i = 0; i < 5; i++)
+            {
+                Assert.True(store1.ResumeOnLaunch().IsRecording);
+            }
             store1.RecordBreadcrumb("import", "open", "Opened photo", new() { ["extension"] = "arw" });
             Assert.True(store1.GetSnapshot().BreadcrumbCount >= 2);
 
             now = now.AddMinutes(2);
             var store2 = new DiagnosticSessionStore(root, TimeSpan.FromMinutes(30), () => now);
-            Assert.True(store2.ResumeOnLaunch().IsRecording);
+            for (var i = 0; i < 4; i++)
+            {
+                Assert.True(store2.ResumeOnLaunch().IsRecording);
+            }
 
             now = now.AddMinutes(2);
             var store3 = new DiagnosticSessionStore(root, TimeSpan.FromMinutes(30), () => now);
@@ -43,29 +50,52 @@ public sealed class DiagnosticSessionStoreTests
     }
 
     [Fact]
-    public async Task RedactionZipArchiveAndSlsUploadPayloadMatchContract()
+    public async Task RedactionZipArchiveReadablePreviewAndFreshUploadCodesMatchContract()
     {
         var root = Path.Combine(Path.GetTempPath(), "rawlab-win-diag-zip-" + Guid.NewGuid().ToString("N"));
         try
         {
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var realProfilePhoto = Path.Combine(userProfile, "My Pictures", "SecretVacation", "DSC0001.ARW");
+            var tempPhoto = Path.Combine(Path.GetTempPath(), "import-stage", "IMG 1234.DNG");
+            var spacedDrivePhoto = string.Join("\\", "D:", "My Photos", "Summer 2026", "IMG_99.CR3");
+
             var store = new DiagnosticSessionStore(root);
             store.SetRecordingEnabled(true);
             store.RecordBreadcrumb(
                 "import",
                 "open",
-                @"Failed opening C:\Users\Alice\Pictures\Secret\DSC0001.ARW and file:///Users/bob/photo.cr3",
-                new() { ["extension"] = "privateformat", ["bytes"] = "123456" },
+                $"Failed opening {realProfilePhoto} and {spacedDrivePhoto}; temp {tempPhoto} and bare_portrait.nef",
+                new() { ["extension"] = "privateformat", ["bytes"] = "123456", ["source"] = realProfilePhoto },
                 level: "warn");
-            store.RecordError("export", "save", new IOException(@"Cannot write D:\Private\out.jpg"));
+            store.RecordError("export", "save", new IOException($"Cannot write {spacedDrivePhoto}"));
 
             var zipPath = Path.Combine(root, "out.zip");
-            var pkg = store.BuildReportPackage(@"导出 C:\Users\Alice\Desktop\test.arw 报错", stopActiveRecording: false);
+            var pkg = store.BuildReportPackage($"导出 {realProfilePhoto} 中文备注正常显示", stopActiveRecording: false);
             pkg.ExportZip(zipPath);
 
             var combined = pkg.ManifestJson + "\n" + pkg.BreadcrumbsJsonl + "\n" + pkg.RecentErrorsJson;
-            Assert.DoesNotContain("Alice", combined, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("DSC0001", combined, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("privateformat", combined, StringComparison.OrdinalIgnoreCase);
+            foreach (var forbidden in new[]
+                     {
+                         "My Pictures",
+                         "SecretVacation",
+                         "DSC0001",
+                         "import-stage",
+                         "IMG 1234",
+                         "My Photos",
+                         "Summer 2026",
+                         "IMG_99",
+                         "bare_portrait",
+                         "privateformat",
+                         "\\u003C",
+                     })
+            {
+                Assert.DoesNotContain(forbidden, combined, StringComparison.OrdinalIgnoreCase);
+            }
+            Assert.Contains("<user>", combined, StringComparison.Ordinal);
+            Assert.Contains("<temp>", combined, StringComparison.Ordinal);
+            Assert.Contains("<file>.nef", combined, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("中文备注正常显示", combined, StringComparison.Ordinal);
             Assert.Contains("123456", combined, StringComparison.Ordinal);
 
             using (var zip = ZipFile.OpenRead(zipPath))
@@ -83,17 +113,18 @@ public sealed class DiagnosticSessionStoreTests
                 SLSDiagnosticWebTracking.ValidateEndpoint("https://attacker.invalid/logstores/diag/track"));
 
             var fake = new FakeUploadTransport();
-            var uploadedCode = await store.UploadAsync("Repro note", fake,
-                new Uri(SLSDiagnosticWebTracking.ProductionUrl));
-            Assert.True(SLSDiagnosticWebTracking.IsValidReportId(uploadedCode));
+            var firstCode = await store.UploadAsync("First upload", fake, new Uri(SLSDiagnosticWebTracking.ProductionUrl));
+            Assert.True(SLSDiagnosticWebTracking.IsValidReportId(firstCode));
             Assert.False(store.IsRecording);
-            Assert.NotNull(fake.CapturedBody);
+
+            store.RecordError("export", "saveRetry", new IOException("Second failure"));
+            var secondCode = await store.UploadAsync("Second upload", fake, new Uri(SLSDiagnosticWebTracking.ProductionUrl));
+            Assert.NotEqual(firstCode, secondCode);
 
             var envelope = JsonNode.Parse(Encoding.UTF8.GetString(fake.CapturedBody!))!.AsObject();
             Assert.Equal("rawlab-diagnostic-v1", (string?)envelope["__topic__"]);
             Assert.Equal("windows", (string?)envelope["__source__"]);
-            Assert.Equal(uploadedCode, (string?)envelope["__logs"]?[0]?["report_id"]
-                ?? (string?)envelope["__logs__"]?[0]?["report_id"]);
+            Assert.Equal(secondCode, (string?)envelope["__logs__"]?[0]?["report_id"]);
         }
         finally
         {

@@ -39,6 +39,7 @@ public struct DiagnosticBreadcrumb: Codable, Equatable, Sendable {
 public struct DiagnosticManifest: Codable, Equatable, Sendable {
     public var schemaVersion: Int = 1
     public let reportID: String
+    public let sessionID: String?
     public let createdAt: String
     public let environment: DiagnosticEnvironment
     public let recordingActive: Bool
@@ -49,6 +50,10 @@ public struct DiagnosticManifest: Codable, Equatable, Sendable {
     public let userNote: String?
 }
 
+public enum DiagnosticArchiveError: Error, Sendable {
+    case coordinationFailed
+}
+
 public struct DiagnosticReportBundle: Sendable {
     public let reportID: String
     public let manifest: DiagnosticManifest
@@ -57,13 +62,33 @@ public struct DiagnosticReportBundle: Sendable {
     public let recentErrorsJSON: String
     public let readmeText: String
 
+    /// Packages the diagnostic files into a standard `.zip` archive using Apple's native `NSFileCoordinator` `.forUploading`.
     public func zipData() throws -> Data {
-        try DiagnosticZipArchive.build(entries: [
-            DiagnosticZipEntry(name: "manifest.json", text: manifestJSON),
-            DiagnosticZipEntry(name: "breadcrumbs.jsonl", text: breadcrumbsJSONL),
-            DiagnosticZipEntry(name: "recent-errors.json", text: recentErrorsJSON),
-            DiagnosticZipEntry(name: "README.txt", text: readmeText),
-        ])
+        let fm = FileManager.default
+        let workspace = fm.temporaryDirectory
+            .appendingPathComponent("rawlab-diag-stage-\(UUID().uuidString)", isDirectory: true)
+        let packageDir = workspace.appendingPathComponent("RawLab-Diag-\(reportID)", isDirectory: true)
+        try fm.createDirectory(at: packageDir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: workspace) }
+
+        try Data(manifestJSON.utf8).write(to: packageDir.appendingPathComponent("manifest.json"), options: .atomic)
+        try Data(breadcrumbsJSONL.utf8).write(to: packageDir.appendingPathComponent("breadcrumbs.jsonl"), options: .atomic)
+        try Data(recentErrorsJSON.utf8).write(to: packageDir.appendingPathComponent("recent-errors.json"), options: .atomic)
+        try Data(readmeText.utf8).write(to: packageDir.appendingPathComponent("README.txt"), options: .atomic)
+
+        var coordinatorError: NSError?
+        var archiveResult: Result<Data, Error>?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: packageDir, options: .forUploading, error: &coordinatorError) { zipURL in
+            archiveResult = Result { try Data(contentsOf: zipURL) }
+        }
+        if let coordinatorError {
+            throw coordinatorError
+        }
+        guard let archiveResult else {
+            throw DiagnosticArchiveError.coordinationFailed
+        }
+        return try archiveResult.get()
     }
 
     public var previewText: String {
@@ -100,42 +125,54 @@ public enum DiagnosticReportID {
 }
 
 public enum DiagnosticRedactor {
+    // Matches directory segments (allowing single spaces inside folder names, never crossing ` /` or `:`)
+    // followed by a final file/leaf segment (including spaced filenames ending in an extension).
+    private static let pathTailPattern =
+        #"(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]*))?"#
+
+    private static let fileURIRegex = try! NSRegularExpression(
+        pattern: #"(?i)(?:file|content)://[^\s"'<>()\[\]{}]+"#
+    )
     private static let windowsPathRegex = try! NSRegularExpression(
-        pattern: #"(?i)(?:[a-z]:[\\/]|\\\\)[^\s"'<>()\[\]{}]+?"#
+        pattern: #"(?i)(?:[a-z]:|\\\\[^\\/\s"'<>:*?|]+)"# +
+            #"(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[a-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]+))+"#
     )
     private static let posixSensitivePathRegex = try! NSRegularExpression(
-        pattern: #"/(?:Users|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|storage/emulated)/[^\s"'<>()\[\]{}]+"#
+        pattern: #"/(?:[Uu]sers|home|private/var|var/mobile|var/folders|tmp|Volumes|data/user|data/data|storage|sdcard|mnt)"# +
+            #"(?:[\\/](?:[^\s\\/\r\n"'<>:*?|](?:[^\r\n\\/"'<>:*?|]{0,80}?[^\s\\/\r\n"'<>:*?|])?[\\/])*(?:[^\s\\/\r\n"'<>:*?|][^\r\n\\/"'<>:*?|]{0,120}?\.[A-Za-z0-9]{1,10}\b|[^\s\\/\r\n"'<>()\[\]{}:*?|]+))+"#
     )
-    private static let fileURLRegex = try! NSRegularExpression(
-        pattern: #"(?i)file://[^\s"'<>()\[\]{}]+"#
+    private static let bareMediaFilenameRegex = try! NSRegularExpression(
+        pattern: #"(?i)(?<![A-Za-z0-9_<>])(?:[A-Za-z0-9_\u0080-\uFFFF][^\s\\/"'<>()\[\]{}:*?|]*)\.(3fr|arq|arw|cr2|cr3|crw|dcr|dng|erf|fff|heic|heif|iiq|jpeg|jpg|kdc|mos|mrw|nef|nrw|orf|pef|png|raf|raw|rw2|rwl|sr2|srf|srw|tif|tiff|x3f|cube|dcp)\b"#
     )
 
     public static func cleanText(_ input: String, maxLength: Int = 512, extraPaths: [(String, String)] = []) -> String {
         guard !input.isEmpty else { return "" }
-        var text = input
+        var text = replace(regex: fileURIRegex, in: input, with: "<uri>")
+
         var replacements = defaultPathReplacements() + extraPaths
         replacements.sort { $0.0.count > $1.0.count }
-        for (source, token) in replacements where source.count > 1 {
-            text = text.replacingOccurrences(of: source, with: token, options: [.caseInsensitive])
-            let normalized = source.replacingOccurrences(of: "\\", with: "/")
-            if normalized != source {
-                text = text.replacingOccurrences(of: normalized, with: token, options: [.caseInsensitive])
+        for (rawPrefix, token) in replacements {
+            let trimmed = rawPrefix.trimmingCharacters(in: CharacterSet(charactersIn: "/\\"))
+            guard trimmed.count > 1 else { continue }
+            if let prefixRegex = buildPrefixRegex(trimmed) {
+                text = replace(regex: prefixRegex, in: text, with: token)
             }
         }
-        text = replace(regex: fileURLRegex, in: text, with: "<file-url>")
+
         text = replace(regex: windowsPathRegex, in: text, with: "<path>")
         text = replace(regex: posixSensitivePathRegex, in: text, with: "<path>")
+        text = replace(regex: bareMediaFilenameRegex, in: text, with: "<file>.$1")
         if text.count > maxLength {
             return String(text.prefix(maxLength)) + " [truncated]"
         }
         return text
     }
 
-    public static func cleanUserNote(_ note: String?) -> String? {
+    public static func cleanUserNote(_ note: String?, extraPaths: [(String, String)] = []) -> String? {
         guard let raw = note?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
             return nil
         }
-        return cleanText(raw, maxLength: 200)
+        return cleanText(raw, maxLength: 200, extraPaths: extraPaths)
     }
 
     public static func cleanIdentifier(_ value: String, fallback: String = "unknown") -> String {
@@ -146,15 +183,25 @@ public enum DiagnosticRedactor {
         return safe.isEmpty ? fallback : safe
     }
 
-    public static func cleanContext(_ raw: [String: String]) -> [String: String] {
+    public static func cleanContext(_ raw: [String: String], extraPaths: [(String, String)] = []) -> [String: String] {
         let base = ErrorDiagnostics.redactedContext(raw)
         var output: [String: String] = [:]
         for key in base.keys.sorted().prefix(24) {
             guard let value = base[key] else { continue }
             let safeKey = cleanIdentifier(key, fallback: "key")
-            output[safeKey] = cleanText(value, maxLength: 256)
+            output[safeKey] = cleanText(value, maxLength: 256, extraPaths: extraPaths)
         }
         return output
+    }
+
+    private static func buildPrefixRegex(_ trimmedPrefix: String) -> NSRegularExpression? {
+        let hasLeadingSlash = trimmedPrefix.hasPrefix("/") || trimmedPrefix.hasPrefix("\\")
+        let parts = trimmedPrefix
+            .split(whereSeparator: { $0 == "/" || $0 == "\\" })
+            .map { NSRegularExpression.escapedPattern(for: String($0)) }
+        guard !parts.isEmpty else { return nil }
+        let prefixPattern = (hasLeadingSlash ? #"[\\/]"# : "") + parts.joined(separator: #"[\\/]"#)
+        return try? NSRegularExpression(pattern: "(?i)" + prefixPattern + pathTailPattern)
     }
 
     private static func defaultPathReplacements() -> [(String, String)] {
@@ -371,6 +418,7 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
     private struct SessionMeta: Codable {
         var schemaVersion: Int = 1
         var sessionID: String
+        var pendingReportID: String?
         var startedAt: String
         var droppedBreadcrumbs: Int
     }
@@ -402,6 +450,7 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
     private var breadcrumbs: [DiagnosticBreadcrumb] = []
     private var nextSeq: Int = 1
     private var loadedFromDisk = false
+    private var launchResumedInProcess = false
     private var recoveredPreviousSessionFlag = false
 
     public init(
@@ -444,11 +493,19 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
         return now < expires
     }
 
+    /// Evaluates persistent lease at most once per process/store instance so window or activity recreation
+    /// never consumes `remainingLaunches`.
     @discardableResult
     public func resumeOnLaunch() -> StateSnapshot {
         queue.sync {
             ensureLoadedLocked()
             let now = nowProvider()
+            if launchResumedInProcess {
+                expireIfNeededLocked(now: now)
+                return snapshotLocked(now: now)
+            }
+            launchResumedInProcess = true
+
             if var lease = readLeaseLocked(),
                let expiresAt = Self.parseISO8601(lease.expiresAt),
                now < expiresAt,
@@ -458,7 +515,12 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
                 writeLeaseLocked(lease)
                 setFastActiveUntil(expiresAt)
                 if sessionMeta == nil {
-                    sessionMeta = SessionMeta(sessionID: lease.sessionID, startedAt: lease.startedAt, droppedBreadcrumbs: 0)
+                    sessionMeta = SessionMeta(
+                        sessionID: lease.sessionID,
+                        pendingReportID: lease.sessionID,
+                        startedAt: lease.startedAt,
+                        droppedBreadcrumbs: 0
+                    )
                 }
                 appendBreadcrumbLocked(
                     level: .info,
@@ -488,6 +550,7 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
     public func setRecordingEnabled(_ enabled: Bool) -> StateSnapshot {
         queue.sync {
             ensureLoadedLocked()
+            launchResumedInProcess = true
             let now = nowProvider()
             if enabled {
                 let sessionID = DiagnosticReportID.generate(now: now)
@@ -500,7 +563,12 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
                     remainingLaunches: 1
                 )
                 activeLease = lease
-                sessionMeta = SessionMeta(sessionID: sessionID, startedAt: startedISO, droppedBreadcrumbs: 0)
+                sessionMeta = SessionMeta(
+                    sessionID: sessionID,
+                    pendingReportID: sessionID,
+                    startedAt: startedISO,
+                    droppedBreadcrumbs: 0
+                )
                 breadcrumbs.removeAll(keepingCapacity: true)
                 nextSeq = 1
                 recoveredPreviousSessionFlag = false
@@ -584,7 +652,11 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
         }
     }
 
-    public func buildReportBundle(userNote: String? = nil, stopActiveRecording: Bool = false) throws -> DiagnosticReportBundle {
+    public func buildReportBundle(
+        userNote: String? = nil,
+        stopActiveRecording: Bool = false,
+        consumeReportID: Bool = false
+    ) throws -> DiagnosticReportBundle {
         let recentErrorsData = try errorDiagnostics.reportData()
         return try queue.sync {
             ensureLoadedLocked()
@@ -609,14 +681,24 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
             }
 
             let reportID: String
-            if let existingID = sessionMeta?.sessionID, DiagnosticReportID.isValid(existingID) {
-                reportID = existingID
+            if let pending = sessionMeta?.pendingReportID, DiagnosticReportID.isValid(pending) {
+                reportID = pending
             } else {
                 reportID = DiagnosticReportID.generate(now: now)
+                if sessionMeta != nil && !consumeReportID {
+                    sessionMeta?.pendingReportID = reportID
+                    persistMetaOnlyLocked()
+                }
             }
+            if consumeReportID, sessionMeta != nil {
+                sessionMeta?.pendingReportID = nil
+                persistMetaOnlyLocked()
+            }
+
             let cleanedNote = DiagnosticRedactor.cleanUserNote(userNote)
             let manifest = DiagnosticManifest(
                 reportID: reportID,
+                sessionID: sessionMeta?.sessionID,
                 createdAt: Self.formatISO8601(now),
                 environment: errorDiagnostics.environment,
                 recordingActive: activeLease != nil,
@@ -792,10 +874,12 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
         }
         if dropped > 0 {
             if sessionMeta == nil {
-                let nowISO = Self.formatISO8601(nowProvider())
+                let now = nowProvider()
+                let id = DiagnosticReportID.generate(now: now)
                 sessionMeta = SessionMeta(
-                    sessionID: DiagnosticReportID.generate(now: nowProvider()),
-                    startedAt: nowISO,
+                    sessionID: id,
+                    pendingReportID: id,
+                    startedAt: Self.formatISO8601(now),
                     droppedBreadcrumbs: dropped
                 )
             } else {
@@ -827,6 +911,14 @@ public final class DiagnosticSessionStore: @unchecked Sendable {
         } catch {
             // Keep in-memory breadcrumbs available for the current session even if disk write fails.
         }
+    }
+
+    private func persistMetaOnlyLocked() {
+        guard let meta = sessionMeta else { return }
+        do {
+            try prepareDirectoryLocked()
+            try JSONEncoder().encode(meta).write(to: metaURL, options: .atomic)
+        } catch {}
     }
 
     private func readLeaseLocked() -> Lease? {
@@ -940,6 +1032,7 @@ public final class DiagnosticCenter: ObservableObject {
     public nonisolated let store: DiagnosticSessionStore
     private var uploadTransport: DiagnosticUploadTransport?
     private var expirationTimer: Timer?
+    private var sessionBegan = false
 
     public init(store: DiagnosticSessionStore, uploadTransport: DiagnosticUploadTransport? = nil) {
         self.store = store
@@ -952,6 +1045,11 @@ public final class DiagnosticCenter: ObservableObject {
     }
 
     public func beginSession() {
+        guard !sessionBegan else {
+            refreshState()
+            return
+        }
+        sessionBegan = true
         apply(store.resumeOnLaunch())
         scheduleExpirationCheck()
     }
@@ -1012,7 +1110,9 @@ public final class DiagnosticCenter: ObservableObject {
         do {
             let store = self.store
             let (bundle, payload) = try await Task.detached(priority: .utility) {
-                let bundle = try store.buildReportBundle(userNote: userNote, stopActiveRecording: true)
+                // Only consume/rotate pendingReportID after upload succeeds so failed retries keep the same ID,
+                // while a later upload after new errors mints a fresh reportID.
+                let bundle = try store.buildReportBundle(userNote: userNote, stopActiveRecording: true, consumeReportID: false)
                 let payload = try SLSDiagnosticPayload.build(bundle: bundle)
                 return (bundle, payload)
             }.value
@@ -1024,6 +1124,7 @@ public final class DiagnosticCenter: ObservableObject {
                 transport = URLSessionDiagnosticUploadTransport(configuration: config)
             }
             try await transport.upload(payload: payload, reportID: bundle.reportID)
+            _ = try? store.buildReportBundle(userNote: userNote, stopActiveRecording: false, consumeReportID: true)
             lastUploadedReportID = bundle.reportID
             feedbackIsError = false
             feedbackMessageKey = "上传成功，请复制诊断码发送给开发者。"

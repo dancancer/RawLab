@@ -76,3 +76,25 @@ test('reassembleReportRows merges out-of-order chunks and strips client IP metad
         rmSync(temp, {recursive: true, force: true});
     }
 });
+
+test('reassembleReportRows prefers newest __time__ when duplicate report_id rows exist', () => {
+    const rows = [
+        {
+            report_id: 'RL-20261124-8F3A92C1',
+            __time__: '1700000100',
+            chunk_index: '0',
+            chunk_count: '1',
+            breadcrumbs_jsonl: '{"seq":1,"stage":"oldSnapshot"}\n',
+        },
+        {
+            report_id: 'RL-20261124-8F3A92C1',
+            __time__: '1700000200',
+            chunk_index: '0',
+            chunk_count: '1',
+            breadcrumbs_jsonl: '{"seq":2,"stage":"newestSnapshot"}\n',
+        },
+    ];
+    const assembled = reassembleReportRows(rows, 'RL-20261124-8F3A92C1');
+    assert.ok(assembled.breadcrumbsJsonl.includes('newestSnapshot'));
+    assert.ok(!assembled.breadcrumbsJsonl.includes('oldSnapshot'));
+});

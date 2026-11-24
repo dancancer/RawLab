@@ -211,6 +211,15 @@ public partial class MainWindow
             }
             File.Move(temp,destination,true);
             usageAnalytics.Record(new ExportCompletedEvent());
+            diagnosticSession.RecordBreadcrumb(
+                "export",
+                "exportCompleted",
+                "Single photo export completed",
+                new()
+                {
+                    ["format"] = format.Suffix(),
+                    ["backend"] = engine.LastBackend.ToString(),
+                });
             lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
             SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }

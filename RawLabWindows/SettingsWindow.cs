@@ -60,17 +60,20 @@ public sealed class SettingsWindow : Window
         }
         aiGpu.SelectionChanged+=(_,_)=>RefreshHint();RefreshHint();
         if(diagnosticSession!=null) {
+            var syncingDiag=false;
             var recordingCheck=new CheckBox{Content=Loc.Text("记录详细诊断日志"),IsChecked=diagnosticSession.IsRecording,Margin=new Thickness(0,16,0,0)};
             AutomationProperties.SetAutomationId(recordingCheck,"settings.diagnosticRecording");
-            recordingCheck.Checked+=(_,_)=>diagnosticSession.SetRecordingEnabled(true);
-            recordingCheck.Unchecked+=(_,_)=>diagnosticSession.SetRecordingEnabled(false);
+            recordingCheck.Checked+=(_,_)=>{if(!syncingDiag)diagnosticSession.SetRecordingEnabled(true);};
+            recordingCheck.Unchecked+=(_,_)=>{if(!syncingDiag)diagnosticSession.SetRecordingEnabled(false);};
             panel.Children.Add(recordingCheck);
             var openDiagnostics=new Button{Content=Loc.Text("上传或预览日志…"),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
             AutomationProperties.SetAutomationId(openDiagnostics,"settings.openDiagnostics");
             openDiagnostics.Click+=(_,_)=>{
                 var sheet=new DiagnosticSubmissionWindow(diagnosticSession){Owner=this};
                 sheet.ShowDialog();
+                syncingDiag=true;
                 recordingCheck.IsChecked=diagnosticSession.IsRecording;
+                syncingDiag=false;
             };
             panel.Children.Add(openDiagnostics);
         }
