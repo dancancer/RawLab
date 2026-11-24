@@ -23,7 +23,8 @@ enum class RenderStatus : int32_t {
 enum class PixelBufferFormat : int32_t {
     RGB8 = 0,
     RGBA8 = 1,
-    RGBA16 = 2
+    RGBA16 = 2,
+    BGRA8 = 3
 };
 
 struct PixelBufferView {

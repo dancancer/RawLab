@@ -30,8 +30,11 @@ enum ProRAWExporter {
         guard let source = info.proRAW, let stamp = info.cameraStamp, settings.cameraDevelopmentSettings.isDefault else {
             throw HDRSettings.ModeError.unsupportedSource
         }
-        let request = try makeHDRRequest(settings: settings, intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge,
-                                         outputSharpening: format == .renderedDNG ? .off : outputSharpening)
+        var options = try HDRImage.makeRenderOptions(intent: SONY2FUJI_INTENT_FINAL, longEdge: longEdge)
+        let editStateJSON = try HDRImage.hdrEditStateJSON(
+            settings: settings,
+            outputSharpening: format == .renderedDNG ? .off : outputSharpening
+        )
         return try withoutActuallyEscaping(cancelled) { cancellation in
             let reader = Reader(url: url, source: source, stamp: stamp, cancelled: cancellation)
             defer { reader.releaseDecoder() }
@@ -79,13 +82,13 @@ enum ProRAWExporter {
                             temporaryRoot.path.withCString { temporaryPath in
                                 input.decoder_identifier = decoder
                                 config.metadata_source_path = sourcePath
-                                return withHDRRequestPrefix(request) {
+                                return editStateJSON.withCString { json in
                                     if tiled {
-                                        return sony2fuji_hdr_export_tiled(session, nil, &input, sourcePath, $0, &config,
+                                        return sony2fuji_hdr_export_tiled_json(session, nil, &input, sourcePath, &options, json, &config,
                                             UInt32(format == .hdrHEIF ? SONY2FUJI_HDR_TILED_HEIF : SONY2FUJI_HDR_TILED_SDR_DNG),
                                             temporaryPath, outputPath, &result, &diagnostic)
                                     }
-                                    return sony2fuji_hdr_export_stream(session, &input, $0, &config, format == .hdrJPEG ? 1 : 0,
+                                    return sony2fuji_hdr_export_stream_json(session, &input, &options, json, &config, format == .hdrJPEG ? 1 : 0,
                                         temporaryPath, outputPath, &result, &diagnostic)
                                 }
                             }
@@ -171,7 +174,7 @@ enum ProRAWExporter {
             try autoreleasepool {
                 try validateSource()
                 guard first >= 0, count > 0, count <= 256, first + count <= source.height else {
-                    throw HDRRequestError.invalidSettings
+                    throw HDRNativeError.invalidSettings
                 }
                 if raw == nil {
                     // 仅估算系统显影和行块；后续 codec 在解码器释放后单独准入。
@@ -188,7 +191,7 @@ enum ProRAWExporter {
                     rgba = [Float](repeating: .nan, count: source.width * min(256, source.height) * 4)
                 }
                 if rendition != hdr {
-                    guard first == 0 else { throw HDRRequestError.invalidSettings }
+                    guard first == 0 else { throw HDRNativeError.invalidSettings }
                     context?.clearCaches()
                     raw!.extendedDynamicRangeAmount = hdr ? 1 : 0
                     image = raw!.outputImage; rendition = hdr

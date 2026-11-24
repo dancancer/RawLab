@@ -19,7 +19,6 @@ MAC_NATIVE_SWIFT_SOURCES=(
     # full-source harnesses pass through the glob below; subset harnesses
     # compile both or neither.
     "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
-    "$ROOT/Shared/Native/HDRRequest.swift"
     "$ROOT/Shared/Native/HDRSource.swift"
     "$ROOT/Shared/Native/ProRAWSource.swift"
     "$ROOT/Shared/Native/ProRAWExport.swift"

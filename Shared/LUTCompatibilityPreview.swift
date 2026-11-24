@@ -87,9 +87,13 @@ struct LUTPreviewFrame {
         guard url.path.withCString({ sony2fuji_load_display_image($0, &input) }) == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }
         let session = try LUTPreviewWorker.newSession()
         defer { sony2fuji_session_destroy(session) }
-        var request = LUTPreviewWorker.request()
-        LUTPreviewWorker.setDisplayInput(&request, input)
-        guard sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }
+        var options = LUTPreviewWorker.renderOptions()
+        LUTPreviewWorker.setDisplayInput(&options, input)
+        let editStateJSON = try LUTPreviewWorker.sessionStateJSON(isRaster: true, lutPath: nil)
+        let status = editStateJSON.withCString { json in
+            sony2fuji_session_render(session, &options, json, &output, nil)
+        }
+        guard status == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }
         return try Self(output)
     }
 }
@@ -148,44 +152,53 @@ final class LUTPreviewWorker {
         var session: OpaquePointer?
         guard sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK, let session else { throw LUTPreviewError.failed }
         var gpu = sony2fuji_gpu_config(version: SONY2FUJI_GPU_CONFIG_VERSION, struct_size: UInt32(MemoryLayout<sony2fuji_gpu_config>.size), mode: SONY2FUJI_GPU_OFF)
-        let paramsStatus = CanonicalEditRecipe.processingOnlyJSON(processingVersion: 2, exposureMode: "scene")
-            .withCString { sony2fuji_apply_params(session, $0) }
-        guard sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK,
-              paramsStatus == SONY2FUJI_STATUS_OK else {
+        guard sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK else {
             sony2fuji_session_destroy(session); throw LUTPreviewError.failed
         }
         return session
     }
-    static func request() -> sony2fuji_request {
-        var request = sony2fuji_request()
-        request.version = SONY2FUJI_REQUEST_VERSION; request.struct_size = UInt32(MemoryLayout<sony2fuji_request>.size)
-        request.input_type = SONY2FUJI_INPUT_RAW; request.wb_mode = SONY2FUJI_WB_CAMERA; request.wb_mul = (1,1,1,1)
-        request.brightness = 1; request.contrast = 1; request.saturation = 1; request.temperature = 6500
-        request.intent = SONY2FUJI_INTENT_PREVIEW; request.preview_long_edge = 512
-        request.output_target = SONY2FUJI_TARGET_BUFFER; request.output_format = SONY2FUJI_OUTPUT_RGBA8
-        return request
+    static func renderOptions() -> sony2fuji_render_options_v1 {
+        var options = sony2fuji_render_options_v1()
+        options.version = UInt32(SONY2FUJI_RENDER_OPTIONS_V1_VERSION)
+        options.struct_size = UInt32(MemoryLayout<sony2fuji_render_options_v1>.size)
+        options.input_type = SONY2FUJI_INPUT_RAW
+        options.intent = SONY2FUJI_INTENT_PREVIEW
+        options.size_mode = SONY2FUJI_SIZE_NATIVE
+        options.preview_long_edge = 512
+        options.output_target = SONY2FUJI_TARGET_BUFFER
+        options.output_format = SONY2FUJI_OUTPUT_RGBA8
+        options.jpeg_quality = 95
+        return options
     }
-    static func setDisplayInput(_ request: inout sony2fuji_request, _ buffer: sony2fuji_buffer) {
-        request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER
-        request.input_pixels = buffer.data.map(UnsafeRawPointer.init)
-        request.input_width = buffer.width; request.input_height = buffer.height
-        request.input_pixel_format = buffer.pixel_format; request.input_color_space = SONY2FUJI_COLOR_SRGB
+    static func setDisplayInput(_ options: inout sony2fuji_render_options_v1, _ buffer: sony2fuji_buffer) {
+        options.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER
+        options.input_pixels = buffer.data.map(UnsafeRawPointer.init)
+        options.input_width = buffer.width; options.input_height = buffer.height
+        options.input_pixel_format = buffer.pixel_format; options.input_color_space = SONY2FUJI_COLOR_SRGB
+    }
+    static func sessionStateJSON(isRaster: Bool, lutPath: String?) throws -> String {
+        var settings = Adjustments()
+        settings.processing = .c5
+        settings.exposureMode = isRaster ? .sensor : .scene
+        settings.strength = lutPath == nil ? 0 : 1
+        return try settings.sdrSessionStateJSON(isRaster: isRaster, lutPath: lutPath, includeDenoise: false)
     }
     func render(_ draft: LUTCompatibility?) throws -> LUTPreviewFrame {
         if let draft, !draft.supportsPreview(displayInput: displayInput) { throw LUTPreviewError.unsupportedSource }
-        var request = Self.request(), output = sony2fuji_buffer()
+        var options = Self.renderOptions(), output = sony2fuji_buffer()
         defer { sony2fuji_release_buffer(&output) }
-        if displayInput { Self.setDisplayInput(&request, display) }
-        request.lut_strength = draft == nil ? 0 : 1
+        if displayInput { Self.setDisplayInput(&options, display) }
+        let editStateJSON = try Self.sessionStateJSON(isRaster: displayInput, lutPath: draft == nil ? nil : lutURL.path)
         let configuration = try draft?.previewRequest()
         let status = sourceURL.path.withCString { sourcePath in
-            request.input_path = sourcePath
-            return lutURL.path.withCString { lookPath in
-                request.lut_path = draft == nil ? nil : lookPath
+            if !displayInput { options.input_path = sourcePath }
+            return editStateJSON.withCString { stateJSON in
                 if let configuration {
-                    return configuration.withCString { sony2fuji_preview_lut_compatibility(session, &request, $0, &output) }
+                    return configuration.withCString { configJSON in
+                        sony2fuji_preview_lut_compatibility_json(session, &options, stateJSON, configJSON, &output)
+                    }
                 }
-                return sony2fuji_process(session, &request, &output)
+                return sony2fuji_session_render(session, &options, stateJSON, &output, nil)
             }
         }
         guard status == SONY2FUJI_STATUS_OK else { throw LUTPreviewError.failed }

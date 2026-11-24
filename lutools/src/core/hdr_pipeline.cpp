@@ -471,10 +471,10 @@ CameraRawDecodedPair decodeCameraRawInternal(const char* file, const CameraRawDe
             ? spec.temperature >= 2000.0f && spec.temperature <= 50000.0f &&
               spec.tint >= -150.0f && spec.tint <= 150.0f
             : spec.whiteBalance == 0 && spec.temperature == 0.0f && spec.tint == 0.0f;
-        raw.lensCorrection.distortion = (flags & 1u) != 0;
-        raw.lensCorrection.tca = (flags & 2u) != 0;
-        raw.lensCorrection.autoCrop = (flags & 4u) != 0;
-        raw.lensCorrection.vignetting = (flags & 8u) != 0;
+        raw.lensCorrection.distortion = (flags & kHdrCameraLensDistortion) != 0;
+        raw.lensCorrection.tca = (flags & kHdrCameraLensTca) != 0;
+        raw.lensCorrection.autoCrop = (flags & kHdrCameraLensAutoCrop) != 0;
+        raw.lensCorrection.vignetting = (flags & kHdrCameraLensVignetting) != 0;
         if (!validWB || spec.exposureReference > 1 || spec.fbddLevel > 2 || (flags & ~15u) ||
             (!raw.lensCorrection.active() && (flags || spec.lensProfileId))) {
             fail(kHdrReasonInvalidArgument, kHdrFieldCameraDevelopment,

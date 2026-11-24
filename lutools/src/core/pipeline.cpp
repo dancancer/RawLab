@@ -66,6 +66,9 @@ void Pipeline::copyConfigurationFrom(const Pipeline& source) {
     curveApplyToLuminosity_ = source.curveApplyToLuminosity_;
     parametricCurve_ = source.parametricCurve_;
     aiDenoiseBlend_ = source.aiDenoiseBlend_;
+    hasCommittedEditState_ = source.hasCommittedEditState_;
+    committedEditState_ = source.committedEditState_;
+    masterRecipeWb_ = source.masterRecipeWb_;
     outputSharpening_ = source.outputSharpening_;
     rasterRelativeWbActive_ = source.rasterRelativeWbActive_;
     rasterRelativeTemp_ = source.rasterRelativeTemp_;
@@ -502,12 +505,14 @@ RenderStatus Pipeline::setAiDenoiseBlend(float strength) noexcept {
 RenderStatus Pipeline::applyParams(const char* recipeJson) {
     if (!recipeJson || !*recipeJson) return RenderStatus::InvalidArgument;
     try {
-        CanonicalSdrRecipe parsed;
+        CanonicalEditState parsed;
         std::string error;
-        if (!parseCanonicalSdrRecipe(recipeJson, parsed, error, /*allowRasterLensCorrection=*/true)) {
+        if (!parseCanonicalEditState(
+                recipeJson, parsed, error, {RecipeParseMode::SessionState, /*allowRasterLensCorrection=*/true}) ||
+            parsed.isHdr) {
             return RenderStatus::InvalidArgument;
         }
-        return applyParams(parsed);
+        return applyEditState(parsed, /*preserveUnsetAiBlend=*/true);
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
     } catch (...) {
@@ -516,99 +521,171 @@ RenderStatus Pipeline::applyParams(const char* recipeJson) {
 }
 
 RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
+    CanonicalEditState state{};
+    state.isHdr = false;
+    state.schemaVersion = recipe.schemaVersion;
+    state.processingVersion = recipe.processingVersion;
+    state.x3fMode = recipe.x3fMode;
+    state.inputPath = recipe.inputPath;
+    state.rasterInput = recipe.rasterInput;
+    state.outputPath = recipe.outputPath;
+    state.lookPath = recipe.lookPath;
+    state.exposureMode = recipe.exposureMode;
+    state.exposureEv = recipe.exposureEv;
+    state.brightness = recipe.brightness;
+    state.whiteBalanceMode = recipe.whiteBalanceMode;
+    state.temperatureKelvin = recipe.temperatureKelvin;
+    state.tint = recipe.tint;
+    state.lookStrength = recipe.lookStrength;
+    state.contrast = recipe.contrast;
+    state.saturation = recipe.saturation;
+    state.highlights = recipe.highlights;
+    state.shadows = recipe.shadows;
+    state.sCurve = recipe.sCurve;
+    state.toneCurve = recipe.toneCurve;
+    state.channelCurves = recipe.channelCurves;
+    state.curveApplyToLuminosity = recipe.curveApplyToLuminosity;
+    state.parametricCurve = recipe.parametricCurve;
+    state.toneControls = recipe.toneControls;
+    state.atmosphere = recipe.atmosphere;
+    state.colorGrading = recipe.colorGrading;
+    state.sharpening = recipe.sharpening;
+    state.rawNoiseReduction = recipe.rawNoiseReduction;
+    state.chromaDenoise = recipe.chromaDenoise;
+    state.wavelet = recipe.wavelet;
+    state.hsl = recipe.hsl;
+    state.effects = recipe.effects;
+    state.lensDistortion = recipe.lensDistortion;
+    state.lensTca = recipe.lensTca;
+    state.lensVignetting = recipe.lensVignetting;
+    state.lensAutoCrop = recipe.lensAutoCrop;
+    state.lensProfileId = recipe.lensProfileId;
+    state.hasAiDenoiseBlend = recipe.hasAiDenoiseBlend;
+    state.aiDenoiseBlend = recipe.aiDenoiseBlend;
+    state.masterRecipe = recipe.masterRecipe;
+    state.outputFormat = recipe.outputFormat;
+    state.jpegQuality = recipe.jpegQuality;
+    state.outputLongEdge = recipe.outputLongEdge;
+    state.outputSharpening = recipe.outputSharpening;
+    state.geometry = recipe.geometry;
+    return applyEditState(state, /*preserveUnsetAiBlend=*/true);
+}
+
+RenderStatus Pipeline::applyEditState(const CanonicalEditState& state, bool preserveUnsetAiBlend) {
     try {
-        if (!validProcessingVersion(recipe.processingVersion)) {
+        if (state.isHdr) {
             return RenderStatus::InvalidArgument;
         }
-        if (recipe.x3fMode != X3fMode::Legacy && recipe.x3fMode != X3fMode::Normal) {
+        if (!validProcessingVersion(state.processingVersion)) {
             return RenderStatus::InvalidArgument;
         }
-        if (recipe.exposureMode < RawExposureMode::Scene || recipe.exposureMode > RawExposureMode::Sensor) {
+        if (state.x3fMode != X3fMode::Legacy && state.x3fMode != X3fMode::Normal) {
             return RenderStatus::InvalidArgument;
         }
-        if (recipe.rawNoiseReduction < 0 || recipe.rawNoiseReduction > 2) {
+        if (state.exposureMode < RawExposureMode::Scene || state.exposureMode > RawExposureMode::Sensor) {
             return RenderStatus::InvalidArgument;
         }
-        if (recipe.chromaDenoise < 0 || recipe.chromaDenoise > 2) {
+        if (!std::isfinite(state.exposureEv) || std::abs(state.exposureEv) > 20.0f ||
+            !std::isfinite(state.brightness) || state.brightness <= 0.0f ||
+            !std::isfinite(state.contrast) || state.contrast < 0.0f || state.contrast > 2.0f ||
+            !std::isfinite(state.saturation) || state.saturation < 0.0f || state.saturation > 2.0f ||
+            !std::isfinite(state.highlights) || state.highlights < -1.0f || state.highlights > 1.0f ||
+            !std::isfinite(state.shadows) || state.shadows < -1.0f || state.shadows > 1.0f ||
+            !std::isfinite(state.sCurve) || state.sCurve < -1.0f || state.sCurve > 1.0f ||
+            !std::isfinite(state.sharpening) || state.sharpening < 0.0f || state.sharpening > 2.0f ||
+            !std::isfinite(state.lookStrength) || state.lookStrength < 0.0f || state.lookStrength > 2.0f ||
+            !std::isfinite(state.aiDenoiseBlend) || state.aiDenoiseBlend < 0.0f || state.aiDenoiseBlend > 1.0f ||
+            !std::isfinite(state.masterRecipe.strength) || state.masterRecipe.strength < 0.0f || state.masterRecipe.strength > 2.0f ||
+            !std::isfinite(state.masterRecipe.temperatureKelvin) || state.masterRecipe.temperatureKelvin < 2000.0f || state.masterRecipe.temperatureKelvin > 50000.0f ||
+            !std::isfinite(state.masterRecipe.tint) || std::abs(state.masterRecipe.tint) > 150.0f) {
             return RenderStatus::InvalidArgument;
         }
-        if (recipe.chromaDenoise != 0 && !chromaDenoiseAvailable()) {
+        if (state.rawNoiseReduction < 0 || state.rawNoiseReduction > 2) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (state.chromaDenoise < 0 || state.chromaDenoise > 2) {
+            return RenderStatus::InvalidArgument;
+        }
+        if (state.chromaDenoise != 0 && !chromaDenoiseAvailable()) {
             return RenderStatus::Unsupported;
         }
-        WaveletDenoiseOptions wavelet = recipe.wavelet;
-        wavelet.processingVersion = recipe.processingVersion;
+        WaveletDenoiseOptions wavelet = state.wavelet;
+        wavelet.processingVersion = state.processingVersion;
         if (!validWaveletDenoiseOptions(wavelet)) {
             return RenderStatus::InvalidArgument;
         }
         if (wavelet.active() && !waveletDenoiseAvailable()) {
             return RenderStatus::Unsupported;
         }
-        const auto freeCurveEndpoints = recipe.schemaVersion >= 18 ? ToneCurveEndpoints::Free
-            : recipe.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
-        if (!recipe.effects.valid() || !recipe.hsl.valid() || !recipe.toneControls.valid() ||
-            !recipe.atmosphere.valid() || !recipe.colorGrading.valid() || !recipe.parametricCurve.valid() ||
-            recipe.outputSharpening < OutputSharpening::Off || recipe.outputSharpening > OutputSharpening::High) {
+        const auto freeCurveEndpoints = state.schemaVersion >= 18 ? ToneCurveEndpoints::Free
+            : state.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
+        if (!state.effects.valid() || !state.hsl.valid() || !state.toneControls.valid() ||
+            !state.atmosphere.valid() || !state.colorGrading.valid() || !state.parametricCurve.valid() ||
+            state.outputSharpening < OutputSharpening::Off || state.outputSharpening > OutputSharpening::High) {
             return RenderStatus::InvalidArgument;
         }
-        if (!validToneCurve(recipe.toneCurve, freeCurveEndpoints) ||
-            !std::all_of(recipe.channelCurves.begin(), recipe.channelCurves.end(),
+        if (!validToneCurve(state.toneCurve, freeCurveEndpoints) ||
+            !std::all_of(state.channelCurves.begin(), state.channelCurves.end(),
                 [freeCurveEndpoints](const auto& c) { return validToneCurve(c, freeCurveEndpoints); })) {
             return RenderStatus::InvalidArgument;
         }
-        ToneCurve masterCurve(recipe.toneCurve, freeCurveEndpoints);
-        if (masterCurve.custom() && recipe.sCurve != 0.0f) {
+        ToneCurve masterCurve(state.toneCurve, freeCurveEndpoints);
+        if (masterCurve.custom() && state.sCurve != 0.0f) {
             return RenderStatus::InvalidArgument;
         }
         std::array<ToneCurve, 3> channelCurves = {
-            ToneCurve(recipe.channelCurves[0], freeCurveEndpoints),
-            ToneCurve(recipe.channelCurves[1], freeCurveEndpoints),
-            ToneCurve(recipe.channelCurves[2], freeCurveEndpoints)
+            ToneCurve(state.channelCurves[0], freeCurveEndpoints),
+            ToneCurve(state.channelCurves[1], freeCurveEndpoints),
+            ToneCurve(state.channelCurves[2], freeCurveEndpoints)
         };
-        GeometryOptions geometry = recipe.geometry;
+        GeometryOptions geometry = state.geometry;
         if (!geometry.valid()) {
             return RenderStatus::InvalidArgument;
         }
         geometry.crop_width = std::min(geometry.crop_width, 1.0f - geometry.crop_x);
         geometry.crop_height = std::min(geometry.crop_height, 1.0f - geometry.crop_y);
 
-        if (!validProfileId(recipe.lensProfileId)) {
+        if (!validProfileId(state.lensProfileId)) {
             return RenderStatus::InvalidArgument;
         }
         LensCorrectionOptions lens{
-            recipe.lensDistortion, recipe.lensTca, recipe.lensAutoCrop, recipe.lensProfileId, recipe.lensVignetting
+            state.lensDistortion, state.lensTca, state.lensAutoCrop, state.lensProfileId, state.lensVignetting
         };
         if (lens.active() && !LensCorrectionDatabase::available()) {
             return RenderStatus::Unsupported;
         }
 
         // All validations passed; commit atomically without touching runtime/hardware/metadata config.
-        if (processingVersion_ != recipe.processingVersion) {
+        if (processingVersion_ != state.processingVersion) {
             dehazeAnalysis_ = {};
         }
-        processingVersion_ = recipe.processingVersion;
-        x3fMode_ = recipe.x3fMode;
+        processingVersion_ = state.processingVersion;
+        x3fMode_ = state.x3fMode;
         x3fError_.clear();
         unsupportedReason_ = UnsupportedReason::None;
         gpuFallbackReason_ = GpuFallbackReason::None;
         gpuErrorDetail_.clear();
-        rawExposureMode_ = recipe.exposureMode;
-        rawNoiseReduction_ = recipe.rawNoiseReduction;
-        chromaDenoise_ = recipe.chromaDenoise;
+        rawExposureMode_ = state.exposureMode;
+        rawNoiseReduction_ = state.rawNoiseReduction;
+        chromaDenoise_ = state.chromaDenoise;
         waveletDenoise_ = wavelet;
-        photoEffects_ = recipe.effects;
-        hsl_ = recipe.hsl;
-        toneControls_ = recipe.toneControls;
-        atmosphere_ = recipe.atmosphere;
-        colorGrading_ = recipe.colorGrading;
+        photoEffects_ = state.effects;
+        hsl_ = state.hsl;
+        toneControls_ = state.toneControls;
+        atmosphere_ = state.atmosphere;
+        colorGrading_ = state.colorGrading;
         toneCurve_ = std::move(masterCurve);
         channelCurves_ = std::move(channelCurves);
-        curveApplyToLuminosity_ = recipe.curveApplyToLuminosity;
-        parametricCurve_ = recipe.parametricCurve;
-        outputSharpening_ = recipe.outputSharpening;
-        if (recipe.rasterInput && recipe.whiteBalanceMode == RenderWhiteBalanceMode::Relative) {
+        curveApplyToLuminosity_ = state.curveApplyToLuminosity;
+        parametricCurve_ = state.parametricCurve;
+        if (!preserveUnsetAiBlend || state.hasAiDenoiseBlend) {
+            aiDenoiseBlend_ = state.aiDenoiseBlend;
+        }
+        outputSharpening_ = state.outputSharpening;
+        if (state.rasterInput && state.whiteBalanceMode == RenderWhiteBalanceMode::Relative) {
             rasterRelativeWbActive_ = true;
-            rasterRelativeTemp_ = recipe.temperatureKelvin;
-            rasterRelativeTint_ = recipe.tint;
+            rasterRelativeTemp_ = state.temperatureKelvin;
+            rasterRelativeTint_ = state.tint;
         } else {
             rasterRelativeWbActive_ = false;
             rasterRelativeTemp_ = 6500.0f;
@@ -617,6 +694,14 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
         geometry_ = geometry;
         geometryWidth_ = geometryHeight_ = 0;
         lensCorrection_ = std::move(lens);
+        masterRecipeWb_ = state.masterRecipe;
+        committedEditState_ = state;
+        committedEditState_.aiDenoiseBlend = aiDenoiseBlend_;
+        if (committedEditState_.whiteBalanceMode == RenderWhiteBalanceMode::Camera) {
+            committedEditState_.temperatureKelvin = 6500.0f;
+            committedEditState_.tint = 0.0f;
+        }
+        hasCommittedEditState_ = true;
         return RenderStatus::Ok;
     } catch (const std::bad_alloc&) {
         return RenderStatus::OutOfMemory;
@@ -684,6 +769,271 @@ RenderStatus Pipeline::processToImageData(const RenderParams& params, ImageData&
     } catch (...) {
         return recordAiError(RenderStatus::ProcessingError, "Unknown native AI failure");
     }
+}
+
+RenderStatus Pipeline::resolveStateWhiteBalanceIfNeeded(RenderParams& params) {
+    if (!masterRecipeWb_.active || params.inputType != RenderInputType::Raw) {
+        return RenderStatus::Ok;
+    }
+    RecipeWbRequest wbReq{};
+    wbReq.inputPath = params.inputPath;
+    wbReq.processingVersion = processingVersion_;
+    wbReq.x3fMode = x3fMode_;
+    wbReq.exposureMode = rawExposureMode_;
+    wbReq.recipeActive = masterRecipeWb_.active;
+    wbReq.recipeStrength = masterRecipeWb_.strength;
+    wbReq.customWb = masterRecipeWb_.customWb;
+    wbReq.temperature = masterRecipeWb_.temperatureKelvin;
+    wbReq.tint = masterRecipeWb_.tint;
+
+    RecipeWbResult wbRes{};
+    const RenderStatus status = resolveRecipeWhiteBalance(wbReq, wbRes);
+    if (status == RenderStatus::Ok) {
+        params.wbMode = wbRes.wbMode;
+        if (wbRes.wbMode == RenderWhiteBalanceMode::Camera) {
+            params.temperature = 6500.0f;
+            params.tint = 0.0f;
+        } else {
+            params.temperature = wbRes.temperature;
+            params.tint = wbRes.tint;
+        }
+        return RenderStatus::Ok;
+    }
+    if (status == RenderStatus::Unsupported &&
+        masterRecipeWb_.uncalibratedFallback == UncalibratedWbPolicy::FallbackCamera) {
+        params.wbMode = RenderWhiteBalanceMode::Camera;
+        params.temperature = 6500.0f;
+        params.tint = 0.0f;
+        return RenderStatus::Ok;
+    }
+    return status;
+}
+
+RenderStatus Pipeline::prepareStatefulParams(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    RenderParams& outParams,
+    bool resolveMasterWb
+) {
+    if (options.viewportRoi.enabled) {
+        const auto& roi = options.viewportRoi;
+        if (!std::isfinite(roi.normX0) || !std::isfinite(roi.normY0) ||
+            !std::isfinite(roi.normX1) || !std::isfinite(roi.normY1) ||
+            roi.normX0 < 0.0 || roi.normY0 < 0.0 ||
+            roi.normX1 > 1.0 || roi.normY1 > 1.0 ||
+            roi.normX0 >= roi.normX1 || roi.normY0 >= roi.normY1) {
+            return RenderStatus::InvalidArgument;
+        }
+    }
+    if (editStateJson != nullptr) {
+        if (!*editStateJson) {
+            return RenderStatus::InvalidArgument;
+        }
+        CanonicalEditState parsed;
+        std::string error;
+        if (!parseCanonicalEditState(
+                editStateJson, parsed, error, {RecipeParseMode::SessionState, /*allowRasterLensCorrection=*/true}) ||
+            parsed.isHdr) {
+            return RenderStatus::InvalidArgument;
+        }
+        const RenderStatus applyStatus = applyEditState(parsed, /*preserveUnsetAiBlend=*/false);
+        if (applyStatus != RenderStatus::Ok) {
+            return applyStatus;
+        }
+    }
+
+    outParams = hasCommittedEditState_ ? committedEditState_.toRenderParams() : RenderParams{};
+    outParams.inputType = options.inputType;
+    outParams.inputPixelFormat = options.inputPixelFormat;
+    if (!options.inputPath.empty()) {
+        outParams.inputPath = options.inputPath;
+    } else if (options.inputType == RenderInputType::Raw && hasCommittedEditState_) {
+        outParams.inputPath = committedEditState_.inputPath;
+    } else {
+        outParams.inputPath.clear();
+    }
+    outParams.inputPixels = options.inputPixels;
+    outParams.inputWidth = options.inputWidth;
+    outParams.inputHeight = options.inputHeight;
+    outParams.inputColorSpace = options.inputColorSpace;
+    outParams.inputIsLinear = options.inputIsLinear;
+
+    outParams.intent = options.intent;
+    outParams.sizeMode = options.sizeMode;
+    outParams.targetWidth = options.targetWidth;
+    outParams.targetHeight = options.targetHeight;
+    outParams.longEdge = options.longEdge;
+    outParams.shortEdge = options.shortEdge;
+    outParams.previewLongEdge = options.previewLongEdge;
+    outParams.outputTarget = options.outputTarget;
+    outParams.outputFormat = options.outputFormat;
+    if (!options.outputPath.empty()) {
+        outParams.outputPath = options.outputPath;
+    } else if (options.outputTarget == RenderOutputTarget::File && hasCommittedEditState_) {
+        outParams.outputPath = committedEditState_.outputPath;
+    } else {
+        outParams.outputPath.clear();
+    }
+    outParams.jpegQuality = options.jpegQuality != 0
+        ? options.jpegQuality
+        : (hasCommittedEditState_ ? committedEditState_.jpegQuality : 95u);
+
+    if (resolveMasterWb) {
+        const RenderStatus wbStatus = resolveStateWhiteBalanceIfNeeded(outParams);
+        if (wbStatus != RenderStatus::Ok) {
+            return wbStatus;
+        }
+    }
+    return RenderStatus::Ok;
+}
+
+namespace {
+
+struct TransientPreviewGuard {
+    Pipeline& pipeline;
+    bool& interactiveRef;
+    bool& viewportRef;
+    Pipeline::ViewportRoiConfig& roiRef;
+    bool prevInteractive;
+    bool prevViewport;
+    Pipeline::ViewportRoiConfig prevRoi;
+
+    TransientPreviewGuard(
+        Pipeline& p,
+        bool& iRef,
+        bool& vRef,
+        Pipeline::ViewportRoiConfig& rRef,
+        const Pipeline::RenderExecutionOptions& opts
+    )
+        : pipeline(p),
+          interactiveRef(iRef),
+          viewportRef(vRef),
+          roiRef(rRef),
+          prevInteractive(iRef),
+          prevViewport(vRef),
+          prevRoi(rRef) {
+        interactiveRef = opts.interactivePreview;
+        viewportRef = opts.viewportPreview;
+        roiRef = opts.viewportRoi;
+    }
+
+    ~TransientPreviewGuard() {
+        interactiveRef = prevInteractive;
+        viewportRef = prevViewport;
+        roiRef = prevRoi;
+    }
+};
+
+} // namespace
+
+RenderStatus Pipeline::renderWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    OwnedPixelBuffer* outBuffer,
+    ViewportRoiResult* outRoi
+) {
+    if (outRoi) *outRoi = {};
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    TransientPreviewGuard guard(*this, interactivePreview_, viewportPreview_, viewportRoi_, options);
+    const RenderStatus status = process(params, outBuffer);
+    if (outRoi) {
+        *outRoi = viewportRoiResult_;
+    }
+    return status;
+}
+
+RenderStatus Pipeline::renderToImageDataWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    ImageData& outImage
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    TransientPreviewGuard guard(*this, interactivePreview_, viewportPreview_, viewportRoi_, options);
+    return processToImageData(params, outImage);
+}
+
+RenderStatus Pipeline::createHslProbeWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    uint64_t sourceRevision,
+    uint64_t requestRevision,
+    HslProbeData& outProbe
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    TransientPreviewGuard guard(*this, interactivePreview_, viewportPreview_, viewportRoi_, options);
+    return createHslProbe(params, sourceRevision, requestRevision, outProbe);
+}
+
+RenderStatus Pipeline::estimateAutoExposureWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    float& outExposureEv
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    return estimateAutoExposure(params, outExposureEv);
+}
+
+RenderStatus Pipeline::sampleWbProbeWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    const WbProbeQuery& query,
+    WbProbeResult& outResult
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    return sampleWbProbe(params, query, outResult);
+}
+
+RenderStatus Pipeline::prepareAiWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    const AiProgressCallback& progress
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    return prepareAi(params, progress);
+}
+
+RenderStatus Pipeline::previewLutCompatibilityWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    const char* configuration,
+    OwnedPixelBuffer& outBuffer
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    TransientPreviewGuard guard(*this, interactivePreview_, viewportPreview_, viewportRoi_, options);
+    return previewLutCompatibility(params, configuration, outBuffer);
+}
+
+RenderStatus Pipeline::migrateProcessingWithOptions(
+    const RenderExecutionOptions& options,
+    const char* editStateJson,
+    ProcessingMigrationResult& outResult
+) {
+    RenderParams params;
+    const RenderStatus prep = prepareStatefulParams(options, editStateJson, params);
+    if (prep != RenderStatus::Ok) return prep;
+
+    return migrateProcessing(params, outResult);
 }
 
 RenderStatus Pipeline::previewLutCompatibility(

@@ -390,7 +390,12 @@ class SonyCameraConnectionTest {
 
             advanceToWifiStarting(conn, platform, gatt)
             platform.scanResultsList = listOf(
-                SonyCameraConnection.WifiApResult("DIRECT-x123:ILCE-7CM2", "02:11:22:33:44:55", platform.elapsedMicros() + 3_000_000L),
+                SonyCameraConnection.WifiApResult(
+                    "DIRECT-x123:ILCE-7CM2",
+                    "02:11:22:33:44:55",
+                    platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
             )
             deliverCredentials(platform, gatt)
             assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
@@ -413,7 +418,12 @@ class SonyCameraConnectionTest {
 
             advanceToWifiStarting(conn, platform, gatt)
             platform.scanResultsList = listOf(
-                SonyCameraConnection.WifiApResult("DIRECT-x123:ILCE-7CM2", "02:11:22:33:44:55", platform.elapsedMicros() + 3_000_000L),
+                SonyCameraConnection.WifiApResult(
+                    "DIRECT-x123:ILCE-7CM2",
+                    "02:11:22:33:44:55",
+                    platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
             )
             deliverCredentials(platform, gatt)
             platform.gatewayForProperties = { null }
@@ -438,7 +448,12 @@ class SonyCameraConnectionTest {
 
             advanceToWifiStarting(conn, platform, gatt)
             platform.scanResultsList = listOf(
-                SonyCameraConnection.WifiApResult("DIRECT-x123:ILCE-7CM2", "02:11:22:33:44:55", platform.elapsedMicros() + 3_000_000L),
+                SonyCameraConnection.WifiApResult(
+                    "DIRECT-x123:ILCE-7CM2",
+                    "02:11:22:33:44:55",
+                    platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
             )
             deliverCredentials(platform, gatt)
             val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
@@ -461,7 +476,12 @@ class SonyCameraConnectionTest {
 
             advanceToWifiStarting(conn, platform, gatt)
             platform.scanResultsList = listOf(
-                SonyCameraConnection.WifiApResult("DIRECT-x123:ILCE-7CM2", "02:11:22:33:44:55", platform.elapsedMicros() + 3_000_000L),
+                SonyCameraConnection.WifiApResult(
+                    "DIRECT-x123:ILCE-7CM2",
+                    "02:11:22:33:44:55",
+                    platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
             )
             deliverCredentials(platform, gatt)
             platform.activeWifiCallbacks!!.onUnavailable()
@@ -479,7 +499,12 @@ class SonyCameraConnectionTest {
 
             advanceToWifiStarting(conn, platform, gatt)
             platform.scanResultsList = listOf(
-                SonyCameraConnection.WifiApResult("DIRECT-x123:ILCE-7CM2", "02:11:22:33:44:55", platform.elapsedMicros() + 3_000_000L),
+                SonyCameraConnection.WifiApResult(
+                    "DIRECT-x123:ILCE-7CM2",
+                    "02:11:22:33:44:55",
+                    platform.elapsedMicros() + 3_000_000L,
+                    capabilities = "[WPA2-PSK-CCMP][ESS]",
+                ),
             )
             deliverCredentials(platform, gatt)
             conn.close()
@@ -816,6 +841,30 @@ class SonyCameraConnectionTest {
             platform.advanceBy(4_000L)
             assertNull(platform.requestedBssid)
             assertEquals(SonyCameraConnection.WifiSecurity.WPA3, platform.requestedSecurity)
+        }
+
+        // 5. Unknown/blank scan capabilities fall back once to WPA3 onUnavailable(), then fail on second onUnavailable().
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val (conn, _) = createConnection(platform, listener, wifiScanFallbackMs = 4_000L)
+            val gatt = FakeGatt()
+            advanceToWifiStarting(conn, platform, gatt)
+            platform.scanResultsList = emptyList()
+            deliverCredentials(platform, gatt)
+            platform.advanceBy(4_000L)
+            assertEquals(listOf(SonyCameraConnection.WifiSecurity.WPA2), platform.requestedSecurities)
+            platform.activeWifiCallbacks!!.onUnavailable()
+            platform.drain()
+            assertEquals(
+                listOf(SonyCameraConnection.WifiSecurity.WPA2, SonyCameraConnection.WifiSecurity.WPA3),
+                platform.requestedSecurities,
+            )
+            assertTrue(listener.failures.isEmpty())
+
+            platform.activeWifiCallbacks!!.onUnavailable()
+            platform.drain()
+            assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
         }
     }
 

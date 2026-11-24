@@ -47,7 +47,7 @@ internal sealed class AdjustmentPresetNameDialog : Window
             catch (Exception failure) { error.Text = AdjustmentPresetPresentation.Error(failure); }
             if (error.Text.Length == 0) DialogResult = true;
         });
-        confirm.IsDefault = true; actions.Children.Add(confirm);
+        confirm.IsDefault = true; confirm.SetResourceReference(StyleProperty, "AccentButton"); actions.Children.Add(confirm);
         void Update() {
             confirm.IsEnabled = AdjustmentPreset.NormalizeName(name.Text).Length > 0 && (!includeScope || scope.HasSelection);
             Height = includeScope ? scope.IsCustom ? 720 : preview != null ? 600 : 420 : 300;
@@ -70,7 +70,9 @@ internal sealed class AdjustmentPresetConfirmationDialog : Window
         var cancel = AdjustmentPresetPresentation.Button("取消", "preset.confirm.cancel", Close); cancel.IsCancel = true; actions.Children.Add(cancel);
         if (overwrite) actions.Children.Add(AdjustmentPresetPresentation.Button("另存", "preset.confirm.save-as", () => { Choice = PresetConfirmationChoice.SaveAs; DialogResult = false; }));
         var confirm = AdjustmentPresetPresentation.Button(overwrite ? "覆盖" : "删除", "preset.confirm.commit", () => { Choice = PresetConfirmationChoice.Confirm; DialogResult = true; });
-        confirm.IsDefault = true; actions.Children.Add(confirm);
+        confirm.IsDefault = true;
+        if (overwrite) confirm.SetResourceReference(StyleProperty, "AccentButton");
+        actions.Children.Add(confirm);
     }
     internal AdjustmentPresetConfirmationDialog(Window owner, AdjustmentPreset preset, bool overwrite)
         : this(owner, preset.Name, overwrite) { }

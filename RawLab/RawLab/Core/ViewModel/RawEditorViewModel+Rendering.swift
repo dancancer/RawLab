@@ -6,7 +6,7 @@ import UIKit
 extension RawEditorViewModel {
     func preflightCameraHDR(settings: RawSettings, completion: @escaping (Result<Void, Error>) -> Void) {
         guard sourceSupportsCameraHDR, settings.isHDREditing, let sourceFile else {
-            completion(.failure(HDRRequestError.invalidSettings))
+            completion(.failure(HDRNativeError.invalidSettings))
             return
         }
         let sourceRevision = self.sourceRevision

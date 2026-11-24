@@ -1,13 +1,24 @@
 using System.Runtime.InteropServices;
 using RawLab.Windows;
 
+internal static class NativeTestResolver
+{
+    private static int registered;
+
+    internal static void EnsureRegistered()
+    {
+        if (Interlocked.Exchange(ref registered, 1) != 0) return;
+        if (Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_HDR_LIBRARY") is { Length: > 0 } library)
+            NativeLibrary.SetDllImportResolver(typeof(Native).Assembly,
+                (name, _, _) => name == "sony2fuji.dll" ? NativeLibrary.Load(library) : IntPtr.Zero);
+    }
+}
+
 internal static class HDRAssetImportChecks
 {
     internal static void Run()
     {
-        if (Environment.GetEnvironmentVariable("RAWLAB_TEST_NATIVE_HDR_LIBRARY") is { Length: > 0 } library)
-            NativeLibrary.SetDllImportResolver(typeof(Native).Assembly,
-                (name, _, _) => name == "sony2fuji.dll" ? NativeLibrary.Load(library) : IntPtr.Zero);
+        NativeTestResolver.EnsureRegistered();
         var root = Path.Combine(Path.GetTempPath(), "rawlab-hdr-import-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try {

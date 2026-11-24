@@ -38,6 +38,7 @@ internal static class CanonicalEditRecipeChecks
 
         var rawJson = CanonicalEditRecipe.Encode(rawSettings, isRaster: false);
         var rawRoot = JsonNode.Parse(rawJson)!.AsObject();
+        Check(rawRoot["input"]!["path"] == null, "Strict canonical recipe omits synthetic file path placeholders");
         Check(rawRoot["schema_version"]!.GetValue<int>() == 7, "RAW canonical recipe uses schema_version 7");
         Check(rawRoot["x3f_mode"]!.GetValue<string>() == "legacy", "RAW canonical recipe preserves x3f_mode");
         Check(rawRoot["processing"]!["version"]!.GetValue<int>() == 2, "RAW canonical recipe uses integer processing version");
@@ -66,9 +67,49 @@ internal static class CanonicalEditRecipeChecks
         Check(!rasterRoot["edits"]!["lens_correction"]!.AsObject().ContainsKey("profile_id"), "Automatic lens omits profile_id");
         Check(rasterRoot["edits"]!["denoise"]!["chroma_mode"]!.GetValue<int>() == 0, "Disabled includeDenoise zeroes chroma_mode");
 
-        var procOnly = JsonNode.Parse(CanonicalEditRecipe.ProcessingOnlyJson(3))!.AsObject();
-        Check(procOnly["schema_version"]!.GetValue<int>() == 5, "Processing-only helper uses schema_version 5");
-        Check(procOnly["processing"]!["version"]!.GetValue<int>() == 3, "Processing-only helper preserves version");
+        var procOnly = JsonNode.Parse(CanonicalEditRecipe.ProcessingStateJson(3, "scene"))!.AsObject();
+        Check(procOnly["processing"]!["version"]!.GetValue<int>() == 3, "Processing-state helper preserves version");
+        Check(procOnly["edits"]!["exposure"]!["mode"]!.GetValue<string>() == "scene" && !procOnly.ContainsKey("input"),
+            "Processing-state helper preserves exposure mode without synthetic input");
+
+        var compatPreview = JsonNode.Parse(CanonicalEditRecipe.CompatibilityPreviewStateJson(2, "scene", "look.cube", 0.75))!.AsObject();
+        Check(compatPreview["edits"]!["look"]!["path"]!.GetValue<string>() == "look.cube" &&
+              compatPreview["edits"]!["look"]!["strength"]!.GetValue<double>() == 0.75,
+            "Compatibility preview helper serializes look path and strength");
+
+        var recipeState = new Adjustments { AIDenoiseEnabled = true, AIDenoiseStrength = 40 };
+        recipeState.ApplyMasterRecipe(MasterRecipe.All[0]);
+        recipeState.Set(Parameter.Strength, 0.8);
+        recipeState.Set(Parameter.Temperature, 5400);
+        recipeState.Set(Parameter.Tint, 12);
+        var stateJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(recipeState, isRaster: false, lutPath: "film.cube"))!.AsObject();
+        Check(stateJson["edits"]!["master_recipe"]!["active"]!.GetValue<bool>() &&
+              Math.Abs(stateJson["edits"]!["master_recipe"]!["strength"]!.GetValue<double>() - 0.8) < 1e-6 &&
+              stateJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 5400 &&
+              Math.Abs(stateJson["edits"]!["ai_denoise_blend"]!.GetValue<double>() - 0.4) < 1e-6 &&
+              stateJson["edits"]!["look"]!["path"]!.GetValue<string>() == "film.cube",
+            "Session state encoder populates master_recipe, ai_denoise_blend, and look path");
+
+        var zeroStrengthRecipe = new Adjustments();
+        zeroStrengthRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        zeroStrengthRecipe.ResolveWhiteBalance((6955, 99));
+        zeroStrengthRecipe.Set(Parameter.Strength, 0.0);
+        var zeroStrengthJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(zeroStrengthRecipe, isRaster: false))!.AsObject();
+        Check(!zeroStrengthJson["edits"]!["master_recipe"]!["custom_wb"]!.GetValue<bool>() &&
+              zeroStrengthJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 6500 &&
+              zeroStrengthJson["edits"]!["master_recipe"]!["tint"]!.GetValue<double>() == 0,
+            "Zero-strength Camera WB master_recipe normalizes temperature_kelvin=6500 and tint=0");
+
+        var zeroTintRecipe = new Adjustments();
+        zeroTintRecipe.ApplyMasterRecipe(MasterRecipe.All[0]);
+        zeroTintRecipe.ResolveWhiteBalance((6955, 99));
+        zeroTintRecipe.SetRelativeWhiteBalance(6955, 0);
+        zeroTintRecipe.ResolveWhiteBalance((6955, 99));
+        var zeroTintJson = JsonNode.Parse(CanonicalEditRecipe.EncodeState(zeroTintRecipe, isRaster: false))!.AsObject();
+        Check(!zeroTintJson["edits"]!["master_recipe"]!["custom_wb"]!.GetValue<bool>() &&
+              zeroTintJson["edits"]!["master_recipe"]!["temperature_kelvin"]!.GetValue<double>() == 6500 &&
+              zeroTintJson["edits"]!["master_recipe"]!["tint"]!.GetValue<double>() == 0,
+            "Zero-tint Camera WB master_recipe normalizes temperature_kelvin=6500 and tint=0");
 
         var unpinnedMaster = new Adjustments
         {
@@ -117,5 +158,113 @@ internal static class CanonicalEditRecipeChecks
               gradingV2Json["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 75 &&
               gradingV2Json["edits"]!["color_grading"]!["balance"]!.GetValue<double>() == -20,
             "CanonicalEditRecipe encodes Color Grading v2 global, luminance, blending, and balance under schema_version 17");
+
+        var masterRecipe = MasterRecipe.All.First(recipe => recipe.TintDelta != 0);
+        var masterTwo = new Adjustments();
+        masterTwo.ApplyMasterRecipe(masterRecipe);
+        masterTwo.Set(Parameter.Strength, 2.0);
+        masterTwo.ResolveWhiteBalance((2000, -150));
+        var masterTwoRequest = masterTwo.Request("fixture.dng", masterRecipe.LutPath, 0, "out.png", 128);
+        var masterTwoState = JsonNode.Parse(CanonicalEditRecipe.EncodeState(masterTwo, isRaster: false, lutPath: masterRecipe.LutPath))!.AsObject();
+        var canonicalContrast = (float)masterTwoState["edits"]!["tone"]!["contrast"]!.GetValue<double>();
+        var canonicalSaturation = (float)masterTwoState["edits"]!["tone"]!["saturation"]!.GetValue<double>();
+        Check(BitConverter.SingleToInt32Bits(masterTwoRequest.Contrast) == BitConverter.SingleToInt32Bits(canonicalContrast) &&
+              BitConverter.SingleToInt32Bits(masterTwoRequest.Saturation) == BitConverter.SingleToInt32Bits(canonicalSaturation),
+            "Adjustments.Request Contrast and Saturation match CanonicalEditRecipe.EncodeState bit-for-bit at master strength 2.0");
+
+        var contrastParity = masterTwo.Clone();
+        contrastParity.Set(Parameter.Contrast, 0.92);
+        var contrastParityRequest = contrastParity.Request("fixture.dng", masterRecipe.LutPath, 0, "out.png", 128);
+        var contrastParityState = JsonNode.Parse(CanonicalEditRecipe.EncodeState(contrastParity, isRaster: false, lutPath: masterRecipe.LutPath))!.AsObject();
+        var canonicalContrast92 = (float)contrastParityState["edits"]!["tone"]!["contrast"]!.GetValue<double>();
+        Check(BitConverter.SingleToInt32Bits(contrastParityRequest.Contrast) == BitConverter.SingleToInt32Bits(canonicalContrast92),
+            "Adjustments.Request Contrast matches CanonicalEditRecipe.EncodeState bit-for-bit without float addition 1-ULP drift");
+
+        var coreClamp = new Adjustments();
+        coreClamp.ApplyMasterRecipe(masterRecipe);
+        coreClamp.Set(Parameter.Strength, 2.0);
+        coreClamp.Set(Parameter.Contrast, 2.0);
+        coreClamp.Set(Parameter.Saturation, 0.0);
+        coreClamp.Set(Parameter.Highlights, -1.0);
+        coreClamp.Set(Parameter.Shadows, -1.0);
+        coreClamp.Set(Parameter.ToneCurve, 1.0);
+        coreClamp.Set(Parameter.Sharpening, 2.0);
+        var coreClampState = JsonNode.Parse(CanonicalEditRecipe.EncodeState(coreClamp, isRaster: false, lutPath: masterRecipe.LutPath))!.AsObject();
+        var coreClampTone = coreClampState["edits"]!["tone"]!.AsObject();
+        Check(coreClampTone["contrast"]!.GetValue<double>() == 2.0 &&
+              coreClampTone["saturation"]!.GetValue<double>() == 0.0 &&
+              coreClampTone["highlights"]!.GetValue<double>() == -1.0 &&
+              coreClampTone["shadows"]!.GetValue<double>() == -1.0 &&
+              coreClampTone["s_curve"]!.GetValue<double>() == 0.0 &&
+              coreClampState["edits"]!["detail"]!["sharpening"]!.GetValue<double>() == 2.0 &&
+              coreClampState["edits"]!["look"]!["strength"]!.GetValue<double>() == 2.0 &&
+              coreClampState["edits"]!["master_recipe"]!["strength"]!.GetValue<double>() == 2.0,
+            "CanonicalEditRecipe.EncodeState clamps master-recipe-scaled Contrast, Saturation, Highlights, and Shadows to canonical bounds (core-clamp)");
+
+        var coreClampOpposite = new Adjustments();
+        coreClampOpposite.ApplyMasterRecipe(masterRecipe);
+        coreClampOpposite.Curve = new ToneCurveSettings();
+        coreClampOpposite.Set(Parameter.Strength, 2.0);
+        coreClampOpposite.Set(Parameter.Contrast, 0.0);
+        coreClampOpposite.Set(Parameter.Saturation, 2.0);
+        coreClampOpposite.Set(Parameter.Highlights, 1.0);
+        coreClampOpposite.Set(Parameter.Shadows, 1.0);
+        coreClampOpposite.Set(Parameter.ToneCurve, -0.8);
+        coreClampOpposite.Set(Parameter.Sharpening, 2.0);
+        var oppositeTone = JsonNode.Parse(CanonicalEditRecipe.EncodeState(coreClampOpposite, isRaster: false, lutPath: masterRecipe.LutPath))!["edits"]!["tone"]!.AsObject();
+        Check(oppositeTone["contrast"]!.GetValue<double>() == 0.0 &&
+              oppositeTone["saturation"]!.GetValue<double>() == 2.0 &&
+              oppositeTone["highlights"]!.GetValue<double>() == 1.0 &&
+              oppositeTone["shadows"]!.GetValue<double>() == 1.0 &&
+              oppositeTone["s_curve"]!.GetValue<double>() == -1.0,
+            "CanonicalEditRecipe.EncodeState clamps opposite master-recipe-scaled tone extremes and legacy s_curve");
+
+        foreach (var cameraVersion in new[] { 1, 2, 3 })
+        {
+            var cameraInfo = new HDRSourceInfo(HDRProbeState.Supported, 100, 80, 1, HDRNative.ContainerCameraRaw,
+                0, HDRNative.ColorSrgb, 0, HDRNative.HeadroomUnknown, new byte[32])
+            {
+                CameraProcessingVersion = cameraVersion
+            };
+            var defaultCameraJson = JsonNode.Parse(HDRNative.BuildCameraRawDecodeJson(cameraInfo, null, cameraAI: false))!.AsObject();
+            Check(defaultCameraJson["camera_development"]!["processing_version"]!.GetValue<int>() == cameraVersion &&
+                  defaultCameraJson["camera_development"]!["wb_mode"]!.GetValue<string>() == "as_shot" &&
+                  defaultCameraJson["camera_development"]!["fbdd_level"]!.GetValue<int>() == 0 &&
+                  !defaultCameraJson["camera_development"]!["use_ai"]!.GetValue<bool>(),
+                "Default camera RAW HDR decode JSON preserves CameraProcessingVersion " + cameraVersion);
+
+            var editedCameraJson = JsonNode.Parse(HDRNative.BuildCameraRawDecodeJson(cameraInfo, new HDRCameraDevelopmentSettings(FbddLevel: 2), cameraAI: false))!.AsObject();
+            Check(editedCameraJson["camera_development"]!["processing_version"]!.GetValue<int>() == cameraVersion &&
+                  editedCameraJson["camera_development"]!["fbdd_level"]!.GetValue<int>() == 2,
+                "Edited camera RAW HDR decode JSON preserves CameraProcessingVersion " + cameraVersion);
+        }
+        var aiBlockedThrown = false;
+        try
+        {
+            var cameraInfoV3 = new HDRSourceInfo(HDRProbeState.Supported, 100, 80, 1, HDRNative.ContainerCameraRaw,
+                0, HDRNative.ColorSrgb, 0, HDRNative.HeadroomUnknown, new byte[32]);
+            _ = HDRNative.BuildCameraRawDecodeJson(cameraInfoV3, new HDRCameraDevelopmentSettings(FbddLevel: 1), cameraAI: true);
+        }
+        catch (HDRSourceException ex) when (ex.Reason == HDRNative.ReasonCameraAI)
+        {
+            aiBlockedThrown = true;
+        }
+        Check(aiBlockedThrown, "Camera RAW HDR decode JSON still rejects AI when FBDD is active");
+
+        var neutralHdrV9 = JsonNode.Parse(new HDRSettings().ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
+        var parametricHdrV9 = JsonNode.Parse(new HDRSettings().WithTone(new HDRToneSettings
+        {
+            Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0), new(1, 1)],
+                parametric: new ToneCurveParametric(Shadows: 15))
+        }).ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
+        Check(neutralHdrV9["schema_version"]!.GetValue<int>() == 16 &&
+              neutralHdrV9["processing"]!["version"]!.GetValue<int>() == 9 &&
+              neutralHdrV9["output"]!["output_sharpening"]!.GetValue<string>() == "high" &&
+              neutralHdrV9["edits"]!["tone"]!["curve"]!["parametric"] == null &&
+              parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["shadows"]!.GetValue<double>() == 15 &&
+              Math.Abs(parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["split_shadow"]!.GetValue<double>() - 0.25) < 1e-6 &&
+              Math.Abs(parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["split_midtone"]!.GetValue<double>() - 0.50) < 1e-6 &&
+              Math.Abs(parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["split_highlight"]!.GetValue<double>() - 0.75) < 1e-6,
+            "HDR v9 canonical JSON omits default parametric object and populates parametric splits when active");
     }
 }

@@ -28,26 +28,42 @@ final class HDRPresentation: HDRDisplayImage, HDRLinearDisplayImage {
 
     static func makeSDRImage(_ image: HDRImage) throws -> CGImage {
         try image.withPair { pair in
-            let buffer=pair.pointee.sdr
-            guard let pointer=buffer.data else { throw HDRDisplayFailure.invalidBuffer }
-            let values=pointer.assumingMemoryBound(to:Float.self)
-            var data=Data(count:image.width*image.height*4)
-            data.withUnsafeMutableBytes { raw in
-                let out=raw.bindMemory(to:UInt8.self)
-                for y in 0..<image.height { for x in 0..<image.width {
-                    let input=y*Int(buffer.stride_bytes)/4+x*3, output=(y*image.width+x)*4
-                    for c in 0..<3 {
-                        let v=min(1,max(0,values[input+c]))
-                        let encoded=v<=0.0031308 ? 12.92*v : 1.055*pow(v,1/2.4)-0.055
-                        out[output+c]=UInt8(min(255,max(0,(encoded*255).rounded())))
-                    }
-                    out[output+3]=255
-                } }
+            var sdr = pair.pointee.sdr
+            guard sdr.data != nil, sdr.width > 0, sdr.height > 0,
+                  sdr.pixel_format == SONY2FUJI_HDR_RGB32F_LINEAR,
+                  sdr.color_encoding == SONY2FUJI_HDR_LINEAR_SRGB else {
+                throw HDRDisplayFailure.invalidBuffer
             }
-            guard let color=CGColorSpace(name:CGColorSpace.sRGB),let provider=CGDataProvider(data:data as CFData),
-                  let cg=CGImage(width:image.width,height:image.height,bitsPerComponent:8,bitsPerPixel:32,
-                    bytesPerRow:image.width*4,space:color,bitmapInfo:CGBitmapInfo(rawValue:CGImageAlphaInfo.last.rawValue),
-                    provider:provider,decode:nil,shouldInterpolate:true,intent:.defaultIntent) else {
+            var encoded = sony2fuji_buffer()
+            let status = sony2fuji_hdr_encode_rgba8(&sdr, &encoded)
+            guard status == SONY2FUJI_STATUS_OK else {
+                sony2fuji_release_buffer(&encoded)
+                throw status == SONY2FUJI_STATUS_INVALID_ARGUMENT
+                    ? HDRDisplayFailure.nonfinite
+                    : HDRDisplayFailure.invalidBuffer
+            }
+            guard let pixels = encoded.data, encoded.width > 0, encoded.height > 0,
+                  encoded.pixel_format == SONY2FUJI_PIXEL_RGBA8 else {
+                sony2fuji_release_buffer(&encoded)
+                throw HDRDisplayFailure.invalidBuffer
+            }
+            let width = Int(encoded.width)
+            let height = Int(encoded.height)
+            let byteCount = width * height * 4
+            let boxed = UnsafeMutablePointer<sony2fuji_buffer>.allocate(capacity: 1)
+            boxed.initialize(to: encoded)
+            let data = Data(bytesNoCopy: pixels, count: byteCount, deallocator: .custom { _, _ in
+                sony2fuji_release_buffer(boxed)
+                boxed.deallocate()
+            })
+            guard let color = CGColorSpace(name: CGColorSpace.sRGB),
+                  let provider = CGDataProvider(data: data as CFData),
+                  let cg = CGImage(
+                    width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                    bytesPerRow: width * 4, space: color,
+                    bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue),
+                    provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
+                  ) else {
                 throw HDRDisplayFailure.invalidBuffer
             }
             return cg

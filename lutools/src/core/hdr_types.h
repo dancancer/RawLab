@@ -46,6 +46,11 @@ inline constexpr uint32_t kHdrSdrOutputJpeg = 0u;
 inline constexpr uint32_t kHdrSdrOutputPng = 1u;
 inline constexpr uint32_t kHdrSdrOutputDng = 4u;
 
+inline constexpr uint32_t kHdrCameraLensDistortion = 1u;
+inline constexpr uint32_t kHdrCameraLensTca = 2u;
+inline constexpr uint32_t kHdrCameraLensAutoCrop = 4u;
+inline constexpr uint32_t kHdrCameraLensVignetting = 8u;
+
 inline constexpr uint32_t kHdrReasonNone = 0u;
 inline constexpr uint32_t kHdrReasonUnsupportedSystem = 1u;
 inline constexpr uint32_t kHdrReasonUnsupportedProtocol = 2u;

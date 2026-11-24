@@ -212,6 +212,32 @@ import ImageIO
                 print("PASS ProRAW \(final.width)x\(final.height) preview, edit and JPEG round trip")
             }
         }
+        for edge in [0, -1, 65536] {
+            do {
+                _ = try HDRImage.makeRenderOptions(intent: SONY2FUJI_INTENT_FINAL, longEdge: edge)
+                fatalError("invalid HDR longEdge \(edge) was accepted")
+            } catch let error as HDRNativeError {
+                require(error.status == HDRNativeError.invalidSettings.status, "unexpected invalidSettings error")
+            }
+        }
+        var nanBuffer = sony2fuji_hdr_buffer_v1()
+        var nanPixels: [Float] = [Float.nan, 0.5, 0.5]
+        nanPixels.withUnsafeMutableBufferPointer { buf in
+            nanBuffer.version = SONY2FUJI_HDR_VERSION
+            nanBuffer.struct_size = UInt32(MemoryLayout<sony2fuji_hdr_buffer_v1>.size)
+            nanBuffer.data = UnsafeMutableRawPointer(buf.baseAddress)
+            nanBuffer.size_bytes = UInt64(buf.count * MemoryLayout<Float>.size)
+            nanBuffer.width = 1
+            nanBuffer.height = 1
+            nanBuffer.stride_bytes = 12
+            nanBuffer.pixel_format = UInt32(SONY2FUJI_HDR_RGB32F_LINEAR)
+            nanBuffer.color_encoding = UInt32(SONY2FUJI_HDR_LINEAR_SRGB)
+            var outRgba8 = sony2fuji_buffer()
+            let nanStatus = sony2fuji_hdr_encode_rgba8(&nanBuffer, &outRgba8)
+            sony2fuji_release_buffer(&outRgba8)
+            require(nanStatus == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                    "sony2fuji_hdr_encode_rgba8 did not reject non-finite pixel")
+        }
         print("PASS Swift HDR ownership, source cache, full quality, export provenance and release")
     }
 }

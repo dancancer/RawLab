@@ -90,7 +90,7 @@ internal sealed class BatchSelectionWindow : Window
             preparing=true;RefreshButtons();
             try{await editor.SynchronizeCollection(this);}finally{preparing=false;Refresh();}
         });buttons.Children.Add(sync);
-        export=AdjustmentDialogLayout.Button("逐张导出","collection.export",()=>{new CollectionExportDialog(this,editor).ShowDialog();Refresh();});buttons.Children.Add(export);
+        export=AdjustmentDialogLayout.Button("逐张导出","collection.export",()=>{new CollectionExportDialog(this,editor).ShowDialog();Refresh();});export.SetResourceReference(StyleProperty,"AccentButton");buttons.Children.Add(export);
         buttons.Children.Add(AdjustmentDialogLayout.Button("关闭","collection.close",Close));
         Activated+=(_,_)=>{if(!preparing)Refresh();};
         Closing+=(_,_)=>{if(preparing)editor.CancelCollectionOperation();coordinator.CancelPending();};
@@ -211,7 +211,7 @@ internal sealed class CollectionExportDialog : Window
         AutomationProperties.SetAutomationId(message,"collection.export-count");
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right};footer.Children.Add(actions);
         actions.Children.Add(AdjustmentDialogLayout.Button("取消","collection.export-cancel",Close));
-        confirm=AdjustmentDialogLayout.Button("开始导出 {0} 张","collection.export-confirm",async()=>await Confirm());actions.Children.Add(confirm);
+        confirm=AdjustmentDialogLayout.Button("开始导出 {0} 张","collection.export-confirm",async()=>await Confirm());confirm.SetResourceReference(StyleProperty,"AccentButton");actions.Children.Add(confirm);
         Closed+=(_,_)=>{closed=true;CancelCheck();};
         Deactivated+=(_,_)=>CancelCheck();
         RefreshRows();Invalidate();

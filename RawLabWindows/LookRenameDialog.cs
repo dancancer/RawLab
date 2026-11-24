@@ -18,7 +18,7 @@ internal sealed class LookRenameDialog : Window
         Grid.SetRow(name,1);root.Children.Add(name);
         var actions=new WrapPanel{HorizontalAlignment=HorizontalAlignment.Right};
         var cancel=AdjustmentDialogLayout.Button("取消","look.rename.cancel",Close);cancel.IsCancel=true;actions.Children.Add(cancel);
-        var save=AdjustmentDialogLayout.Button("保存","look.rename.save",()=>DialogResult=true);save.IsDefault=true;actions.Children.Add(save);
+        var save=AdjustmentDialogLayout.Button("保存","look.rename.save",()=>DialogResult=true);save.IsDefault=true;save.SetResourceReference(StyleProperty,"AccentButton");actions.Children.Add(save);
         Grid.SetRow(actions,2);root.Children.Add(actions);
         void Update()=>save.IsEnabled=LookName.Length>0 && !LookName.Any(char.IsControl);
         name.TextChanged+=(_,_)=>Update();Loaded+=(_,_)=>{name.Focus();name.SelectAll();};Update();

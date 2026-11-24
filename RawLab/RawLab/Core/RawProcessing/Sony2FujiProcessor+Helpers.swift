@@ -104,6 +104,199 @@ extension Sony2FujiProcessor {
         }
     }
 
+    func encodeSessionState(
+        _ settings: RawSettings,
+        inputType: sony2fuji_input_type,
+        lutPath: String?,
+        outputSharpening: OutputSharpening = .off
+    ) throws -> String {
+        let prepared: RawSettings
+        let isRaster: Bool
+        switch inputType {
+        case SONY2FUJI_INPUT_DISPLAY_BUFFER:
+            isRaster = true
+            var raster = settings
+            raster.exposureMode = .sensor
+            if settings.masterRecipeID != nil || raster.whiteBalanceMode != .camera {
+                raster.whiteBalanceMode = .camera
+                raster.temperature = 6500
+                raster.tint = 0
+            }
+            prepared = raster
+        case SONY2FUJI_INPUT_BUFFER:
+            isRaster = false
+            var legacy = settings.renderedRecipe(cameraTemperature: 6500, cameraTint: 0)
+            legacy.whiteBalanceMode = .camera
+            legacy.temperature = 6500
+            legacy.tint = 0
+            prepared = legacy
+        default:
+            isRaster = false
+            prepared = settings
+        }
+        do {
+            return try prepared.sdrSessionStateJSON(
+                isRaster: isRaster,
+                lutPath: lutPath,
+                includeDenoise: true,
+                outputSharpening: outputSharpening
+            )
+        } catch let error as CanonicalEditRecipeError {
+            throw ProcessorError.processFailed(validationMessage(for: error))
+        } catch is EncodingError {
+            throw processingFailure(SONY2FUJI_STATUS_INVALID_ARGUMENT)
+        }
+    }
+
+    func configureGPU(_ session: OpaquePointer) throws {
+        var config = sony2fuji_gpu_config()
+        config.version = SONY2FUJI_GPU_CONFIG_VERSION
+        config.struct_size = UInt32(MemoryLayout<sony2fuji_gpu_config>.size)
+        config.mode = gpuMode
+        let gpuStatus = sony2fuji_session_set_gpu_config(session, &config)
+        guard gpuStatus == SONY2FUJI_STATUS_OK else {
+            throw ProcessorError.processFailed(L10n.format("Invalid GPU configuration: %@", statusMessage(gpuStatus)))
+        }
+    }
+
+    func makeRenderOptions(
+        inputType: sony2fuji_input_type,
+        width: UInt32 = 0,
+        height: UInt32 = 0,
+        previewLongEdge: CGFloat? = nil,
+        exportLongEdge: Int? = nil,
+        interactive: Bool = false,
+        viewportPreview: Bool = false,
+        outputTarget: sony2fuji_output_target = SONY2FUJI_TARGET_BUFFER,
+        outputFormat: sony2fuji_output_format = SONY2FUJI_OUTPUT_RGBA8
+    ) -> sony2fuji_render_options_v1 {
+        var options = sony2fuji_render_options_v1()
+        options.version = UInt32(SONY2FUJI_RENDER_OPTIONS_V1_VERSION)
+        options.struct_size = UInt32(MemoryLayout<sony2fuji_render_options_v1>.size)
+        options.input_type = inputType
+        options.interactive_preview = interactive ? 1 : 0
+        options.viewport_preview = viewportPreview ? 1 : 0
+        options.output_target = outputTarget
+        options.output_format = outputFormat
+        options.jpeg_quality = 95
+        if let edge = exportLongEdge {
+            options.intent = SONY2FUJI_INTENT_FINAL
+            options.size_mode = SONY2FUJI_SIZE_LIMIT_LONG_EDGE
+            options.long_edge = UInt32(edge)
+            options.preview_long_edge = 0
+        } else if let edge = previewLongEdge, edge > 0 {
+            let edgeValue = UInt32(edge.rounded())
+            options.intent = SONY2FUJI_INTENT_PREVIEW
+            options.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE
+            options.long_edge = edgeValue
+            options.preview_long_edge = edgeValue
+        } else {
+            options.intent = SONY2FUJI_INTENT_FINAL
+            options.size_mode = SONY2FUJI_SIZE_NATIVE
+            options.target_width = width
+            options.target_height = height
+        }
+        return options
+    }
+
+    func makeNativeViewportROI(_ roi: Sony2FujiProcessor.ViewportROI) -> sony2fuji_viewport_roi {
+        var nativeRoi = sony2fuji_viewport_roi()
+        nativeRoi.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi>.size)
+        nativeRoi.enabled = 1
+        nativeRoi.norm_x0 = Double(roi.normalizedRect.minX)
+        nativeRoi.norm_y0 = Double(roi.normalizedRect.minY)
+        nativeRoi.norm_x1 = Double(roi.normalizedRect.maxX)
+        nativeRoi.norm_y1 = Double(roi.normalizedRect.maxY)
+        nativeRoi.max_output_long_edge = UInt32(max(0, roi.maxOutputLongEdge))
+        return nativeRoi
+    }
+
+    func makeViewportROIResult(_ result: sony2fuji_viewport_roi_result) -> Sony2FujiProcessor.ViewportROIResult? {
+        guard result.active != 0,
+              result.native_x1 > result.native_x0,
+              result.native_y1 > result.native_y0,
+              result.full_native_width > 0,
+              result.full_native_height > 0 else {
+            return nil
+        }
+        return Sony2FujiProcessor.ViewportROIResult(
+            nativeX0: Int(result.native_x0),
+            nativeY0: Int(result.native_y0),
+            nativeX1: Int(result.native_x1),
+            nativeY1: Int(result.native_y1),
+            fullNativeWidth: Int(result.full_native_width),
+            fullNativeHeight: Int(result.full_native_height)
+        )
+    }
+
+    func renderSessionRaw(
+        session: OpaquePointer,
+        options: inout sony2fuji_render_options_v1,
+        editStateJSON: String,
+        inputPath: String,
+        outputPath: String? = nil,
+        outBuffer: UnsafeMutablePointer<sony2fuji_buffer>? = nil,
+        outROI: UnsafeMutablePointer<sony2fuji_viewport_roi_result>? = nil
+    ) -> sony2fuji_status {
+        inputPath.withCString { inputPtr in
+            options.input_path = inputPtr
+            return editStateJSON.withCString { jsonPtr in
+                if let outputPath {
+                    return outputPath.withCString { outputPtr in
+                        options.output_path = outputPtr
+                        return sony2fuji_session_render(session, &options, jsonPtr, outBuffer, outROI)
+                    }
+                }
+                options.output_path = nil
+                return sony2fuji_session_render(session, &options, jsonPtr, outBuffer, outROI)
+            }
+        }
+    }
+
+    func renderSessionBuffer(
+        session: OpaquePointer,
+        options: inout sony2fuji_render_options_v1,
+        editStateJSON: String,
+        buffer: Buffer,
+        outputPath: String? = nil,
+        outBuffer: UnsafeMutablePointer<sony2fuji_buffer>? = nil,
+        outROI: UnsafeMutablePointer<sony2fuji_viewport_roi_result>? = nil
+    ) -> sony2fuji_status {
+        buffer.data.withUnsafeBytes { bytes in
+            options.input_pixels = bytes.baseAddress
+            options.input_width = UInt32(buffer.width)
+            options.input_height = UInt32(buffer.height)
+            options.input_pixel_format = buffer.pixelFormat
+            options.input_color_space = SONY2FUJI_COLOR_SRGB
+            options.input_is_linear = 0
+            return editStateJSON.withCString { jsonPtr in
+                if let outputPath {
+                    return outputPath.withCString { outputPtr in
+                        options.output_path = outputPtr
+                        return sony2fuji_session_render(session, &options, jsonPtr, outBuffer, outROI)
+                    }
+                }
+                options.output_path = nil
+                return sony2fuji_session_render(session, &options, jsonPtr, outBuffer, outROI)
+            }
+        }
+    }
+
+    func masterRecipeFailureIfNeeded(
+        _ status: sony2fuji_status,
+        settings: RawSettings,
+        inputType: sony2fuji_input_type,
+        session: OpaquePointer
+    ) -> Error? {
+        guard status == SONY2FUJI_STATUS_UNSUPPORTED,
+              inputType == SONY2FUJI_INPUT_RAW,
+              settings.masterRecipeID != nil,
+              sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_NONE else {
+            return nil
+        }
+        return ProcessorError.processFailed(L10n.text("此 RAW 无法解析拍摄白平衡，不能应用配方色调。"))
+    }
+
     func applySessionParams(_ session: OpaquePointer, settings: RawSettings,
                             isRaster: Bool = false, outputSharpening: OutputSharpening = .off) throws {
         let recipeJSON: String
@@ -111,6 +304,8 @@ extension Sony2FujiProcessor {
             recipeJSON = try settings.canonicalParamsJSON(isRaster: isRaster, outputSharpening: outputSharpening)
         } catch let error as CanonicalEditRecipeError {
             throw ProcessorError.processFailed(validationMessage(for: error))
+        } catch is EncodingError {
+            throw processingFailure(SONY2FUJI_STATUS_INVALID_ARGUMENT)
         }
         let status = recipeJSON.withCString { sony2fuji_apply_params(session, $0) }
         guard status == SONY2FUJI_STATUS_OK else { throw processingFailure(status, session: session) }

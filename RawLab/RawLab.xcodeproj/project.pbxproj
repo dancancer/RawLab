@@ -198,7 +198,6 @@
         2DCD5783547984E860773E97 /* ToneCurveCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0324C679CADE139F72163211; };
         B6C0A774BB3BFD64F1F06174 /* ToneCurveEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D20BB7F1FC842F0DA927634; };
         591EBC8F57FFA39BB60C77B4 /* ToneCurveControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BD8A49A9293229AE363C138; };
-        D14200000000000000000001 /* HDRRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14200000000000000000011; };
         D14300000000000000000001 /* HDRSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14300000000000000000011; };
         D15E00000000000000000001 /* ProRAWSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15E00000000000000000011; };
         D15F00000000000000000001 /* ProRAWExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000011; };
@@ -520,7 +519,6 @@
         0324C679CADE139F72163211 /* ToneCurveCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveCanvas.swift; path = "../Shared/ToneCurveCanvas.swift"; sourceTree = SOURCE_ROOT; };
         8D20BB7F1FC842F0DA927634 /* ToneCurveEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveEditor.swift; path = "../Shared/ToneCurveEditor.swift"; sourceTree = SOURCE_ROOT; };
         4BD8A49A9293229AE363C138 /* ToneCurveControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ToneCurveControls.swift; path = "RawLab/UI/Panels/ToneCurveControls.swift"; sourceTree = SOURCE_ROOT; };
-        D14200000000000000000011 /* HDRRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRRequest.swift; path = "../Shared/Native/HDRRequest.swift"; sourceTree = SOURCE_ROOT; };
         D14300000000000000000011 /* HDRSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HDRSource.swift; path = "../Shared/Native/HDRSource.swift"; sourceTree = SOURCE_ROOT; };
         D15E00000000000000000011 /* ProRAWSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWSource.swift; path = "../Shared/Native/ProRAWSource.swift"; sourceTree = SOURCE_ROOT; };
         D15F00000000000000000011 /* ProRAWExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ProRAWExport.swift; path = "../Shared/Native/ProRAWExport.swift"; sourceTree = SOURCE_ROOT; };
@@ -725,7 +723,6 @@
 			isa = PBXGroup;
 			children = (
 				D01800000000000000000011,
-				D14200000000000000000011,
 				D14300000000000000000011,
 				D15E00000000000000000011,
 				D15F00000000000000000011,
@@ -1410,7 +1407,6 @@
 				E2C000030000000000000001 /* EditorTestHooks.swift in Sources */,
 				C3A803626CF750D1B9AFFCDA,
 				A7894D11E1234B7FBE0F0CC1,
-				D14200000000000000000001,
 				D14300000000000000000001,
 				D15E00000000000000000001,
 				D15F00000000000000000001,

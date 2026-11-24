@@ -35,4 +35,24 @@ OwnedPixelBuffer encodeRgba16BufferFromImageData(
     bool linearToSrgb = false
 );
 
+RenderStatus encodeDisplay8IntoFloatRgb(
+    const float* data,
+    uint32_t width,
+    uint32_t height,
+    uint64_t srcStrideBytes,
+    bool bgra,
+    void* dst,
+    uint64_t dstSizeBytes,
+    uint64_t dstStrideBytes
+);
+
+RenderStatus encodeDisplay8BufferFromFloatRgb(
+    const float* data,
+    uint32_t width,
+    uint32_t height,
+    uint64_t srcStrideBytes,
+    bool bgra,
+    OwnedPixelBuffer& outBuffer
+);
+
 } // namespace sony2fuji

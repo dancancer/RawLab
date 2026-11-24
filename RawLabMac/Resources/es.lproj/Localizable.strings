@@ -320,6 +320,9 @@
 "导入调整参数 JSON…" = "Importar ajustes JSON…";
 "导出" = "Exportar";
 "导出 %@ 张" = "Exportar fotos (%@)";
+"导出 16 位 PNG…" = "Exportar PNG de 16 bits…";
+"导出 HDR HEIF…" = "Exportar HEIF HDR…";
+"导出 HDR JPEG…" = "Exportar JPEG HDR…";
 "导出 JPEG…" = "Exportar JPEG…";
 "导出不能覆盖原始照片。请选择其他文件。" = "La exportación no puede sobrescribir la foto original. Elige otro archivo.";
 "导出到文件…" = "Exportar a Archivos…";

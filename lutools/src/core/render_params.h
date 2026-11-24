@@ -34,6 +34,12 @@ enum class RenderWhiteBalanceMode : int32_t {
     Relative = 4
 };
 
+enum class RawExposureMode : int32_t {
+    Scene = 0,
+    Preview = 1,
+    Sensor = 2
+};
+
 enum class OutputSharpening : int32_t {
     Off = 0,
     Low = 1,

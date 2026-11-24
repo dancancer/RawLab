@@ -50,7 +50,7 @@ internal sealed partial class RenderEngine
         if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         if(!GetAIDevices().IsAvailable(deviceID))throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
     }
-    private void ConfigureAI(bool enabled, double blend = 100.0)
+    private void ConfigureAI(bool enabled)
     {
         if(enabled && (!AIAvailable || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json"))))
             throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
@@ -60,8 +60,6 @@ internal sealed partial class RenderEngine
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
             ModelDirectory=aiModelDirectory,CacheDirectory=aiCacheDirectory};
         CheckAI(Native.sony2fuji_session_set_ai_denoise(session,ref config));
-        var normalized = enabled ? (float)Math.Clamp(blend / 100.0, 0.0, 1.0) : 1.0f;
-        CheckAI(Native.sony2fuji_session_set_ai_denoise_blend(session, normalized));
         if(enabled)CheckAI(Native.sony2fuji_session_set_ai_device(session,aiDeviceID));
     }
     private void CheckAI(int status)
@@ -91,14 +89,18 @@ internal sealed partial class RenderEngine
     private void PrepareAICore(string path,Adjustments settings,AIPreparation progress)
     {
         progress.Token.ThrowIfCancellationRequested();
-        PreparedRecipeSettings? prepared = null;
+        Native.RenderOptions options = default;
+        string? editStateJson = null;
         if (!settings.IsHDREditing)
         {
             if(Native.sony2fuji_is_normal_x3f(path,settings.X3fMode)!=0)throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
             if(!PhotoInput.IsRaw(path))throw new InvalidOperationException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-            prepared=PrepareRecipe(path,settings);
-            settings=prepared.Value.Settings;
-            ApplyParams(path,settings,includeDenoise:false,validateAiX3f:true);
+            var prepared = PrepareRecipe(path, settings);
+            settings = prepared.Settings;
+            EnsureInput(path);
+            options = BuildRenderOptions(path, 0, null, null, false, false);
+            SetInput(ref options, path);
+            editStateJson = CanonicalEditRecipe.EncodeState(settings, PhotoInput.IsRaster(path), includeDenoise: false);
         }
         ConfigureAI(true);
         Exception? callbackError=null;
@@ -118,8 +120,7 @@ internal sealed partial class RenderEngine
             }
             else
             {
-                var request=prepared!.Value.Request(path,null,0,null);
-                status=Native.sony2fuji_session_prepare_ai(session,ref request,callback,IntPtr.Zero);
+                status = Native.sony2fuji_session_prepare_ai_json(session, ref options, editStateJson, callback, IntPtr.Zero);
             }
         }
         finally { GC.KeepAlive(callback); }
@@ -129,13 +130,13 @@ internal sealed partial class RenderEngine
 
     private HDRSourceLease AcquireHDRSource(string path,HDRSourceInfo info,bool final,uint edge,Adjustments settings)
     {
-        if (info.IsCameraRaw && !info.IsProRAW) ApplyProcessingOnly(settings.Processing);
         var camera = settings.IsHDREditing ? settings.HDR!.CameraDevelopment : null;
         if (!settings.IsHDREditing || !settings.HDRCameraAIEnabled)
             return HDRSourceCache.Acquire(path,info,final,edge,session,camera,lensDatabase,
                 temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory);
         if (!PhotoInput.IsHDRCameraAICandidate(info))
             throw new AIDenoiseException(Loc.Text("此照片或构建尚不能使用 AI 降噪。"));
+        if (info.IsCameraRaw && !info.IsProRAW) ApplyProcessingOnly(settings.Processing);
         ConfigureAI(true);
         aiNativeOperationStarted=true;
         var diagnostic=HDRNative.Diagnostic();

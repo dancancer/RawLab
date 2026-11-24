@@ -67,6 +67,14 @@ sony2fuji_status hook_process(sony2fuji_session* session, const sony2fuji_reques
 }
 DYLD_INTERPOSE_NAME(hook_process, sony2fuji_process, process)
 
+sony2fuji_status hook_session_render(sony2fuji_session* session, const sony2fuji_render_options_v1* options,
+                                     const char* edit_state_json, sony2fuji_buffer* output,
+                                     sony2fuji_viewport_roi_result* out_roi) {
+    g_process_calls.fetch_add(1);
+    return sony2fuji_session_render(session, options, edit_state_json, output, out_roi);
+}
+DYLD_INTERPOSE_NAME(hook_session_render, sony2fuji_session_render, session_render)
+
 sony2fuji_status hook_load_display_image(const char* path, sony2fuji_buffer* out_buffer) {
     g_load_display_image.fetch_add(1);
     return sony2fuji_load_display_image(path, out_buffer);

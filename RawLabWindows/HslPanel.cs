@@ -20,6 +20,16 @@ public sealed partial class HslPanel : StackPanel
     private readonly Button resetColor=new(),resetAll=new();
     private static readonly string[] colorKeys=["红","橙","黄","绿","青","蓝","紫","洋红"];
     private static readonly string[] axisKeys=["色相","饱和度","明度"];
+    private static readonly Color[] ChannelColors = [
+        Color.FromRgb(0xE6, 0x5C, 0x5A),
+        Color.FromRgb(0xE8, 0xA0, 0x4F),
+        Color.FromRgb(0xDF, 0xCE, 0x51),
+        Color.FromRgb(0x7B, 0xBA, 0x64),
+        Color.FromRgb(0x68, 0xC8, 0xC7),
+        Color.FromRgb(0x5C, 0x89, 0xDF),
+        Color.FromRgb(0xA0, 0x75, 0xD2),
+        Color.FromRgb(0xCB, 0x6E, 0xAF)
+    ];
     public event Action<HslSettings,bool>? Changed;
     public event Action<EditorResetScope>? ResetRequested;
     public int SelectedChannel => channel;
@@ -33,13 +43,14 @@ public sealed partial class HslPanel : StackPanel
         MaxWidth=720;Margin=new Thickness(4);
         InitializeTargetControls();
         var selector = new UniformGrid { Rows = 1, Columns = 8 };
-        var colors=new[]{Colors.Red,Colors.Orange,Colors.Yellow,Colors.LimeGreen,Colors.Cyan,Colors.DodgerBlue,Colors.Purple,Colors.Magenta};
         for(var i=0;i<8;++i)
         {
             var index=i;
             // 默认按钮内边距 12 会把 20 的色块裁成半圆：色块按钮不留内边距
             var content=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center};
-            content.Children.Add(new Ellipse{Width=20,Height=20,Fill=new SolidColorBrush(colors[i])});
+            var fill = new SolidColorBrush(ChannelColors[i]);
+            fill.Freeze();
+            content.Children.Add(new Ellipse{Width=20,Height=20,Fill=fill});
             var marker=new Border{Width=4,Height=4,CornerRadius=new CornerRadius(2),Margin=new Thickness(0,3,0,0),Visibility=Visibility.Hidden};
             marker.SetResourceReference(Border.BackgroundProperty,"Indicator");markers[i]=marker;content.Children.Add(marker);
             var button = new Button { MinHeight = 34, Margin = new Thickness(1, 0, 1, 0), Padding = new Thickness(0), Content = content };
@@ -84,7 +95,6 @@ public sealed partial class HslPanel : StackPanel
     public void Refresh(HslSettings value)
     {
         syncing=true;settings=value;
-        var colors=new[]{Colors.Red,Colors.Orange,Colors.Yellow,Colors.LimeGreen,Colors.Cyan,Colors.DodgerBlue,Colors.Purple,Colors.Magenta};
         var directions=new[]{Loc.Text("色相：向相邻颜色偏移。"),Loc.Text("饱和度：从灰色到彩色。"),Loc.Text("明度：从暗到亮。")};
         for(var axis=0;axis<3;++axis) {
             var name=Loc.Format("{0} · {1}",SelectedChannelName,Loc.Text(axisKeys[axis]));
@@ -92,9 +102,9 @@ public sealed partial class HslPanel : StackPanel
             AutomationProperties.SetName(rows[axis].Slider,name);AutomationProperties.SetName(rows[axis].Number,name);
             AutomationProperties.SetHelpText(rows[axis].Slider,AutomationProperties.GetHelpText(rows[axis].Slider)+" "+directions[axis]);
             var brush=new LinearGradientBrush{StartPoint=new(0,0),EndPoint=new(1,0)};
-            brush.GradientStops.Add(new(axis==0 ? colors[(channel+7)%8] : axis==1 ? Colors.Gray : Colors.Black,0));
-            if(axis!=1)brush.GradientStops.Add(new(colors[channel],.5));
-            brush.GradientStops.Add(new(axis==0 ? colors[(channel+1)%8] : axis==1 ? colors[channel] : Colors.White,1));
+            brush.GradientStops.Add(new(axis==0 ? ChannelColors[(channel+7)%8] : axis==1 ? Colors.Gray : Colors.Black,0));
+            if(axis!=1)brush.GradientStops.Add(new(ChannelColors[channel],.5));
+            brush.GradientStops.Add(new(axis==0 ? ChannelColors[(channel+1)%8] : axis==1 ? ChannelColors[channel] : Colors.White,1));
             brush.Freeze();rows[axis].Slider.DirectionBrush=brush;
         }
         for(var i=0;i<8;++i){
