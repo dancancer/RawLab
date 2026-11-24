@@ -1442,6 +1442,12 @@
       "symbol": "sony2fuji_process"
     },
     {
+      "name": "sony2fuji_session_render_rgba16",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const sony2fuji_request*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_session_render_rgba16"
+    },
+    {
       "name": "sony2fuji_session_migrate_processing",
       "return_type": "sony2fuji_status",
       "params": ["const sony2fuji_session*", "const sony2fuji_request*", "sony2fuji_processing_migration_result*"],
@@ -1584,6 +1590,12 @@
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_request_v1*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
       "symbol": "sony2fuji_hdr_render"
+    },
+    {
+      "name": "sony2fuji_hdr_encode_rgba16",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_hdr_encode_rgba16"
     },
     {
       "name": "sony2fuji_hdr_create_hsl_probe",

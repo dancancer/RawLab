@@ -1,5 +1,5 @@
 #include "raw_info.h"
-#include "core/file_path.h"
+#include <libraw/libraw.h>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -9,6 +9,14 @@
 namespace sony2fuji {
 namespace {
 using Json = nlohmann::json;
+
+int openRawFile(LibRaw& raw, const std::string& path) {
+#ifdef _WIN32
+    return raw.open_file(std::filesystem::u8path(path).c_str());
+#else
+    return raw.open_file(path.c_str());
+#endif
+}
 
 sony2fuji_status metadataStatus(int code) {
     switch (code) {

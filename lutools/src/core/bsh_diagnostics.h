@@ -5,23 +5,8 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
 
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace sony2fuji {
-
-struct BshSampleQueryItem {
-    float normX = 0.0f;
-    float normY = 0.0f;
-    std::string label;
-};
-
-struct BshSampleEntry {
-    std::string label;
-    float normX = 0.0f;
-    float normY = 0.0f;
-    sony2fuji_bsh_sample_result result{};
-};
 
 RenderStatus diagnosePixelBuffer(
     const PixelBufferView& view,
@@ -37,23 +22,17 @@ RenderStatus sampleRegionBshBuffer(
     sony2fuji_bsh_sample_result& out
 );
 
-OwnedPixelBuffer encodeRgba16BufferFromImageData(
-    const ImageData& image,
+OwnedPixelBuffer encodeRgba16BufferFromFloatRgb(
+    const float* data,
+    uint32_t width,
+    uint32_t height,
+    uint64_t strideBytes,
     bool linearToSrgb = false
 );
 
-bool parseBshSampleArg(
-    const std::string& rawArg,
-    BshSampleQueryItem& out,
-    std::string& error
-);
-
-const char* bshCastHintName(sony2fuji_bsh_cast_hint hint) noexcept;
-const char* hslChannelName(sony2fuji_hsl_channel channel) noexcept;
-
-std::string bshDiagnosisToJsonString(
-    const sony2fuji_bsh_diagnosis& diag,
-    const std::vector<BshSampleEntry>& samples
+OwnedPixelBuffer encodeRgba16BufferFromImageData(
+    const ImageData& image,
+    bool linearToSrgb = false
 );
 
 } // namespace sony2fuji
