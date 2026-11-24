@@ -147,6 +147,11 @@ internal class EditorExportStateHolder(
             exportProgress = null,
             message = strings.text(R.string.export_done),
         )
+        com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+            category = "export",
+            stage = "exportCompleted",
+            message = "Single photo export completed",
+        )
         recordUsage(UsageEvent.ExportCompleted)
     }
 
@@ -157,6 +162,11 @@ internal class EditorExportStateHolder(
             mainDelivery {
                 if (isDisposed()) return@mainDelivery
                 mutable.value = EditorStateReducer.lateExportCompleted(mutable.value, strings.text(R.string.export_done))
+                com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+                    category = "export",
+                    stage = "lateExportCompleted",
+                    message = "Late single photo export completed",
+                )
                 recordUsage(UsageEvent.ExportCompleted)
             }
         }

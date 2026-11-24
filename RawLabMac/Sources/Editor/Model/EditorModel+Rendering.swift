@@ -16,7 +16,17 @@ extension EditorModel {
             refreshBusy()
             return
         }
-        if value { schedule() } else { finishAdjustmentInteraction(); schedule(forceExact: true) }
+        if value {
+            schedule()
+        } else {
+            finishAdjustmentInteraction()
+            DiagnosticCenter.recordBreadcrumb(
+                category: "adjustment",
+                stage: "interactionCommitted",
+                message: "Adjustment interaction committed"
+            )
+            schedule(forceExact: true)
+        }
     }
     func schedule() {
         schedule(forceExact: false)
@@ -210,6 +220,14 @@ extension EditorModel {
             if completion == .publishInteractive && request.value.edge != renderPreviewLongEdge { break }
             if let failure {
                 if completion == .publishExact || scheduler.latest?.id == request.id {
+                    var failContext: [String: String] = ["hdr": String(request.value.settings.isHDREditing)]
+                    if let ext = ErrorDiagnostics.fileNameExtension(request.value.file) { failContext["extension"] = ext }
+                    DiagnosticCenter.appErrorDiagnostics.record(
+                        failure as NSError,
+                        operation: .preview,
+                        stage: "renderPreview",
+                        context: failContext
+                    )
                     self.previewOutdated = true
                     self.error = failure.localizedDescription
                     self.handleAIFailure(failure)
@@ -274,6 +292,17 @@ extension EditorModel {
                 if completion == .publishInteractive {
                     statusState = .interactive(result.image.width, result.image.height)
                 } else {
+                    DiagnosticCenter.recordBreadcrumb(
+                        category: "preview",
+                        stage: "exactPreviewRendered",
+                        message: "Exact preview rendered",
+                        context: [
+                            "width": String(result.image.width),
+                            "height": String(result.image.height),
+                            "fullResolution": String(result.isFullResolution),
+                            "hdr": String(request.value.settings.isHDREditing),
+                        ]
+                    )
                     statusState = .preview(result.image.width, result.image.height, original: result.isFullResolution)
                 }
             }

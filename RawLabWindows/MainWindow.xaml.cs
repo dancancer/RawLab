@@ -73,6 +73,7 @@ public partial class MainWindow : Window
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
     private bool previewDeferred;
     private UsageAnalytics usageAnalytics;
+    private DiagnosticSessionStore diagnosticSession;
     private AboutWindow? aboutWindow;
     private bool startupReported, analyticsDisposed;
     private long photoImportReportedRevision;
@@ -103,6 +104,8 @@ public partial class MainWindow : Window
         this.presetStore = presetStore ?? new(appPaths.PresetsDirectory);
         this.aiPreferenceStore = aiPreferenceStore ?? new(appPaths.AiGpuPreferencesPath);
         this.aiDiagnostics = aiDiagnostics ?? new(appPaths.AiDiagnosticsDirectory);
+        this.diagnosticSession = new(appPaths.DiagnosticsDirectory);
+        this.diagnosticSession.ResumeOnLaunch();
         workspaceWidthsPath = appPaths.WorkspaceWidthsPath;
         recentLooksPath = appPaths.RecentLooksPath;
         photoPreviewCacheDirectory = appPaths.EditedPhotoPreviewCacheDirectory;

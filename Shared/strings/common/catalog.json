@@ -9406,5 +9406,213 @@
     "es": "División de luces",
     "ja": "ハイライト分割",
     "zh-Hans": "高光拆分"
+  },
+  "已复制": {
+    "de": "Kopiert",
+    "en": "Copied",
+    "es": "Copiada",
+    "fr": "Copié",
+    "ja": "コピー済み",
+    "zh-Hans": "已复制"
+  },
+  "暂无可导出的错误日志。": {
+    "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
+    "en": "There is no error log to export.",
+    "es": "No hay ningún registro de errores para exportar.",
+    "fr": "Aucun journal des erreurs à exporter.",
+    "ja": "書き出せるエラーログがありません。",
+    "zh-Hans": "暂无可导出的错误日志。"
+  },
+  "故障诊断与错误日志": {
+    "en": "Diagnostics & Error Logs",
+    "de": "Diagnose & Fehlerprotokolle",
+    "fr": "Diagnostic et journaux d’erreurs",
+    "es": "Diagnóstico y registros de errores",
+    "ja": "診断とエラーログ",
+    "zh-Hans": "故障诊断与错误日志"
+  },
+  "记录详细诊断日志": {
+    "en": "Record Detailed Diagnostic Logs",
+    "de": "Detaillierte Diagnoseprotokolle aufzeichnen",
+    "fr": "Enregistrer des journaux de diagnostic détaillés",
+    "es": "Registrar diagnósticos detallados",
+    "ja": "詳細な診断ログを記録",
+    "zh-Hans": "记录详细诊断日志"
+  },
+  "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。": {
+    "en": "Diagnostic packages contain only app version, system environment, step summaries, and error codes. Photo data, file names, and personal paths are excluded.",
+    "de": "Diagnosepakete enthalten nur App-Version, Systemumgebung, Schrittzusammenfassungen und Fehlercodes. Fotodaten, Dateinamen und persönliche Pfade sind ausgeschlossen.",
+    "fr": "Les archives de diagnostic ne contiennent que la version de l’application, l’environnement système, le résumé des étapes et les codes d’erreur. Les photos, noms de fichiers et chemins personnels sont exclus.",
+    "es": "Los paquetes de diagnóstico solo incluyen la versión de la aplicación, el entorno del sistema, resúmenes de pasos y códigos de error. Se excluyen fotos, nombres de archivo y rutas personales.",
+    "ja": "診断パッケージにはアプリバージョン、システム環境、操作ステップの概要、エラーコードのみが含まれます。写真データ、ファイル名、個人パスは含まれません。",
+    "zh-Hans": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。"
+  },
+  "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。": {
+    "en": "Recording detailed diagnostic logs (turns off automatically after 30 minutes or the next restart). Reproduce the issue, then save or upload.",
+    "de": "Detaillierte Diagnoseprotokolle werden aufgezeichnet (wird nach 30 Minuten oder nach dem nächsten Neustart automatisch beendet). Reproduzieren Sie das Problem und speichern oder senden Sie das Paket.",
+    "fr": "Enregistrement détaillé actif (désactivation automatique après 30 minutes ou après le prochain redémarrage). Reproduisez le problème puis enregistrez ou envoyez les journaux.",
+    "es": "Registrando diagnósticos detallados (se desactiva automáticamente tras 30 minutos o tras el próximo reinicio). Reproduce el problema y luego guarda o sube el paquete.",
+    "ja": "詳細な診断ログを記録中です（30 分後または次回再起動後に自動でオフになります）。問題を再現した後に保存またはアップロードしてください。",
+    "zh-Hans": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。"
+  },
+  "检测到上次录制的诊断日志，可直接保存到设备或一键上传。": {
+    "en": "Diagnostic logs from the previous session are ready to save to device or upload.",
+    "de": "Diagnoseprotokolle aus der vorherigen Sitzung stehen zum Speichern oder Hochladen bereit.",
+    "fr": "Les journaux de diagnostic de la session précédente sont prêts à être enregistrés ou envoyés.",
+    "es": "Se detectaron registros de diagnóstico de la sesión anterior listos para guardar o subir.",
+    "ja": "前回記録された診断ログがあります。端末への保存またはアップロードが可能です。",
+    "zh-Hans": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。"
+  },
+  "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。": {
+    "en": "Local diagnostic entries are available to export; detailed recording is currently off.",
+    "de": "Lokale Diagnoseeinträge sind zum Export verfügbar; die detaillierte Aufzeichnung ist derzeit deaktiviert.",
+    "fr": "Des entrées de diagnostic locales sont disponibles ; l’enregistrement détaillé est actuellement désactivé.",
+    "es": "Hay registros de diagnóstico locales disponibles; la grabación detallada está desactivada.",
+    "ja": "書き出し可能なローカル診断記録があります。詳細ログの記録は現在オフです。",
+    "zh-Hans": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。"
+  },
+  "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。": {
+    "en": "Off by default. Turn this on when troubleshooting to reproduce an issue, then save the diagnostic package to your device or upload it.",
+    "de": "Standardmäßig deaktiviert. Aktivieren Sie diese Option zur Fehlerreproduktion und speichern Sie das Diagnosepaket anschließend auf dem Gerät oder laden Sie es hoch.",
+    "fr": "Désactivé par défaut. Activez cette option pour reproduire un problème, puis enregistrez l’archive sur l’appareil ou envoyez-la.",
+    "es": "Desactivado por defecto. Actívalo para reproducir un problema y luego guarda el paquete en tu dispositivo o súbelo.",
+    "ja": "既定ではオフです。問題発生時にオンにして操作を再現し、診断パッケージを端末に保存するかアップロードしてください。",
+    "zh-Hans": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。"
+  },
+  "问题简述（选填，勿填个人隐私）": {
+    "en": "Brief issue note (optional, omit personal info)",
+    "de": "Kurze Problembeschreibung (optional, keine persönlichen Daten)",
+    "fr": "Brève description du problème (facultatif, sans données personnelles)",
+    "es": "Breve descripción del problema (opcional, sin datos personales)",
+    "ja": "問題の概要（任意・個人情報は入力しないでください）",
+    "zh-Hans": "问题简述（选填，勿填个人隐私）"
+  },
+  "保存到设备…": {
+    "en": "Save to Device…",
+    "de": "Auf Gerät speichern…",
+    "fr": "Enregistrer sur l’appareil…",
+    "es": "Guardar en el dispositivo…",
+    "ja": "端末に保存…",
+    "zh-Hans": "保存到设备…"
+  },
+  "分享诊断包…": {
+    "en": "Share Diagnostic Package…",
+    "de": "Diagnosepaket teilen…",
+    "fr": "Partager l’archive de diagnostic…",
+    "es": "Compartir paquete de diagnóstico…",
+    "ja": "診断パッケージを共有…",
+    "zh-Hans": "分享诊断包…"
+  },
+  "上传或预览日志…": {
+    "en": "Upload or Preview Logs…",
+    "de": "Protokolle hochladen oder prüfen…",
+    "fr": "Envoyer ou prévisualiser les journaux…",
+    "es": "Subir o previsualizar registros…",
+    "ja": "ログをアップロード・確認…",
+    "zh-Hans": "上传或预览日志…"
+  },
+  "一键云端上传": {
+    "en": "Upload to Cloud",
+    "de": "In die Cloud hochladen",
+    "fr": "Envoyer vers le cloud",
+    "es": "Subir a la nube",
+    "ja": "クラウドにアップロード",
+    "zh-Hans": "一键云端上传"
+  },
+  "正在上传…": {
+    "en": "Uploading…",
+    "de": "Wird hochgeladen…",
+    "fr": "Envoi en cours…",
+    "es": "Subiendo…",
+    "ja": "アップロード中…",
+    "zh-Hans": "正在上传…"
+  },
+  "预览日志": {
+    "en": "Preview Logs",
+    "de": "Protokollvorschau",
+    "fr": "Aperçu des journaux",
+    "es": "Vista previa del registro",
+    "ja": "ログをプレビュー",
+    "zh-Hans": "预览日志"
+  },
+  "收起预览": {
+    "en": "Hide Preview",
+    "de": "Vorschau ausblenden",
+    "fr": "Masquer l’aperçu",
+    "es": "Ocultar vista previa",
+    "ja": "プレビューを閉じる",
+    "zh-Hans": "收起预览"
+  },
+  "清除日志": {
+    "en": "Clear Logs",
+    "de": "Protokolle löschen",
+    "fr": "Effacer les journaux",
+    "es": "Borrar registros",
+    "ja": "ログを消去",
+    "zh-Hans": "清除日志"
+  },
+  "诊断码：{0}": {
+    "en": "Diagnostic Code: {0}",
+    "de": "Diagnosecode: {0}",
+    "fr": "Code de diagnostic : {0}",
+    "es": "Código de diagnóstico: {0}",
+    "ja": "診断コード: {0}",
+    "zh-Hans": "诊断码：{0}"
+  },
+  "复制诊断码": {
+    "en": "Copy Code",
+    "de": "Code kopieren",
+    "fr": "Copier le code",
+    "es": "Copiar código",
+    "ja": "診断コードをコピー",
+    "zh-Hans": "复制诊断码"
+  },
+  "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。": {
+    "en": "Diagnostic package saved. You can share the ZIP file with the developer via GitHub Issues or messaging apps.",
+    "de": "Diagnosepaket gespeichert. Sie können die ZIP-Datei über GitHub Issues oder Messenger an den Entwickler senden.",
+    "fr": "Archive de diagnostic enregistrée. Vous pouvez l’envoyer au développeur via GitHub Issues ou votre messagerie.",
+    "es": "Paquete de diagnóstico guardado. Puedes enviar el archivo ZIP al desarrollador por GitHub Issues o mensajería.",
+    "ja": "診断パッケージを保存しました。GitHub Issue やメッセージアプリから開発者に送信できます。",
+    "zh-Hans": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。"
+  },
+  "无法导出诊断包。": {
+    "en": "Could not export the diagnostic package.",
+    "de": "Das Diagnosepaket konnte nicht exportiert werden.",
+    "fr": "Impossible d’exporter l’archive de diagnostic.",
+    "es": "No se pudo exportar el paquete de diagnóstico.",
+    "ja": "診断パッケージを書き出せませんでした。",
+    "zh-Hans": "无法导出诊断包。"
+  },
+  "上传成功，请复制诊断码发送给开发者。": {
+    "en": "Upload succeeded. Copy the diagnostic code and share it with the developer.",
+    "de": "Upload erfolgreich. Kopieren Sie den Diagnosecode und teilen Sie ihn dem Entwickler mit.",
+    "fr": "Envoi réussi. Copiez le code de diagnostic et transmettez-le au développeur.",
+    "es": "Subida completada. Copia el código de diagnóstico y compártelo con el desarrollador.",
+    "ja": "アップロードが完了しました。診断コードをコピーして開発者にお知らせください。",
+    "zh-Hans": "上传成功，请复制诊断码发送给开发者。"
+  },
+  "云端上传暂不可用，请先将诊断包保存到设备后发送。": {
+    "en": "Cloud upload is currently unavailable. Save the diagnostic package to your device and send it manually.",
+    "de": "Cloud-Upload ist derzeit nicht verfügbar. Bitte speichern Sie das Diagnosepaket auf dem Gerät und senden Sie es manuell.",
+    "fr": "L’envoi vers le cloud est indisponible pour le moment. Enregistrez l’archive sur votre appareil pour l’envoyer manuellement.",
+    "es": "La subida a la nube no está disponible ahora. Guarda el paquete en tu dispositivo y envíalo manualmente.",
+    "ja": "現在クラウドアップロードを利用できません。診断パッケージを端末に保存して送信してください。",
+    "zh-Hans": "云端上传暂不可用，请先将诊断包保存到设备后发送。"
+  },
+  "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。": {
+    "en": "The log exceeds the single-upload size limit. Use Save to Device to export the diagnostic package.",
+    "de": "Das Protokoll überschreitet das Größenlimit für den Cloud-Upload. Verwenden Sie „Auf Gerät speichern“.",
+    "fr": "Le journal dépasse la taille maximale d’envoi cloud. Utilisez « Enregistrer sur l’appareil ».",
+    "es": "El registro supera el límite de subida a la nube. Usa «Guardar en el dispositivo».",
+    "ja": "ログのサイズがクラウド送信の上限を超えています。「端末に保存」で書き出してください。",
+    "zh-Hans": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。"
+  },
+  "已清除本地诊断日志。": {
+    "en": "Local diagnostic logs cleared.",
+    "de": "Lokale Diagnoseprotokolle wurden gelöscht.",
+    "fr": "Les journaux de diagnostic locaux ont été effacés.",
+    "es": "Se borraron los registros de diagnóstico locales.",
+    "ja": "ローカルの診断ログを消去しました。",
+    "zh-Hans": "已清除本地诊断日志。"
   }
 }

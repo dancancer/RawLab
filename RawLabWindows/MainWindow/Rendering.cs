@@ -377,6 +377,26 @@ public partial class MainWindow
                     {
                         photoImportReportedRevision = openRevision;
                         usageAnalytics.Record(new PhotoImportedEvent());
+                        diagnosticSession.RecordBreadcrumb(
+                            "import",
+                            "photoImported",
+                            "Photo imported and preview delivered",
+                            new() { ["extension"] = Path.GetExtension(work.File) });
+                    }
+                    if (exactReady)
+                    {
+                        var fellBack = renderedGpuMode == 0 && rendered.Backend != 3 && !LibraryEntry.IsRaster(work.File);
+                        diagnosticSession.RecordBreadcrumb(
+                            "preview",
+                            fellBack ? "gpuFallback" : "exactPreviewRendered",
+                            fellBack ? "Preview fell back to CPU" : "Exact preview rendered",
+                            new()
+                            {
+                                ["width"] = rendered.Image.PixelWidth.ToString(),
+                                ["height"] = rendered.Image.PixelHeight.ToString(),
+                                ["backend"] = rendered.Backend.ToString(),
+                            },
+                            level: fellBack ? "warn" : "info");
                     }
                     RefreshControls();
                     UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
@@ -399,6 +419,7 @@ public partial class MainWindow
 
     private void ApplyMainPreviewFailure(Exception? failure)
     {
+        if (failure != null) diagnosticSession.RecordError("preview", "renderPreview", failure);
         Trace.WriteLine($"Main preview fallback for {file}: {failure?.Message ?? "Source unavailable"}");
         var outcome = failure != null
             ? PreviewFallback.DegradeMainPreview(failure, result != null, openingPreview != null)

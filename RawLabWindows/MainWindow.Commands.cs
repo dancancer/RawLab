@@ -27,7 +27,7 @@ public partial class MainWindow
         PreserveUpdateNavigation();
         var focus=Keyboard.FocusedElement;
         var dialog=new SettingsWindow(GpuMode.SelectedIndex,aiPreference,RenderEngine.GetAIDevices(true),aiJob.State.IsRunning || exporting || autoExposing,
-            owner=>ExportAIDiagnostics(owner,null),aiDiagnostics.Latest()!=null,()=>ShowSoftwareUpdates(true),appPaths.LanguagePreferencePath){Owner=this};
+            owner=>ExportAIDiagnostics(owner,null),aiDiagnostics.Latest()!=null,()=>ShowSoftwareUpdates(true),appPaths.LanguagePreferencePath,diagnosticSession){Owner=this};
         if(dialog.ShowDialog()==true) {
             try {
                 if(aiPreference!=dialog.AIPreference) {

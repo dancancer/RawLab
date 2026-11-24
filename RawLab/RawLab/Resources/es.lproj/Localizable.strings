@@ -86,10 +86,12 @@
 "Wi-Fi 密码" = "Contraseña de Wi-Fi";
 "X3F 显影" = "Revelado X3F";
 "一并导入 %@ 个日期未知的文件" = "Incluir %@ archivos sin fecha";
+"一键云端上传" = "Subir a la nube";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
 "上一张" = "Foto anterior";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
+"上传成功，请复制诊断码发送给开发者。" = "Subida completada. Copia el código de diagnóstico y compártelo con el desarrollador.";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次使用的相机 · 未连接" = "Última cámara utilizada · Desconectada";
 "上次同步结果与历史" = "Resultados e historial de la última sincronización";
@@ -114,6 +116,7 @@
 "临时选择" = "Selección provisional";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Para contar los dispositivos activos, la aplicación guarda en este dispositivo un identificador de instalación generado al azar. No contiene información personal y se elimina al desactivar el análisis.";
 "乡村秋日 · 古典油画" = "Otoño rural · óleo clásico";
+"云端上传暂不可用，请先将诊断包保存到设备后发送。" = "La subida a la nube no está disponible ahora. Guarda el paquete en tu dispositivo y envíalo manualmente.";
 "交换横纵比例" = "Intercambiar la orientación del formato";
 "亮度降噪" = "Reducción de ruido de luminancia";
 "亮部" = "Claros";
@@ -158,6 +161,7 @@
 "保存 SDR JPEG" = "Guardar JPEG SDR";
 "保存位置" = "Ubicación de guardado";
 "保存到" = "Guardar en";
+"保存到设备…" = "Guardar en el dispositivo…";
 "保存失败" = "Error al guardar";
 "保存失败，请重试。" = "No se pudo guardar. Vuelve a intentarlo.";
 "保存当前照片" = "Guardar foto actual";
@@ -203,6 +207,7 @@
 "几何与镜头" = "Geometría y objetivo";
 "几何与镜头仅在“全部”或显式选择时包含。" = "La geometría y el objetivo solo se incluyen con Todo o al seleccionarlos expresamente.";
 "几何编辑" = "Edición de geometría";
+"分享诊断包…" = "Compartir paquete de diagnóstico…";
 "分割位置" = "Posición de la división";
 "分割线" = "Línea divisoria";
 "切换" = "Cambiar";
@@ -283,6 +288,7 @@
 "处理版本与来源不同，已沿用当前照片的处理版本" = "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual";
 "复制密码" = "Copiar contraseña";
 "复制范围" = "Alcance de la copia";
+"复制诊断码" = "Copiar código";
 "复制调整" = "Copiar ajustes";
 "外观" = "Aspectos";
 "外观不可用" = "Aspecto no disponible";
@@ -391,9 +397,11 @@
 "已撤销 %@ 张 · 未完成 %@ 张" = "Deshechas %@ · Pendientes %@";
 "已收起" = "Contraído";
 "已显影的照片（JPEG 等）" = "Foto revelada (JPEG, etc.)";
+"已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。" = "Hay registros de diagnóstico locales disponibles; la grabación detallada está desactivada.";
 "已校正%@" = "Corregido: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Se han rellenado algunos ajustes con la información de color del archivo. Revísalos.";
 "已清理 %d 个文件，释放 %@。" = "Se limpiaron %d archivos y se liberaron %@.";
+"已清除本地诊断日志。" = "Se borraron los registros de diagnóstico locales.";
 "已生成 %@ 个渲染型 DNG" = "Archivos DNG revelados creados: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Archivos DNG revelados creados: %@ (no se guardaron en la ubicación elegida)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.";
@@ -509,6 +517,8 @@
 "放弃此任务？已保存的照片会保留。" = "¿Descartar esta tarea? Las fotos guardadas se conservarán.";
 "放弃草稿" = "Descartar borrador";
 "放弃草稿并继续" = "Descartar borrador y continuar";
+"故障诊断" = "Diagnóstico";
+"故障诊断与错误日志" = "Diagnóstico y registros de errores";
 "效果" = "Efecto";
 "效果未验证" = "Aspecto sin verificar";
 "数据与提供方" = "Datos y proveedor";
@@ -548,6 +558,7 @@
 "无法创建新的预设标识，请重试。" = "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.";
 "无法加入最近打开：%@" = "No se pudo añadir a las fotos recientes: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "No se puede obtener el RAW original. Autoriza el acceso a esta foto en Ajustes del sistema y vuelve a intentarlo.";
+"无法导出诊断包。" = "No se pudo exportar el paquete de diagnóstico.";
 "无法导出错误日志。" = "No se pudo exportar el registro de errores.";
 "无法恢复编辑草稿，已保留已应用的调整。" = "No se pudo restaurar el borrador de edición; se conservaron los ajustes aplicados.";
 "无法按所选设置处理 JPEG。" = "No se pudo procesar el JPEG con estos ajustes.";
@@ -579,6 +590,7 @@
 "无法重置调整" = "No se pueden restablecer los ajustes";
 "无配方" = "Sin receta";
 "日光" = "Luz diurna";
+"日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。" = "El registro supera el límite de subida a la nube. Usa «Guardar en el dispositivo».";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Piel luminosa japonesa, azul cian transparente y aireado, sombras abiertas y altas luces suaves";
 "日系青空 · 高调日光" = "Cielo azul japonés · luz diurna en clave alta";
 "旧版 FBDD" = "FBDD heredado";
@@ -665,10 +677,12 @@
 "检查 %@ 的效果" = "Inspeccionar resultado de %@";
 "检查并查看最终调整" = "Comprobar y revisar ajustes finales";
 "检查目标" = "Comprobar fotos";
+"检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Se detectaron registros de diagnóstico de la sesión anterior listos para guardar o subir.";
 "横向色差" = "Aberración cromática lateral";
 "横向色差未应用" = "Aberración cromática lateral no corregida";
 "横向色差标定不可用" = "Calibración de aberración cromática lateral no disponible";
 "橙" = "Naranja";
+"正在上传…" = "Subiendo…";
 "正在保存" = "Guardando";
 "正在保存照片…" = "Guardando fotos…";
 "正在停止…" = "Deteniendo…";
@@ -695,6 +709,7 @@
 "正在检查预设…" = "Comprobando ajuste preestablecido…";
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在生成预览…" = "Generando vistas previas…";
+"正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Registrando diagnósticos detallados (se desactiva automáticamente tras 30 minutos o tras el próximo reinicio). Reproduce el problema y luego guarda o sube el paquete.";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "正在连接相机…" = "Conectando con la cámara…";
 "正常显影" = "Revelado normal";
@@ -748,6 +763,7 @@
 "清理已导出的相机原件失败，请重试。" = "No se pudieron limpiar los originales exportados de la cámara. Inténtalo de nuevo.";
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
+"清除日志" = "Borrar registros";
 "清除相机配置" = "Quitar perfil de cámara";
 "清除筛选" = "Borrar filtros";
 "清除锚点" = "Borrar anclas";
@@ -907,7 +923,11 @@
 "观察层" = "Capa de inspección";
 "视频范围（10 位 64–940）" = "Rango de vídeo (10 bits 64–940)";
 "计算与参考的差异" = "Calcular la diferencia con la referencia";
+"记录详细诊断日志" = "Registrar diagnósticos detallados";
 "设置结果未确认，请重新连接后检查。" = "No se ha confirmado el resultado del ajuste. Vuelve a conectar y compruébalo.";
+"诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Los paquetes de diagnóstico solo incluyen la versión de la aplicación, el entorno del sistema, resúmenes de pasos y códigos de error. Se excluyen fotos, nombres de archivo y rutas personales.";
+"诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Paquete de diagnóstico guardado. Puedes enviar el archivo ZIP al desarrollador por GitHub Issues o mensajería.";
+"诊断码：%@" = "Código de diagnóstico: %@";
 "试用方案 · 无颜色依据" = "Opción de prueba · Sin base de color";
 "试试其他编辑状态。" = "Prueba otro estado de edición.";
 "语言" = "Idioma";
@@ -1067,6 +1087,7 @@
 "长边" = "Borde largo";
 "长边 %@ px" = "Borde largo %@ px";
 "闪光灯" = "Flash";
+"问题简述（选填，勿填个人隐私）" = "Breve descripción del problema (opcional, sin datos personales)";
 "阴天" = "Nublado";
 "阴影" = "Sombras";
 "阿里云隐私政策" = "Política de privacidad de Aliyun";
@@ -1090,6 +1111,7 @@
 "预览待更新" = "Actualizando vista previa";
 "预览方式" = "Modo de vista previa";
 "预览方式不会改变编辑或导出。" = "El modo de vista previa no cambia los ajustes ni la exportación.";
+"预览日志" = "Vista previa del registro";
 "预览未更新" = "Vista previa sin actualizar";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Condiciones de vista previa: revelado C5, balance de blancos de la cámara, exposición de escena normalizada, exposición 0, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Condiciones de vista previa: foto revelada, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.";
@@ -1122,4 +1144,5 @@
 "黑场" = "Punto negro";
 "默认" = "Predeterminado";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valor predeterminado: %@; rango: de %@ a %@; incremento: %@.";
+"默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。" = "Desactivado por defecto. Actívalo para reproducir un problema y luego guarda el paquete en tu dispositivo o súbelo.";
 "默认降噪设置" = "Ajustes de reducción de ruido predeterminados";

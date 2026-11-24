@@ -23,7 +23,8 @@ public sealed class SettingsWindow : Window
     internal SettingsWindow(int currentBackend,AppPaths appPaths,Action? openSoftwareUpdates=null)
         : this(currentBackend,new AIGpuPreferenceStore(appPaths.AiGpuPreferencesPath).Read(),RenderEngine.GetAIDevices(),false,null,false,openSoftwareUpdates,appPaths.LanguagePreferencePath) { }
     internal SettingsWindow(int currentBackend,AIGpuPreference preference,AIDeviceInventory inventory,bool aiBusy,
-        Func<Window,Task<bool>>? exportDiagnostics,bool hasReport,Action? openSoftwareUpdates=null,string? languagePreferencePath=null)
+        Func<Window,Task<bool>>? exportDiagnostics,bool hasReport,Action? openSoftwareUpdates=null,string? languagePreferencePath=null,
+        DiagnosticSessionStore? diagnosticSession=null)
     {
         this.languagePreferencePath=languagePreferencePath;
         Style=(Style)FindResource(typeof(Window));
@@ -58,6 +59,24 @@ public sealed class SettingsWindow : Window
                 Loc.Format("AI 降噪将使用：{0}",selected?.Name ?? "");
         }
         aiGpu.SelectionChanged+=(_,_)=>RefreshHint();RefreshHint();
+        if(diagnosticSession!=null) {
+            var syncingDiag=false;
+            var recordingCheck=new CheckBox{Content=Loc.Text("记录详细诊断日志"),IsChecked=diagnosticSession.IsRecording,Margin=new Thickness(0,16,0,0)};
+            AutomationProperties.SetAutomationId(recordingCheck,"settings.diagnosticRecording");
+            recordingCheck.Checked+=(_,_)=>{if(!syncingDiag)diagnosticSession.SetRecordingEnabled(true);};
+            recordingCheck.Unchecked+=(_,_)=>{if(!syncingDiag)diagnosticSession.SetRecordingEnabled(false);};
+            panel.Children.Add(recordingCheck);
+            var openDiagnostics=new Button{Content=Loc.Text("上传或预览日志…"),Margin=new Thickness(0,8,0,0),HorizontalAlignment=HorizontalAlignment.Left};
+            AutomationProperties.SetAutomationId(openDiagnostics,"settings.openDiagnostics");
+            openDiagnostics.Click+=(_,_)=>{
+                var sheet=new DiagnosticSubmissionWindow(diagnosticSession){Owner=this};
+                sheet.ShowDialog();
+                syncingDiag=true;
+                recordingCheck.IsChecked=diagnosticSession.IsRecording;
+                syncingDiag=false;
+            };
+            panel.Children.Add(openDiagnostics);
+        }
         var export=new Button{Content=Loc.Text("导出 AI 诊断包…"),Margin=new Thickness(0,16,0,0),HorizontalAlignment=HorizontalAlignment.Left,
             IsEnabled=hasReport && exportDiagnostics!=null};
         AutomationProperties.SetAutomationId(export,"settings.exportAiDiagnostics");

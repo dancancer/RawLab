@@ -514,11 +514,20 @@ extension EditorModel {
         }
         let info: HDRSourceInfo?
         var sdrFallback = false
+        var openContext: [String: String] = [:]
+        if let ext = ErrorDiagnostics.fileNameExtension(url) { openContext["extension"] = ext }
+        DiagnosticCenter.recordBreadcrumb(category: "import", stage: "openStart", message: "Opening photo", context: openContext)
         do { info=try probeHDRSource(url, { sdrFallback = true }) }
-        catch { self.error=error.localizedDescription; return }
+        catch {
+            DiagnosticCenter.appErrorDiagnostics.record(error as NSError, operation: .photoImport, stage: "probeHDR", context: openContext)
+            self.error=error.localizedDescription; return
+        }
         var candidate: Adjustments
         do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
-        catch { self.error=error.localizedDescription; return }
+        catch {
+            DiagnosticCenter.appErrorDiagnostics.record(error as NSError, operation: .photoImport, stage: "defaultSettings", context: openContext)
+            self.error=error.localizedDescription; return
+        }
         if sdrFallback { candidate.hdr?.mode = .sdr }
         var cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
         guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
@@ -904,11 +913,23 @@ extension EditorModel {
                                              interactive: false, exportLongEdge: longEdge, exportFormat: format,
                                              outputSharpening: sharpening)
                 DispatchQueue.main.async {
+                    DiagnosticCenter.recordBreadcrumb(
+                        category: "export",
+                        stage: "exportCompleted",
+                        message: "Single photo export succeeded",
+                        context: ["format": resolvedFormat.suffix]
+                    )
                     self.exporting = false; self.statusState = .exported(output.lastPathComponent)
                     self.onUsage(.exportCompleted)
                 }
             } catch {
                 DispatchQueue.main.async {
+                    DiagnosticCenter.appErrorDiagnostics.record(
+                        error as NSError,
+                        operation: .photoExport,
+                        stage: "exportFile",
+                        context: ["format": resolvedFormat.suffix]
+                    )
                     self.exporting = false; self.error = error.localizedDescription
                     if self.file == file, self.settings == settings, self.aiGeneration == generation {
                         self.handleAIFailure(error)

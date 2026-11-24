@@ -504,6 +504,16 @@ public partial class MainWindow
             var outcome = after.Interrupted ? BatchOutcome.Interrupted : after.Cancelled ? BatchOutcome.Cancelled :
                 failed > 0 || after.FailedCount > 0 ? BatchOutcome.Partial : BatchOutcome.Completed;
             usageAnalytics.Record(new BatchExportCompletedEvent(outcome, succeeded, failed));
+            diagnosticSession.RecordBreadcrumb(
+                "batch",
+                "batchExportCompleted",
+                "Batch export reached terminal state",
+                new()
+                {
+                    ["outcome"] = outcome.ToString(),
+                    ["succeeded"] = succeeded.ToString(),
+                    ["failed"] = failed.ToString(),
+                });
         };
         window.BusyChanged += active => {
             var closeFailed=!active && closing && window.CloseFailed;

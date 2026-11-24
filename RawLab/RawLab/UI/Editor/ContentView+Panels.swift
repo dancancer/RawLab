@@ -175,6 +175,10 @@ extension ContentView {
                         Label(L10n.text("隐私设置"), systemImage: "gearshape")
                     }
                     .accessibilityIdentifier("editor.privacy.open")
+                    Button { coordinator.presentPrivacy() } label: {
+                        Label(L10n.text("故障诊断"), systemImage: "stethoscope")
+                    }
+                    .accessibilityIdentifier("diagnostics.open")
                     Button(action: exportErrorDiagnostics) {
                         Label(L10n.text("导出错误日志"), systemImage: "doc.text")
                     }

@@ -86,10 +86,12 @@
 "Wi-Fi 密码" = "Wi-Fi-Passwort";
 "X3F 显影" = "X3F-Entwicklung";
 "一并导入 %@ 个日期未知的文件" = "%@ Dateien ohne Datum einbeziehen";
+"一键云端上传" = "In die Cloud hochladen";
 "三分网格" = "Drittelraster";
 "三线性" = "Trilinear";
 "上一张" = "Vorheriges Foto";
 "上下拖动调整，方向键微调，Esc 取消" = "Zum Anpassen nach oben oder unten ziehen, mit Pfeiltasten feinjustieren, mit Esc abbrechen";
+"上传成功，请复制诊断码发送给开发者。" = "Upload erfolgreich. Kopieren Sie den Diagnosecode und teilen Sie ihn dem Entwickler mit.";
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次使用的相机 · 未连接" = "Zuletzt verwendete Kamera · Getrennt";
 "上次同步结果与历史" = "Ergebnisse und Verlauf der letzten Synchronisierung";
@@ -114,6 +116,7 @@
 "临时选择" = "Vorläufige Auswahl";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Um aktive Geräte zu zählen, speichert die App eine zufällig erzeugte Installations-ID auf diesem Gerät. Sie enthält keine personenbezogenen Daten und wird gelöscht, wenn Sie die Analyse deaktivieren.";
 "乡村秋日 · 古典油画" = "Ländlicher Herbst · klassisches Ölgemälde";
+"云端上传暂不可用，请先将诊断包保存到设备后发送。" = "Cloud-Upload ist derzeit nicht verfügbar. Bitte speichern Sie das Diagnosepaket auf dem Gerät und senden Sie es manuell.";
 "交换横纵比例" = "Seitenverhältnis drehen";
 "亮度降噪" = "Luminanz-Rauschreduzierung";
 "亮部" = "Helle Mitteltöne";
@@ -158,6 +161,7 @@
 "保存 SDR JPEG" = "SDR-JPEG speichern";
 "保存位置" = "Speicherort";
 "保存到" = "Speichern unter";
+"保存到设备…" = "Auf Gerät speichern…";
 "保存失败" = "Speichern fehlgeschlagen";
 "保存失败，请重试。" = "Speichern fehlgeschlagen. Versuchen Sie es erneut.";
 "保存当前照片" = "Aktuelles Foto sichern";
@@ -203,6 +207,7 @@
 "几何与镜头" = "Geometrie und Objektiv";
 "几何与镜头仅在“全部”或显式选择时包含。" = "Geometrie und Objektiv werden nur mit „Alle“ oder bei ausdrücklicher Auswahl übernommen.";
 "几何编辑" = "Geometrie bearbeiten";
+"分享诊断包…" = "Diagnosepaket teilen…";
 "分割位置" = "Position der Trennlinie";
 "分割线" = "Trennlinie";
 "切换" = "Wechseln";
@@ -283,6 +288,7 @@
 "处理版本与来源不同，已沿用当前照片的处理版本" = "Verarbeitungsversion unterscheidet sich von der Quelle; die Verarbeitungsversion des aktuellen Fotos wird beibehalten";
 "复制密码" = "Passwort kopieren";
 "复制范围" = "Kopierumfang";
+"复制诊断码" = "Code kopieren";
 "复制调整" = "Anpassungen kopieren";
 "外观" = "Looks";
 "外观不可用" = "Look nicht verfügbar";
@@ -391,9 +397,11 @@
 "已撤销 %@ 张 · 未完成 %@ 张" = "Rückgängig %@ · Offen %@";
 "已收起" = "Eingeklappt";
 "已显影的照片（JPEG 等）" = "Entwickeltes Foto (JPEG usw.)";
+"已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。" = "Lokale Diagnoseeinträge sind zum Export verfügbar; die detaillierte Aufzeichnung ist derzeit deaktiviert.";
 "已校正%@" = "Korrigiert: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Einige Einstellungen wurden aus den Farbangaben der Datei übernommen. Bitte prüfen Sie diese.";
 "已清理 %d 个文件，释放 %@。" = "%d Dateien bereinigt, %@ freigegeben.";
+"已清除本地诊断日志。" = "Lokale Diagnoseprotokolle wurden gelöscht.";
 "已生成 %@ 个渲染型 DNG" = "Entwickelte DNG-Dateien erstellt: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Entwickelte DNG-Dateien erstellt: %@ (nicht am gewählten Ort gespeichert)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Entwickeltes DNG erstellt, aber nicht am gewählten Ort gespeichert.";
@@ -509,6 +517,8 @@
 "放弃此任务？已保存的照片会保留。" = "Aufgabe verwerfen? Gespeicherte Fotos bleiben erhalten.";
 "放弃草稿" = "Entwurf verwerfen";
 "放弃草稿并继续" = "Entwurf verwerfen und fortfahren";
+"故障诊断" = "Diagnose";
+"故障诊断与错误日志" = "Diagnose & Fehlerprotokolle";
 "效果" = "Effekte";
 "效果未验证" = "Bildwirkung ungeprüft";
 "数据与提供方" = "Daten und Anbieter";
@@ -548,6 +558,7 @@
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
 "无法加入最近打开：%@" = "Konnte nicht zu den zuletzt geöffneten Fotos hinzugefügt werden: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "Das originale RAW konnte nicht abgerufen werden. Erlauben Sie in den Systemeinstellungen den Zugriff auf dieses Foto und versuchen Sie es erneut.";
+"无法导出诊断包。" = "Das Diagnosepaket konnte nicht exportiert werden.";
 "无法导出错误日志。" = "Das Fehlerprotokoll konnte nicht exportiert werden.";
 "无法恢复编辑草稿，已保留已应用的调整。" = "Der Bearbeitungsentwurf konnte nicht wiederhergestellt werden; die angewendeten Anpassungen wurden beibehalten.";
 "无法按所选设置处理 JPEG。" = "Das JPEG konnte mit diesen Einstellungen nicht verarbeitet werden.";
@@ -579,6 +590,7 @@
 "无法重置调整" = "Anpassungen können nicht zurückgesetzt werden";
 "无配方" = "Kein Rezept";
 "日光" = "Tageslicht";
+"日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。" = "Das Protokoll überschreitet das Größenlimit für den Cloud-Upload. Verwenden Sie „Auf Gerät speichern“.";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Japanisch leuchtende Haut, luftiges transparentes Blaucyan, offene Schatten und weiche Lichter";
 "日系青空 · 高调日光" = "Japanischer blauer Himmel · High-Key-Tageslicht";
 "旧版 FBDD" = "Älteres FBDD";
@@ -665,10 +677,12 @@
 "检查 %@ 的效果" = "Ergebnis von %@ prüfen";
 "检查并查看最终调整" = "Endgültige Anpassungen prüfen und anzeigen";
 "检查目标" = "Fotos prüfen";
+"检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Diagnoseprotokolle aus der vorherigen Sitzung stehen zum Speichern oder Hochladen bereit.";
 "横向色差" = "Laterale chromatische Aberration";
 "横向色差未应用" = "Laterale chromatische Aberration nicht korrigiert";
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
+"正在上传…" = "Wird hochgeladen…";
 "正在保存" = "Wird gespeichert";
 "正在保存照片…" = "Fotos werden gespeichert…";
 "正在停止…" = "Wird angehalten…";
@@ -695,6 +709,7 @@
 "正在检查预设…" = "Vorgabe wird geprüft…";
 "正在生成效果预览…" = "Vorschau wird erstellt…";
 "正在生成预览…" = "Vorschauen werden erstellt …";
+"正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Detaillierte Diagnoseprotokolle werden aufgezeichnet (wird nach 30 Minuten oder nach dem nächsten Neustart automatisch beendet). Reproduzieren Sie das Problem und speichern oder senden Sie das Paket.";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在连接相机…" = "Verbindung zur Kamera wird hergestellt …";
 "正常显影" = "Normale Entwicklung";
@@ -748,6 +763,7 @@
 "清理已导出的相机原件失败，请重试。" = "Bereinigen der exportierten Kamera-Originale fehlgeschlagen. Bitte erneut versuchen.";
 "清空选择" = "Auswahl aufheben";
 "清除搜索" = "Suche löschen";
+"清除日志" = "Protokolle löschen";
 "清除相机配置" = "Kameraprofil entfernen";
 "清除筛选" = "Filter zurücksetzen";
 "清除锚点" = "Anker löschen";
@@ -907,7 +923,11 @@
 "观察层" = "Kontrollansicht";
 "视频范围（10 位 64–940）" = "Videobereich (10 Bit 64–940)";
 "计算与参考的差异" = "Abweichung von der Referenz berechnen";
+"记录详细诊断日志" = "Detaillierte Diagnoseprotokolle aufzeichnen";
 "设置结果未确认，请重新连接后检查。" = "Das Ergebnis der Einstellung wurde nicht bestätigt. Verbinden Sie sich erneut und prüfen Sie es.";
+"诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Diagnosepakete enthalten nur App-Version, Systemumgebung, Schrittzusammenfassungen und Fehlercodes. Fotodaten, Dateinamen und persönliche Pfade sind ausgeschlossen.";
+"诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Diagnosepaket gespeichert. Sie können die ZIP-Datei über GitHub Issues oder Messenger an den Entwickler senden.";
+"诊断码：%@" = "Diagnosecode: %@";
 "试用方案 · 无颜色依据" = "Testoption · Keine Farbbasis";
 "试试其他编辑状态。" = "Wähle einen anderen Bearbeitungsstatus.";
 "语言" = "Sprache";
@@ -1067,6 +1087,7 @@
 "长边" = "Lange Seite";
 "长边 %@ px" = "Lange Seite %@ px";
 "闪光灯" = "Blitz";
+"问题简述（选填，勿填个人隐私）" = "Kurze Problembeschreibung (optional, keine persönlichen Daten)";
 "阴天" = "Bewölkt";
 "阴影" = "Schatten";
 "阿里云隐私政策" = "Datenschutzerklärung von Aliyun";
@@ -1090,6 +1111,7 @@
 "预览待更新" = "Vorschau wird aktualisiert";
 "预览方式" = "Vorschaumodus";
 "预览方式不会改变编辑或导出。" = "Der Vorschaumodus ändert weder Bearbeitung noch Export.";
+"预览日志" = "Protokollvorschau";
 "预览未更新" = "Vorschau nicht aktualisiert";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Vorschau-Bedingungen: C5-Entwicklung, Kamera-Weißabgleich, normalisierte Szenenbelichtung, Belichtung 0, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Vorschau-Bedingungen: entwickeltes Foto, keine zusätzlichen Anpassungen, LUT-Stärke 100%, sRGB-Ausgabe, lange Kante 512 Pixel.";
@@ -1122,4 +1144,5 @@
 "黑场" = "Schwarzpunkt";
 "默认" = "Standard";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Standard: %@; Bereich: %@ bis %@; Schrittweite: %@.";
+"默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。" = "Standardmäßig deaktiviert. Aktivieren Sie diese Option zur Fehlerreproduktion und speichern Sie das Diagnosepaket anschließend auf dem Gerät oder laden Sie es hoch.";
 "默认降噪设置" = "Standard-Rauschreduzierung";

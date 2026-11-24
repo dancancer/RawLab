@@ -431,8 +431,11 @@ final class EditorModel: ObservableObject {
             self.error = error.localizedDescription
         }
         selectedFilmID = ""
-        do { editStore = try MacEditPersistence(directory: editDirectory) }
-        catch { saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription)) }
+        do { editStore = try MacEditPersistence(directory: editDirectory, diagnostics: DiagnosticCenter.appErrorDiagnostics) }
+        catch {
+            DiagnosticCenter.appErrorDiagnostics.record(error as NSError, operation: .editPersistence, stage: "openStore")
+            saveError = L10n.format("无法读取调整记录：%@", String(describing: error.localizedDescription))
+        }
         do {
             if let job = try batchJournal.load() {
                 attachBatch(job)
@@ -457,6 +460,7 @@ extension EditorModel {
         if case RenderError.aiNotReady = failure {
             aiResultUnavailable()
         } else if case RenderError.aiFailed(let message) = failure {
+            DiagnosticCenter.recordBreadcrumb(level: .error, category: "ai", stage: "aiDenoiseFailed", message: message)
             aiRequiresExplicitRetry = true
             aiState = .failed(message)
         } else { return }

@@ -100,7 +100,13 @@ struct RawLabMacApp: App {
                         else { Text(L10n.text("请保留现有应用和数据，处理问题后重新启动。")) }
                     }.padding(24).preferredColorScheme(.dark)
                 } else { ProgressView(L10n.text("正在检查启动状态…")) }
-            }.task { await runtime.start(delegate: appDelegate); if runtime.model != nil { UsageAnalytics.shared.beginSession() } }
+            }.task {
+                await runtime.start(delegate: appDelegate)
+                if runtime.model != nil {
+                    UsageAnalytics.shared.beginSession()
+                    DiagnosticCenter.shared.beginSession()
+                }
+            }
                 .onChange(of: runtime.model != nil, initial: true) { _, ready in
                     if ready { appDelegate.openPhotos = handleSystemOpen }
                 }
@@ -132,6 +138,7 @@ struct RawLabMacApp: App {
                 }
                 CommandGroup(replacing: .appInfo) {
                     Button(L10n.text("关于 RawLab…")) { openWindow(id: "about") }
+                    Button(L10n.text("故障诊断…")) { openWindow(id: "about") }
                     Button(L10n.text("检查更新…")) {
                         showUpdateWindow("update-prompt")
                         runtime.controller?.check(manual: true)
