@@ -169,6 +169,7 @@ public partial class MainWindow
     private void RefreshExternalReloadBanner()
     {
         ExternalReloadBanner.Visibility = externalReloadBanner.Visible ? Visibility.Visible : Visibility.Collapsed;
+        RefreshHDRPresentation();
     }
 
     private void ReloadExternalUpdateClicked(object sender, RoutedEventArgs e) => ReloadExternalUpdate();

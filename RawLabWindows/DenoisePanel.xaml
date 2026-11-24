@@ -32,7 +32,7 @@
     </Button>
    </StackPanel>
    <ProgressBar x:Name="AIProgress" Minimum="0" Maximum="1" Height="4" Margin="0,8,0,0" Visibility="Collapsed" AutomationProperties.Name="{DynamicResource 'AI 降噪进度'}"/>
-   <local:ParameterRow x:Name="AIStrength" Visibility="Collapsed" Margin="0,6,0,0" Compact="True" AutomationProperties.AutomationId="denoise.ai.strength"/>
+   <local:ParameterRow x:Name="AIStrength" Visibility="Collapsed" Margin="0,6,0,0" AutomationProperties.AutomationId="denoise.ai.strength"/>
    <TextBlock x:Name="AIStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
   </StackPanel>
  </StackPanel>

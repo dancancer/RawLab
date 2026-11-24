@@ -147,6 +147,7 @@ struct MacLensChooserState {
 
     static func capabilityKeys(for candidate: LensCandidate) -> [String] {
         [candidate.hasDistortion ? "畸变标定" : "畸变标定不可用",
-         candidate.hasTCA ? "横向色差标定" : "横向色差标定不可用"]
+         candidate.hasTCA ? "横向色差标定" : "横向色差标定不可用",
+         candidate.hasVignetting ? "暗角标定" : "暗角标定不可用"]
     }
 }

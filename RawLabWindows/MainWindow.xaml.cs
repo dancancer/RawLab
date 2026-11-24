@@ -135,7 +135,6 @@ public partial class MainWindow : Window
             RefreshSaveNotice();
             RefreshInspection();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
-            RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
             foreach(var entry in galleries.SelectMany(gallery=>gallery.Photos).Distinct())entry.RefreshPhotoStatus();
         }
@@ -152,7 +151,7 @@ public partial class MainWindow : Window
         ResultCanvas.HoldStarted+=BeginHoldingBefore;
         ResultCanvas.HoldEnded+=EndHoldingBefore;
         NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
-        ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        ResultCanvas.ImageBoundsChanged+=()=>{RefreshPhotoLabels();if(settings.IsHDREditing)RefreshHDRPresentation();};
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);

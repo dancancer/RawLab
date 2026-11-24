@@ -623,9 +623,13 @@ public partial class MainWindow
             {
                 if (toolMode==EditorToolMode.Geometry || !dragFastPath)
                 {
+                    var geom=transform.Active && transform.Tool==TransformTool.Geometry ? transform.Geometry : settings.Geometry;
                     GeometryCategoryRing.Selected=toolMode==EditorToolMode.Geometry && !GeometryEditor.ShowPerspective;
-                    GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;
+                    GeometryCategoryRing.Progress=(geom with { PerspectiveHorizontal=0, PerspectiveVertical=0 }).IsIdentity ? 0 : 1;
                     GeometryCategoryRing.InvalidateVisual();
+                    PerspectiveCategoryRing.Selected=toolMode==EditorToolMode.Geometry && GeometryEditor.ShowPerspective;
+                    PerspectiveCategoryRing.Progress=geom.PerspectiveHorizontal!=0 || geom.PerspectiveVertical!=0 ? 1 : 0;
+                    PerspectiveCategoryRing.InvalidateVisual();
                 }
                 if (toolMode==EditorToolMode.ColorGrading || !dragFastPath)
                 {
@@ -772,8 +776,6 @@ public partial class MainWindow
         ClippingButton.IsEnabled=InfoButton.IsEnabled=file!=null && !exporting && ShowsPhotoWorkspace;
         ZoomButton.IsEnabled=file!=null && !exporting && ShowsPhotoWorkspace && !transform.Active;
         CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active && ShowsPhotoWorkspace;
-        InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
-        InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         var busy=(scheduler.Busy && scheduler.Revision!=quietViewportRevision) || previewResize.IsEnabled || aiJob.State.IsRunning || processingMigrationBusy;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;

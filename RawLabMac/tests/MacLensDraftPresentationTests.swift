@@ -14,10 +14,22 @@ final class EditorModel: ObservableObject {
 @main
 struct MacLensDraftPresentationTests {
     private static let candidates = [
-        LensCandidate(id: "gm", maker: "Sony", model: "FE 24–70mm F2.8 GM", hasDistortion: true, hasTCA: true, isMatch: true),
-        LensCandidate(id: "gm2", maker: "Sony", model: "FE 24–70mm F2.8 GM II", hasDistortion: true, hasTCA: true, isMatch: false),
+        LensCandidate(id: "gm", maker: "Sony", model: "FE 24–70mm F2.8 GM", hasDistortion: true, hasTCA: true, isMatch: true, hasVignetting: true),
+        LensCandidate(id: "gm2", maker: "Sony", model: "FE 24–70mm F2.8 GM II", hasDistortion: true, hasTCA: true, isMatch: false, hasVignetting: true),
         LensCandidate(id: "za", maker: "Sony", model: "Vario-Tessar T* FE 24–70mm F4 ZA OSS", hasDistortion: true, hasTCA: false, isMatch: false)
     ]
+
+    private struct WidthProbeLayout: Layout {
+        let proposedWidth: CGFloat
+        func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+            guard let child = subviews.first else { return .zero }
+            return child.sizeThatFits(ProposedViewSize(width: proposedWidth, height: nil))
+        }
+        func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+            subviews.first?.place(at: bounds.origin, anchor: .topLeading,
+                                  proposal: ProposedViewSize(width: proposedWidth, height: nil))
+        }
+    }
 
     static func main() {
         setbuf(stdout, nil)
@@ -86,6 +98,17 @@ struct MacLensDraftPresentationTests {
                 name: "lens-default-\(width)", size: NSSize(width: width, height: width == 650 ? 260 : 190),
                 language: language, output: output)
         }
+        let narrowHost = NSHostingView(rootView: WidthProbeLayout(proposedWidth: 280) {
+            LensDraftWorkspace(settings: settings, info: info, previewIsCurrent: true, update: { _ in }, choose: {})
+        }.environment(\.locale, Locale(identifier: language.rawValue)))
+        narrowHost.layoutSubtreeIfNeeded()
+        guard narrowHost.fittingSize.width <= 280.5 else {
+            throw RenderError.failed("Narrow 280pt lens workspace overflowed to \(narrowHost.fittingSize.width)pt in \(language.rawValue)")
+        }
+        try await snapshot(LensDraftWorkspace(settings: settings, info: info, previewIsCurrent: true,
+            update: { _ in }, choose: {}).padding(.vertical, 12).background(Color(nsColor: .windowBackgroundColor)),
+            name: "lens-narrow-280", size: NSSize(width: 280, height: 420),
+            language: language, output: output)
         var manual = settings
         manual.mode = .manual
         manual.profileID = "za"
@@ -101,7 +124,7 @@ struct MacLensDraftPresentationTests {
             name: "lens-chooser", size: NSSize(width: 540, height: 440), language: language, output: output)
         let report: [String: Any] = ["method": "NSHostingView.cacheDisplay on test-owned, unshown windows",
             "fixture": "Synthetic catalog and report; no RAW file or saved edit was read or modified",
-            "language": language.rawValue, "snapshots": 4,
+            "language": language.rawValue, "snapshots": 5,
             "limitations": ["No screen capture, activation, or input synthesis", "Real keyboard, pointer, and VoiceOver behavior awaits unlock"]]
         try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
             .write(to: output.appendingPathComponent("report.json"))

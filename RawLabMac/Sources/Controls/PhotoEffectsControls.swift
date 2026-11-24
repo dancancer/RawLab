@@ -6,6 +6,7 @@ struct PhotoEffectsControls: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
     let tool: AdjustmentParameter
+    var horizontalPadding: CGFloat = 16
     var onPreferredHeight: (CGFloat) -> Void = { _ in }
     var onReset: () -> Void = {}
     @State private var advanced = false
@@ -30,7 +31,7 @@ struct PhotoEffectsControls: View {
                         .accessibilityIdentifier("effects.advanced.vignette")
                 }
                 Spacer(minLength: 0)
-                if !isVignette || advanced { Button {
+                Button {
                     ParameterValueField.cancelPendingInputs()
                     onReset()
                 } label: {
@@ -40,7 +41,6 @@ struct PhotoEffectsControls: View {
                     .accessibilityLabel(L10n.format("重置%@", tool.spec.title))
                     .accessibilityIdentifier("effects.resetGroup.\(tool.rawValue)")
                     .disabled(model.settings.isEffectDefault(tool))
-                }
             }.frame(minHeight: 28)
             ForEach(parameters) { parameter in
                 ParameterRow(title: parameter == .grainAmount ? L10n.text("颗粒强度") : parameter.title,
@@ -56,7 +56,7 @@ struct PhotoEffectsControls: View {
                     .multilineTextAlignment(.center).padding(.top, 4)
                     .accessibilityIdentifier("effects.disabledReason.\(tool.rawValue)")
             }
-        }.frame(maxWidth: 720).padding(.horizontal, 16)
+        }.frame(maxWidth: 720).padding(.horizontal, horizontalPadding)
 
     }
 

@@ -116,6 +116,7 @@ public partial class MainWindow
         RefreshWorkspaceAvailability();
         RefreshHistogramWorkspace();
         RefreshWorkspaceBrowserLayout();
+        RefreshInspection();
         RefreshHDRPresentation();
     }
 
@@ -149,6 +150,12 @@ public partial class MainWindow
         if (workspaceLayout.Mode == WorkspaceMode.Editing && !SuspendInspectorTool()) return;
         if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
         if (mode != WorkspaceMode.Editing && curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
+        if (mode != WorkspaceMode.Editing && wbProbeEnabled) CancelWbProbe();
+        if (mode != WorkspaceMode.Editing && inspection.PinModeEnabled)
+        {
+            inspection.PinModeEnabled = false;
+            RefreshInspection();
+        }
         CancelViewingInput();
         HistogramPopup.IsOpen = ProcessingPopup.IsOpen = false;
         workspaceLayout.SetMode(mode);
@@ -207,7 +214,18 @@ public partial class MainWindow
     {
         if (file == null || pendingAllReset != null || closing || exporting || UpdateInstallationActive ||
             workspaceLayout.Mode != WorkspaceMode.Editing) return;
-        if (ShowsInspector && !SuspendInspectorTool()) return;
+        if (ShowsInspector)
+        {
+            if (!SuspendInspectorTool()) return;
+            if (hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
+            if (curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
+            if (wbProbeEnabled) CancelWbProbe();
+            if (inspection.PinModeEnabled)
+            {
+                inspection.PinModeEnabled = false;
+                RefreshInspection();
+            }
+        }
         workspaceLayout.ToggleInspector();
         ProcessingPopup.IsOpen = false;
         RefreshWorkspace();
@@ -219,7 +237,7 @@ public partial class MainWindow
     {
         get
         {
-            var minimumHeight = TextElement.GetFontSize(AdjustmentPanel) >= 20 ? 700 : 400;
+            var minimumHeight = TextElement.GetFontSize(AdjustmentPanel) >= 20 ? 700 : 640;
             return ShowsInspector && (WorkspaceBody.ActualHeight == 0 || WorkspaceBody.ActualHeight >= minimumHeight);
         }
     }

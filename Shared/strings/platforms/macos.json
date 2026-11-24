@@ -604,10 +604,6 @@
       "formats": [],
       "source": "元数据匹配"
     },
-    "先开启畸变或横向色差校正": {
-      "formats": [],
-      "source": "先开启畸变或横向色差校正"
-    },
     "全不选": {
       "formats": [],
       "source": "全不选"
@@ -3236,10 +3232,6 @@
       "formats": [],
       "source": "重置颜色分级"
     },
-    "恢复阴影、中间调和高光的颜色分级默认值？": {
-      "formats": [],
-      "source": "恢复阴影、中间调和高光的颜色分级默认值？"
-    },
     "上下拖动调整，方向键微调，Esc 取消": {
       "formats": [],
       "source": "上下拖动调整，方向键微调，Esc 取消"
@@ -4506,10 +4498,6 @@
       "formats": [],
       "source": "拆分点"
     },
-    "重置曲线": {
-      "formats": [],
-      "source": "重置曲线"
-    },
     "明亮度": {
       "formats": [],
       "source": "明亮度"
@@ -4656,6 +4644,62 @@
     "正在显影": {
       "formats": [],
       "source": "正在显影"
+    },
+    "中间调拆分": {
+      "formats": [],
+      "source": "中间调拆分"
+    },
+    "先开启畸变、横向色差或暗角校正": {
+      "formats": [],
+      "source": "先开启畸变、横向色差或暗角校正"
+    },
+    "展开取样监视": {
+      "formats": [],
+      "source": "展开取样监视"
+    },
+    "恢复阴影、中间调、高光、全局、融合和平衡的默认值？": {
+      "formats": [],
+      "source": "恢复阴影、中间调、高光、全局、融合和平衡的默认值？"
+    },
+    "拖动照片调整曲线；退出目标模式后可平移。": {
+      "formats": [],
+      "source": "拖动照片调整曲线；退出目标模式后可平移。"
+    },
+    "收起取样监视": {
+      "formats": [],
+      "source": "收起取样监视"
+    },
+    "暗角标定": {
+      "formats": [],
+      "source": "暗角标定"
+    },
+    "暗角标定不可用": {
+      "formats": [],
+      "source": "暗角标定不可用"
+    },
+    "点击照片中的中性灰区域取样，按 Esc 退出。": {
+      "formats": [],
+      "source": "点击照片中的中性灰区域取样，按 Esc 退出。"
+    },
+    "点选添加锚点": {
+      "formats": [],
+      "source": "点选添加锚点"
+    },
+    "退出白平衡吸管": {
+      "formats": [],
+      "source": "退出白平衡吸管"
+    },
+    "重置参数曲线": {
+      "formats": [],
+      "source": "重置参数曲线"
+    },
+    "阴影拆分": {
+      "formats": [],
+      "source": "阴影拆分"
+    },
+    "高光拆分": {
+      "formats": [],
+      "source": "高光拆分"
     }
   },
   "overrides": {},
@@ -4859,14 +4903,6 @@
       "fr": "Pixels",
       "ja": "ピクセル",
       "zh-Hans": "像素"
-    },
-    "先开启畸变或横向色差校正": {
-      "de": "Zuerst die Korrektur von Verzeichnung oder lateraler chromatischer Aberration aktivieren",
-      "en": "Enable Distortion or Lateral Chromatic Aberration Correction First",
-      "es": "Activa primero la corrección de distorsión o aberración cromática lateral",
-      "fr": "Activez d’abord la correction de la distorsion ou de l’aberration chromatique latérale",
-      "ja": "先に歪曲収差補正か倍率色収差補正をオンにしてください",
-      "zh-Hans": "先开启畸变或横向色差校正"
     },
     "关于 RawLab…": {
       "de": "Über RawLab…",
@@ -5939,6 +5975,38 @@
       "fr": "Impossible de lire le mode de développement X3F : {0}",
       "ja": "X3F 現像モードを読み取れません：{0}",
       "zh-Hans": "无法读取 X3F 显影模式：{0}"
+    },
+    "先开启畸变、横向色差或暗角校正": {
+      "en": "Enable Distortion, Lateral Chromatic Aberration, or Vignetting Correction First",
+      "de": "Zuerst Verzeichnung, laterale chromatische Aberration oder Vignettierung aktivieren",
+      "fr": "Activez d’abord la distorsion, l’aberration chromatique latérale ou le vignettage",
+      "es": "Activa primero distorsión, aberración cromática lateral o viñeteo",
+      "ja": "先に歪曲収差・倍率色収差・周辺光量補正のいずれかをオンにしてください",
+      "zh-Hans": "先开启畸变、横向色差或暗角校正"
+    },
+    "暗角标定": {
+      "en": "Vignetting Calibration",
+      "de": "Vignettierungskalibrierung",
+      "fr": "Étalonnage du vignettage",
+      "es": "Calibración de viñeteo",
+      "ja": "周辺光量補正の校正データあり",
+      "zh-Hans": "暗角标定"
+    },
+    "暗角标定不可用": {
+      "en": "Vignetting Calibration Unavailable",
+      "de": "Vignettierungskalibrierung nicht verfügbar",
+      "fr": "Étalonnage du vignettage indisponible",
+      "es": "Calibración de viñeteo no disponible",
+      "ja": "周辺光量補正の校正データなし",
+      "zh-Hans": "暗角标定不可用"
+    },
+    "退出白平衡吸管": {
+      "en": "Exit WB Eyedropper",
+      "de": "Weißabgleich-Pipette beenden",
+      "fr": "Quitter la pipette BB",
+      "es": "Salir del cuentagotas de BB",
+      "ja": "WB スポイトを終了",
+      "zh-Hans": "退出白平衡吸管"
     }
   }
 }

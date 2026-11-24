@@ -43,7 +43,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if channel == .rgb {
+            if channel == .rgb && !showSplitMarkers {
                 ViewThatFits(in: .horizontal) {
                     HStack { modeTitle; Spacer(minLength: 12); switchButton }
                     VStack(alignment: .leading) { modeTitle; switchButton }
@@ -91,7 +91,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
     }
     private var canvas: some View {
         ToneCurveCanvas(value: channelBinding, selected: $selected, scope: "\(scope).\(channel.rawValue)",
-            channel: channel, showSplitMarkers: showSplitMarkers, fine: fine,
+            channel: channel, showSplitMarkers: showSplitMarkers, allowsPointEditing: !(showSplitMarkers && channel == .rgb), fine: fine,
             isCurrent: isCurrent, canChange: canChange, prepareEditing: prepareEditing,
             onEditingChanged: onEditingChanged, onCancelled: onCancelled)
     }

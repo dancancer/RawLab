@@ -11,7 +11,7 @@ public partial class MainWindow
 
     private bool CanUseWbProbe =>
         file != null && !settings.IsHDREditing && !closing && !exporting && !transform.Active &&
-        (PhotoInput.IsRaster(file) || settings.AsShot != null) &&
+        (PhotoInput.IsRaster(file) ? settings.MasterRecipeID == null : settings.AsShot != null) &&
         !PhotoInput.IsNormalX3f(file, settings);
 
     private void InitializeWbProbe()
@@ -38,14 +38,16 @@ public partial class MainWindow
 
     private void RefreshWbProbe()
     {
-        ResultCanvas.WbProbeEnabled = wbProbeEnabled && toolMode == EditorToolMode.WhiteBalance &&
+        ResultCanvas.WbProbeEnabled = ShowsInspector && wbProbeEnabled && toolMode == EditorToolMode.WhiteBalance &&
             expandedGroup != null && !transform.Active && CanUseWbProbe;
         if (toolMode == EditorToolMode.WhiteBalance)
         {
             var raster = file != null && PhotoInput.IsRaster(file) && !settings.IsHDREditing;
-            var notice = wbProbeSampling ? Loc.Text("正在取色…") : wbProbeNotice;
+            var rasterMasterRecipe = raster && settings.MasterRecipeID != null;
+            var notice = wbProbeSampling ? Loc.Text("正在取色…") : wbProbeNotice ??
+                (wbProbeEnabled && CanUseWbProbe ? Loc.Text("点击照片中的中性灰区域取样，按 Esc 退出。") : null);
             WhiteBalanceEditor.Refresh(settings,
-                WhiteBalanceEditor.IsEnabled && (settings.IsHDREditing || raster || settings.AsShot != null),
+                WhiteBalanceEditor.IsEnabled && (settings.IsHDREditing || (raster && !rasterMasterRecipe) || (!raster && settings.AsShot != null)),
                 isRaster: raster,
                 wbProbeAvailable: CanUseWbProbe && result != null,
                 wbProbeEnabled: wbProbeEnabled,

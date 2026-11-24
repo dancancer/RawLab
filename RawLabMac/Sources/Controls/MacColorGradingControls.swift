@@ -45,29 +45,20 @@ struct MacColorGradingControls: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) {
                     ForEach(GradingTab.allCases) { target in
-                        let wheelValue = target.zone.map { settings[$0] } ?? settings.global
-                        Button {
-                            onCancelled()
-                            ParameterValueField.cancelPendingInputs()
-                            if let z = target.zone {
-                                globalSelected = false
-                                zone = z
-                            } else {
-                                globalSelected = true
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Text(target.title).fixedSize()
-                                Circle().fill(wheelValue.isDefault ? .clear : Color.yellow).frame(width: 3, height: 3)
-                            }.padding(.horizontal, 10).frame(minHeight: 30)
-                                .background(activeTab == target ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
-                                .contentShape(Rectangle())
-                        }.buttonStyle(.plain).accessibilityIdentifier("grading.zone.\(target.rawValue)")
-                            .accessibilityAddTraits(activeTab == target ? .isSelected : [])
-                            .accessibilityValue(L10n.text(wheelValue.isDefault ? "未调整" : "已调整"))
+                        gradingTabButton(target, fillWidth: false)
+                    }
+                }
+                VStack(spacing: 4) {
+                    HStack(spacing: 4) {
+                        gradingTabButton(.shadows, fillWidth: true)
+                        gradingTabButton(.midtones, fillWidth: true)
+                    }
+                    HStack(spacing: 4) {
+                        gradingTabButton(.highlights, fillWidth: true)
+                        gradingTabButton(.global, fillWidth: true)
                     }
                 }
             }
@@ -89,6 +80,35 @@ struct MacColorGradingControls: View {
             }
         }.frame(maxWidth: 720)
             .onChange(of: zone) { _, _ in globalSelected = false }
+    }
+
+    private func gradingTabButton(_ target: GradingTab, fillWidth: Bool) -> some View {
+        let wheelValue = target.zone.map { settings[$0] } ?? settings.global
+        let active = activeTab == target
+        return Button {
+            onCancelled()
+            ParameterValueField.cancelPendingInputs()
+            if let z = target.zone {
+                globalSelected = false
+                zone = z
+            } else {
+                globalSelected = true
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(target.title).font(.system(size: 12, weight: active ? .semibold : .regular)).fixedSize()
+                Circle().fill(wheelValue.isDefault ? .clear : Color.yellow).frame(width: 3, height: 3)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: fillWidth ? .infinity : nil, minHeight: 28)
+            .background(active ? Color.yellow.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 4))
+            .foregroundStyle(active ? Color.yellow : Color.primary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("grading.zone.\(target.rawValue)")
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityValue(L10n.text(wheelValue.isDefault ? "未调整" : "已调整"))
     }
 
     private var wheel: some View {

@@ -146,10 +146,11 @@ extension EditorModel {
 
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
         guard group.isVisible(isHDREditing: settings.isHDREditing) else { return }
-        if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
+        if group == .looks && !quickPresetsVisible && geometryDraft != nil {
             showQuickPresets(); return
         }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation
         target.selectGroup(group)
         navigateAdjustment(to: target)
@@ -159,6 +160,7 @@ extension EditorModel {
         guard tool.group.isVisible(isHDREditing: settings.isHDREditing),
               quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && tool.group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation; target.selectTool(tool)
         navigateAdjustment(to: target)
     }

@@ -210,7 +210,7 @@ public partial class MainWindow
             var visiblePhoto=ResultCanvas.VisibleImageBounds;
             var photo=new Rect(ResultCanvas.TranslatePoint(visiblePhoto.TopLeft,PhotoLabels),visiblePhoto.Size);
             var after=new Rect(new Point(Canvas.GetLeft(FilmLabel),Canvas.GetTop(FilmLabel)),FilmLabel.DesiredSize);
-            var info=InfoEntryButton.IsVisible ? new Rect(InfoEntryButton.TranslatePoint(new Point(),PhotoLabels),InfoEntryButton.RenderSize) : Rect.Empty;
+            var info=InfoOverlay.IsVisible ? new Rect(InfoOverlay.TranslatePoint(new Point(),PhotoLabels),InfoOverlay.RenderSize) : Rect.Empty;
             var image=ResultCanvas.ImageBounds;
             var center=ResultCanvas.TranslatePoint(new Point(image.X+image.Width*ResultCanvas.Divider,visiblePhoto.Y+visiblePhoto.Height/2),PhotoLabels);
             var handle=new Rect(center.X-16,center.Y-16,32,32);

@@ -155,6 +155,7 @@ struct MacAIDenoiseControls: View {
                     }
                 ), range: 0...100, defaultValue: 100, unit: "%", identifier: "denoise.ai.strength",
                 onEditingChanged: model.setInteracting, compact: true)
+                    .foregroundStyle(.primary)
                     .disabled(model.result == nil)
             }
             if !model.settings.isHDREditing && model.settings.aiDenoiseEnabled {

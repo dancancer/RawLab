@@ -61,6 +61,7 @@ public partial class MainWindow
         if(!closing)IsEnabled=true;
         EditorShell.IsEnabled=!UpdateInstallationActive;
         UpdateLockBanner.Visibility=UpdateInstallationActive ? Visibility.Visible : Visibility.Collapsed;
+        RefreshHDRPresentation();
         if(batchWindow!=null)batchWindow.IsEnabled=!UpdateInstallationActive;
         if(collectionWindow!=null)collectionWindow.IsEnabled=!UpdateInstallationActive;
     }

@@ -9326,5 +9326,85 @@
     "fr": "Développement",
     "ja": "現像中",
     "zh-Hans": "正在显影"
+  },
+  "中间调拆分": {
+    "en": "Midtones Split",
+    "de": "Mitteltöne-Trennpunkt",
+    "fr": "Séparation des tons moyens",
+    "es": "División de medios tonos",
+    "ja": "中間調分割",
+    "zh-Hans": "中间调拆分"
+  },
+  "展开取样监视": {
+    "en": "Expand Sampling Monitor",
+    "de": "Messmonitor einblenden",
+    "fr": "Développer le moniteur d’échantillonnage",
+    "es": "Expandir monitor de muestreo",
+    "ja": "サンプリングモニターを展開",
+    "zh-Hans": "展开取样监视"
+  },
+  "恢复阴影、中间调、高光、全局、融合和平衡的默认值？": {
+    "en": "Restore default color grading for shadows, midtones, highlights, global, blending, and balance?",
+    "de": "Color-Grading für Schatten, Mitteltöne, Lichter, Global, Überblendung und Balance zurücksetzen?",
+    "fr": "Rétablir l’étalonnage par défaut des ombres, tons moyens, hautes lumières, global, fusion et équilibre ?",
+    "es": "¿Restaurar la gradación de color predeterminada de sombras, medios tonos, luces, global, fusión y equilibrio?",
+    "ja": "シャドウ、中間調、ハイライト、グローバル、ブレンディング、バランスのカラーグレーディングを初期値に戻しますか？",
+    "zh-Hans": "恢复阴影、中间调、高光、全局、融合和平衡的默认值？"
+  },
+  "拖动照片调整曲线；退出目标模式后可平移。": {
+    "en": "Drag the photo to adjust the curve. Exit target mode to pan.",
+    "de": "Foto ziehen, um die Kurve anzupassen. Zum Verschieben den Zielmodus beenden.",
+    "fr": "Faites glisser la photo pour régler la courbe. Quittez le mode ciblé pour la déplacer.",
+    "es": "Arrastra la foto para ajustar la curva. Sal del modo dirigido para desplazarla.",
+    "ja": "写真をドラッグしてカーブを調整します。移動するにはターゲットモードを終了してください。",
+    "zh-Hans": "拖动照片调整曲线；退出目标模式后可平移。"
+  },
+  "收起取样监视": {
+    "en": "Collapse Sampling Monitor",
+    "de": "Messmonitor ausblenden",
+    "fr": "Réduire le moniteur d’échantillonnage",
+    "es": "Contraer monitor de muestreo",
+    "ja": "サンプリングモニターを折りたたむ",
+    "zh-Hans": "收起取样监视"
+  },
+  "点击照片中的中性灰区域取样，按 Esc 退出。": {
+    "en": "Click a neutral gray area on the photo to sample. Press Esc to exit.",
+    "de": "Auf einen neutralgrauen Bereich im Foto klicken. Mit Esc beenden.",
+    "fr": "Cliquez sur une zone gris neutre de la photo pour échantillonner. Échap pour quitter.",
+    "es": "Haz clic en un área gris neutro de la foto para muestrear. Pulsa Esc para salir.",
+    "ja": "写真内のニュートラルグレー部分をクリックしてサンプルします。Esc で終了します。",
+    "zh-Hans": "点击照片中的中性灰区域取样，按 Esc 退出。"
+  },
+  "点选添加锚点": {
+    "en": "Click to Pin Anchor",
+    "de": "Klicken zum Anker setzen",
+    "fr": "Cliquer pour épingler un repère",
+    "es": "Clic para fijar ancla",
+    "ja": "クリックでアンカー追加",
+    "zh-Hans": "点选添加锚点"
+  },
+  "重置参数曲线": {
+    "en": "Reset Parametric Curve",
+    "de": "Parametrische Kurve zurücksetzen",
+    "fr": "Réinitialiser la courbe paramétrique",
+    "es": "Restablecer curva paramétrica",
+    "ja": "パラメトリックカーブをリセット",
+    "zh-Hans": "重置参数曲线"
+  },
+  "阴影拆分": {
+    "en": "Shadows Split",
+    "de": "Schatten-Trennpunkt",
+    "fr": "Séparation des ombres",
+    "es": "División de sombras",
+    "ja": "シャドウ分割",
+    "zh-Hans": "阴影拆分"
+  },
+  "高光拆分": {
+    "en": "Highlights Split",
+    "de": "Lichter-Trennpunkt",
+    "fr": "Séparation des hautes lumières",
+    "es": "División de luces",
+    "ja": "ハイライト分割",
+    "zh-Hans": "高光拆分"
   }
 }

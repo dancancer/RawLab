@@ -82,7 +82,7 @@
             <StackPanel Margin="0,0,0,18">
               <TextBlock Text="{DynamicResource '输出锐化'}"/>
               <ComboBox x:Name="SharpeningSelection" Width="150" Margin="0,8,0,0" HorizontalAlignment="Left" SelectionChanged="SharpeningChanged" AutomationProperties.Name="{DynamicResource '输出锐化'}">
-                <ComboBoxItem Content="{DynamicResource '关闭'}" Tag="0"/><ComboBoxItem Content="{DynamicResource '低'}" Tag="1"/><ComboBoxItem Content="{DynamicResource '标准'}" Tag="2"/><ComboBoxItem Content="{DynamicResource '高'}" Tag="3"/>
+                <ComboBoxItem Content="{DynamicResource '关'}" Tag="0"/><ComboBoxItem Content="{DynamicResource '低'}" Tag="1"/><ComboBoxItem Content="{DynamicResource '标准'}" Tag="2"/><ComboBoxItem Content="{DynamicResource '高'}" Tag="3"/>
               </ComboBox>
             </StackPanel>
             <DockPanel Margin="0,0,0,18">

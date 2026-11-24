@@ -45,7 +45,6 @@ public partial class MainWindow
             workspaceLayout.PhotoOpened();
             RefreshWorkspace();
             WorkspacePhotoOpened();
-            RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
             RefreshViewingFrames();
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;

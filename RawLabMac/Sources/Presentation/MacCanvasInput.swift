@@ -27,8 +27,14 @@ struct MacCanvasInput: NSViewRepresentable {
         private var trackingArea: NSTrackingArea?
         private var targetOrigin: CGPoint?
         private var targetFine = false
+        private var pendingPinPoint: CGPoint?
+        private var pendingPinViewLocation: CGPoint?
+        private var pannedSinceMouseDown = false
         private weak var pressRecognizer: NSPressGestureRecognizer?
         func configure(_ next: MacCanvasInput) {
+            let needsCursorReset = owner?.imageRect != next.imageRect ||
+                (owner?.target != nil) != (next.target != nil) ||
+                owner?.pinMode != next.pinMode
             if owner?.target?.scope != next.target?.scope { cancelInput() }
             owner = next
             for recognizer in gestureRecognizers {
@@ -38,6 +44,17 @@ struct MacCanvasInput: NSViewRepresentable {
                     recognizer.isEnabled = next.target == nil
                 }
             }
+            if needsCursorReset {
+                window?.invalidateCursorRects(for: self)
+            }
+        }
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            guard let owner, (owner.target != nil || owner.pinMode),
+                  owner.imageRect.width > 0, owner.imageRect.height > 0 else { return }
+            let clipped = owner.imageRect.intersection(bounds)
+            guard !clipped.isEmpty else { return }
+            addCursorRect(clipped, cursor: .crosshair)
         }
         override func resignFirstResponder() -> Bool { cancelInput(); return super.resignFirstResponder() }
 
@@ -95,7 +112,8 @@ struct MacCanvasInput: NSViewRepresentable {
             observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.cancelInput() })
         }
         func cancelInput() {
-            targetOrigin = nil; owner?.target?.cancel()
+            targetOrigin = nil; pendingPinPoint = nil; pendingPinViewLocation = nil; pannedSinceMouseDown = false
+            owner?.target?.cancel()
             owner?.onHold(false); owner?.onPanEnd(); owner?.onHover?(nil)
             for recognizer in gestureRecognizers {
                 recognizer.isEnabled = false
@@ -131,6 +149,9 @@ struct MacCanvasInput: NSViewRepresentable {
         }
         override func mouseDown(with event: NSEvent) {
             owner?.onHold(false)
+            pendingPinPoint = nil
+            pendingPinViewLocation = nil
+            pannedSinceMouseDown = false
             if let owner, let target = owner.target {
                 let point = convert(event.locationInWindow, from: nil)
                 guard owner.imageRect.contains(point), bounds.contains(point),
@@ -143,7 +164,8 @@ struct MacCanvasInput: NSViewRepresentable {
                 window?.makeFirstResponder(self)
             } else if let owner, owner.pinMode || event.modifierFlags.contains(.option), let pinPoint = normalizedImagePoint(for: event) {
                 window?.makeFirstResponder(self)
-                owner.onPin?(pinPoint)
+                pendingPinPoint = pinPoint
+                pendingPinViewLocation = convert(event.locationInWindow, from: nil)
             } else {
                 window?.makeFirstResponder(self)
                 if event.clickCount == 2 { owner?.onDoubleClick() }
@@ -151,6 +173,11 @@ struct MacCanvasInput: NSViewRepresentable {
         }
         @objc private func panned(_ gesture: NSPanGestureRecognizer) {
             if gesture.state == .began || gesture.state == .changed {
+                if gesture.state == .began {
+                    pannedSinceMouseDown = true
+                    pendingPinPoint = nil
+                    pendingPinViewLocation = nil
+                }
                 owner?.onHold(false)
                 let translation = gesture.translation(in: self)
                 owner?.onPan(CGSize(width: translation.x, height: translation.y))
@@ -170,7 +197,15 @@ struct MacCanvasInput: NSViewRepresentable {
                 owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
                 targetOrigin = nil
                 owner?.target?.end()
+            } else if !pannedSinceMouseDown, let pinPoint = pendingPinPoint, let start = pendingPinViewLocation {
+                let end = convert(event.locationInWindow, from: nil)
+                if hypot(end.x - start.x, end.y - start.y) < 4 {
+                    owner?.onPin?(pinPoint)
+                }
             }
+            pendingPinPoint = nil
+            pendingPinViewLocation = nil
+            pannedSinceMouseDown = false
             owner?.onHold(false); owner?.onPanEnd()
         }
     }
