@@ -257,12 +257,50 @@ def _expr_root_contexts(expr):
                 k += 1
             is_call = k < n and expr[k] == "("
             prev_is_dot = i > 0 and expr[i - 1] == "."
-            if not is_call and not prev_is_dot and ident not in {"true", "false", "null"}:
-                contexts.add(ident.split(".", 1)[0])
+            ident_lower = ident.lower()
+            if not is_call and not prev_is_dot and ident_lower not in {"true", "false", "null"}:
+                contexts.add(ident_lower.split(".", 1)[0])
             i = j
             continue
         i += 1
     return contexts
+
+
+def _extract_gha_expressions(text):
+    exprs = []
+    s = str(text)
+    i = 0
+    n = len(s)
+    while i < n:
+        start = s.find("${{", i)
+        if start == -1:
+            break
+        j = start + 3
+        in_quote = False
+        end = -1
+        while j < n:
+            ch = s[j]
+            if in_quote:
+                if ch == "'":
+                    if j + 1 < n and s[j + 1] == "'":
+                        j += 2
+                        continue
+                    in_quote = False
+                j += 1
+                continue
+            if ch == "'":
+                in_quote = True
+                j += 1
+                continue
+            if s.startswith("}}", j):
+                end = j
+                break
+            j += 1
+        if end == -1:
+            break
+        exprs.append(s[start + 3:end])
+        i = end + 2
+    return exprs
 
 
 def _env_expr_root_contexts(env_map):
@@ -271,10 +309,35 @@ def _env_expr_root_contexts(env_map):
         return refs
     for key, value in env_map.items():
         for field, raw in (("key", key), ("value", value)):
-            for match in re.finditer(r"\$\{\{(.*?)\}\}", str(raw), re.S):
-                expr = match.group(1)
+            for expr in _extract_gha_expressions(raw):
                 refs.append((str(key), field, expr.strip(), _expr_root_contexts(expr)))
     return refs
+
+
+WORKFLOW_ENV_FORBIDDEN_CONTEXTS = {"env", "secrets", "runner", "steps", "job", "needs", "strategy", "matrix"}
+JOB_ENV_FORBIDDEN_CONTEXTS = {"env", "runner", "steps", "job"}
+
+
+def _invalid_env_context_errors(wf_data, rel="workflow"):
+    errors = []
+    if not isinstance(wf_data, dict):
+        return errors
+    for key, field, expr, roots in _env_expr_root_contexts(wf_data.get("env")):
+        bad = sorted(roots & WORKFLOW_ENV_FORBIDDEN_CONTEXTS)
+        if bad:
+            errors.append(
+                f"{rel} workflow-level env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}"
+            )
+    for job_id, job in (wf_data.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        for key, field, expr, roots in _env_expr_root_contexts(job.get("env")):
+            bad = sorted(roots & JOB_ENV_FORBIDDEN_CONTEXTS)
+            if bad:
+                errors.append(
+                    f"{rel} jobs.{job_id}.env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}"
+                )
+    return errors
 
 
 def _needs_set(job):
@@ -1134,33 +1197,44 @@ class WorkflowContractTests(unittest.TestCase):
         )
         self.assertTrue(workflow_files, "No GitHub workflow files found")
 
-        workflow_forbidden = {"runner", "steps", "job", "needs", "strategy", "matrix"}
-        job_forbidden = {"runner", "steps", "job"}
-
         for wf_path in workflow_files:
             wf_data = yaml.load(wf_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
             rel = wf_path.relative_to(ROOT).as_posix()
             with self.subTest(workflow=rel):
-                for key, field, expr, roots in _env_expr_root_contexts(wf_data.get("env")):
-                    bad = sorted(roots & workflow_forbidden)
-                    self.assertEqual(
-                        bad,
-                        [],
-                        f"{rel} workflow-level env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}",
-                    )
-                for job_id, job in (wf_data.get("jobs") or {}).items():
-                    for key, field, expr, roots in _env_expr_root_contexts(job.get("env")):
-                        bad = sorted(roots & job_forbidden)
-                        self.assertEqual(
-                            bad,
-                            [],
-                            f"{rel} jobs.{job_id}.env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}",
-                        )
+                self.assertEqual(_invalid_env_context_errors(wf_data, rel=rel), [])
 
         self.assertEqual(_expr_root_contexts("runner.temp"), {"runner"})
         self.assertEqual(_expr_root_contexts("runner['temp']"), {"runner"})
+        self.assertEqual(_expr_root_contexts("RUNNER.temp"), {"runner"})
+        self.assertEqual(_expr_root_contexts("Runner['TEMP']"), {"runner"})
         self.assertEqual(_expr_root_contexts("format('{0}', steps.foo.outputs.bar)"), {"steps"})
         self.assertEqual(_expr_root_contexts("'runner.temp'"), set())
+        self.assertEqual(_expr_root_contexts("TRUE || FALSE || NULL"), set())
+
+        self.assertEqual(
+            _env_expr_root_contexts({"TRICKY": "${{ format('}} {0}', runner.temp) }}"}),
+            [("TRICKY", "value", "format('}} {0}', runner.temp)", {"runner"})],
+        )
+        self.assertEqual(
+            _env_expr_root_contexts({"TRICKY_ESCAPED": "${{ format('''}} {0}', runner.temp) }}"}),
+            [("TRICKY_ESCAPED", "value", "format('''}} {0}', runner.temp)", {"runner"})],
+        )
+
+        self.assertEqual(
+            _invalid_env_context_errors({
+                "env": {"OK": "${{ vars.FOO }}-${{ github.ref }}-${{ inputs.bar }}"},
+                "jobs": {"build": {"env": {"OK": "${{ matrix.os }}-${{ needs.prep.outputs.x }}-${{ secrets.TOK }}"}}},
+            }),
+            [],
+        )
+
+        self.assertTrue(_invalid_env_context_errors({"env": {"BAD": "${{ env.FOO }}"}}))
+        self.assertTrue(_invalid_env_context_errors({"env": {"BAD": "${{ secrets.TOKEN }}"}}))
+        self.assertTrue(_invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ env.FOO }}"}}}}))
+        self.assertTrue(_invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ RUNNER.temp }}"}}}}))
+        self.assertTrue(
+            _invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ format('}} {0}', runner.temp) }}"}}}})
+        )
 
 
 if __name__ == "__main__":
