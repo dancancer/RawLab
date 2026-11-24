@@ -115,7 +115,10 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 ]
                 capabilities["commands"] = [
                     command for command in capabilities["commands"]
-                    if command in ("capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer")
+                    if command in (
+                        "capabilities", "validate_recipe", "info", "preview", "export",
+                        "analyze", "print_transfer", "save_preset", "sync_photo_edit",
+                    )
                 ]
                 self.assertEqual(await call("capabilities"), capabilities)
                 self.assertEqual(await call("image_info", image_path=str(source)), direct("--info", source))
@@ -497,3 +500,191 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                 })
                 self.assertFalse(saved.is_error, str(saved))
                 self.assertTrue((data_dir / "Presets" / "presets.json").is_file())
+
+    async def test_gui_sync_end_to_end_presets_and_photo_edits(self):
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-gui-e2e-") as directory:
+            root = Path(directory).resolve()
+            data_dir = root / "appdata"
+            raw_photo = root / "photo.dng"
+            sibling_photo = root / "sibling.jpg"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", raw_photo)
+            sibling_photo.write_bytes(b"sibling-jpg")
+
+            # Seed unreadable future preset + retired_ids to verify verbatim preservation
+            presets_dir = data_dir / "Presets"
+            presets_dir.mkdir(parents=True)
+            raw_unreadable = (
+                '{  "name" : "Future V99",  "id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", '
+                '"created_at": 1, "updated_at": 1, '
+                '"payload": { "payload_version": 99, "ratio": 1.000, "extra": [ 1, 2 ] }  }'
+            )
+            (presets_dir / "presets.json").write_text(
+                '{"registry_version":1,"presets":[' + raw_unreadable + '],"retired_ids":["11111111-2222-4333-8444-555555555555"]}',
+                encoding="utf-8",
+            )
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+                "--enable-gui-sync", "--data-dir", str(data_dir),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+            async with Client(params) as client:
+                # 1. save_preset creates, rejects duplicate without overwrite, then updates
+                created = await client.call_tool("save_preset", {
+                    "name": "  Real  Look\u00a0",
+                    "values": {"light.exposure": 0.4, "light.curve.apply_to_luminosity": True},
+                })
+                self.assertFalse(created.is_error, str(created))
+                self.assertEqual(created.structured_content["result"]["action"], "created")
+                self.assertEqual(created.structured_content["result"]["name"], "Real  Look")
+
+                dup = await client.call_tool("save_preset", {
+                    "name": "Real  Look",
+                    "values": {"light.exposure": 0.8},
+                })
+                self.assertTrue(dup.is_error)
+                self.assertEqual(dup.structured_content["error"]["code"], "invalid_argument")
+
+                updated = await client.call_tool("save_preset", {
+                    "name": "Real  Look",
+                    "values": {"light.exposure": 0.8},
+                    "overwrite": True,
+                })
+                self.assertFalse(updated.is_error, str(updated))
+                self.assertEqual(updated.structured_content["result"]["action"], "updated")
+
+                raw_presets_text = (presets_dir / "presets.json").read_text(encoding="utf-8")
+                self.assertIn(raw_unreadable, raw_presets_text)
+                presets_doc = json.loads(raw_presets_text)
+                self.assertEqual(presets_doc["retired_ids"], ["11111111-2222-4333-8444-555555555555"])
+
+                # 2. HDR v1..v9 validation
+                bad_hdr = await client.call_tool("save_preset", {
+                    "name": "Bad HDR v1",
+                    "hdr_processing_version": 1,
+                    "is_raw": False,
+                    "values": {"light.curve": {"mode": "legacy", "points": []}},
+                })
+                self.assertTrue(bad_hdr.is_error)
+
+                ok_hdr9 = await client.call_tool("save_preset", {
+                    "name": "Good HDR v9",
+                    "hdr_processing_version": 9,
+                    "is_raw": False,
+                    "values": {
+                        "light.exposure": 0.3,
+                        "light.curve.apply_to_luminosity": True,
+                        "color.grading.global": {"hue": 40, "saturation": 20, "luminance": -5},
+                    },
+                })
+                self.assertFalse(ok_hdr9.is_error, str(ok_hdr9))
+
+                # 3. sync_photo_edit end-to-end on desktop OS (or unsupported=4 on Linux)
+                sync_first = await client.call_tool("sync_photo_edit", {
+                    "photo_path": str(raw_photo),
+                    "adjustments": {"exposure": 0.65, "processing_version": 2},
+                    "film_id": "builtin:classic_chrome",
+                })
+                if sys.platform not in ("darwin", "win32"):
+                    self.assertTrue(sync_first.is_error)
+                    self.assertEqual(sync_first.structured_content["error"]["code"], "unsupported")
+                    self.assertEqual(sync_first.structured_content["error"]["status"], 4)
+                    return
+
+                self.assertFalse(sync_first.is_error, str(sync_first))
+                photo_key = sync_first.structured_content["result"]["photo_path"]
+                edits_path = data_dir / "Edits" / "edits.json"
+                edits_doc = json.loads(edits_path.read_text(encoding="utf-8"))
+
+                # Inject unknown field, sibling raw slice, and migration receipt, then update processing_version -> 3
+                sibling_slice = '{"customSibling":123.000,"identity":{"size":11}}'
+                if sys.platform == "darwin":
+                    edits_doc["records"][photo_key]["state"]["settings"]["customUntouched"] = "keep-me"
+                    edits_doc["processingMigrations"] = {
+                        photo_key: {"status": "kept"},
+                        str(sibling_photo): {"status": "keep-sibling"},
+                    }
+                    edits_text = (
+                        '{"records":{'
+                        + json.dumps(photo_key) + ':' + json.dumps(edits_doc["records"][photo_key])
+                        + ',' + json.dumps(str(sibling_photo)) + ':' + sibling_slice
+                        + '},"processingMigrations":' + json.dumps(edits_doc["processingMigrations"])
+                        + ',"version":1}'
+                    )
+                else:
+                    edits_doc["Records"][photo_key]["Settings"]["CustomUntouched"] = "keep-me"
+                    edits_doc["MigrationReceipts"] = {
+                        photo_key: {"Status": "kept"},
+                        str(sibling_photo): {"Status": "keep-sibling"},
+                    }
+                    edits_text = (
+                        '{"Records":{'
+                        + json.dumps(photo_key) + ':' + json.dumps(edits_doc["Records"][photo_key])
+                        + ',' + json.dumps(str(sibling_photo)) + ':' + sibling_slice
+                        + '},"MigrationReceipts":' + json.dumps(edits_doc["MigrationReceipts"])
+                        + ',"Version":1}'
+                    )
+                edits_path.write_text(edits_text, encoding="utf-8")
+
+                sync_second = await client.call_tool("sync_photo_edit", {
+                    "photo_path": str(raw_photo),
+                    "adjustments": {"exposure": 1.1, "processing_version": 3},
+                })
+                self.assertFalse(sync_second.is_error, str(sync_second))
+                self.assertEqual(sync_second.structured_content["result"]["action"], "updated")
+
+                final_edits_raw = edits_path.read_text(encoding="utf-8")
+                self.assertIn(sibling_slice, final_edits_raw)
+                final_edits = json.loads(final_edits_raw)
+                if sys.platform == "darwin":
+                    self.assertEqual(final_edits["records"][photo_key]["state"]["settings"]["customUntouched"], "keep-me")
+                    self.assertEqual(final_edits["records"][photo_key]["state"]["settings"]["exposure"], 1.1)
+                    self.assertNotIn(photo_key, final_edits.get("processingMigrations", {}))
+                    self.assertIn(str(sibling_photo), final_edits["processingMigrations"])
+                else:
+                    self.assertEqual(final_edits["Records"][photo_key]["Settings"]["CustomUntouched"], "keep-me")
+                    self.assertEqual(final_edits["Records"][photo_key]["Settings"]["Values"][1], 1.1)
+                    self.assertNotIn(photo_key, final_edits.get("MigrationReceipts", {}))
+                    self.assertIn(str(sibling_photo), final_edits["MigrationReceipts"])
+
+    def test_gui_sync_synchronous_default_cli_runner(self):
+        from unittest.mock import patch
+        from rawlab_mcp import gui_sync
+        from rawlab_mcp.errors import AdapterError
+
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-gui-sync-default-") as directory:
+            root = Path(directory).resolve()
+            data_dir = root / "appdata"
+            photo = root / "photo.dng"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", photo)
+
+            with patch.dict(os.environ, {"RAWLAB_MCP_CLI": str(Path(CLI).resolve())}):
+                preset_res = gui_sync.save_preset(
+                    data_dir=data_dir,
+                    name="SyncDefaultRunner",
+                    values={"light.exposure": 0.35},
+                )
+                self.assertEqual(preset_res["action"], "created")
+                self.assertTrue((data_dir / "Presets" / "presets.json").is_file())
+
+                if sys.platform in ("darwin", "win32"):
+                    edit_res = gui_sync.sync_photo_edit(
+                        data_dir=data_dir,
+                        photo_canonical=photo,
+                        adjustments={"exposure": 0.55},
+                        is_raster=False,
+                        film_id="builtin:classic_chrome",
+                    )
+                    self.assertEqual(edit_res["action"], "created")
+                    self.assertEqual(edit_res["filmID"], "builtin:classic_chrome")
+                    self.assertTrue((data_dir / "Edits" / "edits.json").is_file())
+                else:
+                    with self.assertRaises(AdapterError) as ctx:
+                        gui_sync.sync_photo_edit(
+                            data_dir=data_dir,
+                            photo_canonical=photo,
+                            adjustments={"exposure": 0.55},
+                            is_raster=False,
+                        )
+                    self.assertEqual(ctx.exception.code, "unsupported")
+                    self.assertEqual(ctx.exception.status, 4)

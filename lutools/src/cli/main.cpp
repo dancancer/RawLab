@@ -208,6 +208,7 @@ static int runMain(int argc, char* argv[]) {
         const std::string arg = argv[i];
         if (arg == "--json" || arg == "--capabilities" || arg == "--info" || arg == "--preview" ||
             arg == "--analyze" || arg == "--print-transfer" || arg == "--sample" ||
+            arg == "--save-preset" || arg == "--sync-photo-edit" || arg == "--request" ||
             (i == 1 && (arg == "--recipe" || arg == "--lens-database" || arg == "--print-recipe" || arg == "--input")))
             return runAgentCommands(argc, argv);
         // Legacy option values may themselves be filenames such as "--json".

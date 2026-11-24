@@ -234,6 +234,8 @@ set(CORE_SOURCES
     src/core/rendered_dng.cpp
     src/core/render_params.cpp
     src/core/edit_recipe_core.cpp
+    src/core/gui_store.cpp
+    src/platform/file_lock.cpp
     src/core/image_header_probe.cpp
     src/core/photo_pipeline_stages.cpp
     src/core/hsl_probe.cpp
@@ -331,7 +333,7 @@ target_include_directories(sony2fuji_core_objects PRIVATE
     "${RAWLAB_HDR_XML_INCLUDE}"
 )
 if(WIN32)
-    list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES windowscodecs ole32 psapi bcrypt)
+    list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES windowscodecs ole32 psapi bcrypt normaliz)
 endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES d3d11 dxgi d3dcompiler)
@@ -2146,6 +2148,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LIBRARIES sony2fuji_core
         COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
         LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME gui_store
+        SOURCES tests/gui_store_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core cli ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(

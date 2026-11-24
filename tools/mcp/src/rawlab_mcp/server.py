@@ -78,7 +78,7 @@ READ_ONLY_TOOL_SPECS = {
 
 GUI_SYNC_TOOL_SPECS = {
     "save_preset": (SavePresetArguments, "save_preset", "Save or overwrite a user preset in Presets/presets.json inside the configured --data-dir (requires --enable-gui-sync)."),
-    "sync_photo_edit": (SyncPhotoEditArguments, "sync_photo_edit", "Persist non-destructive edits for a photo to macOS Edits/edits.json inside --data-dir (requires --enable-gui-sync)."),
+    "sync_photo_edit": (SyncPhotoEditArguments, "sync_photo_edit", "Persist non-destructive edits for a photo to desktop Edits/edits.json inside --data-dir (requires --enable-gui-sync)."),
 }
 
 TOOL_SPECS = READ_ONLY_TOOL_SPECS

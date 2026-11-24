@@ -513,7 +513,7 @@ jobs:
               Invoke-Checked python @('lutools/tests/test_dcp_compiler.py', '--fixtures', $env:RAWLAB_TEST_DCP_FIXTURE_DIR)
               $env:RAWLAB_TEST_NATIVE_HDR_LIBRARY = Join-Path $package 'sony2fuji.dll'
               Invoke-Checked dotnet @('test', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release', '--filter', 'Suite=hdr-look-import')
-              & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'agent-recipe,raster,looks'
+              & ./RawLabWindows/tests/run-v08.ps1 -RawPath $raw -NativeArtifacts $package -Only 'agent-recipe,raster,looks,agent-hot-reload'
             }
             else {
               Invoke-Checked dotnet @('build', 'RawLabWindows/tests/RawLabWindows.Tests.csproj', '-c', 'Release')

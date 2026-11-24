@@ -69,7 +69,7 @@ public partial class MainWindow
 
     private void HandleExternalEditsFileChange()
     {
-        if (file == null || closing) return;
+        if (closing) return;
         EditStore store;
         try
         {
@@ -84,6 +84,9 @@ public partial class MainWindow
         var currentStamp = PathStatStamp.Capture(editsPath);
         if (store.LastWriteStamp is { } lastWrite && lastWrite == currentStamp)
             return;
+
+        PhotoPreviewReady("");
+        if (file == null) return;
 
         if (HasPendingEditSaves)
         {
@@ -113,7 +116,8 @@ public partial class MainWindow
             diskRecord,
             stamp,
             HasUnsavedManualDraft,
-            HasPendingEditSaves);
+            HasPendingEditSaves,
+            settings.AsShot);
 
         externalReloadBanner = evaluation.NextState;
         RefreshExternalReloadBanner();
@@ -179,12 +183,16 @@ public partial class MainWindow
     {
         if (file == null || currentEditRecord == null) return;
         var outcome = TransferSession.AdoptExternalReload(currentEditRecord, diskRecord);
-        if (outcome.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))
+        if (outcome.Status != AdjustmentStatus.Applied)
             return;
 
+        CancelHslTarget();
+        CancelCurveTarget();
+        CancelWbProbe();
+        CancelProcessingMigration();
         var saved = outcome.Saved ?? diskRecord;
         AdoptSavedEdit(saved);
-        if (acceptedPhotoPreviewResources is { } resources)
-            CacheCurrentPhotoPreview(resources);
+        processingMigrationReceipt = editStore?.ReadProcessingMigration(file);
+        RefreshProcessingMigrationControls();
     }
 }
