@@ -121,11 +121,11 @@ public sealed partial class PhotoCanvas : FrameworkElement
                 else WbProbeRejected?.Invoke();
                 e.Handled=true;return;
             }
-            if(HandleInspectionDown(point)){e.Handled=true;return;}
-            if(e.ClickCount==2 && !draggingDivider && image!=null)
+            BeginPendingInspectionPin(point);
+            if(e.ClickCount==2 && !draggingDivider && !pendingInspectionPin && image!=null)
             {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
             pressOrigin=point;panning=false;
-            if(!draggingDivider){drag=point;if(image!=null && ImageBounds.Contains(point) && !ComparisonEnabled)holdTimer.Start();}
+            if(!draggingDivider){drag=point;if(image!=null && ImageBounds.Contains(point) && !ComparisonEnabled && !pendingInspectionPin)holdTimer.Start();}
             CaptureMouse();e.Handled=true;
         };
         MouseMove+=(_,e)=> {
@@ -133,15 +133,15 @@ public sealed partial class PhotoCanvas : FrameworkElement
             if(MoveHslPointer(next)){e.Handled=true;return;}
             if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
             HandleInspectionMove(next);
-            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : (WbProbeEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand);
+            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : (WbProbeEnabled || HslTargetEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand);
             if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
             if(drag is not {} point)return;
             if(!panning && (Math.Abs(next.X-pressOrigin.X)>SystemParameters.MinimumHorizontalDragDistance || Math.Abs(next.Y-pressOrigin.Y)>SystemParameters.MinimumVerticalDragDistance))
-            {panning=true;CancelHold();}
+            {panning=true;pendingInspectionPin=false;CancelHold();}
             if(panning){Viewport?.Move(next-point,ImageBounds.Size);drag=next;}
         };
-        MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;EndPointer();};
-        LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
+        MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;var shouldPin=pendingInspectionPin && !panning && !draggingDivider;var upPoint=e.GetPosition(this);EndPointer();if(shouldPin)CommitInspectionPin(upPoint);};
+        LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;pendingInspectionPin=draggingDivider=panning=false;};
         MouseLeave+=(_,_)=>InspectionHoverChanged?.Invoke(null);
         LostKeyboardFocus+=(_,_)=>{CancelHslPointer();CancelHold();};
         TouchDown+=(_,_)=>{CancelHslPointer();CancelHold();};
@@ -151,7 +151,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
     internal void CancelHold(){holdTimer.Stop();HoldEnded?.Invoke();}
-    internal void CancelPointer(){CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
+    internal void CancelPointer(){CancelHslPointer();CancelHold();EndCropDrag();drag=null;pendingInspectionPin=draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
     private void EndPointer(){CancelPointer();}
     protected override int VisualChildrenCount=>layers.Count;
     protected override Visual GetVisualChild(int index)=>layers[index];

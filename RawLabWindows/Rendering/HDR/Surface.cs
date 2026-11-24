@@ -69,7 +69,14 @@ public sealed class HDRSurface : HwndHost
                 var point = element.TranslatePoint(new Point(), canvas);
                 return new NativeRect { Left=(int)Math.Floor(point.X*dpi.DpiScaleX)-1, Top=(int)Math.Floor(point.Y*dpi.DpiScaleY)-1,
                     Right=(int)Math.Ceiling((point.X+element.ActualWidth)*dpi.DpiScaleX)+1, Bottom=(int)Math.Ceiling((point.Y+element.ActualHeight)*dpi.DpiScaleY)+1 };
-            }).Take(32).ToArray();
+            })
+            .Concat(canvas.ActiveMarkerBounds().Select(r => new NativeRect {
+                Left = (int)Math.Floor(r.Left * dpi.DpiScaleX) - 1,
+                Top = (int)Math.Floor(r.Top * dpi.DpiScaleY) - 1,
+                Right = (int)Math.Ceiling(r.Right * dpi.DpiScaleX) + 1,
+                Bottom = (int)Math.Ceiling(r.Bottom * dpi.DpiScaleY) + 1
+            }))
+            .Take(32).ToArray();
         if (lastParameters?.SequenceEqual(parameters) == true && lastHoles?.SequenceEqual(holes) == true) return true;
         if (Present(window, parameters, holes, holes.Length) == 0) { HideFrame(); Available = false; return false; }
         lastParameters = parameters; lastHoles = holes; return true;

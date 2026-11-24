@@ -8,6 +8,7 @@ struct ToneCurveCanvas: View {
     let scope: String
     var channel: ToneCurveChannel = .rgb
     var showSplitMarkers = false
+    var allowsPointEditing = true
     var fine = false
     var isCurrent: () -> Bool = { true }
     var canChange: () -> Bool = { true }
@@ -60,7 +61,9 @@ struct ToneCurveCanvas: View {
                     context.stroke(circle, with: .color(.black.opacity(0.8)), lineWidth: 1)
                 }
             }.accessibilityHidden(true)
-            ToneCurveInput(configuration: configuration)
+            if allowsPointEditing {
+                ToneCurveInput(configuration: configuration)
+            }
         }
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
         .opacity(enabled ? 1 : 0.4)

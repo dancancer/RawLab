@@ -166,7 +166,7 @@
             <Button.ContextMenu>
               <ContextMenu>
                 <MenuItem x:Name="ToolbarInspectionMonitor" Header="{DynamicResource '取样监视'}" IsCheckable="True" Click="InspectionMonitorClicked"/>
-                <MenuItem x:Name="ToolbarInspectionPin" Header="{DynamicResource '添加锚点'}" Click="InspectionPinNowClicked"/>
+                <MenuItem x:Name="ToolbarInspectionPin" Header="{DynamicResource '点选添加锚点'}" IsCheckable="True" Click="InspectionPinModeClicked"/>
                 <MenuItem x:Name="ToolbarInspectionClear" Header="{DynamicResource '清除锚点'}" Click="InspectionClearAnchorsClicked"/>
                 <Separator/>
                 <MenuItem x:Name="ToolbarOverlayNone" Header="{DynamicResource '关闭观察层'}" IsCheckable="True" IsChecked="True" Click="InspectionOverlayItemClicked" Tag="None"/>
@@ -266,45 +266,51 @@
           <local:PhotoCanvas x:Name="ResultCanvas" Grid.Row="1" Grid.Column="1"/>
           <local:HDRSurface x:Name="NeutralHDRSurface" Grid.Row="1" Visibility="Hidden"/>
           <local:HDRSurface x:Name="ResultHDRSurface" Grid.Row="1" Grid.Column="1" Visibility="Hidden"/>
-          <Border x:Name="HslTargetBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="560" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="hsl.target.canvas">
-            <StackPanel>
-              <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>
-              <TextBlock Text="{DynamicResource '拖动照片调整颜色；退出目标模式后可平移。'}" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="0,6,0,0"/>
-            </StackPanel>
-          </Border>
-          <Border x:Name="ExternalReloadBanner" Grid.RowSpan="2" Grid.ColumnSpan="2" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" MaxWidth="600" Margin="12" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="externalReload.banner">
-            <WrapPanel VerticalAlignment="Center">
-              <TextBlock Text="{DynamicResource '检测到外部调色方案更新'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
-              <Button x:Name="ReloadExternalUpdateButton" Content="{DynamicResource '重载滑块'}" Click="ReloadExternalUpdateClicked" Margin="0,0,8,0" AutomationProperties.AutomationId="externalReload.reload"/>
-              <Button x:Name="KeepManualDraftButton" Content="{DynamicResource '保留当前手动草稿'}" Click="KeepManualDraftClicked" AutomationProperties.AutomationId="externalReload.keepDraft"/>
-            </WrapPanel>
-          </Border>
+          <StackPanel Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="12">
+            <Border x:Name="HslTargetBanner" Visibility="Collapsed" MaxWidth="560" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="hsl.target.canvas">
+              <StackPanel>
+                <WrapPanel><TextBlock x:Name="HslTargetBannerTitle" TextWrapping="Wrap" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{DynamicResource '退出目标调整'}" Click="ExitHslTargetClicked" AutomationProperties.AutomationId="hsl.target.exit"/></WrapPanel>
+                <TextBlock x:Name="HslTargetBannerCaption" Text="{DynamicResource '拖动照片调整颜色；退出目标模式后可平移。'}" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Border>
+            <Border x:Name="ExternalReloadBanner" Visibility="Collapsed" MaxWidth="600" Margin="0,8,0,0" Padding="10" Background="{DynamicResource OverlaySurface}" CornerRadius="8" AutomationProperties.AutomationId="externalReload.banner">
+              <WrapPanel VerticalAlignment="Center">
+                <TextBlock Text="{DynamicResource '检测到外部调色方案更新'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <Button x:Name="ReloadExternalUpdateButton" Content="{DynamicResource '重载滑块'}" Click="ReloadExternalUpdateClicked" Margin="0,0,8,0" AutomationProperties.AutomationId="externalReload.reload"/>
+                <Button x:Name="KeepManualDraftButton" Content="{DynamicResource '保留当前手动草稿'}" Click="KeepManualDraftClicked" AutomationProperties.AutomationId="externalReload.keepDraft"/>
+              </WrapPanel>
+            </Border>
+          </StackPanel>
           <Grid x:Name="BusyIndicator" Grid.RowSpan="2" Grid.ColumnSpan="2" Height="2" VerticalAlignment="Top" Visibility="Collapsed" IsHitTestVisible="False" AutomationProperties.Name="{DynamicResource '正在显影…'}"><ProgressBar x:Name="BusyAnimation" Height="2" Foreground="{DynamicResource Indicator}" Background="{DynamicResource ProgressSurface}" IsIndeterminate="True"/><Border x:Name="BusyStill" Background="{DynamicResource Indicator}" Visibility="Collapsed"/></Grid>
           <Canvas x:Name="PhotoLabels" Grid.RowSpan="2" Grid.ColumnSpan="2" IsHitTestVisible="False" ClipToBounds="True">
             <Border x:Name="NeutralLabel" Background="{DynamicResource OverlaySurface}" CornerRadius="4" Padding="9,5" Visibility="Collapsed"><TextBlock Text="{DynamicResource '调整前'}" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/></Border>
             <Border x:Name="FilmLabel" Background="{DynamicResource OverlaySurface}" CornerRadius="4" Padding="9,5" Visibility="Collapsed"><TextBlock x:Name="FilmLabelText" Text="{DynamicResource '调整后'}" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/></Border>
           </Canvas>
-          <Button x:Name="InfoEntryButton" Grid.RowSpan="2" Grid.ColumnSpan="2" Click="InfoClicked" Style="{StaticResource QuietButton}" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Width="32" Height="32" Padding="6" Visibility="Collapsed" ToolTip="{DynamicResource '照片信息'}" AutomationProperties.Name="{DynamicResource '照片信息'}"><local:EditorIcon Kind="Info" Width="18" Height="18"/></Button>
-          <Border x:Name="InfoOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14,54,14,14" Background="{DynamicResource OverlaySurface}" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
+          <Border x:Name="InfoOverlay" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" CornerRadius="5" Padding="10,7" MaxWidth="380" Visibility="Collapsed" IsHitTestVisible="False">
             <StackPanel><TextBlock x:Name="InfoFileText" FontSize="{DynamicResource EditorBodySize}" TextWrapping="Wrap"/><TextBlock x:Name="InfoCaptureText" FontSize="{DynamicResource EditorBodySize}" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
           </Border>
-          <Border x:Name="InspectionHud" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14" Background="{DynamicResource OverlaySurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="6" Padding="10,8" MaxWidth="420" Visibility="Collapsed" AutomationProperties.AutomationId="inspection.hud">
-            <StackPanel>
+          <Border x:Name="InspectionOverlayChip" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="14" Background="{DynamicResource OverlaySurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="8" Padding="10,5" Visibility="Collapsed" AutomationProperties.AutomationId="inspection.overlay.chip">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock x:Name="InspectionOverlayLabel" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}"/>
+              <Button Content="{DynamicResource '关闭观察层'}" Click="InspectionOverlayClearClicked" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="22" Margin="8,0,0,0" FontSize="{DynamicResource EditorCaptionSize}"/>
+            </StackPanel>
+          </Border>
+          <Border x:Name="InspectionHud" Grid.RowSpan="2" Grid.ColumnSpan="2" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14" Background="{DynamicResource OverlaySurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" CornerRadius="8" Padding="10,8" MaxWidth="360" Visibility="Collapsed" AutomationProperties.AutomationId="inspection.hud">
+            <StackPanel x:Name="InspectionContent">
               <DockPanel Margin="0,0,0,4">
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                  <Button x:Name="InspectionPinModeButton" Content="{DynamicResource '添加锚点'}" Click="InspectionPinModeClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="4,0,0,0"/>
-                  <Button x:Name="InspectionClearAnchorsButton" Content="{DynamicResource '清除锚点'}" Click="InspectionClearAnchorsClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="4,0,0,0" Visibility="Collapsed"/>
+                  <ToggleButton x:Name="InspectionPinModeButton" Content="{DynamicResource '点选添加锚点'}" Click="InspectionPinModeClicked" Padding="6,2" MinHeight="24" Margin="4,0,0,0" FontSize="{DynamicResource EditorCaptionSize}"/>
+                  <Button x:Name="InspectionClearAnchorsButton" Content="{DynamicResource '清除锚点'}" Click="InspectionClearAnchorsClicked" Style="{StaticResource QuietButton}" Padding="6,2" MinHeight="24" Margin="4,0,0,0" FontSize="{DynamicResource EditorCaptionSize}" Visibility="Collapsed"/>
                 </StackPanel>
-                <TextBlock Text="{DynamicResource '取样监视'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock x:Name="InspectionFloatingTitle" Text="{DynamicResource '取样监视'}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,8,0"/>
               </DockPanel>
-              <StackPanel Orientation="Horizontal" Margin="0,2,0,2">
-                <Border x:Name="InspectionSwatch" Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center" Background="Transparent" BorderBrush="{DynamicResource Outline}" BorderThickness="1"/>
-                <TextBlock x:Name="InspectionLiveReadout" FontFamily="Consolas" FontSize="{DynamicResource EditorCaptionSize}" VerticalAlignment="Center"/>
+              <StackPanel Margin="0,2,0,2">
+                <StackPanel Orientation="Horizontal">
+                  <Border x:Name="InspectionSwatch" Width="10" Height="10" CornerRadius="5" Margin="0,0,6,0" VerticalAlignment="Center" Background="Transparent" BorderBrush="{DynamicResource Outline}" BorderThickness="1"/>
+                  <TextBlock x:Name="InspectionLiveRgb" Typography.NumeralAlignment="Tabular" FontSize="{DynamicResource EditorCaptionSize}" VerticalAlignment="Center"/>
+                </StackPanel>
+                <TextBlock x:Name="InspectionLiveHsb" Typography.NumeralAlignment="Tabular" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}" Margin="16,2,0,0"/>
               </StackPanel>
-              <DockPanel x:Name="InspectionOverlayBanner" Visibility="Collapsed" Margin="0,4,0,0">
-                <Button DockPanel.Dock="Right" Content="{DynamicResource '关闭观察层'}" Click="InspectionOverlayClearClicked" Style="{StaticResource ToolButton}" Padding="6,2" Margin="8,0,0,0"/>
-                <TextBlock x:Name="InspectionOverlayLabel" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource EditorCaptionSize}"/>
-              </DockPanel>
               <StackPanel x:Name="InspectionAnchorsPanel" Margin="0,4,0,0"/>
             </StackPanel>
           </Border>
@@ -355,10 +361,24 @@
               <Grid x:Name="HistogramPanel"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                 <TextBlock x:Name="HistogramTitle" Text="{DynamicResource 'RGB 直方图'}" FontSize="{DynamicResource EditorCaptionSize}" FontWeight="SemiBold" TextWrapping="Wrap"/>
                 <TextBlock x:Name="HistogramSource" Grid.Row="1" Margin="0,4,0,0" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="Wrap"/>
-                <local:HistogramView x:Name="Histogram" Grid.Row="2" Height="92" Margin="2,8"/>
+                <local:HistogramView x:Name="Histogram" Grid.Row="2" Height="68" Margin="2,8"/>
                 <TextBlock x:Name="ClipStats" Grid.Row="3" FontSize="{DynamicResource EditorCaptionSize}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
               </Grid>
                   </Grid>
+                </DockPanel>
+              </Border>
+              <Border x:Name="InspectionSurface" BorderBrush="{DynamicResource Outline}" BorderThickness="0,0,0,1" Padding="0,3" Visibility="Collapsed">
+                <DockPanel>
+                  <Button x:Name="InspectionInlineButton" DockPanel.Dock="Top" Click="InspectionMonitorClicked" Style="{StaticResource ToolButton}" HorizontalContentAlignment="Stretch" AutomationProperties.AutomationId="workspace.inspection.inline">
+                    <DockPanel>
+                      <TextBlock x:Name="InspectionAnchorCountBadge" DockPanel.Dock="Right" Foreground="{DynamicResource Muted}" FontSize="{DynamicResource EditorCaptionSize}" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <local:EditorIcon x:Name="InspectionChevron" Kind="ChevronDown" Width="14" Height="14" RenderTransformOrigin="0.5,0.5"/>
+                        <TextBlock Text="{DynamicResource '取样监视'}" FontWeight="SemiBold" Margin="6,0,0,0"/>
+                      </StackPanel>
+                    </DockPanel>
+                  </Button>
+                  <Grid x:Name="InspectionInlineHost" Margin="0,4,0,2"/>
                 </DockPanel>
               </Border>
               <WrapPanel x:Name="Groups" Margin="0,4"/>
@@ -410,7 +430,7 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="GeometryCategoryRing"/><local:EditorIcon Kind="Geometry" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '裁切'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="PerspectiveCategory" Click="PerspectiveCategoryClicked" Style="{StaticResource ToolButton}" AutomationProperties.Name="{DynamicResource '透视'}" AutomationProperties.AutomationId="Perspective">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:EditorIcon Kind="Perspective" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '透视'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="PerspectiveCategoryRing"/><local:EditorIcon Kind="Perspective" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '透视'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
               <Button x:Name="HslCategory" Click="HslCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="HSL" AutomationProperties.Name="HSL">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="HslCategoryRing"/><local:EditorIcon Kind="Hsl" Width="16" Height="16"/></Grid><TextBlock Text="HSL" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>

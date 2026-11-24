@@ -37,7 +37,9 @@ struct QuickPresetView: View {
             .onChange(of: model.adjustmentSheet) { _, kind in if kind == nil { reload() } }
             .onChange(of: model.presetLibraryRevision) { _, _ in reload() }
             .onDisappear { model.cancelQuickPreset() }
-            .onExitCommand { model.closeQuickPresets() }
+            .onExitCommand {
+                if model.quickPresetsVisible { model.closeQuickPresets() }
+            }
     }
 
     @ViewBuilder private var libraryActions: some View {

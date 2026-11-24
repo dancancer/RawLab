@@ -66,8 +66,9 @@ struct MacLensDraftControlsTests {
                                                 hasDistortion: true, hasTCA: false, isMatch: true)]
         check(MacLensChooserState(settings: original, candidates: ambiguous).selectedID == nil,
               "Ambiguous automatic matches require an explicit candidate selection")
-        check(MacLensChooserState.capabilityKeys(for: partial) == ["畸变标定", "横向色差标定不可用"] &&
-              MacLensChooserState.capabilityKeys(for: noCalibration) == ["畸变标定不可用", "横向色差标定不可用"],
+        check(MacLensChooserState.capabilityKeys(for: matched) == ["畸变标定", "横向色差标定", "暗角标定"] &&
+              MacLensChooserState.capabilityKeys(for: partial) == ["畸变标定", "横向色差标定不可用", "暗角标定不可用"] &&
+              MacLensChooserState.capabilityKeys(for: noCalibration) == ["畸变标定不可用", "横向色差标定不可用", "暗角标定不可用"],
               "Candidate descriptions expose missing calibration independently for each correction")
     }
 

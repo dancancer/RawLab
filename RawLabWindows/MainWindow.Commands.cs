@@ -151,7 +151,7 @@ public partial class MainWindow
         var groupName=Loc.Text(EditorAdjustmentRules.Title(scope.Group));
         var title=scope.Kind==EditorResetKind.All ? Loc.Text("重置全部调整？") : grading ? Loc.Text("重置颜色分级") : hsl ? Loc.Text("重置全部 HSL？") :
             scope.Kind==EditorResetKind.Group ? Loc.Format("重置{0}组？",groupName) : Loc.Format("重置{0}？",Loc.Text(EditorAdjustmentRules.Title(scope.Tool)));
-        var message=scope.Kind==EditorResetKind.All ? Loc.Text("恢复当前照片的全部调整，不改写原始照片。") : grading ? Loc.Text("恢复阴影、中间调和高光的颜色分级默认值？") : hsl ?
+        var message=scope.Kind==EditorResetKind.All ? Loc.Text("恢复当前照片的全部调整，不改写原始照片。") : grading ? Loc.Text("恢复阴影、中间调、高光、全局、融合和平衡的默认值？") : hsl ?
             Loc.Text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。") :
             scope.Kind==EditorResetKind.Group ? Loc.Format("此操作只恢复{0}组内的调整，其他分组保持不变。",groupName) : "";
         if(scope.Kind==EditorResetKind.All)message=System.IO.Path.GetFileName(file)+"\n\n"+message;

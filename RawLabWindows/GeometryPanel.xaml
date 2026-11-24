@@ -5,10 +5,11 @@
  <UserControl.Resources>
   <Style x:Key="FlipToggle" TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
    <Setter Property="MinWidth" Value="28"/><Setter Property="MinHeight" Value="28"/><Setter Property="Margin" Value="3,0"/>
+   <Setter Property="BorderBrush" Value="Transparent"/><Setter Property="BorderThickness" Value="1"/>
    <Setter Property="FocusVisualStyle" Value="{StaticResource FocusOutline}"/>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
-    <Border x:Name="Surface" Background="Transparent" CornerRadius="4" Padding="5"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-    <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource SelectedSurface}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource HoverSurface}"/></Trigger></ControlTemplate.Triggers>
+    <Border x:Name="Surface" Background="Transparent" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="5"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+    <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource SelectedSurface}"/><Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="{DynamicResource SelectedForeground}"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="{DynamicResource HoverSurface}"/></Trigger></ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>
   </Style>
  </UserControl.Resources>
@@ -30,6 +31,9 @@
     <UniformGrid x:Name="CropRows" Columns="1" Margin="0,6,0,0"/>
    </Expander>
   </StackPanel>
-  <StackPanel x:Name="PerspectiveRows" Visibility="Collapsed"/>
+  <StackPanel x:Name="PerspectiveRows" Visibility="Collapsed">
+   <StackPanel x:Name="PerspectiveSliders"/>
+   <Button x:Name="ResetPerspective" Content="{DynamicResource '重置透视'}" Click="ResetPerspectiveClicked" HorizontalAlignment="Right" Margin="0,6,0,0" Style="{StaticResource QuietButton}" AutomationProperties.AutomationId="geometry.resetPerspective"/>
+  </StackPanel>
  </StackPanel>
 </UserControl>

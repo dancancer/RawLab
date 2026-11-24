@@ -74,6 +74,12 @@ struct MacWorkspaceLayout {
         if mode == .selection { setMode(.editing) }
     }
 
+    @discardableResult mutating func dismissDrawer() -> Bool {
+        guard drawerOpen else { return false }
+        drawerOpen = false
+        return true
+    }
+
     @discardableResult mutating func dismissTransient() -> Bool {
         if drawerOpen { drawerOpen = false; return true }
         if mode == .preview { setMode(modeBeforePreview); return true }

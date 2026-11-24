@@ -146,7 +146,7 @@ extension EditorModel {
 
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
         guard group.isVisible(isHDREditing: settings.isHDREditing) else { return }
-        if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
+        if group == .looks && !quickPresetsVisible && geometryDraft != nil {
             showQuickPresets(); return
         }
         if quickPresetsVisible { closeQuickPresets() }

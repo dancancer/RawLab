@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -184,8 +186,8 @@ internal sealed class CollectionExportDialog : Window
         var header=configuration;root.Children.Add(header);
         header.Children.Add(AdjustmentDialogLayout.Text(Loc.Text("将按每张照片已保存的调整导出。跳过只影响本次导出。")));
         var output=new WrapPanel();header.Children.Add(output);
-        formats.ItemsSource=Enum.GetValues<ExportFormat>();formats.SelectedItem=format;output.Children.Add(formats);
-        sharpening.ItemsSource=Enum.GetValues<OutputSharpening>();sharpening.SelectedItem=outputSharpening;
+        formats.ItemsSource=Enum.GetValues<ExportFormat>();formats.ItemTemplate=CreateEnumTitleTemplate();formats.SelectedItem=format;output.Children.Add(formats);
+        sharpening.ItemsSource=Enum.GetValues<OutputSharpening>();sharpening.ItemTemplate=CreateEnumTitleTemplate();sharpening.SelectedItem=outputSharpening;
         sharpening.IsEnabled=format!=ExportFormat.RenderedDng;
         sharpening.SelectionChanged+=(_,_)=>{
             outputSharpening=format==ExportFormat.RenderedDng ? OutputSharpening.Off : (OutputSharpening)(sharpening.SelectedItem ?? OutputSharpening.Off);
@@ -279,5 +281,22 @@ internal sealed class CollectionExportDialog : Window
             message.Text=review.Rows.Count==0 ? Loc.Text("没有可导出的照片，请取消跳过或重新选择。") : Loc.Format("实际导出 {0} 张",review.Rows.Count);
         }catch(Exception error){if(!closed && request==generation){Invalidate();message.Text=AdjustmentTransferPresentation.Detail(error);}}
         finally{if(request==generation){checking=false;configuration.IsEnabled=rows.IsEnabled=true;confirm.IsEnabled=editor.Collection.SelectedPhotos.Any(photo=>!skipping.Contains(photo.ID));}}
+    }
+    private static DataTemplate CreateEnumTitleTemplate()
+    {
+        var factory = new FrameworkElementFactory(typeof(TextBlock));
+        factory.SetBinding(TextBlock.TextProperty, new Binding { Converter = EnumTitleConverter.Instance });
+        return new DataTemplate { VisualTree = factory };
+    }
+    private sealed class EnumTitleConverter : IValueConverter
+    {
+        internal static readonly EnumTitleConverter Instance = new();
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+        {
+            ExportFormat f => f.Title(),
+            OutputSharpening s => s.Title(),
+            _ => value?.ToString() ?? ""
+        };
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => Binding.DoNothing;
     }
 }

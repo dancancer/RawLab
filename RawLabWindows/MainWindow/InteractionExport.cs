@@ -56,7 +56,7 @@ public partial class MainWindow
         ResultCanvas.ComparisonEnabled=placement.ShowWipeOverlay && ReferenceCurrent;
         RefreshPhotoLabels();
     }
-    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip=file==null ? null : swipe ? Loc.Text("拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。") : Loc.Text("拖动平移，滚轮缩放，双击适合窗口。");
+    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip = null;
     private void RefreshCopyLabels()
     {
         ExportJpeg.Header=Loc.Text("JPEG…");
@@ -86,13 +86,19 @@ public partial class MainWindow
         var startsBeforeKey=viewingKey==Key.Oem5 && !beforeKeyDown;
         if(viewingKey==Key.Oem5)beforeKeyDown=true;
         if(e.OriginalSource is TextBoxBase or ComboBox || Keyboard.FocusedElement is TextBoxBase or ComboBox)return;
-        if(e.Key==Key.Escape && quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
-        if(e.Key==Key.Escape && hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
-        if(e.Key==Key.Escape && inspection.HandleEscape()){RefreshViewingFrames();e.Handled=true;return;}
-        if(e.Key==Key.Escape && curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
-        if(e.Key==Key.Escape && wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
-        if(e.Key==Key.Escape && editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
-        if(e.Key==Key.Escape && DismissWorkspaceTransient()){e.Handled=true;return;}
+        if(e.Key==Key.Escape)
+        {
+            if(ProcessingPopup.IsOpen || HistogramPopup.IsOpen){ProcessingPopup.IsOpen=HistogramPopup.IsOpen=false;e.Handled=true;return;}
+            if(workspaceLayout.LibraryAt(WorkspaceWidth)==LibraryPresentation.Drawer && DismissWorkspaceTransient()){e.Handled=true;return;}
+            if(quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
+            if(hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
+            if(curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
+            if(wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
+            if(editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
+            if(transform.Active){_=ResolveTransformDraft();e.Handled=true;return;}
+            if(inspection.HandleEscape()){RefreshInspection();RefreshViewingFrames();e.Handled=true;return;}
+            if(DismissWorkspaceTransient()){e.Handled=true;return;}
+        }
         if(e.Key==Key.Z && Keyboard.Modifiers==ModifierKeys.Control){RunPhotoHistory(true);e.Handled=true;return;}
         if(e.Key==Key.Y && Keyboard.Modifiers==ModifierKeys.Control || e.Key==Key.Z && Keyboard.Modifiers==(ModifierKeys.Control|ModifierKeys.Shift))
             {RunPhotoHistory(false);e.Handled=true;return;}

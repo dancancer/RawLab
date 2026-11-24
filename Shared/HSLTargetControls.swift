@@ -101,7 +101,7 @@ struct CurveTargetCanvasControls: View {
                 HStack(spacing: 12) { title; exitButton }
                 VStack(alignment: .leading, spacing: 4) { title; exitButton }
             }
-            Text(L10n.text("拖动照片调整颜色；退出目标模式后可平移。"))
+            Text(L10n.text("拖动照片调整曲线；退出目标模式后可平移。"))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
         .padding(10).frame(maxWidth: 560, alignment: .leading)

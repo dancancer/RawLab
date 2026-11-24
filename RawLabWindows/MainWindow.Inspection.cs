@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
@@ -15,7 +17,7 @@ public partial class MainWindow
     {
         bool PointAllowed(PhotoCanvas canvas, Point point) => new FrameworkElement[]
         {
-            NeutralLabel, FilmLabel, InfoOverlay, InfoEntryButton, HslTargetBanner, InspectionHud
+            NeutralLabel, FilmLabel, InfoOverlay, ExternalReloadBanner, HslTargetBanner, InspectionOverlayChip, InspectionHud
         }.All(element => !element.IsVisible || !new Rect(element.TranslatePoint(new Point(), canvas), element.RenderSize).Contains(point));
 
         ResultCanvas.InspectionAllowed = p => PointAllowed(ResultCanvas, p);
@@ -134,12 +136,14 @@ public partial class MainWindow
         if (live is { } s)
         {
             InspectionSwatch.Background = new SolidColorBrush(Color.FromRgb(s.R, s.G, s.B));
-            InspectionLiveReadout.Text = $"RGB {s.RgbText} · {s.HsbText}";
+            InspectionLiveRgb.Text = $"RGB {s.RgbText}";
+            InspectionLiveHsb.Text = $"HSB {s.HsbText}";
         }
         else
         {
             InspectionSwatch.Background = Brushes.Transparent;
-            InspectionLiveReadout.Text = "RGB -- -- -- · --° --% --%";
+            InspectionLiveRgb.Text = "RGB -- -- --";
+            InspectionLiveHsb.Text = "HSB --° --% --%";
         }
     }
 
@@ -165,17 +169,19 @@ public partial class MainWindow
         }
         ResultCanvas.SetInspectionMarkers(markers);
 
+        var overlay = inspection.Overlay;
         InspectionMonitorMenu.IsEnabled = hasResult && !geometryEditing;
         InspectionOverlayMenu.IsEnabled = hasResult && !geometryEditing;
         ToolbarInspectionMonitor.IsEnabled = hasResult && !geometryEditing;
         InspectionMonitorMenu.IsChecked = inspection.MonitorEnabled;
         ToolbarInspectionMonitor.IsChecked = inspection.MonitorEnabled;
-        ToolbarInspectionPin.IsEnabled = hasResult && !geometryEditing && inspection.CanPinMore;
+        ToolbarInspectionPin.IsChecked = inspection.PinModeEnabled;
+        ToolbarInspectionPin.IsEnabled = hasResult && !geometryEditing && (inspection.CanPinMore || inspection.PinModeEnabled);
         ToolbarInspectionClear.IsEnabled = inspection.Anchors.Count > 0;
-        InspectionPinModeButton.IsEnabled = hasResult && !geometryEditing && inspection.CanPinMore;
+        InspectionPinModeButton.IsChecked = inspection.PinModeEnabled;
+        InspectionPinModeButton.IsEnabled = hasResult && !geometryEditing && (inspection.CanPinMore || inspection.PinModeEnabled);
         InspectionClearAnchorsButton.Visibility = inspection.Anchors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
-        var overlay = inspection.Overlay;
         MenuOverlayNone.IsChecked = ToolbarOverlayNone.IsChecked = overlay == InspectionOverlayMode.None;
         MenuOverlaySketch.IsChecked = ToolbarOverlaySketch.IsChecked = overlay == InspectionOverlayMode.SketchLuminance;
         MenuOverlayWarmCool.IsChecked = ToolbarOverlayWarmCool.IsChecked = overlay == InspectionOverlayMode.WarmCoolBW;
@@ -184,15 +190,17 @@ public partial class MainWindow
         MenuOverlayGray50.IsChecked = ToolbarOverlayGray50.IsChecked = overlay == InspectionOverlayMode.NeutralGray50;
         InspectionGray50Button.IsEnabled = hasResult && !geometryEditing;
         InspectionOverlayButton.IsEnabled = hasResult && !geometryEditing;
+        InspectionGray50Button.Tag = overlay == InspectionOverlayMode.NeutralGray50 ? "selected" : null;
+        InspectionOverlayButton.Tag = inspection.MonitorEnabled || inspection.PinModeEnabled || overlay.IsActive() ? "selected" : null;
 
-        if (overlay.IsActive())
+        if (hasResult && !geometryEditing && overlay.IsActive())
         {
-            InspectionOverlayBanner.Visibility = Visibility.Visible;
+            InspectionOverlayChip.Visibility = Visibility.Visible;
             InspectionOverlayLabel.Text = OverlayModeTitle(overlay);
         }
         else
         {
-            InspectionOverlayBanner.Visibility = Visibility.Collapsed;
+            InspectionOverlayChip.Visibility = Visibility.Collapsed;
         }
 
         InspectionAnchorsPanel.Children.Clear();
@@ -200,19 +208,41 @@ public partial class MainWindow
         for (var i = 0; i < inspection.Anchors.Count; i++)
         {
             var anchor = inspection.Anchors[i];
+            var isSelected = inspection.SelectedAnchorId == anchor.Id;
             var pt = InspectionDisplayPoint(anchor);
             var before = pt is { } bp && reference?.Image is { } bi ? InspectionOverlayRenderer.SampleBitmap(bi, bp.X, bp.Y) : null;
             var after = pt is { } ap && result?.Image is { } ai ? InspectionOverlayRenderer.SampleBitmap(ai, ap.X, ap.Y) : null;
 
-            var row = new DockPanel { Margin = new Thickness(0, 2, 0, 0) };
+            var card = new Border
+            {
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(6, 4, 6, 4),
+                Margin = new Thickness(0, 3, 0, 0),
+                BorderThickness = new Thickness(1),
+            };
+            if (isSelected)
+            {
+                card.SetResourceReference(Border.BackgroundProperty, "SelectedSurface");
+                card.SetResourceReference(Border.BorderBrushProperty, "Accent");
+            }
+            else
+            {
+                card.Background = Brushes.Transparent;
+                card.BorderBrush = Brushes.Transparent;
+            }
+
+            var row = new DockPanel();
             var remove = new Button
             {
                 Content = "×",
                 Padding = new Thickness(5, 0, 5, 0),
+                MinHeight = 22,
                 ToolTip = Loc.Text("移除"),
                 Margin = new Thickness(6, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
                 Tag = anchor.Id,
             };
+            remove.SetResourceReference(FrameworkElement.StyleProperty, "QuietButton");
             remove.Click += (_, _) =>
             {
                 inspection.RemoveAnchor(anchor.Id);
@@ -221,28 +251,72 @@ public partial class MainWindow
             DockPanel.SetDock(remove, Dock.Right);
             row.Children.Add(remove);
 
-            var beforeText = before is { } bs ? $"{bs.RgbText} {bs.HsbText}" : "--";
-            var afterText = after is { } asmp ? $"{asmp.RgbText} {asmp.HsbText}" : "--";
-            var text = new TextBlock
+            var beforeText = before is { } bs ? $"{bs.RgbText} · {bs.HsbText}" : "--";
+            var afterText = after is { } asmp ? $"{asmp.RgbText} · {asmp.HsbText}" : "--";
+            var textStack = new StackPanel
             {
-                Text = $"#{i + 1} {Loc.Text("调整前")} {beforeText} | {Loc.Text("调整后")} {afterText}",
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 11,
+                Background = Brushes.Transparent,
+                Cursor = System.Windows.Input.Cursors.Hand,
                 VerticalAlignment = VerticalAlignment.Center,
+            };
+            var beforeLine = new TextBlock
+            {
+                Text = $"#{i + 1} {Loc.Text("调整前")} {beforeText}",
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
-            text.MouseLeftButtonDown += (_, _) =>
+            beforeLine.SetResourceReference(TextBlock.FontSizeProperty, "EditorCaptionSize");
+            beforeLine.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            Typography.SetNumeralAlignment(beforeLine, FontNumeralAlignment.Tabular);
+
+            var afterLine = new TextBlock
+            {
+                Text = $"   {Loc.Text("调整后")} {afterText}",
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 1, 0, 0),
+            };
+            afterLine.SetResourceReference(TextBlock.FontSizeProperty, "EditorCaptionSize");
+            afterLine.SetResourceReference(TextBlock.ForegroundProperty, "Foreground");
+            Typography.SetNumeralAlignment(afterLine, FontNumeralAlignment.Tabular);
+
+            textStack.Children.Add(beforeLine);
+            textStack.Children.Add(afterLine);
+            textStack.MouseLeftButtonDown += (_, _) =>
             {
                 inspection.SelectedAnchorId = anchor.Id;
                 RefreshInspection();
             };
-            row.Children.Add(text);
-            InspectionAnchorsPanel.Children.Add(row);
+            row.Children.Add(textStack);
+            card.Child = row;
+            InspectionAnchorsPanel.Children.Add(card);
         }
 
         RefreshInspectionReadoutAndCursor();
-        var showHud = hasResult && !geometryEditing && (inspection.MonitorEnabled || inspection.Anchors.Count > 0 || overlay.IsActive());
-        InspectionHud.Visibility = showHud ? Visibility.Visible : Visibility.Collapsed;
+
+        var docked = ShowsInspector;
+        var bodyVisible = inspection.MonitorEnabled || inspection.Anchors.Count > 0;
+        if (docked && !ReferenceEquals(InspectionContent.Parent, InspectionInlineHost))
+        {
+            if (InspectionHud.Child == InspectionContent) InspectionHud.Child = null;
+            InspectionInlineHost.Children.Add(InspectionContent);
+        }
+        else if (!docked && !ReferenceEquals(InspectionContent.Parent, InspectionHud))
+        {
+            if (InspectionContent.Parent == InspectionInlineHost) InspectionInlineHost.Children.Remove(InspectionContent);
+            InspectionHud.Child = InspectionContent;
+        }
+
+        InspectionSurface.Visibility = docked && hasResult && !geometryEditing ? Visibility.Visible : Visibility.Collapsed;
+        InspectionInlineHost.Visibility = bodyVisible ? Visibility.Visible : Visibility.Collapsed;
+        InspectionFloatingTitle.Visibility = docked ? Visibility.Collapsed : Visibility.Visible;
+        InspectionChevron.RenderTransform = bodyVisible ? Transform.Identity : new RotateTransform(-90);
+        InspectionInlineButton.ToolTip = Loc.Text(inspection.MonitorEnabled ? "收起取样监视" : "展开取样监视");
+        InspectionAnchorCountBadge.Text = inspection.Anchors.Count > 0
+            ? $"{inspection.Anchors.Count.ToString(CultureInfo.InvariantCulture)}/{InspectionAnchor.MaxCount.ToString(CultureInfo.InvariantCulture)}"
+            : "";
+
+        InspectionHud.Margin = (compare || view.HoldingBefore) ? new Thickness(14, 14, 14, 48) : new Thickness(14);
+        InspectionHud.Visibility = !docked && hasResult && !geometryEditing && bodyVisible ? Visibility.Visible : Visibility.Collapsed;
+        RefreshHDRPresentation();
     }
 
     private void InspectionMonitorClicked(object sender, RoutedEventArgs e)
@@ -266,12 +340,6 @@ public partial class MainWindow
             SetHslTargetMode(false, hslTargetAxis);
         }
         RefreshInspection();
-    }
-
-    private void InspectionPinNowClicked(object sender, RoutedEventArgs e)
-    {
-        var pt = inspection.LiveOutputPoint ?? (0.5, 0.5);
-        PinInspectionAnchor(pt.X, pt.Y);
     }
 
     private void InspectionClearAnchorsClicked(object sender, RoutedEventArgs e)

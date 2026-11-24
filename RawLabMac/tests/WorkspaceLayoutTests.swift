@@ -16,6 +16,12 @@ import Foundation
 
         layout.toggleLibrary(width: 950)
         precondition(layout.libraryPresentation(width: 950) == .drawer)
+        precondition(layout.dismissDrawer())
+        precondition(layout.libraryPresentation(width: 950) == .hidden)
+        precondition(!layout.dismissDrawer())
+        layout.setMode(.preview)
+        precondition(!layout.dismissDrawer() && layout.mode == .preview)
+        layout.setMode(.editing)
         layout.windowResized(from: 950, to: 1180)
         precondition(layout.libraryPresentation(width: 1180) == .pinned)
         layout.windowResized(from: 1180, to: 950)

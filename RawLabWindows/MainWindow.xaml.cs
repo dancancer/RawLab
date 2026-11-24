@@ -152,7 +152,7 @@ public partial class MainWindow : Window
         ResultCanvas.HoldStarted+=BeginHoldingBefore;
         ResultCanvas.HoldEnded+=EndHoldingBefore;
         NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
-        ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        ResultCanvas.ImageBoundsChanged+=()=>{RefreshPhotoLabels();if(settings.IsHDREditing)RefreshHDRPresentation();};
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);

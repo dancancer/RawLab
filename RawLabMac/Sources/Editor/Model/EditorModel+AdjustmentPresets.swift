@@ -46,14 +46,18 @@ extension EditorModel {
         quickPresetState = .idle
     }
 
+    private var canApplyQuickPresetContext: Bool {
+        quickPresetsVisible || (settings.isHDREditing && adjustmentNavigation.expandedGroup == .looks && geometryDraft == nil)
+    }
+
     func applyPresetToCurrentPhoto(_ preset: AdjustmentPreset) {
-        guard quickPresetsVisible, canUsePresetPhoto, !importing, !quickPresetState.isPreparing, let file else { return }
+        guard canApplyQuickPresetContext, canUsePresetPhoto, !importing, !quickPresetState.isPreparing, let file else { return }
         let source = sourceRevision, generation = UUID()
         quickPresetGeneration = generation
         let accepted = preparePresetAction(onStay: { [weak self] in
             if self?.quickPresetGeneration == generation { self?.cancelQuickPreset() }
         }) { [weak self] in
-            guard let self, self.quickPresetsVisible, self.quickPresetGeneration == generation,
+            guard let self, self.canApplyQuickPresetContext, self.quickPresetGeneration == generation,
                   self.sourceRevision == source, self.file == file else { return }
             do {
                 let session = try self.requireAdjustmentSession()

@@ -111,6 +111,7 @@
 "中性直出" = "Sortie directe neutre";
 "中点" = "Point médian";
 "中间调" = "Tons moyens";
+"中间调拆分" = "Séparation des tons moyens";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Pour compter les appareils actifs, l’application enregistre sur cet appareil un identifiant d’installation généré aléatoirement. Il ne contient aucune information personnelle et est supprimé lorsque vous désactivez l’analyse.";
 "乡村秋日 · 古典油画" = "Automne rural · peinture à l'huile classique";
 "交互预览… %@ × %@ · HDR" = "Aperçu interactif… %@ × %@ · HDR";
@@ -174,7 +175,7 @@
 "允许使用统计" = "Autoriser l’analyse d’utilisation";
 "元数据匹配" = "Correspondance des métadonnées";
 "先处理每张照片的未保存调整，再检查最终设置。跳过只影响本次导出。" = "Traitez les réglages non enregistrés de chaque photo, puis vérifiez les réglages finaux. Ignorer ne concerne que cet export.";
-"先开启畸变或横向色差校正" = "Activez d’abord la correction de la distorsion ou de l’aberration chromatique latérale";
+"先开启畸变、横向色差或暗角校正" = "Activez d’abord la distorsion, l’aberration chromatique latérale ou le vignettage";
 "先比较候选效果，再选择导入。候选包含推测，不能证明已还原作者效果。" = "Comparez les résultats proposés avant l’importation. Ils reposent sur des hypothèses et ne prouvent pas que le rendu de l’auteur a été reproduit.";
 "光线" = "Lumière";
 "全不选" = "Tout désélectionner";
@@ -351,6 +352,7 @@
 "尚未选择照片" = "Aucune photo sélectionnée";
 "屏幕容量 %@ EV" = "Marge de l’écran %@ EV";
 "展开%@组" = "Développer le groupe %@";
+"展开取样监视" = "Développer le moniteur d’échantillonnage";
 "展开暗角参数" = "Afficher les réglages du vignettage";
 "展开直方图" = "Développer l'histogramme";
 "展开精细调整" = "Afficher les réglages fins";
@@ -443,7 +445,7 @@
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
 "恢复更新前的数据" = "Restaurer les données d’avant la mise à jour";
 "恢复自动高度" = "Rétablir la hauteur automatique";
-"恢复阴影、中间调和高光的颜色分级默认值？" = "Rétablir l’étalonnage par défaut des ombres, tons moyens et hautes lumières ?";
+"恢复阴影、中间调、高光、全局、融合和平衡的默认值？" = "Rétablir l’étalonnage par défaut des ombres, tons moyens, hautes lumières, global, fusion et équilibre ?";
 "成功 %@ 张 · 失败 %@ 张 · 未处理 %@ 张" = "Réussite %@ · Échec %@ · Non traitées %@";
 "我的预设" = "Mes préréglages";
 "所选外观不可用，请重新选择外观。" = "Le look sélectionné est indisponible ; choisissez-en un autre.";
@@ -468,6 +470,7 @@
 "拍摄参数" = "Paramètres de prise de vue";
 "拍摄时设置" = "Réglage selon la prise";
 "拍摄时：%.0f K · 色调 %+.0f" = "Selon la prise : %.0f K · Teinte %+.0f";
+"拖动照片调整曲线；退出目标模式后可平移。" = "Faites glisser la photo pour régler la courbe. Quittez le mode ciblé pour la déplacer.";
 "拖动照片调整颜色；退出目标模式后可平移。" = "Faites glisser la photo pour régler la couleur. Quittez le mode ciblé pour la déplacer.";
 "拖动边角裁切，拖动画面内移动选区。" = "Faites glisser un coin pour recadrer ; faites glisser à l’intérieur de la zone pour la déplacer.";
 "指定长边" = "Spécifier le bord long";
@@ -493,6 +496,7 @@
 "收起全部" = "Tout replier";
 "收起其他方案" = "Masquer les autres options";
 "收起分支" = "Replier la branche";
+"收起取样监视" = "Réduire le moniteur d’échantillonnage";
 "收起暗角参数" = "Masquer les réglages du vignettage";
 "收起直方图" = "Réduire l'histogramme";
 "收起精细调整" = "Masquer les réglages fins";
@@ -592,6 +596,8 @@
 "暖调日系 · 漫射金光" = "Style japonais chaud · lumière dorée diffuse";
 "暖金光影 · 质感人像" = "Lumière dorée chaude · portrait texturé";
 "暗角" = "Vignettage";
+"暗角标定" = "Étalonnage du vignettage";
+"暗角标定不可用" = "Étalonnage du vignettage indisponible";
 "暗角校正" = "Correction du vignetage";
 "暗部" = "Tons foncés";
 "暮色黄昏 · 相邻色过渡" = "Crépuscule · transition de couleurs voisines";
@@ -759,7 +765,9 @@
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Molette : %@ ; Maj : %@ ; Plage : %@ à %@ %@";
 "滨田英明" = "Hideaki Hamada";
 "点击曲线区域添加控制点，拖动中间点调整。" = "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.";
+"点击照片中的中性灰区域取样，按 Esc 退出。" = "Cliquez sur une zone gris neutre de la photo pour échantillonner. Échap pour quitter.";
 "点曲线" = "Courbe à points";
+"点选添加锚点" = "Cliquer pour épingler un repère";
 "照片" = "Photo";
 "照片信息" = "Informations de la photo";
 "照片四周留白" = "Marge autour de la photo";
@@ -976,6 +984,7 @@
 "返回调整后" = "Revenir à après";
 "返回选片集合" = "Revenir à la collection de photos";
 "这些修改尚未应用。应用并离开，放弃修改，或继续编辑。" = "Ces modifications n’ont pas encore été appliquées. Appliquez-les et quittez, abandonnez-les ou continuez à modifier.";
+"退出白平衡吸管" = "Quitter la pipette BB";
 "退出目标调整" = "Quitter le réglage ciblé";
 "适合窗口" = "Ajuster à la fenêtre";
 "选择 %@" = "Sélectionner %@";
@@ -1029,10 +1038,10 @@
 "重置全部调整？" = "Réinitialiser tous les réglages ?";
 "重置几何编辑" = "Réinitialiser la géométrie";
 "重置分割线" = "Réinitialiser la séparation";
+"重置参数曲线" = "Réinitialiser la courbe paramétrique";
 "重置当前分区" = "Réinitialiser la plage actuelle";
 "重置当前颜色" = "Réinitialiser la couleur actuelle";
 "重置当前颜色（%@）" = "Réinitialiser la couleur actuelle (%@)";
-"重置曲线" = "Réinitialiser la courbe";
 "重置本工具" = "Réinitialiser cet outil";
 "重置调整" = "Réinitialiser les réglages";
 "重置镜头校正" = "Réinitialiser la correction optique";
@@ -1058,6 +1067,7 @@
 "长边" = "Bord long";
 "长边 %@ px" = "Bord long %@ px";
 "阴影" = "Ombres";
+"阴影拆分" = "Séparation des ombres";
 "阿里云隐私政策" = "Politique de confidentialité d’Aliyun";
 "降噪" = "Réduction du bruit";
 "降噪亮度" = "Luminance";
@@ -1097,6 +1107,7 @@
 "高光" = "Hautes lumières";
 "高光 %@" = "Hautes lumières %@";
 "高光保护" = "Protection des hautes lumières";
+"高光拆分" = "Séparation des hautes lumières";
 "高度" = "Hauteur";
 "高级颜色设置" = "Réglages colorimétriques avancés";
 "高调通透日光，蓝天转日系天青色，柔和哑光暗部与奶油蜜桃肤色" = "Lumière du jour claire et high-key, ciel cyan japonais, ombres mates douces et carnations pêche crémeuses";

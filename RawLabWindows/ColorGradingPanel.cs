@@ -10,7 +10,7 @@ public sealed class ColorGradingPanel : StackPanel
     internal static readonly string[] ZoneKeys = ["阴影", "中间调", "高光"];
     private readonly ColorGradingWheelControl wheel = new();
     private readonly ParameterRow hue = new() { Compact = true }, saturation = new() { Compact = true },
-        luminance = new() { Compact = true }, blending = new() { Compact = true }, balance = new() { Compact = true };
+        luminance = new(), blending = new(), balance = new();
     internal ParameterRow SaturationRow => saturation;
     internal ParameterRow LuminanceRow => luminance;
     internal ParameterRow BlendingRow => blending;
@@ -117,12 +117,17 @@ public sealed class ColorGradingPanel : StackPanel
             wheel.Refresh(selected, identity, zoneScope, zoneTitle);
             for (var i = 0; i < zones.Length; i++) {
                 var zone = (ColorGradingZone)i;
-                zones[i].Content = Loc.Text(ZoneKeys[i]) + (settings[zone].IsDefault ? "" : " ·");
+                var zoneTitleText = zone switch {
+                    ColorGradingZone.Shadows => Loc.Text("阴影"),
+                    ColorGradingZone.Midtones => Loc.Text("中间调"),
+                    _ => Loc.Text("高光")
+                };
+                zones[i].Content = zoneTitleText + (settings[zone].IsDefault ? "" : " •");
                 zones[i].Tag = !globalSelected && zone == SelectedZone ? "selected" : null;
-                AutomationProperties.SetName(zones[i], Loc.Text(ZoneKeys[i]));
+                AutomationProperties.SetName(zones[i], zoneTitleText);
                 AutomationProperties.SetItemStatus(zones[i], Loc.Text(settings[zone].IsDefault ? "未调整" : "已调整"));
             }
-            globalButton.Content = Loc.Text("全局") + (settings.Global.IsDefault ? "" : " ·");
+            globalButton.Content = Loc.Text("全局") + (settings.Global.IsDefault ? "" : " •");
             globalButton.Tag = globalSelected ? "selected" : null;
             AutomationProperties.SetName(globalButton, Loc.Text("全局"));
             AutomationProperties.SetItemStatus(globalButton, Loc.Text(settings.Global.IsDefault ? "未调整" : "已调整"));

@@ -21,7 +21,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
     public event Action<int>? SelectionChanged;
     public ToneCurveCanvas()
     {
-        Width = 232; Height = 164; Focusable = true;
+        HorizontalAlignment = HorizontalAlignment.Stretch; MaxWidth = 232; MinWidth = 160; Height = 164; Focusable = true;
         AutomationProperties.SetAutomationId(this, "curve.canvas");
         IsVisibleChanged += (_, _) => { if (!IsVisible) CancelGesture(); };
         IsEnabledChanged += (_, _) => { if (!IsEnabled) CancelGesture(); InvalidateVisual(); };
@@ -53,7 +53,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
     private Point CanvasPoint(ToneCurvePoint p) => new(12 + p.X * (ActualWidth - 24), 12 + (1 - p.Y) * (ActualHeight - 24));
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        if (!IsEnabled || (value.Mode == ToneCurveMode.Legacy) || PrepareEditing?.Invoke() == false) return;
+        if (!IsEnabled || value.Mode == ToneCurveMode.Legacy || (showSplitMarkers && channel == ToneCurveChannel.Rgb) || PrepareEditing?.Invoke() == false) return;
         var location = e.GetPosition(this); var origin = Normalized(location);
         double Distance(int index) { var p = CanvasPoint(value.Points[index]) - location; return p.LengthSquared; }
         var index = Enumerable.Range(0, value.Points.Count).MinBy(Distance);
@@ -96,7 +96,8 @@ public sealed class ToneCurveCanvas : FrameworkElement
     {
         if (e.Key == Key.Escape) { CancelGesture(); e.Handled = true; return; }
         if (drag != null) { if (e.Key is Key.LeftShift or Key.RightShift) CancelGesture(); e.Handled = true; return; }
-        if (!IsEnabled || e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Delete or Key.Back) ||
+        if (!IsEnabled || (showSplitMarkers && channel == ToneCurveChannel.Rgb) ||
+            e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Delete or Key.Back) ||
             PrepareEditing?.Invoke() == false) { base.OnKeyDown(e); return; }
         var isVertical = e.Key is Key.Up or Key.Down;
         if (isVertical ? !value.CanMoveY(selected) : !value.IsInterior(selected)) { base.OnKeyDown(e); return; }

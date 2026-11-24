@@ -78,7 +78,7 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner,InspectionHud];
+        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner,ExternalReloadBanner,UpdateLockBanner,InspectionOverlayChip,InspectionHud];
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
@@ -290,7 +290,7 @@ public partial class MainWindow
         tint.Changed += (value,_) => draft=draft with { Tint=value };
         var exposure = new ComboBox { ItemsSource=new[] { Loc.Text("场景"), Loc.Text("传感器基准") }, SelectedIndex=draft.SensorExposure ? 1 : 0 };
         exposure.SelectionChanged += (_,_) => draft=draft with { SensorExposure=exposure.SelectedIndex==1 };
-        var fbdd = new ComboBox { ItemsSource=new[] { Loc.Text("关闭"), "FBDD 1", "FBDD 2" }, SelectedIndex=draft.FbddLevel };
+        var fbdd = new ComboBox { ItemsSource=new[] { Loc.Text("关"), "FBDD 1", "FBDD 2" }, SelectedIndex=draft.FbddLevel };
         fbdd.SelectionChanged += (_,_) => draft=draft with { FbddLevel=fbdd.SelectedIndex };
         var crop = new CheckBox { Content=Loc.Text("自动裁切"), IsChecked=draft.LensAutoCrop, IsEnabled=draft.LensActive, Margin=new Thickness(0,6,0,0) };
         CheckBox LensToggle(string title, bool current, Action<bool> update) {

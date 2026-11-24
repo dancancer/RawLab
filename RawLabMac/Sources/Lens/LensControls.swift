@@ -96,9 +96,22 @@ struct LensDraftWorkspace: View {
     }
 
     private var correctionOptions: some View {
-        HStack(alignment: .top, spacing: 18) { distortion; tca; vignetting; autoCrop }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: 18) {
+                distortion.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
+                tca.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
+                vignetting.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
+                autoCrop.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                distortion
+                tca
+                vignetting
+                autoCrop
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     private var distortion: some View {
@@ -121,15 +134,15 @@ struct LensDraftWorkspace: View {
     private var autoCrop: some View {
         VStack(alignment: .leading, spacing: 5) {
             correctionToggle("自动裁边", value: value(\.autoCrop), enabled: settings.isEnabled, identifier: "lens.crop")
-            Text(L10n.text(settings.isEnabled ? "校正后裁去空白边缘" : "先开启畸变或横向色差校正"))
+            Text(L10n.text(settings.isEnabled ? "校正后裁去空白边缘" : "先开启畸变、横向色差或暗角校正"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if let crop = presentation.cropPercent {
                 Text(L10n.format("裁边 %@%%", String(crop)))
                     .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
             }
-        }.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
-            .help(L10n.text(settings.isEnabled ? "校正后裁去空白边缘" : "先开启畸变或横向色差校正"))
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            .help(L10n.text(settings.isEnabled ? "校正后裁去空白边缘" : "先开启畸变、横向色差或暗角校正"))
     }
 
     private func correctionOption(_ title: String, detail: String, value: Binding<Bool>,
@@ -138,7 +151,7 @@ struct LensDraftWorkspace: View {
             correctionToggle(title, value: value, enabled: enabled, identifier: identifier)
             Text(L10n.text(detail)).font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }.frame(minWidth: 118, maxWidth: 150, alignment: .leading)
+        }.frame(maxWidth: .infinity, alignment: .leading)
             .help(L10n.text(detail))
     }
 
