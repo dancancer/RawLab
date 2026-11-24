@@ -4,10 +4,11 @@ import SwiftUI
 struct MacInspectionHUD: View {
     @ObservedObject var model: EditorModel
     let showingBefore: Bool
+    @State private var collapsed = false
     @Environment(\.locale) private var localizationLocale
 
     private var expanded: Bool {
-        model.inspection.monitorEnabled || !model.inspection.anchors.isEmpty
+        !collapsed && (model.inspection.monitorEnabled || !model.inspection.anchors.isEmpty)
     }
 
     var body: some View {
@@ -17,9 +18,13 @@ struct MacInspectionHUD: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Button {
-                    model.inspection.monitorEnabled.toggle()
-                    if !model.inspection.monitorEnabled {
+                    if expanded {
+                        collapsed = true
+                        model.inspection.monitorEnabled = false
                         model.inspection.pinModeEnabled = false
+                    } else {
+                        collapsed = false
+                        model.inspection.monitorEnabled = true
                     }
                 } label: {
                     HStack(spacing: 4) {
@@ -115,6 +120,15 @@ struct MacInspectionHUD: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .onChange(of: model.inspection.monitorEnabled) { _, enabled in
+            if enabled { collapsed = false }
+        }
+        .onChange(of: model.inspection.anchors.count) { oldCount, newCount in
+            if newCount == 0 || newCount > oldCount { collapsed = false }
+        }
+        .onChange(of: model.sourceRevision) { _, _ in
+            collapsed = false
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("inspection.hud")
     }

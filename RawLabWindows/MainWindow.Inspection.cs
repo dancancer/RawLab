@@ -10,6 +10,7 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private readonly InspectionSessionState inspection = new();
+    private bool inspectionBodyCollapsed;
     private (int Width, int Height)? sourceNativeSize;
     private readonly InspectionOverlayCache inspectionOverlayCache = new(maxEntries: 4);
 
@@ -56,6 +57,7 @@ public partial class MainWindow
         if (src is not { } s) return;
         if (inspection.PinAnchor(s.X, s.Y) != null)
         {
+            inspectionBodyCollapsed = false;
             var hadReference = ReferenceCurrent;
             RefreshInspection();
             if (!hadReference) Schedule();
@@ -293,7 +295,9 @@ public partial class MainWindow
         RefreshInspectionReadoutAndCursor();
 
         var docked = ShowsInspector;
-        var bodyVisible = inspection.MonitorEnabled || inspection.Anchors.Count > 0;
+        if (inspection.Anchors.Count == 0)
+            inspectionBodyCollapsed = false;
+        var bodyVisible = !inspectionBodyCollapsed && (inspection.MonitorEnabled || inspection.Anchors.Count > 0);
         if (docked && !ReferenceEquals(InspectionContent.Parent, InspectionInlineHost))
         {
             if (InspectionHud.Child == InspectionContent) InspectionHud.Child = null;
@@ -309,7 +313,7 @@ public partial class MainWindow
         InspectionInlineHost.Visibility = bodyVisible ? Visibility.Visible : Visibility.Collapsed;
         InspectionFloatingTitle.Visibility = docked ? Visibility.Collapsed : Visibility.Visible;
         InspectionChevron.RenderTransform = bodyVisible ? Transform.Identity : new RotateTransform(-90);
-        InspectionInlineButton.ToolTip = Loc.Text(inspection.MonitorEnabled ? "收起取样监视" : "展开取样监视");
+        InspectionInlineButton.ToolTip = Loc.Text(bodyVisible ? "收起取样监视" : "展开取样监视");
         InspectionAnchorCountBadge.Text = inspection.Anchors.Count > 0
             ? $"{inspection.Anchors.Count.ToString(CultureInfo.InvariantCulture)}/{InspectionAnchor.MaxCount.ToString(CultureInfo.InvariantCulture)}"
             : "";
@@ -321,9 +325,35 @@ public partial class MainWindow
 
     private void InspectionMonitorClicked(object sender, RoutedEventArgs e)
     {
-        inspection.MonitorEnabled = !inspection.MonitorEnabled;
-        if (!inspection.MonitorEnabled)
-            inspection.PinModeEnabled = false;
+        if (ReferenceEquals(sender, InspectionInlineButton))
+        {
+            var expanded = !inspectionBodyCollapsed && (inspection.MonitorEnabled || inspection.Anchors.Count > 0);
+            if (expanded)
+            {
+                inspection.MonitorEnabled = false;
+                inspection.PinModeEnabled = false;
+                inspectionBodyCollapsed = true;
+            }
+            else
+            {
+                inspectionBodyCollapsed = false;
+                inspection.MonitorEnabled = true;
+            }
+        }
+        else
+        {
+            inspection.MonitorEnabled = !inspection.MonitorEnabled;
+            if (inspection.MonitorEnabled)
+            {
+                inspectionBodyCollapsed = false;
+            }
+            else
+            {
+                inspection.PinModeEnabled = false;
+                if (inspection.Anchors.Count > 0)
+                    inspectionBodyCollapsed = true;
+            }
+        }
         var hadReference = ReferenceCurrent;
         RefreshInspection();
         if (inspection.MonitorEnabled && !hadReference) Schedule();
@@ -331,6 +361,7 @@ public partial class MainWindow
 
     private void InspectionPinModeClicked(object sender, RoutedEventArgs e)
     {
+        inspectionBodyCollapsed = false;
         inspection.MonitorEnabled = true;
         inspection.PinModeEnabled = !inspection.PinModeEnabled;
         if (inspection.PinModeEnabled)
@@ -344,6 +375,7 @@ public partial class MainWindow
 
     private void InspectionClearAnchorsClicked(object sender, RoutedEventArgs e)
     {
+        inspectionBodyCollapsed = false;
         inspection.ClearAnchors();
         RefreshInspection();
     }

@@ -88,7 +88,7 @@ public partial class MainWindow
         toolMode=ended.Mode;selectedParameter=ended.SelectedParameter;selectedToneParameter=ended.SelectedToneParameter;selectedAtmosphereParameter=ended.SelectedAtmosphereParameter;selectedHdrRenditionParameter=ended.SelectedHdrRenditionParameter;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
-        RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();
+        RefreshComparisonLayout();viewport.Fit();
     }
     private bool ResolveTransformDraft()
     {

@@ -71,8 +71,8 @@ extension EditorModel {
                 self.quickPresetQueue.async { [weak self] in
                     let result = Result { try prepare(session, preset.payload, targets) }
                     DispatchQueue.main.async {
-                        guard let self, self.quickPresetGeneration == generation, self.quickPresetsVisible else { return }
-                        guard self.sourceRevision == source, self.file == file, self.editRevision == revision,
+                        guard let self, self.quickPresetGeneration == generation else { return }
+                        guard self.canApplyQuickPresetContext, self.sourceRevision == source, self.file == file, self.editRevision == revision,
                               self.adjustmentSession === session, !self.importing, !self.exporting, !self.dirty,
                               self.geometryDraft == nil, !self.scheduler.interacting, !self.aiState.isRunning else {
                             self.cancelQuickPreset(); return
@@ -121,7 +121,7 @@ extension EditorModel {
         case .saved(let value, let id), .undoFailed(let value, let id, _): preset = value; transaction = id
         default: return
         }
-        guard quickPresetsVisible, canUsePresetPhoto, geometryDraft == nil,
+        guard canApplyQuickPresetContext, canUsePresetPhoto, geometryDraft == nil,
               ParameterValueField.resolvePendingInputs(), saveEdits() else { return }
         changeAdjustmentTransaction(transaction, undo: true)
         if let outcome = adjustmentOutcomes.first, outcome.status == .applied, outcome.saved == committedEdit {

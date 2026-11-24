@@ -27,7 +27,7 @@ public partial class MainWindow
         if(transform.Active || file==null || exporting){RefreshComparisonSelection();return;}
         CancelViewingInput();
         if(enabled)view.Select(sliding ? ComparisonMode.Wipe : ComparisonMode.SideBySide);else view.SetEnabled(false);
-        RefreshComparisonLayout();RefreshComparisonToolTip();RefreshControls();RefreshViewingFrames();
+        RefreshComparisonLayout();RefreshControls();RefreshViewingFrames();
         if(view.NeedsReference && !ReferenceCurrent)Schedule();
     }
     private void RefreshComparisonSelection()
@@ -56,7 +56,6 @@ public partial class MainWindow
         ResultCanvas.ComparisonEnabled=placement.ShowWipeOverlay && ReferenceCurrent;
         RefreshPhotoLabels();
     }
-    private void RefreshComparisonToolTip() => ResultCanvas.ToolTip = null;
     private void RefreshCopyLabels()
     {
         ExportJpeg.Header=Loc.Text("JPEG…");

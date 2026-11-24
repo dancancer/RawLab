@@ -169,6 +169,42 @@ enum QuickPresetModelChecks {
         guard case .saved = model.quickPresetState else { throw NSError(domain: "unchanged geometry departure must continue quick apply", code: 1) }
         try check(model.quickPresetsVisible && model.geometryDraft == nil && model.settings.exposure == -0.2,
             "automatic departure from an unchanged draft keeps the quick request and visible result")
+
+        let hdrFixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/bayer-demosaic.dng")
+        let hdrPhoto = directory.appendingPathComponent("hdr-quick-preset.dng")
+        try FileManager.default.copyItem(at: hdrFixture, to: hdrPhoto)
+        model.closeQuickPresets()
+        model.open(hdrPhoto); try rendered(model)
+        model.setHDREditing(true)
+        try wait { model.settings.isHDREditing && !model.busy && !model.workerActive }
+        try rendered(model)
+        model.selectAdjustmentGroup(.looks)
+        try check(model.settings.isHDREditing && model.adjustmentNavigation.expandedGroup == .looks && !model.quickPresetsVisible,
+            "HDR looks group stays inline without opening quick preset overlay")
+        model.applyPresetToCurrentPhoto(preset)
+        try wait { !model.quickPresetState.isPreparing }; try rendered(model)
+        guard case .saved = model.quickPresetState else {
+            throw NSError(domain: "HDR inline quick preset stayed stuck or failed: \(model.quickPresetState)", code: 1)
+        }
+        try check(model.settings.hdr?.exposure == 0.7 && !model.dirty,
+            "HDR inline quick preset applies and saves to HDR settings")
+        model.applyPresetToCurrentPhoto(preset)
+        try wait { !model.quickPresetState.isPreparing }
+        guard case .unchanged = model.quickPresetState else {
+            throw NSError(domain: "HDR repeated inline quick preset must report unchanged", code: 1)
+        }
+        model.applyPresetToCurrentPhoto(unchanged)
+        try wait { !model.quickPresetState.isPreparing }; try rendered(model)
+        guard case .saved = model.quickPresetState else {
+            throw NSError(domain: "HDR second inline quick preset must report saved", code: 1)
+        }
+        model.undoQuickPreset(); try rendered(model)
+        guard case .undone = model.quickPresetState else {
+            throw NSError(domain: "HDR inline quick preset undo must succeed", code: 1)
+        }
+        try check(model.settings.hdr?.exposure == 0.7, "HDR inline quick preset undo restores previous HDR exposure")
+
         try failureAndRetry(root: directory, photo: second, preset: preset)
     }
 

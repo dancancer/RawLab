@@ -150,6 +150,7 @@ extension EditorModel {
             showQuickPresets(); return
         }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation
         target.selectGroup(group)
         navigateAdjustment(to: target)
@@ -159,6 +160,7 @@ extension EditorModel {
         guard tool.group.isVisible(isHDREditing: settings.isHDREditing),
               quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && tool.group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation; target.selectTool(tool)
         navigateAdjustment(to: target)
     }

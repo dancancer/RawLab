@@ -135,7 +135,6 @@ public partial class MainWindow : Window
             RefreshSaveNotice();
             RefreshInspection();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
-            RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
             foreach(var entry in galleries.SelectMany(gallery=>gallery.Photos).Distinct())entry.RefreshPhotoStatus();
         }

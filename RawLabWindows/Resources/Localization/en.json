@@ -453,8 +453,6 @@
     "拍摄时设置": "As-Shot Setting",
     "拍摄时：{0} K / {1}": "As shot: {0} K / {1}",
     "拖入照片，或添加目录开始浏览": "Drop photos or add a folder to start browsing",
-    "拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。": "Drag the divider to compare; use arrow keys for fine adjustment and Home to center. Drag the photo to pan; use the scroll wheel to zoom.",
-    "拖动平移，滚轮缩放，双击适合窗口。": "Drag to pan, use the scroll wheel to zoom, and double-click to fit the window.",
     "拖动照片调整曲线；退出目标模式后可平移。": "Drag the photo to adjust the curve. Exit target mode to pan.",
     "拖动照片调整颜色；退出目标模式后可平移。": "Drag the photo to adjust color. Exit target mode to pan.",
     "拖动调整文件树宽度": "Drag to resize file tree",

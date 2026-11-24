@@ -200,13 +200,13 @@ struct MacToneCurveControls: View {
             Text(L10n.text("拆分点")).font(.caption).foregroundStyle(.secondary).padding(.top, 2)
             ParameterRow(title: L10n.text("阴影拆分"), value: parametricPercentBinding(\.splitShadow, in: sub.splitShadowRange.lowerBound...shadowMax),
                 range: (sub.splitShadowRange.lowerBound * 100)...(shadowMax * 100), defaultValue: sub.splitShadowDefault * 100,
-                unit: "%", precision: .cropPercent, identifier: "value.curve.splitShadow", onEditingChanged: onEditingChanged)
+                unit: "%", precision: .standard, identifier: "value.curve.splitShadow", onEditingChanged: onEditingChanged)
             ParameterRow(title: L10n.text("中间调拆分"), value: parametricPercentBinding(\.splitMidtone, in: midMin...midMax),
                 range: (midMin * 100)...(midMax * 100), defaultValue: sub.splitMidtoneDefault * 100,
-                unit: "%", precision: .cropPercent, identifier: "value.curve.splitMidtone", onEditingChanged: onEditingChanged)
+                unit: "%", precision: .standard, identifier: "value.curve.splitMidtone", onEditingChanged: onEditingChanged)
             ParameterRow(title: L10n.text("高光拆分"), value: parametricPercentBinding(\.splitHighlight, in: highMin...sub.splitHighlightRange.upperBound),
                 range: (highMin * 100)...(sub.splitHighlightRange.upperBound * 100), defaultValue: sub.splitHighlightDefault * 100,
-                unit: "%", precision: .cropPercent, identifier: "value.curve.splitHighlight", onEditingChanged: onEditingChanged)
+                unit: "%", precision: .standard, identifier: "value.curve.splitHighlight", onEditingChanged: onEditingChanged)
             HStack {
                 Spacer()
                 Button(L10n.text("重置参数曲线")) {
