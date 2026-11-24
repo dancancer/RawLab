@@ -15,11 +15,13 @@ internal sealed class EditSaveQueue
         EditSaveKey key,
         Func<bool, PhotoEditState> execute,
         bool clearMigrationReceipt,
+        Func<bool>? isStale,
         TaskCompletionSource<EditSaveWorkResult> completion)
     {
         internal EditSaveKey Key { get; } = key;
         internal Func<bool, PhotoEditState> Execute { get; set; } = execute;
         internal bool ClearMigrationReceipt { get; set; } = clearMigrationReceipt;
+        internal Func<bool>? IsStale { get; set; } = isStale;
         internal TaskCompletionSource<EditSaveWorkResult> Completion { get; set; } = completion;
     }
 
@@ -27,6 +29,8 @@ internal sealed class EditSaveQueue
     private readonly Queue<PendingRequest> queue = new();
     private bool workerRunning;
     private TaskCompletionSource<bool>? idleTcs;
+
+    internal event Action? BecameIdle;
 
     internal bool HasPendingWork
     {
@@ -38,7 +42,8 @@ internal sealed class EditSaveQueue
         string path,
         long openRevision,
         bool clearMigrationReceipt,
-        Func<bool, PhotoEditState> execute)
+        Func<bool, PhotoEditState> execute,
+        Func<bool>? isStale = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(path);
@@ -62,13 +67,14 @@ internal sealed class EditSaveQueue
                     superseded = last.Completion;
                     last.Execute = execute;
                     last.ClearMigrationReceipt |= clearMigrationReceipt;
+                    last.IsStale = isStale;
                     last.Completion = completion;
                 }
             }
 
             if (superseded == null)
             {
-                queue.Enqueue(new PendingRequest(key, execute, clearMigrationReceipt, completion));
+                queue.Enqueue(new PendingRequest(key, execute, clearMigrationReceipt, isStale, completion));
                 EnsureWorkerLocked();
             }
         }
@@ -99,6 +105,7 @@ internal sealed class EditSaveQueue
                     return null!;
                 },
                 false,
+                null,
                 workCompletion));
             EnsureWorkerLocked();
         }
@@ -127,6 +134,7 @@ internal sealed class EditSaveQueue
         while (true)
         {
             PendingRequest next;
+            Action? idleHandlers = null;
             lock (gate)
             {
                 if (queue.Count == 0)
@@ -134,20 +142,33 @@ internal sealed class EditSaveQueue
                     workerRunning = false;
                     idleTcs?.TrySetResult(true);
                     idleTcs = null;
-                    return;
+                    idleHandlers = BecameIdle;
+                    goto NotifyIdle;
                 }
                 next = queue.Dequeue();
             }
 
             try
             {
-                var saved = next.Execute(next.ClearMigrationReceipt);
-                next.Completion.TrySetResult(new EditSaveWorkResult(Superseded: false, Saved: saved));
+                if (next.IsStale?.Invoke() == true)
+                {
+                    next.Completion.TrySetResult(new EditSaveWorkResult(Superseded: true));
+                }
+                else
+                {
+                    var saved = next.Execute(next.ClearMigrationReceipt);
+                    next.Completion.TrySetResult(new EditSaveWorkResult(Superseded: false, Saved: saved));
+                }
             }
             catch (Exception error)
             {
                 next.Completion.TrySetException(error);
             }
+            continue;
+
+        NotifyIdle:
+            idleHandlers?.Invoke();
+            return;
         }
     }
 }
@@ -158,6 +179,7 @@ internal sealed class PendingEditSaveCommit
     internal long Revision { get; init; }
     internal string Path { get; init; } = "";
     internal long OpenRevision { get; init; }
+    internal long Epoch { get; init; }
     internal AdjustmentTransferSession Session { get; init; } = null!;
     internal PhotoEditState Baseline { get; init; } = null!;
     internal string? PreviousLook { get; init; }

@@ -131,6 +131,35 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     }
 
     @Synchronized
+    internal fun supportsFastFullResGpu(
+        input: File,
+        settings: EditSettings,
+        lut: File? = null,
+        nativeWidth: Int = 0,
+        nativeHeight: Int = 0,
+        maxPixels: Int = 0,
+        inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
+    ): Boolean {
+        check(handle != 0L) { "Processor is closed" }
+        if (settings.isHDREditing || inputKind != PhotoInputKind.RAW) return false
+        val effective = settings.effectiveFor(inputKind)
+        val json = effective.toSdrSessionStateJson(
+            isRaster = false,
+            lutPath = lut?.path,
+            includeDenoise = true,
+        )
+        return nativeSupportsFastFullResGpu(
+            handle,
+            0,
+            nativeWidth.coerceAtLeast(0),
+            nativeHeight.coerceAtLeast(0),
+            maxPixels.coerceAtLeast(0),
+            input.path,
+            json,
+        )
+    }
+
+    @Synchronized
     fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean,
         inputKind: PhotoInputKind = PhotoFiles.kind(input.name, null) ?: PhotoInputKind.RAW,
         cancellationGeneration: Long = -1L, reusableBitmap: Bitmap? = null): NativeFrame {
@@ -594,6 +623,8 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     private external fun nativeMigrateProcessing(handle: Long, editStateJson: String, inputPath: String,
         pixels: Any?, width: Int, height: Int, pixelFormat: Int,
         cancellationGeneration: Long): NativeMigrationResult?
+    private external fun nativeSupportsFastFullResGpu(handle: Long, inputType: Int, inputWidth: Int,
+        inputHeight: Int, maxPixels: Int, inputPath: String?, editStateJson: String?): Boolean
 
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean

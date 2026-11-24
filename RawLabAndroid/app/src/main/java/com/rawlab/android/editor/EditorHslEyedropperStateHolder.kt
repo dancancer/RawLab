@@ -23,20 +23,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 internal class EditorHslEyedropperStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val currentSourceRevision: () -> Long,
-    private val currentRenderRevision: () -> Long,
-    private val submitProbe: (Work.HslProbe) -> Unit,
-    private val onChangeDraft: (EditSettings, Boolean) -> Unit,
-    private val onIncrementDraftRevision: () -> Unit,
-    private val onRenderDraft: (Boolean) -> Unit,
-    private val sampleCurve: (ToneCurveSettings, ToneCurveChannel) -> List<ToneCurvePoint> = { settings, channel ->
-        com.rawlab.android.engine.ToneCurveSampling.samples(settings, channel)
-    },
-    private val sampleParametric: (ToneCurveSettings, Double) -> Double = { settings, x ->
-        com.rawlab.android.engine.ToneCurveSampling.sampleParametricValue(settings, x)
-    },
+    private val session: EditorDocumentSession,
+    private val sampleCurve: (ToneCurveSettings, ToneCurveChannel) -> List<ToneCurvePoint> = session.dependencies.curveSampler,
+    private val sampleParametric: (ToneCurveSettings, Double) -> Double = session.dependencies.curveParametricSampler,
 ) {
+    private val mutable get() = session.mutable
     private val mutableTarget = MutableStateFlow(HslTargetState())
     val state = mutableTarget.asStateFlow()
     private val interaction = HslTargetInteraction()
@@ -89,7 +80,7 @@ internal class EditorHslEyedropperStateHolder(
         val isCurve = group == AdjustmentGroup.CURVE
         if (!target.enabled || !current.controlsEnabled || current.rendering || current.previewResizePending ||
             current.error != null || (!isHsl && !isCurve) ||
-            preview == null || revision == null || revision.source != currentSourceRevision() ||
+            preview == null || revision == null || revision.source != session.sourceRevision ||
             current.visibleEdits != acceptedSettings ||
             current.photo?.identity != preview.photo.identity || current.photo?.file != preview.photo.file
         ) {
@@ -131,7 +122,7 @@ internal class EditorHslEyedropperStateHolder(
                 interaction.end()
             }
         }
-        submitProbe(Work.HslProbe(preview, current.visibleEdits, revision, token, if (isCurve) 0 else target.axis, x, y))
+        session.actions.submitRender(Work.HslProbe(preview, current.visibleEdits, revision, token, if (isCurve) 0 else target.axis, x, y))
     }
 
     fun accept(value: WorkResult.HslProbe) {
@@ -143,7 +134,7 @@ internal class EditorHslEyedropperStateHolder(
         val target = mutableTarget.value
         val expectedGroup = if (isCurve) AdjustmentGroup.CURVE else AdjustmentGroup.HSL
         if (!target.enabled || (!isCurve && target.axis != work.axis) || current.visibleEdits != work.before ||
-            current.draft?.group != expectedGroup || currentSourceRevision() != work.revision.source ||
+            current.draft?.group != expectedGroup || session.sourceRevision != work.revision.source ||
             current.photo?.identity != work.preview.photo.identity
         ) {
             cancel()
@@ -208,7 +199,7 @@ internal class EditorHslEyedropperStateHolder(
 
     private fun changeTargetDraft(edits: EditSettings, group: AdjustmentGroup, interactive: Boolean) {
         if (mutable.value.draft?.group == group) {
-            onChangeDraft(edits.canonicalZeros().synchronizeHDR(), interactive)
+            session.actions.changeDraft(edits.canonicalZeros().synchronizeHDR(), interactive)
         }
     }
 
@@ -233,9 +224,9 @@ internal class EditorHslEyedropperStateHolder(
         clear()
         val draft = mutable.value.draft
         if (active && group != null && draft?.group == group && draft.interacting && draft.canUndo) {
-            onIncrementDraftRevision()
+            session.actions.incrementDraftRevision()
             mutable.value = mutable.value.copy(draft = draft.undo().copy(redoSteps = emptyList()))
-            onRenderDraft(false)
+            session.actions.renderDraft(false)
         }
     }
 

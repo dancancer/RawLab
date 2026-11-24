@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     private readonly LatestWork<Work> scheduler=new();
     private record EmbeddedWork(string Path,long Revision);
     private readonly LatestWork<EmbeddedWork> embeddedScheduler=new();
-    private long openRevision;
+    private readonly EditorPersistenceCoordinator persistence;
     private readonly Dictionary<Parameter,(Button Button,AdjustmentRing Ring)> toolButtons=[];
     private readonly Dictionary<PhotoEffectTool,(Button Button,AdjustmentRing Ring)> effectToolButtons=[];
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +55,6 @@ public partial class MainWindow : Window
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private bool autoExposing;
-    private long editRevision;
     private int? exportLongEdge;
     private OutputSharpening exportOutputSharpening = OutputSharpening.Off;
     private string? lastExportedPath;
@@ -99,7 +98,11 @@ public partial class MainWindow : Window
         ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path, appPaths: this.appPaths);
         this.usageAnalytics = usageAnalytics ?? new UsageAnalytics(appPaths.UsageSettingsPath);
         this.library = library ?? new(appPaths.FoldersPath);
-        this.editStore = editStore;
+        this.persistence = new EditorPersistenceCoordinator(
+            editStore,
+            () => new EditStore(this.appPaths.EditsDirectory),
+            action => Dispatcher.BeginInvoke(action));
+        this.persistence.DeferredExternalCheckReady += FlushDeferredExternalEditsCheckIfNeeded;
         this.batchJournal = batchJournal ?? new(appPaths.BatchDirectory);
         this.presetStore = presetStore ?? new(appPaths.PresetsDirectory);
         this.aiPreferenceStore = aiPreferenceStore ?? new(appPaths.AiGpuPreferencesPath);

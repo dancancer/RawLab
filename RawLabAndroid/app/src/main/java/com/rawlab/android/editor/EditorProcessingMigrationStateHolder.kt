@@ -2,40 +2,25 @@ package com.rawlab.android.editor
 
 import com.rawlab.android.editor.render.SerialWorkQueue
 import com.rawlab.android.editor.storage.EditSaveResult
-import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.engine.NativeProcessor
-import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.AdjustmentOperationExpiredException
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.ProcessingMigrationReceipt
 import com.rawlab.android.settings.ProcessingMigrationStatus
-import kotlinx.coroutines.flow.MutableStateFlow
-import java.io.File
 import java.util.UUID
 
 internal class EditorProcessingMigrationStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val storage: PhotoStorage,
-    private val editStore: EditorEditStore,
-    private val adjustmentHistory: EditorAdjustmentHistory,
-    private val strings: EditorStrings,
-    private val mainDelivery: (() -> Unit) -> Unit,
-    private val processorFactory: (Int, File?) -> NativeProcessor,
-    onQueueReleased: () -> Unit,
-    private val isDisposed: () -> Boolean,
-    private val isEditorActive: () -> Boolean,
-    private val currentSourceRevision: () -> Long,
-    private val currentEditRevision: () -> Long,
-    private val gpuMode: () -> Int,
-    private val onCommitAdjustments: (work: () -> Any?, publishBeforeUnlock: Boolean, completed: (Result<Any?>) -> Unit) -> Unit,
-    private val onIncrementEditRevision: () -> Unit,
-    private val onInvalidateRender: () -> Unit,
-    private val onCancelPreviewResize: () -> Unit,
-    private val onClearDurableAndNavigationPreview: () -> Unit,
-    private val onIncludeIndependentRecipeLook: (EditSettings) -> Unit,
-    private val onRenderCommittedForNavigation: () -> Unit,
+    private val session: EditorDocumentSession,
 ) {
-    val queue = SerialWorkQueue(onQueueReleased)
+    private val mutable get() = session.mutable
+    private val storage get() = session.storage
+    private val editStore get() = session.editStore
+    private val adjustmentHistory get() = session.adjustmentHistory
+    private val strings get() = session.strings
+    private val mainDelivery get() = session.dependencies.mainDelivery
+    private val processorFactory get() = session.dependencies.migrationProcessorFactory
+
+    val queue = SerialWorkQueue(session.storageRelease.releaserFor("processingMigrationQueue"))
     @Volatile private var runId: UUID? = null
     @Volatile private var activeEngine: NativeProcessor? = null
     private var attemptSource: Long? = null
@@ -73,7 +58,7 @@ internal class EditorProcessingMigrationStateHolder(
     }
 
     fun cancel(skipCurrentSource: Boolean = false) {
-        if (skipCurrentSource) attemptSource = currentSourceRevision()
+        if (skipCurrentSource) attemptSource = session.sourceRevision
         runId = null
         activeEngine?.cancelPreview()
         if (mutable.value.matchingProcessing) mutable.value = mutable.value.copy(matchingProcessing = false)
@@ -81,10 +66,10 @@ internal class EditorProcessingMigrationStateHolder(
 
     fun resumeDeferredPreviewIfReady() {
         val current = mutable.value
-        if (!isDisposed() && isEditorActive() && deferredMigrationPreview && !current.committingAdjustments &&
+        if (!session.disposed && session.editorActive && deferredMigrationPreview && !current.committingAdjustments &&
             !current.rendering && current.operation == Operation.NONE && current.draft == null
         ) {
-            onRenderCommittedForNavigation()
+            session.actions.renderCommittedForNavigation()
         }
     }
 
@@ -94,17 +79,17 @@ internal class EditorProcessingMigrationStateHolder(
         val history = adjustmentHistory.snapshot()
         val expected = history.loaded ?: return
         val original = expected.settings ?: return
-        val source = currentSourceRevision()
-        if (isDisposed() || !isEditorActive() || current.rendering || !current.exact || !current.controlsEnabled ||
+        val source = session.sourceRevision
+        if (session.disposed || !session.editorActive || current.rendering || !current.exact || !current.controlsEnabled ||
             current.draft != null || current.saveState == EditSaveState.FAILED || current.edits.isHDREditing ||
             current.edits.recipeID != null || current.edits.processing.version >= 3 || history.interacting ||
             attemptSource == source
         ) return
         if (current.processingMigration?.shouldAttempt(original, original.processing.version) == false) return
         val validation = runCatching { history.committedValidation(photo, current.edits) }.getOrNull() ?: return
-        val edit = currentEditRevision()
+        val edit = session.editRevision
         val snapshot = current.edits
-        val mode = gpuMode()
+        val mode = session.gpuMode()
         val ticket = UUID.randomUUID()
         attemptSource = source
         runId = ticket
@@ -129,7 +114,7 @@ internal class EditorProcessingMigrationStateHolder(
                 if (runId == null && mutable.value.matchingProcessing) {
                     mutable.value = mutable.value.copy(matchingProcessing = false)
                 }
-                if (isDisposed() || runId != ticket || currentSourceRevision() != source || currentEditRevision() != edit ||
+                if (session.disposed || runId != ticket || session.sourceRevision != source || session.editRevision != edit ||
                     mutable.value.photo?.identity != photo.identity || mutable.value.edits != snapshot
                 ) return@mainDelivery
                 mutable.value = mutable.value.copy(matchingProcessing = false)
@@ -138,8 +123,8 @@ internal class EditorProcessingMigrationStateHolder(
                 if (mutable.value.committingAdjustments || postHistory.sourceToken != history.sourceToken || postHistory.interacting ||
                     mutable.value.draft != null || mutable.value.operation != Operation.NONE
                 ) return@mainDelivery
-                onCommitAdjustments({
-                    if (runId != ticket || currentSourceRevision() != source || currentEditRevision() != edit) {
+                session.commitAdjustments({
+                    if (runId != ticket || session.sourceRevision != source || session.editRevision != edit) {
                         throw AdjustmentOperationExpiredException()
                     }
                     validation()
@@ -153,21 +138,18 @@ internal class EditorProcessingMigrationStateHolder(
                     editStore.adjustmentSession?.adoptProcessingMigration(saved)
                     saved to receipt
                 }, true) { committed ->
-                    if (currentSourceRevision() != source || currentEditRevision() != edit || mutable.value.edits != snapshot ||
+                    if (session.sourceRevision != source || session.editRevision != edit || mutable.value.edits != snapshot ||
                         mutable.value.photo?.identity != photo.identity || mutable.value.photo?.file != photo.file
-                    ) return@onCommitAdjustments
-                    committed.onSuccess { pair ->
-                        @Suppress("UNCHECKED_CAST")
-                        val outcomePair = pair as Pair<com.rawlab.android.settings.PhotoEditState, ProcessingMigrationReceipt>
-                        val (saved, receipt) = outcomePair
+                    ) return@commitAdjustments
+                    committed.onSuccess { (saved, receipt) ->
                         // 成功返回即已落盘；取消可以阻止排队保存，不能丢弃已提交状态。
                         if (!adjustmentHistory.acceptSaved(photo, saved, history.sourceToken)) return@onSuccess
                         val migrated = receipt.status == ProcessingMigrationStatus.MIGRATED
-                        onIncrementEditRevision()
+                        session.incrementEditRevision()
                         if (migrated) {
-                            onInvalidateRender()
-                            onCancelPreviewResize()
-                            onClearDurableAndNavigationPreview()
+                            session.actions.invalidateRender()
+                            session.actions.cancelPreviewResize()
+                            session.actions.clearDurableAndNavigationPreview()
                             deferredMigrationPreview = true
                         }
                         mutable.value = mutable.value.copy(
@@ -200,30 +182,27 @@ internal class EditorProcessingMigrationStateHolder(
         ) return
         val validation = runCatching { history.committedValidation(photo, current.edits) }.getOrNull() ?: return
         cancel()
-        val source = currentSourceRevision()
-        val edit = currentEditRevision()
-        onCommitAdjustments({
-            if (currentSourceRevision() != source || currentEditRevision() != edit) throw AdjustmentOperationExpiredException()
+        val source = session.sourceRevision
+        val edit = session.editRevision
+        session.commitAdjustments({
+            if (session.sourceRevision != source || session.editRevision != edit) throw AdjustmentOperationExpiredException()
             validation()
             val saved = editStore.rollbackProcessingMigration(expected)
             editStore.adjustmentSession?.adoptProcessingMigration(saved)
             saved to editStore.processingMigration(photo.identity)
         }, false) { result ->
-            if (currentSourceRevision() != source || mutable.value.photo?.identity != photo.identity) return@onCommitAdjustments
-            result.onSuccess { pair ->
-                @Suppress("UNCHECKED_CAST")
-                val outcomePair = pair as Pair<com.rawlab.android.settings.PhotoEditState, ProcessingMigrationReceipt?>
-                val (saved, receipt) = outcomePair
+            if (session.sourceRevision != source || mutable.value.photo?.identity != photo.identity) return@commitAdjustments
+            result.onSuccess { (saved, receipt) ->
                 if (!adjustmentHistory.acceptSaved(photo, saved, history.sourceToken)) return@onSuccess
-                onIncrementEditRevision()
+                session.incrementEditRevision()
                 mutable.value = mutable.value.copy(
                     edits = requireNotNull(saved.settings),
                     processingMigration = receipt,
                     saveState = EditSaveState.SAVED,
                     saveError = null,
                 )
-                onIncludeIndependentRecipeLook(requireNotNull(saved.settings))
-                onRenderCommittedForNavigation()
+                session.actions.includeIndependentRecipeLook(requireNotNull(saved.settings))
+                session.actions.renderCommittedForNavigation()
             }.onFailure { error ->
                 mutable.value = mutable.value.copy(saveError = EditSaveResult(EditSaveState.FAILED, error).formatMessage(strings))
             }
