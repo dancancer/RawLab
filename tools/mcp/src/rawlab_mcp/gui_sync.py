@@ -314,8 +314,13 @@ def _validate_tone_curve_shape(obj: Any, *, field_name: str) -> dict[str, Any]:
             if y < prev_y:
                 raise AdapterError(f"{field_name}.points y values must be non-decreasing")
         out_points.append([x, y])
-    if out_points[0][0] != 0.0 or out_points[-1][0] != 1.0:
-        raise AdapterError(f"{field_name}.points must start at x=0 and end at x=1")
+    points_sub = _TRANSFER_FIELDS["light.curve"]["sub_fields"]["points"]
+    if not points_sub.get("endpoints_x_unpinned", False):
+        if out_points[0][0] != 0.0 or out_points[-1][0] != 1.0:
+            raise AdapterError(f"{field_name}.points must start at x=0 and end at x=1")
+    if not points_sub.get("endpoints_y_unpinned", False):
+        if out_points[0][1] != 0.0 or out_points[-1][1] != 1.0:
+            raise AdapterError(f"{field_name}.points must start at y=0 and end at y=1")
     return {"mode": "custom", "points": out_points}
 
 
@@ -489,7 +494,10 @@ def validate_transfer_values(
             )
             if is_hdr and hdr_processing_version is not None and hdr_processing_version < 9:
                 if master_curve["mode"] == "custom" and (
-                    master_curve["points"][0][1] != 0.0 or master_curve["points"][-1][1] != 1.0
+                    master_curve["points"][0][0] != 0.0
+                    or master_curve["points"][0][1] != 0.0
+                    or master_curve["points"][-1][0] != 1.0
+                    or master_curve["points"][-1][1] != 1.0
                 ):
                     raise AdapterError(
                         f"Free curve endpoints on light.curve require hdr_processing_version >= 9 (got {hdr_processing_version})"
@@ -509,7 +517,10 @@ def validate_transfer_values(
                     ch_curve = _validate_tone_curve_shape(c_shape, field_name=f"light.curve.channels.{c_name}")
                     if is_hdr and hdr_processing_version is not None and hdr_processing_version < 9:
                         if ch_curve["mode"] == "custom" and (
-                            ch_curve["points"][0][1] != 0.0 or ch_curve["points"][-1][1] != 1.0
+                            ch_curve["points"][0][0] != 0.0
+                            or ch_curve["points"][0][1] != 0.0
+                            or ch_curve["points"][-1][0] != 1.0
+                            or ch_curve["points"][-1][1] != 1.0
                         ):
                             raise AdapterError(
                                 f"Free curve endpoints on light.curve.channels.{c_name} require hdr_processing_version >= 9 (got {hdr_processing_version})"

@@ -27,8 +27,14 @@ import AppKit
             select: { _ in }, change: { endpointCurve = $0 }, end: { commits += 1 }, cancel: {}))
         input.keyDown(with: key)
         guard commits == 3 && endpointCurve.points[0].x == 0 && abs(endpointCurve.points[0].y - 0.01) < 1e-12 else {
-            fatalError("Endpoint vertical nudge must move y while keeping x pinned at 0")
+            fatalError("Endpoint vertical nudge must move y while keeping x at 0")
         }
-        print("PASS: curve keyboard preflight retains focus, endpoint y-nudge, and consecutive history commits")
+        let rightKey = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: 124)!
+        input.keyDown(with: rightKey)
+        guard commits == 4 && abs(endpointCurve.points[0].x - 0.01) < 1e-12 && abs(endpointCurve.points[0].y - 0.01) < 1e-12 else {
+            fatalError("Endpoint horizontal nudge must move x while retaining y and focus")
+        }
+        print("PASS: curve keyboard preflight retains focus, endpoint x/y nudges, and consecutive history commits")
     }
 }

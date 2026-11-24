@@ -223,7 +223,7 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
             }
             CompositionLocalProvider(LocalAdjustmentSession provides Triple(scope, channel, index)) {
                 val point = curve.points[index]
-                CurveCoordinate(R.string.curve_input, point.x, enabled && curve.isInterior(index), "curve-x", usesExposureStops) { x ->
+                CurveCoordinate(R.string.curve_input, point.x, enabled && curve.canMoveX(index), "curve-x", usesExposureStops) { x ->
                     update(current.moving(index, x, current.points[index].y), false)
                 }
                 CurveCoordinate(R.string.curve_output, point.y, enabled && curve.canMoveY(index), "curve-y", usesExposureStops) { y ->
@@ -337,8 +337,8 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
         else {
             val point = current.points[selected]; val step = if (event.isShiftPressed || fine) .001 else .01
             val next = when (event.key) {
-                Key.DirectionLeft -> if (current.isInterior(selected)) current.moving(selected, point.x - step, point.y) else null
-                Key.DirectionRight -> if (current.isInterior(selected)) current.moving(selected, point.x + step, point.y) else null
+                Key.DirectionLeft -> if (current.canMoveX(selected)) current.moving(selected, point.x - step, point.y) else null
+                Key.DirectionRight -> if (current.canMoveX(selected)) current.moving(selected, point.x + step, point.y) else null
                 Key.DirectionUp -> current.moving(selected, point.x, point.y + step)
                 Key.DirectionDown -> current.moving(selected, point.x, point.y - step)
                 Key.Backspace, Key.Delete -> if (current.isInterior(selected)) current.removing(selected) else null

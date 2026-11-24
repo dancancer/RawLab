@@ -87,6 +87,7 @@ public static class AdjustmentFieldSpec
             public const int CustomMaxPoints = 33;
             public const double CoordMin = 0.0;
             public const double CoordMax = 1.0;
+            public const bool EndpointsXUnpinned = true;
             public const bool EndpointsYUnpinned = true;
             public static readonly IReadOnlyList<string> AllowedChannels = ["red", "green", "blue"];
         }

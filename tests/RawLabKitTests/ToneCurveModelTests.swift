@@ -23,15 +23,21 @@ final class ToneCurveModelTests: XCTestCase {
         XCTAssertTrue(curve.isEndpoint(0))
         XCTAssertTrue(curve.isEndpoint(3))
         XCTAssertFalse(curve.isInterior(0))
+        XCTAssertTrue(curve.canMoveX(0))
+        XCTAssertTrue(curve.canMoveX(3))
         XCTAssertTrue(curve.canMoveY(0))
         XCTAssertTrue(curve.canMoveY(3))
 
         let liftBlack = curve.moving(index: 0, x: 0.1, y: 0.08)
-        XCTAssertEqual(liftBlack.points[0], ToneCurvePoint(x: 0.0, y: 0.08))
-        XCTAssertEqual(curve.moving(index: 0, x: 0.1, y: 0.5).points[0], ToneCurvePoint(x: 0.0, y: curve.points[1].y))
+        XCTAssertEqual(liftBlack.points[0], ToneCurvePoint(x: 0.1, y: 0.08))
+        let clampedBlack = curve.moving(index: 0, x: 0.5, y: 0.5)
+        XCTAssertLessThan(clampedBlack.points[0].x, curve.points[1].x)
+        XCTAssertEqual(clampedBlack.points[0].y, curve.points[1].y)
         let dropWhite = curve.moving(index: 3, x: 0.9, y: 0.92)
-        XCTAssertEqual(dropWhite.points[3], ToneCurvePoint(x: 1.0, y: 0.92))
-        XCTAssertEqual(curve.moving(index: 3, x: 0.9, y: 0.2).points[3], ToneCurvePoint(x: 1.0, y: curve.points[2].y))
+        XCTAssertEqual(dropWhite.points[3], ToneCurvePoint(x: 0.9, y: 0.92))
+        let clampedWhite = curve.moving(index: 3, x: 0.2, y: 0.2)
+        XCTAssertGreaterThan(clampedWhite.points[3].x, curve.points[2].x)
+        XCTAssertEqual(clampedWhite.points[3].y, curve.points[2].y)
         XCTAssertEqual(curve.removing(index: 3), curve)
         XCTAssertEqual(curve.removing(index: 1).points.count, 3)
         XCTAssertEqual(curve.inserting(x: 0.25, y: 0.5), curve)
@@ -41,7 +47,8 @@ final class ToneCurveModelTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: bytes), curve)
 
         for invalid in [
-            #"{"mode":"custom","points":[[0.1,0],[1,1]]}"#,
+            #"{"mode":"custom","points":[[-0.1,0],[1,1]]}"#,
+            #"{"mode":"custom","points":[[0,0],[1.1,1]]}"#,
             #"{"mode":"custom","points":[[0,0],[0.5,0.7],[0.6,0.5],[1,1]]}"#,
             #"{"mode":"custom","points":[[0,0],[0.5,0.2],[0.5,0.7],[1,1]]}"#,
             #"{"mode":"legacy","points":[[0,0],[1,1]]}"#,
@@ -86,12 +93,34 @@ final class ToneCurveModelTests: XCTestCase {
         XCTAssertTrue(unpinned.hasV2Extensions)
         XCTAssertFalse(curve.hasV2Extensions)
         XCTAssertTrue(ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0.2), .init(x: 1, y: 1)]).hasV2Extensions)
+        XCTAssertTrue(ToneCurveSettings(mode: .custom, points: [.init(x: 0.1, y: 0), .init(x: 1, y: 1)]).hasV2Extensions)
         XCTAssertTrue(ToneCurveSettings(channels: ToneCurveChannels(
             red: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 0.9)])
         )).hasV2Extensions)
+        XCTAssertTrue(ToneCurveSettings(channels: ToneCurveChannels(
+            red: ToneCurveShape(mode: .custom, points: [.init(x: 0.1, y: 0), .init(x: 1, y: 1)])
+        )).hasV2Extensions)
+        let diagInset = ToneCurveSettings(mode: .custom, points: [.init(x: 0.1, y: 0.1), .init(x: 0.9, y: 0.9)])
+        XCTAssertFalse(diagInset.isIdentity)
+        XCTAssertGreaterThan(diagInset.progress, 0)
+        let insertedOutside = diagInset.inserting(x: 0.05, y: 0.05).inserting(x: 0.95, y: 0.95)
+        XCTAssertEqual(insertedOutside.points.first, ToneCurvePoint(x: 0.05, y: 0.05))
+        XCTAssertEqual(insertedOutside.points.last, ToneCurvePoint(x: 0.95, y: 0.95))
         let encodedUnpinned = try JSONEncoder().encode(unpinned)
         XCTAssertEqual(try JSONDecoder().decode(ToneCurveSettings.self, from: encodedUnpinned), unpinned)
         XCTAssertFalse(ToneCurveParametric(splitShadow: 0.4, splitMidtone: 0.41, splitHighlight: 0.75).isValid)
+
+        let freeX = ToneCurveSettings(mode: .custom, points: [.init(x: 0.12, y: 0.08), .init(x: 0.5, y: 0.55), .init(x: 0.88, y: 0.92)])
+        let freeXHalf = freeX.scaled(by: 0.5)
+        XCTAssertEqual(freeXHalf.points[0].x, 0.06, accuracy: 1e-12)
+        XCTAssertEqual(freeXHalf.points[0].y, 0.04, accuracy: 1e-12)
+        XCTAssertEqual(freeXHalf.points[2].x, 0.94, accuracy: 1e-12)
+        XCTAssertEqual(freeXHalf.points[2].y, 0.96, accuracy: 1e-12)
+        let logicalFreeX = try AdjustmentTransferRefinement.logical(freeXHalf.transferValue, field: .curve, strength: 0.5, preserving: ToneCurveSettings().transferValue)
+        XCTAssertTrue(AdjustmentTransferRefinement.equivalent(logicalFreeX, freeX.transferValue, field: .curve))
+        let crossingTwoPoint = ToneCurveSettings(mode: .custom, points: [.init(x: 0.4, y: 0.2), .init(x: 0.7, y: 0.9)]).scaled(by: 2.0)
+        XCTAssertTrue(crossingTwoPoint.isValid)
+        XCTAssertLessThan(crossingTwoPoint.points[0].x, crossingTwoPoint.points[1].x)
 
         let unpinnedZero = unpinned.scaled(by: 0)
         XCTAssertTrue(unpinnedZero.isIdentity)

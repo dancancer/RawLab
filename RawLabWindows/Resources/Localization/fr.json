@@ -713,7 +713,7 @@
     "滑动对比": "Comparaison par balayage",
     "滑动对比，左侧中性，右侧修改后": "Comparaison par balayage, neutre à gauche, modifiée à droite",
     "滨田英明": "Hideaki Hamada",
-    "点击曲线区域添加控制点，拖动中间点调整。": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.",
+    "点击曲线区域添加控制点，拖动控制点调整。": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points de contrôle pour ajuster.",
     "点击照片中的中性灰区域取样，按 Esc 退出。": "Cliquez sur une zone gris neutre de la photo pour échantillonner. Échap pour quitter.",
     "点曲线": "Courbe à points",
     "点选添加锚点": "Cliquer pour épingler un repère",

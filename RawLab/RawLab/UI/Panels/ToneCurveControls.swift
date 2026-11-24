@@ -286,14 +286,17 @@ struct IOSToneCurveControls: View {
             return range.lowerBound + (horizontal ? p.x : p.y) * span
         }, set: { next in
             guard channel == owner, inputContext.isCurrent(), inputContext.canChange() else { return }
-            if horizontal { guard selectedCurve.isInterior(index) else { return } }
+            if horizontal { guard selectedCurve.canMoveX(index) else { return } }
             else { guard selectedCurve.canMoveY(index) else { return } }
             let p = selectedCurve.points[index], value = (next - range.lowerBound) / span
             curveBinding.wrappedValue = selectedCurve.moving(index: index, x: horizontal ? value : p.x, y: horizontal ? p.y : value)
         })
-        let allowed = horizontal ? selectedCurve.isInterior(selected) : selectedCurve.canMoveY(selected)
+        let allowed = horizontal ? selectedCurve.canMoveX(selected) : selectedCurve.canMoveY(selected)
+        let defaultCoord = horizontal
+            ? (selected == 0 ? 0.0 : (selected == selectedCurve.points.count - 1 ? 1.0 : point.x))
+            : point.x
         return AdjustmentControl(title: L10n.text(horizontal ? "输入坐标" : "输出坐标"), value: binding,
-            range: range, step: usesExposureStops ? 0.01 : 0.001, defaultValue: range.lowerBound + point.x * span,
+            range: range, step: usesExposureStops ? 0.01 : 0.001, defaultValue: range.lowerBound + defaultCoord * span,
             unit: usesExposureStops ? "EV" : "", formatter: { String(format: "%.2f", locale: L10n.locale, $0) },
             identifier: horizontal ? "curve.x" : "curve.y", compactNumber: true, compactDecimals: nil,
             onEditingChanged: onEditingChanged).disabled(!allowed)

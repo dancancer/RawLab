@@ -67,10 +67,10 @@ bool validToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
         if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return false;
         if (i && (p.x <= config.points[i - 1].x || p.y < config.points[i - 1].y)) return false;
     }
-    const auto first = config.points[0], last = config.points[config.count - 1];
     if (allowFreeEndpoints) {
-        return first.x == 0 && last.x == 1;
+        return true;
     }
+    const auto first = config.points[0], last = config.points[config.count - 1];
     return first.x == 0 && first.y == 0 && last.x == 1 && last.y == 1;
 }
 
@@ -80,6 +80,7 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
     if (!custom_) return;
     count_ = config.count - 1;
     double h[32]{}, dy[32]{};
+    active_ = config.points[0].x != 0.0 || config.points[count_].x != 1.0;
     for (uint32_t i = 0; i < count_; ++i) {
         h[i] = config.points[i + 1].x - config.points[i].x;
         dy[i] = config.points[i + 1].y - config.points[i].y;
@@ -105,8 +106,8 @@ ToneCurve::ToneCurve(const ToneCurveConfig& config, bool allowFreeEndpoints) {
 
 double ToneCurve::evaluate(double value) const {
     if (!active_) return value;
-    if (value <= 0) return segments_[0].y0;
-    if (value >= 1) return segments_[count_ - 1].y1;
+    if (value <= segments_[0].x0) return segments_[0].y0;
+    if (value >= segments_[count_ - 1].x1) return segments_[count_ - 1].y1;
     uint32_t index = 0;
     while (index + 1 < count_ && value > segments_[index].x1) ++index;
     const auto& s = segments_[index];

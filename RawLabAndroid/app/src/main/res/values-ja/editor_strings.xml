@@ -86,7 +86,7 @@
     <string name="curve_darks">"ダーク"</string>
     <string name="curve_edit_point">"制御点を編集"</string>
     <string name="curve_fixed_endpoint">"端点は固定されています"</string>
-    <string name="curve_hint">"カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。"</string>
+    <string name="curve_hint">"カーブ領域をタップして点を追加します。制御点をドラッグして調整します。"</string>
     <string name="curve_input">"入力"</string>
     <string name="curve_lights">"ライト"</string>
     <string name="curve_luminosity_only">"輝度のみに適用"</string>

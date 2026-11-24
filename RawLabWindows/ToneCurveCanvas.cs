@@ -36,7 +36,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
         channel = nextChannel; showSplitMarkers = nextShowSplitMarkers;
         SetValue(next, forceResample: channelOrSplitChanged);
         AutomationProperties.SetName(this, Loc.Text("曲线"));
-        AutomationProperties.SetHelpText(this, Loc.Text("点击曲线区域添加控制点，拖动中间点调整。"));
+        AutomationProperties.SetHelpText(this, Loc.Text("点击曲线区域添加控制点，拖动控制点调整。"));
         AutomationProperties.SetItemStatus(this, Loc.Format("多点曲线（{0} 个控制点）", next.Points.Count));
     }
     private void SetValue(ToneCurveSettings next, bool forceResample = false)
@@ -99,8 +99,12 @@ public sealed class ToneCurveCanvas : FrameworkElement
         if (!IsEnabled || (showSplitMarkers && channel == ToneCurveChannel.Rgb) ||
             e.Key is not (Key.Left or Key.Right or Key.Up or Key.Down or Key.Delete or Key.Back) ||
             PrepareEditing?.Invoke() == false) { base.OnKeyDown(e); return; }
-        var isVertical = e.Key is Key.Up or Key.Down;
-        if (isVertical ? !value.CanMoveY(selected) : !value.IsInterior(selected)) { base.OnKeyDown(e); return; }
+        var blocked = e.Key switch {
+            Key.Up or Key.Down => !value.CanMoveY(selected),
+            Key.Left or Key.Right => !value.CanMoveX(selected),
+            _ => !value.IsInterior(selected)
+        };
+        if (blocked) { base.OnKeyDown(e); return; }
         var point = value.Points[selected]; var step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? .001 : .01;
         var next = e.Key switch {
             Key.Left => value.Moving(selected, point.X - step, point.Y), Key.Right => value.Moving(selected, point.X + step, point.Y),

@@ -139,7 +139,7 @@ struct MacToneCurveControls: View {
 
     private func coordinates(_ index: Int, point: ToneCurvePoint) -> some View {
         VStack(spacing: 6) {
-            coordinate(index, point: point, horizontal: true).disabled(!editingShape.isInterior(index))
+            coordinate(index, point: point, horizontal: true).disabled(!editingShape.canMoveX(index))
             coordinate(index, point: point, horizontal: false).disabled(!editingShape.canMoveY(index))
         }
     }
@@ -159,19 +159,22 @@ struct MacToneCurveControls: View {
             guard isCurrent() else { return }
             let s = settings.shape(owner)
             let shape = s.mode == .legacy ? ToneCurveShape.identity : s
-            if horizontal { guard shape.isInterior(index) else { return } }
+            if horizontal { guard shape.canMoveX(index) else { return } }
             else { guard shape.canMoveY(index) else { return } }
             let pt = shape.points[index]
             let value = (next - range.lowerBound) / span
             let updated = shape.moving(index: index, x: horizontal ? value : pt.x, y: horizontal ? pt.y : value)
             settings = settings.replacing(owner, with: updated)
         })
+        let defaultCoord = horizontal
+            ? (index == 0 ? 0.0 : (index == editingShape.points.count - 1 ? 1.0 : point.x))
+            : point.x
         return HStack {
             Text(title).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             ParameterValueField(value: binding, range: range, precision: usesExposureStops ? .exposure : .curveCoordinate,
                 title: title, unit: usesExposureStops ? "EV" : "", identifier: horizontal ? "curve.value.x" : "curve.value.y",
-                defaultValue: range.lowerBound + point.x * span, inputScope: "\(source).\(owner.rawValue).\(index)",
+                defaultValue: range.lowerBound + defaultCoord * span, inputScope: "\(source).\(owner.rawValue).\(index)",
                 onEditingChanged: onEditingChanged)
                 .frame(width: 122, height: 30)
         }

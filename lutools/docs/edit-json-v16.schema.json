@@ -659,7 +659,7 @@
                 "mode": "legacy",
                 "points": []
               },
-              "description": "Normalized luminance curve from -8 to +8 EV relative to SDR reference white (0.5); runtime checks fixed endpoints and monotone points."
+              "description": "Normalized luminance curve from -8 to +8 EV relative to SDR reference white (0.5); HDR v9 (processing.version >= 9) allows free endpoint x/y coordinates in [0,1] with flat clamping outside [x0, x_{n-1}], while earlier versions require fixed endpoints."
             }
           },
           "allOf": [

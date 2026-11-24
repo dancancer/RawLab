@@ -1190,9 +1190,9 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 "geometry.crop.width": 0.001,
                 "light.curve": {
                     "mode": "custom",
-                    "points": [[0.0, 0.05], [0.5, 0.55], [1.0, 0.95]],
+                    "points": [[0.1, 0.05], [0.5, 0.55], [0.9, 0.95]],
                     "channels": {
-                        "red": {"mode": "custom", "points": [[0.0, 0.0], [0.5, 0.6], [1.0, 1.0]]},
+                        "red": {"mode": "custom", "points": [[0.1, 0.0], [0.5, 0.6], [0.9, 1.0]]},
                     },
                 },
                 "light.curve.apply_to_luminosity": True,
@@ -1231,6 +1231,13 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                     "exposure_reference": "metadata",
                     "fbdd_level": 1,
                 },
+                "light.curve": {
+                    "mode": "custom",
+                    "points": [[0.15, 0.0], [0.85, 1.0]],
+                    "channels": {
+                        "red": {"mode": "custom", "points": [[0.1, 0.0], [0.9, 1.0]]},
+                    },
+                },
                 "light.curve.parametric": {
                     "highlights": 0, "lights": 0, "darks": 0, "shadows": 0,
                     "split_shadow": 0.25, "split_midtone": 0.5, "split_highlight": 0.75,
@@ -1268,7 +1275,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             ({"geometry.crop.width": 0.0}, {}),
             ({"color.grading.shadows": {"hue": 360.0, "saturation": 20.0}}, {}),
             ({"light.curve": {"mode": "legacy", "points": [[0.0, 0.0], [1.0, 1.0]]}}, {}),
-            ({"light.curve": {"mode": "custom", "points": [[0.1, 0.0], [1.0, 1.0]]}}, {}),
+            ({"light.curve": {"mode": "custom", "points": [[-0.1, 0.0], [1.0, 1.0]]}}, {}),
+            ({"light.curve": {"mode": "custom", "points": [[0.0, 0.0], [1.1, 1.0]]}}, {}),
             ({"light.curve": {"mode": "custom", "points": [[0.0, 0.5], [0.5, 0.4], [1.0, 1.0]]}}, {}),
             ({"light.curve": {"mode": "legacy", "points": [], "channels": {"red": [[0.0, 0.0], [1.0, 1.0]]}}}, {}),
             ({"light.curve.parametric": {"highlights": 0, "lights": 0, "darks": 0, "shadows": 0}}, {}),
@@ -1299,8 +1307,15 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 "mode": "custom", "points": [[0.0, 0.1], [1.0, 1.0]],
             }}, {"hdr_processing_version": 8}),
             ({"light.curve": {
+                "mode": "custom", "points": [[0.1, 0.0], [1.0, 1.0]],
+            }}, {"hdr_processing_version": 8}),
+            ({"light.curve": {
                 "mode": "legacy", "points": [],
                 "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [1.0, 0.9]]}},
+            }}, {"hdr_processing_version": 8}),
+            ({"light.curve": {
+                "mode": "legacy", "points": [],
+                "channels": {"red": {"mode": "custom", "points": [[0.0, 0.0], [0.9, 1.0]]}},
             }}, {"hdr_processing_version": 8}),
             ({"color.grading.shadows": {"hue": 120.0, "saturation": 25.0, "luminance": -5.0}}, {"hdr_processing_version": 8}),
             ({"color.grading.global": {"hue": 30.0, "saturation": 10.0, "luminance": 2.5}}, {"hdr_processing_version": 8}),

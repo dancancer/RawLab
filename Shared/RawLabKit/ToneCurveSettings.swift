@@ -25,18 +25,18 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
     public var points: [ToneCurvePoint] = []
     public static let identity = Self(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 1, y: 1)])
     public var isDefault: Bool { mode == .legacy && points.isEmpty }
-    public var isIdentity: Bool { mode == .legacy || points.allSatisfy { $0.x == $0.y } }
+    public var isIdentity: Bool { mode == .legacy || (!hasUnpinnedEndpoints && points.allSatisfy { $0.x == $0.y }) }
     public var hasUnpinnedEndpoints: Bool {
-        mode == .custom && ((points.first?.y ?? 0) != 0 || (points.last?.y ?? 1) != 1)
+        mode == .custom && points.count >= 2 &&
+            (points[0].x != 0 || points[0].y != 0 || points[points.count - 1].x != 1 || points[points.count - 1].y != 1)
     }
     public var isValid: Bool {
         let sub = AdjustmentFieldSpec.SubFields.LightCurve.self
         if mode == .legacy { return points.count == sub.legacyPointsCount }
         guard (sub.customMinPoints...sub.customMaxPoints).contains(points.count),
               let first = points.first, let last = points.last,
-              first.x == sub.coordRange.lowerBound,
-              last.x == sub.coordRange.upperBound,
-              sub.endpointsYUnpinned || (first.y == sub.coordRange.lowerBound && last.y == sub.coordRange.upperBound) else { return false }
+              (sub.endpointsXUnpinned || (first.x == sub.coordRange.lowerBound && last.x == sub.coordRange.upperBound)),
+              (sub.endpointsYUnpinned || (first.y == sub.coordRange.lowerBound && last.y == sub.coordRange.upperBound)) else { return false }
         for (index, point) in points.enumerated() {
             guard point.x.isFinite, point.y.isFinite,
                   sub.coordRange.contains(point.x), sub.coordRange.contains(point.y) else { return false }
@@ -44,16 +44,49 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
         }
         return true
     }
-    public var progress: Double { points.map { abs($0.y - $0.x) }.max() ?? 0 }
+    public var progress: Double {
+        guard mode == .custom, let first = points.first, let last = points.last else { return 0 }
+        return max(points.map { abs($0.y - $0.x) }.max() ?? 0, first.y, 1 - last.y)
+    }
     public func scaled(by strength: Double) -> Self {
         guard mode == .custom, strength != 1 else { return self }
         guard strength != 0 else { return .identity }
         var result = self
+        let last = result.points.count - 1
+        if result.points.count == 2 {
+            let rawX0 = min(1.0, max(0.0, points[0].x * strength))
+            let rawX1 = min(1.0, max(0.0, 1.0 + (points[1].x - 1.0) * strength))
+            if rawX0 < rawX1 {
+                result.points[0].x = rawX0
+                result.points[1].x = rawX1
+            } else if rawX1 <= 0.0 {
+                result.points[0].x = 0.0
+                result.points[1].x = (0.0).nextUp
+            } else if rawX0 >= 1.0 {
+                result.points[0].x = (1.0).nextDown
+                result.points[1].x = 1.0
+            } else {
+                let mid = points[0].x / (points[0].x + (1.0 - points[1].x))
+                result.points[0].x = mid.nextDown
+                result.points[1].x = mid.nextUp
+            }
+        } else {
+            result.points[0].x = min(points[1].x.nextDown, max(0.0, points[0].x * strength))
+            result.points[last].x = max(points[last - 1].x.nextUp, min(1.0, 1.0 + (points[last].x - 1.0) * strength))
+        }
         var previous = 0.0
         for index in result.points.indices {
             let point = points[index]
             // 放大相对恒等线的偏移；极端手动曲线仍保持端点和明暗单调性。
-            let y = min(1, max(previous, point.x + (point.y - point.x) * strength))
+            let rawY: Double
+            if index == 0 {
+                rawY = point.y * strength
+            } else if index == last {
+                rawY = 1.0 + (point.y - 1.0) * strength
+            } else {
+                rawY = point.x + (point.y - point.x) * strength
+            }
+            let y = min(1, max(previous, rawY))
             result.points[index].y = y
             previous = y
         }
@@ -61,26 +94,36 @@ public struct ToneCurveShape: Equatable, Hashable, Codable {
     }
     public func isInterior(_ index: Int) -> Bool { mode == .custom && index > 0 && index + 1 < points.count }
     public func isEndpoint(_ index: Int) -> Bool { mode == .custom && points.count >= 2 && (index == 0 || index == points.count - 1) }
+    public func canMoveX(_ index: Int) -> Bool {
+        mode == .custom && points.indices.contains(index) &&
+            (AdjustmentFieldSpec.SubFields.LightCurve.endpointsXUnpinned || isInterior(index))
+    }
     public func canMoveY(_ index: Int) -> Bool { mode == .custom && points.indices.contains(index) }
     public func inserting(x: Double, y: Double) -> Self {
-        guard mode == .custom, isValid, points.count < 33, x.isFinite, y.isFinite, x > 0, x < 1,
-              !points.contains(where: { $0.x == x }), let next = points.firstIndex(where: { $0.x > x }) else { return self }
+        guard mode == .custom, isValid, points.count < 33, x.isFinite, y.isFinite, x >= 0, x <= 1,
+              !points.contains(where: { $0.x == x }) else { return self }
+        let next = points.firstIndex(where: { $0.x > x }) ?? points.count
+        let minY = next > 0 ? points[next - 1].y : 0.0
+        let maxY = next < points.count ? points[next].y : 1.0
         var result = self
-        result.points.insert(.init(x: x, y: min(points[next].y, max(points[next - 1].y, y))), at: next)
+        result.points.insert(.init(x: x, y: min(maxY, max(minY, y))), at: next)
         return result
     }
     public func moving(index: Int, x: Double, y: Double) -> Self {
         guard isValid, canMoveY(index), x.isFinite, y.isFinite else { return self }
+        let allowX = AdjustmentFieldSpec.SubFields.LightCurve.endpointsXUnpinned
         if index == 0 {
+            let highX = points.count > 1 ? points[1].x.nextDown : 1.0
             let maxY = points.count > 1 ? points[1].y : 1.0
             var result = self
-            result.points[0] = .init(x: 0.0, y: min(maxY, max(0.0, y)))
+            result.points[0] = .init(x: allowX ? min(highX, max(0.0, x)) : 0.0, y: min(maxY, max(0.0, y)))
             return result
         }
         if index == points.count - 1 {
+            let lowX = points.count > 1 ? points[index - 1].x.nextUp : 0.0
             let minY = points.count > 1 ? points[index - 1].y : 0.0
             var result = self
-            result.points[index] = .init(x: 1.0, y: min(1.0, max(minY, y)))
+            result.points[index] = .init(x: allowX ? min(1.0, max(lowX, x)) : 1.0, y: min(1.0, max(minY, y)))
             return result
         }
         let previous = points[index - 1], next = points[index + 1]
@@ -279,6 +322,7 @@ public struct ToneCurveSettings: Equatable, Hashable, Codable {
     }
     public func isInterior(_ index: Int) -> Bool { master.isInterior(index) }
     public func isEndpoint(_ index: Int) -> Bool { master.isEndpoint(index) }
+    public func canMoveX(_ index: Int) -> Bool { master.canMoveX(index) }
     public func canMoveY(_ index: Int) -> Bool { master.canMoveY(index) }
     public func inserting(x: Double, y: Double) -> Self { replacing(.rgb, with: master.inserting(x: x, y: y)) }
     public func moving(index: Int, x: Double, y: Double) -> Self { replacing(.rgb, with: master.moving(index: index, x: x, y: y)) }

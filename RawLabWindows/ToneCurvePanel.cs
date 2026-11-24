@@ -164,7 +164,7 @@ public sealed class ToneCurvePanel : StackPanel
         };
         x.Changed += (next, dragging) => {
             var active = ActiveChannelSettings();
-            if (active.IsInterior(selected)) Change(active.Moving(selected, Normalize(next), active.Points[selected].Y), dragging);
+            if (active.CanMoveX(selected)) Change(active.Moving(selected, Normalize(next), active.Points[selected].Y), dragging);
         };
         y.Changed += (next, dragging) => {
             var active = ActiveChannelSettings();
@@ -272,7 +272,7 @@ public sealed class ToneCurvePanel : StackPanel
         splitHeader.Text = Loc.Text("拆分点");
         resetParametric.Content = Loc.Text("重置参数曲线");
         add.Content = Loc.Text("添加控制点"); remove.Content = Loc.Text("删除控制点"); reset.Content = Loc.Text("重置为直线");
-        hint.Text = Loc.Text("点击曲线区域添加控制点，拖动中间点调整。");
+        hint.Text = Loc.Text("点击曲线区域添加控制点，拖动控制点调整。");
         referenceWhite.Text = "0 EV\n" + Loc.Text("参考白");
         RefreshTargetControls();
         Refresh(settings, scalar, source, usesExposureStops);
@@ -354,8 +354,9 @@ public sealed class ToneCurvePanel : StackPanel
             var range = usesExposureStops ? new NumericRange(-8, 8, .01, .1, .01, AllowOffGrid: true) :
                 new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
             var unit = usesExposureStops ? "EV" : "";
-            x.Refresh(Loc.Text("输入坐标"), range, Coordinate(point.X), Coordinate(point.X), unit,
-                enabled: active.IsInterior(selected), inputScope: (channel, selected));
+            var defaultX = selected == 0 ? 0.0 : selected == active.Points.Count - 1 ? 1.0 : point.X;
+            x.Refresh(Loc.Text("输入坐标"), range, Coordinate(point.X), Coordinate(defaultX), unit,
+                enabled: active.CanMoveX(selected), inputScope: (channel, selected));
             y.Refresh(Loc.Text("输出坐标"), range, Coordinate(point.Y), Coordinate(point.X), unit,
                 enabled: active.CanMoveY(selected), inputScope: (channel, selected));
         } finally { syncing = wasSyncing; }

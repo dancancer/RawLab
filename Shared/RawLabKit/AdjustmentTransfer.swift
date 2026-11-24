@@ -323,7 +323,13 @@ public enum AdjustmentTransferRefinement {
             for channel in ToneCurveChannel.allCases {
                 let shape = curve.shape(channel)
                 if shape.mode == .custom {
-                    inverse = inverse.replacing(channel, with: .init(mode: .custom, points: shape.points.map { .init(x: $0.x, y: $0.x + ($0.y - $0.x) / strength) }))
+                    let last = shape.points.count - 1
+                    let inverted = shape.points.enumerated().map { idx, pt in
+                        if idx == 0 { return ToneCurvePoint(x: pt.x / strength, y: pt.y / strength) }
+                        if idx == last { return ToneCurvePoint(x: 1 + (pt.x - 1) / strength, y: 1 + (pt.y - 1) / strength) }
+                        return ToneCurvePoint(x: pt.x, y: pt.x + (pt.y - pt.x) / strength)
+                    }
+                    inverse = inverse.replacing(channel, with: .init(mode: .custom, points: inverted))
                 }
             }
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
@@ -351,7 +357,7 @@ public enum AdjustmentTransferRefinement {
                 let a = first.shape(channel), b = second.shape(channel)
                 guard a.mode == b.mode else { return false }
                 if a.isIdentity && b.isIdentity { return true }
-                return a.points.count == b.points.count && zip(a.points, b.points).allSatisfy { $0.x == $1.x && abs($0.y - $1.y) <= 1e-12 }
+                return a.points.count == b.points.count && zip(a.points, b.points).allSatisfy { abs($0.x - $1.x) <= 1e-12 && abs($0.y - $1.y) <= 1e-12 }
             }
         }
         if field == .curveParametric, let first = a.parametricCurve, let second = b.parametricCurve {

@@ -45,14 +45,18 @@ internal static class ToneCurveChecks
         var coordinate = new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
         Check(coordinate.Parse("0.250000000000001") == curve.Points[1].X && coordinate.Parse("1.000001") == null &&
             new NumericRange(0, 1, .001).Parse("0.2501") == null, "Precise curve input keeps Double coordinates without relaxing other controls");
-        Check(curve.IsEndpoint(0) && curve.IsEndpoint(3) && curve.CanMoveY(0) && curve.CanMoveY(3) &&
+        Check(curve.IsEndpoint(0) && curve.IsEndpoint(3) && curve.CanMoveX(0) && curve.CanMoveX(3) && curve.CanMoveY(0) && curve.CanMoveY(3) &&
             !curve.IsInterior(0) && !curve.IsInterior(3) && curve.Removing(0) == curve && curve.Removing(3) == curve,
-            "Endpoints allow Y movement while disallowing deletion and X drag");
+            "Endpoints allow X and Y movement while disallowing deletion");
         var movedBlack = curve.Moving(0, .2, .1);
-        var clampedBlack = curve.Moving(0, .2, .5);
+        var clampedBlack = curve.Moving(0, .5, .5);
         var movedWhite = curve.Moving(3, .8, .9);
-        Check(movedBlack.Points[0] == new ToneCurvePoint(0, .1) && clampedBlack.Points[0] == new ToneCurvePoint(0, curve.Points[1].Y) &&
-            movedWhite.Points[3] == new ToneCurvePoint(1, .9), "Endpoints move along Y within monotonic neighbor bounds");
+        var clampedWhite = curve.Moving(3, .2, .2);
+        Check(movedBlack.Points[0] == new ToneCurvePoint(.2, .1) &&
+            clampedBlack.Points[0].X < curve.Points[1].X && clampedBlack.Points[0].Y == curve.Points[1].Y &&
+            movedWhite.Points[3] == new ToneCurvePoint(.8, .9) &&
+            clampedWhite.Points[3].X > curve.Points[2].X && clampedWhite.Points[3].Y == curve.Points[2].Y,
+            "Endpoints move along X and Y within monotonic neighbor bounds");
         var moved = curve.Moving(1, 1, 1);
         Check(moved.Points[1].X < moved.Points[2].X && moved.Points[1].Y == .875, "Moving cannot cross adjacent points");
         var state = new Adjustments { Curve = curve }; state.Set(Parameter.ToneCurve, .65);
@@ -67,20 +71,33 @@ internal static class ToneCurveChecks
         Check(Marshal.SizeOf<Native.ToneCurveConfig>() == 544 && config.Count == 4 && config.Points[2] == curve.Points[1].X,
             "Additive curve config retains binary64 points and stable ABI");
         foreach (var bad in new[] { """{"mode":"custom","points":[[0,0],[1,1,2]]}""",
-            """{"mode":"custom","points":[[0.1,0],[1,1]]}""",
+            """{"mode":"custom","points":[[-0.1,0],[1,1]]}""",
+            """{"mode":"custom","points":[[0,0],[1.1,1]]}""",
             """{"mode":"custom","points":[[0,0],[0.5,0.6],[0.6,0.5],[1,1]]}""",
             """{"mode":"custom","points":[[0,0],[1,1]],"future":0}""" })
             Reject(() => JsonSerializer.Deserialize<ToneCurveSettings>(bad));
-        var unpinned = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.125), new(0.5, 0.55), new(1, 0.875)],
+        var unpinned = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.12, 0.08), new(0.5, 0.55), new(0.88, 0.92)],
             applyToLuminosity: true, parametric: new ToneCurveParametric(-10, 15, -5, 20, 0.2, 0.5, 0.8));
         Check(JsonSerializer.Deserialize<ToneCurveSettings>(JsonSerializer.Serialize(unpinned)) == unpinned,
-            "Unpinned Y and parametric curve round-trip");
+            "Unpinned X/Y and parametric curve round-trip");
+        var diagInset = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.1, 0.1), new(0.9, 0.9)]);
+        var insertedOutside = diagInset.Inserting(0.05, 0.05).Inserting(0.95, 0.95);
+        var freeXHalf = new ToneCurveSettings(ToneCurveMode.Custom, unpinned.Points).Scaled(0.5);
+        var crossing = new ToneCurveSettings(ToneCurveMode.Custom, [new(0.4, 0.2), new(0.7, 0.9)]).Scaled(2.0);
         Check(!curve.HasV2Extensions &&
+            !diagInset.IsIdentity && diagInset.Progress > 0 &&
+            insertedOutside.Points[0] == new ToneCurvePoint(0.05, 0.05) && insertedOutside.Points[^1] == new ToneCurvePoint(0.95, 0.95) &&
+            Math.Abs(freeXHalf.Points[0].X - 0.06) < 1e-12 && Math.Abs(freeXHalf.Points[2].X - 0.94) < 1e-12 &&
+            crossing.Points[0].X < crossing.Points[1].X &&
             new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0.2), new(1, 0.8)]).HasV2Extensions &&
+            new ToneCurveSettings(ToneCurveMode.Custom, [new(0.1, 0), new(1, 1)]).HasV2Extensions &&
             new ToneCurveSettings(channels: new ToneCurveChannels(
                 new ToneCurveShape(ToneCurveMode.Custom, [new(0, 0.1), new(1, 1)]),
+                new(), new())).HasV2Extensions &&
+            new ToneCurveSettings(channels: new ToneCurveChannels(
+                new ToneCurveShape(ToneCurveMode.Custom, [new(0.1, 0), new(0.9, 1)]),
                 new(), new())).HasV2Extensions,
-            "HasV2Extensions tracks unpinned endpoints on master and channel curves");
+            "HasV2Extensions, IsIdentity, Inserting, and Scaled handle unpinned X/Y endpoints on master and channel curves");
         try {
             AdjustmentPayload.Parse("""{"payload_version":1,"scope_version":1,"source":{"identifier":"a","is_raw":true,"processing_version":3},"values":{"light.curve":{"mode":"custom","points":[[0,0],[1,1]],"apply_to_luminosity":true}}}""");
             throw new Exception("Nested apply_to_luminosity accepted inside light.curve");

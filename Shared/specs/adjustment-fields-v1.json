@@ -1247,6 +1247,7 @@
               0.0,
               1.0
             ],
+            "endpoints_x_unpinned": true,
             "endpoints_y_unpinned": true
           },
           "channels": {

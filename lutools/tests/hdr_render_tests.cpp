@@ -202,6 +202,19 @@ void tone() {
     const auto v9Free = renderHDRPair(source, options);
     require(v9Free.hdr.pixels[1].r != v9Base.hdr.pixels[1].r && v9Free.hdr.pixels[4].r < v9Base.hdr.pixels[4].r,
         "HDR v9 unpinned endpoints affect HDR tone curve");
+
+    options.tone.curve = {ToneCurveMode::Custom, 2, {{{0.2, 0.0}, {0.8, 1.0}}}};
+    const auto v9FreeX = renderHDRPair(source, options);
+    require(v9FreeX.hdr.pixels[1].r < v9Base.hdr.pixels[1].r && v9FreeX.hdr.pixels[4].r > v9Base.hdr.pixels[4].r,
+        "HDR v9 free-X endpoints affect HDR tone curve");
+    auto v8FreeX = options;
+    v8FreeX.processingVersion = SONY2FUJI_HDR_PROCESSING_CHANNEL_CURVES_VERSION;
+    bool v8OptRejected = false;
+    try { validateHDRRenderOptions(v8FreeX); } catch (const std::invalid_argument&) { v8OptRejected = true; }
+    require(v8OptRejected, "HDR v8 rejects free-X endpoints");
+    bool v8Rejected = false;
+    try { renderHDRPair(source, v8FreeX); } catch (const std::invalid_argument&) { v8Rejected = true; }
+    require(v8Rejected, "HDR v8 render rejects free-X endpoints");
 }
 
 void color() {

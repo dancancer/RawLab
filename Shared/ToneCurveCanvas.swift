@@ -70,7 +70,7 @@ struct ToneCurveCanvas: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(L10n.text("曲线"))
         .accessibilityValue(L10n.format("多点曲线（%d 个控制点）", value.points.count))
-        .accessibilityHint(L10n.text("点击曲线区域添加控制点，拖动中间点调整。"))
+        .accessibilityHint(L10n.text("点击曲线区域添加控制点，拖动控制点调整。"))
         .accessibilityIdentifier("curve.canvas")
     }
     private var configuration: ToneCurveInputConfiguration {
