@@ -30,6 +30,7 @@ import com.rawlab.android.editor.canvas.PhotoViewOptions
 import com.rawlab.android.editor.canvas.ComparisonMode
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rawlab.android.R
 import com.rawlab.android.editor.AdjustmentGroup
@@ -111,10 +112,12 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null,
-    isAdjustingSlider: Boolean = false) {
+    isAdjustingSlider: Boolean = false,
+    bottomControlsInset: Dp = 64.dp) {
+    val controlsBaseInset = if (workspaceControls) maxOf(64.dp, bottomControlsInset) else 12.dp
     val comparisonInset = if (compare) with(LocalDensity.current) {
-        MaterialTheme.typography.labelSmall.lineHeight.toDp() + if (workspaceControls) 84.dp else 36.dp
-    } else if (workspaceControls) 64.dp else 12.dp
+        MaterialTheme.typography.labelSmall.lineHeight.toDp() + controlsBaseInset + if (workspaceControls) 20.dp else 24.dp
+    } else controlsBaseInset
     val loading = resolveEditorLoadingPresentation(state, isAdjustingSlider)
     var delayedBannerVisible by remember { mutableStateOf(false) }
     LaunchedEffect(loading.delayedBannerRes) {

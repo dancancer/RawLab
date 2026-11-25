@@ -8,6 +8,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.rawlab.android.editor.render.PreviewDetailOverlay
+import java.lang.ref.WeakReference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -17,17 +18,24 @@ import kotlin.math.max
 internal object InspectionBitmap {
     private const val MAX_CACHE_ENTRIES = 24
 
+    // AndroidBitmap_lockPixels increments Bitmap.generationId even for read-only JNI access
+    // (overlay rendering and 3x3 patch sampling). Preview bitmaps are immutable snapshots, so
+    // key by identity + dimensions + mode and verify WeakReference=== to prevent hash collisions.
     private data class OverlayCacheKey(
         val identityHash: Int,
-        val generationId: Int,
         val width: Int,
         val height: Int,
         val mode: InspectionOverlayMode,
     )
 
+    private class OverlayCacheEntry(
+        val sourceRef: WeakReference<Bitmap>,
+        val rendered: Bitmap,
+    )
+
     private val cacheLock = Any()
-    private val overlayCache = object : LinkedHashMap<OverlayCacheKey, Bitmap>(MAX_CACHE_ENTRIES, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<OverlayCacheKey, Bitmap>?): Boolean =
+    private val overlayCache = object : LinkedHashMap<OverlayCacheKey, OverlayCacheEntry>(MAX_CACHE_ENTRIES, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<OverlayCacheKey, OverlayCacheEntry>?): Boolean =
             size > MAX_CACHE_ENTRIES
     }
 
@@ -40,26 +48,27 @@ internal object InspectionBitmap {
     private fun cacheKey(source: Bitmap, mode: InspectionOverlayMode): OverlayCacheKey =
         OverlayCacheKey(
             identityHash = System.identityHashCode(source),
-            generationId = source.generationId,
             width = source.width,
             height = source.height,
             mode = mode,
         )
 
-    private fun lookupCache(key: OverlayCacheKey): Bitmap? =
+    private fun lookupCache(source: Bitmap, key: OverlayCacheKey): Bitmap? =
         synchronized(cacheLock) {
             val hit = overlayCache[key]
-            if (hit != null && hit.isRecycled) {
+            if (hit == null) {
+                null
+            } else if (hit.sourceRef.get() !== source || hit.rendered.isRecycled) {
                 overlayCache.remove(key)
                 null
             } else {
-                hit
+                hit.rendered
             }
         }
 
-    private fun storeCache(key: OverlayCacheKey, bitmap: Bitmap) {
+    private fun storeCache(source: Bitmap, key: OverlayCacheKey, bitmap: Bitmap) {
         synchronized(cacheLock) {
-            overlayCache[key] = bitmap
+            overlayCache[key] = OverlayCacheEntry(WeakReference(source), bitmap)
         }
     }
 
@@ -124,7 +133,7 @@ internal object InspectionBitmap {
         if (mode == InspectionOverlayMode.NONE) return source
         if (mode == InspectionOverlayMode.NEUTRAL_GRAY_50) return gray50Bitmap
         val key = cacheKey(source, mode)
-        val cached = lookupCache(key)
+        val cached = lookupCache(source, key)
         var lastRendered by remember(mode) { mutableStateOf<Bitmap?>(null) }
         if (cached != null) {
             lastRendered = cached
@@ -144,7 +153,7 @@ internal object InspectionBitmap {
                         dst.recycle()
                         return@withContext null
                     }
-                    storeCache(key, dst)
+                    storeCache(source, key, dst)
                     dst
                 } finally {
                     if (!isRgba8) argbSrc.recycle()

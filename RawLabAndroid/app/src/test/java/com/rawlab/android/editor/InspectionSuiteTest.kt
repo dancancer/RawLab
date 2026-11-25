@@ -83,4 +83,19 @@ class InspectionSuiteTest {
         assertEquals(InspectionOverlayMode.SKIN_HUE_AMPLIFICATION, restored.lastNonGrayOverlay)
         assertEquals(3L, restored.nextAnchorId)
     }
+
+    @Test
+    fun dismissOverlayRestoresPreviousNonGrayOverlayBeforeClearing() {
+        var session = InspectionSessionState()
+            .selectOverlay(InspectionOverlayMode.WARM_COOL_BW)
+            .toggleNeutralGray50()
+        assertEquals(InspectionOverlayMode.NEUTRAL_GRAY_50, session.overlay)
+
+        session = session.dismissOverlay()
+        assertEquals(InspectionOverlayMode.WARM_COOL_BW, session.overlay)
+
+        session = session.dismissOverlay()
+        assertEquals(InspectionOverlayMode.NONE, session.overlay)
+        assertEquals(InspectionOverlayMode.NONE, session.lastNonGrayOverlay)
+    }
 }
