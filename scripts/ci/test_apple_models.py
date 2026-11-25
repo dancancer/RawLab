@@ -4,7 +4,9 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -20,6 +22,14 @@ AX_GATE_SKIP_PAIR = "\n".join((
 ))
 
 
+def fake_tool_script(name):
+    """SDK/pre-check stand-ins; python3 still runs the real scheduler the runner delegates to."""
+    if name == "python3":
+        return (f'#!/bin/sh\ncase "$1" in *apple_models_scheduler.py) exec "{sys.executable}" "$@" ;; esac\n'
+                'echo /unused/sdk\n')
+    return "#!/bin/sh\necho /unused/sdk\n"
+
+
 class AppleModelRunnerTests(unittest.TestCase):
     def test_cache_is_shared_within_a_run_and_removed_after_success_or_failure(self):
         with tempfile.TemporaryDirectory(prefix="rawlab model cache ") as directory:
@@ -27,11 +37,12 @@ class AppleModelRunnerTests(unittest.TestCase):
             runner = root / "scripts/ci/apple-models.sh"
             runner.parent.mkdir(parents=True)
             shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+            shutil.copy2(ROOT / "scripts/ci/apple_models_scheduler.py", runner.parent)
             tools = root / "bin"
             tools.mkdir()
             for name in ("xcode-select", "xcrun", "python3"):
                 tool = tools / name
-                tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+                tool.write_text(fake_tool_script(name))
                 tool.chmod(0o755)
             swift_tool = tools / "swift"
             swift_tool.write_text("#!/bin/sh\necho 'PASS: simulated swift test'\n")
@@ -100,11 +111,12 @@ exit "$PROBE_EXIT"
         runner = root / "scripts/ci/apple-models.sh"
         runner.parent.mkdir(parents=True)
         shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+        shutil.copy2(ROOT / "scripts/ci/apple_models_scheduler.py", runner.parent)
         tools = root / "bin"
         tools.mkdir()
         for name in ("xcode-select", "xcrun", "python3"):
             tool = tools / name
-            tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+            tool.write_text(fake_tool_script(name))
             tool.chmod(0o755)
         swift_tool = tools / "swift"
         swift_tool.write_text("#!/bin/bash\nset -eu\nif [[ -n \"${INJECT_FOR:-}\" ]]; then printf 'PASS: simulated swift test\\n'; else printf '%s\\n' \"${INJECT_OUT:-PASS: simulated swift test}\"; fi\n")
@@ -215,11 +227,12 @@ exit 0
         runner = root / "scripts/ci/apple-models.sh"
         runner.parent.mkdir(parents=True)
         shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+        shutil.copy2(ROOT / "scripts/ci/apple_models_scheduler.py", runner.parent)
         tools = root / "bin"
         tools.mkdir()
         for name in ("xcode-select", "xcrun", "python3"):
             tool = tools / name
-            tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+            tool.write_text(fake_tool_script(name))
             tool.chmod(0o755)
         swift_tool = tools / "swift"
         swift_tool.write_text("#!/bin/sh\necho 'PASS: simulated swift test'\n")
@@ -403,6 +416,71 @@ printf 'PASS: %s line 2\n' "$suite"
                 else:
                     self.assertIn("error: RawLab/tests/hdr-model.sh logged SKIP (forbidden by CI invariant 7)", result.stderr)
 
+    def test_high_concurrency_replay_survives_signals_and_nonblocking_stdout_on_a_full_pipe(self):
+        # The runner's stdout is a pipe drained slowly (like `| tee` in CI), so replay keeps it
+        # full and every write blocks while suites exit at random times and deliver SIGCHLD. macOS
+        # /bin/bash 3.2 builtins failed there with "write error: Interrupted system call".
+        root, runner, tools = self._parallel_probe_root()
+        child = tools / "bash"
+        child.write_text('''#!/bin/bash
+set -eu
+suite="$1"
+sleep "$(( RANDOM % 3 )).$(( RANDOM % 10 ))"
+for i in $(seq 1 200); do printf 'PASS: %s line %04d %s\\n' "$suite" "$i" "$(printf '%060d' 0)"; done
+''')
+        child.chmod(0o755)
+        for attempt, nonblocking in ((0, False), (1, False), (2, True)):
+            with self.subTest(attempt=attempt, nonblocking_stdout=nonblocking):
+                read_fd, write_fd = os.pipe()
+                if nonblocking:
+                    # A pipe shared with other writers can be left O_NONBLOCK; writes into the
+                    # full pipe then fail immediately instead of waiting for the reader.
+                    os.set_blocking(write_fd, False)
+                process = subprocess.Popen(["/bin/bash", str(runner), "ios"], stdout=write_fd, stderr=subprocess.PIPE,
+                    env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}", "TMPDIR": str(root),
+                         "RAWLAB_APPLE_MODELS_JOBS": "8"}, start_new_session=True)
+                os.close(write_fd)
+                errors = []
+                reader = threading.Thread(target=lambda: errors.append(process.stderr.read()))
+                reader.start()
+                # Real suite exits rarely hit the blocked write; flood the runner's process group
+                # with SIGCHLD (ignored by default, so harmless to correct code) to make it certain.
+                done = threading.Event()
+                def flood():
+                    while not done.wait(0.001):
+                        try:
+                            os.killpg(process.pid, signal.SIGCHLD)
+                        except ProcessLookupError:
+                            return
+                flooder = threading.Thread(target=flood)
+                flooder.start()
+                chunks = []
+                while True:
+                    chunk = os.read(read_fd, 512)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    time.sleep(0.005)
+                os.close(read_fd)
+                process.wait(timeout=300)
+                done.set()
+                flooder.join(timeout=10)
+                reader.join(timeout=60)
+                process.stderr.close()
+                stdout = b"".join(chunks).decode()
+                stderr = errors[0].decode() if errors else ""
+                self.assertNotIn("write error", stdout + stderr)
+                self.assertEqual(process.returncode, 0, stderr[-2000:])
+                lines = stdout.splitlines()
+                headers = [i for i, line in enumerate(lines) if line.startswith("[model] ")]
+                self.assertEqual(len(headers), 30)
+                for index in headers:
+                    suite = lines[index].split(" ", 1)[1]
+                    body = lines[index + 1:index + 201]
+                    self.assertEqual(len(body), 200)
+                    self.assertTrue(all(line.startswith(f"PASS: {suite} line ") for line in body),
+                                    f"replayed log of {suite} is interleaved or truncated")
+
     def test_swiftpm_waiter_sigterm_does_not_steal_active_lock_or_build_concurrently(self):
         helper = ROOT / "scripts/ci/swiftpm-rawlabkit.sh"
         for fn_call in (
@@ -504,11 +582,12 @@ printf 'END:%s\\n' "$CALLER_ID" >> "$SWIFT_LOG"
             runner = root / "scripts/ci/apple-models.sh"
             runner.parent.mkdir(parents=True)
             shutil.copy2(ROOT / "scripts/ci/apple-models.sh", runner)
+            shutil.copy2(ROOT / "scripts/ci/apple_models_scheduler.py", runner.parent)
             tools = root / "bin"
             tools.mkdir()
             for name in ("xcode-select", "xcrun", "python3"):
                 tool = tools / name
-                tool.write_text("#!/bin/sh\necho /unused/sdk\n")
+                tool.write_text(fake_tool_script(name))
                 tool.chmod(0o755)
             swift_tool = tools / "swift"
             swift_tool.write_text("#!/bin/sh\necho 'PASS: simulated swift test'\n")

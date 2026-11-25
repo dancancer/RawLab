@@ -7,6 +7,15 @@ static class BatchSelectionChecks
     static extern bool CreateHardLink(string link, string existing, IntPtr unused);
     static void Check(bool condition,string message) { if(!condition)throw new Exception(message); }
     static void Rejected(Action action,string message) { try { action(); }catch { return; }throw new Exception(message); }
+    // 在独立的非线程池线程上执行并转抛异常，让线程归属断言不受测试宿主所在线程影响。
+    static void RunOnDedicatedThread(Action action)
+    {
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure=null;
+        var thread=new Thread(()=>{ try { action(); } catch(Exception error) { failure=System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); } }){IsBackground=true,Name="BatchSelectionChecks freeze anchor"};
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
+    }
     public static void Run()
     {
         var root=Path.Combine(Path.GetTempPath(),"rawlab-collection-"+Guid.NewGuid());Directory.CreateDirectory(root);
@@ -95,31 +104,38 @@ static class BatchSelectionChecks
             review=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
             job=exporter.Freeze(selection,review,_=>null);
             // 线程锚点：冻结核心（前后双遍全集重验 + look 副本拷贝）整体离开调用线程（异步路径经 Task.Run 调度同一核心）。
-            // 撤掉修复（Freeze 在调用线程内联完成重验与拷贝）时派发用例的 IsThreadPoolThread 记为 false，断言必红；内联用例防止探针恒真假绿。
-            var dispatchedStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
-            var dispatchedReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
-            var dispatchedIDs=selection.SelectedPhotos.Select(photo=>photo.ID).ToList();
-            string dispatchedLookCopy;
-            {
-                using var dispatched=Task.Run(()=>exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",
-                    stage=>dispatchedStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)))).GetAwaiter().GetResult();
-                Check(dispatchedStages.Count(entry=>entry.Item1=="revalidate")==2 && dispatchedStages.Any(entry=>entry.Item1=="copy") &&
-                    dispatchedStages.All(entry=>entry.Item2),"Collection freeze revalidates twice and copies looks on the dispatched worker thread");
-                Check(dispatched.Job.Items.Count==2 && dispatched.StagedLookCopyCount==1,"Dispatched freeze returns the frozen job with task-owned look copies");
-                dispatchedLookCopy=dispatched.Job.Items[1].Frozen!.Look!;
-                Check(File.Exists(dispatchedLookCopy),"Dispatched staged look copy exists before dispose");
-            }
-            Check(!File.Exists(dispatchedLookCopy),"Disposing uncommitted dispatched frozen export removes staged look copy automatically");
-            var inlineStages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
-            string inlineLookCopy;
-            {
-                using var inline=exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",stage=>inlineStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread)));
-                Check(inlineStages.Count==3 && inlineStages.All(entry=>!entry.Item2),"Inline freeze stays on the calling thread");
-                Check(inline.StagedLookCopyCount==1,"Inline freeze stages task-owned look copy");
-                inlineLookCopy=inline.Job.Items[1].Frozen!.Look!;
-                Check(File.Exists(inlineLookCopy),"Inline staged look copy exists before dispose");
-            }
-            Check(!File.Exists(inlineLookCopy),"Disposing uncommitted inline frozen export removes staged look copy automatically");
+            // 撤掉修复（Freeze 在调用线程内联完成重验与拷贝）时派发用例记录的线程 ID 等于调用线程，断言必红；内联用例防止探针恒真假绿。
+            // xUnit 自身在线程池线程上执行：调用线程若是池线程，内联用例的 IsThreadPoolThread 也为 true（假红），
+            // Task.Run 的任务还可能被等待方内联到同一池线程（假绿）。因此两段都放到独立的非池线程上，并同时比对线程 ID。
+            RunOnDedicatedThread(()=>{
+                var callerThread=Environment.CurrentManagedThreadId;
+                Check(!Thread.CurrentThread.IsThreadPoolThread,"Freeze thread anchors run on a dedicated non-pool thread");
+                var dispatchedStages=new System.Collections.Concurrent.ConcurrentQueue<(string Stage,bool Pool,int Thread)>();
+                var dispatchedReview=exporter.Prepare(selection,[],ExportFormat.Png,1024,output,_=>null);
+                var dispatchedIDs=selection.SelectedPhotos.Select(photo=>photo.ID).ToList();
+                string dispatchedLookCopy;
+                {
+                    using var dispatched=Task.Run(()=>exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",
+                        stage=>dispatchedStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread,Environment.CurrentManagedThreadId)))).GetAwaiter().GetResult();
+                    Check(dispatchedStages.Count(entry=>entry.Stage=="revalidate")==2 && dispatchedStages.Any(entry=>entry.Stage=="copy") &&
+                        dispatchedStages.All(entry=>entry.Pool && entry.Thread!=callerThread),"Collection freeze revalidates twice and copies looks on the dispatched worker thread");
+                    Check(dispatched.Job.Items.Count==2 && dispatched.StagedLookCopyCount==1,"Dispatched freeze returns the frozen job with task-owned look copies");
+                    dispatchedLookCopy=dispatched.Job.Items[1].Frozen!.Look!;
+                    Check(File.Exists(dispatchedLookCopy),"Dispatched staged look copy exists before dispose");
+                }
+                Check(!File.Exists(dispatchedLookCopy),"Disposing uncommitted dispatched frozen export removes staged look copy automatically");
+                var inlineStages=new System.Collections.Concurrent.ConcurrentQueue<(string Stage,bool Pool,int Thread)>();
+                string inlineLookCopy;
+                {
+                    using var inline=exporter.FreezeCore(dispatchedReview,dispatchedIDs,_=>null,2,"",
+                        stage=>inlineStages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread,Environment.CurrentManagedThreadId)));
+                    Check(inlineStages.Count==3 && inlineStages.All(entry=>!entry.Pool && entry.Thread==callerThread),"Inline freeze stays on the calling thread");
+                    Check(inline.StagedLookCopyCount==1,"Inline freeze stages task-owned look copy");
+                    inlineLookCopy=inline.Job.Items[1].Frozen!.Look!;
+                    Check(File.Exists(inlineLookCopy),"Inline staged look copy exists before dispose");
+                }
+                Check(!File.Exists(inlineLookCopy),"Disposing uncommitted inline frozen export removes staged look copy automatically");
+            });
             settings.Set(Parameter.Exposure,3);store.Save(target,settings.Capture(),look);File.Delete(look);
             var exposures=new List<double>();BatchRunner.Run(journal.Load()!,journal,false,CancellationToken.None,(_,_)=>{},(_,edit,_,path)=>{
                 exposures.Add(edit[Parameter.Exposure]);File.WriteAllText(path,"rendered");
