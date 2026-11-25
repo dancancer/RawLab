@@ -182,8 +182,8 @@ class ProfileAndConnectionTest(unittest.TestCase):
         self.assertIn('-J', scp)
 
     def test_unsafe_settings_are_rejected_before_anything_runs(self):
-        for override in ({'pwsh': 'C:/Program Files/PowerShell/7/pwsh.exe'}, {'workspace': 'C:/Users/me/work'},
-                         {'workspace': 'C:/RawLabBuild/../Users/me'}, {'env': {'A': 'x\u2019; calc'}},
+        for override in ({'pwsh': 'C:/Program Files/PowerShell/7/pwsh.exe'}, {'workspace': 'D:/Elsewhere/work'},
+                         {'workspace': 'C:/RawLabBuild/../Windows/Temp'}, {'env': {'A': 'x\u2019; calc'}},
                          {'dotnet_dir': 'C:/dotnet\u2018x'},
                          {'workspace': "C:/RawLabBuild/x'; Remove-Item"}, {'path_prepend': ['relative/bin']},
                          {'env': {'A': "x'y"}}, {'dotnet_dir': 'C:/dotnet;calc'}, {'host': None}):
