@@ -77,6 +77,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_decode_with_session",
         "sony2fuji_hdr_encode_rgba16",
         "sony2fuji_hdr_encode_rgba8_into",
+        "sony2fuji_hdr_export_apple_proraw_json",
         "sony2fuji_hdr_export_heif",
         "sony2fuji_hdr_export_heif_with_session",
         "sony2fuji_hdr_export_jpeg_with_session",
@@ -88,6 +89,7 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_export_tiled_json",
         "sony2fuji_hdr_geometry_size",
         "sony2fuji_hdr_heif_export_available",
+        "sony2fuji_hdr_probe_apple_proraw",
         "sony2fuji_hdr_probe_camera_raw",
         "sony2fuji_hdr_render",
         "sony2fuji_hdr_render_camera_raw_roi",
@@ -146,11 +148,10 @@ internal static class AbiLayoutChecks
         "sony2fuji_status_message",
     };
 
-    // Windows-local exports compiled into sony2fuji.dll (thumbnail.cpp / display_image_windows.cpp)
+    // Windows-local exports compiled into sony2fuji.dll (thumbnail.cpp)
     // rather than declared in the shared C ABI headers.
     private static readonly HashSet<string> LocalNativeEntryPoints = new(StringComparer.Ordinal)
     {
-        "rawlab_display_preview",
         "rawlab_preview",
         "rawlab_thumbnail",
     };

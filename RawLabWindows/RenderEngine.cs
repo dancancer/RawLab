@@ -699,7 +699,7 @@ internal sealed partial class RenderEngine : IDisposable
             }
             if(LibraryEntry.IsRaster(path))
             {
-                if(Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
+                if(Native.sony2fuji_load_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
                 return new(Bitmap(buffer),checked((int)sourceWidth),checked((int)sourceHeight));
             }
             if (Native.rawlab_preview(path,out buffer,out var kind,out var flip,out var width,out var height) != 0) return new(null,width,height);

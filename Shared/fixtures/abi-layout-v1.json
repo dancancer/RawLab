@@ -1125,6 +1125,12 @@
       "symbol": "sony2fuji_load_display_image"
     },
     {
+      "name": "sony2fuji_load_display_preview",
+      "return_type": "sony2fuji_status",
+      "params": ["const char*", "uint32_t", "sony2fuji_buffer*", "uint32_t*", "uint32_t*"],
+      "symbol": "sony2fuji_load_display_preview"
+    },
+    {
       "name": "sony2fuji_inspect_sdr_jpeg_mpf",
       "return_type": "int32_t",
       "params": ["const char*"],
@@ -1821,6 +1827,12 @@
       "symbol": "sony2fuji_hdr_probe_proraw"
     },
     {
+      "name": "sony2fuji_hdr_probe_apple_proraw",
+      "return_type": "sony2fuji_status",
+      "params": ["const char*", "sony2fuji_hdr_source_info_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_probe_apple_proraw"
+    },
+    {
       "name": "sony2fuji_hdr_decode_proraw",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_decode_options_v1*", "const char*", "sony2fuji_hdr_image_pair_v1*", "sony2fuji_hdr_diagnostic_v1*"],
@@ -2029,6 +2041,12 @@
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
       "symbol": "sony2fuji_hdr_export_proraw_json"
+    },
+    {
+      "name": "sony2fuji_hdr_export_apple_proraw_json",
+      "return_type": "sony2fuji_status",
+      "params": ["sony2fuji_session*", "const char*", "const sony2fuji_hdr_render_options_v1*", "const char*", "const sony2fuji_hdr_export_config_v1*", "uint32_t", "const char*", "const char*", "sony2fuji_hdr_stream_result_v1*", "sony2fuji_hdr_diagnostic_v1*"],
+      "symbol": "sony2fuji_hdr_export_apple_proraw_json"
     },
     {
       "name": "sony2fuji_hdr_create_hsl_probe_json",

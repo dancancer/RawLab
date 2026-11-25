@@ -36,8 +36,8 @@ extension ContentView {
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:viewModel.sourceIsHDR,
                                                    cameraRAW:viewModel.sourceSupportsCameraHDR)
-            if enabled, viewModel.sourceProRAW != nil {
-                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
+            if enabled, viewModel.sourceIsProRAW {
+                candidate.proRAWDecodeVersion = try HDRSourceInfo.validatedProRAWDecodeVersion(settings.proRAWDecodeVersion)
             }
             guard viewModel.saveCurrentSettings(settings) else { return }
             if enabled && viewModel.sourceSupportsCameraHDR {
@@ -58,7 +58,7 @@ extension ContentView {
 
     func applyHDRCameraDevelopment(_ development: HDRCameraDevelopmentSettings) {
         guard !editorBusy, !isEditorDraftActive, settings.isHDREditing, viewModel.sourceSupportsCameraHDR,
-              viewModel.sourceProRAW == nil, let source = viewModel.editorEditSource,
+              !viewModel.sourceIsProRAW, let source = viewModel.editorEditSource,
               development.isValid, development != settings.hdr?.cameraDevelopmentSettings,
               viewModel.saveCurrentSettings(settings) else { return }
         let before = settings

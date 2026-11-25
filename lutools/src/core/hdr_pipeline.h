@@ -183,6 +183,11 @@ void exportImagePairSDR(const HDRImagePair& pixels, const ExportSourceMetadata& 
 ProRAWStreamExportResult exportProRAWStream(const char* sourceFile, const HDRRenderOptions& options,
                                             const std::string& lookPath, const HDRExportConfig& config,
                                             bool keepHDR, const char* temporaryRoot, const char* targetFile);
+#if defined(__APPLE__)
+ProRAWStreamExportResult exportAppleProRAWStream(const char* sourceFile, const HDRRenderOptions& options,
+                                                 const std::string& lookPath, const HDRExportConfig& config,
+                                                 bool keepHDR, const char* temporaryRoot, const char* targetFile);
+#endif
 HDRStreamResult exportRowStream(const StreamSourceSpec& source, const HDRRenderOptions& options,
                                 const std::string& lookPath, const HDRExportConfig& config,
                                 bool keepHDR, const char* temporaryRoot, const char* targetFile);

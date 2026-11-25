@@ -719,6 +719,19 @@ sony2fuji_status sony2fuji_hdr_create_hsl_probe(sony2fuji_session* sessionHandle
 
 sony2fuji_status sony2fuji_hdr_probe(const char* f, sony2fuji_hdr_source_info_v1* i, sony2fuji_hdr_diagnostic_v1* d) { return probeFileEntry(f, i, d, hdr::probeFile); }
 sony2fuji_status sony2fuji_hdr_probe_proraw(const char* f, sony2fuji_hdr_source_info_v1* i, sony2fuji_hdr_diagnostic_v1* d) { return probeFileEntry(f, i, d, hdr::probeProRAW); }
+sony2fuji_status sony2fuji_hdr_probe_apple_proraw(const char* f, sony2fuji_hdr_source_info_v1* i, sony2fuji_hdr_diagnostic_v1* d) {
+#if defined(__APPLE__)
+    return probeFileEntry(f, i, d, hdr::probeAppleProRAW);
+#else
+    return boundary(d, [&] {
+        header(i, SONY2FUJI_HDR_FIELD_RESULT);
+        clearOutput(i);
+        requirePath(f);
+        fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, SONY2FUJI_HDR_FIELD_SOURCE,
+             "Apple ProRAW probing requires an Apple runtime", SONY2FUJI_STATUS_UNSUPPORTED);
+    });
+#endif
+}
 sony2fuji_status sony2fuji_hdr_probe_camera_raw(const char* f, sony2fuji_hdr_source_info_v1* i, sony2fuji_hdr_diagnostic_v1* d) { return sony2fuji_hdr_probe_camera_raw_with_processing(f, SONY2FUJI_PROCESSING_LEGACY, i, d); }
 
 sony2fuji_status sony2fuji_hdr_probe_look(const char* file, sony2fuji_hdr_look_info_v1* info, sony2fuji_hdr_diagnostic_v1* diagnostic) {
@@ -1554,6 +1567,52 @@ sony2fuji_status sony2fuji_hdr_export_proraw_json(
                                                       keepHDR != 0, temporaryRoot, file);
         reportHdrProgress(1000, 1000);
         finishStreamExport(result, exported.stream, exported.nativeWidth, exported.nativeHeight, hdr::portableProRAWRevision, session);
+    });
+}
+
+sony2fuji_status sony2fuji_hdr_export_apple_proraw_json(
+    sony2fuji_session* sessionHandle,
+    const char* sourceFile,
+    const sony2fuji_hdr_render_options_v1* exec_options,
+    const char* edit_state_json,
+    const sony2fuji_hdr_export_config_v1* config,
+    uint32_t keepHDR,
+    const char* temporaryRoot,
+    const char* file,
+    sony2fuji_hdr_stream_result_v1* result,
+    sony2fuji_hdr_diagnostic_v1* diagnostic
+) {
+    return boundary(diagnostic, [&] {
+#if defined(__APPLE__)
+        header(config, SONY2FUJI_HDR_FIELD_EXPORT);
+        header(result, SONY2FUJI_HDR_FIELD_RESULT);
+        if (overlaps(config, sizeof(*config), result, sizeof(*result)) ||
+            (exec_options && overlaps(exec_options, sizeof(*exec_options), result, sizeof(*result)))) {
+            fail(SONY2FUJI_HDR_REASON_INVALID_BUFFER, SONY2FUJI_HDR_FIELD_RESULT, "ProRAW result aliases input");
+        }
+        clearOutput(result);
+        requirePath(file);
+        requirePath(temporaryRoot);
+        requirePath(sourceFile);
+        requirePath(config->metadata_source_path);
+        SessionLease session;
+        requireCpuSession(sessionHandle, session, "ProRAW development is CPU only");
+        std::string lookPath;
+        const auto options = buildHdrRenderOptionsFromJson(exec_options, edit_state_json, &session, true, &lookPath);
+        if (keepHDR > 1) fail(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT, SONY2FUJI_HDR_FIELD_EXPORT, "Invalid ProRAW export configuration");
+        const ProcessingCancellationScope cancellation(hdrSessionCancellation(session));
+        const HdrProgressScope progress(hdrSessionProgress(session));
+        reportHdrProgress(0, 1000);
+        const auto exported = hdr::exportAppleProRAWStream(sourceFile, options, lookPath, toCoreExportConfig(*config),
+                                                           keepHDR != 0, temporaryRoot, file);
+        reportHdrProgress(1000, 1000);
+        finishStreamExport(result, exported.stream, exported.nativeWidth, exported.nativeHeight, hdr::appleProRAWRevision, session);
+#else
+        (void)sessionHandle; (void)sourceFile; (void)exec_options; (void)edit_state_json;
+        (void)config; (void)keepHDR; (void)temporaryRoot; (void)file; (void)result;
+        fail(SONY2FUJI_HDR_REASON_UNSUPPORTED_SYSTEM, SONY2FUJI_HDR_FIELD_EXPORT,
+             "Apple ProRAW export requires an Apple runtime", SONY2FUJI_STATUS_UNSUPPORTED);
+#endif
     });
 }
 

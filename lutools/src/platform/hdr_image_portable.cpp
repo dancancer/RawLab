@@ -259,21 +259,28 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
     const auto sourcePath = std::filesystem::u8path(config.metadataSourcePath);
     if (isTIFF(config.metadataSourcePath)) {
         impl->isTiff = true;
-        if (PinnedSourceFile::pinIdentity(sourcePath, false, impl->pinned) != SourcePinStatus::Ok)
-            fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot inspect HDR metadata source");
-        if (hasDigest(config.sourceSha256)) {
-            verifyDigest(config.metadataSourcePath, config.sourceSha256);
-            std::copy_n(config.sourceSha256, 32, impl->digest);
-        } else {
-            // 全零 config.sourceSha256：调用方未预冻结，内部单次哈希并贯穿发布阶段。
-            const auto digest = fileDigest(config.metadataSourcePath);
-            const auto hex = [](char c) { return c <= '9' ? c - '0' : c - 'a' + 10; };
-            for (size_t i = 0; i < 32; ++i) {
-                const uint8_t b = uint8_t(hex(digest[2 * i]) * 16 + hex(digest[2 * i + 1]));
-                pin.digest[i] = b;
-                impl->digest[i] = b;
-            }
+        PinnedSourceOptions pinOpts;
+        pinOpts.maxBytes = 512ull * 1024 * 1024;
+        pinOpts.allowEmpty = false;
+        pinOpts.checkCancellation = true;
+        pinOpts.computeSha256 = true;
+        pinOpts.rejectSymlink = false;
+        pinOpts.expectedSha256 = hasDigest(config.sourceSha256) ? config.sourceSha256 : nullptr;
+        const auto pinSt = PinnedSourceFile::pinAndHash(sourcePath, pinOpts, impl->pinned);
+        switch (pinSt) {
+            case SourcePinStatus::Ok:
+                break;
+            case SourcePinStatus::SourceChanged:
+                fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
+            case SourcePinStatus::Cancelled:
+                throw ProcessingCancelled();
+            case SourcePinStatus::InvalidPath:
+            case SourcePinStatus::IoError:
+            case SourcePinStatus::TooLarge:
+                fail(RenderStatus::IoError, kHdrReasonInputIo, "Cannot inspect HDR metadata source");
         }
+        std::copy(impl->pinned.sha256().begin(), impl->pinned.sha256().end(), impl->digest);
+        std::copy(impl->pinned.sha256().begin(), impl->pinned.sha256().end(), pin.digest);
         info = probeProRAW(config.metadataSourcePath);
         if (!impl->pinned.verifyUnchanged())
             fail(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source changed");
@@ -413,7 +420,18 @@ DecodedImage decodeFileROI(const char* path, const RoiSubRect& rect) {
 }
 #if defined(__APPLE__)
 // Keep the portable adapter's symbol closure complete when the Apple-compiled
-// C ABI object also references tiled export. Never pull the Apple adapter back in.
+// C ABI object also references tiled/Apple-ProRAW export. Never pull the Apple adapter back in.
+HDRSourceInfo probeAppleProRAW(const char*) {
+    fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        "Apple ProRAW probing is unavailable in the portable adapter");
+}
+HDRSourceInfo probeFileOrAppleProRAW(const char* path) {
+    return probeFile(path);
+}
+HDRRowSource openAppleProRAWRows(const char*, const uint8_t[32], StreamSourcePin&, uint64_t&) {
+    fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
+        "Apple ProRAW streaming is unavailable in the portable adapter");
+}
 HDRRowSource openRasterRows(const char*, const uint8_t[32], StreamSourcePin&, uint64_t&) {
     fail(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem,
         "Tiled HDR raster decoding is unavailable on this platform");

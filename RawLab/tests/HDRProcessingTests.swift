@@ -12,7 +12,7 @@ import UIKit
         let info=try (HDRSourceInfo.probe(source) ?? HDRSourceInfo.probeRAW(source))!
         let processor=Sony2FujiProcessor(gpuMode:SONY2FUJI_GPU_OFF)
         let output=URL(fileURLWithPath:CommandLine.arguments[2],isDirectory:true)
-        if info.proRAW != nil {
+        if info.isProRAW {
             var settings=HDRSettings()
             settings.geometry.quarterTurns=1; settings.geometry.straightenDegrees=7
             settings.geometry.cropWidth=0.5; settings.geometry.perspectiveHorizontal=0.12
@@ -31,7 +31,7 @@ import UIKit
             let proHdrURL=output.appendingPathComponent("proraw-progress.jpg")
             var proProgress=[Double]()
             try processor.exportHDR(url:source,settings:proExportSettings,output:proHdrURL,longEdge:256,
-                proRAWDecodeVersion:ProRAWSource.decodeVersion,format:.hdrJPEG,
+                proRAWDecodeVersion:HDRSourceInfo.proRAWDecodeVersion,format:.hdrJPEG,
                 progress:{ proProgress.append($0) },cancelled:{ false })
             require(!proProgress.isEmpty && proProgress.allSatisfy { $0 >= 0 && $0 <= 1 },"ProRAW HDR export progress out of range")
             require(zip(proProgress,proProgress.dropFirst()).allSatisfy { $0.1 >= $0.0 },"ProRAW HDR export progress went backwards")
@@ -42,7 +42,7 @@ import UIKit
             var shouldCancel=false; var cancelledThrown=false
             do {
                 try processor.exportHDR(url:source,settings:proExportSettings,output:proCancelURL,longEdge:256,
-                    proRAWDecodeVersion:ProRAWSource.decodeVersion,format:.hdrJPEG,
+                    proRAWDecodeVersion:HDRSourceInfo.proRAWDecodeVersion,format:.hdrJPEG,
                     progress:{ if $0 > 0 { shouldCancel=true } },cancelled:{ shouldCancel })
                 fatalError("ProRAW HDR export cancellation did not throw")
             } catch is CancellationError { cancelledThrown=true }
@@ -50,14 +50,14 @@ import UIKit
             let proDngURL=output.appendingPathComponent("proraw-progress.dng")
             var dngProgress=[Double]()
             try processor.exportHDRDNG(url:source,settings:proExportSettings,output:proDngURL,longEdge:256,
-                proRAWDecodeVersion:ProRAWSource.decodeVersion,progress:{ dngProgress.append($0) },cancelled:{ false })
+                proRAWDecodeVersion:HDRSourceInfo.proRAWDecodeVersion,progress:{ dngProgress.append($0) },cancelled:{ false })
             require(!dngProgress.isEmpty && zip(dngProgress,dngProgress.dropFirst()).allSatisfy { $0.1 >= $0.0 } && dngProgress.last==1,"ProRAW DNG progress contract failed")
             require(FileManager.default.fileExists(atPath:proDngURL.path),"ProRAW DNG export missing output")
             let proDngCancelURL=output.appendingPathComponent("proraw-dng-cancel.dng")
             var cancelDng=false; var dngCancelled=false
             do {
                 try processor.exportHDRDNG(url:source,settings:proExportSettings,output:proDngCancelURL,longEdge:256,
-                    proRAWDecodeVersion:ProRAWSource.decodeVersion,progress:{ if $0 > 0 { cancelDng=true } },cancelled:{ cancelDng })
+                    proRAWDecodeVersion:HDRSourceInfo.proRAWDecodeVersion,progress:{ if $0 > 0 { cancelDng=true } },cancelled:{ cancelDng })
                 fatalError("ProRAW DNG cancellation did not throw")
             } catch is CancellationError { dngCancelled=true }
             require(dngCancelled && !FileManager.default.fileExists(atPath:proDngCancelURL.path),"Cancelled ProRAW DNG left output file")

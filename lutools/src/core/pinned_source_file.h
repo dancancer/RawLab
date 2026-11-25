@@ -40,6 +40,12 @@ public:
         std::vector<uint8_t>& outBytes,
         std::string* outMessage = nullptr);
 
+    static SourcePinStatus pinAndHash(
+        const std::filesystem::path& path,
+        const PinnedSourceOptions& options,
+        PinnedSourceFile& outPinned,
+        std::string* outMessage = nullptr);
+
     static SourcePinStatus pinIdentity(
         const std::filesystem::path& path,
         bool rejectSymlink,
@@ -58,6 +64,13 @@ public:
     bool valid() const noexcept { return valid_; }
 
 private:
+    static SourcePinStatus pinAndStream(
+        const std::filesystem::path& path,
+        const PinnedSourceOptions& options,
+        PinnedSourceFile& outPinned,
+        std::vector<uint8_t>* outBytes,
+        std::string* outMessage);
+
     std::filesystem::path path_;
     ResourceFileStamp stamp_{};
     std::array<uint8_t, 32> sha256_{};

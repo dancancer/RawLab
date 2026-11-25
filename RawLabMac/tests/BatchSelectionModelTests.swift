@@ -371,7 +371,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         var settings = Adjustments()
         var hdr = HDRSettings(); hdr.mode = .sdr; hdr.exposure = 0.75
         settings.hdr = hdr
-        settings.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+        settings.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion + 1
         try model.editStore!.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
         model.open(photo); try rendered(model)
         try check(model.sourceSupportsCameraHDR && !model.settings.isHDREditing, "incompatible ProRAW record still opens in SDR")

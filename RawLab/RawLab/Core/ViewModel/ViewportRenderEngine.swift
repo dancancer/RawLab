@@ -505,10 +505,10 @@ final class ViewportRenderEngine {
         draftBuffer: Sony2FujiProcessor.Buffer?,
         cachedFullRaster: inout Sony2FujiProcessor.Buffer?
     ) throws -> Sony2FujiProcessor.Buffer {
-        if let existing = cachedFullRaster, !existing.isProxy {
+        if let existing = cachedFullRaster, !existing.isProxy, existing.hasFullBitDepth {
             return existing
         }
-        if let draft = draftBuffer, !draft.isProxy {
+        if let draft = draftBuffer, !draft.isProxy, draft.hasFullBitDepth {
             return draft
         }
         let loaded = try sourceFile.withReadAccess { url in

@@ -7,9 +7,13 @@
 #include "core/parallel_pixels.h"
 #include "core/pinned_source_file.h"
 #include "core/hdr_storage.h"
+#include "core/tiff_ifd.h"
 #import <Foundation/Foundation.h>
 #import <CoreImage/CoreImage.h>
 #import <ImageIO/ImageIO.h>
+#if defined(SONY2FUJI_ENABLE_METAL)
+#import <Metal/Metal.h>
+#endif
 #include <TargetConditionals.h>
 #include <mach/mach.h>
 #if TARGET_OS_IPHONE
@@ -18,13 +22,16 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <mutex>
 #include <limits>
+#include <optional>
 #include <string>
 #include <malloc/malloc.h>
 
@@ -88,26 +95,120 @@ struct File {
     NSData* data = nil;
     NSDictionary* properties = nil;
     CGImageSourceRef source = nullptr;
+    CGImageMetadataRef metadataTags = nullptr;
     HDRSourceInfo info{};
     PinnedSourceFile pinned;
-    ~File() { if (source) CFRelease(source); }
+    ~File() {
+        if (source) CFRelease(source);
+        if (metadataTags) CFRelease(metadataTags);
+    }
 };
 
 // 流式导出的源冻结快照（对 hdr_image.h 的 StreamSourcePin::impl 不透明）。
 struct StreamSourcePinImpl {
     NSData* data = nil;               // validate 时单次读取的源容器
     CGImageSourceRef source = nullptr; // 与 data 同一解析，publish 复用其元数据
+    NSDictionary* cachedProperties = nil;
+    CGImageMetadataRef cachedMetadata = nullptr;
+    uint64_t sourceSize = 0;
     PinnedSourceFile pinned;
+    ~StreamSourcePinImpl() {
+        if (source) CFRelease(source);
+        if (cachedMetadata) CFRelease(cachedMetadata);
+    }
 };
 
 void pinFile(const File& source, StreamSourcePin& pin) {
     if (!pin.impl) pin.impl = new StreamSourcePinImpl();
     auto* impl = static_cast<StreamSourcePinImpl*>(pin.impl);
     if (impl->source) CFRelease(impl->source);
+    if (impl->cachedMetadata) CFRelease(impl->cachedMetadata);
     impl->data = source.data;
     impl->source = source.source ? (CGImageSourceRef)CFRetain(source.source) : nullptr;
+    impl->cachedProperties = source.properties;
+    impl->cachedMetadata = source.metadataTags ? (CGImageMetadataRef)CFRetain(source.metadataTags) : nullptr;
+    impl->sourceSize = source.data ? uint64_t(source.data.length) : 0;
     impl->pinned = source.pinned;
     std::copy_n(source.info.sourceSha256, 32, pin.digest);
+}
+
+bool isDNGPath(const char* path) {
+    if (!path) return false;
+    std::string ext = std::filesystem::u8path(path).extension().u8string();
+    for (char& ch : ext) {
+        ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+    }
+    return ext == ".dng";
+}
+
+const tiff::Entry* findTiffEntry(const std::vector<tiff::Entry>& entries, uint16_t tag) {
+    for (const auto& entry : entries) {
+        if (entry.tag == tag) return &entry;
+    }
+    return nullptr;
+}
+
+bool hasProRAWProfileTag(const std::vector<tiff::Entry>& entries) {
+    return findTiffEntry(entries, 52525) != nullptr || findTiffEntry(entries, 52544) != nullptr;
+}
+
+bool isLinearProRAWIFD(const tiff::Reader& reader, const std::vector<tiff::Entry>& entries,
+                       const std::vector<tiff::Entry>& rootEntries) {
+    const tiff::Entry* photo = findTiffEntry(entries, 262);
+    if (!photo || photo->type != 3 || photo->count64 != 1) return false;
+    tiff::Payload photoPayload{};
+    uint64_t photometric = 0;
+    if (!reader.payload(*photo, photoPayload) || photoPayload.width != 2 ||
+        !reader.integer(photoPayload.offset, photoPayload.width, photometric) ||
+        photometric != 34892) {
+        return false;
+    }
+    if (findTiffEntry(entries, 50712) == nullptr) return false;
+    return hasProRAWProfileTag(entries) || hasProRAWProfileTag(rootEntries);
+}
+
+bool isLinearProRAWFile(const std::filesystem::path& path, uint64_t fileSize) {
+    if (fileSize < 8 || fileSize > (512ull << 20)) return false;
+    std::ifstream input(path, std::ios::binary);
+    if (!input.is_open()) return false;
+    tiff::Reader reader(input, static_cast<size_t>(fileSize));
+    tiff::Traversal traversal;
+    uint32_t first = 0;
+    if (!reader.header(first)) return false;
+    tiff::Directory rootDir{};
+    if (!traversal.open(reader, first, 0, rootDir)) return false;
+    std::vector<tiff::Entry> rootEntries;
+    if (!reader.entries(rootDir, [&](const tiff::Entry& entry) {
+            rootEntries.push_back(entry);
+            return true;
+        })) {
+        return false;
+    }
+    if (findTiffEntry(rootEntries, 50706) == nullptr) return false;
+    if (isLinearProRAWIFD(reader, rootEntries, rootEntries)) return true;
+
+    const tiff::Entry* sub = findTiffEntry(rootEntries, 330);
+    if (!sub || (sub->type != 4 && sub->type != 13) ||
+        sub->count64 < 1 || sub->count64 > 32) {
+        return false;
+    }
+    tiff::Payload subPayload{};
+    if (!reader.payload(*sub, subPayload) || subPayload.width != 4) return false;
+    for (size_t i = 0; i < static_cast<size_t>(sub->count64); ++i) {
+        uint64_t childOffset = 0;
+        if (!reader.integer(subPayload.offset + i * 4, 4, childOffset)) return false;
+        tiff::Directory subDir{};
+        if (!traversal.open(reader, childOffset, 1, subDir)) return false;
+        std::vector<tiff::Entry> subEntries;
+        if (!reader.entries(subDir, [&](const tiff::Entry& entry) {
+                subEntries.push_back(entry);
+                return true;
+            })) {
+            return false;
+        }
+        if (isLinearProRAWIFD(reader, subEntries, rootEntries)) return true;
+    }
+    return false;
 }
 
 bool has(NSData* data, const char* marker) {
@@ -133,6 +234,44 @@ void validateMap(NSDictionary* map) {
     require(width && height && width <= 128000000 / height && stride >= width &&
         stride <= SIZE_MAX / height && (!data || stride * height <= data.length),
         kHdrReasonMalformedAux, "Invalid auxiliary dimensions or storage");
+}
+
+void readMetadataOnlySource(File& file, const char* path, const uint8_t* expectedSHA = nullptr) {
+    NSString* name = path ? [NSString stringWithUTF8String:path] : nil;
+    if (!name || !*path) error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid UTF-8 HDR path");
+    PinnedSourceOptions options;
+    options.maxBytes = 512ull * 1024 * 1024;
+    options.allowEmpty = false;
+    options.checkCancellation = true;
+    options.computeSha256 = true;
+    options.rejectSymlink = false;
+    options.expectedSha256 = expectedSHA;
+    const auto pinStatus = PinnedSourceFile::pinAndHash(
+        std::filesystem::u8path(path), options, file.pinned);
+    switch (pinStatus) {
+        case SourcePinStatus::Ok:
+            break;
+        case SourcePinStatus::InvalidPath:
+            error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid UTF-8 HDR path");
+        case SourcePinStatus::SourceChanged:
+            error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source has changed");
+        case SourcePinStatus::Cancelled:
+            throw ProcessingCancelled();
+        case SourcePinStatus::IoError:
+        case SourcePinStatus::TooLarge:
+            error(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read HDR source");
+    }
+    std::copy_n(file.pinned.sha256().data(), 32, file.info.sourceSha256);
+    NSURL* url = [NSURL fileURLWithPath:name];
+    CGImageSourceRef src = url ? CGImageSourceCreateWithURL((__bridge CFURLRef)url,
+        (__bridge CFDictionaryRef)@{(__bridge NSString*)kCGImageSourceShouldCache:@NO}) : nullptr;
+    require(src, kHdrReasonMalformedAux, "Cannot parse HDR container");
+    file.properties = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(src, 0, nullptr));
+    file.metadataTags = CGImageSourceCopyMetadataAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!file.pinned.verifyUnchanged()) {
+        error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR metadata source has changed");
+    }
 }
 
 void readMetadataSource(File& file, const char* path, const uint8_t* expectedSHA = nullptr) {
@@ -450,8 +589,7 @@ void differentFile(const char* source, const char* target) {
         error(RenderStatus::InvalidArgument, kHdrReasonSameFile, "HDR export cannot replace its source");
 }
 
-NSDictionary* buildMetadata(File& file,uint32_t width,uint32_t height) {
-    NSDictionary* original=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(file.source,0,nullptr));
+NSDictionary* buildMetadataFromProperties(NSDictionary* original, uint32_t width, uint32_t height) {
     NSMutableDictionary* exif=[original[(__bridge NSString*)kCGImagePropertyExifDictionary] mutableCopy] ?: [NSMutableDictionary dictionary];
     for (NSString* key in @[(__bridge NSString*)kCGImagePropertyExifMakerNote,(__bridge NSString*)kCGImagePropertyExifCFAPattern,
             (__bridge NSString*)kCGImagePropertyExifComponentsConfiguration,(__bridge NSString*)kCGImagePropertyExifCompressedBitsPerPixel,
@@ -475,19 +613,28 @@ NSDictionary* buildMetadata(File& file,uint32_t width,uint32_t height) {
     return values;
 }
 
+NSDictionary* buildMetadata(File& file,uint32_t width,uint32_t height) {
+    NSDictionary* original = file.properties ?: (file.source ? CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(file.source,0,nullptr)) : nil);
+    return buildMetadataFromProperties(original, width, height);
+}
+
 NSDictionary* metadata(File& file,const char* source,const uint8_t sha[32],uint32_t width,uint32_t height,const char* target) HDR_AVAILABLE {
     if (!source) return @{(__bridge NSString*)kCGImagePropertyOrientation:@1};
     differentFile(source,target);
-    readMetadataSource(file,source,sha);
+    if (isDNGPath(source)) {
+        const bool hasExpected = sha && std::any_of(sha, sha + 32, [](uint8_t value) { return value != 0; });
+        readMetadataOnlySource(file, source, hasExpected ? sha : nullptr);
+    } else {
+        readMetadataSource(file,source,sha);
+    }
     return buildMetadata(file,width,height);
 }
 
-NSData* addBaseMetadata(NSData* base,NSDictionary* properties,CGImageSourceRef original) {
+NSData* addBaseMetadata(NSData* base,NSDictionary* properties,CGImageMetadataRef originalTags) {
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)base,nullptr);
     NSMutableData* data=[NSMutableData data];
     CGImageDestinationRef destination=CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data,CFSTR("public.jpeg"),1,nullptr);
     CGMutableImageMetadataRef tags=CGImageMetadataCreateMutable();
-    CGImageMetadataRef originalTags=original ? CGImageSourceCopyMetadataAtIndex(original,0,nullptr) : nullptr;
     bool success=source && destination && tags;
     for (NSString* dictionary in properties) {
         if (![properties[dictionary] isKindOfClass:NSDictionary.class]) continue;
@@ -523,9 +670,20 @@ NSData* addBaseMetadata(NSData* base,NSDictionary* properties,CGImageSourceRef o
     if (success) success=CGImageDestinationCopyImageSource(destination,source,
         (__bridge CFDictionaryRef)@{(__bridge NSString*)kCGImageDestinationMetadata:(__bridge id)tags,
             (__bridge NSString*)kCGImageMetadataShouldExcludeXMP:@YES},nullptr);
-    if (originalTags) CFRelease(originalTags);
     if (source) CFRelease(source); if (destination) CFRelease(destination); if (tags) CFRelease(tags);
     require(success, kHdrReasonOutputIo, "Cannot write JPEG base metadata"); return data;
+}
+
+NSData* addBaseMetadataFromFile(NSData* base, NSDictionary* properties, const File& file) {
+    if (file.metadataTags) {
+        return addBaseMetadata(base, properties, file.metadataTags);
+    }
+    CGImageMetadataRef copied = file.source ? CGImageSourceCopyMetadataAtIndex(file.source, 0, nullptr) : nullptr;
+    @try {
+        return addBaseMetadata(base, properties, copied);
+    } @finally {
+        if (copied) CFRelease(copied);
+    }
 }
 
 void atomicWrite(NSData* data, const char* path) {
@@ -565,7 +723,12 @@ void atomicStreamWrite(NSData* data, const char* path, const HDRExportConfig& co
         if (pin.impl) {
             verifyStreamSource(pin);
         } else if (config.metadataSourcePath) {
-            File verification; readMetadataSource(verification, config.metadataSourcePath, config.sourceSha256);
+            File verification;
+            if (isDNGPath(config.metadataSourcePath)) {
+                readMetadataOnlySource(verification, config.metadataSourcePath, config.sourceSha256);
+            } else {
+                readMetadataSource(verification, config.metadataSourcePath, config.sourceSha256);
+            }
         }
         differentFile(config.metadataSourcePath, path);
         checkProcessingCancellation();
@@ -689,11 +852,227 @@ void admitStreamingMemory(uint64_t additionalBytes) {
             "Streamed HDR codec exceeds current memory budget");
 }
 
+namespace {
+
+struct AppleProRAWProbeDetails {
+    PinnedSourceFile pinned;
+    NSString* decoderVersion = nil;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+AppleProRAWProbeDetails probeAppleProRAWDetails(const char* path) HDR_AVAILABLE {
+    NSString* name = path ? [NSString stringWithUTF8String:path] : nil;
+    if (!name || !*path) error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid UTF-8 HDR path");
+    AppleProRAWProbeDetails details;
+    const auto fsPath = std::filesystem::u8path(path);
+    const auto pinStatus = PinnedSourceFile::pinIdentity(fsPath, false, details.pinned);
+    if (pinStatus == SourcePinStatus::InvalidPath) {
+        error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid UTF-8 HDR path");
+    }
+    if (pinStatus != SourcePinStatus::Ok) {
+        error(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read ProRAW source");
+    }
+    if (details.pinned.stamp().size < 8 || details.pinned.stamp().size > (512ull << 20)) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    if (!isLinearProRAWFile(fsPath, details.pinned.stamp().size)) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    NSURL* url = [NSURL fileURLWithPath:name];
+    CIRAWFilter* raw = url ? [CIRAWFilter filterWithImageURL:url] : nil;
+    NSDictionary* tiff = raw ? raw.properties[(__bridge NSString*)kCGImagePropertyTIFFDictionary] : nil;
+    NSString* make = [tiff isKindOfClass:NSDictionary.class] ? tiff[@"Make"] : nil;
+    NSString* model = [tiff isKindOfClass:NSDictionary.class] ? tiff[@"Model"] : nil;
+    if (![make isKindOfClass:NSString.class] ||
+        [make caseInsensitiveCompare:@"Apple"] != NSOrderedSame ||
+        ![model isKindOfClass:NSString.class] ||
+        ![model hasPrefix:@"iPhone "]) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    const CGSize canvas = raw.nativeSize;
+    if (!std::isfinite(canvas.width) || !std::isfinite(canvas.height) ||
+        canvas.width < 2.0 || canvas.height < 2.0 ||
+        canvas.width * canvas.height > 128000000.0) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    if (!details.pinned.verifyUnchanged()) {
+        error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed");
+    }
+    const bool rotated = int(raw.orientation) >= 5;
+    details.decoderVersion = raw.decoderVersion;
+    details.width = static_cast<uint32_t>(rotated ? canvas.height : canvas.width);
+    details.height = static_cast<uint32_t>(rotated ? canvas.width : canvas.height);
+    return details;
+}
+
+DecodedImage decodeAppleProRAWRegion(const char* path, const HDRDecodeOptions* options, const RoiSubRect* rect) HDR_AVAILABLE {
+    const auto details = probeAppleProRAWDetails(path);
+    std::optional<uint32_t> effectiveEdge;
+    if (options) {
+        if (options->intent == kHdrIntentPreview) {
+            if (options->longEdge == 0) {
+                error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Preview decode requires positive long edge");
+            }
+            effectiveEdge = std::min<uint32_t>(options->longEdge, 2048u);
+        } else if (options->intent != kHdrIntentFinal || options->longEdge != 0) {
+            error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid HDR decode options");
+        }
+    }
+    if (rect) {
+        require(!rect->empty() && rect->x0 >= 0 && rect->y0 >= 0 &&
+                rect->x1 <= int(details.width) && rect->y1 <= int(details.height),
+            kHdrReasonInvalidArgument, "Invalid HDR file ROI rect");
+    }
+    const bool isFinal = (!effectiveEdge.has_value() && rect == nullptr);
+    const uint32_t longSide = std::max(details.width, details.height);
+    const double scale = effectiveEdge
+        ? std::min(1.0, double(*effectiveEdge) / double(longSide))
+        : 1.0;
+    const uint64_t expectedPixels = rect
+        ? uint64_t(rect->width()) * uint64_t(rect->height())
+        : uint64_t(std::ceil(double(details.width) * scale)) * uint64_t(std::ceil(double(details.height) * scale));
+    admitMemory(expectedPixels * (isFinal ? 88ull : 56ull) + (64ull << 20));
+    if (!details.pinned.verifyUnchanged()) {
+        error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed");
+    }
+    PinnedSourceOptions pinOpts;
+    pinOpts.maxBytes = 512ull << 20;
+    pinOpts.allowEmpty = false;
+    pinOpts.checkCancellation = true;
+    pinOpts.computeSha256 = true;
+    pinOpts.rejectSymlink = false;
+    PinnedSourceFile pinned;
+    const auto pinStatus = PinnedSourceFile::pinAndHash(std::filesystem::u8path(path), pinOpts, pinned);
+    switch (pinStatus) {
+        case SourcePinStatus::Ok:
+            break;
+        case SourcePinStatus::SourceChanged:
+            error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed");
+        case SourcePinStatus::Cancelled:
+            throw ProcessingCancelled();
+        case SourcePinStatus::InvalidPath:
+            error(RenderStatus::InvalidArgument, kHdrReasonInvalidArgument, "Invalid UTF-8 HDR path");
+        case SourcePinStatus::IoError:
+        case SourcePinStatus::TooLarge:
+            error(RenderStatus::IoError, kHdrReasonInputIo, "Cannot read ProRAW source");
+    }
+    if (!(pinned.stamp() == details.pinned.stamp())) {
+        error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed");
+    }
+    NSURL* url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+    CIRAWFilter* raw = url ? [CIRAWFilter filterWithImageURL:url] : nil;
+    if (!raw || ![raw.decoderVersion isEqualToString:details.decoderVersion]) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    raw.scaleFactor = rect ? 1.0f : static_cast<float>(scale);
+    CGColorSpaceRef color = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+    if (!color) throw std::bad_alloc();
+    std::unique_ptr<std::remove_pointer_t<CGColorSpaceRef>, decltype(&CGColorSpaceRelease)> managedColor(color, CGColorSpaceRelease);
+    CIContext* context = [CIContext contextWithOptions:@{
+        kCIContextWorkingColorSpace: (__bridge id)color,
+        kCIContextCacheIntermediates: @YES
+    }];
+    raw.extendedDynamicRangeAmount = 1.0f;
+    CIImage* hdrImage = raw.outputImage;
+    if (!hdrImage) error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    const CGRect bounds = CGRectIntegral(hdrImage.extent);
+    if (bounds.size.width < 1.0 || bounds.size.height < 1.0 ||
+        bounds.size.width * bounds.size.height > 128000000.0 ||
+        (!effectiveEdge ? (bounds.size.width != double(details.width) || bounds.size.height != double(details.height))
+                        : std::max(bounds.size.width, bounds.size.height) > double(*effectiveEdge))) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    const int cropX = rect ? rect->x0 : 0;
+    const int cropY = rect ? rect->y0 : 0;
+    const int w = rect ? rect->width() : int(bounds.size.width);
+    const int h = rect ? rect->height() : int(bounds.size.height);
+
+    auto pack = [&](CIImage* image, bool isHDR, float& peakOut) -> ImageData {
+        ImageData out(w, h);
+        const int stripLimit = std::min(256, h);
+        std::vector<float> rgba(size_t(w) * stripLimit * 4);
+        float peak = 1.0f;
+        for (int row = 0; row < h; row += stripLimit) {
+            @autoreleasepool {
+                checkProcessingCancellation();
+                const int stripHeight = std::min(stripLimit, h - row);
+                const CGRect tile = CGRectMake(
+                    bounds.origin.x + CGFloat(cropX),
+                    bounds.origin.y + bounds.size.height - CGFloat(cropY + row + stripHeight),
+                    CGFloat(w),
+                    CGFloat(stripHeight));
+                for (int i = 0; i < w * stripHeight; ++i) {
+                    rgba[size_t(i) * 4 + 3] = std::numeric_limits<float>::quiet_NaN();
+                }
+                [context render:image
+                       toBitmap:rgba.data()
+                       rowBytes:size_t(w) * 16
+                         bounds:tile
+                         format:kCIFormatRGBAf
+                     colorSpace:color];
+                checkProcessingCancellation();
+                RGB* dst = out.pixels.data() + size_t(row) * w;
+                for (int i = 0; i < w * stripHeight; ++i) {
+                    const float r = rgba[size_t(i) * 4];
+                    const float g = rgba[size_t(i) * 4 + 1];
+                    const float b = rgba[size_t(i) * 4 + 2];
+                    const float a = rgba[size_t(i) * 4 + 3];
+                    require(std::isfinite(a) && std::isfinite(r) && std::isfinite(g) && std::isfinite(b),
+                        kHdrReasonNonfinite, "Native HDR contains nonfinite pixels");
+                    if (isHDR) {
+                        dst[i] = {r, g, b};
+                    } else {
+                        dst[i] = {std::clamp(r, 0.0f, 1.0f), std::clamp(g, 0.0f, 1.0f), std::clamp(b, 0.0f, 1.0f)};
+                    }
+                    peak = std::max(peak, 0.2126f * r + 0.7152f * g + 0.0722f * b);
+                }
+            }
+        }
+        peakOut = peak;
+        return out;
+    };
+
+    DecodedImage result;
+    float headroom = 1.0f;
+    float unusedPeak = 1.0f;
+    result.pixels.hdr = pack(hdrImage, true, headroom);
+    [context clearCaches];
+    raw.extendedDynamicRangeAmount = 0.0f;
+    CIImage* sdrImage = raw.outputImage;
+    if (!sdrImage || !CGRectEqualToRect(CGRectIntegral(sdrImage.extent), bounds)) {
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+    }
+    result.pixels.sdr = pack(sdrImage, false, unusedPeak);
+    [context clearCaches];
+    checkProcessingCancellation();
+    if (!pinned.verifyUnchanged()) {
+        error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed");
+    }
+
+    result.info.width = details.width;
+    result.info.height = details.height;
+    result.info.orientation = 1;
+    result.info.container = kHdrContainerProRaw;
+    result.info.protocol = kHdrProtocolUnknown;
+    result.info.colorDescription = kHdrColorSrgb;
+    result.info.contentHeadroom = 0.0f;
+    result.info.headroomKind = !effectiveEdge ? kHdrHeadroomMeasured : kHdrHeadroomUnknown;
+    std::copy_n(pinned.sha256().data(), 32, result.info.sourceSha256);
+
+    result.pixels.nativeWidth = details.width;
+    result.pixels.nativeHeight = details.height;
+    result.pixels.sourceHeadroom = !effectiveEdge ? headroom : 0.0f;
+    result.pixels.sourceQuality = result.pixels.renderQuality = !effectiveEdge ? HDRQuality::Final : HDRQuality::Preview;
+    result.pixels.isProxy = effectiveEdge.has_value();
+    result.pixels.decodeRevision = appleProRAWRevision;
+    return result;
+}
+
+} // namespace
+
 StreamSourcePin::~StreamSourcePin() {
-    auto* impl = static_cast<StreamSourcePinImpl*>(this->impl);
-    if (!impl) return;
-    if (impl->source) CFRelease(impl->source);
-    delete impl;
+    delete static_cast<StreamSourcePinImpl*>(this->impl);
 }
 
 void freezeStreamSourceFile(const char* path, StreamSourcePin& pin) {
@@ -712,9 +1091,167 @@ void verifyStreamSource(const StreamSourcePin& pin) {
         error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source has changed during export");
 }
 
-HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision) {
+HDRSourceInfo probeAppleProRAW(const char* path) {
     @autoreleasepool {
         if (@available(macOS 15.0, iOS 18.0, *)) {
+            const auto details = probeAppleProRAWDetails(path);
+            HDRSourceInfo info{};
+            info.width = details.width;
+            info.height = details.height;
+            info.orientation = 1;
+            info.container = kHdrContainerProRaw;
+            info.protocol = kHdrProtocolUnknown;
+            info.colorDescription = kHdrColorSrgb;
+            info.contentHeadroom = 0.0f;
+            info.headroomKind = kHdrHeadroomUnknown;
+            return info;
+        }
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
+    }
+}
+
+HDRSourceInfo probeFileOrAppleProRAW(const char* path) {
+    if (isDNGPath(path)) return probeAppleProRAW(path);
+    return probeFile(path);
+}
+
+HDRRowSource openAppleProRAWRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision) {
+    @autoreleasepool {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            const auto details = probeAppleProRAWDetails(path);
+            const bool hasExpected = expectedSHA && std::any_of(expectedSHA, expectedSHA + 32,
+                [](uint8_t value) { return value != 0; });
+            File file;
+            readMetadataOnlySource(file, path, hasExpected ? expectedSHA : nullptr);
+            if (!(file.pinned.stamp() == details.pinned.stamp())) {
+                error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source differs from the frozen file");
+            }
+            pinFile(file, pin);
+            struct ProRAWReader {
+                NSURL* url = nil;
+                NSString* decoderVersion = nil;
+                uint32_t width = 0;
+                uint32_t height = 0;
+                CIRAWFilter* raw = nil;
+                CIContext* context = nil;
+                CIImage* image = nil;
+                std::optional<bool> rendition;
+                std::vector<float> rgba;
+                CGColorSpaceRef color = nullptr;
+                ~ProRAWReader() {
+                    release();
+                    if (color) CGColorSpaceRelease(color);
+                }
+                void release() {
+                    [context clearCaches];
+                    image = nil;
+                    raw = nil;
+                    context = nil;
+                    std::vector<float>().swap(rgba);
+                }
+            };
+            auto reader = std::make_shared<ProRAWReader>();
+            reader->url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+            reader->decoderVersion = details.decoderVersion;
+            reader->width = details.width;
+            reader->height = details.height;
+            reader->color = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
+            if (!reader->color) throw std::bad_alloc();
+
+            HDRRowSource rows;
+            rows.width = details.width;
+            rows.height = details.height;
+            rows.read = [reader, &pin](bool hdr, uint32_t first, uint32_t count, RGB* output) {
+                @autoreleasepool {
+                    verifyStreamSource(pin);
+                    checkProcessingCancellation();
+                    if (!output || !count || count > 256 || first > reader->height || count > reader->height - first) {
+                        throw std::invalid_argument("Invalid complete HDR source row range");
+                    }
+                    if (!reader->raw) {
+                        admitStreamingMemory(uint64_t(reader->width) * uint64_t(reader->height) * 16 + (128ull << 20));
+                        CIRAWFilter* filter = [CIRAWFilter filterWithImageURL:reader->url];
+                        if (!filter || ![filter.decoderVersion isEqualToString:reader->decoderVersion]) {
+                            error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+                        }
+                        reader->raw = filter;
+                        NSMutableDictionary* contextOptions = [@{
+                            kCIContextWorkingColorSpace: (__bridge id)reader->color,
+                            kCIContextCacheIntermediates: @NO,
+                            kCIContextMemoryLimit: @256
+                        } mutableCopy];
+#if defined(SONY2FUJI_ENABLE_METAL)
+                        if (id<MTLDevice> device = MTLCreateSystemDefaultDevice()) {
+                            reader->context = [CIContext contextWithMTLDevice:device options:contextOptions];
+                        } else {
+                            reader->context = [CIContext contextWithOptions:contextOptions];
+                        }
+#else
+                        reader->context = [CIContext contextWithOptions:contextOptions];
+#endif
+                        reader->rgba.resize(size_t(reader->width) * std::min<uint32_t>(256, reader->height) * 4);
+                    }
+                    if (!reader->rendition.has_value() || *reader->rendition != hdr) {
+                        if (first != 0) throw std::invalid_argument("Invalid ProRAW rendition start row");
+                        [reader->context clearCaches];
+                        reader->raw.extendedDynamicRangeAmount = hdr ? 1.0f : 0.0f;
+                        reader->image = reader->raw.outputImage;
+                        reader->rendition = hdr;
+                    }
+                    if (!reader->image || !reader->context) {
+                        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+                    }
+                    const CGRect bounds = CGRectIntegral(reader->image.extent);
+                    if (bounds.size.width != double(reader->width) || bounds.size.height != double(reader->height)) {
+                        error(RenderStatus::Unsupported, kHdrReasonUnsupportedRaw, "Unsupported ProRAW source");
+                    }
+                    const CGRect tile = CGRectMake(
+                        bounds.origin.x,
+                        bounds.origin.y + bounds.size.height - CGFloat(first + count),
+                        bounds.size.width,
+                        CGFloat(count));
+                    for (size_t i = 0; i < size_t(reader->width) * count; ++i) {
+                        reader->rgba[i * 4 + 3] = std::numeric_limits<float>::quiet_NaN();
+                    }
+                    [reader->context render:reader->image
+                                   toBitmap:reader->rgba.data()
+                                   rowBytes:size_t(reader->width) * 16
+                                     bounds:tile
+                                     format:kCIFormatRGBAf
+                                 colorSpace:reader->color];
+                    checkProcessingCancellation();
+                    for (size_t i = 0; i < size_t(reader->width) * count; ++i) {
+                        const float r = reader->rgba[i * 4];
+                        const float g = reader->rgba[i * 4 + 1];
+                        const float b = reader->rgba[i * 4 + 2];
+                        const float a = reader->rgba[i * 4 + 3];
+                        require(std::isfinite(a) && std::isfinite(r) && std::isfinite(g) && std::isfinite(b),
+                            kHdrReasonNonfinite, "Native HDR contains nonfinite pixels");
+                        if (hdr) {
+                            output[i] = {r, g, b};
+                        } else {
+                            output[i] = {std::clamp(r, 0.0f, 1.0f), std::clamp(g, 0.0f, 1.0f), std::clamp(b, 0.0f, 1.0f)};
+                        }
+                    }
+                }
+            };
+            rows.finish = [reader, &pin] { reader->release(); verifyStreamSource(pin); };
+            decodeRevision = appleProRAWRevision;
+            return rows;
+        }
+        error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
+    }
+}
+
+HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision) {
+    if (isDNGPath(path)) {
+        return openAppleProRAWRows(path, expectedSHA, pin, decodeRevision);
+    }
+    @autoreleasepool {
+        if (@available(macOS 15.0, iOS 18.0, *)) {
+            if (!expectedSHA || std::all_of(expectedSHA, expectedSHA + 32, [](uint8_t value) { return value == 0; })) {
+                error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source differs from the frozen file");
+            }
             File file; open(file, path);
             if (std::memcmp(file.info.sourceSha256, expectedSHA, 32) != 0)
                 error(RenderStatus::InvalidArgument, kHdrReasonSourceChanged, "HDR source differs from the frozen file");
@@ -797,8 +1334,16 @@ void validateStreamSource(const HDRExportConfig& config, uint32_t width, uint32_
         // 全零 config.sourceSha256 表示调用方未预冻结：内部自采一次并贯穿发布阶段。
         const bool hasExpected = !std::all_of(config.sourceSha256, config.sourceSha256 + 32,
             [](uint8_t value) { return value == 0; });
-        File source; readMetadataSource(source, config.metadataSourcePath, hasExpected ? config.sourceSha256 : nullptr);
-        NSDictionary* values = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source.source, 0, nullptr));
+        File source;
+        NSDictionary* values = nil;
+        if (isDNGPath(config.metadataSourcePath)) {
+            readMetadataOnlySource(source, config.metadataSourcePath, hasExpected ? config.sourceSha256 : nullptr);
+            values = source.properties;
+        } else {
+            readMetadataSource(source, config.metadataSourcePath, hasExpected ? config.sourceSha256 : nullptr);
+            values = CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source.source, 0, nullptr));
+            source.properties = values;
+        }
         uint32_t actualWidth = [values[(__bridge NSString*)kCGImagePropertyPixelWidth] unsignedIntValue];
         uint32_t actualHeight = [values[(__bridge NSString*)kCGImagePropertyPixelHeight] unsignedIntValue];
         const auto orientation = [values[(__bridge NSString*)kCGImagePropertyOrientation] unsignedIntValue];
@@ -822,14 +1367,21 @@ JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_
     const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
     const bool hasPin = impl != nullptr;
     NSData* pinnedData = impl ? impl->data : nil;
+    NSDictionary* pinnedProperties = impl ? impl->cachedProperties : nil;
     std::shared_ptr<const void> pinnedSource;
     if (impl && impl->source) {
         pinnedSource.reset(CFRetain(impl->source), [](const void* ref) {
             if (ref) CFRelease(ref);
         });
     }
+    std::shared_ptr<const void> pinnedMetadata;
+    if (impl && impl->cachedMetadata) {
+        pinnedMetadata.reset(CFRetain(impl->cachedMetadata), [](const void* ref) {
+            if (ref) CFRelease(ref);
+        });
+    }
     return [metadataPath = std::move(metadataPath), hasTargetPath, targetPath = std::move(targetPath),
-            expectedSha, width, height, hasPin, pinnedData, pinnedSource](const std::vector<uint8_t>& base) {
+            expectedSha, width, height, hasPin, pinnedData, pinnedProperties, pinnedSource, pinnedMetadata](const std::vector<uint8_t>& base) {
         @autoreleasepool {
             if (@available(macOS 15.0, iOS 18.0, *)) {
                 checkProcessingCancellation();
@@ -838,15 +1390,17 @@ JPEGTransformBase makeStreamBaseTransform(const HDRExportConfig& config, uint32_
                 NSDictionary* properties = nil;
                 if (hasPin) {
                     source.data = pinnedData;
+                    source.properties = pinnedProperties;
                     source.source = pinnedSource ? (CGImageSourceRef)CFRetain(pinnedSource.get()) : nullptr;
+                    source.metadataTags = pinnedMetadata ? (CGImageMetadataRef)CFRetain(pinnedMetadata.get()) : nullptr;
                     differentFile(metadataPath.c_str(), destPath);
                     properties = buildMetadata(source, width, height);
                 } else {
                     properties = metadata(source, metadataPath.c_str(), expectedSha.data(), width, height, destPath);
                 }
-                NSData* tagged = addBaseMetadata(
+                NSData* tagged = addBaseMetadataFromFile(
                     [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
-                    properties, source.source);
+                    properties, source);
                 const auto* ptr = static_cast<const uint8_t*>(tagged.bytes);
                 return std::vector<uint8_t>(ptr, ptr + tagged.length);
             }
@@ -862,8 +1416,8 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
             checkProcessingCancellation();
             const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
             uint64_t sourceSize = 0;
-            if (impl && impl->data) sourceSize = impl->data.length;
-            else if (config.metadataSourcePath) {
+            if (impl) sourceSize = impl->sourceSize;
+            else if (config.metadataSourcePath && !isDNGPath(config.metadataSourcePath)) {
                 NSNumber* sourceBytes = [[[NSFileManager defaultManager]
                     attributesOfItemAtPath:[NSString stringWithUTF8String:config.metadataSourcePath] error:nil] objectForKey:NSFileSize];
                 if (!sourceBytes)
@@ -878,7 +1432,9 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
                 if (impl) {
                     // 单次读取贯穿 validate→publish：元数据直接来自冻结的同一 NSData/解析，不再重开重算。
                     source.data = impl->data;
+                    source.properties = impl->cachedProperties;
                     source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+                    source.metadataTags = impl->cachedMetadata ? (CGImageMetadataRef)CFRetain(impl->cachedMetadata) : nullptr;
                     differentFile(config.metadataSourcePath, path);
                     properties = buildMetadata(source, width, height);
                 } else {
@@ -886,12 +1442,12 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
                 }
                 if (hdr) {
                     const auto base = jpegBase(data.data(), data.size());
-                    NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
-                        properties, source.source);
+                    NSData* tagged = addBaseMetadataFromFile([NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
+                        properties, source);
                     data = replaceJPEGBase(data.data(), data.size(), tagged.bytes, tagged.length);
                 } else {
                     data = withSRGBProfile(data);
-                    NSData* tagged = addBaseMetadata([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source.source);
+                    NSData* tagged = addBaseMetadataFromFile([NSData dataWithBytesNoCopy:data.data() length:data.size() freeWhenDone:NO], properties, source);
                     data.assign(static_cast<const uint8_t*>(tagged.bytes), static_cast<const uint8_t*>(tagged.bytes) + tagged.length);
                 }
             }
@@ -915,13 +1471,19 @@ HDRSourceInfo probeFile(const char* path) {
 }
 DecodedImage decodeFile(const char* path,const HDRDecodeOptions& options) {
     @autoreleasepool {
-        if (@available(macOS 15.0,iOS 18.0,*)) { File file; open(file,path); return decode(file,options); }
+        if (@available(macOS 15.0,iOS 18.0,*)) {
+            if (isDNGPath(path)) return decodeAppleProRAWRegion(path, &options, nullptr);
+            File file; open(file,path); return decode(file,options);
+        }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
     }
 }
 DecodedImage decodeFileROI(const char* path, const RoiSubRect& rect) {
     @autoreleasepool {
-        if (@available(macOS 15.0,iOS 18.0,*)) { File file; open(file,path); return decodeROI(file,rect); }
+        if (@available(macOS 15.0,iOS 18.0,*)) {
+            if (isDNGPath(path)) return decodeAppleProRAWRegion(path, nullptr, &rect);
+            File file; open(file,path); return decodeROI(file,rect);
+        }
         error(RenderStatus::Unsupported, kHdrReasonUnsupportedSystem, "HDR requires macOS15/iOS18");
     }
 }
@@ -936,9 +1498,9 @@ void exportJPEG(const HDRImagePair& image,const HDRExportConfig& config,const ch
             JPEGTransformBase transformBase;
             if (config.metadataSourcePath) {
                 transformBase = [&](const std::vector<uint8_t>& base) {
-                    NSData* tagged = addBaseMetadata(
+                    NSData* tagged = addBaseMetadataFromFile(
                         [NSData dataWithBytesNoCopy:const_cast<uint8_t*>(base.data()) length:base.size() freeWhenDone:NO],
-                        properties, metadataFile.source);
+                        properties, metadataFile);
                     const auto* ptr = static_cast<const uint8_t*>(tagged.bytes);
                     return std::vector<uint8_t>(ptr, ptr + tagged.length);
                 };
@@ -1109,8 +1671,11 @@ void publishTiledHEIF(const HDRStreamFiles& image, const HDRExportConfig& config
             const auto* impl = static_cast<const StreamSourcePinImpl*>(pin.impl);
             verifyStreamSource(pin);
             differentFile(impl->pinned.path().u8string().c_str(), path);
-            File source; source.data = impl->data;
+            File source;
+            source.data = impl->data;
+            source.properties = impl->cachedProperties;
             source.source = impl->source ? (CGImageSourceRef)CFRetain(impl->source) : nullptr;
+            source.metadataTags = impl->cachedMetadata ? (CGImageMetadataRef)CFRetain(impl->cachedMetadata) : nullptr;
             NSDictionary* properties = config.metadataSourcePath ? buildMetadata(source, width, height) : @{};
             CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceExtendedLinearSRGB);
             if (!space) throw std::bad_alloc();

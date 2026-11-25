@@ -42,8 +42,7 @@ sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer
     }
 }
 
-#ifdef _WIN32
-extern "C" sony2fuji_status rawlab_display_preview(
+sony2fuji_status sony2fuji_load_display_preview(
     const char* path,
     uint32_t edge,
     sony2fuji_buffer* out_buffer,
@@ -67,7 +66,6 @@ extern "C" sony2fuji_status rawlab_display_preview(
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
-#endif
 
 sony2fuji_status sony2fuji_compute_histogram(
     const sony2fuji_buffer* buffer,
