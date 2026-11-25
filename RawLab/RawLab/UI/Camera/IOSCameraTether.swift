@@ -13,7 +13,6 @@ struct IOSCameraTether: View {
     @State private var parameters = false
     @State private var parameter: IOSCameraParameter?
     @State private var previewOriginal: CameraStoredOriginal?
-    @State private var lastFocusSquareRatio: Double?
     private var cameraName: String { model.device?.model == "ILCE-7CM2" ? "α7C II" : model.device?.model ?? "Sony" }
 
     var body: some View {
@@ -148,43 +147,31 @@ struct IOSCameraTether: View {
                         if live {
                             Canvas { context, _ in
                                 context.clip(to: Path(CGRect(x: left, y: top, width: fittedWidth, height: fittedHeight)))
-                                let focusLocked = model.cameraFocusLocked
                                 let green = Color(red: 0.20, green: 0.84, blue: 0.35)
                                 let white = Color.white.opacity(0.92)
                                 let backing = Color.black.opacity(0.45)
-                                if !model.focusBusy && !model.liveViewFrames.isEmpty {
-                                    for overlay in model.liveViewFrames {
-                                        let box = CameraWire.focusOverlayBox(
-                                            frame: overlay,
-                                            left: left,
-                                            top: top,
-                                            fittedWidth: fittedWidth,
-                                            fittedHeight: fittedHeight
-                                        )
-                                        let rect = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
-                                        let focused = overlay.focused || (focusLocked && overlay.kind != .face)
-                                        let lineWidth: CGFloat = focused ? 2 : 1.5
-                                        let strokeColor: Color = focused ? green : white
+                                switch model.focusRenderContent(
+                                    left: left,
+                                    top: top,
+                                    fittedWidth: fittedWidth,
+                                    fittedHeight: fittedHeight
+                                ) {
+                                case .frames(let items):
+                                    for item in items {
+                                        let rect = CGRect(x: item.box.x, y: item.box.y, width: item.box.width, height: item.box.height)
+                                        let lineWidth: CGFloat = item.focused ? 2 : 1.5
+                                        let strokeColor: Color = item.focused ? green : white
                                         context.stroke(Path(rect), with: .color(backing), lineWidth: lineWidth + 1.5)
                                         context.stroke(Path(rect), with: .color(strokeColor), lineWidth: lineWidth)
                                     }
-                                } else if let tap = model.tapFocusPoint {
-                                    let size = CGFloat(CameraWire.tapFocusSide(
-                                        fittedWidth: fittedWidth,
-                                        fittedHeight: fittedHeight,
-                                        lastSquareRatio: lastFocusSquareRatio
-                                    ))
-                                    let rect = CGRect(
-                                        x: left + CGFloat(tap.u) * fittedWidth - size / 2,
-                                        y: top + CGFloat(tap.v) * fittedHeight - size / 2,
-                                        width: size,
-                                        height: size
-                                    )
-                                    let focused = !model.focusBusy && focusLocked
+                                case .tapReticle(let box, let focused):
+                                    let rect = CGRect(x: box.x, y: box.y, width: box.width, height: box.height)
                                     let lineWidth: CGFloat = focused ? 2 : 1.75
                                     let strokeColor: Color = focused ? green : white
                                     context.stroke(Path(rect), with: .color(backing), lineWidth: lineWidth + 1.5)
                                     context.stroke(Path(rect), with: .color(strokeColor), lineWidth: lineWidth)
+                                case .none:
+                                    break
                                 }
                             }
                             .allowsHitTesting(false)
@@ -256,23 +243,6 @@ struct IOSCameraTether: View {
                         .padding(10)
                         .accessibilityIdentifier("camera.tether.cancelFocus")
                     }
-                }
-                .task(id: "\(model.tapFocusPoint?.id.uuidString ?? "")-\(model.focusBusy)") {
-                    guard !model.focusBusy, let id = model.tapFocusPoint?.id else { return }
-                    try? await Task.sleep(for: .seconds(1.8))
-                    model.clearTapFocusPoint(id: id)
-                }
-                .onChange(of: model.liveViewFrames) { _, frames in
-                    let nonFace = frames.filter { $0.kind != .face }
-                    if nonFace.count == 1, let imageSize = model.frame?.size,
-                       let ratio = CameraWire.normalizedFocusSquareRatio(frame: nonFace[0],
-                                                                         imageWidth: imageSize.width,
-                                                                         imageHeight: imageSize.height) {
-                        lastFocusSquareRatio = ratio
-                    }
-                }
-                .onChange(of: model.connected) { _, isConnected in
-                    if !isConnected { lastFocusSquareRatio = nil }
                 }
             }
         }.accessibilityIdentifier("camera.liveview")

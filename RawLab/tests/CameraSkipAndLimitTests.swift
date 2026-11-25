@@ -573,6 +573,7 @@ struct CameraSkipAndLimitTests {
             ("testP222PerformBatchPersistFailureRollbackAndRecovery", testP222PerformBatchPersistFailureRollbackAndRecovery),
             ("test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile", test508ThumbnailsDoNotBlockCommandQueueOrHashFullFile),
             ("testTetheringTouchFocusAndCancelLifecycle", testTetheringTouchFocusAndCancelLifecycle),
+            ("testTetheringVirtualClockFocusExpiryAndBusyGuard", testTetheringVirtualClockFocusExpiryAndBusyGuard),
             ("testManualBrowseOrderNewestFirst", testManualBrowseOrderNewestFirst),
             ("testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial", testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial),
             ("testTetheringAutomaticallySavesNewShotsToPhotoLibrary", testTetheringAutomaticallySavesNewShotsToPhotoLibrary),
@@ -3371,6 +3372,54 @@ struct CameraSkipAndLimitTests {
         let liveRequest = String(data: lastLiveChannel?.written ?? Data(), encoding: .utf8) ?? ""
         try check(liveRequest.contains("Host: localhost:60152\r\n") && !liveRequest.contains("Host: 192.168.122.1"),
                   "Tethering over SSH tunnel opens Live View port 60152 via tunnel with Host: localhost:60152")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
+    }
+
+    @MainActor static func testTetheringVirtualClockFocusExpiryAndBusyGuard() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-vclock-focus-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let jpeg = try makeLargeJPEG(targetSize: 16_384, seed: 0x33)
+        let channel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
+        channel.tetherControls = [0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5]
+        channel.tetherExtraProps = [
+            (0x500a, 4, true, 1, 2),
+            (0xd284, 2, false, 1, 1),
+            (0xd285, 2, false, 0, 0),
+            (0xd213, 2, false, 1, 1),
+        ]
+        channel.on9207 = { code, value in
+            if code == 0xd2e4 {
+                channel.setExtraProperty(0xd285, value: 1, enabled: 1)
+            } else if code == 0xd2c1 && value == 2 {
+                channel.setExtraProperty(0xd213, value: 6, enabled: 1)
+            } else if code == 0xd2c1 && value == 1 {
+                channel.setExtraProperty(0xd213, value: 1, enabled: 1)
+            }
+        }
+        let clock = VirtualCameraFocusClock(initialMillis: 10_000)
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID()) { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }
+        let controller = IOSCameraController(backend: backend, focusClock: clock)
+        controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:VCLOCK", label: "Fake"),
+                           mode: .tethering, cardConfirmed: true, resume: false)
+        try await waitUntil { controller.phase == .ready }
+        _ = jpeg
+        controller.setFocusPoint(u: 0.5, v: 0.5, x: 320, y: 240)
+        try check(controller.focusBusy && controller.tapFocusPoint != nil, "Tap starts focusBusy=true")
+        clock.advance(byMillis: 5_000)
+        try check(controller.focusBusy && controller.tapFocusPoint != nil, "Virtual clock while busy never clears reticle")
+        try await waitUntil { !controller.focusBusy }
+        try check(controller.tapFocusPoint != nil && controller.cameraFocusLocked, "Focus completes and locks reticle")
+        clock.advance(byMillis: 1_799)
+        try check(controller.tapFocusPoint != nil, "Reticle remains visible at 1799ms")
+        clock.advance(byMillis: 1)
+        try check(controller.tapFocusPoint == nil, "Reticle expires deterministically at 1800ms")
 
         await withCheckedContinuation { continuation in
             controller.stop { continuation.resume() }

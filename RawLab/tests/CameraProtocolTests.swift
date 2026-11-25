@@ -117,6 +117,7 @@ import Foundation
         try test552IncrementalCursorVerification()
         try testFocusCoordinateMappingAndMetadata()
         try testSonySessionTouchFocusAndFocusArea()
+        try testDualSlot0x923bAndForwardCompatible0x9202()
         try testSequentialPTPIPInitializationAndNetworkErrors()
         try testDualSlotListingPreviewRangeAndOriginal()
         try testLargeSlotDatesPayload()
@@ -561,6 +562,96 @@ import Foundation
         catch CameraProtocolError.response(0x9209, 0x2019) { exhaustedBusy = true }
         try check(exhaustedBusy && !touchChannel.closed && touchChannel.queued9209Statuses.isEmpty,
                   "properties() propagates 0x2019 after 3 exhausted attempts without closing channel")
+    }
+
+    static func testDualSlot0x923bAndForwardCompatible0x9202() throws {
+        // 1. Forward-compatible 0x9202 descriptor v0x190 (a7M5) with trailing bytes
+        var dev = Data()
+        dev.appendLE(UInt16(100)); dev.appendLE(UInt32(17)); dev.appendLE(UInt16(100))
+        dev.append(0); dev.appendLE(UInt16(0))
+        let ops: [UInt16] = [0x1001, 0x1002, 0x9201, 0x9202, 0x9209, 0x923b, 0x923c, 0x923d, 0x923e]
+        dev.appendLE(UInt32(ops.count)); ops.forEach { dev.appendLE($0) }
+        for _ in 0..<4 { dev.appendLE(UInt32(0)) }
+        for v in ["Sony Corporation", "ILCE-7M5", "1.00", "dual-slot"] { dev.append(ptpString(v)) }
+
+        var ext190 = Data()
+        ext190.appendLE(UInt16(0x190))
+        ext190.appendLE(UInt32(1)); ext190.appendLE(UInt16(0x5013))
+        ext190.appendLE(UInt32(0))
+        ext190.appendLE(UInt16(0x1234)) // trailing future descriptor bytes
+
+        final class DualSlotChannel: CameraByteChannel {
+            let dev: Data
+            let ext: Data
+            let slot1Dates: Data
+            let slot2Payload: Data
+            let originalBytes: Data
+            private var outgoing = Data()
+            private(set) var listedSlots: [UInt32] = []
+            private(set) var downloadSlotParams: [UInt32] = []
+            private(set) var previewSlotParams: [UInt32] = []
+            private(set) var closed = false
+
+            init(dev: Data, ext: Data, slot1Dates: Data, slot2Payload: Data, originalBytes: Data) {
+                self.dev = dev; self.ext = ext; self.slot1Dates = slot1Dates
+                self.slot2Payload = slot2Payload; self.originalBytes = originalBytes
+            }
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let d = Data(outgoing.prefix(count)); outgoing.removeFirst(count); return d
+            }
+            func write(_ data: Data) throws {
+                var r = CameraDataReader(data)
+                _ = try r.u32(); let type = try r.u32(); guard type == 6 else { return }
+                _ = try r.u32(); let op = try r.u16(); let tid = try r.u32()
+                var params: [UInt32] = []
+                while r.remaining >= 4 { params.append(try r.u32()) }
+                switch op {
+                case 0x1001: outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dev))
+                case 0x1002, 0x9201: outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x9202: outgoing.append(CameraProtocolTests.transactionResponse(tid, data: ext))
+                case 0x923b:
+                    if params[0] == 1 {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: slot1Dates))
+                    } else {
+                        var s2 = Data(); s2.appendLE(UInt32(1)); s2.append(Data(repeating: 0, count: 8))
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: s2))
+                    }
+                case 0x923c:
+                    let slot = params[3]
+                    listedSlots.append(slot)
+                    if slot == 2 {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: slot2Payload))
+                    } else {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: CameraProtocolTests.mobilePagePayload([])))
+                    }
+                case 0x923d:
+                    downloadSlotParams.append(params[1])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: originalBytes))
+                case 0x923e:
+                    previewSlotParams.append(params[1])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: Data([0xff, 0xd8, 0xff, 0xd9])))
+                default:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                }
+            }
+            func close() { closed = true }
+        }
+
+        // Large 0x923b payload (> 1024 bytes, within 256 KiB) with count = 0 on slot 1, slot 2 has 1 photo
+        var largeEmptyDates = Data(); largeEmptyDates.appendLE(UInt32(0)); largeEmptyDates.append(Data(repeating: 0, count: 2048))
+        let arwBytes = Data([0x49, 0x49, 0x2a, 0x00, 1, 2, 3, 4])
+        let slot2Page = mobilePagePayload([(content: 10, file: 7, name: "DSC00007.ARW", size: UInt64(arwBytes.count), created: 2_000)])
+        let dualChannel = DualSlotChannel(dev: dev, ext: ext190, slot1Dates: largeEmptyDates, slot2Payload: slot2Page, originalBytes: arwBytes)
+        let dualSession = try SonyCameraSession(client: CameraPTPClient(command: dualChannel, event: nil), purpose: .tethering)
+        let listed = try dualSession.listAssets()
+        try check(listed.count == 1 && listed[0].snapshot.slot == 2 && listed[0].snapshot.key.hasPrefix("slot2:") &&
+                  !dualChannel.listedSlots.contains(1) && dualChannel.listedSlots.contains(2),
+                  "0x923b skips empty slot 1 (even >1KiB date payload) and lists slot 2 with slot2: key")
+        let _ = try dualSession.preview(listed[0], large: true)
+        let _ = try dualSession.originalDigest(listed[0]) { _ in }
+        try check(dualChannel.previewSlotParams == [(2 << 24) | 7] && dualChannel.downloadSlotParams == [(2 << 24) | 7],
+                  "Slot 2 preview (0x923e) and download (0x923d) encode (2 << 24) | file")
     }
 }
 

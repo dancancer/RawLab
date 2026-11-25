@@ -16,6 +16,22 @@ enum CameraLiveViewFrameKind: Equatable {
     case focus
     case face
     case tracking
+
+    var cKind: sony2fuji_sony_live_view_frame_kind {
+        switch self {
+        case .focus: return SONY2FUJI_SONY_LIVE_FRAME_FOCUS
+        case .face: return SONY2FUJI_SONY_LIVE_FRAME_FACE
+        case .tracking: return SONY2FUJI_SONY_LIVE_FRAME_TRACKING
+        }
+    }
+
+    init(cKind: sony2fuji_sony_live_view_frame_kind) {
+        switch cKind {
+        case SONY2FUJI_SONY_LIVE_FRAME_FACE: self = .face
+        case SONY2FUJI_SONY_LIVE_FRAME_TRACKING: self = .tracking
+        default: self = .focus
+        }
+    }
 }
 
 struct CameraLiveViewFrame: Equatable {
@@ -25,6 +41,17 @@ struct CameraLiveViewFrame: Equatable {
     let width: Double
     let height: Double
     let focused: Bool
+
+    var cFrame: sony2fuji_sony_live_view_frame {
+        sony2fuji_sony_live_view_frame(
+            kind: kind.cKind,
+            focused: focused ? 1 : 0,
+            cx: cx,
+            cy: cy,
+            width: width,
+            height: height
+        )
+    }
 }
 
 struct CameraOverlayBox: Equatable {
@@ -223,177 +250,305 @@ struct CameraProperty: Equatable, Identifiable {
     var id: UInt16 { code }
     var number: Int64? { if case .number(let value) = current { return value }; return nil }
     var text: String? { if case .text(let value) = current { return value }; return nil }
+    private var cInfo: sony2fuji_sony_property_info {
+        sony2fuji_sony_property_info(
+            code: code,
+            type: type,
+            writable: writable ? 1 : 0,
+            enabled: enabled,
+            form: form,
+            reserved0: 0,
+            value_kind: {
+                switch current {
+                case .number: return SONY2FUJI_SONY_PROP_NUMBER
+                case .text: return SONY2FUJI_SONY_PROP_TEXT
+                case .opaque: return SONY2FUJI_SONY_PROP_OPAQUE
+                }
+            }(),
+            number_value: number ?? 0,
+            has_range: (form == 1 && minimum != nil && maximum != nil && step != nil) ? 1 : 0,
+            choice_count: UInt32(choices.count),
+            minimum: minimum ?? 0,
+            maximum: maximum ?? 0,
+            step: step ?? 0
+        )
+    }
     func accepts(_ value: Int64) -> Bool {
-        guard writable, enabled == 1 else { return false }
-        switch type {
-        case 3: guard (-32768...32767).contains(value) else { return false }
-        case 4: guard (0...65535).contains(value) else { return false }
-        case 6: guard (0...Int64(UInt32.max)).contains(value) else { return false }
-        default: return false
+        var info = cInfo
+        return choices.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_property_accepts(&info, buf.baseAddress, UInt32(buf.count), value) != 0
         }
-        if form == 2 { return choices.contains(value) }
-        guard form == 1, let minimum, let maximum, let step, step > 0,
-              value >= minimum, value <= maximum else { return false }
-        return (value - minimum) % step == 0
     }
     var selectableValues: [Int64] {
-        if form == 2 { return Array(Set(choices)).sorted().filter(accepts) }
-        guard [UInt16(3), 4, 6].contains(type), form == 1, let minimum, let maximum, let step,
-              minimum >= -32768, maximum <= Int64(UInt32.max), step > 0, step <= Int64(UInt32.max),
-              maximum >= minimum, (maximum - minimum) / step <= 512 else { return [] }
-        return stride(from: minimum, through: maximum, by: Int(step)).filter(accepts)
+        var info = cInfo
+        return choices.withUnsafeBufferPointer { buf in
+            var count: UInt32 = 0
+            guard sony2fuji_sony_property_options(
+                &info, buf.baseAddress, UInt32(buf.count),
+                1, 1, 513, nil, 0, &count
+            ) == SONY2FUJI_STATUS_OK, count > 0 else {
+                return []
+            }
+            var out = [Int64](repeating: 0, count: Int(count))
+            let status = out.withUnsafeMutableBufferPointer { outBuf in
+                sony2fuji_sony_property_options(
+                    &info, buf.baseAddress, UInt32(buf.count),
+                    1, 1, 513, outBuf.baseAddress, count, &count
+                )
+            }
+            return status == SONY2FUJI_STATUS_OK ? Array(out.prefix(Int(count))) : []
+        }
     }
 }
 
 enum CameraWire {
-    static let dataLimit = 8 << 20
+    static let dataLimit = Int(SONY2FUJI_SONY_PTPIP_DATA_LIMIT)
+    static let slotDatesLimit = Int(SONY2FUJI_SONY_SLOT_DATES_LIMIT)
+
     static func packet(_ type: UInt32, _ payload: Data) -> Data {
-        var data = Data(); data.appendLE(UInt32(payload.count + 8)); data.appendLE(type); data.append(payload)
+        var data = Data()
+        data.appendLE(UInt32(payload.count + 8))
+        data.appendLE(type)
+        data.append(payload)
         return data
     }
+
     static func wifiCredential(_ bytes: Data, password: Bool) throws -> String {
-        guard bytes.count >= 4, Int(bytes[0]) == bytes.count - 1 else { throw CameraProtocolError.invalid("Invalid Wi-Fi credential length") }
-        var value = Data(bytes.dropFirst(3))
-        while value.last == 0 { value.removeLast() }
-        let range = password ? 8...63 : 1...32
-        guard range.contains(value.count), value.allSatisfy({ (32...126).contains($0) }),
-              let text = String(data: value, encoding: .ascii) else { throw CameraProtocolError.invalid("Invalid Wi-Fi credential") }
-        return text
-    }
-    static func device(_ bytes: Data) throws -> CameraDeviceIdentity {
-        var reader = CameraDataReader(bytes)
-        _ = try reader.u16(); let vendor = try reader.u32()
-        _ = try reader.u16(); _ = try reader.string(); _ = try reader.u16()
-        let operations = try reader.u16Array()
-        for _ in 0..<4 { _ = try reader.u16Array() }
-        let device = try CameraDeviceIdentity(manufacturer: reader.string(), model: reader.string(),
-            firmware: reader.string(), serial: reader.string(), operations: operations)
-        guard vendor == 17, device.manufacturer.lowercased().contains("sony"),
-              !device.model.isEmpty, !device.firmware.isEmpty else { throw CameraProtocolError.unsupported("Not a Sony PTP camera") }
-        return device
-    }
-    static func photoName(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        return lower.hasSuffix(".arw") || lower.hasSuffix(".jpg") || lower.hasSuffix(".jpeg")
-    }
-    static func validName(_ name: String) -> Bool {
-        !name.isEmpty && name != "." && name != ".." && !name.contains("/") && !name.contains("\\") && !name.contains("\0")
-    }
-    static func validateHeader(name: String, data: Data) throws {
-        let tiff = data.starts(with: [0x49, 0x49, 0x2a, 0]) || data.starts(with: [0x4d, 0x4d, 0, 0x2a])
-        let jpeg = data.starts(with: [0xff, 0xd8, 0xff])
-        guard name.lowercased().hasSuffix(".arw") ? tiff : photoName(name) && jpeg else {
-            throw CameraProtocolError.invalidOriginalHeader
+        let raw = Array(bytes)
+        var outLen = 0
+        let sizeStatus = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_wifi_credential(buf.baseAddress, buf.count, password ? 1 : 0, nil, 0, &outLen)
         }
+        guard sizeStatus == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("Invalid Wi-Fi credential")
+        }
+        var outBuf = [CChar](repeating: 0, count: outLen + 1)
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_wifi_credential(
+                buf.baseAddress, buf.count, password ? 1 : 0, &outBuf, outBuf.count, &outLen
+            )
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("Invalid Wi-Fi credential")
+        }
+        return String(cString: outBuf)
     }
-    static func slotDateCount(_ bytes: Data) -> UInt32 {
-        guard bytes.count >= 4 else { return 0 }
-        var reader = CameraDataReader(bytes)
-        return (try? reader.u32()) ?? 0
+    static func slotDateCount(_ bytes: Data) throws -> UInt32 {
+        let raw = Array(bytes)
+        var count: UInt32 = 0
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_slot_photo_count(buf.baseAddress, buf.count, &count)
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("Invalid camera slot photo count")
+        }
+        return count
     }
-    static func mobilePage(_ bytes: Data, owner: UUID, slot: UInt32 = 1) throws -> (count: Int, cursor: UInt64, assets: [CameraRemoteAsset]) {
-        var reader = CameraDataReader(bytes)
-        try reader.skip(144)
-        let count = Int(try reader.u32())
-        guard count <= 100 else { throw CameraProtocolError.invalid("Camera page exceeds budget") }
-        let normalizedSlot: UInt32 = slot == 2 ? 2 : 1
-        var cursor: UInt64 = 0, assets: [CameraRemoteAsset] = []
-        for _ in 0..<count {
-            _ = try reader.u32(); let content = try reader.u32(); try reader.skip(20)
-            cursor = try reader.u64(); try reader.skip(36)
-            let marks = Int(try reader.u32())
-            guard marks <= 1 << 20 else { throw CameraProtocolError.invalid("Shot marks exceed budget") }
-            try reader.skip(marks)
-            let files = Int(try reader.u32())
-            guard files <= 32 else { throw CameraProtocolError.invalid("Camera representations exceed budget") }
-            for _ in 0..<files {
-                let file = try reader.u32(), length = Int(try reader.u32())
-                guard file <= 65535, (1...4096).contains(length) else { throw CameraProtocolError.invalid("Invalid camera path length") }
-                let path = try reader.take(length)
-                guard path.last == 0, let full = String(data: path.dropLast(), encoding: .utf8) else {
-                    throw CameraProtocolError.invalid("Invalid camera path")
-                }
-                let name = full.components(separatedBy: "/").last ?? ""
-                guard validName(name) else { throw CameraProtocolError.invalid("Invalid camera filename") }
-                _ = try reader.u32(); let size = try reader.u64(); try reader.skip(32)
-                if try reader.u32() != 0 { try reader.skip(8) }
-                let video = try reader.u32() != 0
-                if video { try reader.skip(76) }
-                let audio = try reader.u32() != 0
-                if audio { try reader.skip(16) }
-                if !video, !audio, size > 0, photoName(name) {
-                    assets.append(CameraRemoteAsset(owner: owner, snapshot: CameraAssetSnapshot(content: content,
-                        file: file, storage: 0, format: 0, name: name, size: size, created: String(cursor), modified: "", slot: normalizedSlot)))
-                }
+
+    static func device(_ bytes: Data) throws -> CameraDeviceIdentity {
+        let raw = Array(bytes)
+        var ptr: OpaquePointer?
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_device_info(buf.baseAddress, buf.count, &ptr)
+        }
+        if status == SONY2FUJI_STATUS_UNSUPPORTED {
+            throw CameraProtocolError.unsupported("Not a Sony PTP camera")
+        }
+        guard status == SONY2FUJI_STATUS_OK, let ptr else {
+            throw CameraProtocolError.invalid("Truncated camera device info")
+        }
+        defer { sony2fuji_sony_device_info_free(ptr) }
+        var opCount: UInt32 = 0
+        guard sony2fuji_sony_device_info_operations(ptr, nil, 0, &opCount) == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("Invalid camera device operations")
+        }
+        var ops = [UInt16](repeating: 0, count: Int(opCount))
+        if opCount > 0 {
+            guard ops.withUnsafeMutableBufferPointer({ buf in
+                sony2fuji_sony_device_info_operations(ptr, buf.baseAddress, opCount, &opCount)
+            }) == SONY2FUJI_STATUS_OK else {
+                throw CameraProtocolError.invalid("Invalid camera device operations")
             }
         }
-        guard reader.remaining == 0 else { throw CameraProtocolError.invalid("Trailing camera page bytes") }
-        return (count, cursor, assets)
+        return CameraDeviceIdentity(
+            manufacturer: String(cString: sony2fuji_sony_device_info_manufacturer(ptr)),
+            model: String(cString: sony2fuji_sony_device_info_model(ptr)),
+            firmware: String(cString: sony2fuji_sony_device_info_firmware(ptr)),
+            serial: String(cString: sony2fuji_sony_device_info_serial(ptr)),
+            operations: Set(ops.prefix(Int(opCount)))
+        )
     }
-    static func legacyObject(_ handle: UInt32, bytes: Data, owner: UUID) throws -> CameraRemoteAsset {
-        var reader = CameraDataReader(bytes)
-        let storage = try reader.u32(), format = try reader.u16()
-        _ = try reader.u16(); let size = UInt64(try reader.u32()); try reader.skip(40)
-        let name = try reader.string(), created = try reader.string(), modified = try reader.string()
-        _ = try reader.string()
-        guard reader.remaining == 0, validName(name) else { throw CameraProtocolError.invalid("Invalid legacy object metadata") }
-        return CameraRemoteAsset(owner: owner, snapshot: CameraAssetSnapshot(content: handle, file: 0,
-            storage: storage, format: format, name: name, size: size, created: created, modified: modified))
+
+    static func photoName(_ name: String) -> Bool {
+        name.withCString { sony2fuji_sony_is_photo_filename($0) != 0 }
     }
-    static func properties(_ bytes: Data, enumTables: Int) throws -> [UInt16: CameraProperty] {
-        guard enumTables == 1 || enumTables == 2 else { throw CameraProtocolError.invalid("Unknown Sony property version") }
-        var reader = CameraDataReader(bytes)
-        let count = try reader.u64()
-        guard count <= 4096 else { throw CameraProtocolError.invalid("Property count exceeds budget") }
-        var output: [UInt16: CameraProperty] = [:], enumCount = 0
-        for _ in 0..<count {
-            let code = try reader.u16(), type = try reader.u16(), writable = try reader.u8(), enabled = try reader.u8()
-            _ = try propertyValue(&reader, type: type); let current = try propertyValue(&reader, type: type)
-            let form = try reader.u8()
-            var minimum: Int64?, maximum: Int64?, step: Int64?, choices: [Int64] = []
-            if form == 1 {
-                let low = try propertyValue(&reader, type: type), high = try propertyValue(&reader, type: type),
-                    increment = try propertyValue(&reader, type: type)
-                if case .number(let a) = low, case .number(let b) = high, case .number(let c) = increment {
-                    minimum = a; maximum = b; step = c
-                }
-            } else if form == 2 {
-                for table in 0..<enumTables {
-                    let size = Int(try reader.u16()); enumCount += size
-                    guard size <= 4096, enumCount <= 65536 else { throw CameraProtocolError.invalid("Property choices exceed budget") }
-                    for _ in 0..<size {
-                        let value = try propertyValue(&reader, type: type)
-                        if table == 0, case .number(let number) = value { choices.append(number) }
-                    }
-                }
-            } else if form != 0 { throw CameraProtocolError.invalid("Unknown property form") }
-            guard output[code] == nil else { throw CameraProtocolError.invalid("Duplicate camera property") }
-            output[code] = CameraProperty(code: code, type: type, writable: writable == 1, enabled: enabled,
-                current: current, form: form, minimum: minimum, maximum: maximum, step: step, choices: choices)
+
+    static func validName(_ name: String) -> Bool {
+        name.withCString { sony2fuji_sony_is_valid_photo_filename($0) != 0 }
+    }
+
+    static func validateHeader(name: String, data: Data) throws {
+        let raw = Array(data)
+        let ok = name.withCString { cName in
+            raw.withUnsafeBufferPointer { buf in
+                sony2fuji_sony_validate_photo_header(cName, buf.baseAddress, buf.count) != 0
+            }
         }
-        guard reader.remaining == 0 else { throw CameraProtocolError.invalid("Trailing camera properties") }
+        guard ok else { throw CameraProtocolError.invalidOriginalHeader }
+    }
+
+    static func mobilePage(_ bytes: Data, owner: UUID, slot: UInt32 = 1) throws -> (count: Int, cursor: UInt64, assets: [CameraRemoteAsset]) {
+        let raw = Array(bytes)
+        var ptr: OpaquePointer?
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_mobile_page(buf.baseAddress, buf.count, &ptr)
+        }
+        guard status == SONY2FUJI_STATUS_OK, let ptr else {
+            throw CameraProtocolError.invalid("Invalid camera page")
+        }
+        defer { sony2fuji_sony_mobile_page_free(ptr) }
+        let entryCount = Int(sony2fuji_sony_mobile_page_entry_count(ptr))
+        let cursor = sony2fuji_sony_mobile_page_cursor(ptr)
+        let assetCount = sony2fuji_sony_mobile_page_asset_count(ptr)
+        var assets: [CameraRemoteAsset] = []
+        assets.reserveCapacity(Int(assetCount))
+        let normalizedSlot: UInt32 = slot == 2 ? 2 : 1
+        for idx in 0..<assetCount {
+            var info = sony2fuji_sony_mobile_asset_info()
+            var cName: UnsafePointer<CChar>?
+            guard sony2fuji_sony_mobile_page_asset_at(ptr, idx, &info, &cName) == SONY2FUJI_STATUS_OK,
+                  let cName else {
+                throw CameraProtocolError.invalid("Invalid camera page asset")
+            }
+            assets.append(CameraRemoteAsset(
+                owner: owner,
+                snapshot: CameraAssetSnapshot(
+                    content: info.content,
+                    file: info.file,
+                    storage: 0,
+                    format: 0,
+                    name: String(cString: cName),
+                    size: info.size,
+                    created: String(info.created),
+                    modified: "",
+                    slot: normalizedSlot
+                )
+            ))
+        }
+        return (entryCount, cursor, assets)
+    }
+
+    static func legacyObject(_ handle: UInt32, bytes: Data, owner: UUID) throws -> CameraRemoteAsset {
+        let raw = Array(bytes)
+        var ptr: OpaquePointer?
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_legacy_object(buf.baseAddress, buf.count, &ptr)
+        }
+        guard status == SONY2FUJI_STATUS_OK, let ptr else {
+            throw CameraProtocolError.invalid("Invalid legacy object metadata")
+        }
+        defer { sony2fuji_sony_legacy_object_free(ptr) }
+        var info = sony2fuji_sony_legacy_object_info()
+        var cName: UnsafePointer<CChar>?
+        var cCreated: UnsafePointer<CChar>?
+        var cModified: UnsafePointer<CChar>?
+        guard sony2fuji_sony_legacy_object_get(ptr, &info, &cName, &cCreated, &cModified) == SONY2FUJI_STATUS_OK,
+              let cName, let cCreated, let cModified else {
+            throw CameraProtocolError.invalid("Invalid legacy object metadata")
+        }
+        return CameraRemoteAsset(
+            owner: owner,
+            snapshot: CameraAssetSnapshot(
+                content: handle,
+                file: 0,
+                storage: info.storage,
+                format: info.format,
+                name: String(cString: cName),
+                size: info.size,
+                created: String(cString: cCreated),
+                modified: String(cString: cModified)
+            )
+        )
+    }
+
+    static func properties(_ bytes: Data, enumTables: Int) throws -> [UInt16: CameraProperty] {
+        let raw = Array(bytes)
+        var ptr: OpaquePointer?
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_properties(buf.baseAddress, buf.count, Int32(enumTables), &ptr)
+        }
+        guard status == SONY2FUJI_STATUS_OK, let ptr else {
+            throw CameraProtocolError.invalid("Invalid camera properties")
+        }
+        defer { sony2fuji_sony_property_table_free(ptr) }
+        let count = sony2fuji_sony_property_table_count(ptr)
+        var output: [UInt16: CameraProperty] = [:]
+        output.reserveCapacity(Int(count))
+        for idx in 0..<count {
+            var info = sony2fuji_sony_property_info()
+            guard sony2fuji_sony_property_table_get_at(ptr, idx, &info) == SONY2FUJI_STATUS_OK else {
+                throw CameraProtocolError.invalid("Invalid camera property entry")
+            }
+            let current: CameraPropertyValue
+            switch info.value_kind {
+            case SONY2FUJI_SONY_PROP_NUMBER:
+                current = .number(info.number_value)
+            case SONY2FUJI_SONY_PROP_TEXT:
+                current = .text(String(cString: sony2fuji_sony_property_table_text_at(ptr, idx)))
+            default:
+                current = .opaque
+            }
+            var choices: [Int64] = []
+            if info.choice_count > 0 {
+                var cCount = info.choice_count
+                var buf = [Int64](repeating: 0, count: Int(cCount))
+                guard buf.withUnsafeMutableBufferPointer({ outBuf in
+                    sony2fuji_sony_property_table_choices_at(ptr, idx, outBuf.baseAddress, cCount, &cCount)
+                }) == SONY2FUJI_STATUS_OK else {
+                    throw CameraProtocolError.invalid("Invalid camera property choices")
+                }
+                choices = Array(buf.prefix(Int(cCount)))
+            }
+            output[info.code] = CameraProperty(
+                code: info.code,
+                type: info.type,
+                writable: info.writable != 0,
+                enabled: info.enabled,
+                current: current,
+                form: info.form,
+                minimum: info.has_range != 0 ? info.minimum : nil,
+                maximum: info.has_range != 0 ? info.maximum : nil,
+                step: info.has_range != 0 ? info.step : nil,
+                choices: choices
+            )
+        }
         return output
     }
-    private static func propertyValue(_ reader: inout CameraDataReader, type: UInt16) throws -> CameraPropertyValue {
-        if type == 0xffff { return .text(try reader.string(terminated: false)) }
-        if type & 0x4000 != 0 {
-            let count = try reader.u32(), scalar = type & ~UInt16(0x4000)
-            guard count <= 4096, (1...10).contains(scalar) else { throw CameraProtocolError.invalid("Property array exceeds budget") }
-            for _ in 0..<count { _ = try propertyValue(&reader, type: scalar) }
-            return .opaque
+
+    static func withPropertyTable<R>(_ properties: [UInt16: CameraProperty], _ body: (OpaquePointer) -> R) -> R {
+        let numeric = properties.values.filter { $0.number != nil }
+        var payload = Data()
+        payload.appendLE(UInt64(numeric.count))
+        for prop in numeric {
+            let v = UInt64(bitPattern: prop.number ?? 0)
+            payload.appendLE(prop.code)
+            payload.appendLE(UInt16(8))
+            payload.append(prop.writable ? 1 : 0)
+            payload.append(prop.enabled)
+            payload.appendLE(v)
+            payload.appendLE(v)
+            payload.append(0)
         }
-        switch type {
-        case 1: return .number(Int64(Int8(bitPattern: try reader.u8())))
-        case 2: return .number(Int64(try reader.u8()))
-        case 3: return .number(Int64(Int16(bitPattern: try reader.u16())))
-        case 4: return .number(Int64(try reader.u16()))
-        case 5: return .number(Int64(Int32(bitPattern: try reader.u32())))
-        case 6: return .number(Int64(try reader.u32()))
-        case 7, 8: return .number(Int64(bitPattern: try reader.u64()))
-        case 9, 10: try reader.skip(16); return .opaque
-        default: throw CameraProtocolError.invalid("Unknown camera property type")
+        let raw = Array(payload)
+        var ptr: OpaquePointer?
+        let status = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_properties(buf.baseAddress, buf.count, 2, &ptr)
         }
+        precondition(status == SONY2FUJI_STATUS_OK && ptr != nil)
+        defer { sony2fuji_sony_property_table_free(ptr) }
+        return body(ptr!)
     }
+
     static func liveURL(_ raw: String, camera: String) throws -> URL {
         guard var url = URLComponents(string: raw), url.scheme == "http", let host = url.host,
               host == "localhost" || host == camera, let port = url.port, (1...65535).contains(port),
@@ -404,118 +559,104 @@ enum CameraWire {
         guard let result = url.url else { throw CameraProtocolError.invalid("Invalid live-view endpoint") }
         return result
     }
+
     static func liveFrameBounds(_ fields: [UInt32]) throws -> (size: Int, image: Range<Int>, metadata: Range<Int>?) {
         guard fields.count == 4 else { throw CameraProtocolError.invalid("Invalid frame header") }
-        let image = UInt64(fields[0]), length = UInt64(fields[1]), metadata = UInt64(fields[2]), metadataLength = UInt64(fields[3])
-        let imageEnd = image + length, metadataEnd = metadata + metadataLength
-        let total = max(imageEnd, metadataLength == 0 ? 16 : metadataEnd)
-        guard image >= 16, length >= 4, total <= dataLimit,
-              metadataLength == 0 || (metadata >= 16 && !(image < metadataEnd && metadata < imageEnd)) else {
+        var bounds = sony2fuji_sony_live_frame_bounds()
+        let status = fields.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_live_frame_bounds(buf.baseAddress, UInt64(SONY2FUJI_SONY_PTPIP_DATA_LIMIT), &bounds)
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
             throw CameraProtocolError.invalid("Invalid live-view frame bounds")
         }
-        let metadataRange: Range<Int>? = metadataLength > 0 ? Int(metadata - 16)..<Int(metadataEnd - 16) : nil
-        return (Int(total - 16), Int(image - 16)..<Int(imageEnd - 16), metadataRange)
+        let metaRange: Range<Int>? = bounds.has_metadata != 0
+            ? Int(bounds.metadata_offset)..<Int(bounds.metadata_offset + bounds.metadata_length)
+            : nil
+        return (
+            Int(bounds.body_size),
+            Int(bounds.image_offset)..<Int(bounds.image_offset + bounds.image_length),
+            metaRange
+        )
     }
 
     static func liveViewFrames(_ rawMeta: Data) -> [CameraLiveViewFrame] {
-        let meta = Data(rawMeta)
-        guard meta.count >= 0x28 else { return [] }
-        func u16(_ offset: Int) -> UInt16 {
-            UInt16(meta[offset]) | (UInt16(meta[offset + 1]) << 8)
+        let raw = Array(rawMeta)
+        var count: UInt32 = 0
+        let sizeStatus = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_parse_live_view_frames(buf.baseAddress, buf.count, nil, 0, &count)
         }
-        func u32(_ offset: Int) -> UInt32 {
-            UInt32(meta[offset]) | (UInt32(meta[offset + 1]) << 8) |
-                (UInt32(meta[offset + 2]) << 16) | (UInt32(meta[offset + 3]) << 24)
-        }
-        let version = u16(0)
-        guard version > 0x27 else { return [] }
-        var offset = 0x28
-        var frames: [CameraLiveViewFrame] = []
-        func readBlock(kind: CameraLiveViewFrameKind?) -> Bool {
-            guard offset + 16 <= meta.count else { return false }
-            let xMax = u32(offset), yMax = u32(offset + 4), count = Int(u16(offset + 8))
-            offset += 16
-            guard count <= 128, offset + count * 24 <= meta.count else { return false }
-            for _ in 0..<count {
-                let type = u16(offset), state = u16(offset + 2)
-                let centerX = u32(offset + 8), centerY = u32(offset + 12)
-                let height = u32(offset + 16), width = u32(offset + 20)
-                offset += 24
-                if let kind, xMax > 0, yMax > 0, width > 0, height > 0,
-                   width <= xMax, height <= yMax, centerX <= xMax, centerY <= yMax {
-                    let focused: Bool
-                    switch kind {
-                    case .focus, .tracking: focused = state == 2
-                    case .face: focused = type == 2
-                    }
-                    frames.append(CameraLiveViewFrame(
-                        kind: kind,
-                        cx: Double(centerX) / Double(xMax),
-                        cy: Double(centerY) / Double(yMax),
-                        width: Double(width) / Double(xMax),
-                        height: Double(height) / Double(yMax),
-                        focused: focused
-                    ))
-                }
+        guard sizeStatus == SONY2FUJI_STATUS_OK, count > 0 else { return [] }
+        var frames = [sony2fuji_sony_live_view_frame](repeating: sony2fuji_sony_live_view_frame(), count: Int(count))
+        let status = raw.withUnsafeBufferPointer { metaBuf in
+            frames.withUnsafeMutableBufferPointer { outBuf in
+                sony2fuji_sony_parse_live_view_frames(
+                    metaBuf.baseAddress, metaBuf.count, outBuf.baseAddress, count, &count
+                )
             }
-            return true
         }
-        guard readBlock(kind: nil), readBlock(kind: .focus) else { return [] }
-        if version > 0x64 {
-            guard readBlock(kind: .face), readBlock(kind: .tracking) else { return [] }
+        guard status == SONY2FUJI_STATUS_OK else { return [] }
+        return frames.prefix(Int(count)).map {
+            CameraLiveViewFrame(
+                kind: CameraLiveViewFrameKind(cKind: $0.kind),
+                cx: $0.cx,
+                cy: $0.cy,
+                width: $0.width,
+                height: $0.height,
+                focused: $0.focused != 0
+            )
         }
-        return frames
     }
 
     static func focusPoint(tapX: Double, tapY: Double, containerWidth: Double, containerHeight: Double,
                            imageWidth: Double, imageHeight: Double) -> CameraFocusTapPoint? {
-        guard tapX.isFinite, tapY.isFinite, containerWidth.isFinite, containerHeight.isFinite,
-              imageWidth.isFinite, imageHeight.isFinite,
-              containerWidth > 0, containerHeight > 0, imageWidth > 0, imageHeight > 0 else { return nil }
-        let scale = min(containerWidth / imageWidth, containerHeight / imageHeight)
-        let fittedWidth = imageWidth * scale, fittedHeight = imageHeight * scale
-        let left = (containerWidth - fittedWidth) / 2, top = (containerHeight - fittedHeight) / 2
-        guard tapX >= left, tapX <= left + fittedWidth, tapY >= top, tapY <= top + fittedHeight else { return nil }
-        let u = min(1.0, max(0.0, (tapX - left) / fittedWidth))
-        let v = min(1.0, max(0.0, (tapY - top) / fittedHeight))
-        let x = min(639, max(0, Int((u * 640.0).rounded())))
-        let y = min(479, max(0, Int((v * 480.0).rounded())))
-        return CameraFocusTapPoint(u: u, v: v, x: x, y: y)
+        var valid: Int32 = 0
+        var tap = sony2fuji_sony_focus_tap_point()
+        guard sony2fuji_sony_focus_point_from_tap(
+            tapX, tapY, containerWidth, containerHeight, imageWidth, imageHeight, &valid, &tap
+        ) == SONY2FUJI_STATUS_OK, valid != 0 else {
+            return nil
+        }
+        return CameraFocusTapPoint(u: tap.u, v: tap.v, x: Int(tap.x), y: Int(tap.y))
     }
 
     static func focusOverlayBox(frame: CameraLiveViewFrame, left: Double, top: Double,
                                 fittedWidth: Double, fittedHeight: Double) -> CameraOverlayBox {
-        let rawW = frame.width * fittedWidth
-        let rawH = frame.height * fittedHeight
-        let cx = left + frame.cx * fittedWidth
-        let cy = top + frame.cy * fittedHeight
-        if frame.kind != .face, rawW > 0, rawH > 0 {
-            let aspect = max(rawW, rawH) / min(rawW, rawH)
-            if aspect <= 1.35 {
-                let side = (rawW + rawH) / 2.0
-                return CameraOverlayBox(x: cx - side / 2.0, y: cy - side / 2.0,
-                                        width: side, height: side, isNormalizedSquare: true)
-            }
-        }
-        return CameraOverlayBox(x: cx - rawW / 2.0, y: cy - rawH / 2.0,
-                                width: rawW, height: rawH, isNormalizedSquare: false)
+        var cFrame = frame.cFrame
+        var box = sony2fuji_sony_focus_overlay_box()
+        _ = sony2fuji_sony_compute_focus_overlay_box(&cFrame, left, top, fittedWidth, fittedHeight, &box)
+        return CameraOverlayBox(
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            isNormalizedSquare: box.is_normalized_square != 0
+        )
     }
 
     static func normalizedFocusSquareRatio(frame: CameraLiveViewFrame, imageWidth: Double, imageHeight: Double) -> Double? {
-        guard frame.kind != .face, imageWidth.isFinite, imageHeight.isFinite, imageWidth > 0, imageHeight > 0 else { return nil }
-        let shortEdge = min(imageWidth, imageHeight)
-        let w = frame.width * (imageWidth / shortEdge)
-        let h = frame.height * (imageHeight / shortEdge)
-        guard w > 0, h > 0, max(w, h) / min(w, h) <= 1.35 else { return nil }
-        return (w + h) / 2.0
+        var cFrame = frame.cFrame
+        var valid: Int32 = 0
+        var ratio: Double = 0
+        guard sony2fuji_sony_normalized_focus_square_ratio(
+            &cFrame, imageWidth, imageHeight, &valid, &ratio
+        ) == SONY2FUJI_STATUS_OK, valid != 0 else {
+            return nil
+        }
+        return ratio
     }
 
     static func tapFocusSide(fittedWidth: Double, fittedHeight: Double, lastSquareRatio: Double? = nil) -> Double {
-        let shortEdge = min(fittedWidth, fittedHeight)
-        guard shortEdge.isFinite, shortEdge > 0 else { return 34.0 }
-        if let ratio = lastSquareRatio, ratio.isFinite, ratio > 0 {
-            return min(max(20.0, shortEdge * ratio), max(20.0, shortEdge * 0.5))
-        }
-        return min(52.0, max(34.0, shortEdge * 0.138))
+        var side: Double = 34.0
+        _ = sony2fuji_sony_tap_focus_side(
+            fittedWidth,
+            fittedHeight,
+            34.0,
+            52.0,
+            20.0,
+            lastSquareRatio != nil ? 1 : 0,
+            lastSquareRatio ?? 0.0,
+            &side
+        )
+        return side
     }
 }

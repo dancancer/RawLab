@@ -120,8 +120,10 @@ set(CORE_SOURCES
     src/core/pipeline_geometry.cpp
     src/core/pipeline_io.cpp
     src/core/viewport_pyramid.cpp
+    src/core/sony_ptpip.cpp
     src/ffi/sony2fuji_c.cpp
     src/ffi/viewport_pyramid_c.cpp
+    src/ffi/sony_ptpip_c.cpp
     src/ffi/edit_recipe.cpp
     src/ffi/sony2fuji_lens_c.cpp
     src/ffi/sony2fuji_buffer_c.cpp
@@ -953,6 +955,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/inspection_overlay_tests.cpp src/core/photo_geometry.cpp src/core/inspection_overlay.cpp src/ffi/inspection_c.cpp
         LIBRARIES ${geometry_libs}
         LABELS inspection ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME sony_ptpip
+        SOURCES tests/sony_ptpip_tests.cpp src/core/sony_ptpip.cpp src/ffi/sony_ptpip_c.cpp
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME perspective_api
