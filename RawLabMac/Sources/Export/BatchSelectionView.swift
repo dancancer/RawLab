@@ -404,17 +404,13 @@ struct MacBatchSettingsSummaryView: View {
                     HStack {
                         Text(zone.title)
                         Spacer()
-                        Text(L10n.text("色相") + " " + number(grading[zone].hue) + "° · " +
-                            L10n.text("饱和度") + " " + number(grading[zone].saturation) + " · " +
-                            L10n.text("明亮度") + " " + number(grading[zone].luminance))
+                        Text(gradingSummary(grading[zone]))
                     }
                 }
                 HStack {
                     Text(L10n.text("全局"))
                     Spacer()
-                    Text(L10n.text("色相") + " " + number(grading.global.hue) + "° · " +
-                        L10n.text("饱和度") + " " + number(grading.global.saturation) + " · " +
-                        L10n.text("明亮度") + " " + number(grading.global.luminance))
+                    Text(gradingSummary(grading.global))
                 }
                 summary("融合", number(grading.blending) + "%")
                 summary("平衡", number(grading.balance))
@@ -460,6 +456,9 @@ struct MacBatchSettingsSummaryView: View {
     }
     private func number(_ value: Double) -> String { String(format: "%.2f", value) }
     private func enabled(_ value: Bool) -> String { L10n.text(value ? "开启" : "停用") }
+    private func gradingSummary(_ wheel: ColorGradingWheel) -> String {
+        "\(L10n.text("色相")) \(number(wheel.hue))° · \(L10n.text("饱和度")) \(number(wheel.saturation)) · \(L10n.text("明亮度")) \(number(wheel.luminance))"
+    }
     private func summary(_ title: String, _ value: String, rawTitle: Bool = false) -> some View {
         HStack { Text(rawTitle ? title : L10n.text(title)); Spacer(); Text(value).monospacedDigit() }
     }

@@ -20,7 +20,7 @@
 
 <p align="center">
   <a href="https://github.com/dancancer/RawLab/releases/latest"><b>下载</b></a> ·
-  <a href="releases/v0.12/v0.12.1.md">0.12.1 发布说明</a> ·
+  <a href="releases/v0.13/v0.13.0.md">0.13.0 发布说明</a> ·
   <a href="README.md">文档索引</a> ·
   <a href="../CHANGELOG.md">更新日志</a> ·
   <a href="../README.md">English</a>
@@ -178,7 +178,7 @@ bash lutools/build.sh ios
 
 ## 相关文档与架构资料
 
-- [总文档索引](README.md) · [v0.12.1 发布说明（移动端构建 24）](releases/v0.12/v0.12.1.md) · [v0.12.0 发布说明（构建 23）](releases/v0.12/v0.12.0.md) · [更新日志](../CHANGELOG.md)
+- [总文档索引](README.md) · [v0.13.0 发布说明（构建 25）](releases/v0.13/v0.13.0.md) · [更新日志](../CHANGELOG.md)
 - [RAW 格式支持清单](reference/raw-format-support.md) · [格式契约](reference/formats/) · [镜头校正](reference/platforms/lens-correction.md) · [LUT 来源审计](luts/README.md)
 - [产品路线图](architecture/roadmap.md) · [活动架构评审](architecture/architecture-and-performance-review-2026-10-18.md) · [跨相机路线图](architecture/cross-camera-presets-roadmap.md)
 - [编辑迭代总需求](design/editing-iteration/requirements.md)与[技术方案](design/editing-iteration/technical-design.md) · [四端设计资产](design/README.md)

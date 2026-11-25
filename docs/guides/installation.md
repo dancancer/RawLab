@@ -6,17 +6,14 @@ Get current packages and checksums from the [latest release](https://github.com/
 
 | Platform | Package | Requirements |
 | --- | --- | --- |
-| Windows | [0.12.0 current-user Setup](https://github.com/dancancer/RawLab/releases/download/v0.12.0/RawLab.Desktop-stable-Setup.exe), [manual ZIP](https://github.com/dancancer/RawLab/releases/download/v0.12.0/RawLab-Windows-0.12.0-x64.zip) | Windows 10/11 x64 |
-| macOS Apple Silicon | [0.12.0 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.12.0/RawLab-Mac-0.12.0-arm64.zip) | macOS 14+; HDR editing requires macOS 15+ |
-| macOS Intel | [0.12.0 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.12.0/RawLab-Mac-0.12.0-x86_64.zip) | macOS 14+; HDR editing requires macOS 15+; no AI denoising |
-| Android | [0.12.1 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.12.1/RawLab-Android-0.12.1.apk) | Android 8+, ARM64 or x86_64 |
-| iOS | [0.12.1 unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.12.1/RawLab-iOS-0.12.1-unsigned.ipa) | iOS 18+; valid user signing/provisioning required |
+| Windows | [0.13.0 current-user Setup](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab.Desktop-stable-Setup.exe), [manual ZIP](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab-Windows-0.13.0-x64.zip) | Windows 10/11 x64 |
+| macOS Apple Silicon | [0.13.0 arm64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab-Mac-0.13.0-arm64.zip) | macOS 14+; HDR editing requires macOS 15+ |
+| macOS Intel | [0.13.0 x86_64 ZIP](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab-Mac-0.13.0-x86_64.zip) | macOS 14+; HDR editing requires macOS 15+; no AI denoising |
+| Android | [0.13.0 signed APK](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab-Android-0.13.0.apk) | Android 8+, ARM64 or x86_64 |
+| iOS | [0.13.0 unsigned IPA](https://github.com/dancancer/RawLab/releases/download/v0.13.0/RawLab-iOS-0.13.0-unsigned.ipa) | iOS 18+; valid user signing/provisioning required |
 
-[0.12.1 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.12.1/SHA256SUMS.txt)
-cover the `0.12.1` mobile release assets and carried-forward desktop update
-metadata; desktop installers remain at `0.12.0` (covered by
-[0.12.0 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.12.0/SHA256SUMS.txt)).
-No directly installable iOS package is published.
+[0.13.0 SHA-256 checksums](https://github.com/dancancer/RawLab/releases/download/v0.13.0/SHA256SUMS.txt)
+cover all release assets. No directly installable iOS package is published.
 
 ## Windows
 
@@ -45,7 +42,7 @@ Apple Silicon packages include GPU AI denoising with Core ML; Intel packages
 omit AI models and controls. Ordinary editing targets macOS 14, while HDR
 editing/export requires macOS 15+. A newer-system build does not establish
 minimum-OS or physical Intel acceptance; see the exact coverage in the
-[release notes](../releases/v0.12/v0.12.0.md) and
+[release notes](../releases/v0.13/v0.13.0.md) and
 [macOS documentation](../../RawLabMac/README.md).
 
 ## Android
@@ -75,6 +72,6 @@ memory and thermal validation remain outstanding. See the
 The release provides corresponding source, pinned dependency sources and build
 instructions alongside the binaries. Original project code is distributed
 under [GPLv3 only](../../LICENSE); dependencies and resources retain their own
-licenses. See [licensing](../reference/licensing.md) and the [release notes](../releases/v0.12/v0.12.1.md).
+licenses. See [licensing](../reference/licensing.md) and the [release notes](../releases/v0.13/v0.13.0.md).
 
 RAW files and private signing material are never included in source packages.
