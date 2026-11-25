@@ -452,6 +452,7 @@ void testFastFullResGpuAndParity() {
         const std::string s = j.dump();
         const int32_t supported = queryFastGpu(session.get(), q, &s);
         const auto backend = renderAndGetBackend(session.get(), rawPath, &s);
+// gpu-portability: metal-only the DCP rlook fast path exists only in Metal; D3D11/GLES report 0 and render on CPU
 #ifdef SONY2FUJI_ENABLE_METAL
         checkPass(supported == (backend == SONY2FUJI_BACKEND_METAL ? 1 : 0),
                   "DCP rlook capability matches Metal DCP pipeline availability");

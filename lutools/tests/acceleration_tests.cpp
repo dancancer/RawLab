@@ -82,6 +82,7 @@ try {
         std::cerr << "FAIL acceleration_tests: LUT does not exist: " << (argv[2] ? argv[2] : "") << '\n';
         return 1;
     }
+// gpu-portability: metal-only DCP .rlook looks have a GPU stage only in Metal; D3D11/GLES render them on CPU
 #ifdef SONY2FUJI_ENABLE_METAL
     const bool nativeCpuOnly = false;
 #else

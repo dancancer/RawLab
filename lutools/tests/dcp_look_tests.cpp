@@ -252,6 +252,7 @@ void photoTests(const fs::path& root) {
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
     sony2fuji_buffer output{};
     const auto forced = sony2fuji_process(session, &request, &output);
+// gpu-portability: metal-only the DCP look GPU stage exists only in Metal (metal_dcp_shader.h); D3D11/GLES Force returns UNSUPPORTED
 #ifdef SONY2FUJI_ENABLE_METAL
     checkPass(forced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
           (forced == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL),
@@ -289,6 +290,7 @@ void photoTests(const fs::path& root) {
     render("PHOTO Auto handles FP32 overflow via precise CPU", automatic);
     checkPass(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite Metal stage cannot report success");
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
+// gpu-portability: metal-only the DCP look GPU stage exists only in Metal; D3D11/GLES Force returns UNSUPPORTED
 #ifdef SONY2FUJI_ENABLE_METAL
     checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force rejects nonfinite Metal stage");
 #else
@@ -402,6 +404,7 @@ int evaluate(int argc, char** argv) {
         output.write(reinterpret_cast<const char*>(&value), sizeof(value));
     }
     if (gpu) {
+// gpu-portability: metal-only the --metal DCP probe needs the Metal-only DCP stage; other builds report failure
 #ifdef SONY2FUJI_ENABLE_METAL
         sony2fuji::ImageData image, result;
         image.width = static_cast<int>(points.size()); image.height = 1; image.pixels = std::move(points);

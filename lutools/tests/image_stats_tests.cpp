@@ -311,6 +311,7 @@ void testPublicCAPI() {
             sony2fuji_release_buffer(&forceMask);
         }
     } else {
+// gpu-portability: metal-only the image-stats GPU kernel exists only in Metal (metal_stats.mm); D3D11/GLES Force returns UNSUPPORTED
 #ifdef SONY2FUJI_ENABLE_METAL
         checkPass(forceStatus == SONY2FUJI_STATUS_PROCESSING_ERROR,
               "public C API Force rejects unavailable Metal");

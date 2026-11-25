@@ -1190,6 +1190,21 @@ class WorkflowContractTests(unittest.TestCase):
         mkdir_idx = next(i for i, line in enumerate(run_lines) if ".cache/ci/swiftpm/deps" in line)
         self.assertGreater(mkdir_idx, core_idx)
 
+    def test_workflows_pass_actionlint(self):
+        # Contracts runs the pinned actionlint and exports it as RAWLAB_ACTIONLINT; locally use the one
+        # on PATH (`brew install actionlint`) so workflow mistakes surface before a push.
+        pinned = re.search(r"actionlint/releases/download/v([0-9.]+)/", self.text).group(1)
+        binary = os.environ.get("RAWLAB_ACTIONLINT") or shutil.which("actionlint")
+        if not binary:
+            if os.environ.get("CI"):
+                self.fail("CI must provide actionlint through RAWLAB_ACTIONLINT")
+            self.skipTest(f"actionlint {pinned} is not installed (brew install actionlint)")
+        version = subprocess.run([binary, "-version"], capture_output=True, text=True).stdout.splitlines()[0].strip()
+        if os.environ.get("CI"):
+            self.assertEqual(version, pinned, "CI must lint with the pinned actionlint")
+        result = subprocess.run([binary, "-no-color"], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, f"actionlint {version}:\n{result.stdout}{result.stderr}")
+
     def test_workflow_and_job_env_do_not_reference_invalid_contexts(self):
         workflow_files = sorted(
             list((ROOT / ".github/workflows").glob("*.yml"))

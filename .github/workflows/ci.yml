@@ -109,7 +109,7 @@ jobs:
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
           "$lint_dir/actionlint"
-          python -m pytest -v
+          RAWLAB_ACTIONLINT="$lint_dir/actionlint" python -m pytest -v
           python scripts/localization/generate.py --check
           python scripts/version/generate.py --check
           python scripts/specs/generate.py --check
