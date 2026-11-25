@@ -195,9 +195,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           restore-keys: |
-            rawlab-cargo-v1-${{ runner.os }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -360,7 +361,7 @@ jobs:
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -490,9 +491,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           restore-keys: |
-            rawlab-cargo-v1-${{ runner.os }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -641,7 +643,7 @@ jobs:
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -929,9 +931,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           restore-keys: |
-            rawlab-cargo-v1-${{ runner.os }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -950,7 +953,6 @@ jobs:
             rawlab-source-archives-v1-android-
           path: |
             .cache/ci/rawlab-deps
-            .cache/ci/lens-sources
       - name: Install toolchain and identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -986,7 +988,6 @@ jobs:
         shell: bash
         env:
           RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
-          RAWLAB_LENS_SOURCE_CACHE: ${{ github.workspace }}/.cache/ci/lens-sources
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
           RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -1039,7 +1040,7 @@ jobs:
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -1054,7 +1055,6 @@ jobs:
           key: rawlab-source-archives-v1-android-${{ hashFiles('RawLabAndroid/app/src/main/cpp/CMakeLists.txt', 'lutools/cmake/**') }}
           path: |
             .cache/ci/rawlab-deps
-            .cache/ci/lens-sources
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -1114,9 +1114,10 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           restore-keys: |
-            rawlab-cargo-v1-${{ runner.os }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -1135,7 +1136,6 @@ jobs:
             rawlab-source-archives-v1-ios-
           path: |
             .cache/ci/rawlab-deps
-            .cache/ci/lens-sources
             lutools/build-ios-libraw/*/sources/*.tar.gz
       - name: Identify native dependency cache
         id: native-key
@@ -1180,7 +1180,6 @@ jobs:
         shell: bash
         env:
           RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
-          RAWLAB_LENS_SOURCE_CACHE: ${{ github.workspace }}/.cache/ci/lens-sources
           # Overlap the three slices' serial Xcode configure (~8 min each); see build-framework.sh.
           RAWLAB_IOS_PARALLEL_SLICES: '1'
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
@@ -1227,7 +1226,7 @@ jobs:
         if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
-          key: rawlab-cargo-v1-${{ runner.os }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
           path: |
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
             ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
@@ -1242,7 +1241,6 @@ jobs:
           key: rawlab-source-archives-v1-ios-${{ hashFiles('lutools/platform/ios/build-framework.sh', 'lutools/cmake/**') }}
           path: |
             .cache/ci/rawlab-deps
-            .cache/ci/lens-sources
             lutools/build-ios-libraw/*/sources/*.tar.gz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()

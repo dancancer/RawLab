@@ -531,11 +531,14 @@ and Windows jobs use the bounded worker settings documented above.
 ### Download Caches and iOS Slices
 
 Separately from the exact native caches, every native build job keeps two download-only
-caches: the Cargo registry/git database for the pinned X3F crates (keyed by
+caches: the Cargo registry/git database for the pinned X3F crates (keyed by job and
 `lutools/x3f-bridge/Cargo.lock`, in the `CARGO_HOME` that `prepare-rust.sh` or the Windows
-Rust step exports), and the dependency source archives (`RAWLAB_SOURCE_ARCHIVE_CACHE`,
-Lensfun's `RAWLAB_LENS_SOURCE_CACHE`, the Mac `.cache/shared/macos-sources` and the iOS
-`build-ios-libraw/*/sources/*.tar.gz`), keyed by the files that pin them. Windows keeps its
+Rust step exports, since each job fetches only its own targets' crates), and the dependency
+source archives (`RAWLAB_SOURCE_ARCHIVE_CACHE`, the Mac `.cache/shared/macos-sources`, which
+also holds the Mac Lensfun/GLib downloads, and the iOS `build-ios-libraw/*/sources/*.tar.gz`),
+keyed by the files that pin them. `rawlab_download_archive` locks each archive, so parallel
+configures sharing the directory wait for one verified download instead of truncating each
+other's partial file. Windows keeps its
 existing `native_cache.py archives` key. These caches hold only downloads that are still
 checked against their pinned SHA-256 (or `Cargo.lock`) before use, so unlike native caches
 they do use prefix restore keys, and cold gates restore them: a cold build still compiles
