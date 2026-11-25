@@ -213,12 +213,13 @@ val compileHostCameraJni by tasks.registering {
     val sonyPtpipCpp = File(repoRoot, "lutools/src/core/sony_ptpip.cpp")
     val sonyPtpipH = File(repoRoot, "lutools/src/core/sony_ptpip.h")
     val sonyPtpipCCpp = File(repoRoot, "lutools/src/ffi/sony_ptpip_c.cpp")
-    val jniCameraCpp = file("src/main/cpp/jni_camera.cpp")
+    val jniCameraSources = listOf(file("src/main/cpp/jni_camera_protocol.cpp"), file("src/main/cpp/jni_camera_focus.cpp"))
+    val jniCameraHeader = file("src/main/cpp/jni_camera_common.h")
     val cHeader = File(repoRoot, "lutools/include/sony2fuji/ffi/sony2fuji_c.h")
     val includeDir = File(repoRoot, "lutools/include")
     val srcDir = File(repoRoot, "lutools/src")
 
-    inputs.files(sonyPtpipCpp, sonyPtpipH, sonyPtpipCCpp, jniCameraCpp, cHeader)
+    inputs.files(sonyPtpipCpp, sonyPtpipH, sonyPtpipCCpp, jniCameraSources, jniCameraHeader, cHeader)
     inputs.property("osName", System.getProperty("os.name").orEmpty())
     inputs.property("osArch", System.getProperty("os.arch").orEmpty())
     outputs.file(hostCameraJniLib)
@@ -278,7 +279,9 @@ val compileHostCameraJni by tasks.registering {
             "-I${File(jdkHome, "include/$osInclude").absolutePath}",
             sonyPtpipCpp.absolutePath,
             sonyPtpipCCpp.absolutePath,
-            jniCameraCpp.absolutePath,
+        )
+        cmd += jniCameraSources.map { it.absolutePath }
+        cmd += listOf(
             "-o",
             outFile.absolutePath,
         )
