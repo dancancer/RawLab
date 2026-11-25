@@ -68,7 +68,7 @@
    - 任一步失败立即停止，并在 stderr 打印失败步骤名与退出码；apple-models 并行失败时会额外汇总每个失败套件及其退出码。
    - SwiftPM 产物缓存在 `<worktree>/.cache/tmp/release-preflight`（可用 `RAWLAB_PREFLIGHT_CACHE` 改位置），与本 worktree 源码绑定；首次约 80 秒，增量约 40 秒；发布结束后随 worktree 一起清理。
 4. **CI 手动门禁错峰派发**：`checks=full` 是发布门禁，按设计冷编原生依赖（`cold=true`，只查询不恢复缓存），并在 `macOS full (arm64, all)` 与 `(x86_64, core)` 成功后保存原生依赖缓存；`checks=build` 不是冷构建，会直接恢复同一缓存键。
-   - 先派发 `platform=macos checks=full`，等上述两个作业完成 `Save successful native dependencies` 后再派发 `platform=macos checks=build`；同时派发时 build 的 arm64 与 x86_64 两个作业会与 full 的四个作业一起冷编，并争用 GitHub 托管 macOS 的并发额度，整体反而更慢。
+   - 先派发 `platform=macos checks=full`，等上述两个作业结束（`Save successful native dependencies` 完成，或因缓存键已存在而显示 skipped）后再派发 `platform=macos checks=build`；同时派发时 build 的 arm64 与 x86_64 两个作业会与 full 的四个作业一起冷编，并争用 GitHub 托管 macOS 的并发额度，整体反而更慢。
    - 不同 `(platform, checks)` 组合的派发互不取消；同一组合重复派发会取消前一次，等它结束再重派。
 
 ---
@@ -92,6 +92,7 @@
 1. 将 `RawLab-$VERSION-source.tar.gz`、`UpdateTrust.release.json` 与发布说明文本传至 `release-hosts.md` 中的 Windows 发布机（`Paul-dev`），解压到干净目录。
    - **复用 `Paul-dev` 已校验缓存**：源码归档没有 `.git`，`build.ps1` 找不到主工作区，会把 `<源码>\.cache\shared` 当共享缓存，RUM SDK、Velopack 工具等每次重新下载。构建前先建目录联接并导出缓存变量：
      ```powershell
+     New-Item -ItemType Directory -Force "$src\.cache" | Out-Null
      New-Item -ItemType Junction -Path "$src\.cache\shared" -Target 'E:\RawLabRelease\.cache\shared' | Out-Null
      $env:NUGET_PACKAGES = 'E:\RawLabRelease\.cache\shared\nuget'
      $env:RAWLAB_SOURCE_ARCHIVE_CACHE = 'E:\RawLabCI\cache\rawlab-deps'
@@ -108,7 +109,7 @@
 6. **物理独显冒烟（`DESKTOP-216`）**：用 `scripts/release/smoke-windows-gpu.ps1` 对正式 ZIP 做无损冒烟，脚本头部注释给出完整的上传与调用命令：
    - 必须经原生 Windows OpenSSH 端口 `2222` 连接（`ssh -p 2222` / `scp -P 2222`）；端口 `22` 进入 WSL2，进程带 `PreferSystem32Images` 限制会加载 `System32\onnxruntime.dll`，脚本检测到即拒绝运行；
    - 依次核对：打包 `AI\DualDn` 的 `dualdn_probe --validate`、强制 DirectML 的 `pipeline` 探针（`producer` 须含 DirectML 且无回退）、`sony2fuji.exe` CLI 出图、ExifTool 版本、子进程加载 `sony2fuji.dll` 的 `sony2fuji_ai_available=1` 与 `sony2fuji_ai_hardware_available=1`（且运行库来自安装包目录）；
-   - 工作目录与 `-StagingDir` 在 `finally` 中删除并核实 `Test-Path` 为 `False`；`%LOCALAPPDATA%\RawLab` 前后指纹不一致即判失败；不启动 GUI。输出的 `SUMMARY:` 行可直接写入 `BUILD-PROVENANCE.json`。
+   - 调用时加 `-NonInteractive`，漏传参数直接报错而不是在 ssh 会话里等待输入；前置守卫失败同样会清理；工作目录与 `-StagingDir` 在 `finally` 中删除并核实 `Test-Path` 为 `False`；`%LOCALAPPDATA%\RawLab` 前后指纹不一致即判失败；不启动 GUI。输出的 `SUMMARY:` 行可直接写入 `BUILD-PROVENANCE.json`。
 
 ### 4.3 Android（`.apk`）
 1. 在打包 worktree 执行 `bash RawLabAndroid/scripts/fetch-rum-sdk.sh` 拉取并校验 RUM AAR。

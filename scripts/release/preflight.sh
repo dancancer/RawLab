@@ -30,6 +30,7 @@ done
 model_platforms=()
 case "$models" in
     none) ;;
+    ''|*,|,*|*,,*) echo "--models needs macos,ios|macos|ios|none, got '$models'" >&2; exit 2 ;;
     *)
         IFS=',' read -r -a model_platforms <<< "$models"
         for platform in "${model_platforms[@]}"; do

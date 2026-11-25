@@ -187,6 +187,19 @@ class UploadDraftReleaseTests(unittest.TestCase):
         self.assertEqual(len([c for c in self.calls() if c[:2] == ["release", "upload"]]), before)
         self.assertIn("remote: 13/13", verify.stdout)
 
+    def test_verify_only_without_a_draft_says_so_and_writes_nothing(self):
+        result = self.run_script("--verify-only")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("no draft release exists for v9.8.7", result.stderr)
+        self.assertFalse([c for c in self.calls() if c[:2] in (["release", "create"], ["release", "upload"])])
+
+    def test_temporary_files_are_removed_on_success_and_failure(self):
+        for env in ({}, {"FAKE_CORRUPT": "windows-stable.json"}):
+            with self.subTest(env=env):
+                self.run_script(**env)
+                leftovers = [p.name for p in self.root.iterdir() if p.name.startswith(("rawlab-upload.", "rawlab-assets."))]
+                self.assertEqual(leftovers, [])
+
     def test_missing_token_is_rejected_up_front(self):
         result = self.run_script(GH_TOKEN="")
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)

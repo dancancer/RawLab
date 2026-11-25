@@ -347,6 +347,7 @@ printf 'PASS: %s line 2\n' "$suite"
         self.assertIn("error:   Shared/tests/hdr-native-request.sh (exit 23)", result.stderr)
         self.assertIn("error:   Shared/tests/hdr-source-probe.sh (exit 5)", result.stderr)
         self.assertNotIn("FAIL: ", result.stderr, "suite output stays in the replayed stdout log")
+        self.assertIn("error:   ", result.stderr)
 
     def test_serial_failure_and_logged_skip_are_summarized_with_exit_codes(self):
         root, runner, tools = self._parallel_probe_root()
@@ -358,6 +359,7 @@ printf 'PASS: %s line 2\n' "$suite"
             self.assertIn("error: RawLab/tests/hdr-model.sh failed with exit code 42", result.stderr)
             self.assertIn("error: apple models (ios): 1 failure(s)", result.stderr)
             self.assertIn("error:   RawLab/tests/hdr-model.sh (exit 42)", result.stderr)
+            self.assertRegex(result.stderr, r"error:   \d+ queued suite\(s\) were not started after the first failure")
             self.assertNotIn("[model] RawLab/tests/hdr-canvas.sh", result.stdout,
                              "later suites must not start after a serial failure")
         with self.subTest(case="logged skip"):

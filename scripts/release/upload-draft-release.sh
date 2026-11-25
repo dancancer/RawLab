@@ -94,6 +94,10 @@ expected=(
     "SHA256SUMS.txt"
 )
 
+status_dir=""
+assets_file=""
+trap 'rm -rf ${status_dir:+"$status_dir"} ${assets_file:+"$assets_file"}' EXIT
+
 # ---- 1. 本地核对 ----
 "$PYTHON" - "$dist" "${expected[@]}" <<'PY'
 import hashlib, sys
@@ -145,6 +149,10 @@ release_state() {
 }
 
 state="$(release_state)"
+if [ "$verify_only" = 1 ] && [ "$state" = none ]; then
+    echo "error: no draft release exists for $tag; nothing to verify" >&2
+    exit 1
+fi
 if [ "$state" = published ]; then
     echo "error: $tag is already published; this script only uploads to a Draft" >&2
     exit 1
@@ -160,7 +168,6 @@ if [ "$verify_only" = 0 ]; then
         echo "reusing existing draft $tag"
     fi
     status_dir="$(mktemp -d "${TMPDIR:-/tmp}/rawlab-upload.XXXXXX")"
-    trap 'rm -rf "$status_dir"' EXIT
     upload_rc=0
     # 大包先传，缩短并发尾巴。
     for name in "${expected[@]}"; do
@@ -172,8 +179,10 @@ if [ "$verify_only" = 0 ]; then
         [ -f "$status_dir/$name.ok" ] || failed+=("$name")
     done
     if [ "${#failed[@]}" -gt 0 ] || [ "$upload_rc" -ne 0 ]; then
-        printf 'error: %d asset(s) failed to upload to draft %s:\n' "${#failed[@]}" "$tag" >&2
-        printf 'error:   %s\n' ${failed[@]+"${failed[@]}"} >&2
+        printf 'error: %d asset(s) failed to upload to draft %s\n' "${#failed[@]}" "$tag" >&2
+        for name in ${failed[@]+"${failed[@]}"}; do
+            printf 'error:   %s\n' "$name" >&2
+        done
         echo "error: rerun the same command to resume; the draft stays unpublished" >&2
         exit 1
     fi

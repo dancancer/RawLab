@@ -26,7 +26,7 @@
     scp -P 2222 -i $K scripts/release/smoke-windows-gpu.ps1 "$DIST/RawLab-Windows-$VERSION-x64.zip" \
         <Paul-dev build tree>/dualdn_probe.exe lutools/tests/fixtures/bayer-demosaic.dng \
         .cache/shared/assets/.../lutools/examples/DJI_20250602164503_0444_D.DNG "$H:$S/"
-    ssh -p 2222 -i $K $H "powershell -NoProfile -ExecutionPolicy Bypass -File $S/smoke-windows-gpu.ps1 \
+    ssh -p 2222 -i $K $H "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $S/smoke-windows-gpu.ps1 \
         -PackageZip $S/RawLab-Windows-$VERSION-x64.zip -DualDnProbe $S/dualdn_probe.exe \
         -ProbeRaw $S/bayer-demosaic.dng -CliRaw $S/DJI_20250602164503_0444_D.DNG -StagingDir $S"
 #>
@@ -99,19 +99,20 @@ public static class RawLabSmokeMitigation {
 }
 '@
 
-foreach ($required in @($PackageZip, $DualDnProbe, $ProbeRaw, $CliRaw)) {
-    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Input not found: $required" }
-}
-if (-not [Environment]::Is64BitProcess) { throw 'Run the smoke from 64-bit PowerShell.' }
-if ([RawLabSmokeMitigation]::PreferSystem32Images()) {
-    throw 'PreferSystem32Images is active (WSL entry on port 22); System32\onnxruntime.dll would shadow the packaged runtime. Reconnect with ssh -p 2222.'
-}
-Pass 'PreferSystem32Images=False (native Windows OpenSSH session)'
-
 $stateBefore = Get-LocalStateSnapshot
 if (-not $WorkRoot) { $WorkRoot = Join-Path ([IO.Path]::GetTempPath()) ("rawlab-gpu-smoke-" + [Guid]::NewGuid().ToString('N')) }
 $failure = $null
+# Guards run inside try so a refused run still removes the staged inputs.
 try {
+    foreach ($required in @($PackageZip, $DualDnProbe, $ProbeRaw, $CliRaw)) {
+        if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Input not found: $required" }
+    }
+    if (-not [Environment]::Is64BitProcess) { throw 'Run the smoke from 64-bit PowerShell.' }
+    if ([RawLabSmokeMitigation]::PreferSystem32Images()) {
+        throw 'PreferSystem32Images is active (WSL entry on port 22); System32\onnxruntime.dll would shadow the packaged runtime. Reconnect with ssh -p 2222.'
+    }
+    Pass 'PreferSystem32Images=False (native Windows OpenSSH session)'
+
     $package = Join-Path $WorkRoot 'pkg'
     New-Item -ItemType Directory -Force $package | Out-Null
     Expand-Archive -LiteralPath $PackageZip -DestinationPath $package -Force
@@ -135,7 +136,9 @@ try {
     $probeOut = Join-Path $WorkRoot 'dualdn-pipeline'
     Invoke-Native $probe ('"{0}" "{1}" "{2}" pipeline directml' -f $ProbeRaw, $model, $probeOut) 'dualdn_probe pipeline directml' | Out-Null
     $pipeline = Get-Content -LiteralPath (Join-Path $probeOut 'pipeline.json') -Raw | ConvertFrom-Json
-    if ([string]$pipeline.producer -notmatch 'DirectML') { throw "DualDn producer is not DirectML: $($pipeline.producer)" }
+    # Forced DirectML must not hide a partial CPU/unknown stage behind one DirectML stage.
+    $producer = [string]$pipeline.producer
+    if ($producer -notmatch 'DirectML' -or $producer -match 'CPU|unknown') { throw "DualDn producer is not DirectML only: $producer" }
     if ($pipeline.raw_fallback -or $pipeline.rgb_fallback) {
         throw "DualDn reported a fallback: raw='$($pipeline.raw_fallback)' rgb='$($pipeline.rgb_fallback)'"
     }
@@ -197,7 +200,11 @@ Write-Output ("available={0};hardware={1};foreign={2}" -f $available, $hardware,
     $failure = $_
 } finally {
     foreach ($path in @($WorkRoot, $StagingDir)) {
-        if ($path -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue }
+        # Antivirus may briefly hold freshly extracted executables; retry before reporting.
+        for ($attempt = 1; $path -and (Test-Path -LiteralPath $path) -and $attempt -le 3; $attempt++) {
+            if ($attempt -gt 1) { Start-Sleep -Seconds 2 }
+            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+        }
         if ($path -and (Test-Path -LiteralPath $path)) {
             $message = "Cleanup failed; remove $path manually."
             if ($failure) { Write-Error $message -ErrorAction Continue } else { $failure = $message }

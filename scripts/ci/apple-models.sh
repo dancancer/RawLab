@@ -262,7 +262,10 @@ while [ "${#pids[@]}" -gt 0 ]; do
 done
 
 if [ "${#failed_suites[@]}" -gt 0 ]; then
-    printf 'error: apple models (%s): %d failure(s); suites queued after the first failure were not started\n' "$1" "${#failed_suites[@]}" >&2
+    printf 'error: apple models (%s): %d failure(s)\n' "$1" "${#failed_suites[@]}" >&2
+    if [ "$idx" -lt "$total" ]; then
+        printf 'error:   %d queued suite(s) were not started after the first failure\n' "$((total - idx))" >&2
+    fi
     for failed in "${failed_suites[@]}"; do
         printf 'error:   %s\n' "$failed" >&2
     done

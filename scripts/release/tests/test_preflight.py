@@ -45,10 +45,15 @@ class PreflightTests(unittest.TestCase):
         self.assertIn("[preflight] PASS  version", result.stdout)
         self.assertIn("[preflight] PASS  docs", result.stdout)
 
-    def test_unknown_model_platform_is_rejected(self):
+    def test_unknown_or_empty_model_platform_is_rejected(self):
         result = subprocess.run(["/bin/bash", str(PREFLIGHT), "--models", "android"], capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertIn("Unknown --models platform: android", result.stderr)
+        for value in ("--models=", "--models=macos,", "--models=,ios"):
+            with self.subTest(value=value):
+                result = subprocess.run(["/bin/bash", str(PREFLIGHT), value], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn("--models needs macos,ios|macos|ios|none", result.stderr)
 
     def test_mac_typecheck_covers_every_source_set_of_the_app_build(self):
         build = (ROOT / "RawLabMac/build.sh").read_text(encoding="utf-8")
