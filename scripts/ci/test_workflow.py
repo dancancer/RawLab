@@ -699,6 +699,7 @@ class WorkflowContractTests(unittest.TestCase):
             "cargo-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "x3f-rust-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "source-archives-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
         }
         base_matrix = {"suite": "all"}
         for job_name, step in save_steps:
@@ -1130,7 +1131,7 @@ class WorkflowContractTests(unittest.TestCase):
                     }
                     restore_runs = _gha_truthy(_eval_gha_expr(_strip_expr(restore["if"]), ctx))
                     expected = (checks == "models" and row["arch"] == "arm64") or (
-                        checks in ("native", "full") and row["suite"] in ("all", "core")
+                        checks in ("native", "full") and row["suite"] in ("all", "core", "intel")
                     )
                     self.assertEqual(restore_runs, expected)
 
@@ -1204,6 +1205,69 @@ class WorkflowContractTests(unittest.TestCase):
             self.assertEqual(version, pinned, "CI must lint with the pinned actionlint")
         result = subprocess.run([binary, "-no-color"], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, f"actionlint {version}:\n{result.stdout}{result.stderr}")
+
+    def test_mac_suite_selection_runs_each_suite_once_per_architecture(self):
+        # Execute the workflow's own in_suite() so the matrix rows and the shell gate cannot drift.
+        mac_build = next(s for s in self.workflow["jobs"]["macos"]["steps"] if "RawLabMac/build.sh" in s.get("run", ""))
+        match = re.search(r"^ *in_suite\(\) \{(?:[^\n]*\}$|\n.*?^ *\}$)", mac_build["run"], re.S | re.M)
+        self.assertIsNotNone(match, "in_suite() must stay a standalone shell function")
+        groups = ("core", "agent", "render", "model")
+        for checks in ("native", "full"):
+            for arch in ("arm64", "x86_64"):
+                ran = []
+                for row in (r for r in macos_matrix(checks) if r["arch"] == arch):
+                    script = match.group(0) + "\nfor g in " + " ".join(groups) + "; do in_suite $g && echo $g; done; true\n"
+                    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=True,
+                                            env={**os.environ, "RAWLAB_CI_NATIVE": "true", "RAWLAB_MAC_SUITE": row["suite"]})
+                    ran += result.stdout.split()
+                with self.subTest(checks=checks, arch=arch):
+                    expected = list(groups) if arch == "arm64" else ["core", "agent", "render"]
+                    self.assertEqual(sorted(ran), sorted(expected), "each suite group runs exactly once")
+        result = subprocess.run(["bash", "-c", match.group(0) + "\nin_suite core"], capture_output=True, text=True,
+                                env={**os.environ, "RAWLAB_CI_NATIVE": "false", "RAWLAB_MAC_SUITE": "intel"})
+        self.assertNotEqual(result.returncode, 0, "build-only runs must not enter native suites")
+        self.assertEqual(len([r for r in macos_matrix("full") if r["arch"] == "x86_64"]), 1,
+                         "the cold full gate must build x86_64 once")
+
+    def test_build_jobs_cache_cargo_and_source_archives_around_the_native_build(self):
+        build_markers = {"macos": "RawLabMac/build.sh", "windows": "build.ps1", "android": "assembleRelease",
+                         "ios": "build-framework.sh"}
+        same_repo = "github.event.pull_request.head.repo.full_name == github.repository"
+        for job_name, marker in build_markers.items():
+            steps = self.workflow["jobs"][job_name]["steps"]
+            names = [step.get("name", "") for step in steps]
+            build = next(i for i, step in enumerate(steps) if marker in step.get("run", ""))
+            prep = names.index("Prepare X3F Rust renderer toolchain")
+            caches = [("cargo-cache", "Save Cargo registry and git cache")]
+            if job_name != "windows":  # Windows keeps its dep-archives cache keyed by native_cache.py
+                caches.append(("source-archives-cache", "Save dependency source archives"))
+            for cache_id, save_name in caches:
+                with self.subTest(job=job_name, cache=cache_id):
+                    restore = next(i for i, step in enumerate(steps) if step.get("id") == cache_id)
+                    self.assertLess(prep, restore, "restore after the Rust toolchain owns CARGO_HOME")
+                    self.assertLess(restore, build, "restore before the native build downloads anything")
+                    save = steps[names.index(save_name)]
+                    self.assertGreater(names.index(save_name), build)
+                    self.assertEqual(save["with"]["key"], steps[restore]["with"]["key"])
+                    self.assertEqual(save["with"]["path"], steps[restore]["with"]["path"],
+                                     "restore and save must use the same paths or the cache version differs")
+                    self.assertIn(same_repo, save["if"])
+                    self.assertIn(f"steps.{cache_id}.outputs.cache-hit != 'true'", save["if"])
+                    self.assertEqual(steps[restore].get("continue-on-error"), "true")
+            if job_name == "windows":
+                continue
+            env = steps[build].get("env", {})
+            cached = steps[next(i for i, step in enumerate(steps) if step.get("id") == "source-archives-cache")]["with"]["path"]
+            for variable in ("RAWLAB_SOURCE_ARCHIVE_CACHE", "RAWLAB_LENS_SOURCE_CACHE"):
+                if variable in env:
+                    relative = env[variable].replace("${{ github.workspace }}/", "")
+                    with self.subTest(job=job_name, variable=variable):
+                        self.assertIn(relative, cached.split())
+            self.assertIn("RAWLAB_SOURCE_ARCHIVE_CACHE", env)
+        cargo_paths = self.workflow["jobs"]["windows"]["steps"]
+        restore = next(step for step in cargo_paths if step.get("id") == "cargo-cache")
+        self.assertIn("${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache", restore["with"]["path"],
+                      "the cached registry must live in the CARGO_HOME the Rust prep step exports")
 
     def test_workflow_and_job_env_do_not_reference_invalid_contexts(self):
         workflow_files = sorted(

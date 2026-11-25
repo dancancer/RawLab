@@ -57,9 +57,10 @@ struct AdjustmentTransferSessionTests {
         var failFromWrite = Int.max
         var writeCount = 0
         var writeOnMain = false
-        let enteredFirst = DispatchSemaphore(value: 0)
-        let releaseFirst = DispatchSemaphore(value: 0)
-        var blockFirst = true
+        // Latch one numbered write on ioQueue until the test has asserted the optimistic state.
+        let enteredBlocked = DispatchSemaphore(value: 0)
+        let releaseBlocked = DispatchSemaphore(value: 0)
+        var blockWrite = 1
 
         let store = try MacEditPersistence(directory: dir, writeData: { data, url in
             let isMain = Thread.isMainThread
@@ -67,12 +68,12 @@ struct AdjustmentTransferSessionTests {
             writeCount += 1
             let current = writeCount
             if isMain { writeOnMain = true }
-            let shouldBlock = blockFirst && current == 1
+            let shouldBlock = current == blockWrite
             let shouldFail = current >= failFromWrite
             lock.unlock()
             if shouldBlock {
-                enteredFirst.signal()
-                releaseFirst.wait()
+                enteredBlocked.signal()
+                releaseBlocked.wait()
             }
             if shouldFail {
                 throw CocoaError(.fileWriteOutOfSpace)
@@ -88,12 +89,12 @@ struct AdjustmentTransferSessionTests {
               "Async edit commits return optimistic applied outcomes immediately")
         check(session.hasPendingCommits && session.transactions.count == 2,
               "Optimistic history transactions and pending commit state update immediately")
-        check(enteredFirst.wait(timeout: .now() + 5) == .success, "First async write started on ioQueue")
-        releaseFirst.signal()
+        check(enteredBlocked.wait(timeout: .now() + 5) == .success, "First async write started on ioQueue")
+        releaseBlocked.signal()
         check(session.flushPendingCommits() && !session.hasPendingCommits, "Flush settles queued commits")
         lock.lock()
         let ranOnMain = writeOnMain
-        blockFirst = false
+        blockWrite = 3 // hold E3's write until E4 is queued and the optimistic stack is checked
         failFromWrite = 3 // fail E3 (and chained E4)
         lock.unlock()
         check(!ranOnMain, "Async edit commits write off the main thread")
@@ -109,6 +110,8 @@ struct AdjustmentTransferSessionTests {
         })
         check(out3.status == .applied && out4.status == .applied && session.transactions.count == 4,
               "In-flight E3/E4 stack optimistically before failure")
+        check(enteredBlocked.wait(timeout: .now() + 5) == .success, "E3 async write started on ioQueue")
+        releaseBlocked.signal()
         check(!session.flushPendingCommits(), "Flush reports failure when queued commits fail")
         check(session.transactions.count == 2 &&
               session.knownRecord(forPath: initial.identity.path)?.state == state(2) &&

@@ -15,6 +15,12 @@ endfunction()
 function(rawlab_download_archive url sha256 archive)
     get_filename_component(directory "${archive}" DIRECTORY)
     file(MAKE_DIRECTORY "${directory}")
+    # 并发 configure（如 iOS 三切片并行）可能共享 RAWLAB_SOURCE_ARCHIVE_CACHE：按归档加锁，
+    # 否则各进程会删掉、截断彼此的 .part 再改名失败。等锁者拿到锁后直接复用已校验的归档。
+    file(LOCK "${archive}.lock" GUARD FUNCTION TIMEOUT 1800 RESULT_VARIABLE lock_result)
+    if(NOT lock_result STREQUAL "0")
+        message(FATAL_ERROR "Cannot lock dependency archive ${archive}: ${lock_result}")
+    endif()
     set(partial "${archive}.part")
     file(REMOVE "${partial}")
     if(EXISTS "${archive}")

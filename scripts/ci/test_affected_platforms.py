@@ -250,9 +250,11 @@ class SelectionTests(unittest.TestCase):
     def test_mac_matrix_runs_models_once_and_builds_once_per_architecture(self):
         self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("models")], [("arm64", "all")])
         self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("build")], [("arm64", "all"), ("x86_64", "build")])
-        for checks in ("native", "full"):
-            self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix(checks)],
-                [("arm64", "all"), ("x86_64", "core"), ("x86_64", "agent"), ("x86_64", "render")])
+        self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("native")],
+            [("arm64", "all"), ("x86_64", "core"), ("x86_64", "agent"), ("x86_64", "render")])
+        # The cold full gate builds x86_64 once; one job runs every Intel suite.
+        self.assertEqual([(r["arch"], r["suite"]) for r in selection.macos_matrix("full")],
+            [("arm64", "all"), ("x86_64", "intel")])
 
 
 class WindowsSchedulingTests(unittest.TestCase):
