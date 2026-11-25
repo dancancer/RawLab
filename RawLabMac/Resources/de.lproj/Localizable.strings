@@ -786,7 +786,7 @@
 "渲染型 DNG 未生成。" = "Das entwickelte DNG wurde nicht erstellt.";
 "滚轮：%@；Shift：%@；范围：%@ 至 %@ %@" = "Mausrad: %@; Umschalt: %@; Bereich: %@ bis %@ %@";
 "滨田英明" = "Hideaki Hamada";
-"点击曲线区域添加控制点，拖动控制点调整。" = "Zum Hinzufügen in die Kurvenfläche tippen. Kontrollpunkte zum Anpassen ziehen.";
+"点击添加控制点；双击控制点或拖出画布可删除。" = "Zum Hinzufügen tippen oder klicken; Punkt zum Löschen doppeltippen oder herausziehen.";
 "点击照片中的中性灰区域取样，按 Esc 退出。" = "Auf einen neutralgrauen Bereich im Foto klicken. Mit Esc beenden.";
 "点曲线" = "Punktkurve";
 "点选添加锚点" = "Klicken zum Anker setzen";

@@ -774,7 +774,7 @@
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Warmer, satter Vintage-Stadtfilmlook, ruhige saubere Schatten, warme goldene Lichter und ein Gefühl des Umherschweifens";
 "渲染型 DNG 未生成。" = "Das entwickelte DNG wurde nicht erstellt.";
 "滨田英明" = "Hideaki Hamada";
-"点击曲线区域添加控制点，拖动控制点调整。" = "Zum Hinzufügen in die Kurvenfläche tippen. Kontrollpunkte zum Anpassen ziehen.";
+"点击添加控制点；双击控制点或拖出画布可删除。" = "Zum Hinzufügen tippen oder klicken; Punkt zum Löschen doppeltippen oder herausziehen.";
 "点曲线" = "Punktkurve";
 "焦距（mm）" = "Brennweite (mm)";
 "照片" = "Foto";
@@ -1069,11 +1069,11 @@
 "重置全部调整…" = "Alle Anpassungen zurücksetzen…";
 "重置全部调整？" = "Alle Anpassungen zurücksetzen?";
 "重置分割线" = "Trennlinie zurücksetzen";
+"重置参数曲线" = "Parametrische Kurve zurücksetzen";
 "重置当前分区" = "Aktuellen Tonwertbereich zurücksetzen";
 "重置当前颜色" = "Aktuelle Farbe zurücksetzen";
 "重置当前颜色（%@）" = "Aktuelle Farbe (%@) zurücksetzen";
 "重置所有调整并返回中性" = "Alle Anpassungen zurücksetzen und zum neutralen Zustand zurückkehren";
-"重置曲线" = "Kurve zurücksetzen";
 "重置本工具" = "Dieses Werkzeug zurücksetzen";
 "重置调整" = "Anpassungen zurücksetzen";
 "重置镜头校正" = "Objektivkorrektur zurücksetzen";

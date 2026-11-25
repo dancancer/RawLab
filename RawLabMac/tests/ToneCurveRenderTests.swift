@@ -79,9 +79,20 @@ import ImageIO
             parametric: ToneCurveParametric(highlights: -10, lights: 15, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
         )
         let rgbSamples = v2.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        let pointOnlySamples = v2.curveSettings.sampledPoints(channel: .rgb, includeParametric: false, count: 257)
+        let parametricOnlySamples = ToneCurveSettings(
+            mode: .custom,
+            points: ToneCurveShape.identity.points,
+            parametric: v2.curveSettings.parametric
+        ).sampledPoints(channel: .rgb, includeParametric: true, count: 257)
         let redSamples = v2.curveSettings.sampledPoints(channel: .red, count: 256)
         require(abs(rgbSamples[0].y - 0.1) < 1e-5 && abs(rgbSamples[255].y - 0.9) < 1e-5,
             "v2 RGB sampling reflects unpinned matte-fade endpoints")
+        require(abs(pointOnlySamples[128].y - 0.55) < 1e-9 && abs(rgbSamples[128].y - 0.55) > 1e-3,
+            "Point-curve canvas sampling isolates control points from active parametric curve")
+        require(abs(parametricOnlySamples[0].y - 0.0) < 1e-9 && abs(parametricOnlySamples[256].y - 1.0) < 1e-9 &&
+            abs(parametricOnlySamples[64].y - 0.25) > 1e-3,
+            "Parametric-curve canvas sampling isolates parametric bands from point-curve endpoints")
         require(abs(redSamples[0].y - 0.05) < 1e-5 && abs(redSamples[255].y - 0.95) < 1e-5,
             "v2 Red channel sampling reflects red unpinned endpoints without parametric")
         let v2RgbBytes = try bytes(v2)

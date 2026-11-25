@@ -223,6 +223,10 @@ public sealed class ToneCurvePanel : StackPanel
     {
         TargetEnabled = enabled;
         if (enabled && channel != targetChannel) channel = targetChannel;
+        if (enabled && channel == ToneCurveChannel.Rgb && showParametric) {
+            showParametric = false;
+            Refresh(settings, scalar, source, usesExposureStops);
+        }
         targetWaiting = waiting; targetSample = sample; targetNotice = notice;
         RefreshTargetControls();
     }
@@ -272,7 +276,7 @@ public sealed class ToneCurvePanel : StackPanel
         splitHeader.Text = Loc.Text("拆分点");
         resetParametric.Content = Loc.Text("重置参数曲线");
         add.Content = Loc.Text("添加控制点"); remove.Content = Loc.Text("删除控制点"); reset.Content = Loc.Text("重置为直线");
-        hint.Text = Loc.Text("点击曲线区域添加控制点，拖动控制点调整。");
+        hint.Text = Loc.Text("点击添加控制点；双击控制点或拖出画布可删除。");
         referenceWhite.Text = "0 EV\n" + Loc.Text("参考白");
         RefreshTargetControls();
         Refresh(settings, scalar, source, usesExposureStops);
@@ -281,19 +285,28 @@ public sealed class ToneCurvePanel : StackPanel
     {
         var wasSyncing = syncing; syncing = true;
         try {
+            var nextPointModified = !next.Shape(ToneCurveChannel.Rgb).IsIdentity ||
+                (next.Mode == ToneCurveMode.Legacy && Math.Abs(legacyValue) > 1e-6);
             if (!Equals(source, identity) || usesExposureStops != hdr) {
                 CancelInputs(); selected = 0; channel = ToneCurveChannel.Rgb;
-                showParametric = !next.Parametric.IsDefault && next.Mode == ToneCurveMode.Legacy;
+                showParametric = !next.Parametric.IsDefault && !nextPointModified;
             }
             source = identity; settings = next; scalar = legacyValue; usesExposureStops = hdr;
             var active = ActiveChannelSettings();
             selected = Math.Clamp(selected, 0, Math.Max(0, active.Points.Count - 1));
             var isRgb = channel == ToneCurveChannel.Rgb;
+            var pointTitle = Loc.Text("点曲线");
+            var parametricTitle = Loc.Text("参数曲线");
+            var pointModified = !settings.Shape(ToneCurveChannel.Rgb).IsIdentity ||
+                (settings.Mode == ToneCurveMode.Legacy && Math.Abs(scalar) > 1e-6);
             subModeTabs.Visibility = isRgb ? Visibility.Visible : Visibility.Collapsed;
             luminosityToggle.Visibility = isRgb ? Visibility.Visible : Visibility.Collapsed;
             pointModeButton.Tag = !showParametric ? "selected" : null;
             parametricModeButton.Tag = showParametric ? "selected" : null;
-            parametricModeButton.Content = Loc.Text("参数曲线") + (settings.Parametric.IsDefault ? "" : " •");
+            pointModeButton.Content = pointTitle + (pointModified ? " •" : "");
+            parametricModeButton.Content = parametricTitle + (settings.Parametric.IsDefault ? "" : " •");
+            AutomationProperties.SetName(pointModeButton, pointTitle);
+            AutomationProperties.SetName(parametricModeButton, parametricTitle);
             pointModeButton.FontWeight = !showParametric ? FontWeights.SemiBold : FontWeights.Normal;
             parametricModeButton.FontWeight = showParametric ? FontWeights.SemiBold : FontWeights.Normal;
             for (var i = 0; i < channelButtons.Length; i++) {

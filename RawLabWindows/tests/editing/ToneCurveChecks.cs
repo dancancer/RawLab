@@ -1,7 +1,12 @@
 using RawLab.Windows;
+using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Runtime.InteropServices;
+using System.Threading;
+using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
 using F = RawLab.Windows.AdjustmentField;
 
 internal static class ToneCurveChecks
@@ -192,6 +197,153 @@ internal static class ToneCurveChecks
             "Curve target interaction applies vertical drag delta/200");
         var cancelled = targetInteraction.Cancel();
         Check(cancelled == new ToneCurveSettings(), "Curve target cancel reverts to original settings");
-        Console.WriteLine("PASS: curve precision, persistence, immutable snapshots, native adapter, selective transfer, reset and batch");
+        RunCanvasMouseChecks();
+        Console.WriteLine("PASS: curve precision, persistence, immutable snapshots, native adapter, selective transfer, reset, batch and WPF canvas deletion");
+    }
+
+    private static void RunCanvasMouseChecks()
+    {
+        Exception? staFailure = null;
+        var sta = new Thread(() =>
+        {
+            try
+            {
+                var canvas = new ToneCurveCanvas
+                {
+                    Width = 224,
+                    Height = 164,
+                    Sampler = static (settings, _, _) => settings.Points,
+                };
+                canvas.Measure(new Size(224, 164));
+                canvas.Arrange(new Rect(0, 0, 224, 164));
+
+                var captured = false;
+                var lostCaptureEvents = 0;
+                var gestureCompletedCount = 0;
+                var gestureCancelledCount = 0;
+                var commits = 0;
+                var selected = 0;
+                var current = ToneCurveSettings.Identity;
+                var beforeGesture = current;
+
+                canvas.CaptureMouseOverride = () => { captured = true; return true; };
+                canvas.ReleaseMouseCaptureOverride = () =>
+                {
+                    if (!captured) return;
+                    captured = false;
+                    // Reproduce WPF's synchronous LostMouseCaptureEvent dispatch inside ReleaseMouseCapture().
+                    lostCaptureEvents++;
+                    canvas.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0)
+                    {
+                        RoutedEvent = UIElement.LostMouseCaptureEvent,
+                        Source = canvas,
+                    });
+                };
+                canvas.SelectionChanged += idx => selected = idx;
+                canvas.AddHandler(ParameterRow.GestureStartedEvent, new RoutedEventHandler((_, _) => beforeGesture = current));
+                canvas.AddHandler(ParameterRow.GestureCompletedEvent, new RoutedEventHandler((_, _) => gestureCompletedCount++));
+                canvas.AddHandler(ParameterRow.GestureCancelledEvent, new RoutedEventHandler((_, _) =>
+                {
+                    gestureCancelledCount++;
+                    current = beforeGesture;
+                }));
+                canvas.Changed += (next, interactive) =>
+                {
+                    current = next;
+                    if (!interactive) commits++;
+                    // Mirror ToneCurvePanel.Change -> Refresh re-entering canvas.Refresh on every update.
+                    canvas.Refresh(current, "photo-1", selected, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+                };
+
+                static Point Pt(double nx, double ny) => new(12 + nx * 200.0, 12 + (1.0 - ny) * 140.0);
+                canvas.Refresh(current, "photo-1", 0, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+
+                // 1. Accidental double-click on empty curve space inserts on Click 1 and must NOT delete on Click 2.
+                Check(canvas.HandleLeftButtonDown(Pt(0.5, 0.55), clickCount: 1, nowMsOverride: 1000), "Click 1 on empty curve space starts insertion");
+                Check(canvas.HandleLeftButtonUp(Pt(0.5, 0.55)), "Click 1 release succeeds");
+                Check(current.Points.Count == 3 && commits == 1 && lostCaptureEvents == 1, "Click 1 inserts one interior point and fires LostMouseCapture");
+                Check(canvas.HandleLeftButtonDown(Pt(0.5, 0.55), clickCount: 2, nowMsOverride: 1100), "Click 2 after empty-space insertion selects instead of deleting");
+                Check(canvas.HandleLeftButtonUp(Pt(0.5, 0.55)), "Click 2 release succeeds");
+                Check(current.Points.Count == 3, "Newly inserted point survives accidental double-click on empty curve space");
+
+                // 2. Double-clicking an existing interior point deletes it even after ReleaseMouseCapture raises LostMouseCapture.
+                var lostBefore = lostCaptureEvents;
+                Check(canvas.HandleLeftButtonDown(Pt(0.5, 0.55), clickCount: 1, nowMsOverride: 2000), "Click 1 on existing interior point starts selection");
+                Check(canvas.HandleLeftButtonUp(Pt(0.5, 0.55)), "Click 1 release on existing interior point succeeds");
+                Check(lostCaptureEvents == lostBefore + 1 && current.Points.Count == 3, "ReleaseMouseCapture synchronously dispatched LostMouseCapture");
+                Check(canvas.HandleLeftButtonDown(Pt(0.5, 0.55), clickCount: 2, nowMsOverride: 2120), "Click 2 within double-click window deletes interior point");
+                Check(current.Points.Count == 2 && commits == 2, "Windows double-click deletes existing interior point cleanly");
+
+                // 3. Slight sub-threshold jitter during Click 1 (which triggers Changed + Refresh on release) still arms double-click delete.
+                current = ToneCurveSettings.Identity.Inserting(0.5, 0.55);
+                canvas.Refresh(current, "photo-1", 1, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+                Check(canvas.HandleLeftButtonDown(Pt(0.5, 0.55), clickCount: 1, nowMsOverride: 3000), "Jitter Click 1 down");
+                Check(canvas.HandlePointerMove(Pt(0.505, 0.555)), "Sub-threshold 1px jitter move");
+                Check(canvas.HandleLeftButtonUp(Pt(0.505, 0.555)), "Jitter Click 1 up");
+                Check(current.Points.Count == 3 && commits == 3, "Jitter Click 1 committed slight nudge");
+                Check(canvas.HandleLeftButtonDown(Pt(0.505, 0.555), clickCount: 2, nowMsOverride: 3150), "Jitter Click 2 deletes nudged interior point");
+                Check(current.Points.Count == 2 && commits == 4, "Double-click delete survives sub-threshold jitter and Refresh");
+
+                // 4. Significant drag (> 0.02) disarms quick-reclick deletion; involuntary mid-drag LostMouseCapture cancels and rolls back.
+                current = ToneCurveSettings.Identity.Inserting(0.4, 0.4);
+                canvas.Refresh(current, "photo-1", 1, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+                Check(canvas.HandleLeftButtonDown(Pt(0.4, 0.4), clickCount: 1, nowMsOverride: 4000), "Drag Click 1 down");
+                Check(canvas.HandlePointerMove(Pt(0.4, 0.65)), "Significant drag move");
+                Check(canvas.HandleLeftButtonUp(Pt(0.4, 0.65)), "Drag Click 1 up");
+                Check(canvas.HandleLeftButtonDown(Pt(0.4, 0.65), clickCount: 2, nowMsOverride: 4100), "Quick click after significant drag selects without deleting");
+                Check(canvas.HandleLeftButtonUp(Pt(0.4, 0.65)), "Quick click release");
+                Check(current.Points.Count == 3 && Math.Abs(current.Points[1].Y - 0.65) < 1e-12, "Significant drag disarms quick second-click deletion");
+
+                Check(canvas.HandleLeftButtonDown(Pt(0.4, 0.65), clickCount: 1, nowMsOverride: 5000), "Mid-drag capture-loss down");
+                Check(canvas.HandlePointerMove(Pt(0.4, 0.80)), "Mid-drag move to 0.80");
+                Check(Math.Abs(current.Points[1].Y - 0.80) < 1e-12, "Interactive preview reached 0.80 before capture loss");
+                captured = false;
+                canvas.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0)
+                {
+                    RoutedEvent = UIElement.LostMouseCaptureEvent,
+                    Source = canvas,
+                });
+                canvas.Refresh(current, "photo-1", selected, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+                Check(gestureCancelledCount == 1 && current.Points.Count == 3 && Math.Abs(current.Points[1].Y - 0.65) < 1e-12,
+                    "Involuntary mid-drag LostMouseCapture cancels gesture and restores pre-drag curve");
+
+                // 5. Drag-out-of-bounds previews removal, dragging back inside restores, releasing outside commits removal.
+                Check(canvas.HandleLeftButtonDown(Pt(0.4, 0.65), clickCount: 1, nowMsOverride: 6000), "Drag-out down");
+                Check(canvas.HandlePointerMove(Pt(0.4, -0.20)), "Drag outside bottom margin");
+                Check(current.Points.Count == 2, "Dragging interior point outside bounds previews removal");
+                Check(canvas.HandlePointerMove(Pt(0.45, 0.60)), "Drag back inside bounds");
+                Check(current.Points.Count == 3 && Math.Abs(current.Points[1].X - 0.45) < 1e-12 && Math.Abs(current.Points[1].Y - 0.60) < 1e-12,
+                    "Dragging back inside bounds before release restores interior point");
+                Check(canvas.HandlePointerMove(Pt(1.20, 0.60)), "Drag outside right margin");
+                Check(canvas.HandleLeftButtonUp(Pt(1.20, 0.60)), "Release outside bounds");
+                Check(current.Points.Count == 2, "Releasing outside bounds commits interior point deletion");
+
+                // 6. Right-click deletes interior points; endpoints and Parametric view ignore point deletion/editing.
+                current = ToneCurveSettings.Identity.Inserting(0.3, 0.35);
+                canvas.Refresh(current, "photo-1", 1, ToneCurveChannel.Rgb, nextShowSplitMarkers: false);
+                Check(canvas.HandleRightButtonDown(Pt(0.3, 0.35)) && current.Points.Count == 2, "Right-clicking interior point deletes it immediately");
+                Check(!canvas.HandleRightButtonDown(Pt(0.0, 0.0)) && current.Points.Count == 2, "Right-clicking endpoint does not delete");
+                Check(canvas.HandleLeftButtonDown(Pt(0.0, 0.0), clickCount: 1, nowMsOverride: 7000) && canvas.HandleLeftButtonUp(Pt(0.0, 0.0)), "Endpoint Click 1");
+                Check(canvas.HandleLeftButtonDown(Pt(0.0, 0.0), clickCount: 2, nowMsOverride: 7100) && canvas.HandleLeftButtonUp(Pt(0.0, 0.0)) && current.Points.Count == 2,
+                    "Double-clicking endpoint never deletes endpoint");
+                canvas.Refresh(current, "photo-1", 0, ToneCurveChannel.Rgb, nextShowSplitMarkers: true);
+                Check(!canvas.HandleLeftButtonDown(Pt(0.5, 0.5), clickCount: 1, nowMsOverride: 8000) &&
+                    !canvas.HandleRightButtonDown(Pt(0.5, 0.5)) && current.Points.Count == 2,
+                    "Parametric view suppresses canvas point editing and deletion");
+                Check(gestureCompletedCount >= 6, "Completed gestures emit GestureCompletedEvent");
+            }
+            catch (Exception ex)
+            {
+                staFailure = ex;
+            }
+            finally
+            {
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
+            }
+        });
+        sta.SetApartmentState(ApartmentState.STA);
+        sta.Start();
+        sta.Join();
+        if (staFailure != null) ExceptionDispatchInfo.Capture(staFailure).Throw();
     }
 }

@@ -86,7 +86,7 @@
     <string name="curve_darks">"Oscuros"</string>
     <string name="curve_edit_point">"Editar punto"</string>
     <string name="curve_fixed_endpoint">"Los extremos son fijos"</string>
-    <string name="curve_hint">"Toca el área de la curva para añadir un punto. Arrastra los puntos de control para ajustar."</string>
+    <string name="curve_hint">"Haz clic o toca para añadir un punto; haz doble clic sobre él o arrástralo fuera para eliminarlo."</string>
     <string name="curve_input">"Entrada"</string>
     <string name="curve_lights">"Claros"</string>
     <string name="curve_luminosity_only">"Solo luminancia"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"Curva de puntos"</string>
     <string name="curve_point_number">"Punto %1$d"</string>
     <string name="curve_remove_point">"Eliminar punto"</string>
-    <string name="curve_reset">"Restablecer curva"</string>
+    <string name="curve_reset">"Restablecer curva paramétrica"</string>
     <string name="curve_reset_identity">"Restablecer línea recta"</string>
     <string name="curve_split_points">"Puntos de división"</string>
     <string name="curve_summary">"Curva de puntos (%1$d puntos)"</string>

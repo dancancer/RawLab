@@ -732,7 +732,7 @@
     "滑动对比": "Comparación con deslizador",
     "滑动对比，左侧中性，右侧修改后": "Comparación con deslizador: neutral a la izquierda, editada a la derecha",
     "滨田英明": "Hideaki Hamada",
-    "点击曲线区域添加控制点，拖动控制点调整。": "Toca el área de la curva para añadir un punto. Arrastra los puntos de control para ajustar.",
+    "点击添加控制点；双击控制点或拖出画布可删除。": "Haz clic o toca para añadir un punto; haz doble clic sobre él o arrástralo fuera para eliminarlo.",
     "点击照片中的中性灰区域取样，按 Esc 退出。": "Haz clic en un área gris neutro de la foto para muestrear. Pulsa Esc para salir.",
     "点曲线": "Curva de puntos",
     "点选添加锚点": "Clic para fijar ancla",

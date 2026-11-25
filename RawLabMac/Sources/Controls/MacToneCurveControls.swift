@@ -68,7 +68,7 @@ struct MacToneCurveControls: View {
             if channel == .rgb {
                 Picker(L10n.text("参数曲线"), selection: $subMode) {
                     ForEach(MacCurveSubMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(subModeLabel(mode)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented).labelsHidden()
@@ -104,21 +104,47 @@ struct MacToneCurveControls: View {
             }
         }
         .onAppear {
-            subMode = !settings.parametric.isDefault && settings.mode == .legacy ? .parametric : .point
+            subMode = preferredInitialSubMode
         }
         .onChange(of: subMode) { _, next in
-            if next == .parametric { onCancelTarget() }
+            if next == .parametric {
+                onCancelTarget()
+                if targetEnabled?.wrappedValue == true {
+                    targetEnabled?.wrappedValue = false
+                }
+            }
+        }
+        .onChange(of: targetEnabled?.wrappedValue ?? false) { _, enabled in
+            if enabled && channel == .rgb && subMode == .parametric {
+                subMode = .point
+            }
         }
         .onChange(of: source) { _, _ in
             setChannel(.rgb)
-            subMode = !settings.parametric.isDefault && settings.mode == .legacy ? .parametric : .point
+            subMode = preferredInitialSubMode
         }
+    }
+
+    private var pointCurveIsModified: Bool {
+        !settings.shape(.rgb).isIdentity || (settings.mode == .legacy && abs(legacy) > 1e-6)
+    }
+
+    private var parametricIsModified: Bool {
+        !settings.parametric.isDefault
+    }
+
+    private var preferredInitialSubMode: MacCurveSubMode {
+        parametricIsModified && !pointCurveIsModified ? .parametric : .point
+    }
+
+    private func subModeLabel(_ mode: MacCurveSubMode) -> String {
+        let modified = mode == .point ? pointCurveIsModified : parametricIsModified
+        return modified ? "\(mode.title) •" : mode.title
     }
 
     private func channelIsModified(_ item: ToneCurveChannel) -> Bool {
         if item == .rgb {
-            return !settings.shape(.rgb).isIdentity || !settings.parametric.isDefault ||
-                (settings.mode == .legacy && abs(legacy) > 1e-6)
+            return pointCurveIsModified || parametricIsModified
         }
         return !settings.shape(item).isIdentity
     }
