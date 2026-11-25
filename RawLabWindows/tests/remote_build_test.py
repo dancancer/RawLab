@@ -1,3 +1,4 @@
+import base64
 import hashlib
 from unittest import mock
 import re
@@ -182,6 +183,8 @@ class ProfileAndConnectionTest(unittest.TestCase):
 
     def test_unsafe_settings_are_rejected_before_anything_runs(self):
         for override in ({'pwsh': 'C:/Program Files/PowerShell/7/pwsh.exe'}, {'workspace': 'C:/Users/me/work'},
+                         {'workspace': 'C:/RawLabBuild/../Users/me'}, {'env': {'A': 'x\u2019; calc'}},
+                         {'dotnet_dir': 'C:/dotnet\u2018x'},
                          {'workspace': "C:/RawLabBuild/x'; Remove-Item"}, {'path_prepend': ['relative/bin']},
                          {'env': {'A': "x'y"}}, {'dotnet_dir': 'C:/dotnet;calc'}, {'host': None}):
             with self.subTest(override=override):
@@ -221,7 +224,57 @@ class IncrementalSyncTest(unittest.TestCase):
             with zipfile.ZipFile(archive) as package:
                 self.assertEqual(sorted(package.namelist()), ['.rawlab-sync-plan.json', 'b.txt'])
                 plan = json.loads(package.read('.rawlab-sync-plan.json'))
-            self.assertEqual(plan, {'changed': ['b.txt'], 'removed': ['old.txt'], 'manifest': local})
+            self.assertEqual(plan, {'changed': ['b.txt'], 'removed': ['old.txt'], 'manifest': local,
+                                    'base': 'none', 'known': ['a.txt', 'b.txt']})
+
+    def test_untrusted_remote_sets_reupload_everything_and_still_remove_stale_files(self):
+        local = {'keep.cs': 'a', 'new.cs': 'b'}
+        remote = {'keep.cs': 'a', 'Y.cs': None}
+        # pending/legacy sets or --full-sync: hashes are not trusted, deletions still happen.
+        self.assertEqual(self.module.sync_plan(local, remote, trusted=False), (['keep.cs', 'new.cs'], ['Y.cs']))
+
+    def test_remote_manifest_read_keeps_kind_path_pairs(self):
+        captured = []
+        def fake_run(command, **_):
+            captured.append(base64.b64decode(command[-1].rsplit(' ', 1)[1]).decode('utf-16le'))
+            return subprocess.CompletedProcess(command, 0, '', '')
+        with mock.patch.object(self.module.subprocess, 'run', side_effect=fake_run):
+            self.module.read_remote_manifest(settings_for(self.module, PROFILE))
+        script = captured[0]
+        self.assertIn("@(@('trusted', 'C:/RawLabBuild/verify/rawtools/.rawlab-remote-manifest.json'), @('pending'", script)
+        self.assertNotIn("); @(", script)
+
+    def test_remote_manifest_reply_kinds_and_tokens(self):
+        def reply(kind, payload):
+            data = json.dumps(payload).encode()
+            return f'{kind} {base64.b64encode(data).decode()}\r\n', f'{kind}:{hashlib.sha256(data).hexdigest()}'
+        text, token = reply('trusted', {'a.cpp': 'h'})
+        self.assertEqual(self.module.parse_remote_manifest(text), ({'a.cpp': 'h'}, True, token))
+        text, token = reply('pending', {'a.cpp': None, 'gone.cpp': None})
+        self.assertEqual(self.module.parse_remote_manifest(text)[1:], (False, token))
+        text, _ = reply('legacy', ['old.cs', 'a.cpp'])
+        paths, trusted, _ = self.module.parse_remote_manifest(text)
+        self.assertEqual((sorted(paths), trusted), (['a.cpp', 'old.cs'], False))
+        self.assertEqual(self.module.parse_remote_manifest(''), ({}, True, 'none'))
+        with self.assertRaises(SystemExit):
+            self.module.parse_remote_manifest('Warning: something else')
+
+    def test_sync_locks_checks_its_base_and_marks_pending_before_touching_files(self):
+        block = self.module.SYNC_BLOCK
+        check = block.index('if ($current -ne $plan.base)')
+        pending = block.index('Set-Content -LiteralPath $pendingPath')
+        first_change = min(block.index('Remove-Item -LiteralPath $path'), block.index('Copy-Item -LiteralPath'))
+        self.assertLess(check, pending)
+        self.assertLess(pending, first_change)
+        self.assertLess(first_change, block.index('Set-Content -LiteralPath $manifestPath'))
+        self.assertLess(block.index('Set-Content -LiteralPath $manifestPath'), block.index('Remove-Item -LiteralPath $pendingPath'))
+        self.assertIn("[IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')", self.module.LOCK_BLOCK)
+        settings = settings_for(self.module, PROFILE)
+        for script in (self.module.verify_script(settings, 'C:/RawLabBuild/incoming/1', True, None, None, ''),
+                       self.module.build_script(settings, 'C:/RawLabBuild/incoming/1', '', '')):
+            self.assertLess(script.index('[IO.File]::Open($lockPath'), script.index('Expand-Archive'))
+            self.assertIn('if ($workspaceLock) { $workspaceLock.Dispose() }', script)
+            self.assertLess(script.index('try {'), script.index('[IO.File]::Open($lockPath'))
 
     def test_remote_sync_rewrites_only_changed_files_and_marks_them_new(self):
         block = self.module.SYNC_BLOCK
@@ -229,6 +282,8 @@ class IncrementalSyncTest(unittest.TestCase):
         self.assertIn('.LastWriteTime = $now', block)
         self.assertIn('Resolve-WorkspacePath', block)
         self.assertNotIn('Copy-Item "$staging/*"', block, 'a blanket copy would reset every mtime')
+        self.assertLess(block.index('-eq $expected'), block.index('Copy-Item -LiteralPath'),
+                        'identical content is skipped before any rewrite')
 
 
 class VerifyModeTest(unittest.TestCase):
@@ -252,6 +307,10 @@ class VerifyModeTest(unittest.TestCase):
         self.assertLess(script.index('$stateBefore = Get-RawLabState'), script.index('try {'))
         self.assertIn("$env:RUSTUP_TOOLCHAIN = '1.99.1'", script)
         self.assertIn("$dotnet = 'E:/Tools/dotnet/dotnet.exe'", script)
+        self.assertIn('$dotnetArgs = @{ DotNet = $dotnet }', script)
+        # Without a configured SDK, build.ps1 keeps choosing its own (build/tools/dotnet first).
+        bare = settings_for(self.module, {**PROFILE, 'dotnet_dir': None})
+        self.assertIn('$dotnetArgs = @{}', self.module.verify_script(bare, 'C:/RawLabBuild/incoming/1', False, 'x', None, ''))
 
     def test_requested_phases_only(self):
         models = self.script(models=True)
@@ -260,12 +319,27 @@ class VerifyModeTest(unittest.TestCase):
         ctest = self.script(ctest_filter='^windows_display_image$')
         self.assertLess(ctest.index('build.ps1'), ctest.index('ctest.exe'))
         self.assertIn("-R '^windows_display_image$'", ctest)
+        # Skipped RAW tests (exit 77) must not pass silently; --raw points them at a fixture.
+        self.assertIn("'The following tests did not run'", ctest)
+        self.assertIn("if ('') {", ctest)
+        with_raw = self.script(ctest_filter='^core$', raw_name='fixture.dng')
+        self.assertIn('"-DSONY2FUJI_TEST_RAW=$incoming/fixture.dng"', with_raw)
         v08 = self.script(v08_suite='batch-selection', raw_name='fixture.dng')
         self.assertIn('run-v08.ps1" -RawPath "$incoming/fixture.dng"', v08)
         self.assertIn("-Only 'batch-selection'", v08)
 
     def test_argument_combinations_are_validated(self):
         parser = self.module.build_parser()
+        with tempfile.TemporaryDirectory() as folder:
+            odd = Path(folder) / "fixture.$(calc)"
+            odd.write_text('x')
+            with self.assertRaises(SystemExit):
+                self.module.validate_args(parser, parser.parse_args(['--verify', '--v08-only', 's', '--raw', str(odd)]))
+            dng = Path(folder) / 'fixture.dng'
+            dng.write_text('x')
+            with self.assertRaises(SystemExit):
+                self.module.validate_args(parser, parser.parse_args(['--verify', '--models', '--raw', str(dng)]))
+            self.module.validate_args(parser, parser.parse_args(['--verify', '--ctest-filter', 'core', '--raw', str(dng)]))
         bad = (['--verify'], ['--models'], ['--verify', '--ctest-filter', "x'; calc"],
                ['--verify', '--v08-only', 'batch-selection'], ['--verify', '--models', '--test'])
         for argv in bad:

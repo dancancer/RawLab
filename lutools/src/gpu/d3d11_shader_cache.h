@@ -277,9 +277,11 @@ inline std::filesystem::path defaultD3D11ShaderCacheDirectory() {
     wchar_t buffer[MAX_PATH]{};
     // 与 RawLabWindows AppPaths 同一规则：RAWLAB_APPDATA_ROOT（去空白后非空）替代整个应用数据根。
     // 测试与远端验证靠它隔离用户数据；只看 LOCALAPPDATA 会把着色器缓存写进用户的真实目录。
-    const DWORD rootLen = GetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", buffer, MAX_PATH);
-    if (rootLen > 0 && rootLen < MAX_PATH) {
-        std::wstring root(buffer, rootLen);
+    // 动态长度：根路径不受 MAX_PATH 限制（AppPaths 也没有），过长时不应悄悄回退到用户目录。
+    const DWORD rootSize = GetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", nullptr, 0);
+    if (rootSize > 1) {
+        std::wstring root(rootSize, L'\0');
+        root.resize(GetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", root.data(), rootSize));
         const auto first = root.find_first_not_of(L" \t\r\n");
         if (first != std::wstring::npos) {
             root = root.substr(first, root.find_last_not_of(L" \t\r\n") - first + 1);

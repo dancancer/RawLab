@@ -47,12 +47,17 @@ SYNTHETIC_RAW_FIXTURES = {
      'linear-jxl-lens.dng', 'linear-lens.dng', 'linear-jxl-stage3-lens.dng')
 }
 MANIFEST_NAME = '.rawlab-remote-manifest.json'
+PENDING_NAME = '.rawlab-remote-manifest.pending.json'
+LEGACY_LIST_NAME = 'source-files.json'  # written by the pre-manifest build-remote.py
 PLAN_NAME = '.rawlab-sync-plan.json'
 DEFAULT_PROFILES = Path.home() / '.config/rawlab/windows-verify-hosts.json'
 PROFILE_KEYS = {'description', 'host', 'port', 'proxy_jump', 'identity', 'known_hosts', 'pwsh', 'dotnet_dir',
                 'python', 'workspace', 'path_prepend', 'env'}
 # Everything interpolated into the remote PowerShell is validated against these first.
-SAFE_REMOTE_PATH = re.compile(r"^[A-Za-z]:[/\\][^'\"`$\r\n;&|<>]*$")
+# Allow-lists, not deny-lists: PowerShell also treats Unicode quotes (U+2018..U+201B) as quotes.
+SAFE_REMOTE_PATH = re.compile(r'^[A-Za-z]:[/\\][A-Za-z0-9_.()/\\ -]*$')
+SAFE_ENV_VALUE = re.compile(r'^[A-Za-z0-9_.,:;=+@%()/\\ -]*$')
+SAFE_RAW_SUFFIX = re.compile(r'^\.[A-Za-z0-9]{1,8}$')
 SAFE_ENV_NAME = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 SAFE_FILTER = re.compile(r'^[A-Za-z0-9_.*+?^$()\[\]|-]+$')
 SAFE_SUITE = re.compile(r'^[A-Za-z0-9_.,-]+$')
@@ -91,8 +96,11 @@ def ensure_lut_assets(root):
     """Materialize LUT assets from the shared local cache so the remote host never downloads them."""
     missing = [name for name in lut_asset_files(root) if not (root / name).is_file()]
     if missing:
-        subprocess.run([sys.executable, str(root / 'scripts/assets/prepare.py'), '--group', 'luts', '--offline',
-                        '--quiet'], check=True)
+        result = subprocess.run([sys.executable, str(root / 'scripts/assets/prepare.py'), '--group', 'luts',
+                                 '--offline', '--quiet'])
+        if result.returncode:
+            print('warning: LUT assets are not in the local shared cache; the remote build.ps1 will download them '
+                  '(--models needs them synced: run scripts/assets/prepare.py --group luts locally)', flush=True)
 
 
 def source_files(root):
@@ -112,18 +120,28 @@ def local_manifest(root, files):
     return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in files}
 
 
-def sync_plan(local, remote):
-    """Files to upload (new or different content) and remote files to delete."""
-    changed = sorted(name for name, digest in local.items() if remote.get(name) != digest)
+def sync_plan(local, remote, trusted=True):
+    """Files to upload and remote files to delete.
+
+    An untrusted remote set (no manifest yet, an interrupted run, the legacy file list, or
+    --full-sync) still drives deletions, but every local file is uploaded again.
+    """
+    if trusted:
+        changed = sorted(name for name, digest in local.items() if remote.get(name) != digest)
+    else:
+        changed = sorted(local)
     removed = sorted(name for name in remote if name not in local)
     return changed, removed
 
 
-def package_changes(root, archive, local, changed, removed):
+def package_changes(root, archive, local, changed, removed, base='none', known=None):
+    """Changed files plus the plan; `base` fingerprints the remote state the plan was computed from."""
+    plan = {'changed': changed, 'removed': removed, 'manifest': local, 'base': base,
+            'known': sorted(set(known or ()) | set(local))}
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as package:
         for name in changed:
             package.write(root / name, name)
-        package.writestr(PLAN_NAME, json.dumps({'changed': changed, 'removed': removed, 'manifest': local}))
+        package.writestr(PLAN_NAME, json.dumps(plan))
 
 
 def package_source(root, archive):
@@ -181,9 +199,10 @@ def resolve_settings(args, profile):
         raise SystemExit('No host: pass --host or --profile')
     for key in ('workspace', 'dotnet_dir', 'python'):
         if settings[key] and not SAFE_REMOTE_PATH.match(settings[key]):
-            raise SystemExit(f'{key} must be an absolute Windows path without quotes or shell characters')
-    if not settings['workspace'].replace('\\', '/').startswith(('C:/RawLabBuild/', 'E:/RawLab')):
-        raise SystemExit('workspace must live under C:/RawLabBuild/ or E:/RawLab*')
+            raise SystemExit(f'{key} must be an absolute Windows path of letters, digits and _.()/\\ -')
+    workspace = settings['workspace'].replace('\\', '/')
+    if '..' in workspace.split('/') or not workspace.startswith(('C:/RawLabBuild/', 'E:/RawLab')):
+        raise SystemExit('workspace must live under C:/RawLabBuild/ or E:/RawLab* (no ".." segments)')
     # The remote login shell may be cmd.exe or PowerShell; an unquoted path runs in both.
     if settings['pwsh'] != 'powershell.exe' and (not SAFE_REMOTE_PATH.match(settings['pwsh']) or ' ' in settings['pwsh']):
         raise SystemExit('pwsh must be powershell.exe or an absolute Windows path without spaces')
@@ -191,8 +210,8 @@ def resolve_settings(args, profile):
         if not SAFE_REMOTE_PATH.match(item):
             raise SystemExit(f'path_prepend entry is not a plain absolute Windows path: {item}')
     for name, value in settings['env'].items():
-        if not SAFE_ENV_NAME.match(name) or any(c in value for c in "'\r\n"):
-            raise SystemExit(f'Environment value for {name} contains a quote or line break')
+        if not SAFE_ENV_NAME.match(name) or not SAFE_ENV_VALUE.match(value):
+            raise SystemExit(f'Environment value for {name} has characters outside [A-Za-z0-9_.,:;=+@%()/\\ -]')
     return settings
 
 
@@ -243,35 +262,80 @@ def environment_block(settings):
         lines.append(f'$env:{name} = {ps_quote(value)}')
     dotnet = f"{settings['dotnet_dir']}/dotnet.exe" if settings['dotnet_dir'] else 'dotnet'
     lines.append(f'$dotnet = {ps_quote(dotnet)}')
+    # Without a configured SDK let build.ps1 pick its own (build/tools/dotnet first, then PATH).
+    # Hashtable splatting binds by name; an array would bind '-DotNet' positionally as a value.
+    lines.append('$dotnetArgs = ' + ('@{ DotNet = $dotnet }' if settings['dotnet_dir'] else '@{}'))
     lines.append(f"$python = {ps_quote(settings['python'] or '')}")
     return '\n'.join(lines)
 
+
+LOCK_BLOCK = r"""
+New-Item -ItemType Directory -Force $workspace | Out-Null
+# One run per workspace at a time, for the whole sync, build and test; other runs wait.
+$lockPath = Join-Path $workspace '.rawlab-remote.lock'
+$deadline = (Get-Date).AddMinutes(90)
+$workspaceLock = $null
+while (-not $workspaceLock) {
+    try { $workspaceLock = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None') }
+    catch {
+        if ((Get-Date) -gt $deadline) { throw "Workspace stayed busy for 90 minutes: $workspace" }
+        Write-Output 'Waiting for another run to release the workspace...'
+        Start-Sleep -Seconds 5
+    }
+}
+"""
 
 SYNC_BLOCK = r"""
 $staging = Join-Path $incoming 'changes'
 Expand-Archive -LiteralPath "$incoming/changes.zip" -DestinationPath $staging
 $plan = Get-Content -LiteralPath (Join-Path $staging '.rawlab-sync-plan.json') -Raw | ConvertFrom-Json
-New-Item -ItemType Directory -Force $workspace | Out-Null
+$manifestPath = Join-Path $workspace '.rawlab-remote-manifest.json'
+$pendingPath = Join-Path $workspace '.rawlab-remote-manifest.pending.json'
+$legacyPath = Join-Path $workspace 'source-files.json'
+function Get-ManifestToken {
+    foreach ($entry in @(@('trusted', $manifestPath), @('pending', $pendingPath), @('legacy', $legacyPath))) {
+        if (Test-Path -LiteralPath $entry[1]) { return $entry[0] + ':' + (Get-FileHash -LiteralPath $entry[1] -Algorithm SHA256).Hash.ToLowerInvariant() }
+    }
+    return 'none'
+}
+# The plan was computed from the state read before the lock; a run that changed it meanwhile wins.
+$current = Get-ManifestToken
+if ($current -ne $plan.base) { throw "Remote workspace changed since this run planned its sync ($($plan.base) -> $current); rerun." }
 $prefix = [IO.Path]::GetFullPath($workspace).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 function Resolve-WorkspacePath([string]$name) {
     $path = [IO.Path]::GetFullPath((Join-Path $workspace $name))
     if (-not $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw "Invalid source path: $name" }
     return $path
 }
+# Mark the workspace as mid-sync first: an interrupted run leaves this union of old and new
+# paths, so the next run re-uploads everything and still removes stale files.
+$known = [ordered]@{}
+foreach ($name in @($plan.known)) { $known[$name] = $null }
+$known | ConvertTo-Json -Depth 3 -Compress | Set-Content -LiteralPath $pendingPath -Encoding utf8
+if (Test-Path -LiteralPath $manifestPath) { Remove-Item -LiteralPath $manifestPath -Force }
 foreach ($name in @($plan.removed)) {
     $path = Resolve-WorkspacePath $name
     if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
 }
 $now = Get-Date
+$identical = 0
 foreach ($name in @($plan.changed)) {
     $path = Resolve-WorkspacePath $name
+    # Untrusted plans re-send everything; keep files whose content already matches (and their mtime).
+    $expected = $plan.manifest.PSObject.Properties[$name].Value
+    if ((Test-Path -LiteralPath $path -PathType Leaf) -and (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -eq $expected) {
+        $identical++
+        continue
+    }
     New-Item -ItemType Directory -Force (Split-Path -Parent $path) | Out-Null
     Copy-Item -LiteralPath (Join-Path $staging $name) -Destination $path -Force
     # Archives carry the local mtime, which may predate remote build outputs; rewritten files must look new.
     (Get-Item -LiteralPath $path).LastWriteTime = $now
 }
-$plan.manifest | ConvertTo-Json -Depth 3 -Compress | Set-Content -LiteralPath (Join-Path $workspace '.rawlab-remote-manifest.json') -Encoding utf8
-Write-Output ("SYNC: {0} changed, {1} removed" -f @($plan.changed).Count, @($plan.removed).Count)
+$plan.manifest | ConvertTo-Json -Depth 3 -Compress | Set-Content -LiteralPath $manifestPath -Encoding utf8
+Remove-Item -LiteralPath $pendingPath -Force
+if (Test-Path -LiteralPath $legacyPath) { Remove-Item -LiteralPath $legacyPath -Force }
+Write-Output ("SYNC: {0} rewritten, {1} already identical, {2} removed" -f (@($plan.changed).Count - $identical), $identical, @($plan.removed).Count)
 """
 
 STATE_FUNCTION = r"""
@@ -307,7 +371,7 @@ def verify_script(settings, incoming, models, ctest_filter, v08_suite, raw_name)
         python_arg = '-Python $python' if settings['python'] else ''
         phases.append(rf"""
     Write-Output 'PHASE build'
-    & "$workspace/RawLabWindows/build.ps1" -SelfContained -NoRumSdk -DotNet $dotnet {python_arg}
+    & "$workspace/RawLabWindows/build.ps1" -SelfContained -NoRumSdk @dotnetArgs {python_arg}
     if ($LASTEXITCODE -ne 0) {{ throw 'Windows build failed.' }}""")
     if ctest_filter:
         phases.append(rf"""
@@ -317,14 +381,24 @@ def verify_script(settings, incoming, models, ctest_filter, v08_suite, raw_name)
         $vs = & "${{env:ProgramFiles(x86)}}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
         $cmake = Join-Path $vs 'Common7/IDE/CommonExtensions/Microsoft/CMake/CMake/bin/cmake.exe'
     }}
+    if ('{raw_name}') {{
+        # build.ps1 configures without a RAW unless it runs its full -Test; point the RAW tests at the
+        # uploaded fixture (configure only: test arguments change, nothing is rebuilt).
+        & $cmake -S "$workspace/RawLabWindows/native" -B "$workspace/build/windows-native" "-DSONY2FUJI_TEST_RAW=$incoming/{raw_name}" | Out-Null
+        if ($LASTEXITCODE -ne 0) {{ throw 'Cannot point ctest at the RAW fixture.' }}
+    }}
     $env:PATH = "$workspace/build/RawLab-Windows;" + $env:PATH
-    & (Join-Path (Split-Path $cmake) 'ctest.exe') --test-dir "$workspace/build/windows-native" -C Release -R '{ctest_filter}' --output-on-failure --no-tests=error
-    if ($LASTEXITCODE -ne 0) {{ throw 'ctest failed.' }}""")
+    $ctestOutput = & (Join-Path (Split-Path $cmake) 'ctest.exe') --test-dir "$workspace/build/windows-native" -C Release -R '{ctest_filter}' --output-on-failure --no-tests=error
+    $ctestStatus = $LASTEXITCODE
+    $ctestOutput | ForEach-Object {{ Write-Output $_ }}
+    if ($ctestStatus -ne 0) {{ throw 'ctest failed.' }}
+    # A RAW-dependent test exits 77 without a fixture and ctest still returns 0: treat it as a failure.
+    if (($ctestOutput -join "`n") -match 'The following tests did not run') {{ throw 'ctest skipped tests; pass --raw for RAW-dependent tests or narrow --ctest-filter.' }}""")
     if v08_suite:
         phases.append(rf"""
     Write-Output 'PHASE v08'
     $global:LASTEXITCODE = 0
-    & "$workspace/RawLabWindows/tests/run-v08.ps1" -RawPath "$incoming/{raw_name}" -NativeArtifacts "$workspace/build/RawLab-Windows" -Only '{v08_suite}' -DotNet $dotnet
+    & "$workspace/RawLabWindows/tests/run-v08.ps1" -RawPath "$incoming/{raw_name}" -NativeArtifacts "$workspace/build/RawLab-Windows" -Only '{v08_suite}' @dotnetArgs
     if (-not $? -or $LASTEXITCODE) {{ throw 'v08 suite failed.' }}""")
     return f"""
 $ErrorActionPreference = 'Stop'
@@ -335,7 +409,9 @@ $incoming = {ps_quote(incoming)}
 $stateBefore = Get-RawLabState
 $failure = $null
 $started = Get-Date
+$workspaceLock = $null
 try {{
+{LOCK_BLOCK}
 {SYNC_BLOCK}
     # Tests and tools must never read or write the user's real app data.
     $env:RAWLAB_APPDATA_ROOT = Join-Path $incoming 'appdata'
@@ -345,6 +421,7 @@ try {{
 }} catch {{
     $failure = $_
 }} finally {{
+    if ($workspaceLock) {{ $workspaceLock.Dispose() }}
     Set-Location $env:TEMP
     for ($attempt = 1; (Test-Path -LiteralPath $incoming) -and $attempt -le 3; $attempt++) {{
         if ($attempt -gt 1) {{ Start-Sleep -Seconds 2 }}
@@ -367,28 +444,54 @@ $ErrorActionPreference = 'Stop'
 {environment_block(settings)}
 $workspace = {ps_quote(settings['workspace'])}
 $incoming = {ps_quote(incoming)}
+$workspaceLock = $null
+try {{
+{LOCK_BLOCK}
 {SYNC_BLOCK}
-& "$workspace/RawLabWindows/build.ps1" -SelfContained -DotNet $dotnet {python_arg} {rum_args} {test_args}
+& "$workspace/RawLabWindows/build.ps1" -SelfContained @dotnetArgs {python_arg} {rum_args} {test_args}
 if ($LASTEXITCODE -ne 0) {{ throw 'Windows build failed.' }}
 Compress-Archive -Path "$workspace/build/RawLab-Windows/*" -DestinationPath "$incoming/RawLab-Windows.zip"
 Write-Output 'PASS: Windows build and artifact packaging'
+}} finally {{
+    if ($workspaceLock) {{ $workspaceLock.Dispose() }}
+}}
 """
 
 
-def read_remote_manifest(settings, full_sync):
-    if full_sync:
-        return {}
-    path = settings['workspace'].rstrip('/\\') + '/' + MANIFEST_NAME
-    script = f"$p = {ps_quote(path)}; if (Test-Path -LiteralPath $p) {{ [Convert]::ToBase64String([IO.File]::ReadAllBytes($p)) }}"
-    # Windows hosts may answer in a legacy code page (GBK); only the base64 payload matters.
+def parse_remote_manifest(output):
+    """Decode `<kind> <base64>` from the remote read; return (paths, trusted, base token).
+
+    trusted: the manifest of a completed sync (hashes valid). pending: an interrupted sync's
+    path set. legacy: the old tool's file list. All three still drive deletions.
+    """
+    line = next((item.strip() for item in output.splitlines() if item.strip()), '')
+    if not line:
+        return {}, True, 'none'
+    kind, _, payload = line.partition(' ')
+    if kind not in ('trusted', 'pending', 'legacy'):
+        raise SystemExit(f'Unexpected remote manifest reply: {line[:80]!r}')
+    data = base64.b64decode(payload)
+    token = f'{kind}:{hashlib.sha256(data).hexdigest()}'
+    content = json.loads(data.decode('utf-8-sig'))
+    if kind == 'legacy':
+        paths = {name: None for name in content}
+    else:
+        paths = dict(content) if isinstance(content, dict) else {}
+    return paths, kind == 'trusted', token
+
+
+def read_remote_manifest(settings):
+    workspace = settings['workspace'].rstrip('/\\')
+    # Commas, not semicolons: '@(@(a, b); @(c, d))' would flatten into one list of strings.
+    candidates = ', '.join(f"@('{kind}', {ps_quote(workspace + '/' + name)})" for kind, name in
+                           (('trusted', MANIFEST_NAME), ('pending', PENDING_NAME), ('legacy', LEGACY_LIST_NAME)))
+    script = (f"foreach ($c in @({candidates})) {{ if (Test-Path -LiteralPath $c[1]) {{ "
+              "$c[0] + ' ' + [Convert]::ToBase64String([IO.File]::ReadAllBytes($c[1])); break } }")
+    # Windows hosts may answer in a legacy code page (GBK); only the ASCII reply matters.
     result = subprocess.run(ssh_command(settings, encode(script)), capture_output=True, text=True, errors='replace')
     if result.returncode:
         raise SystemExit(f'Cannot read the remote manifest ({result.returncode}): {result.stderr.strip()}')
-    payload = ''.join(result.stdout.split())
-    if not payload:
-        return {}
-    manifest = json.loads(base64.b64decode(payload).decode('utf-8-sig'))
-    return manifest if isinstance(manifest, dict) else {}
+    return parse_remote_manifest(result.stdout)
 
 
 def build_parser():
@@ -406,13 +509,14 @@ def build_parser():
     parser.add_argument('--python', help='Remote python.exe for build.ps1')
     parser.add_argument('--env', action='append', default=[], metavar='NAME=VALUE', help='Extra remote environment')
     parser.add_argument('--workspace', help='Persistent remote workspace (incremental build state lives here)')
-    parser.add_argument('--full-sync', action='store_true', help='Ignore the remote manifest and upload every file')
+    parser.add_argument('--full-sync', action='store_true',
+                        help='Upload every file again (stale remote files are still removed)')
     parser.add_argument('--verify', action='store_true', help='Quick verification instead of building a package')
     parser.add_argument('--models', action='store_true', help='--verify: run Windows model tests')
     parser.add_argument('--ctest-filter', help='--verify: build, then run ctest -R FILTER')
     parser.add_argument('--v08-only', metavar='SUITE', help='--verify: build, then run one run-v08.ps1 suite')
     parser.add_argument('--test', action='store_true', help='Build mode: run the full native/WPF/GPU suite')
-    parser.add_argument('--raw', type=Path, help='External RAW fixture for --test or --v08-only')
+    parser.add_argument('--raw', type=Path, help='RAW fixture for --test, --v08-only or RAW-dependent --ctest-filter tests')
     parser.add_argument('--rum-sdk-zip', type=Path, help='Vendor AlibabaCloud_RUM_Windows_0.4.4.zip (default: shared cache)')
     parser.add_argument('--no-rum-sdk', action='store_true', help='Offline package without usage analytics')
     return parser
@@ -430,11 +534,17 @@ def validate_args(parser, args):
             parser.error('--v08-only expects a suite name')
         if args.v08_only and (args.raw is None or not args.raw.is_file()):
             parser.error('--v08-only requires --raw pointing to an existing RAW fixture')
+        if args.raw is not None and not (args.v08_only or args.ctest_filter):
+            parser.error('--raw is used by --ctest-filter or --v08-only')
     else:
         if args.models or args.ctest_filter or args.v08_only:
             parser.error('--models, --ctest-filter and --v08-only require --verify')
         if args.test and (args.raw is None or not args.raw.is_file()):
             parser.error('--test requires --raw pointing to an existing external fixture')
+    if args.raw is not None and not SAFE_RAW_SUFFIX.match(args.raw.suffix):
+        parser.error('--raw needs a plain file extension such as .dng or .arw')
+    if args.raw is not None and not args.raw.is_file():
+        parser.error('--raw must point to an existing file')
     if args.rum_sdk_zip is not None and not args.rum_sdk_zip.is_file():
         parser.error('--rum-sdk-zip must point to the vendor archive')
 
@@ -470,8 +580,8 @@ def main(argv=None):
     ensure_lut_assets(root)
     files = source_files(root)
     local = local_manifest(root, files)
-    remote = read_remote_manifest(settings, args.full_sync)
-    changed, removed = sync_plan(local, remote)
+    remote, trusted, base = read_remote_manifest(settings)
+    changed, removed = sync_plan(local, remote, trusted and not args.full_sync)
     print(f'Sync to {settings["workspace"]}: {len(changed)} changed, {len(removed)} removed, '
           f'{len(files) - len(changed)} unchanged of {len(files)} files', flush=True)
 
@@ -480,7 +590,7 @@ def main(argv=None):
     output = Path(staging.name) if staging else root / 'build/windows-remote' / stamp
     output.mkdir(parents=True, exist_ok=True)
     try:
-        package_changes(root, output / 'changes.zip', local, changed, removed)
+        package_changes(root, output / 'changes.zip', local, changed, removed, base, remote)
         mkdir = encode(f"New-Item -ItemType Directory -Force {ps_quote(incoming)} | Out-Null")
         if subprocess.run(ssh_command(settings, mkdir)).returncode:
             raise SystemExit('Cannot create the remote incoming directory')
@@ -488,7 +598,7 @@ def main(argv=None):
         subprocess.run(scp_command(settings, output / 'changes.zip', f'{destination}/changes.zip'), check=True)
         if args.verify:
             raw_name = ''
-            if args.v08_only:
+            if args.raw is not None:
                 raw_name = 'fixture' + args.raw.suffix.lower()
                 subprocess.run(scp_command(settings, args.raw.resolve(), f'{destination}/{raw_name}'), check=True)
             script = verify_script(settings, incoming, args.models, args.ctest_filter, args.v08_only, raw_name)
@@ -508,6 +618,9 @@ def main(argv=None):
         if not args.verify:
             subprocess.run(scp_command(settings, f'{destination}/RawLab-Windows.zip', output), check=True)
             print(f'Built: {output / "RawLab-Windows.zip"}')
+            cleanup = encode(f"Remove-Item -LiteralPath {ps_quote(incoming)} -Recurse -Force")
+            if subprocess.run(ssh_command(settings, cleanup)).returncode:
+                print(f'warning: could not remove the remote directory {incoming}', flush=True)
         print(f'Total {time.monotonic() - started:.0f} s', flush=True)
     finally:
         if staging:

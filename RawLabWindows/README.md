@@ -134,15 +134,22 @@ AI 不支持 CPU 模式。普通显影选择 CPU 时，AI 仍请求硬件 Direct
 已准备好的 Windows x64 OpenSSH 编译机可直接构建当前工作区，不需要先提交或切换到 Windows 真机：
 
 ```bash
-python3 RawLabWindows/build-remote.py \
-  --host <user>@<windows-host> \
-  --identity ~/.ssh/rawlab_vm100 \
-  --known-hosts ~/.ssh/rawlab_vm100_known_hosts
+python3 RawLabWindows/build-remote.py --profile <name>              # 编译并取回安装包
+python3 RawLabWindows/build-remote.py --profile <name> --verify --models
+python3 RawLabWindows/build-remote.py --profile <name> --verify --ctest-filter '^image_stats$' [--raw sample.dng]
+python3 RawLabWindows/build-remote.py --profile <name> --verify --v08-only batch-selection --raw sample.dng
 ```
 
+主机地址、账户、跳板机、私钥路径和远端工具路径只写在本机私有档案 `~/.config/rawlab/windows-verify-hosts.json`
+（或 `RAWLAB_WINDOWS_VERIFY_HOSTS` 指定的文件，权限 600），格式见脚本开头的说明；也可以用 `--host`、`--port`、
+`--proxy-jump`、`--identity`、`--known-hosts`、`--pwsh`、`--dotnet-dir`、`--python`、`--env`、`--workspace` 逐项覆盖。
 首次连接前，通过可信控制台核对 SSH 主机公钥并保存到 `known-hosts` 文件。脚本强制校验主机密钥，只使用指定私钥；不要提交私钥或关闭校验。
 
-脚本发送当前已跟踪及未忽略的新源文件，包含尚未提交的改动，排除个人 RAW 样片和忽略的构建产物；仅白名单中的四个合成 DNG 回归 fixture 随源码发送。Windows 工作目录为 `C:/RawLabBuild/workspace`，保留依赖和编译缓存，只清理上次清单中已从本次源码删除的文件。请勿让多个任务同时使用这个工作目录。远程编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `build.log`。
+脚本同步当前已跟踪及未忽略的新源文件（含未提交改动）和本机共享缓存里的 LUT 素材，排除个人 RAW 样片和忽略的构建产物；仅白名单中的合成 DNG 回归 fixture 随源码发送。
+远端工作目录（默认 `C:/RawLabBuild/workspace`，档案可改）保存 SHA-256 清单：只上传并改写内容变化的文件（改写时间设为当前时间，保证增量重编），删除本次源码已不存在的文件，未变化的文件不碰，依赖与编译缓存因此保留。同一工作目录同一时刻只允许一个运行，后来者等待；同步中断后下次运行自动全量比对。`--full-sync` 强制重传全部文件。
+
+`--verify` 只跑指定检查：`--models`、`--ctest-filter`（依赖 RAW 的测试需加 `--raw`，ctest 出现未运行的测试即判失败）、`--v08-only`。它使用隔离的 `RAWLAB_APPDATA_ROOT`，不打包也不回传安装包，在 `finally` 中删除远端临时目录，并在 `%LOCALAPPDATA%\RawLab` 发生任何变化时判失败；本机只在系统临时目录中转。
+不带 `--verify` 时编译自包含 x64 包并取回 `build/windows-remote/<timestamp>/RawLab-Windows.zip`，同目录保留完整 `remote.log`。
 
 `--test --raw /path/to/sample.ARW` 会另外上传指定样片并执行原有完整测试。编译不要求 GPU，但完整 GPU 测试要求实际 Direct3D 11 执行；仅有虚拟机编译结果或显示适配器名称，不能据此声明 GPU 通过。未使用 `--test` 时不运行完整测试。
 
