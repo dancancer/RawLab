@@ -17,7 +17,7 @@ final class CameraPTPClient {
     private var closed = false
     private var transaction: UInt32 = 0
     private static let operations: Set<UInt16> = [0x1001, 0x1002, 0x1003, 0x1004, 0x1007, 0x1008,
-        0x1009, 0x100a, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209, 0x9212, 0x923c, 0x923d, 0x923e]
+        0x1009, 0x100a, 0x9201, 0x9202, 0x9205, 0x9207, 0x9209, 0x9212, 0x923b, 0x923c, 0x923d, 0x923e]
     init(command: CameraByteChannel, event: CameraByteChannel?) { self.command = command; self.event = event }
     var isClosed: Bool { stateLock.lock(); defer { stateLock.unlock() }; return closed }
     func close() {

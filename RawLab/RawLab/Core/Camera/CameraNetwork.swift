@@ -26,12 +26,7 @@ final class CameraTCPChannel: CameraByteChannel {
     private var buffered = Data()
 
     init(host: String, port: UInt16 = 15740, timeout: TimeInterval = 15) throws {
-        #if DEBUG && targetEnvironment(simulator)
-        let loopbackFixture = host == "127.0.0.1"
-            && ProcessInfo.processInfo.environment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] == "1"
-        #else
-        let loopbackFixture = false
-        #endif
+        let loopbackFixture = Self.isLoopbackFixture(host)
         guard (Self.localIPv4(host) || loopbackFixture), port > 0 else {
             throw CameraProtocolError.invalid("Camera endpoint must be a local IPv4 address")
         }
@@ -75,6 +70,15 @@ final class CameraTCPChannel: CameraByteChannel {
         }
         do { try ready.value() } catch { conn.cancel(); throw error }
         conn.stateUpdateHandler = nil
+    }
+
+    static func isLoopbackFixture(_ host: String) -> Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        return host == "127.0.0.1"
+            && ProcessInfo.processInfo.environment["RAWLAB_CAMERA_LOOPBACK_FIXTURE"] == "1"
+        #else
+        return false
+        #endif
     }
 
     static func localIPv4(_ host: String) -> Bool {
@@ -133,14 +137,16 @@ final class CameraLiveStream {
     private var chunked = false
     private var chunkRemaining = 0
 
-    init(host: String, url: URL) throws {
+    init(host: String, url: URL, openChannel: ((UInt16) throws -> CameraByteChannel)? = nil) throws {
         let validated = try CameraWire.liveURL(url.absoluteString, camera: host)
-        let channel = try CameraTCPChannel(host: host, port: UInt16(validated.port!), timeout: 5)
+        let port = UInt16(validated.port!)
+        let channel = try openChannel?(port) ?? CameraTCPChannel(host: host, port: port, timeout: 5)
         self.channel = channel
         do {
             let components = URLComponents(url: validated, resolvingAgainstBaseURL: false)!
             let path = components.percentEncodedPath + (components.percentEncodedQuery.map { "?" + $0 } ?? "")
-            let request = "GET \(path) HTTP/1.1\r\nHost: \(host):\(validated.port!)\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+            let requestHost = openChannel != nil ? "localhost" : host
+            let request = "GET \(path) HTTP/1.1\r\nHost: \(requestHost):\(port)\r\nAccept: */*\r\nConnection: close\r\n\r\n"
             try channel.write(Data(request.utf8))
             let status = try line(limit: 4096)
             let parts = status.split(separator: " ")

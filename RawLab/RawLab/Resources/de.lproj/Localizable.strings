@@ -311,6 +311,7 @@
 "实时取景" = "Livebild";
 "实时取景、调整参数并拍摄" = "Livebild anzeigen, Einstellungen anpassen und fotografieren";
 "宽度" = "Breite";
+"密码" = "Passwort";
 "密码已复制，仅本机可用，2 分钟后自动清除。" = "Passwort kopiert (nur auf diesem Gerät, wird nach 2 Minuten gelöscht).";
 "对比" = "Vergleich";
 "对比度" = "Kontrast";
@@ -444,6 +445,7 @@
 "当前照片或调整记录无效，无法安全重置。" = "Das aktuelle Foto oder der gespeicherte Bearbeitungsstand ist ungültig und kann nicht sicher zurückgesetzt werden.";
 "当前照片的设置尚不可用。" = "Die Einstellungen für das aktuelle Foto sind noch nicht verfügbar.";
 "当前状态下相机未接受对焦点设置。" = "Die Kamera hat den Fokuspunkt im aktuellen Zustand nicht akzeptiert.";
+"当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。" = "Diese Kamera erfordert interaktive SSH-Authentifizierung (keyboard-interactive), die unter iOS noch nicht unterstützt wird.";
 "当前相机模式不支持远程选择对焦点。" = "Dieser Kameramodus unterstützt keine entfernte Fokuspunktauswahl.";
 "当前相机模式未提供此功能。" = "Diese Funktion ist im aktuellen Kameramodus nicht verfügbar.";
 "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "Diese Signierung unterstützt kein automatisches Wi-Fi-Beitreten. Gehen Sie zurück und verbinden Sie sich über die System-Wi-Fi-Methode.";
@@ -452,6 +454,7 @@
 "待导入 %@ 个文件" = "%@ Dateien zum Importieren";
 "待接收 %d 张。" = "%d Fotos warten auf den Empfang.";
 "待选择的镜头配置" = "Objektivprofil muss ausgewählt werden";
+"忘记已保存凭据" = "Gespeicherte Zugangsdaten löschen";
 "快门" = "Verschluss";
 "恢复上次联机" = "Letzte Tether-Aufnahme fortsetzen";
 "恢复当前照片的全部调整，不改写原始照片。" = "Alle Anpassungen des aktuellen Fotos zurücksetzen. Das Originalfoto wird nicht verändert.";
@@ -712,6 +715,7 @@
 "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Detaillierte Diagnoseprotokolle werden aufgezeichnet (wird nach 30 Minuten oder nach dem nächsten Neustart automatisch beendet). Reproduzieren Sie das Problem und speichern oder senden Sie das Paket.";
 "正在读取镜头信息…" = "Objektivinformationen werden gelesen…";
 "正在连接相机…" = "Verbindung zur Kamera wird hergestellt …";
+"正在验证访问凭据…" = "Zugangsdaten werden geprüft…";
 "正常显影" = "Normale Entwicklung";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Dieses JPEG enthält eine HDR-Gainmap. Speichern Sie das Original, um HDR zu erhalten.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Dieser LUT fehlen vollständige Farbangaben. Bestätigen Sie die Verarbeitung. Er wird als kompatibel mit ungeprüftem Ergebnis markiert.";
@@ -785,6 +789,7 @@
 "照片格式" = "Fotoformat";
 "照片缺少有效焦距，未应用校正" = "Keine gültige Brennweite; Korrektur nicht angewendet";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Die verfügbaren Parameterbereiche können die Wirkung des Rezepts nicht vollständig erhalten. Brechen Sie ab oder bestätigen Sie separat das Zurücksetzen aller Anpassungen.";
+"用户名" = "Benutzername";
 "用户外观" = "Eigene Looks";
 "用户外观 · %@" = "Eigener Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Filmische Breitbild-Ästhetik, hart geschnittenes Licht und Schatten, tiefe Dunkelheit und goldenes Scheinwerferlicht";
@@ -814,6 +819,8 @@
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "Das Kamera-Wi-Fi hat normalerweise keinen Internetzugang. Bleiben Sie verbunden.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "Auf der Kamera sind keine importierbaren RAW- oder JPEG-Fotos.";
 "相机中的原照片会保留。" = "Die Originalfotos auf der Kamera bleiben erhalten.";
+"相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。" = "Der Schlüssel-Fingerabdruck der Kamera hat sich geändert. Prüfen Sie den Fingerabdruck auf dem Kamerabildschirm, bevor Sie die Zugangsdaten erneut eingeben.";
+"相机密钥指纹（请与相机屏幕核对）" = "Kameraschlüssel-Fingerabdruck (mit Kamerabildschirm abgleichen)";
 "相机数据或原件校验未通过，已暂停。" = "Kameradaten oder Originalprüfung fehlgeschlagen. Der Vorgang ist pausiert.";
 "相机时间" = "Kamerazeit";
 "相机未提供可调整选项" = "Die Kamera stellt keine einstellbaren Optionen bereit";
@@ -823,6 +830,7 @@
 "相机白平衡（按目标照片）" = "Kamera-Weißabgleich (pro Zielfoto)";
 "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。" = "Kameramenüs unterscheiden sich je nach Modell und Firmware. Folgen Sie den Smartphone-Verbindungsschritten Ihrer Kamera.";
 "相机裁切系数" = "Crop-Faktor der Kamera";
+"相机访问验证" = "Kamera-Zugriffsauthentifizierung";
 "相机连接已断开。已保存的照片仍可查看。" = "Die Kamera wurde getrennt. Gespeicherte Fotos können weiterhin angezeigt werden.";
 "省略自动黑位" = "Automatische Schwarzwertkorrektur auslassen";
 "确定" = "OK";
@@ -925,6 +933,7 @@
 "计算与参考的差异" = "Abweichung von der Referenz berechnen";
 "记录详细诊断日志" = "Detaillierte Diagnoseprotokolle aufzeichnen";
 "设置结果未确认，请重新连接后检查。" = "Das Ergebnis der Einstellung wurde nicht bestätigt. Verbinden Sie sich erneut und prüfen Sie es.";
+"访问验证失败，请核对相机屏幕中的用户名与密码。" = "Zugriffsauthentifizierung fehlgeschlagen. Prüfen Sie Benutzername und Passwort auf dem Kamerabildschirm.";
 "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Diagnosepakete enthalten nur App-Version, Systemumgebung, Schrittzusammenfassungen und Fehlercodes. Fotodaten, Dateinamen und persönliche Pfade sind ausgeschlossen.";
 "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Diagnosepaket gespeichert. Sie können die ZIP-Datei über GitHub Issues oder Messenger an den Entwickler senden.";
 "诊断码：%@" = "Diagnosecode: %@";
@@ -943,6 +952,7 @@
 "请先确认上方存储卡保存选项" = "Speicherung auf Kamerakarte oben bestätigen";
 "请先确认同源图片、处理条件和参考来源。" = "Bestätigen Sie zunächst dieselbe Originalquelle, die Verarbeitungsbedingungen und die Referenzquelle.";
 "请先选择外观或配方。" = "Wähle zuerst einen Look oder ein Rezept.";
+"请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。" = "Prüfen Sie Benutzername und Passwort im Menü „Zugriffsaut.-Info“ der Kamera, vergleichen Sie den Fingerabdruck unten und melden Sie sich an.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Erlauben Sie RawLab die Bluetooth-Nutzung in den Systemeinstellungen.";
 "请在系统设置中允许 RawLab 访问本地网络。" = "Erlauben Sie RawLab den Zugriff auf das lokale Netzwerk in den Systemeinstellungen.";
 "请在调整后的照片区域取色。" = "Wählen Sie eine Farbe im bearbeiteten Foto.";
@@ -1130,6 +1140,7 @@
 "饱和度" = "Sättigung";
 "饱和度：从灰色到彩色。" = "Sättigung: von Grau zu Farbe.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Neon-Nachtbild von Seoul, kühles Cyan gegen pink-violette Lichter und Reflexionen nasser Straßen";
+"验证并连接" = "Prüfen & verbinden";
 "高" = "Hoch";
 "高光" = "Lichter";
 "高光保护" = "Highlight-Schutz";

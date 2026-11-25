@@ -174,7 +174,12 @@ struct IOSCameraWorkspace: View {
                             .strokeBorder(cardConfirmed ? Color.clear : Color.yellow.opacity(0.45), lineWidth: 1)
                     }
                 }
-                if connection.connecting || model.phase == .connecting {
+                if let prompt = model.accessAuthPrompt {
+                    IOSCameraAccessAuthCard(prompt: prompt, model: model) {
+                        connection.stop()
+                        model.cancelAccessAuth()
+                    }
+                } else if connection.connecting || model.phase == .connecting {
                     HStack {
                         ProgressView()
                         Text(model.device != nil && model.phase == .connecting ? L10n.text("正在扫描相机…")
@@ -313,7 +318,8 @@ struct IOSCameraWorkspace: View {
                 if !connection.status.isEmpty && !connection.connecting && !connection.searching {
                     Text(connection.status).font(.footnote).foregroundStyle(.secondary)
                 }
-                if let error = model.manualImportRequired ? model.notice : connection.failure ?? model.notice {
+                if model.accessAuthPrompt == nil,
+                   let error = model.manualImportRequired ? model.notice : connection.failure ?? model.notice {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(error).font(.callout).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("camera.connection.error")
@@ -413,6 +419,140 @@ struct IOSCameraWorkspace: View {
     private func close() { connection.stop(); model.stop(completion: onClose) }
 }
 
+private struct IOSCameraAccessAuthCard: View {
+    let prompt: IOSCameraAccessAuthPrompt
+    @ObservedObject var model: IOSCameraController
+    let onCancel: () -> Void
+    @State private var user: String = ""
+    @State private var password: String = ""
+    @State private var showPassword = false
+
+    init(prompt: IOSCameraAccessAuthPrompt, model: IOSCameraController, onCancel: @escaping () -> Void) {
+        self.prompt = prompt
+        self.model = model
+        self.onCancel = onCancel
+        _user = State(initialValue: prompt.initialUser)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(L10n.text("相机访问验证"), systemImage: "lock.shield").font(.headline)
+                Spacer()
+                if !prompt.keyType.isEmpty {
+                    Text(prompt.keyType).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text(L10n.text("请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"))
+                .font(.callout).foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.text(prompt.fingerprintChanged
+                               ? "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
+                               : "相机密钥指纹（请与相机屏幕核对）"))
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(prompt.fingerprintChanged ? Color.orange : Color.secondary)
+                Text(prompt.fingerprint)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 8))
+            .overlay {
+                if prompt.fingerprintChanged {
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Color.orange.opacity(0.6), lineWidth: 1)
+                }
+            }
+
+            if let errorMessage = model.accessAuthErrorMessage(for: prompt) {
+                Text(errorMessage)
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("camera.auth.error")
+            }
+
+            TextField(L10n.text("用户名"), text: $user)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+                .disabled(model.accessAuthSubmitting)
+                .accessibilityIdentifier("camera.auth.user")
+
+            HStack(spacing: 8) {
+                Group {
+                    if showPassword {
+                        TextField(L10n.text("密码"), text: $password)
+                    } else {
+                        SecureField(L10n.text("密码"), text: $password)
+                    }
+                }
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .textFieldStyle(.roundedBorder)
+                .disabled(model.accessAuthSubmitting)
+                .accessibilityIdentifier("camera.auth.password")
+
+                Button { showPassword.toggle() } label: {
+                    Image(systemName: showPassword ? "eye.slash" : "eye")
+                }
+                .accessibilityLabel(L10n.text(showPassword ? "隐藏密码" : "显示密码"))
+                .frame(minWidth: 44, minHeight: 44)
+                .disabled(model.accessAuthSubmitting)
+            }
+
+            Button {
+                model.submitAccessAuth(user: user, password: password)
+            } label: {
+                HStack(spacing: 8) {
+                    if model.accessAuthSubmitting {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(L10n.text(model.accessAuthSubmitting ? "正在验证访问凭据…" : "验证并连接"))
+                        .foregroundStyle(canSubmit ? Color.black : Color.secondary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canSubmit)
+            .accessibilityIdentifier("camera.auth.submit")
+
+            HStack {
+                if prompt.hasSavedCredentials {
+                    Button(L10n.text("忘记已保存凭据")) {
+                        model.forgetSavedAccessAuth()
+                        user = ""
+                        password = ""
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(model.accessAuthSubmitting)
+                    .accessibilityIdentifier("camera.auth.forget")
+                }
+                Spacer()
+                Button(L10n.text("取消连接")) { onCancel() }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("camera.auth.cancel")
+            }
+        }
+        .padding(16)
+        .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 10))
+        .onChange(of: prompt.fingerprint) { _, _ in
+            if user.isEmpty && !prompt.initialUser.isEmpty {
+                user = prompt.initialUser
+            }
+        }
+        .accessibilityIdentifier("camera.auth.card")
+    }
+
+    private var canSubmit: Bool {
+        !user.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            !password.isEmpty &&
+            !model.accessAuthSubmitting
+    }
+}
+
 private struct IOSCameraManualWiFi: View {
     @ObservedObject var connection: IOSCameraConnection
     @ObservedObject var model: IOSCameraController
@@ -436,7 +576,14 @@ private struct IOSCameraManualWiFi: View {
                 }.disabled(ssid.isEmpty || password.count < 8 || connecting)
                     .accessibilityIdentifier("camera.wifi.join")
             }
-            if connecting {
+            if let prompt = model.accessAuthPrompt {
+                Section {
+                    IOSCameraAccessAuthCard(prompt: prompt, model: model) {
+                        connection.stop()
+                        model.cancelAccessAuth()
+                    }
+                }
+            } else if connecting {
                 Section {
                     HStack {
                         ProgressView()
@@ -446,7 +593,7 @@ private struct IOSCameraManualWiFi: View {
                     Button(L10n.text("取消连接")) { connection.stop(); model.stop() }
                 }
             }
-            if let error = model.notice ?? connection.failure {
+            if model.accessAuthPrompt == nil, let error = model.notice ?? connection.failure {
                 Section {
                     Text(error).foregroundStyle(.orange)
                     if model.localNetworkDenied {

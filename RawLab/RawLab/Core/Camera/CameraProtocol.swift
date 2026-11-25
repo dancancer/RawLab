@@ -43,9 +43,10 @@ struct CameraFocusTapPoint: Equatable {
     var packed: UInt32 { (UInt32(x) << 16) | UInt32(y) }
 }
 
-enum CameraProtocolError: Error, LocalizedError {
+enum CameraProtocolError: Error, LocalizedError, Equatable {
     case invalid(String), invalidOriginalHeader, transientTransfer(String), unsupported(String), response(UInt16, UInt16)
     case disconnected, cancelled, timeout, localNetworkDenied, connectionRefused, jpegProcessing, jpegGainMapAdjustment, importRecoveryRequired
+    case sshAuthenticationFailed, sshFingerprintMismatch(expected: String, actual: String, keyType: String), sshUnsupportedAuthMethod
     case captureNotSent(String), captureUnknown, tetherRecoveryRequired
     case photoLimitExceeded, photoLibraryDenied, photoLibrarySaveFailed, itemFailed(String, String)
     case focusUnavailable(CameraFocusUnavailableReason), focusRejected
@@ -62,6 +63,9 @@ enum CameraProtocolError: Error, LocalizedError {
         case .timeout: return "Camera operation timed out"
         case .localNetworkDenied: return "Local network access is denied"
         case .connectionRefused: return "Camera endpoint refused connection"
+        case .sshAuthenticationFailed: return "Camera access authentication failed"
+        case .sshFingerprintMismatch: return "Camera SSH key fingerprint changed"
+        case .sshUnsupportedAuthMethod: return "Camera requires an SSH authentication method unsupported on iOS"
         case .jpegProcessing: return "Could not process the camera JPEG with the selected settings"
         case .jpegGainMapAdjustment: return "JPEG adjustment would discard HDR gain-map metadata"
         case .importRecoveryRequired: return "Cannot verify the camera original; select it again"
@@ -144,8 +148,60 @@ struct CameraDeviceIdentity: Codable, Equatable {
 struct CameraAssetSnapshot: Codable, Hashable {
     let content: UInt32, file: UInt32, storage: UInt32, format: UInt16
     let name: String, size: UInt64, created: String, modified: String
+    let slot: UInt32
+
+    init(content: UInt32, file: UInt32, storage: UInt32, format: UInt16,
+         name: String, size: UInt64, created: String, modified: String, slot: UInt32 = 1) {
+        self.content = content
+        self.file = file
+        self.storage = storage
+        self.format = format
+        self.name = name
+        self.size = size
+        self.created = created
+        self.modified = modified
+        self.slot = slot == 2 ? 2 : 1
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case content, file, storage, format, name, size, created, modified, slot
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        content = try container.decode(UInt32.self, forKey: .content)
+        file = try container.decode(UInt32.self, forKey: .file)
+        storage = try container.decode(UInt32.self, forKey: .storage)
+        format = try container.decode(UInt16.self, forKey: .format)
+        name = try container.decode(String.self, forKey: .name)
+        size = try container.decode(UInt64.self, forKey: .size)
+        created = try container.decode(String.self, forKey: .created)
+        modified = try container.decode(String.self, forKey: .modified)
+        let decodedSlot = try container.decodeIfPresent(UInt32.self, forKey: .slot) ?? 1
+        slot = decodedSlot == 2 ? 2 : 1
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(content, forKey: .content)
+        try container.encode(file, forKey: .file)
+        try container.encode(storage, forKey: .storage)
+        try container.encode(format, forKey: .format)
+        try container.encode(name, forKey: .name)
+        try container.encode(size, forKey: .size)
+        try container.encode(created, forKey: .created)
+        try container.encode(modified, forKey: .modified)
+        if effectiveSlot != 1 {
+            try container.encode(effectiveSlot, forKey: .slot)
+        }
+    }
+
+    var effectiveSlot: UInt32 { slot == 2 ? 2 : 1 }
     var kind: String { name.lowercased().hasSuffix(".arw") ? "RAW" : "JPEG" }
-    var key: String { "\(storage):\(content):\(file):\(format):\(name):\(size):\(created):\(modified)" }
+    var key: String {
+        let base = "\(storage):\(content):\(file):\(format):\(name):\(size):\(created):\(modified)"
+        return effectiveSlot == 1 ? base : "slot\(effectiveSlot):\(base)"
+    }
     var transferable: Bool { size > 0 && size <= 1 << 30 }
 }
 struct CameraRemoteAsset: Identifiable, Hashable {
@@ -230,11 +286,17 @@ enum CameraWire {
             throw CameraProtocolError.invalidOriginalHeader
         }
     }
-    static func mobilePage(_ bytes: Data, owner: UUID) throws -> (count: Int, cursor: UInt64, assets: [CameraRemoteAsset]) {
+    static func slotDateCount(_ bytes: Data) -> UInt32 {
+        guard bytes.count >= 4 else { return 0 }
+        var reader = CameraDataReader(bytes)
+        return (try? reader.u32()) ?? 0
+    }
+    static func mobilePage(_ bytes: Data, owner: UUID, slot: UInt32 = 1) throws -> (count: Int, cursor: UInt64, assets: [CameraRemoteAsset]) {
         var reader = CameraDataReader(bytes)
         try reader.skip(144)
         let count = Int(try reader.u32())
         guard count <= 100 else { throw CameraProtocolError.invalid("Camera page exceeds budget") }
+        let normalizedSlot: UInt32 = slot == 2 ? 2 : 1
         var cursor: UInt64 = 0, assets: [CameraRemoteAsset] = []
         for _ in 0..<count {
             _ = try reader.u32(); let content = try reader.u32(); try reader.skip(20)
@@ -261,7 +323,7 @@ enum CameraWire {
                 if audio { try reader.skip(16) }
                 if !video, !audio, size > 0, photoName(name) {
                     assets.append(CameraRemoteAsset(owner: owner, snapshot: CameraAssetSnapshot(content: content,
-                        file: file, storage: 0, format: 0, name: name, size: size, created: String(cursor), modified: "")))
+                        file: file, storage: 0, format: 0, name: name, size: size, created: String(cursor), modified: "", slot: normalizedSlot)))
                 }
             }
         }

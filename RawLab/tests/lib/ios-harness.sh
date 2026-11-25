@@ -157,6 +157,7 @@ rawlab_ios_camera_sources() {
         "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift"
+        "$ROOT/RawLab/RawLab/Core/Camera/CameraAccessAuth.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift"

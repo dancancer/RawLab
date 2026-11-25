@@ -17,6 +17,8 @@
 		AA1100000000000000000003 /* RawLabKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000002 /* RawLabKit */; };
 		AA1100000000000000000005 /* RawLabNativeTypes in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000004 /* RawLabNativeTypes */; };
 		AA1100000000000000000007 /* RawLabNative in Frameworks */ = {isa = PBXBuildFile; productRef = AA1100000000000000000006 /* RawLabNative */; };
+		AA1200000000000000000002 /* CameraAccessAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1200000000000000000001 /* CameraAccessAuth.swift */; };
+		AA1200000000000000000005 /* RawLabCameraSSH in Frameworks */ = {isa = PBXBuildFile; productRef = AA1200000000000000000004 /* RawLabCameraSSH */; };
 		D0676CF1FACE332590F0E323 /* ContentView+RecentPhotos.swift in Sources */ = {isa = PBXBuildFile; fileRef = B718CF4786F3528D5CFB92E8 /* ContentView+RecentPhotos.swift */; };
 		48A79A4AFAD8F440EB66F59D /* RecentPhotosView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5C34A8A7921C28815B456C /* RecentPhotosView.swift */; };
 		A507CACF596001C4E19E65F9 /* IOSPhotoPreviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD3505B3ADF23CAE93A7CB1B /* IOSPhotoPreviews.swift */; };
@@ -548,6 +550,7 @@
 		D71200000000000000000011 /* IOSBatchSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Batch/Execution/IOSBatchSelection.swift"; sourceTree = SOURCE_ROOT; };
 		D71200000000000000000012 /* ExportEvidenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/Core/Batch/Storage/ExportEvidenceStore.swift"; sourceTree = SOURCE_ROOT; };
 		D71200000000000000000013 /* EditorToolDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RawLab/UI/EditorState/EditorToolDraft.swift"; sourceTree = SOURCE_ROOT; };
+		AA1200000000000000000001 /* CameraAccessAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraAccessAuth.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -560,6 +563,7 @@
 				AA1100000000000000000003 /* RawLabKit in Frameworks */,
 				AA1100000000000000000005 /* RawLabNativeTypes in Frameworks */,
 				AA1100000000000000000007 /* RawLabNative in Frameworks */,
+				AA1200000000000000000005 /* RawLabCameraSSH in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1013,6 +1017,7 @@
 				D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */,
 				D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */,
 				AD5145FB279D152EA89CD80D /* CameraNetwork.swift */,
+				AA1200000000000000000001 /* CameraAccessAuth.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -1150,6 +1155,7 @@
 				AA1100000000000000000002 /* RawLabKit */,
 				AA1100000000000000000004 /* RawLabNativeTypes */,
 				AA1100000000000000000006 /* RawLabNative */,
+				AA1200000000000000000004 /* RawLabCameraSSH */,
 			);
 			productName = RawLab;
 			productReference = ED52E5E1D6C957F64808BB11 /* RawLab.app */;
@@ -1185,6 +1191,7 @@
 			mainGroup = E067DA409E66CF448AAA9059;
 			packageReferences = (
 				AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */,
+				AA1200000000000000000003 /* XCLocalSwiftPackageReference "Packages/RawLabCameraSSH" */,
 			);
 			productRefGroup = 2F6D48C6086EC660301E288B /* Products */;
 			projectDirPath = "";
@@ -1373,6 +1380,7 @@
 				D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */,
 				D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */,
 				C36B2ADB84D11D5FD0554281 /* CameraNetwork.swift in Sources */,
+				AA1200000000000000000002 /* CameraAccessAuth.swift in Sources */,
 				2F797D8C193C1A085B1D5258 /* ContentView+AdjustmentTransfer.swift in Sources */,
 				288ACB8ACE1B29115F97D51E /* IOSAdjustmentTransferView.swift in Sources */,
 				B84D06C6D98807B1702187D9 /* IOSAdjustmentTransferPresentation.swift in Sources */,
@@ -1693,6 +1701,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ..;
 		};
+		AA1200000000000000000003 /* XCLocalSwiftPackageReference "Packages/RawLabCameraSSH" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/RawLabCameraSSH;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1710,6 +1722,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AA1100000000000000000001 /* XCLocalSwiftPackageReference ".." */;
 			productName = RawLabNative;
+		};
+		AA1200000000000000000004 /* RawLabCameraSSH */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA1200000000000000000003 /* XCLocalSwiftPackageReference "Packages/RawLabCameraSSH" */;
+			productName = RawLabCameraSSH;
 		};
 /* End XCSwiftPackageProductDependency section */
 

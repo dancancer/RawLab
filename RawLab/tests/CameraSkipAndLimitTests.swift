@@ -75,6 +75,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var recorded9207: [(UInt32, UInt32)] = []
     var tetherControls: [UInt16] = [0xd2c1, 0xd2c2]
     var tetherExtraProps: [(code: UInt16, type: UInt16, writable: Bool, enabled: UInt8, value: Int64)] = []
+    var liveViewURLString: String? = nil
     var next9207Status: UInt16?
     var on9207: ((UInt32, UInt32) -> Void)?
     var onShutter: (() -> Void)?
@@ -319,7 +320,8 @@ final class FakeSonyCameraChannel: CameraByteChannel {
         case 0x9209:
             var props = Data()
             if supportsTethering {
-                props.appendLE(UInt64(2 + tetherExtraProps.count))
+                let extraLiveCount = liveViewURLString == nil ? 0 : 1
+                props.appendLE(UInt64(2 + tetherExtraProps.count + extraLiveCount))
                 for (code, value): (UInt16, UInt16) in [(0x5013, 1), (0xd222, 0x10)] {
                     props.appendLE(code)
                     props.appendLE(UInt16(4))
@@ -341,6 +343,15 @@ final class FakeSonyCameraChannel: CameraByteChannel {
                         props.appendLE(UInt16(truncatingIfNeeded: extra.value))
                         props.appendLE(UInt16(truncatingIfNeeded: extra.value))
                     }
+                    props.append(0)
+                }
+                if let liveViewURLString {
+                    props.appendLE(UInt16(0xd278))
+                    props.appendLE(UInt16(0xffff))
+                    props.append(0)
+                    props.append(1)
+                    props.append(Self.ptpString(liveViewURLString))
+                    props.append(Self.ptpString(liveViewURLString))
                     props.append(0)
                 }
             } else {
@@ -565,7 +576,8 @@ struct CameraSkipAndLimitTests {
             ("testManualBrowseOrderNewestFirst", testManualBrowseOrderNewestFirst),
             ("testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial", testCameraImportSavesToPhotoLibraryWithoutDuplicatingOrLosingOnDenial),
             ("testTetheringAutomaticallySavesNewShotsToPhotoLibrary", testTetheringAutomaticallySavesNewShotsToPhotoLibrary),
-            ("testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary", testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary)
+            ("testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary", testManualImportAppliesJPEGResizeAndSavesResizedBytesToPhotoLibrary),
+            ("testSSHAccessAuthFlowAndLiveViewOverTunnel", testSSHAccessAuthFlowAndLiveViewOverTunnel)
         ]
         #if os(macOS)
         suite.append(("testP222HardExitSubprocessDurabilityAndOrphanCleanup", testP222HardExitSubprocessDurabilityAndOrphanCleanup))
@@ -3069,6 +3081,296 @@ struct CameraSkipAndLimitTests {
         try await waitUntil { controller.phase == .browsing && channel.bytesReadByName["DSC09201.JPG"] == jpegBytes.count }
         try check(channel.mobileRangeReads["DSC09201.JPG"] == [0..<jpegBytes.count],
                   "Manual import with adjust=true downloads full bytes rather than sampling unadjusted original")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+        await drainBackend(backend)
+    }
+
+    @MainActor static func testSSHAccessAuthFlowAndLiveViewOverTunnel() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: fakeCameraPrefsKey) }
+        final class InMemoryAuthStore: CameraAccessAuthStoring {
+            private let lock = NSLock()
+            private var storage: [String: CameraAccessAuthRecord] = [:]
+            func load(cameraID: String) -> CameraAccessAuthRecord? {
+                lock.lock(); defer { lock.unlock() }; return storage[cameraID]
+            }
+            func save(cameraID: String, record: CameraAccessAuthRecord) -> Bool {
+                lock.lock(); storage[cameraID] = record; lock.unlock(); return true
+            }
+            func delete(cameraID: String) {
+                lock.lock(); storage.removeValue(forKey: cameraID); lock.unlock()
+            }
+        }
+
+        final class SynchronizedEventChannel: CameraByteChannel {
+            private let lock = NSLock()
+            private let semaphore = DispatchSemaphore(value: 0)
+            private var outgoing = Data()
+            private(set) var closed = false
+            func read(_ count: Int) throws -> Data {
+                lock.lock()
+                if !closed, outgoing.count >= count {
+                    let slice = Data(outgoing.prefix(count))
+                    outgoing.removeFirst(count)
+                    lock.unlock()
+                    return slice
+                }
+                lock.unlock()
+                semaphore.wait()
+                throw CameraProtocolError.disconnected
+            }
+            func write(_ data: Data) throws {
+                var reader = CameraDataReader(data)
+                _ = try reader.u32()
+                let type = try reader.u32()
+                guard type == 3 else { throw CameraProtocolError.invalid("Unexpected event init packet \(type)") }
+                lock.lock()
+                outgoing.append(CameraWire.packet(4, Data()))
+                lock.unlock()
+            }
+            func close() {
+                lock.lock()
+                if closed { lock.unlock(); return }
+                closed = true
+                lock.unlock()
+                semaphore.signal()
+            }
+        }
+
+        final class PTPIPCommandBridgeChannel: CameraByteChannel {
+            private let inner: CameraByteChannel
+            private let lock = NSLock()
+            private var initAckBuffer = Data()
+            init(_ inner: CameraByteChannel) { self.inner = inner }
+            func read(_ count: Int) throws -> Data {
+                lock.lock()
+                if !initAckBuffer.isEmpty {
+                    let prefixCount = min(count, initAckBuffer.count)
+                    var out = Data(initAckBuffer.prefix(prefixCount))
+                    initAckBuffer.removeFirst(prefixCount)
+                    lock.unlock()
+                    if out.count < count {
+                        out.append(try inner.read(count - out.count))
+                    }
+                    return out
+                }
+                lock.unlock()
+                return try inner.read(count)
+            }
+            func write(_ data: Data) throws {
+                var reader = CameraDataReader(data)
+                _ = try reader.u32()
+                let type = try reader.u32()
+                if type == 1 {
+                    var ack = Data()
+                    ack.appendLE(UInt32(0x42))
+                    ack.append(Data(repeating: 0x11, count: 20))
+                    lock.lock()
+                    initAckBuffer.append(CameraWire.packet(2, ack))
+                    lock.unlock()
+                    return
+                }
+                try inner.write(data)
+            }
+            func close() { inner.close() }
+        }
+
+        final class FailingPTPIPChannel: CameraByteChannel {
+            func read(_ count: Int) throws -> Data { throw CameraProtocolError.disconnected }
+            func write(_ data: Data) throws {}
+            func close() {}
+        }
+
+        final class LiveViewStreamChannel: CameraByteChannel {
+            private let lock = NSLock()
+            private let closeSemaphore = DispatchSemaphore(value: 0)
+            private var outgoing: Data
+            private(set) var written = Data()
+            private(set) var closed = false
+            init(response: Data) { self.outgoing = response }
+            func read(_ count: Int) throws -> Data {
+                lock.lock()
+                if !closed, outgoing.count >= count {
+                    let slice = Data(outgoing.prefix(count))
+                    outgoing.removeFirst(count)
+                    lock.unlock()
+                    return slice
+                }
+                lock.unlock()
+                closeSemaphore.wait()
+                throw CameraProtocolError.disconnected
+            }
+            func write(_ data: Data) throws {
+                lock.lock(); written.append(data); lock.unlock()
+            }
+            func close() {
+                lock.lock()
+                if closed { lock.unlock(); return }
+                closed = true
+                lock.unlock()
+                closeSemaphore.signal()
+            }
+        }
+
+        final class FakeSSHTunnel: CameraSSHTunneling {
+            let hostProbe: CameraSSHHostProbe
+            private let openPort: (UInt16, Set<UInt16>) throws -> CameraByteChannel
+            private(set) var closed = false
+            private(set) var openedPorts: [UInt16] = []
+            init(probe: CameraSSHHostProbe, openPort: @escaping (UInt16, Set<UInt16>) throws -> CameraByteChannel) {
+                self.hostProbe = probe
+                self.openPort = openPort
+            }
+            func openChannel(port: UInt16, allowedPorts: Set<UInt16>, timeout: TimeInterval) throws -> CameraByteChannel {
+                openedPorts.append(port)
+                return try openPort(port, allowedPorts)
+            }
+            func close() { closed = true }
+        }
+
+        final class FakeSSHTransport: CameraSSHTransporting {
+            let probe: CameraSSHHostProbe
+            var expectedUser = "camuser"
+            var expectedPassword = "campass"
+            var connectAttempts = 0
+            var openTunnelChannel: (UInt16, Set<UInt16>) throws -> CameraByteChannel
+            init(probe: CameraSSHHostProbe, openTunnelChannel: @escaping (UInt16, Set<UInt16>) throws -> CameraByteChannel) {
+                self.probe = probe
+                self.openTunnelChannel = openTunnelChannel
+            }
+            func probeHostKey(host: String, port: UInt16, timeout: TimeInterval) throws -> CameraSSHHostProbe {
+                probe
+            }
+            func connect(host: String, port: UInt16, username: String, password: String,
+                         expectedFingerprint: String, timeout: TimeInterval) throws -> CameraSSHTunneling {
+                connectAttempts += 1
+                guard constantTimeCameraFingerprintEquals(expectedFingerprint, probe.fingerprint) else {
+                    throw CameraProtocolError.sshFingerprintMismatch(
+                        expected: expectedFingerprint,
+                        actual: probe.fingerprint,
+                        keyType: probe.keyType
+                    )
+                }
+                guard username == expectedUser, password == expectedPassword else {
+                    throw CameraProtocolError.sshAuthenticationFailed
+                }
+                return FakeSSHTunnel(probe: probe, openPort: openTunnelChannel)
+            }
+        }
+
+        // Also assert slot1 vs slot2 withoutLocator remains distinct.
+        let s1 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0, name: "DSC00010.ARW", size: 1024, created: "100", modified: "", slot: 1)
+        let s2 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0, name: "DSC00010.ARW", size: 1024, created: "100", modified: "", slot: 2)
+        try check(s1.withoutLocator != s2.withoutLocator && s2.withoutLocator.slot == 2,
+                  "CameraAssetSnapshot.withoutLocator preserves slot distinction")
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-ssh-auth-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let authStore = InMemoryAuthStore()
+        let validFP = "SHA256:" + Data(repeating: 0x42, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        let probe = CameraSSHHostProbe(host: "192.168.122.1", port: 22, fingerprint: validFP, keyType: "ecdsa-sha2-nistp256")
+        let baseMillis: UInt64 = 1_700_000_000_000
+        let jpegLiveFrame = try makeLargeJPEG(targetSize: 1024, seed: 88)
+        var livePacket = Data("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\n".utf8)
+        livePacket.appendLE(UInt32(16))
+        livePacket.appendLE(UInt32(jpegLiveFrame.count))
+        livePacket.appendLE(UInt32(0))
+        livePacket.appendLE(UInt32(0))
+        livePacket.append(jpegLiveFrame)
+
+        var failPTPOverTunnel = true
+        var activePTPChannel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [
+            FakeSonyCameraEntry(content: 1, name: "DSC00100.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(1))
+        ])
+        var ptpConnectionCount = 0
+        var lastLiveChannel: LiveViewStreamChannel?
+
+        let transport = FakeSSHTransport(probe: probe) { port, _ in
+            if port == 60152 {
+                let ch = LiveViewStreamChannel(response: livePacket)
+                lastLiveChannel = ch
+                return ch
+            }
+            if failPTPOverTunnel {
+                return FailingPTPIPChannel()
+            }
+            ptpConnectionCount += 1
+            if ptpConnectionCount % 2 == 1 {
+                return PTPIPCommandBridgeChannel(activePTPChannel)
+            } else {
+                return SynchronizedEventChannel()
+            }
+        }
+
+        let backend = CameraWorkspaceBackend(
+            storage: store,
+            clientID: UUID(),
+            sshTransport: transport,
+            authStore: authStore,
+            directChannelOpener: CameraDirectChannelOpener { _, _ in throw CameraProtocolError.connectionRefused }
+        )
+        let controller = IOSCameraController(backend: backend)
+        let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE-SSH", label: "Fake")
+
+        // 1. Direct refused -> SSH probed -> prompts Access Auth.
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.accessAuthPrompt != nil && controller.phase == .paused }
+        try check(controller.accessAuthPrompt?.fingerprint == validFP && controller.accessAuthPrompt?.hasSavedCredentials == false,
+                  "Direct connection refusal with reachable SSH surfaces IOSCameraAccessAuthPrompt")
+
+        // 2. Submitting valid SSH credentials when PTP/IP over tunnel fails must NOT save credentials and must clear auth card to show error.
+        controller.submitAccessAuth(user: "camuser", password: "campass")
+        try await waitUntil { controller.phase == .paused && controller.accessAuthPrompt == nil && controller.notice != nil }
+        try check(authStore.load(cameraID: endpoint.connectionKey) == nil,
+                  "Credentials are NOT persisted when PTP/IP session fails inside SSH tunnel")
+
+        // 3. Reconnect, submit credentials with healthy PTP/IP -> browses assets and saves credentials.
+        failPTPOverTunnel = false
+        ptpConnectionCount = 0
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.accessAuthPrompt != nil }
+        controller.submitAccessAuth(user: "camuser", password: "campass")
+        try await waitUntil { controller.phase == .browsing && controller.assets.count == 1 }
+        try check(controller.accessAuthPrompt == nil && authStore.load(cameraID: endpoint.connectionKey)?.user == "camuser",
+                  "Successful SSH + PTP/IP connect browses assets and saves credentials in authStore")
+
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+
+        // 4. Subsequent connect auto-authenticates over SSH without showing prompt, and forgetSavedAccessAuth deletes stored record.
+        activePTPChannel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [
+            FakeSonyCameraEntry(content: 2, name: "DSC00101.ARW", createdMillis: baseMillis + 2_000, bytes: validRAWBytes(2))
+        ])
+        ptpConnectionCount = 0
+        let attemptsBeforeAuto = transport.connectAttempts
+        controller.connect(endpoint: endpoint, mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing && controller.assets.first?.snapshot.name == "DSC00101.ARW" }
+        try check(controller.accessAuthPrompt == nil && transport.connectAttempts == attemptsBeforeAuto + 1,
+                  "Subsequent connect auto-authenticates via saved SSH credentials")
+        await withCheckedContinuation { continuation in
+            controller.stop { continuation.resume() }
+        }
+
+        backend.forgetAccessAuth(cameraID: endpoint.connectionKey)
+        await drainBackend(backend)
+        try check(authStore.load(cameraID: endpoint.connectionKey) == nil,
+                  "forgetAccessAuth clears stored SSH credentials")
+
+        // 5. Tethering mode over SSH tunnel opens Live View through run.channelOpener on port 60152 with Host: localhost:60152.
+        activePTPChannel = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
+        activePTPChannel.liveViewURLString = "http://192.168.122.1:60152/liveviewstream?k=ssh"
+        ptpConnectionCount = 0
+        controller.connect(endpoint: endpoint, mode: .tethering, cardConfirmed: true, resume: false)
+        try await waitUntil { controller.accessAuthPrompt != nil }
+        controller.submitAccessAuth(user: "camuser", password: "campass")
+        try await waitUntil(timeout: 8) { controller.phase == .ready && controller.frame != nil }
+        let liveRequest = String(data: lastLiveChannel?.written ?? Data(), encoding: .utf8) ?? ""
+        try check(liveRequest.contains("Host: localhost:60152\r\n") && !liveRequest.contains("Host: 192.168.122.1"),
+                  "Tethering over SSH tunnel opens Live View port 60152 via tunnel with Host: localhost:60152")
 
         await withCheckedContinuation { continuation in
             controller.stop { continuation.resume() }
