@@ -18,21 +18,44 @@ SCANNED = (ROOT / "lutools/tests",)
 SUFFIXES = {".c", ".cc", ".cpp", ".h", ".hpp"}
 DIRECTIVE = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
 ANNOTATION = re.compile(r"gpu-portability:\s*metal-only\s+\S")
+NEGATED_METAL = re.compile(r"!\s*defined\s*\(?\s*SONY2FUJI_ENABLE_METAL\b")
+
+
+def _without_block_comments(text):
+    # Keep line numbers: replace each /* ... */ with the same number of newlines.
+    return re.sub(r"/\*.*?\*/", lambda match: "\n" * match.group(0).count("\n"), text, flags=re.S)
+
+
+def _condition(lines, index):
+    """The directive's condition with `\\` continuations joined and the trailing // comment removed."""
+    text = lines[index]
+    while text.endswith("\\") and index + 1 < len(lines):
+        index += 1
+        text = text[:-1] + " " + lines[index]
+    return text.split("//", 1)[0]
 
 
 def metal_only_branches(text):
-    """Return (line, directive) for Metal-only conditionals with an unannotated alternative branch."""
+    """Return (line, directive) for unannotated conditionals that leave D3D11/GLES on a "no Metal" path.
+
+    That is a SONY2FUJI_ENABLE_METAL conditional with an #else/#elif branch not covering D3D11 and
+    GLES, or a negated one (#ifndef / !defined) whose only branch is the non-Metal one.
+    """
     lines = text.splitlines()
+    code = _without_block_comments(text).splitlines()
     stack, findings = [], []
-    for number, line in enumerate(lines, 1):
+    for index, line in enumerate(code):
+        number = index + 1
         match = DIRECTIVE.match(line)
         if not match:
             continue
-        kind, rest = match.groups()
+        kind = match.group(1)
+        rest = _condition(code, index)[match.start(2):] if kind in ("if", "ifdef", "ifndef", "elif") else ""
         if kind in ("if", "ifdef", "ifndef"):
-            annotated = bool(ANNOTATION.search(line) or (number > 1 and ANNOTATION.search(lines[number - 2])))
-            stack.append({"line": number, "text": line.strip(), "conditions": [rest], "branches": 1,
-                          "annotated": annotated})
+            annotated = bool(ANNOTATION.search(lines[index]) or (index > 0 and ANNOTATION.search(lines[index - 1])))
+            negated = kind == "ifndef" or bool(NEGATED_METAL.search(rest))
+            stack.append({"line": number, "text": lines[index].strip(), "conditions": [rest], "branches": 1,
+                          "annotated": annotated, "negated": negated})
         elif kind in ("elif", "else") and stack:
             stack[-1]["branches"] += 1
             if kind == "elif":
@@ -40,8 +63,15 @@ def metal_only_branches(text):
         elif kind == "endif" and stack:
             block = stack.pop()
             conditions = " ".join(block["conditions"])
-            covers_other_gpus = "SONY2FUJI_ENABLE_D3D11" in conditions and "SONY2FUJI_ENABLE_GLES" in conditions
-            if ("SONY2FUJI_ENABLE_METAL" in conditions and block["branches"] > 1
+            if block["negated"]:
+                # "#if !METAL && !D3D11 && !GLES" means no GPU backend at all, which is correct.
+                covers_other_gpus = all(re.search(rf"!\s*defined\s*\(?\s*SONY2FUJI_ENABLE_{name}\b", conditions)
+                                        for name in ("D3D11", "GLES"))
+            else:
+                covers_other_gpus = all(re.search(rf"(?<!!)\bdefined\s*\(?\s*SONY2FUJI_ENABLE_{name}\b", conditions)
+                                        for name in ("D3D11", "GLES"))
+            has_non_metal_path = block["branches"] > 1 or block["negated"]
+            if ("SONY2FUJI_ENABLE_METAL" in conditions and has_non_metal_path
                     and not covers_other_gpus and not block["annotated"]):
                 findings.append((block["line"], block["text"]))
     return findings
@@ -83,6 +113,16 @@ class CppPortabilityGuardTests(unittest.TestCase):
             "#ifdef SONY2FUJI_ENABLE_METAL  // gpu-portability: metal-only\na();\n#else\nb();\n#endif\n": 1,
             "#ifdef SONY2FUJI_ENABLE_METAL\n#ifdef OTHER\nx();\n#else\ny();\n#endif\n#endif\n": 0,
             "#ifdef OTHER\n#ifdef SONY2FUJI_ENABLE_METAL\nx();\n#else\ny();\n#endif\n#endif\n": 1,
+            # Single-branch negations still put D3D11/GLES on the "no Metal" path.
+            "#ifndef SONY2FUJI_ENABLE_METAL\nexpectUnsupported();\n#endif\n": 1,
+            "#if !defined(SONY2FUJI_ENABLE_METAL)\nexpectUnsupported();\n#endif\n": 1,
+            "#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)\ncpuOnly();\n#endif\n": 0,
+            # Coverage must be real conditions, not text in a comment or a negation.
+            "#ifdef SONY2FUJI_ENABLE_METAL // SONY2FUJI_ENABLE_D3D11 SONY2FUJI_ENABLE_GLES\na();\n#else\nb();\n#endif\n": 1,
+            "#if defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_D3D11) && !defined(SONY2FUJI_ENABLE_GLES)\na();\n#else\nb();\n#endif\n": 1,
+            # Continuation lines and block comments.
+            "#if defined(FOO) || \\\n    defined(SONY2FUJI_ENABLE_METAL)\na();\n#else\nb();\n#endif\n": 1,
+            "/*\n#ifdef SONY2FUJI_ENABLE_METAL\n#else\n#endif\n*/\nint x;\n": 0,
         }
         for text, expected in cases.items():
             with self.subTest(text=text):
