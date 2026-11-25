@@ -23,8 +23,9 @@ struct MacPhotoPreviewPlan {
     }
     let record: MacPhotoEditRecord
     let look: URL?
-    let key: PhotoPreviewCacheKey
     let resourceURLs: [URL]
+    private let core: PhotoPreviewPlan
+    var key: PhotoPreviewCacheKey { core.key }
     var url: URL { URL(fileURLWithPath: record.identity.path) }
 
     static func isEditedState(_ state: MacPhotoEditState?, atPath path: String) -> Bool {
@@ -58,52 +59,40 @@ struct MacPhotoPreviewPlan {
         else if let recipeID = state.settings.masterRecipeID ?? state.masterRecipeID {
             guard let url = MasterRecipe.recipe(for: recipeID)?.lutURL() else { throw CocoaError(.fileNoSuchFile) }
             look = url
-        } else if !state.filmID.isEmpty {
-            guard let film = Film.independentRecipe(state.filmID) ?? films.first(where: {
-                $0.id == state.filmID || $0.browserID == state.filmID
+        } else if let filmID = state.filmID, !filmID.isEmpty {
+            guard let film = Film.independentRecipe(filmID) ?? films.first(where: {
+                $0.id == filmID || $0.browserID == filmID
             }) else { throw CocoaError(.fileNoSuchFile) }
             look = film.url
         } else { look = nil }
-        var resources = [URL]()
-        var precomputedHDRLook: (url: URL, result: MacResourceDigestCache.Result)? = nil
-        if let look { resources.append(look) }
+        var specs: [PhotoPreviewResourceSpec] = []
+        if let look { specs.append(PhotoPreviewResourceSpec(url: look)) }
         if state.settings.isHDREditing, let hdr = state.settings.hdr {
-            guard hdr.lookSettings.isValid else { throw CocoaError(.fileNoSuchFile) }
-            if let asset = hdr.lookSettings.asset(in: hdrLookDirectory) {
-                guard asset.isFileURL,
-                      let cached = try? resourceDigestCache.fingerprintDigest(
-                          for: asset, maxBytes: 32 * 1024 * 1024, onHash: Self.recordResourceHash),
-                      cached.digest.map({ String(format: "%02x", $0) }).joined() == hdr.lookSettings.sha256 else {
-                    throw CocoaError(.fileNoSuchFile)
-                }
-                resources.append(asset)
-                precomputedHDRLook = (asset, cached)
-            } else {
-                guard hdr.lookSettings.isDefault else { throw CocoaError(.fileNoSuchFile) }
-            }
-            if let profile = hdr.cameraDevelopmentSettings.cameraProfile {
-                resources.append(try HDRCameraProfileAssetStore.url(for: profile))
-            }
+            specs.append(contentsOf: try PhotoPreviewPlan.resolveHDRResourceSpecs(
+                hdr: hdr,
+                hdrLookDirectory: hdrLookDirectory,
+                profileURLProvider: { try HDRCameraProfileAssetStore.url(for: $0) }
+            ))
         }
         if state.settings.activeAIDenoise {
             guard let model = bundledAIModel else { throw CocoaError(.fileNoSuchFile) }
-            resources.append(model.appendingPathComponent("manifest.json"))
+            specs.append(PhotoPreviewResourceSpec(url: model.appendingPathComponent("manifest.json")))
         }
-        resourceURLs = resources
+        resourceURLs = specs.map(\.url)
+        let (requirements, encodedResources) = try PhotoPreviewPlan.evaluateResources(
+            specs,
+            includeFileIdentity: true,
+            digestCache: resourceDigestCache.rawDigestCache,
+            onHash: Self.recordResourceHash
+        )
         let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-        // 包含资源内容，导入同名 LUT 或替换其内容时不能复用旧图。
-        let fingerprints = try resources.map { url in
-            let cached: MacResourceDigestCache.Result
-            if let precomputedHDRLook, precomputedHDRLook.url == url {
-                cached = precomputedHDRLook.result
-            } else {
-                cached = try resourceDigestCache.fingerprintDigest(for: url, onHash: Self.recordResourceHash)
-            }
-            let identity = try encoder.encode(cached.identity)
-            return identity + cached.digest
-        }
-        key = PhotoPreviewCacheKey(identity: try encoder.encode(record.identity),
-            adjustments: try encoder.encode(state), resources: try encoder.encode(fingerprints), edge: Self.edge)
+        let cacheKey = PhotoPreviewCacheKey(
+            identity: try encoder.encode(record.identity),
+            adjustments: try encoder.encode(state),
+            resources: encodedResources,
+            edge: Self.edge
+        )
+        core = PhotoPreviewPlan(key: cacheKey, resourceRequirements: requirements)
     }
 
     func isCurrent(in store: MacEditPersistence, films: [Film],
@@ -117,25 +106,11 @@ struct MacPhotoPreviewPlan {
     }
 
     static func thumbnailData(_ image: CGImage, edge: Int = Self.edge) throws -> Data {
-        let scale = min(1, Double(edge) / Double(max(image.width, image.height)))
-        let width = max(1, Int((Double(image.width) * scale).rounded()))
-        let height = max(1, Int((Double(image.height) * scale).rounded()))
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-            bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteUnknown) }
-        context.interpolationQuality = .high
-        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-        let data = NSMutableData()
-        guard let small = context.makeImage(), let destination = CGImageDestinationCreateWithData(data,
-            UTType.png.identifier as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
-        CGImageDestinationAddImage(destination, small, nil)
-        guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
-        return data as Data
+        try PhotoPreviewThumbnailCodec.encodeThumbnail(image, maxEdge: edge, format: .png)
     }
 
     fileprivate static func decodeThumbnailImage(_ data: Data) -> NSImage? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else {
+        guard let cgImage = PhotoPreviewThumbnailCodec.decodeCGImage(data) else {
             // 不兜 NSImage(data:)：它能按 PNG 头部懒初始化出 0×0 空白图，把「解不出 CGImage」伪装成成功。
             return nil
         }
@@ -807,9 +782,11 @@ private struct MacAcceptedPhotoPreview {
         var candidates = resources
         if resources.isEmpty, let state = record.state, edited {
             // 资源暂时缺失时仍监听其目录，恢复文件后继续更新可见缩略图。
-            if let film = films.first(where: { $0.id == state.filmID || $0.browserID == state.filmID }) {
-                candidates.append(film.url)
-            } else if state.filmID.hasPrefix("/") { candidates.append(URL(fileURLWithPath: state.filmID)) }
+            if let filmID = state.filmID {
+                if let film = films.first(where: { $0.id == filmID || $0.browserID == filmID }) {
+                    candidates.append(film.url)
+                } else if filmID.hasPrefix("/") { candidates.append(URL(fileURLWithPath: filmID)) }
+            }
             if let hdr = state.settings.hdr, state.settings.isHDREditing {
                 if let asset = hdr.lookSettings.asset() { candidates.append(asset) }
                 if hdr.cameraDevelopmentSettings.cameraProfile != nil { candidates.append(HDRCameraProfileAssetStore.directory) }
@@ -873,15 +850,28 @@ private struct MacAcceptedPhotoPreview {
         let task = Task.detached(priority: .utility) { () -> MacAcceptedPhotoPreview? in
             do {
                 let store = try MacEditPersistence(directory: directory)
-                let plan = try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel)
-                guard try plan.isCurrent(in: store, films: films, bundledAIModel: aiModel) else { return nil }
-                let data = try MacPhotoPreviewPlan.thumbnailData(image)
-                guard try plan.isCurrent(in: store, films: films, bundledAIModel: aiModel),
-                      let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else { return nil }
-                try? cache.write(data, for: plan.key)
-                let cacheKey = PhotoThumbnailCacheKey(identity: record.identity, previewKey: plan.key)
-                thumbnails.store(decoded, for: cacheKey, expectedEditGeneration: editGen)
-                return MacAcceptedPhotoPreview(key: plan.key, image: decoded)
+                var decodedImage: NSImage?
+                let acceptedResult = try EditedPhotoPreviewCoordinator.acceptThumbnail(
+                    cache: cache,
+                    makePlan: { try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel) },
+                    isCurrent: { try $0.isCurrent(in: store, films: films, bundledAIModel: aiModel) },
+                    key: { $0.key },
+                    encode: {
+                        let data = try MacPhotoPreviewPlan.thumbnailData(image)
+                        guard let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else {
+                            throw CocoaError(.fileReadCorruptFile)
+                        }
+                        decodedImage = decoded
+                        return data
+                    },
+                    onAccepted: { plan, _ in
+                        guard let decoded = decodedImage else { return }
+                        let cacheKey = PhotoThumbnailCacheKey(identity: record.identity, previewKey: plan.key)
+                        thumbnails.store(decoded, for: cacheKey, expectedEditGeneration: editGen)
+                    }
+                )
+                guard let decoded = decodedImage else { return nil }
+                return MacAcceptedPhotoPreview(key: acceptedResult.key, image: decoded)
             } catch { return nil }
         }
         accepted = (record, task)
@@ -987,47 +977,60 @@ private actor MacPhotoPreviewWorker {
     }
     private func render(_ record: MacPhotoEditRecord, films: [Film], progress: AIPreparation,
                         relay: AIProgressRelay) throws -> (key: PhotoPreviewCacheKey, image: NSImage) {
-        try Task.checkCancellation()
         let store = try MacEditPersistence(directory: editDirectory)
         let resolvedAIModel = aiModelDirectory ?? RenderEngine.bundledAIModel
-        let plan = try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: resolvedAIModel)
-        guard try plan.isCurrent(in: store, films: films, bundledAIModel: resolvedAIModel) else { throw AdjustmentCommitError.expired }
-        if let data = try? cache.read(plan.key), let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) {
-            try Task.checkCancellation()
-            guard try plan.isCurrent(in: store, films: films, bundledAIModel: resolvedAIModel) else { throw AdjustmentCommitError.expired }
-            diskReadCount += 1
-            return (plan.key, decoded)
-        }
-        guard let settings = record.state?.settings else { throw AdjustmentCommitError.expired }
-        let engine = (prepareAI == nil || renderThumbnail == nil) ? try RenderEngine() : nil
-        if settings.activeAIDenoise {
-            defer { relay.finish() }
-            relay.emit(phase: 0, done: 0, total: 0)
-            if let prepareAI {
-                try prepareAI(plan.url, settings, progress)
-            } else if let engine {
-                try RenderEngine.validateAIInput(plan.url, settings: settings)
-                try engine.prepareAI(plan.url, settings: settings, progress: progress)
-            }
-        }
-        try Task.checkCancellation()
-        let cgImage: CGImage
-        if let renderThumbnail {
-            guard let custom = try renderThumbnail(plan.url, settings, plan.look) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-            cgImage = custom
-        } else {
-            guard let frame = try engine!.render(plan.url, settings: settings, lut: plan.look,
-                edge: MacPhotoPreviewPlan.edge, viewportPreview: true) else { throw CocoaError(.fileReadCorruptFile) }
-            cgImage = frame.image
-        }
-        try Task.checkCancellation()
-        guard try plan.isCurrent(in: store, films: films, bundledAIModel: resolvedAIModel) else { throw AdjustmentCommitError.expired }
-        renderCount += 1
-        let data = try MacPhotoPreviewPlan.thumbnailData(cgImage)
-        guard let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else { throw CocoaError(.fileReadCorruptFile) }
-        try? cache.write(data, for: plan.key)
-        return (plan.key, decoded)
+        var decodedImage: NSImage?
+        var cacheHit = false
+        var cacheMiss = false
+        let outcome = try EditedPhotoPreviewCoordinator.loadOrRenderThumbnail(
+            cache: cache,
+            makePlan: { try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: resolvedAIModel) },
+            isCurrent: { try $0.isCurrent(in: store, films: films, bundledAIModel: resolvedAIModel) },
+            key: { $0.key },
+            decodeCached: { data in
+                guard let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else { return false }
+                decodedImage = decoded
+                return true
+            },
+            render: { plan in
+                guard let settings = record.state?.settings else { throw AdjustmentCommitError.expired }
+                let engine = (prepareAI == nil || renderThumbnail == nil) ? try RenderEngine() : nil
+                if settings.activeAIDenoise {
+                    defer { relay.finish() }
+                    relay.emit(phase: 0, done: 0, total: 0)
+                    if let prepareAI {
+                        try prepareAI(plan.url, settings, progress)
+                    } else if let engine {
+                        try RenderEngine.validateAIInput(plan.url, settings: settings)
+                        try engine.prepareAI(plan.url, settings: settings, progress: progress)
+                    }
+                }
+                try Task.checkCancellation()
+                if let renderThumbnail {
+                    guard let custom = try renderThumbnail(plan.url, settings, plan.look) else {
+                        throw CocoaError(.fileReadCorruptFile)
+                    }
+                    return custom
+                } else {
+                    guard let frame = try engine!.render(plan.url, settings: settings, lut: plan.look,
+                        edge: MacPhotoPreviewPlan.edge, viewportPreview: true) else { throw CocoaError(.fileReadCorruptFile) }
+                    return frame.image
+                }
+            },
+            encode: { cgImage in
+                let data = try MacPhotoPreviewPlan.thumbnailData(cgImage)
+                guard let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                decodedImage = decoded
+                return data
+            },
+            onCacheHit: { cacheHit = true },
+            onCacheMissWrite: { _, _ in cacheMiss = true }
+        )
+        if cacheHit { diskReadCount += 1 }
+        if cacheMiss { renderCount += 1 }
+        guard let decoded = decodedImage else { throw CocoaError(.fileReadCorruptFile) }
+        return (outcome.key, decoded)
     }
 }

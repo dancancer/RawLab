@@ -243,11 +243,11 @@ class RasterNativeInstrumentedTest {
         writeGradient(fullInput, 47, 31)
         val settings = EditSettings(
             exposure = 0.55f,
-            highlights = -0.25f,
+            highlights = 0.25f,
             shadows = 0.3f,
-            contrast = 0.28f,
+            contrast = 1.28f,
             toneCurve = 0.2f,
-            saturation = 0.22f,
+            saturation = 1.22f,
             sharpening = 0.35f,
             denoise = DenoiseSettings(enabled = true, luma = 8f, chroma = 64f, coarse = 72f),
             displayChromaDenoise = 1,
@@ -315,7 +315,7 @@ class RasterNativeInstrumentedTest {
         writeGradient(input, 160, 120)
         val settings = EditSettings(
             exposure = 0.35f,
-            saturation = 0.12f,
+            saturation = 1.12f,
             geometry = GeometrySettings(cropX = 0.2f, cropY = 0.15f, cropWidth = 0.65f, cropHeight = 0.7f, quarterTurns = 1),
         )
         try {

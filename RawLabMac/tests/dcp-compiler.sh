@@ -9,10 +9,9 @@ for source in core/dcp_compiler ffi/dcp_compiler_c; do
         -I "$ROOT/lutools/include" -I "$ROOT/lutools/third_party" \
         -c "$ROOT/lutools/src/$source.cpp" -o "$OUT/$(basename "$source").o"
 done
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" macos 0 all
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/Shared/DCPCompiler.swift" \
     "$ROOT/RawLabMac/tests/DCPTestFixtures.swift" \
     "$ROOT/RawLabMac/tests/DCPCompilerTests.swift" "$OUT"/*.o -lc++ -o "$OUT/dcp-compiler"
 "$OUT/dcp-compiler"

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/atomic_output_transaction.h"
+
 #include <atomic>
 #include <cstdint>
 #include <cstring>
@@ -10,12 +12,6 @@
 #include <string_view>
 #include <unordered_map>
 #include <vector>
-
-#if defined(_WIN32)
-#include <process.h>
-#else
-#include <unistd.h>
-#endif
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -253,44 +249,20 @@ private:
     }
 
     void writeToDisk(const ShaderCacheKey& key, const std::vector<uint8_t>& bytecode, uint32_t version) const {
-        std::error_code ec;
-        std::filesystem::create_directories(diskDirectory_, ec);
-        if (ec) return;
-        static std::atomic<uint64_t> tempSequence{0};
-#if defined(_WIN32)
-        const unsigned long pid = static_cast<unsigned long>(_getpid());
-#else
-        const unsigned long pid = static_cast<unsigned long>(getpid());
-#endif
-        const uint64_t seq = tempSequence.fetch_add(1, std::memory_order_relaxed);
         const auto target = blobPath(key);
-        const auto temp = diskDirectory_ / (key.id + ".tmp." + std::to_string(pid) + "." + std::to_string(seq));
         const auto serialized = serializeShaderBlob(key, bytecode, version);
-        {
-            std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-            if (!out) return;
-            out.write(reinterpret_cast<const char*>(serialized.data()),
-                      static_cast<std::streamsize>(serialized.size()));
-            out.flush();
-            if (!out) {
-                out.close();
-                std::filesystem::remove(temp, ec);
-                return;
-            }
-            out.close();
-            if (out.fail()) {
-                std::filesystem::remove(temp, ec);
-                return;
-            }
-        }
-#if defined(_WIN32)
-        if (!MoveFileExW(temp.c_str(), target.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-            std::filesystem::remove(temp, ec);
-        }
-#else
-        std::filesystem::rename(temp, target, ec);
-        if (ec) std::filesystem::remove(temp, ec);
-#endif
+        AtomicOutputOptions options;
+        options.stagingPrefix = key.id + ".tmp";
+        options.stagingExtension = ".tmp";
+        options.modePolicy = OutputModePolicy::Standard0644;
+        options.rejectSymlinkTarget = true;
+        options.createParentDirs = true;
+        options.syncFile = true;
+        options.winRetryOnTransient = true;
+        AtomicOutputTransaction tx(target, options);
+        if (tx.begin() != AtomicOutputStatus::Ok) return;
+        if (tx.writeAll(serialized.data(), serialized.size(), false) != AtomicOutputStatus::Ok) return;
+        (void)tx.commit();
     }
 
     std::filesystem::path diskDirectory_;

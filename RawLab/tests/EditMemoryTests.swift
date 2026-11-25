@@ -109,31 +109,31 @@ struct EditMemoryTests {
         try Data("second".utf8).write(to: sameNameB)
         let store = try EditPersistence(directory: root)
         var changed = RawSettings.default
-        changed.geometry.cropX = 0.125
-        changed.geometry.cropY = 0.25
-        changed.geometry.cropWidth = 0.75
-        changed.geometry.cropHeight = 0.5
-        changed.geometry.quarterTurns = 1
-        changed.geometry.flipHorizontal = true
-        changed.geometry.straightenDegrees = -4.2
+        changed.geometrySettings.cropX = 0.125
+        changed.geometrySettings.cropY = 0.25
+        changed.geometrySettings.cropWidth = 0.75
+        changed.geometrySettings.cropHeight = 0.5
+        changed.geometrySettings.quarterTurns = 1
+        changed.geometrySettings.flipHorizontal = true
+        changed.geometrySettings.straightenDegrees = -4.2
         changed.exposure = 0.75
         changed.exposureMode = .sensor
-        changed.hsl.set(.saturation, channel: 0, value: -60)
+        changed.hslSettings.set(.saturation, channel: 0, value: -60)
         changed.whiteBalanceMode = .custom
         changed.temperature = 4250
         changed.denoise = RawDenoiseSettings(enabled: true, luma: 10, chroma: 72, coarse: 100)
-        changed.photoEffects.vignetteMidpoint = 62
-        changed.photoEffects.grainSize = 60
+        changed.effectSettings.vignetteMidpoint = 62
+        changed.effectSettings.grainSize = 60
         changed.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false,
                                                        mode: .manual, profileID: "Maker\n镜头 Model,|\nMount\n1.000000")
         try store.save(first, state: PhotoEditState(settings: changed, filmID: "provia"))
 
         let reopened = try EditPersistence(directory: root)
         check(try reopened.state(for: first)?.settings.exposure == 0.75, "edit survives restart")
-        check(try reopened.state(for: first)?.settings.hsl == changed.hsl && reopened.state(for: first)?.settings.exposureMode == .sensor,
+        check(try reopened.state(for: first)?.settings.hslSettings == changed.hslSettings && reopened.state(for: first)?.settings.exposureMode == .sensor,
               "HSL and the selected exposure mode survive restart")
-        check(try reopened.state(for: first)?.settings.geometry == changed.geometry, "geometry survives restart")
-        check(RawSettings.default.geometry.isIdentity, "new photos default to identity geometry")
+        check(try reopened.state(for: first)?.settings.geometrySettings == changed.geometrySettings, "geometry survives restart")
+        check(RawSettings.default.geometrySettings.isIdentity, "new photos default to identity geometry")
         var invalidGeometry = try JSONSerialization.jsonObject(with: JSONEncoder().encode(changed)) as! [String: Any]
         invalidGeometry["geometry"] = ["cropX": 0.5, "cropWidth": 0.75]
         do {
@@ -144,7 +144,7 @@ struct EditMemoryTests {
         check(try reopened.state(for: first)?.settings.denoise == changed.denoise, "denoise survives restart")
         check(try reopened.state(for: first)?.settings.lensCorrection == changed.lensCorrection, "lens configuration survives restart")
         check(LensCorrectionSettings(mode: .manual).coreProfileID == "__rawlab_manual_selection_required__", "manual mode never falls back to automatic")
-        check(try reopened.state(for: first)?.settings.photoEffects == changed.photoEffects,
+        check(try reopened.state(for: first)?.settings.effectSettings == changed.effectSettings,
               "photo effects auxiliary values survive restart even when amount is zero")
         check(try reopened.state(for: first)?.settings.whiteBalanceMode == .custom, "white balance mode survives restart")
         check(try reopened.state(for: second) == nil, "unseen photo uses no previous record")
@@ -152,8 +152,10 @@ struct EditMemoryTests {
         legacy.removeValue(forKey: "processing")
         legacy.removeValue(forKey: "geometry")
         legacy.removeValue(forKey: "denoise")
+        legacy.removeValue(forKey: "waveletNoiseReduction")
         legacy.removeValue(forKey: "photoEffects")
         legacy.removeValue(forKey: "displayChromaDenoise")
+        legacy.removeValue(forKey: "chromaNoiseReduction")
         legacy.removeValue(forKey: "hsl")
         legacy.removeValue(forKey: "exposureMode")
         legacy.removeValue(forKey: "lensCorrection")
@@ -247,11 +249,11 @@ struct EditMemoryTests {
             } catch is DecodingError { }
         }
         check(true, "unknown or null processing identity rejects before rendering")
-        check(legacySettings.geometry.isIdentity, "older records default to identity geometry")
+        check(legacySettings.geometrySettings.isIdentity, "older records default to identity geometry")
         check(legacySettings.denoise == RawDenoiseSettings(), "older records default to disabled denoise")
         check(!legacySettings.lensSettings.isEnabled, "older records default to disabled lens correction")
-        check(legacySettings.photoEffects == PhotoEffectsSettings(), "older records default to disabled photo effects")
-        check(legacySettings.hsl.isIdentity && legacySettings.exposureMode == .scene, "legacy records preserve scene exposure and no HSL")
+        check(legacySettings.effectSettings == PhotoEffectsSettings(), "older records default to disabled photo effects")
+        check(legacySettings.hslSettings.isIdentity && legacySettings.exposureMode == .scene, "legacy records preserve scene exposure and no HSL")
 
         try store.save(sameNameA, state: PhotoEditState(settings: changed))
         var other = RawSettings.default
@@ -417,7 +419,7 @@ extension EditMemoryTests {
         check(EditorAdjustmentRules.isModified(.group(.color), snapshot: PhotoEditState(settings: rasterRecipe), context: context),
               "RAW recipe tint still marks the color group as modified")
         var rasterAuxiliary = rasterWB
-        rasterAuxiliary.photoEffects.grainSize = 61
+        rasterAuxiliary.effectSettings.grainSize = 61
         rasterAuxiliary.denoise.chroma = 72
         rasterAuxiliary.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "disabled-profile")
         for group in [EditorAdjustmentGroup.effects, .detail, .geometry] {
@@ -451,11 +453,11 @@ extension EditMemoryTests {
         settings.shadows = 0.2; settings.contrast = 1.1; settings.toneCurve = 0.3
         settings.saturation = 1.2; settings.whiteBalanceMode = .custom
         settings.temperature = 4250; settings.tint = 12
-        settings.hsl = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[0.5,1.5,0,0,0,0,0,0],\"saturation\":[2.5,3.5,0,0,0,0,0,0],\"lightness\":[4.5,5.5,0,0,0,0,0,0]}".utf8))
-        settings.photoEffects.vignetteMidpoint = 63; settings.photoEffects.grainSize = 61
+        settings.hslSettings = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[0.5,1.5,0,0,0,0,0,0],\"saturation\":[2.5,3.5,0,0,0,0,0,0],\"lightness\":[4.5,5.5,0,0,0,0,0,0]}".utf8))
+        settings.effectSettings.vignetteMidpoint = 63; settings.effectSettings.grainSize = 61
         settings.denoise = RawDenoiseSettings(enabled: false, luma: 10, chroma: 72, coarse: 100)
-        settings.noiseReduction = 0.3; settings.sharpening = 0.4; settings.displayChromaDenoise = 2
-        settings.geometry.quarterTurns = 1
+        settings.sharpening = 0.4; settings.displayChromaDenoise = 2
+        settings.geometrySettings.quarterTurns = 1
         settings.lensCorrection = LensCorrectionSettings(mode: .manual, profileID: "stored-disabled-profile")
         let original = state(settings)
         for group in EditorAdjustmentGroup.visibleGroups(isHDREditing: false) {
@@ -472,12 +474,12 @@ extension EditMemoryTests {
             (.adjustment(.temperature), { $0.whiteBalanceMode = .camera; $0.temperature = 5200; $0.tint = 8 }),
             (.adjustment(.tint), { $0.whiteBalanceMode = .camera; $0.temperature = 5200; $0.tint = 8 }),
             (.adjustment(.saturation), { $0.saturation = 1 }),
-            (.adjustment(.hsl), { $0.hsl = HSLSettings() }),
-            (.adjustment(.vignette), { $0.photoEffects.resetVignette() }),
-            (.adjustment(.grain), { $0.photoEffects.resetGrain() }),
-            (.adjustment(.noiseReduction), { $0.noiseReduction = 0; $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
+            (.adjustment(.hsl), { $0.hslSettings = HSLSettings() }),
+            (.adjustment(.vignette), { $0.effectSettings.resetVignette() }),
+            (.adjustment(.grain), { $0.effectSettings.resetGrain() }),
+            (.adjustment(.noiseReduction), { $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
             (.adjustment(.sharpening), { $0.sharpening = 0 }),
-            (.geometry, { $0.geometry = GeometrySettings() }),
+            (.geometry, { $0.geometrySettings = GeometrySettings() }),
             (.lens, { $0.lensCorrection = nil })
         ]
         for (tool, resetOwnedFields) in toolExpectations {
@@ -515,18 +517,18 @@ extension EditMemoryTests {
         expected.shadows = 0; expected.contrast = 1; expected.toneCurve = 0
         check(light.settings == expected && light.filmID == "external", "light reset preserves all unselected values and identity")
         let color = candidate(.group(.color), original)
-        check(color.settings.whiteBalanceMode == .camera && color.settings.temperature == 5200 && color.settings.tint == 8 && color.settings.saturation == 1 && color.settings.hsl.isIdentity, "color reset uses actual camera WB and clears HSL")
-        check(color.settings.photoEffects == settings.photoEffects && color.settings.exposureMode == .scene, "color reset preserves effects and legacy exposure mode")
+        check(color.settings.whiteBalanceMode == .camera && color.settings.temperature == 5200 && color.settings.tint == 8 && color.settings.saturation == 1 && color.settings.hslSettings.isIdentity, "color reset uses actual camera WB and clears HSL")
+        check(color.settings.effectSettings == settings.effectSettings && color.settings.exposureMode == .scene, "color reset preserves effects and legacy exposure mode")
         let effects = candidate(.group(.effects), original)
-        check(effects.settings.photoEffects == PhotoEffectsSettings() && effects.settings.denoise == settings.denoise, "effects reset includes disabled auxiliary values")
+        check(effects.settings.effectSettings == PhotoEffectsSettings() && effects.settings.denoise == settings.denoise, "effects reset includes disabled auxiliary values")
         let detail = candidate(.group(.detail), original)
-        check(detail.settings.denoise == RawDenoiseSettings() && detail.settings.noiseReduction == 0 && detail.settings.displayChromaDenoise == 0 && detail.settings.sharpening == 0, "detail reset clears modern and legacy complete noise settings")
+        check(detail.settings.denoise == RawDenoiseSettings() && detail.settings.displayChromaDenoise == 0 && detail.settings.sharpening == 0, "detail reset clears modern and legacy complete noise settings")
         let geometry = candidate(.group(.geometry), original)
-        check(geometry.settings.geometry.isIdentity && geometry.settings.lensCorrection == nil && geometry.settings.hsl == settings.hsl, "geometry reset includes complete disabled lens configuration")
+        check(geometry.settings.geometrySettings.isIdentity && geometry.settings.lensCorrection == nil && geometry.settings.hslSettings == settings.hslSettings, "geometry reset includes complete disabled lens configuration")
         let channel = candidate(.hslChannel(0), original)
-        check(channel.settings.hsl.hue[0] == 0 && channel.settings.hsl.saturation[0] == 0 && channel.settings.hsl.lightness[0] == 0 && channel.settings.hsl.hue[1] == 1.5 && channel.settings.hsl.saturation[1] == 3.5 && channel.settings.hsl.lightness[1] == 5.5,
+        check(channel.settings.hslSettings.hue[0] == 0 && channel.settings.hslSettings.saturation[0] == 0 && channel.settings.hslSettings.lightness[0] == 0 && channel.settings.hslSettings.hue[1] == 1.5 && channel.settings.hslSettings.saturation[1] == 3.5 && channel.settings.hslSettings.lightness[1] == 5.5,
               "HSL channel reset isolates three axes and preserves other fractional channels")
-        check(candidate(.allHSL, original).settings.hsl.isIdentity, "all HSL reset clears 24 values")
+        check(candidate(.allHSL, original).settings.hslSettings.isIdentity, "all HSL reset clears 24 values")
         let all = candidate(.all, original)
         var defaults = RawSettings.default; defaults.temperature = 5200; defaults.tint = 8
         check(all.settings == defaults && all.filmID == nil, "all reset restores effective defaults and clears identities")
@@ -540,7 +542,7 @@ extension EditMemoryTests {
         let nilFilm = try JSONDecoder().decode(PhotoEditState.self, from: JSONSerialization.data(withJSONObject: nilFilmJSON))
         check(candidate(.allHSL, nilFilm).filmID == nil, "non-look reset preserves explicit nil filmID even with LUT")
         let look = candidate(.group(.looks), nilFilm)
-        check(look.filmID == nil && look.settings.lutID == nil && look.settings.masterRecipeID == nil && look.settings.lutStrength == 1 && look.settings.hsl == settings.hsl, "looks clears all identities without touching independent adjustments")
+        check(look.filmID == nil && look.settings.lutID == nil && look.settings.masterRecipeID == nil && look.settings.lutStrength == 1 && look.settings.hslSettings == settings.hslSettings, "looks clears all identities without touching independent adjustments")
         let recipe = MasterRecipe.allRecipes[0]
         for strength in [0.0, 0.5, 1, 2] {
             var recipeSettings = settings
@@ -548,9 +550,9 @@ extension EditMemoryTests {
             recipeSettings.whiteBalanceMode = .camera; recipeSettings.tint = 3
             recipeSettings.lutStrength = strength
             let result = candidate(.group(.looks), state(recipeSettings), context)
-            check(result.settings.exposure == strength && Float(result.settings.contrast) == Float(1 + 0.1 * strength) && result.settings.hsl.hue[0] == 0.5 * strength && result.settings.tint == (strength == 0 ? 0 : 8 + 3 * strength),
+            check(result.settings.exposure == strength && Float(result.settings.contrast) == Float(1 + 0.1 * strength) && result.settings.hslSettings.hue[0] == 0.5 * strength && result.settings.tint == (strength == 0 ? 0 : 8 + 3 * strength),
                   "looks materializes recipe strength \(strength) with fractional HSL and real WB")
-            check(result.settings.masterRecipeID == nil && result.settings.lutID == nil && result.filmID == nil && result.settings.exposureMode == .scene && result.settings.geometry == settings.geometry,
+            check(result.settings.masterRecipeID == nil && result.settings.lutID == nil && result.filmID == nil && result.settings.exposureMode == .scene && result.settings.geometrySettings == settings.geometrySettings,
                   "recipe removal clears all look identities and retains other groups")
             check(EditorAdjustmentRules.isModified(.group(.light), snapshot: state(recipeSettings), context: context), "recipe storage remains modified at strength \(strength)")
         }
@@ -572,7 +574,7 @@ extension EditMemoryTests {
         check(candidate(.group(.looks), state(recipeSettings), noCamera).settings.whiteBalanceMode == .camera, "RAW camera zero tint remains calibration-free")
         recipeSettings.whiteBalanceMode = .custom; recipeSettings.tint = 10
         let rasterLook = candidate(.group(.looks), state(recipeSettings), raster)
-        check(rasterLook.settings.whiteBalanceMode == recipeSettings.whiteBalanceMode && rasterLook.settings.temperature == recipeSettings.temperature && rasterLook.settings.tint == recipeSettings.tint && rasterLook.settings.noiseReduction == recipeSettings.noiseReduction && rasterLook.settings.lensCorrection == recipeSettings.lensCorrection, "raster materialization retains disabled RAW fields under processor effective constraints")
+        check(rasterLook.settings.whiteBalanceMode == recipeSettings.whiteBalanceMode && rasterLook.settings.temperature == recipeSettings.temperature && rasterLook.settings.tint == recipeSettings.tint && rasterLook.settings.lensCorrection == recipeSettings.lensCorrection, "raster materialization retains disabled RAW fields under processor effective constraints")
         recipeSettings.exposure = 4; recipeSettings.lutStrength = 2
         check(blocked(recipeSettings, .group(.looks), context), "unrepresentable scaled exposure blocks without clamping")
         recipeSettings = RawSettings.default; recipeSettings.masterRecipeID = "unknown-recipe"
@@ -601,21 +603,21 @@ extension EditMemoryTests {
         let legacyExposureReset = candidate(.all, state(legacy, film: nil))
         check(legacyExposureReset.settings.exposureMode == .preview && legacyExposureReset.settings.processing == .legacy,
               "all restores explicit preview default while preserving legacy processing")
-        var legacyChanged = legacy; legacyChanged.hsl.set(.hue, channel: 1, value: 5)
+        var legacyChanged = legacy; legacyChanged.hslSettings.set(.hue, channel: 1, value: 5)
         check(candidate(.allHSL, state(legacyChanged), noCamera).settings.exposureMode == .scene,
               "legacy missing exposure mode stays scene for unrelated reset")
         var storedRecipe = settings; storedRecipe.masterRecipeID = recipe.id; storedRecipe.lutStrength = 0
         let lightRecipe = candidate(.group(.light), state(storedRecipe), noCamera)
-        check(lightRecipe.settings.masterRecipeID == recipe.id && lightRecipe.settings.hsl == settings.hsl &&
+        check(lightRecipe.settings.masterRecipeID == recipe.id && lightRecipe.settings.hslSettings == settings.hslSettings &&
               lightRecipe.settings.tint == settings.tint && lightRecipe.settings.lutStrength == 0,
               "light reset at recipe strength zero preserves color and recipe without replay")
         let colorRecipe = candidate(.group(.color), state(storedRecipe), context)
         check(colorRecipe.settings.tint == 0 && colorRecipe.settings.masterRecipeID == recipe.id && colorRecipe.settings.exposure == 1,
               "recipe color reset clears relative tint and leaves light contribution stored")
         storedRecipe.tint = 90; storedRecipe.lutStrength = 2
-        storedRecipe.hsl.set(.saturation, channel: 4, value: 75)
+        storedRecipe.hslSettings.set(.saturation, channel: 4, value: 75)
         let clamped = candidate(.group(.looks), state(storedRecipe), context)
-        check(clamped.settings.tint == 150 && clamped.settings.hsl.saturation[4] == 100,
+        check(clamped.settings.tint == 150 && clamped.settings.hslSettings.saturation[4] == 100,
               "materialization preserves existing native tint and HSL clamp")
         for (key, invalid) in [(\RawSettings.temperature, 1999.0), (\RawSettings.tint, 151.0),
                                (\RawSettings.contrast, 2.01), (\RawSettings.sharpening, -0.01),

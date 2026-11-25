@@ -230,6 +230,116 @@ def _eval_gha_template(template, context):
     return re.sub(r"\$\{\{(.*?)\}\}", repl, str(template))
 
 
+def _expr_root_contexts(expr):
+    contexts = set()
+    i = 0
+    n = len(expr)
+    while i < n:
+        ch = expr[i]
+        if ch == "'":
+            i += 1
+            while i < n:
+                if expr[i] == "'":
+                    if i + 1 < n and expr[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+        if ch.isalpha() or ch == "_":
+            j = i
+            while j < n and (expr[j].isalnum() or expr[j] in "._-"):
+                j += 1
+            ident = expr[i:j]
+            k = j
+            while k < n and expr[k].isspace():
+                k += 1
+            is_call = k < n and expr[k] == "("
+            prev_is_dot = i > 0 and expr[i - 1] == "."
+            ident_lower = ident.lower()
+            if not is_call and not prev_is_dot and ident_lower not in {"true", "false", "null"}:
+                contexts.add(ident_lower.split(".", 1)[0])
+            i = j
+            continue
+        i += 1
+    return contexts
+
+
+def _extract_gha_expressions(text):
+    exprs = []
+    s = str(text)
+    i = 0
+    n = len(s)
+    while i < n:
+        start = s.find("${{", i)
+        if start == -1:
+            break
+        j = start + 3
+        in_quote = False
+        end = -1
+        while j < n:
+            ch = s[j]
+            if in_quote:
+                if ch == "'":
+                    if j + 1 < n and s[j + 1] == "'":
+                        j += 2
+                        continue
+                    in_quote = False
+                j += 1
+                continue
+            if ch == "'":
+                in_quote = True
+                j += 1
+                continue
+            if s.startswith("}}", j):
+                end = j
+                break
+            j += 1
+        if end == -1:
+            break
+        exprs.append(s[start + 3:end])
+        i = end + 2
+    return exprs
+
+
+def _env_expr_root_contexts(env_map):
+    refs = []
+    if not isinstance(env_map, dict):
+        return refs
+    for key, value in env_map.items():
+        for field, raw in (("key", key), ("value", value)):
+            for expr in _extract_gha_expressions(raw):
+                refs.append((str(key), field, expr.strip(), _expr_root_contexts(expr)))
+    return refs
+
+
+WORKFLOW_ENV_FORBIDDEN_CONTEXTS = {"env", "secrets", "runner", "steps", "job", "needs", "strategy", "matrix"}
+JOB_ENV_FORBIDDEN_CONTEXTS = {"env", "runner", "steps", "job"}
+
+
+def _invalid_env_context_errors(wf_data, rel="workflow"):
+    errors = []
+    if not isinstance(wf_data, dict):
+        return errors
+    for key, field, expr, roots in _env_expr_root_contexts(wf_data.get("env")):
+        bad = sorted(roots & WORKFLOW_ENV_FORBIDDEN_CONTEXTS)
+        if bad:
+            errors.append(
+                f"{rel} workflow-level env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}"
+            )
+    for job_id, job in (wf_data.get("jobs") or {}).items():
+        if not isinstance(job, dict):
+            continue
+        for key, field, expr, roots in _env_expr_root_contexts(job.get("env")):
+            bad = sorted(roots & JOB_ENV_FORBIDDEN_CONTEXTS)
+            if bad:
+                errors.append(
+                    f"{rel} jobs.{job_id}.env[{key!r}] ({field}) references invalid contexts {bad} in: {expr}"
+                )
+    return errors
+
+
 def _needs_set(job):
     needs = job.get("needs", [])
     if isinstance(needs, str):
@@ -584,6 +694,11 @@ class WorkflowContractTests(unittest.TestCase):
             "assets-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "native-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
             "dep-archives-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "gradle-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "pip-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "cargo-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "x3f-rust-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
+            "swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}},
         }
         base_matrix = {"suite": "all"}
         for job_name, step in save_steps:
@@ -870,6 +985,256 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("--no-rum", run)
         self.assertNotIn("apksigner sign", run)
         self.assertNotIn("RAWLAB_RELEASE_KEYSTORE", run)
+
+    def test_android_uses_split_gradle_cache_and_bounded_workers(self):
+        steps = self.workflow["jobs"]["android"]["steps"]
+        restores = [s for s in steps if s.get("id") == "gradle-cache"]
+        self.assertEqual(len(restores), 1)
+        restore = restores[0]
+        self.assertTrue(restore["uses"].startswith("actions/cache/restore@"))
+        self.assertEqual(restore.get("continue-on-error"), "true")
+        self.assertIn("~/.gradle/caches", restore["with"]["path"])
+        self.assertIn("~/.gradle/wrapper", restore["with"]["path"])
+
+        saves = [
+            s for s in steps
+            if s.get("uses", "").startswith("actions/cache/save@")
+            and s["with"].get("key") == restore["with"].get("key")
+        ]
+        self.assertEqual(len(saves), 1)
+        save_if = _strip_expr(saves[0]["if"])
+        self.assertIn("steps.gradle-cache.outcome == 'success'", save_if)
+        self.assertIn("steps.gradle-cache.outputs.cache-hit != 'true'", save_if)
+
+        models_step = [s for s in steps if "testDebugUnitTest" in s.get("run", "")]
+        self.assertEqual(len(models_step), 1)
+        self.assertIn("--max-workers=4", models_step[0]["run"])
+
+        build_step = [s for s in steps if ":app:assembleRelease" in s.get("run", "")]
+        self.assertEqual(len(build_step), 1)
+        self.assertIn("--max-workers=2", build_step[0]["run"])
+
+    def test_batch_selection_reuses_windows_native_cargo_and_pip_caches(self):
+        steps = self.workflow["jobs"]["windows-batch-selection"]["steps"]
+        restores = [s for s in steps if s.get("uses", "").startswith("actions/cache/restore@")]
+        saves = [s for s in steps if s.get("uses", "").startswith("actions/cache/save@")]
+
+        key_steps = [s for s in steps if s.get("id") == "native-key"]
+        self.assertEqual(len(key_steps), 1)
+        self.assertIn("native_cache.py key --platform windows --arch x86_64", key_steps[0]["run"])
+
+        by_id = {s.get("id"): s for s in restores}
+        for required_id in ("native-cache", "cargo-cache", "x3f-rust-cache", "pip-cache"):
+            self.assertIn(required_id, by_id, f"Missing restore step {required_id} in windows-batch-selection")
+            restore = by_id[required_id]
+            self.assertEqual(restore.get("continue-on-error"), "true")
+            matching_saves = [s for s in saves if s["with"].get("key") == restore["with"].get("key")]
+            self.assertEqual(len(matching_saves), 1, f"Expected single save step for {required_id}")
+            save_if = _strip_expr(matching_saves[0]["if"])
+            self.assertIn("success()", save_if)
+            self.assertIn(f"steps.{required_id}.outcome == 'success'", save_if)
+            self.assertIn(f"steps.{required_id}.outputs.cache-hit != 'true'", save_if)
+
+        self.assertEqual(_norm(by_id["native-cache"]["with"].get("lookup-only")), "${{ needs.changes.outputs.cold == 'true' }}")
+        self.assertNotIn("restore-keys", by_id["native-cache"]["with"])
+        self.assertNotIn("restore-keys", by_id["x3f-rust-cache"]["with"])
+
+        builds = [s for s in steps if "RawLabWindows/native" in s.get("run", "")]
+        self.assertEqual(len(builds), 1)
+        build = builds[0]
+        cache_hit_expr = _norm(build.get("env", {}).get("RAWLAB_CI_CACHE_HIT", ""))
+        self.assertIn("needs.changes.outputs.cold != 'true'", cache_hit_expr)
+        self.assertIn("steps.native-cache.outputs.cache-hit == 'true'", cache_hit_expr)
+        for restore in restores:
+            self.assertLess(steps.index(restore), steps.index(build))
+        for save in saves:
+            self.assertLess(steps.index(build), steps.index(save))
+
+        self.assertNotIn("rust-docs", build["run"])
+        self.assertIn("-DRAWLAB_COLLECT_X3F_LICENSES=OFF", build["run"])
+        self.assertIn("'inventory'", build["run"])
+
+        job_env = self.workflow["jobs"]["windows-batch-selection"].get("env", {})
+        self.assertNotIn("PIP_CACHE_DIR", job_env)
+        pip_restore_path = by_id["pip-cache"]["with"]["path"]
+        self.assertEqual(pip_restore_path, "${{ runner.temp }}/rawlab-ci/cache/pip")
+        dep_key_steps = [s for s in steps if s.get("id") == "dep-archives-key"]
+        self.assertEqual(len(dep_key_steps), 1)
+        dep_key_run = dep_key_steps[0]["run"]
+        self.assertIn("$env:PIP_CACHE_DIR = \"$ciRoot\\cache\\pip\"", dep_key_run)
+        self.assertIn("\"PIP_CACHE_DIR=$env:PIP_CACHE_DIR\"", dep_key_run)
+        self.assertLess(dep_key_run.index("PIP_CACHE_DIR=$env:PIP_CACHE_DIR"), dep_key_run.index("pip install"))
+        self.assertLess(steps.index(dep_key_steps[0]), steps.index(build))
+
+        win_steps = self.workflow["jobs"]["windows"]["steps"]
+        win_rust = [s for s in win_steps if "rustup" in s.get("run", "")]
+        self.assertEqual(len(win_rust), 1)
+        self.assertIn("--component rust-docs", win_rust[0]["run"])
+        win_build = [s for s in win_steps if "RawLabWindows/build.ps1" in s.get("run", "")]
+        self.assertEqual(len(win_build), 1)
+        self.assertNotIn("RAWLAB_COLLECT_X3F_LICENSES=OFF", win_build[0]["run"])
+
+    def test_windows_native_ctest_runs_in_parallel_without_sccache(self):
+        steps = self.workflow["jobs"]["windows"]["steps"]
+        win_build = [s for s in steps if "RawLabWindows/build.ps1" in s.get("run", "")]
+        self.assertEqual(len(win_build), 1)
+        invocations = _ctest_invocations(win_build[0]["run"])
+        self.assertEqual(len(invocations), 1)
+        self.assertIn("--parallel", invocations[0])
+        self.assertIn("$env:JOBS", invocations[0])
+        self.assertNotIn("sccache", self.text)
+
+    def test_apple_jobs_wire_swiftpm_caches(self):
+        for job_name, expected_key_fragment in (
+            ("macos", "rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-"),
+            ("ios", "rawlab-swiftpm-v1-ios-xcode27-"),
+        ):
+            with self.subTest(job=job_name):
+                steps = self.workflow["jobs"][job_name]["steps"]
+                restores = [s for s in steps if s.get("id") == "swiftpm-cache"]
+                self.assertEqual(len(restores), 1)
+                restore = restores[0]
+                self.assertIn(expected_key_fragment, restore["with"]["key"])
+                model_steps = [s for s in steps if "apple-models.sh" in s.get("run", "")]
+                self.assertEqual(len(model_steps), 1)
+                self.assertEqual(model_steps[0].get("env", {}).get("RAWLAB_CI_SWIFTPM_CACHE"), ".cache/ci/swiftpm")
+                self.assertLess(steps.index(restore), steps.index(model_steps[0]))
+
+    def test_apple_swiftpm_cache_is_never_saved_when_unpopulated(self):
+        base_github = {
+            "repository": "dancancer/RawLab",
+            "event_name": "workflow_dispatch",
+            "event": {},
+        }
+        for checks in ("models", "build", "native", "full"):
+            changes_outputs = {
+                "checks": checks,
+                "models": "true" if checks in ("models", "full") else "false",
+                "build": "true" if checks in ("build", "native", "full") else "false",
+                "native": "true" if checks in ("native", "full") else "false",
+            }
+            for row in macos_matrix(checks):
+                with self.subTest(job="macos", checks=checks, arch=row["arch"], suite=row["suite"]):
+                    steps = self.workflow["jobs"]["macos"]["steps"]
+                    restore = next(s for s in steps if s.get("id") == "swiftpm-cache")
+                    save = next(
+                        s for s in steps
+                        if s.get("uses", "").startswith("actions/cache/save@")
+                        and s["with"].get("key") == restore["with"].get("key")
+                    )
+                    ctx = {
+                        "_success": True,
+                        "github": base_github,
+                        "needs": {"changes": {"outputs": changes_outputs}},
+                        "matrix": row,
+                    }
+                    restore_runs = _gha_truthy(_eval_gha_expr(_strip_expr(restore["if"]), ctx))
+                    expected = (checks == "models" and row["arch"] == "arm64") or (
+                        checks in ("native", "full") and row["suite"] in ("all", "core")
+                    )
+                    self.assertEqual(restore_runs, expected)
+
+                    save_expr = _strip_expr(save["if"])
+                    sim_ctx = {
+                        **ctx,
+                        "steps": {"swiftpm-cache": {"outcome": "success" if restore_runs else "skipped", "outputs": {"cache-hit": "false"}}},
+                    }
+                    standalone_ctx = {
+                        **ctx,
+                        "steps": {"swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}}},
+                    }
+                    self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)), expected)
+                    self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)), expected)
+                    if checks == "build" or row["suite"] in ("build", "agent", "render"):
+                        self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)))
+                        self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)))
+
+            with self.subTest(job="ios", checks=checks):
+                steps = self.workflow["jobs"]["ios"]["steps"]
+                restore = next(s for s in steps if s.get("id") == "swiftpm-cache")
+                save = next(
+                    s for s in steps
+                    if s.get("uses", "").startswith("actions/cache/save@")
+                    and s["with"].get("key") == restore["with"].get("key")
+                )
+                ctx = {
+                    "_success": True,
+                    "github": base_github,
+                    "needs": {"changes": {"outputs": changes_outputs}},
+                }
+                restore_runs = _gha_truthy(_eval_gha_expr(_strip_expr(restore["if"]), ctx))
+                expected = checks in ("models", "full")
+                self.assertEqual(restore_runs, expected)
+
+                save_expr = _strip_expr(save["if"])
+                sim_ctx = {
+                    **ctx,
+                    "steps": {"swiftpm-cache": {"outcome": "success" if restore_runs else "skipped", "outputs": {"cache-hit": "false"}}},
+                }
+                standalone_ctx = {
+                    **ctx,
+                    "steps": {"swiftpm-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}}},
+                }
+                self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)), expected)
+                self.assertEqual(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)), expected)
+                if checks in ("build", "native"):
+                    self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, sim_ctx)))
+                    self.assertFalse(_gha_truthy(_eval_gha_expr(save_expr, standalone_ctx)))
+
+        mac_build = next(
+            s for s in self.workflow["jobs"]["macos"]["steps"]
+            if "RawLabMac/build.sh" in s.get("run", "")
+        )
+        run_lines = mac_build["run"].splitlines()
+        core_idx = next(i for i, line in enumerate(run_lines) if "if in_suite core; then" in line)
+        mkdir_idx = next(i for i, line in enumerate(run_lines) if ".cache/ci/swiftpm/deps" in line)
+        self.assertGreater(mkdir_idx, core_idx)
+
+    def test_workflow_and_job_env_do_not_reference_invalid_contexts(self):
+        workflow_files = sorted(
+            list((ROOT / ".github/workflows").glob("*.yml"))
+            + list((ROOT / ".github/workflows").glob("*.yaml"))
+        )
+        self.assertTrue(workflow_files, "No GitHub workflow files found")
+
+        for wf_path in workflow_files:
+            wf_data = yaml.load(wf_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+            rel = wf_path.relative_to(ROOT).as_posix()
+            with self.subTest(workflow=rel):
+                self.assertEqual(_invalid_env_context_errors(wf_data, rel=rel), [])
+
+        self.assertEqual(_expr_root_contexts("runner.temp"), {"runner"})
+        self.assertEqual(_expr_root_contexts("runner['temp']"), {"runner"})
+        self.assertEqual(_expr_root_contexts("RUNNER.temp"), {"runner"})
+        self.assertEqual(_expr_root_contexts("Runner['TEMP']"), {"runner"})
+        self.assertEqual(_expr_root_contexts("format('{0}', steps.foo.outputs.bar)"), {"steps"})
+        self.assertEqual(_expr_root_contexts("'runner.temp'"), set())
+        self.assertEqual(_expr_root_contexts("TRUE || FALSE || NULL"), set())
+
+        self.assertEqual(
+            _env_expr_root_contexts({"TRICKY": "${{ format('}} {0}', runner.temp) }}"}),
+            [("TRICKY", "value", "format('}} {0}', runner.temp)", {"runner"})],
+        )
+        self.assertEqual(
+            _env_expr_root_contexts({"TRICKY_ESCAPED": "${{ format('''}} {0}', runner.temp) }}"}),
+            [("TRICKY_ESCAPED", "value", "format('''}} {0}', runner.temp)", {"runner"})],
+        )
+
+        self.assertEqual(
+            _invalid_env_context_errors({
+                "env": {"OK": "${{ vars.FOO }}-${{ github.ref }}-${{ inputs.bar }}"},
+                "jobs": {"build": {"env": {"OK": "${{ matrix.os }}-${{ needs.prep.outputs.x }}-${{ secrets.TOK }}"}}},
+            }),
+            [],
+        )
+
+        self.assertTrue(_invalid_env_context_errors({"env": {"BAD": "${{ env.FOO }}"}}))
+        self.assertTrue(_invalid_env_context_errors({"env": {"BAD": "${{ secrets.TOKEN }}"}}))
+        self.assertTrue(_invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ env.FOO }}"}}}}))
+        self.assertTrue(_invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ RUNNER.temp }}"}}}}))
+        self.assertTrue(
+            _invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ format('}} {0}', runner.temp) }}"}}}})
+        )
 
 
 if __name__ == "__main__":

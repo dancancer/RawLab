@@ -177,7 +177,8 @@ public readonly record struct AdjustmentTransferNoticeBannerState(
 public sealed record AdjustmentTransferContext(string Identifier,bool IsRaw,
     IReadOnlySet<string>? AvailableLookIDs=null,int DefaultExposureMode=1,bool HasUncommittedDraft=false,Action<LensSettings>? ValidateLens=null,
     (double Temperature,double Tint)? CameraWhiteBalance=null, bool IsProRAW=false, bool SupportsCameraHDR=false,
-    Action<Adjustments>? ValidateHDRCamera=null,Action<AdjustmentTransferNotice>? OnTransferNotice=null)
+    Action<Adjustments>? ValidateHDRCamera=null,Action<AdjustmentTransferNotice>? OnTransferNotice=null,
+    string? HdrLooksDirectory = null)
 {
     internal bool SupportsHDRCameraDevelopment => IsRaw && SupportsCameraHDR && !IsProRAW;
 }
@@ -197,7 +198,11 @@ public static class AdjustmentTransfer
         return Capture(scope, committed, context);
     }
 
-    internal static AdjustmentRecipeContext? Recipe(AdjustmentSnapshot s) => s.MasterRecipeID is {} id ? new(id,s.Values[(int)Parameter.Strength]/100,s.MasterRecipeSettingsVersion) : null;
+    internal static AdjustmentRecipeContext? Recipe(AdjustmentSnapshot s)
+    {
+        s = s.Normalized();
+        return s.MasterRecipeID is {} id ? new(id,s.Values[(int)Parameter.Strength],s.MasterRecipeSettingsVersion) : null;
+    }
     public static AdjustmentPayload Capture(AdjustmentScope scope,SavedEdit edit,AdjustmentTransferContext context)
     {
         if(context.HasUncommittedDraft) throw new AdjustmentTransferException(AdjustmentFailure.Draft);
@@ -235,7 +240,7 @@ public static class AdjustmentTransfer
         if (target.Settings.HDR is { Mode: HDRMode.Hdr })
         {
             ValidateHDRContext(target,context,"hdr.target");
-            var candidate = HDRAdjustmentTransfer.Prepare(p,target,context.SupportsHDRCameraDevelopment);
+            var candidate = HDRAdjustmentTransfer.Prepare(p, target, context.SupportsHDRCameraDevelopment, context.HdrLooksDirectory);
             if (p.Fields.Contains(F.HdrCameraDevelopment)) {
                 var validate = context.ValidateHDRCamera ?? throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.camera_development");
                 validate(candidate.Settings.Restore());
@@ -254,6 +259,8 @@ public static class AdjustmentTransfer
             p=new(p.Source with {HdrProcessingVersion=null},p.Values.ToDictionary(pair=>pair.Key,pair=>pair.Value));
         }
         var storedTarget=target;
+        _ = storedTarget.Settings.Restore();
+        target = target with { Settings = target.Settings.Normalized() };
         // Q4：来源与目标处理版本不同不拒绝，沿用目标处理版本并一次性提示。
         if(p.Source.ProcessingVersion!=storedTarget.Settings.Processing.Version) context.OnTransferNotice?.Invoke(AdjustmentTransferNotice.RetainedTargetProcessingVersion);
         if(context.IsRaw && context.CameraWhiteBalance is {} calibration) {
@@ -306,12 +313,16 @@ public static class AdjustmentTransfer
         if (edit.Settings.ProRAWDecodeVersion != expectedVersion)
             throw new AdjustmentTransferException(AdjustmentFailure.Incompatible,"hdr.proraw_version");
     }
-    internal static double Scale(AdjustmentSnapshot s)=>s.MasterRecipeID==null ? 1 : s.Values[(int)Parameter.Strength]/100;
+    internal static double Scale(AdjustmentSnapshot s)
+    {
+        s = s.Normalized();
+        return s.MasterRecipeID==null ? 1 : s.Values[(int)Parameter.Strength];
+    }
     public static IReadOnlyDictionary<F,float> EffectiveNumbers(AdjustmentSnapshot s)
     {
         var a=s.Restore();var r=a.Request("",null,0,null);
-        var result=new Dictionary<F,float> {[F.Strength]=(float)a[Parameter.Strength]/100,[F.Exposure]=r.ExposureEv,[F.Contrast]=r.Contrast,
-            [F.Highlights]=r.Highlights,[F.Shadows]=r.Shadows,[F.SCurve]=(float)Math.Clamp(a[Parameter.ToneCurve]*a.RefinementScale,-100,100)/100,[F.Saturation]=r.Saturation,[F.Sharpening]=r.Sharpening,
+        var result=new Dictionary<F,float> {[F.Strength]=(float)a[Parameter.Strength],[F.Exposure]=r.ExposureEv,[F.Contrast]=r.Contrast,
+            [F.Highlights]=r.Highlights,[F.Shadows]=r.Shadows,[F.SCurve]=(float)Math.Clamp(a[Parameter.ToneCurve]*a.RefinementScale,-1,1),[F.Saturation]=r.Saturation,[F.Sharpening]=r.Sharpening,
             [F.BlackPoint]=(float)a.RenderToneControls.BlackPoint,[F.WhitePoint]=(float)a.RenderToneControls.WhitePoint,[F.Vibrance]=(float)a.RenderToneControls.Vibrance,
             [F.Clarity]=(float)a.RenderAtmosphere.Clarity,[F.Dehaze]=(float)a.RenderAtmosphere.Dehaze};
         var hsl=a.RenderHsl.Values;
@@ -356,6 +367,7 @@ public static class AdjustmentTransfer
     }
     private static AdjustmentSnapshot NativeValue(AdjustmentSnapshot s,F field,double value)
     {
+        s = s.Normalized();
         if(AdjustmentTransferValues.ToneFields.ContainsKey(field) || AdjustmentTransferValues.AtmosphereFields.ContainsKey(field))return AdjustmentTransferValues.SetLogical(s,field,value);
         var values=(double[])s.Values.Clone(); values[(int)AdjustmentTransferValues.Scalars[field]]=value;
         var result=s with {Values=values};_=result.Restore();return result;

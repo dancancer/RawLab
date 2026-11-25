@@ -69,6 +69,30 @@ import SwiftUI
         let previousCancels = targetCancels; input.cancelOperation(nil); input.mouseUp(with: pointer(.leftMouseUp, CGPoint(x: 150, y: 80)))
         guard targetCancels > previousCancels && targetEnds == 2 else { fatalError("Cancelled target accepted a late mouse-up") }
         guard targetExits == 1 else { fatalError("Escape cancels the gesture and exits target mode") }
-        print("PASS: native cancel, subsequent pan and dismantle lifecycle; Escape exits HSL target mode")
+
+        var pinned: [CGPoint] = []
+        input.configure(MacCanvasInput(imageRect: CGRect(x: -100, y: 20, width: 500, height: 200),
+            excludedRects: [CGRect(x: 0, y: 20, width: 40, height: 40)], target: nil, pinMode: true,
+            canHold: false, onHold: { _ in }, onPan: { _ in }, onPanEnd: {}, onDoubleClick: {},
+            onPin: { pinned.append($0) }))
+        func barePointer(_ type: NSEvent.EventType, _ point: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: input.convert(point, to: nil), modifierFlags: [],
+                timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 1)!
+        }
+        input.mouseDown(with: barePointer(.leftMouseDown, CGPoint(x: 150, y: 120)))
+        input.mouseUp(with: barePointer(.leftMouseUp, CGPoint(x: 150, y: 120)))
+        guard pinned == [CGPoint(x: 0.5, y: 0.5)] else { fatalError("Click in pinMode did not pin expected normalized point") }
+        input.mouseDown(with: barePointer(.leftMouseDown, CGPoint(x: 150, y: 120)))
+        input.mouseUp(with: barePointer(.leftMouseUp, CGPoint(x: 170, y: 120)))
+        guard pinned.count == 1 else { fatalError("Drag in pinMode spuriously pinned an anchor") }
+
+        guard MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: .command, charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [.command, .shift], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [.command, .option], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: [], charactersIgnoringModifiers: "="),
+              !MacViewingKeyboard.isCommandEqualsZoomShortcut(modifiers: .command, charactersIgnoringModifiers: "-") else {
+            fatalError("Command+= zoom-in shortcut matching failed")
+        }
+        print("PASS: native cancel, subsequent pan, pinMode tap-vs-drag, Command+= shortcut, and dismantle lifecycle; Escape exits HSL target mode")
     }
 }

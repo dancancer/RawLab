@@ -11,8 +11,8 @@ extension EditorModel {
         do {
             var candidate=try settings.withHDRMode(enabled,sourceIsHDR:sourceIsHDR,
                 cameraRAW:sourceSupportsCameraHDR)
-            if enabled, sourceSupportsCameraHDR, try HDRSourceInfo.probeRAW(file)?.proRAW != nil {
-                candidate.proRAWDecodeVersion = try ProRAWSource.validatedDecodeVersion(settings.proRAWDecodeVersion)
+            if enabled, sourceSupportsCameraHDR, try HDRSourceInfo.probeRAW(file)?.isProRAW == true {
+                candidate.proRAWDecodeVersion = try HDRSourceInfo.validatedProRAWDecodeVersion(settings.proRAWDecodeVersion)
             }
             guard saveEdits() else { return }
             let snapshot=editState(settings:candidate)

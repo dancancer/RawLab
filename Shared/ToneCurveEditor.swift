@@ -43,7 +43,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if channel == .rgb {
+            if channel == .rgb && !showSplitMarkers {
                 ViewThatFits(in: .horizontal) {
                     HStack { modeTitle; Spacer(minLength: 12); switchButton }
                     VStack(alignment: .leading) { modeTitle; switchButton }
@@ -59,7 +59,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
                         }
                         VStack(spacing: 8) { plot.frame(maxWidth: 320); pointControls }
                     }
-                    Text(L10n.text("点击曲线区域添加控制点，拖动中间点调整。"))
+                    Text(L10n.text("点击添加控制点；双击控制点或拖出画布可删除。"))
                         .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                     ViewThatFits(in: .horizontal) {
                         HStack { addButton; removeButton; Spacer(minLength: 4); resetButton }
@@ -91,7 +91,7 @@ struct ToneCurveEditor<Coordinates: View, Legacy: View>: View {
     }
     private var canvas: some View {
         ToneCurveCanvas(value: channelBinding, selected: $selected, scope: "\(scope).\(channel.rawValue)",
-            channel: channel, showSplitMarkers: showSplitMarkers, fine: fine,
+            channel: channel, showSplitMarkers: showSplitMarkers, allowsPointEditing: !(showSplitMarkers && channel == .rgb), fine: fine,
             isCurrent: isCurrent, canChange: canChange, prepareEditing: prepareEditing,
             onEditingChanged: onEditingChanged, onCancelled: onCancelled)
     }

@@ -25,10 +25,12 @@ internal static class AdjustmentTransferWB
     {if(!valid)throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,field);}
     private static void RequireCalibration(AdjustmentSnapshot s)
     {
+        s = s.Normalized();
         if(s.MasterRecipeID!=null && (s.Values[(int)Parameter.Tint]*AdjustmentTransfer.Scale(s)!=0 || !s.CameraWhiteBalance)) _=Camera(s);
     }
     private static AdjustmentSnapshot Set(AdjustmentSnapshot s,bool camera,double temperature,double tint)
     {
+        s = s.Normalized();
         var values=(double[])s.Values.Clone();values[(int)Parameter.Temperature]=temperature;values[(int)Parameter.Tint]=tint;
         var result=s with {CameraWhiteBalance=camera,Values=values};_=result.Restore();return result;
     }
@@ -63,6 +65,8 @@ internal static class AdjustmentTransferWB
     internal static AdjustmentSnapshot Apply(AdjustmentPayload p,AdjustmentSnapshot target,AdjustmentSnapshot s,
         AdjustmentTransferContext context,bool fullRecipe,bool changed)
     {
+        target = target.Normalized();
+        s = s.Normalized();
         var selected=p.Fields.Intersect(AdjustmentFields.WhiteBalance).ToHashSet();
         // 非 RAW 来源没有独立白平衡，none/null 占位值不覆盖 RAW 目标白平衡；配方相对 tint 仍跨 RAW 复用。
         if(!p.Source.IsRaw && context.IsRaw && (p.Source.Recipe==null || !selected.Contains(F.Tint)))selected.Clear();

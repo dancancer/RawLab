@@ -67,6 +67,14 @@ sony2fuji_status hook_process(sony2fuji_session* session, const sony2fuji_reques
 }
 DYLD_INTERPOSE_NAME(hook_process, sony2fuji_process, process)
 
+sony2fuji_status hook_session_render(sony2fuji_session* session, const sony2fuji_render_options_v1* options,
+                                     const char* edit_state_json, sony2fuji_buffer* output,
+                                     sony2fuji_viewport_roi_result* out_roi) {
+    g_process_calls.fetch_add(1);
+    return sony2fuji_session_render(session, options, edit_state_json, output, out_roi);
+}
+DYLD_INTERPOSE_NAME(hook_session_render, sony2fuji_session_render, session_render)
+
 sony2fuji_status hook_load_display_image(const char* path, sony2fuji_buffer* out_buffer) {
     g_load_display_image.fetch_add(1);
     return sony2fuji_load_display_image(path, out_buffer);
@@ -110,8 +118,8 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$TARGET" -isysro
     -F "$HARNESS/Frameworks" -framework sony2fuji -framework ImageIO -framework CoreGraphics -lc++ \
     -Xlinker -rpath -Xlinker @executable_path/Frameworks \
     -o "$HARNESS/Frameworks/libpreflight_counter.dylib"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$CACHE" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/tests/AdjustmentHistoryModelTests.swift" "$ROOT/RawLab/tests/IOSQuickPresetModelChecks.swift" "$ROOT/RawLab/tests/IOSBatchFlowModelChecks.swift" "$OUT/bridge.o" \

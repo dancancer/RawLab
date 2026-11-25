@@ -20,8 +20,8 @@ if [[ -f "$RAW_FIXTURE" ]]; then
 fi
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
 rawlab_ios_core_shared_sources SOURCES "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" \

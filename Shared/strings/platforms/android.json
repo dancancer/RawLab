@@ -1926,7 +1926,7 @@
     },
     "curve_hint": {
       "formats": [],
-      "source": "点击曲线区域添加控制点，拖动中间点调整。",
+      "source": "点击添加控制点；双击控制点或拖出画布可删除。",
       "file": "editor_strings.xml",
       "types": []
     },
@@ -6973,7 +6973,7 @@
     "curve_reset": {
       "file": "editor_strings.xml",
       "formats": [],
-      "source": "重置曲线",
+      "source": "重置参数曲线",
       "types": []
     },
     "grading_luminance": {
@@ -7166,6 +7166,154 @@
       "file": "strings.xml",
       "formats": [],
       "source": "忘记已保存凭据",
+      "types": []
+    },
+    "diagnostics_title": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "故障诊断与错误日志",
+      "types": []
+    },
+    "diagnostics_recording": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "记录详细诊断日志",
+      "types": []
+    },
+    "diagnostics_privacy_notice": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。",
+      "types": []
+    },
+    "diagnostics_status_recording": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。",
+      "types": []
+    },
+    "diagnostics_status_recovered": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。",
+      "types": []
+    },
+    "diagnostics_status_ready": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。",
+      "types": []
+    },
+    "diagnostics_status_off": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。",
+      "types": []
+    },
+    "diagnostics_note_label": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "问题简述（选填，勿填个人隐私）",
+      "types": []
+    },
+    "diagnostics_save_device": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "保存到设备…",
+      "types": []
+    },
+    "diagnostics_share_zip": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "分享诊断包…",
+      "types": []
+    },
+    "diagnostics_upload": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "一键云端上传",
+      "types": []
+    },
+    "diagnostics_uploading": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "正在上传…",
+      "types": []
+    },
+    "diagnostics_preview": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "预览日志",
+      "types": []
+    },
+    "diagnostics_clear": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "清除日志",
+      "types": []
+    },
+    "diagnostics_code_format": {
+      "file": "strings.xml",
+      "formats": [
+        "%1$s"
+      ],
+      "source": "诊断码：{0}",
+      "types": [
+        "s"
+      ]
+    },
+    "diagnostics_copy_code": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "复制诊断码",
+      "types": []
+    },
+    "diagnostics_copied": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已复制",
+      "types": []
+    },
+    "diagnostics_saved_feedback": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。",
+      "types": []
+    },
+    "diagnostics_export_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法导出诊断包。",
+      "types": []
+    },
+    "diagnostics_upload_succeeded": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "上传成功，请复制诊断码发送给开发者。",
+      "types": []
+    },
+    "diagnostics_upload_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "云端上传暂不可用，请先将诊断包保存到设备后发送。",
+      "types": []
+    },
+    "diagnostics_upload_too_large": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。",
+      "types": []
+    },
+    "diagnostics_empty": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "暂无可导出的错误日志。",
+      "types": []
+    },
+    "diagnostics_cleared": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "已清除本地诊断日志。",
       "types": []
     }
   },
@@ -8700,86 +8848,6 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
-    },
-    "相机访问验证": {
-      "de": "Kamera-Zugriffsauthentifizierung",
-      "en": "Camera Access Authentication",
-      "es": "Autenticación de acceso a la cámara",
-      "fr": "Authentification d'accès à l'appareil photo",
-      "ja": "カメラのアクセス認証",
-      "zh-Hans": "相机访问验证"
-    },
-    "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。": {
-      "de": "Prüfen Sie Benutzername und Passwort im Menü „Zugriffsaut.-Info“ der Kamera, vergleichen Sie den Fingerabdruck unten und melden Sie sich an.",
-      "en": "Check the username and password in the camera's Access Authen. Info menu, verify the fingerprint below, then sign in.",
-      "es": "Consulta el nombre de usuario y la contraseña en el menú Información de autenticación de acceso de la cámara, comprueba la huella siguiente e inicia sesión.",
-      "fr": "Consultez le nom d'utilisateur et le mot de passe dans le menu Infos d'authentification d'accès de l'appareil photo, vérifiez l'empreinte ci-dessous, puis connectez-vous.",
-      "ja": "カメラの「アクセス認証情報」メニューでユーザー名とパスワードを確認し、下のフィンガープリントと一致していることを確認してから入力してください。",
-      "zh-Hans": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"
-    },
-    "相机密钥指纹（请与相机屏幕核对）": {
-      "de": "Kameraschlüssel-Fingerabdruck (mit Kamerabildschirm abgleichen)",
-      "en": "Camera key fingerprint (verify against the camera screen)",
-      "es": "Huella de clave de la cámara (compruébala en la pantalla)",
-      "fr": "Empreinte de clé de l'appareil photo (à vérifier sur l'écran)",
-      "ja": "カメラ鍵フィンガープリント（カメラ画面と照合）",
-      "zh-Hans": "相机密钥指纹（请与相机屏幕核对）"
-    },
-    "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。": {
-      "de": "Der Schlüssel-Fingerabdruck der Kamera hat sich geändert. Prüfen Sie den Fingerabdruck auf dem Kamerabildschirm, bevor Sie die Zugangsdaten erneut eingeben.",
-      "en": "The camera's key fingerprint changed. Verify the fingerprint on the camera screen before re-entering credentials.",
-      "es": "La huella de clave de la cámara ha cambiado. Compruébala en la pantalla de la cámara antes de volver a introducir las credenciales.",
-      "fr": "L'empreinte de clé de l'appareil photo a changé. Vérifiez l'empreinte sur l'écran de l'appareil avant de saisir à nouveau les identifiants.",
-      "ja": "カメラの鍵フィンガープリントが変更されました。カメラ画面で照合してから認証情報を再入力してください。",
-      "zh-Hans": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
-    },
-    "用户名": {
-      "de": "Benutzername",
-      "en": "Username",
-      "es": "Nombre de usuario",
-      "fr": "Nom d'utilisateur",
-      "ja": "ユーザー名",
-      "zh-Hans": "用户名"
-    },
-    "密码": {
-      "de": "Passwort",
-      "en": "Password",
-      "es": "Contraseña",
-      "fr": "Mot de passe",
-      "ja": "パスワード",
-      "zh-Hans": "密码"
-    },
-    "验证并连接": {
-      "de": "Prüfen & verbinden",
-      "en": "Verify & Connect",
-      "es": "Verificar y conectar",
-      "fr": "Vérifier et connecter",
-      "ja": "認証して接続",
-      "zh-Hans": "验证并连接"
-    },
-    "正在验证访问凭据…": {
-      "de": "Zugangsdaten werden geprüft…",
-      "en": "Verifying access credentials…",
-      "es": "Verificando credenciales de acceso…",
-      "fr": "Vérification des identifiants d'accès…",
-      "ja": "アクセス認証情報を確認中…",
-      "zh-Hans": "正在验证访问凭据…"
-    },
-    "访问验证失败，请核对相机屏幕中的用户名与密码。": {
-      "de": "Zugriffsauthentifizierung fehlgeschlagen. Prüfen Sie Benutzername und Passwort auf dem Kamerabildschirm.",
-      "en": "Access authentication failed. Check the username and password shown on the camera screen.",
-      "es": "Error de autenticación de acceso. Comprueba el nombre de usuario y la contraseña en la pantalla de la cámara.",
-      "fr": "Échec de l'authentification d'accès. Vérifiez le nom d'utilisateur et le mot de passe affichés sur l'appareil photo.",
-      "ja": "アクセス認証に失敗しました。カメラ画面に表示されたユーザー名とパスワードを確認してください。",
-      "zh-Hans": "访问验证失败，请核对相机屏幕中的用户名与密码。"
-    },
-    "忘记已保存凭据": {
-      "de": "Gespeicherte Zugangsdaten löschen",
-      "en": "Forget saved credentials",
-      "es": "Olvidar credenciales guardadas",
-      "fr": "Oublier les identifiants enregistrés",
-      "ja": "保存済みの認証情報を削除",
-      "zh-Hans": "忘记已保存凭据"
     }
   }
 }

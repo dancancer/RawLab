@@ -256,16 +256,15 @@ import Foundation
         var context = raw
         context.transferNotices = { notices.append($0) }
         var target = RawSettings.default
-        target.noiseReduction = 0.2
         let old = AdjustmentTransferSource(identifier: "old", isRaw: true, processingVersion: 1, recipe: nil)
         let payload = try AdjustmentTransferPayload(source: old, values: [
             "light.exposure": .number(0.33), "detail.denoise.raw_level": .number(1), "detail.denoise.post_rgb": .number(0.5)])
         let result = try IOSAdjustmentTransfer.prepare(payload: payload, target: state(target), context: context)
-        check(result.settings.exposure == 0.33 && result.settings.noiseReduction == 0.5 &&
+        check(result.settings.exposure == 0.33 &&
             result.settings.processing.version == 3,
-            "iOS applies post_rgb, ignores raw_level and keeps the target processing version on mismatch")
-        check(notices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
-            "iOS reports the retained processing version first and the ignored raw level once")
+            "iOS ignores raw_level and SDR post_rgb and keeps the target processing version on mismatch")
+        check(notices == [.retainedTargetProcessingVersion, .ignoredRawDenoise, .ignoredPostRGBDenoise],
+            "iOS reports the retained processing version first and each ignored denoise field once")
         var silentNotices = [AdjustmentTransferNotice]()
         var quiet = raw
         quiet.transferNotices = { silentNotices.append($0) }
@@ -366,8 +365,8 @@ import Foundation
     }
     static func scopes() throws {
         var source = RawSettings.default
-        source.exposure = 1.25; source.contrast = 1.2; source.geometry.cropWidth = 0.8
-        check(source.hsl.setExact(.hue, channel: 0, value: 12.375), "Fractional HSL fixture is valid")
+        source.exposure = 1.25; source.contrast = 1.2; source.geometrySettings.cropWidth = 0.8
+        check(source.hslSettings.setExact(.hue, channel: 0, value: 12.375), "Fractional HSL fixture is valid")
         let standard = try IOSAdjustmentTransfer.capture(scope: .standard, snapshot: state(source), context: raw)
         check(!standard.fields.contains(.cropWidth), "Default copy excludes geometry")
         let all = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
@@ -378,7 +377,7 @@ import Foundation
         var target = RawSettings.default; target.processing = .legacy; target.sharpening = 0.47; target.lutID = "PROVIA"
         let original = state(target).replacing(settings: target, preservingFilmID: nil)
         let result = try IOSAdjustmentTransfer.prepare(payload: modified, target: original, context: raw)
-        check(result.settings.exposure == 1.25 && result.settings.contrast == 1.2 && result.settings.hsl.hue[0] == 12.375,
+        check(result.settings.exposure == 1.25 && result.settings.contrast == 1.2 && result.settings.hslSettings.hue[0] == 12.375,
             "Core multipliers and exact HSL copy without UI quantization")
         check(result.settings.sharpening == 0.47 && result.settings.processing == .legacy && result.filmID == nil
             && result.updatedAt == original.updatedAt && result.settings.lutID == "PROVIA", "Unselected values and explicit nil metadata survive")
@@ -393,18 +392,18 @@ import Foundation
         }
     }
     static func allTarget() -> RawSettings {
-        var s = RawSettings.default; s.exposure = 1.25; s.contrast = 1.2; s.geometry.cropWidth = 0.8
-        _ = s.hsl.setExact(.hue, channel: 0, value: 12.375); return s
+        var s = RawSettings.default; s.exposure = 1.25; s.contrast = 1.2; s.geometrySettings.cropWidth = 0.8
+        _ = s.hslSettings.setExact(.hue, channel: 0, value: 12.375); return s
     }
     static func recipes() throws {
         var source = RawSettings.default; source.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!)
         source.lutStrength = 0.5; source.exposure = 1.4; source.contrast = 1.4; source.tint = 0
-        _ = source.hsl.setExact(.hue, channel: 0, value: 12.375)
+        _ = source.hslSettings.setExact(.hue, channel: 0, value: 12.375)
         let copy = try IOSAdjustmentTransfer.capture(scope: .custom([.exposure, .contrast, .hslHueRed]), snapshot: state(source), context: raw)
         var target = RawSettings.default; target.saturation = 1.3
         let result = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(target), context: raw)
         check(result.settings.exposure == 0.7 && Float(result.settings.contrast) == Float(1.2)
-            && result.settings.hsl.hue[0] == 6.1875 && result.settings.masterRecipeID == nil, "Source recipe strength is applied once")
+            && result.settings.hslSettings.hue[0] == 6.1875 && result.settings.masterRecipeID == nil, "Source recipe strength is applied once")
         target.applyMasterRecipe(MasterRecipe.recipe(for: "hamada_daylight_v2")!); target.lutStrength = 0.5
         let inverted = try IOSAdjustmentTransfer.prepare(payload: copy, target: state(target), context: raw)
         check(inverted.settings.exposure == 1.4 && inverted.settings.lutStrength == 0.5, "Selected contribution is inverted into target recipe")
@@ -414,7 +413,7 @@ import Foundation
             "Partial recipe look becomes an independent LUT")
         let full = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
         let copied = try IOSAdjustmentTransfer.prepare(payload: full, target: state(), context: raw)
-        check(copied.settings.masterRecipeID == source.masterRecipeID && copied.settings.hsl == source.hsl,
+        check(copied.settings.masterRecipeID == source.masterRecipeID && copied.settings.hslSettings == source.hslSettings,
             "Complete current recipe retains logical values and identity")
         source.lutStrength = 0.7
         let fractional = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
@@ -427,11 +426,11 @@ import Foundation
         let fullLegacy = try payload(legacyValues, recipe: .init(id: "hamada_daylight_v2", strength: 0.5, settingsVersion: 2))
         let legacyRecipe = try IOSAdjustmentTransfer.prepare(payload: fullLegacy, target: state(), context: raw)
         check(legacyRecipe.settings.masterRecipeID == source.masterRecipeID
-            && legacyRecipe.settings.renderedRecipe(cameraTemperature: 5200, cameraTint: 10).hsl.hue[0] == 37.25,
+            && legacyRecipe.settings.renderedRecipe(cameraTemperature: 5200, cameraTint: 10).hslSettings.hue[0] == 37.25,
             "Full legacy HSL is represented without changing its effective contribution")
         let legacy = try payload(["color.hsl.hue.red": .number(37.25)],
             recipe: .init(id: "hamada_daylight_v2", strength: 0.5, settingsVersion: 2))
-        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(), context: raw).settings.hsl.hue[0] == 37.25,
+        check(try IOSAdjustmentTransfer.prepare(payload: legacy, target: state(), context: raw).settings.hslSettings.hue[0] == 37.25,
             "Legacy HSL does not acquire current recipe strength")
         var zero = target; zero.lutStrength = 0
         rejects("Nonzero contribution cannot be hidden in zero-strength target recipe") {
@@ -610,34 +609,35 @@ import Foundation
     }
     static func rasterDormantDenoise() throws {
         var raster = raw; raster.isRaw = false
-        var saved = RawSettings.default
-        saved.noiseReduction = 0.4
-        let loaded = try JSONDecoder().decode(RawSettings.self, from: JSONEncoder().encode(saved))
         var source = RawSettings.default
         source.denoise = RawDenoiseSettings(enabled: true, luma: 20, chroma: 30, coarse: 40)
         let selected = try IOSAdjustmentTransfer.capture(scope: .custom([.waveletDenoise]), snapshot: state(source), context: raw)
-        let candidate = try IOSAdjustmentTransfer.prepare(payload: selected, target: state(loaded), context: raster)
-        check(candidate.settings.denoise == source.denoise && candidate.settings.noiseReduction == 0.4,
-            "Raster wavelet paste preserves loaded dormant post-RGB values without an unselected-field error")
+        let candidate = try IOSAdjustmentTransfer.prepare(payload: selected, target: state(), context: raster)
+        check(candidate.settings.denoise == source.denoise,
+            "Raster wavelet paste succeeds cleanly")
     }
 
     static func objects() throws {
-        var source = RawSettings.default; source.noiseReduction = 0.25
-        let copy = try IOSAdjustmentTransfer.capture(scope: .modified, snapshot: state(source), context: raw)
-        check(copy.fields == [.postRGBDenoise] && copy[.postRGBDenoise] == .number(0.25), "Legacy post-RGB request has its own field")
-        check(try IOSAdjustmentTransfer.prepare(payload: copy, target: state(), context: raw).settings.noiseReduction == 0.25,
-            "Legacy post-RGB request survives iOS transfer")
+        var source = RawSettings.default
+        let capturedAll = try IOSAdjustmentTransfer.capture(scope: .all, snapshot: state(source), context: raw)
+        check(capturedAll[.postRGBDenoise] == .number(0), "SDR capture emits 0 for post_rgb")
+        var postRGBNotices: [AdjustmentTransferNotice] = []
+        var postRGBNoticing = raw
+        postRGBNoticing.transferNotices = { postRGBNotices.append($0) }
+        let ignoredPostRGB = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.post_rgb": .number(0.25)]), target: state(), context: postRGBNoticing)
+        check(ignoredPostRGB.settings == RawSettings.default && postRGBNotices == [.retainedTargetProcessingVersion, .ignoredPostRGBDenoise],
+            "SDR iOS target ignores non-zero post_rgb with notice")
         var rawOnlyNotices: [AdjustmentTransferNotice] = []
         var rawNoticing = raw
         rawNoticing.transferNotices = { rawOnlyNotices.append($0) }
         let ignored = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.raw_level": .number(1)]), target: state(), context: rawNoticing)
-        check(ignored.settings.noiseReduction == RawSettings.default.noiseReduction &&
+        check(ignored.settings == RawSettings.default &&
             rawOnlyNotices == [.retainedTargetProcessingVersion, .ignoredRawDenoise],
-            "RAW FBDD is ignored with a notice and never maps to iOS post-RGB denoise")
+            "RAW FBDD is ignored with a notice")
         var target = RawSettings.default; target.displayChromaDenoise = 2
         let nullChroma = try IOSAdjustmentTransfer.prepare(payload: payload(["detail.denoise.chroma_mode": .null]), target: state(target), context: raw)
         check(nullChroma.settings.displayChromaDenoise == 0, "Null legacy chroma maps to the real disabled native request")
-        source.denoise = .init(enabled: true, luma: 2, chroma: 3, coarse: 4); source.noiseReduction = 0
+        source.denoise = .init(enabled: true, luma: 2, chroma: 3, coarse: 4)
         let wavelet = try IOSAdjustmentTransfer.capture(scope: .custom([.waveletDenoise]), snapshot: state(source), context: raw)
         let denoised = try IOSAdjustmentTransfer.prepare(payload: wavelet, target: state(target), context: raw)
         check(denoised.settings.denoise == source.denoise && denoised.settings.displayChromaDenoise == 2,
@@ -650,20 +650,16 @@ import Foundation
                 "enabled": .boolean(true), "luma": .number(0), "chroma": .number(46), "coarse": .number(50), "preset": .string("clean")])]),
                 target: state(), context: raw)
         }
-        target.noiseReduction = 0.4
-        rejects("Wavelet enable cannot silently disable unselected active post-RGB denoise") {
-            _ = try IOSAdjustmentTransfer.prepare(payload: wavelet, target: state(target), context: raw)
-        }
-        target = .default; target.geometry.cropX = 0.2; target.geometry.cropWidth = 0.5
+        target = .default; target.geometrySettings.cropX = 0.2; target.geometrySettings.cropWidth = 0.5
         let cropped = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.6)]), target: state(target), context: raw)
-        check(cropped.settings.geometry.cropWidth == 0.6 && cropped.settings.geometry.cropX == 0.2, "Crop width keeps unselected position")
+        check(cropped.settings.geometrySettings.cropWidth == 0.6 && cropped.settings.geometrySettings.cropX == 0.2, "Crop width keeps unselected position")
         rejects("Merged crop must fit the canvas") {
             _ = try IOSAdjustmentTransfer.prepare(payload: payload(["geometry.crop.width": .number(0.9)]), target: state(target), context: raw)
         }
         let fractionalEffect = try IOSAdjustmentTransfer.prepare(payload: payload(["effects.grain.amount": .number(2.5)]), target: state(), context: raw)
-        check(fractionalEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect preserves exact decimal without silent rounding")
+        check(fractionalEffect.settings.effectSettings.grainAmount == 2.5, "Fractional effect preserves exact decimal without silent rounding")
         let persistedEffect = try JSONDecoder().decode(PhotoEditState.self, from: JSONEncoder().encode(fractionalEffect))
-        check(persistedEffect.settings.photoEffects.grainAmount == 2.5, "Fractional effect decimal survives persistence round trip")
+        check(persistedEffect.settings.effectSettings.grainAmount == 2.5, "Fractional effect decimal survives persistence round trip")
         var rasterContext = raw; rasterContext.isRaw = false
         let selectedProfile = try IOSAdjustmentTransfer.prepare(payload: payload([
             "geometry.lens.profile_id": .string("fixture-profile")]), target: state(), context: rasterContext)
@@ -699,7 +695,7 @@ import Foundation
                 check(try JSONDecoder().decode(AdjustmentTransferPayload.self, from: JSONEncoder().encode(value)) == value, "Shared accepted vector: \(id)")
                 if let expected = vector["neutral_effective"] as? [String: Double] {
                     let prepared = try IOSAdjustmentTransfer.prepare(payload: value, target: state(), context: raw)
-                    let actual = IOSAdjustmentTransfer.effectiveNumbers(prepared.settings)
+                    let actual = AdjustmentTransfer.effectiveNumbers(prepared.settings)
                     check(expected.allSatisfy { Float(actual[AdjustmentTransferField(rawValue: $0.key)!]!) == Float($0.value) }, "Shared effective vector: \(id)")
                 }
             } else { rejects("Shared rejected vector: \(id)") { _ = try JSONDecoder().decode(AdjustmentTransferPayload.self, from: data) } }
@@ -738,7 +734,6 @@ import Foundation
         var target = RawSettings.default
         target.exposureMode = .scene
         target.whiteBalanceMode = .custom; target.temperature = 5850; target.tint = -18
-        target.noiseReduction = 0.25
         target.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: false, mode: .manual,
             profileID: "fixture-profile", vignetting: true)
         let before = state(target)
@@ -748,8 +743,8 @@ import Foundation
         let applied = try IOSAdjustmentTransfer.prepare(payload: all, target: before, context: rawLens)
         check(applied.settings.exposure == 0.75 && applied.settings.exposureMode == .scene
             && applied.settings.whiteBalanceMode == .custom && applied.settings.temperature == 5850 && applied.settings.tint == -18
-            && applied.settings.noiseReduction == 0.25 && applied.settings.lensCorrection == target.lensCorrection,
-            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, post-RGB denoise and lens")
+            && applied.settings.lensCorrection == target.lensCorrection,
+            "Raster all paste skips placeholders and preserves RAW exposure baseline, custom WB, and lens")
 
         var neutralJpeg = RawSettings.default; neutralJpeg.exposureMode = .sensor
         let placeholders = Set<AdjustmentTransferField>([.exposureMode, .whiteBalanceMode, .temperature, .tint, .rawDenoise, .postRGBDenoise])
@@ -841,7 +836,7 @@ import Foundation
                 }
             }
             if let effectiveObj = expectSpec["effective"] as? [String: NSNumber] {
-                let actualEffective = IOSAdjustmentTransfer.effectiveNumbers(candidate.settings)
+                let actualEffective = AdjustmentTransfer.effectiveNumbers(candidate.settings)
                 for key in effectiveObj.keys.sorted() {
                     let field = AdjustmentTransferField(rawValue: key)!
                     check(abs(actualEffective[field]! - effectiveObj[key]!.doubleValue) <= 1e-6, "Scenario \(id): effective \(key)")

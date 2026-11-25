@@ -41,27 +41,51 @@ data class ProcessingMigrationReceipt(val status: ProcessingMigrationStatus, val
     }
 }
 
-internal class ProcessingMigrationOutcome private constructor(private val before: EditSettings,
-    private val values: FloatArray, val quality: ProcessingMigrationQuality) {
+internal class ProcessingMigrationOutcome private constructor(
+    private val before: EditSettings,
+    private val result: com.rawlab.android.engine.NativeMigrationResult,
+    val quality: ProcessingMigrationQuality,
+) {
     fun candidate(settings: EditSettings): EditSettings? {
         require(settings == before)
-        if (values[4] != 1f) return null
-        return settings.copy(processing = ProcessingIdentity.CURRENT, exposure = values[6], contrast = values[7] - 1,
-            highlights = -values[8], shadows = values[9], saturation = values[10] - 1,
-            blackPoint = values[11] * 100, whitePoint = values[12] * 100, vibrance = values[13] * 100,
-            clarity = values[14] * 100, dehaze = values[15] * 100).canonicalZeros()
+        if (result.disposition != 1) return null
+        return settings.copy(
+            processing = ProcessingIdentity.CURRENT,
+            exposure = result.exposureEv,
+            contrast = result.contrast,
+            highlights = result.highlights,
+            shadows = result.shadows,
+            saturation = result.saturation,
+            blackPoint = result.blackPoint * 100f,
+            whitePoint = result.whitePoint * 100f,
+            vibrance = result.vibrance * 100f,
+            clarity = result.clarity * 100f,
+            dehaze = result.dehaze * 100f,
+        ).canonicalZeros()
     }
+
     companion object {
-        fun decode(before: EditSettings, values: FloatArray): ProcessingMigrationOutcome {
-            require(values.size == 20 && values.all(Float::isFinite))
+        fun fromNative(
+            before: EditSettings,
+            result: com.rawlab.android.engine.NativeMigrationResult,
+        ): ProcessingMigrationOutcome {
+            val scalars = listOf(
+                result.exposureEv, result.contrast, result.highlights, result.shadows, result.saturation,
+                result.blackPoint, result.whitePoint, result.vibrance, result.clarity, result.dehaze,
+                result.rgbRmse, result.p99Error, result.worstTileRmse, result.detailRmse,
+            )
+            require(scalars.all(Float::isFinite))
             require(before.processing.version in 1..2 && !before.isHDREditing && before.recipeID == null)
-            require(values[0] == 1f && values[1] == 80f && values[2] == before.processing.version.toFloat() &&
-                values[3] == 3f && values[4] in listOf(1f, 2f) && values[5] == values[5].toInt().toFloat())
-            require(values[6] in -5f..5f && values[7] in 0f..2f && values[10] in 0f..2f)
-            require(listOf(8, 9, 11, 12, 13, 14, 15).all { values[it] in -1f..1f })
-            val quality = ProcessingMigrationQuality(values[16], values[17], values[18], values[19], values[5].toInt())
-            require(quality.isValid && (values[4] != 1f || quality.passes))
-            return ProcessingMigrationOutcome(before, values.copyOf(), quality)
+            require(result.sourceVersion == before.processing.version && result.targetVersion == 3 &&
+                result.disposition in 1..2 && result.evaluationCount > 0)
+            require(result.exposureEv in -5f..5f && result.contrast in 0f..2f && result.saturation in 0f..2f)
+            require(listOf(result.highlights, result.shadows, result.blackPoint, result.whitePoint,
+                result.vibrance, result.clarity, result.dehaze).all { it in -1f..1f })
+            val quality = ProcessingMigrationQuality(
+                result.rgbRmse, result.p99Error, result.worstTileRmse, result.detailRmse, result.evaluationCount,
+            )
+            require(quality.isValid && (result.disposition != 1 || quality.passes))
+            return ProcessingMigrationOutcome(before, result, quality)
         }
     }
 }

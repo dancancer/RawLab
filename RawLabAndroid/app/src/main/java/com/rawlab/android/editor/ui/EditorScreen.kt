@@ -438,6 +438,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     BackHandler(quickPresetsVisible) { onClosePresets() }
     BackHandler(view.purePreview) { togglePure() }
+    BackHandler(
+        !toolOpen && !quickPresetsVisible && !view.purePreview &&
+            state.operation == Operation.NONE && !state.importingHDRLook &&
+            inspection.overlay.isActive,
+    ) {
+        inspection = inspection.dismissOverlay()
+    }
     val photoInfo by produceState<PhotoInfo?>(null, state.photo?.file?.absolutePath) {
         value = null
         val photo = state.photo ?: return@produceState
@@ -522,7 +529,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(resetPresentation?.isEnabled) { if (resetPresentation?.isEnabled != true) resetMenu = false }
     @Composable fun workspaceActions(modifier: Modifier) {
         if (state.photo != null && !view.purePreview) Row(
-            modifier.fillMaxWidth().alpha(surroundingAlpha).padding(horizontal = 8.dp, vertical = 8.dp),
+            modifier.fillMaxWidth().alpha(surroundingAlpha),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -785,44 +792,60 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 }
             }
+            val showInspectionControls = !view.purePreview && state.photo != null &&
+                state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY
+            var bottomControlsHeightPx by remember { mutableIntStateOf(0) }
+            val bottomControlsInset = if (bottomControlsHeightPx > 0) {
+                with(density) { bottomControlsHeightPx.toDp() }
+            } else {
+                64.dp
+            }
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {
                     Row(Modifier.weight(1f)) {
                         Column(Modifier.weight(1f)) {
                             Box(Modifier.weight(1f)) {
-                            EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
-                                Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
-                                workspaceControls = true, histogramExpanded = workspaceHistogram,
-                                onHistogramExpandedChange = { workspaceHistogram = it },
-                                onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest,
-                                inspection = inspection,
-                                onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
-                                onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe,
-                                isAdjustingSlider = adjusting)
-                            if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
-                                state.preview?.let { p ->
-                                    InspectionSamplingHud(
-                                        inspection = inspection,
-                                        pair = p,
-                                        detailTiles = state.detailTiles,
-                                        detailOverlay = state.detail,
-                                        holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
-                                        onPinAnchor = pinCurrentInspectionAnchor,
-                                        onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                        onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
-                                        onClearAnchors = { inspection = inspection.clearAnchors() },
-                                        onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
-                                        onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
-                                        modifier = Modifier.align(Alignment.BottomStart)
-                                            .padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = if (state.photo != null) 60.dp else 10.dp)
-                                    )
+                                EditorCanvas(
+                                    state, compare, photoCanvas, photoInfo, view.infoMode,
+                                    { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
+                                    Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange,
+                                    onDraftEdit, retrySave, view, ::togglePure, holdBefore,
+                                    { view = view.selectComparison(it) },
+                                    { view = view.copy(comparisonEnabled = false, holdingBefore = false) },
+                                    onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded,
+                                    onCamera = onCamera, workspaceControls = true,
+                                    histogramExpanded = workspaceHistogram,
+                                    onHistogramExpandedChange = { workspaceHistogram = it },
+                                    onCancelExport = onCancelExport,
+                                    onDetailRequest = onDetailRequest,
+                                    inspection = inspection,
+                                    onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
+                                    onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                                    wbProbe = canvasWbProbe,
+                                    isAdjustingSlider = adjusting,
+                                    bottomControlsInset = bottomControlsInset,
+                                )
+                                EditorCanvasBottomStack(
+                                    visible = !view.purePreview,
+                                    showInspection = showInspectionControls,
+                                    inspection = inspection,
+                                    pair = state.preview,
+                                    detailTiles = state.detailTiles,
+                                    detailOverlay = state.detail,
+                                    holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
+                                    onPinAnchor = pinCurrentInspectionAnchor,
+                                    onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                                    onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
+                                    onClearAnchors = { inspection = inspection.clearAnchors() },
+                                    onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
+                                    onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
+                                    onCloseMonitor = { inspection = inspection.copy(monitorEnabled = false) },
+                                    onHeightChanged = { h -> if (bottomControlsHeightPx != h) bottomControlsHeightPx = h },
+                                    modifier = Modifier.align(Alignment.BottomCenter),
+                                ) {
+                                    workspaceActions(Modifier)
                                 }
-                            }
-                            workspaceActions(Modifier.align(Alignment.BottomCenter))
                             }
                         }
                         if (!view.purePreview) VerticalDivider()
@@ -830,37 +853,46 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 } else {
                     Box(Modifier.weight(1f)) {
-                    EditorCanvas(state, compare, photoCanvas, photoInfo, view.infoMode, { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
-                        Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange, onDraftEdit, retrySave, view, ::togglePure, holdBefore,
-                                { view = view.selectComparison(it) }, { view = view.copy(comparisonEnabled = false, holdingBefore = false) }, onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded, onCamera = onCamera,
-                                workspaceControls = true, histogramExpanded = workspaceHistogram,
-                                onHistogramExpandedChange = { workspaceHistogram = it },
-                                onCancelExport = onCancelExport,
-                                onDetailRequest = onDetailRequest,
-                                inspection = inspection,
-                                onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
-                                onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                wbProbe = canvasWbProbe,
-                                isAdjustingSlider = adjusting)
-                    if (!view.purePreview && state.draft?.group != AdjustmentGroup.GEOMETRY) {
-                        state.preview?.let { p ->
-                            InspectionSamplingHud(
-                                inspection = inspection,
-                                pair = p,
-                                detailTiles = state.detailTiles,
-                                detailOverlay = state.detail,
-                                holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
-                                onPinAnchor = pinCurrentInspectionAnchor,
-                                onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
-                                onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
-                                onClearAnchors = { inspection = inspection.clearAnchors() },
-                                onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
-                                onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
-                                modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)
-                            )
+                        EditorCanvas(
+                            state, compare, photoCanvas, photoInfo, view.infoMode,
+                            { view = view.copy(infoMode = (view.infoMode + 1) % 3) },
+                            Modifier.fillMaxSize(), onAlbum, onFile, onLicenses, onPreviewSizeChange,
+                            onDraftEdit, retrySave, view, ::togglePure, holdBefore,
+                            { view = view.selectComparison(it) },
+                            { view = view.copy(comparisonEnabled = false, holdingBefore = false) },
+                            onRetry, hslTarget = canvasTarget, showTargetStatus = !expanded,
+                            onCamera = onCamera, workspaceControls = true,
+                            histogramExpanded = workspaceHistogram,
+                            onHistogramExpandedChange = { workspaceHistogram = it },
+                            onCancelExport = onCancelExport,
+                            onDetailRequest = onDetailRequest,
+                            inspection = inspection,
+                            onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
+                            onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                            wbProbe = canvasWbProbe,
+                            isAdjustingSlider = adjusting,
+                            bottomControlsInset = bottomControlsInset,
+                        )
+                        EditorCanvasBottomStack(
+                            visible = !view.purePreview && state.photo != null,
+                            showInspection = showInspectionControls,
+                            inspection = inspection,
+                            pair = state.preview,
+                            detailTiles = state.detailTiles,
+                            detailOverlay = state.detail,
+                            holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
+                            onPinAnchor = pinCurrentInspectionAnchor,
+                            onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
+                            onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
+                            onClearAnchors = { inspection = inspection.clearAnchors() },
+                            onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
+                            onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
+                            onCloseMonitor = { inspection = inspection.copy(monitorEnabled = false) },
+                            onHeightChanged = { h -> if (bottomControlsHeightPx != h) bottomControlsHeightPx = h },
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        ) {
+                            workspaceActions(Modifier)
                         }
-                    }
-                    workspaceActions(Modifier.align(Alignment.BottomCenter))
                     }
                     if (state.photo != null) {
                         if (!view.purePreview) HorizontalDivider()

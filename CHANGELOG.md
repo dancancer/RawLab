@@ -3,6 +3,52 @@
 Release history is kept here rather than in the project READMEs. Detailed
 release notes include assets, installation requirements and validation limits.
 
+## [0.13.0]
+
+### Added
+
+- **Tone Curve Free Endpoint X**: Endpoints can move horizontally inward along `X`
+  across the master curve and `R/G/B` channel curves (gated by SDR edit JSON
+  schema `18` and HDR schema `19` / `rawlab_hdr` processing version `10`, with
+  writers selecting the lowest required version).
+- **Mobile Sony SSH Access Auth & Dual-Slot Import**: Sony SSH Access Auth tunnel,
+  UI, and α7M5 dual-slot import across iOS and Android (`#651`, `#658`).
+- **Opt-In Diagnostic Logging & Cloud Upload**: Local diagnostic recording with
+  redacted prefix paths, ZIP export, and Aliyun SLS cloud upload (`#652`).
+- **Public RGBA16 Diagnostic C APIs & Windows Hot-Reload**: Public C RGBA16
+  diagnostic entries, unified `gui_store` sync/lock in `sony2fuji` CLI, and
+  Windows `sync_photo_edit` hot-reload support (`#642`, `#644`).
+
+### Changed
+
+- **v0.13 Architecture Deepening (W-A ~ W-F)**: Consolidated `RawLabKit`, aligned
+  24 spec fields across all four clients, unified core `CanonicalEditState` and
+  core HDR→SDR `RGBA8`/`BGRA8` encoding, split Android JNI 3-way, sunk
+  `InspectionSuite` geometry/overlays and Sony PTP/IP + focus state machine into
+  `lutools`, extracted `ViewportRenderEngine`, unified Android/Windows document
+  and persistence coordinators, and consolidated Apple ProRAW/display preview ABI
+  plus `PinnedSourceFile` / `AtomicOutputTransaction` (`#636`, `#638`, `#641`,
+  `#649`, `#650`, `#653`–`#657`, `#659`).
+- **Hosted CI Acceleration**: Improved Hosted CI throughput via dependency caches,
+  parallel Apple models, and CMake third-party decoupling (`#646`).
+- Downgrading to `0.12.x` or earlier is not supported for edits saved with SDR
+  schema `18` / HDR schema `19` (`rawlab_hdr` processing version `10`).
+
+### Fixed
+
+- **Curve Canvas Isolation & Deletion**: Isolated point and parametric curve
+  canvases and preserved Windows double-click curve point deletion across
+  `ReleaseMouseCapture` (`#660`).
+- **Desktop UI & HDR Polish**: Resolved macOS and Windows layout, HDR airspace,
+  HUD, and v2 panel issues, and aligned Windows HDR inline display and float
+  rounding (`#645`, `#648`).
+- **Android Inspection Overlay**: Kept the inspection HUD unfaded during drags,
+  measured stack height accurately, fixed overlay overlap and cache loops, and
+  polished pill UX (`#661`).
+
+Version `0.13.0`, build `25`. See the
+[release notes](docs/releases/v0.13/v0.13.0.md) for compatibility and coverage.
+
 ## [0.12.1]
 
 Mobile-only release for Android and iOS (macOS and Windows desktop packages

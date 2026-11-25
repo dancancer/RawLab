@@ -190,7 +190,7 @@ struct PreviewPerformanceTests {
             manual.exposure *= scale; manual.shadows *= scale; manual.highlights *= scale
             manual.contrast = 1 + (settings.contrast - 1) * scale
             manual.saturation = 1 + (settings.saturation - 1) * scale
-            manual.hsl = settings.hsl.scaled(by: scale)
+            manual.hslSettings = settings.hslSettings.scaled(by: scale)
             if settings.whiteBalanceMode == .camera { manual.temperature = camera.temperature }
             manual.tint = min(150, max(-150, camera.tint + settings.tint * scale))
             if settings.tint * scale != 0 { manual.whiteBalanceMode = .custom }

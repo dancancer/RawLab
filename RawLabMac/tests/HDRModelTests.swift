@@ -14,14 +14,14 @@ import Foundation
         check(aiSource.aiDenoiseEnabled, "resolving a raster target must retain AI on the RAW source")
         let legacy = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
         check(legacy.hdr == nil && !legacy.isHDREditing && legacy.processing == .legacy, "legacy record changed mode or processing")
-        var sdr = Adjustments(); sdr.exposure = 1; sdr.contrast = -25; sdr.highlights = 50
+        var sdr = Adjustments(); sdr.exposure = 1; sdr.contrast = 0.75; sdr.highlights = -0.5
         var recipe = sdr; recipe.setTransferRecipe(MasterRecipe.allRecipes[0].id); recipe.strength = 0.5
-        recipe.contrast = 40; recipe.highlights = -60; recipe.shadows = 80; recipe.saturation = -20
+        recipe.contrast = 1.4; recipe.highlights = 0.6; recipe.shadows = 0.8; recipe.saturation = 0.8
         let recipeHDR = try recipe.withHDRMode(true, sourceIsHDR: true)
         check(recipeHDR.hdr?.exposure == 0.5 && abs(recipeHDR.hdr!.contrast - 20) < 0.00001 &&
               recipeHDR.hdr?.highlights == -30 && recipeHDR.hdr?.shadows == 40 &&
               abs(recipeHDR.hdr!.saturation + 10) < 0.00001, "Gain-map HDR did not start from effective recipe values")
-        var extreme = sdr; extreme.exposure = 8; extreme.contrast = 200; extreme.highlights = -200; extreme.shadows = 200; extreme.saturation = -200
+        var extreme = sdr; extreme.exposure = 8; extreme.contrast = 3; extreme.highlights = 2; extreme.shadows = 2; extreme.saturation = -1
         let bounded = try extreme.withHDRMode(true, sourceIsHDR: true)
         check(bounded.hdr?.exposure == 4 && bounded.hdr?.contrast == 100 && bounded.hdr?.highlights == -100 &&
               bounded.hdr?.shadows == 100 && bounded.hdr?.saturation == -100,
@@ -47,11 +47,11 @@ import Foundation
         var reset = reenabled; reset.resetAll()
         check(reset.isHDREditing && reset.hdr?.isIdentity == true && reset.exposure == 1, "reset changed mode or dormant SDR edit")
         var cameraSDR = sdr
-        cameraSDR.sharpening = 25
-        cameraSDR.blackPoint = -8; cameraSDR.whitePoint = 9; cameraSDR.toneCurve = 12
+        cameraSDR.sharpening = 0.25
+        cameraSDR.blackPoint = -8; cameraSDR.whitePoint = 9; cameraSDR.toneCurve = 0.12
         cameraSDR.curveSettings = .identity
         var cameraHDR = try cameraSDR.withHDRMode(true, sourceIsHDR: false, cameraRAW: true)
-        check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 25 && cameraHDR.exposure == 1,
+        check(cameraHDR.hdr == HDRSettings() && cameraHDR.sharpening == 0.25 && cameraHDR.exposure == 1,
               "camera RAW HDR must start with an independent snapshot")
         cameraHDR.set(.exposure, to: 3)
         check(cameraHDR.hdr?.processingVersion == 1, "ordinary HDR edit upgraded the tone version")
@@ -60,7 +60,7 @@ import Foundation
               AdjustmentParameter.whitePoint.value(from: cameraHDR) == 50 &&
               AdjustmentParameter.toneCurve.value(from: cameraHDR) == 30 &&
               cameraHDR.hdr?.processingVersion == 2, "HDR tone controls did not update the active record")
-        check(cameraHDR.blackPoint == -8 && cameraHDR.whitePoint == 9 && cameraHDR.toneCurve == 12 &&
+        check(cameraHDR.blackPoint == -8 && cameraHDR.whitePoint == 9 && cameraHDR.toneCurve == 0.12 &&
               cameraHDR.curveSettings == .identity, "HDR tone controls changed the dormant SDR record")
         cameraHDR.editingCurveSettings = .identity.inserting(x: 0.5, y: 0.6)
         check(cameraHDR.hdr?.toneSettings.curve == cameraHDR.editingCurveSettings && cameraHDR.curveSettings == .identity,
@@ -83,11 +83,11 @@ import Foundation
         check(aiSDR.hdrCameraAIEnabled && !aiSDR.activeAIDenoise, "SDR reset cleared the dormant HDR Bayer AI selection")
         ai.resetAll()
         check(!ai.activeAIDenoise && ai.isHDREditing, "HDR reset kept the active AI selection")
-        var sharpened = sdr; sharpened.sharpening = 10
+        var sharpened = sdr; sharpened.sharpening = 0.1
         let hdrFromSharpened = try sharpened.withHDRMode(true, sourceIsHDR: true)
         let restoredSharpened = try hdrFromSharpened.withHDRMode(false, sourceIsHDR: true)
         check(hdrFromSharpened.isHDREditing && hdrFromSharpened.hdr?.detailSettings.sharpening == 0 &&
-              restoredSharpened.sharpening == 10, "HDR switch did not preserve the SDR sharpening")
+              restoredSharpened.sharpening == 0.1, "HDR switch did not preserve the SDR sharpening")
         let context=MacEditorAdjustmentContext(isRaw:false,defaultExposureMode:.sensor,neutralFilmID:"")
         let editedTone = MacPhotoEditState(settings: cameraHDR, filmID: "")
         if case .candidate(let candidate) = MacEditorAdjustmentRules.prepareReset(scope: .group(.light), snapshot: editedTone, context: context) {

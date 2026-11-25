@@ -371,8 +371,8 @@ internal static class AdjustmentTransferChecks
     {
         var raster=Context with {IsRaw=false,AvailableLookIDs=MasterRecipe.All.Select(r=>"recipe:"+r.Id).ToHashSet()};
         foreach(var recipe in MasterRecipe.All) foreach(var strength in new[]{0.0,.5,1.0,2.0}) {
-            var source=new Adjustments();source.ApplyMasterRecipe(recipe);source.Set(Parameter.Strength,strength*100);
-            var direct=new Adjustments {ExposureMode=2};direct.ApplyMasterRecipe(recipe);direct.Set(Parameter.Strength,strength*100);
+            var source=new Adjustments();source.ApplyMasterRecipe(recipe);source.Set(Parameter.Strength,strength);
+            var direct=new Adjustments {ExposureMode=2};direct.ApplyMasterRecipe(recipe);direct.Set(Parameter.Strength,strength);
             var previous=new Adjustments {ExposureMode=2};previous.ApplyMasterRecipe(MasterRecipe.All[0]);
             foreach(var scope in new[]{AdjustmentScope.Standard,AdjustmentScope.All}) {
                 var frozen=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(scope,Edit(source),Context).ToJson());
@@ -498,9 +498,9 @@ internal static class AdjustmentTransferChecks
         var scalarFields=new[]{F.Exposure,F.Contrast,F.Highlights,F.Shadows,F.Saturation};
         foreach(var strength in new[]{0.0,.5,1.0,1.5}) {
             var source=new Adjustments();source.ApplyMasterRecipe(recipe);
-            source.Set(Parameter.Strength,strength*100);
-            source.Set(Parameter.Exposure,1.2);source.Set(Parameter.Contrast,40);
-            source.Set(Parameter.Highlights,-60);source.Set(Parameter.Shadows,60);source.Set(Parameter.Saturation,-20);
+            source.Set(Parameter.Strength,strength);
+            source.Set(Parameter.Exposure,1.2);source.Set(Parameter.Contrast,1.4);
+            source.Set(Parameter.Highlights,.6);source.Set(Parameter.Shadows,.6);source.Set(Parameter.Saturation,.8);
             var copy=AdjustmentPayload.Parse(AdjustmentTransfer.Capture(AdjustmentScope.Custom(scalarFields),Edit(source),Context).ToJson());
             var summary=new AdjustmentSummary(copy,System.Globalization.CultureInfo.InvariantCulture,text=>text);
             Check(summary.RecipeNote!=null && summary.RecipeNote.Contains("按此强度换算"),"Recipe summary states strength conversion");
@@ -513,10 +513,10 @@ internal static class AdjustmentTransferChecks
                 "Recipe source scalars scale once on HDR target at strength "+strength);
         }
         var overflow=new Adjustments();overflow.ApplyMasterRecipe(recipe);
-        overflow.Set(Parameter.Strength,150);overflow.Set(Parameter.Shadows,80);
+        overflow.Set(Parameter.Strength,1.5);overflow.Set(Parameter.Shadows,.8);
         var overflowCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Shadows}),Edit(overflow),Context);
         Reject(()=>AdjustmentTransfer.Prepare(overflowCopy,hdrTarget,hdrContext),"Scaled recipe value beyond HDR range is rejected");
-        var plain=new Adjustments();plain.Set(Parameter.Exposure,1.2);plain.Set(Parameter.Contrast,40);
+        var plain=new Adjustments();plain.Set(Parameter.Exposure,1.2);plain.Set(Parameter.Contrast,1.4);
         var plainCopy=AdjustmentTransfer.Capture(AdjustmentScope.Custom(new[]{F.Exposure,F.Contrast}),Edit(plain),Context);
         var plainApplied=AdjustmentTransfer.Prepare(plainCopy,hdrTarget,hdrContext).Settings.HDR!;
         Check(plainApplied.Exposure==1.2 && plainApplied.Contrast==40,"Plain source scalars stay unscaled on HDR target");
@@ -526,7 +526,7 @@ internal static class AdjustmentTransferChecks
     {
         Check(Prepare(Payload((F.Exposure,1.2))).Settings.Values[1]==1.2,"Selected decimal exposure keeps its logical Double value");
         Check(Prepare(Payload((F.HslHueRed,13.15))).Settings.Hsl!.Value(0,0)==13.15,"Selected decimal HSL keeps its logical Double value");
-        var recipe=MasterRecipe.All[0];var source=new Adjustments();source.ApplyMasterRecipe(recipe);source.Set(Parameter.Strength,50);
+        var recipe=MasterRecipe.All[0];var source=new Adjustments();source.ApplyMasterRecipe(recipe);source.Set(Parameter.Strength,.5);
         source.Set(Parameter.Exposure,1.4);source.Hsl=source.Hsl.WithValue(0,0,12.375);
         var context=Context with {AvailableLookIDs=new HashSet<string>{"recipe:"+recipe.Id}};
         var selected=Copy(source,F.Exposure,F.HslHueRed);
@@ -550,8 +550,8 @@ internal static class AdjustmentTransferChecks
         var modified=AdjustmentTransfer.Capture(AdjustmentScope.Modified,Edit(source),context);
         Check(modified.Fields.Contains(F.Exposure),"zero strength does not hide logical edits");
         Reject(()=>Prepare(Payload((F.Exposure,1.0)),source),"zero-scale target cannot represent selected exposure");
-        var target=new Adjustments();target.ApplyMasterRecipe(recipe);target.ResolveWhiteBalance((5100,11));target.Set(Parameter.Strength,50);
-        target.Set(Parameter.Exposure,1.234);target.Set(Parameter.Contrast,17.789);
+        var target=new Adjustments();target.ApplyMasterRecipe(recipe);target.ResolveWhiteBalance((5100,11));target.Set(Parameter.Strength,.5);
+        target.Set(Parameter.Exposure,1.234);target.Set(Parameter.Contrast,1.17789);
         var before=AdjustmentTransfer.EffectiveNumbers(target.Capture());
         var strength=Prepare(Payload((F.Strength,1.0)),target).Settings;
         var after=AdjustmentTransfer.EffectiveNumbers(strength);

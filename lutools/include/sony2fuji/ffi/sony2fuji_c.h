@@ -70,7 +70,10 @@ typedef enum sony2fuji_pixel_format {
     SONY2FUJI_PIXEL_RGB8 = 0,
     SONY2FUJI_PIXEL_RGBA8 = 1,
     // Tightly packed little-endian 16-bit RGBA; input only, for DISPLAY_BUFFER.
-    SONY2FUJI_PIXEL_RGBA16 = 2
+    SONY2FUJI_PIXEL_RGBA16 = 2,
+    // Display-order BGRA8 (e.g. WPF Pbgra32 with opaque alpha); supported by
+    // HDR display encoding and sony2fuji_analyze_image / sony2fuji_compute_histogram.
+    SONY2FUJI_PIXEL_BGRA8 = 3
 } sony2fuji_pixel_format;
 
 typedef enum sony2fuji_look_format {
@@ -584,6 +587,15 @@ sony2fuji_status sony2fuji_session_set_processing_version(
 // sony2fuji_release_buffer. Android clients decode validated files with the
 // platform decoder and pass DISPLAY_BUFFER; this file API returns UNSUPPORTED.
 sony2fuji_status sony2fuji_load_display_image(const char* path, sony2fuji_buffer* out_buffer);
+// Decodes a bounded display-sRGB RGBA8 preview scaled to fit `edge` (> 0) along
+// the oriented long edge, optionally reporting the oriented full-source size.
+sony2fuji_status sony2fuji_load_display_preview(
+    const char* path,
+    uint32_t edge,
+    sony2fuji_buffer* out_buffer,
+    uint32_t* oriented_source_width,
+    uint32_t* oriented_source_height
+);
 // Inspects a display file for JPEG MPF secondary images (image count > 1 for MPF, 0 for single-image/non-MPF, -1 = error).
 int32_t sony2fuji_inspect_sdr_jpeg_mpf(const char* path);
 
@@ -1175,6 +1187,17 @@ sony2fuji_status sony2fuji_process(
     sony2fuji_buffer* out_buffer
 );
 
+// Renders `request` on `session` and returns a display-sRGB RGBA16 buffer in
+// `out_rgba16` for diagnostics. When `request->output_target == SONY2FUJI_TARGET_FILE`,
+// the output file is also written in the same pass. When `output_target == SONY2FUJI_TARGET_BUFFER`,
+// `out_rgba16` receives RGBA16 directly without 8-bit quantization.
+// Pass a zero-initialized or previously released buffer; release with `sony2fuji_release_buffer`.
+sony2fuji_status sony2fuji_session_render_rgba16(
+    sony2fuji_session* session,
+    const sony2fuji_request* request,
+    sony2fuji_buffer* out_rgba16
+);
+
 #define SONY2FUJI_PROCESSING_MIGRATION_VERSION 1u
 typedef enum sony2fuji_migration_disposition {
     SONY2FUJI_MIGRATION_UNCHANGED = 0,
@@ -1221,15 +1244,870 @@ sony2fuji_status sony2fuji_session_migrate_processing(
     sony2fuji_processing_migration_result* result
 );
 
+#define SONY2FUJI_RENDER_OPTIONS_V1_VERSION 1u
+typedef struct sony2fuji_render_options_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_input_type input_type;
+    sony2fuji_pixel_format input_pixel_format;
+    const char* input_path;
+    const void* input_pixels;
+    uint32_t input_width;
+    uint32_t input_height;
+    sony2fuji_color_space input_color_space;
+    int32_t input_is_linear;
+    sony2fuji_intent intent;
+    sony2fuji_size_mode size_mode;
+    uint32_t target_width;
+    uint32_t target_height;
+    uint32_t long_edge;
+    uint32_t short_edge;
+    uint32_t preview_long_edge;
+    int32_t interactive_preview;
+    int32_t viewport_preview;
+    uint32_t reserved;
+    const sony2fuji_viewport_roi* viewport_roi;
+    sony2fuji_output_target output_target;
+    sony2fuji_output_format output_format;
+    const char* output_path;
+    uint32_t jpeg_quality;
+    uint32_t reserved2;
+} sony2fuji_render_options_v1;
+
+// Stateless SDR execution entries with optional atomic CanonicalEditState JSON.
+// When edit_state_json is non-NULL, it is parsed and committed atomically before
+// running; when NULL, the session's current committed CanonicalEditState is used.
+// Transient options (intent, interactive_preview, viewport_preview, viewport_roi)
+// apply only to the current call and never leak across calls.
+sony2fuji_status sony2fuji_session_render(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_buffer,
+    sony2fuji_viewport_roi_result* out_roi
+);
+
+sony2fuji_status sony2fuji_session_render_rgba16_with_options(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_buffer* out_rgba16
+);
+
+sony2fuji_status sony2fuji_session_create_hsl_probe_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    uint64_t source_revision,
+    uint64_t request_revision,
+    sony2fuji_hsl_probe** out_probe
+);
+
+sony2fuji_status sony2fuji_session_estimate_auto_exposure_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    float* exposure_ev
+);
+
+sony2fuji_status sony2fuji_session_sample_wb_probe_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const sony2fuji_wb_probe_query* query,
+    sony2fuji_wb_probe_result* out_result
+);
+
+sony2fuji_status sony2fuji_session_prepare_ai_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_ai_progress_callback progress,
+    void* context
+);
+
+sony2fuji_status sony2fuji_preview_lut_compatibility_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    const char* configuration_json,
+    sony2fuji_buffer* out_buffer
+);
+
+sony2fuji_status sony2fuji_session_migrate_processing_json(
+    sony2fuji_session* session,
+    const sony2fuji_render_options_v1* options,
+    const char* edit_state_json,
+    sony2fuji_processing_migration_result* result
+);
+
 sony2fuji_status sony2fuji_compute_histogram(
     const sony2fuji_buffer* buffer,
     uint32_t bins,
     float* out_bins
 );
 
+/* === Wave W-E: Fast Full-Res GPU & Pyramid Grid === */
+#define SONY2FUJI_FAST_GPU_QUERY_V1_VERSION 1u
+typedef struct sony2fuji_fast_gpu_query_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    sony2fuji_input_type input_type;
+    uint32_t input_width;
+    uint32_t input_height;
+    uint32_t max_pixels;
+    const char* input_path;
+} sony2fuji_fast_gpu_query_v1;
+
+// Evaluates whether the current/given CanonicalEditState and query can run on the
+// fast full-resolution SDR GPU path without mutating any session state.
+sony2fuji_status sony2fuji_session_supports_fast_full_res_gpu(
+    sony2fuji_session* session,
+    const sony2fuji_fast_gpu_query_v1* query,
+    const char* edit_state_json,
+    int32_t* out_supported
+);
+
+#define SONY2FUJI_PYRAMID_CONFIG_V1_VERSION 1u
+typedef struct sony2fuji_pyramid_config_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t full_width;
+    uint32_t full_height;
+    uint32_t tile_size;
+    uint32_t overscan_ring;
+    double zoom_scale;
+    double base_scale;
+    double visible_x0;
+    double visible_y0;
+    double visible_x1;
+    double visible_y1;
+} sony2fuji_pyramid_config_v1;
+
+typedef struct sony2fuji_pyramid_tile_v1 {
+    int32_t level;
+    int32_t col;
+    int32_t row;
+    uint32_t max_output_long_edge;
+    double norm_x0;
+    double norm_y0;
+    double norm_x1;
+    double norm_y1;
+} sony2fuji_pyramid_tile_v1;
+
+#define SONY2FUJI_DETAIL_COVERAGE_QUERY_V1_VERSION 1u
+typedef struct sony2fuji_detail_coverage_query_v1 {
+    uint32_t version;
+    uint32_t struct_size;
+    uint32_t tile_pixel_width;
+    uint32_t tile_pixel_height;
+    uint32_t full_width;
+    uint32_t full_height;
+    uint32_t max_output_long_edge;
+    uint32_t reserved;
+    double tile_norm_x0;
+    double tile_norm_y0;
+    double tile_norm_x1;
+    double tile_norm_y1;
+    double visible_norm_x0;
+    double visible_norm_y0;
+    double visible_norm_x1;
+    double visible_norm_y1;
+    double required_zoom_scale;
+} sony2fuji_detail_coverage_query_v1;
+
+sony2fuji_status sony2fuji_pyramid_level(
+    double zoom_scale,
+    double base_scale,
+    int32_t* out_level
+);
+
+sony2fuji_status sony2fuji_pyramid_tiles(
+    const sony2fuji_pyramid_config_v1* config,
+    sony2fuji_pyramid_tile_v1* out_tiles,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_pyramid_level0_grid(
+    uint32_t full_width,
+    uint32_t full_height,
+    uint32_t tile_size,
+    sony2fuji_pyramid_tile_v1* out_tiles,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_detail_overlay_covers(
+    const sony2fuji_detail_coverage_query_v1* query,
+    int32_t* out_covers
+);
+
 void sony2fuji_release_buffer(sony2fuji_buffer* buffer);
 
 const char* sony2fuji_status_message(sony2fuji_status status);
+
+// Inspection & Geometry Projection
+
+typedef enum sony2fuji_inspection_overlay_mode {
+    SONY2FUJI_INSPECTION_OVERLAY_NONE = 0,
+    SONY2FUJI_INSPECTION_OVERLAY_SKETCH_LUMINANCE = 1,
+    SONY2FUJI_INSPECTION_OVERLAY_WARM_COOL_BW = 2,
+    SONY2FUJI_INSPECTION_OVERLAY_OVERSATURATION_HEATMAP = 3,
+    SONY2FUJI_INSPECTION_OVERLAY_SKIN_HUE_AMPLIFICATION = 4,
+    SONY2FUJI_INSPECTION_OVERLAY_NEUTRAL_GRAY_50 = 5
+} sony2fuji_inspection_overlay_mode;
+
+#define SONY2FUJI_INSPECTION_SAMPLE_VERSION 1u
+typedef struct sony2fuji_inspection_sample {
+    uint32_t version;
+    uint32_t struct_size;
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    uint8_t reserved0;
+    uint32_t reserved1;
+    double hue_deg;
+    double saturation_pct;
+    double brightness_pct;
+    double luminance;
+} sony2fuji_inspection_sample;
+
+sony2fuji_status sony2fuji_geometry_output_size(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    uint32_t* out_width,
+    uint32_t* out_height
+);
+
+sony2fuji_status sony2fuji_geometry_infer_source_size(
+    uint32_t output_width,
+    uint32_t output_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    uint32_t* out_source_width,
+    uint32_t* out_source_height
+);
+
+sony2fuji_status sony2fuji_geometry_output_norm_to_source_norm(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    double out_x,
+    double out_y,
+    double* out_source_x,
+    double* out_source_y,
+    int32_t* out_valid
+);
+
+sony2fuji_status sony2fuji_geometry_source_norm_to_output_norm(
+    uint32_t source_width,
+    uint32_t source_height,
+    const sony2fuji_geometry_config* geometry,
+    const sony2fuji_perspective_config* perspective,
+    double source_x,
+    double source_y,
+    double* out_output_x,
+    double* out_output_y,
+    int32_t* out_valid
+);
+
+sony2fuji_status sony2fuji_inspection_color_from_rgb(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    sony2fuji_inspection_sample* out_sample
+);
+
+sony2fuji_status sony2fuji_inspection_sample_patch(
+    const sony2fuji_buffer* image,
+    double norm_x,
+    double norm_y,
+    uint32_t radius_px,
+    sony2fuji_inspection_sample* out_sample
+);
+
+sony2fuji_status sony2fuji_inspection_overlay_pixel(
+    uint8_t r,
+    uint8_t g,
+    uint8_t b,
+    sony2fuji_inspection_overlay_mode mode,
+    uint8_t* out_r,
+    uint8_t* out_g,
+    uint8_t* out_b
+);
+
+sony2fuji_status sony2fuji_inspection_render_overlay(
+    const sony2fuji_buffer* src,
+    sony2fuji_inspection_overlay_mode mode,
+    sony2fuji_buffer* dst
+);
+
+/* === Wave W-F3: Sony PTP/IP, Live-View Focus & Focus State Machine === */
+
+#define SONY2FUJI_SONY_PTPIP_DATA_LIMIT (8u << 20)
+#define SONY2FUJI_SONY_SLOT_DATES_LIMIT (256u << 10)
+#define SONY2FUJI_SONY_TAP_FOCUS_TIMEOUT_MS 1800ULL
+#define SONY2FUJI_SONY_FOCUS_STATE_VERSION 1u
+
+typedef struct sony2fuji_sony_device_info sony2fuji_sony_device_info;
+typedef struct sony2fuji_sony_remote_descriptor sony2fuji_sony_remote_descriptor;
+typedef struct sony2fuji_sony_property_table sony2fuji_sony_property_table;
+typedef struct sony2fuji_sony_mobile_page sony2fuji_sony_mobile_page;
+typedef struct sony2fuji_sony_legacy_object sony2fuji_sony_legacy_object;
+
+typedef enum sony2fuji_sony_live_view_frame_kind {
+    SONY2FUJI_SONY_LIVE_FRAME_FOCUS = 0,
+    SONY2FUJI_SONY_LIVE_FRAME_FACE = 1,
+    SONY2FUJI_SONY_LIVE_FRAME_TRACKING = 2
+} sony2fuji_sony_live_view_frame_kind;
+
+typedef enum sony2fuji_sony_property_value_kind {
+    SONY2FUJI_SONY_PROP_NUMBER = 0,
+    SONY2FUJI_SONY_PROP_TEXT = 1,
+    SONY2FUJI_SONY_PROP_OPAQUE = 2
+} sony2fuji_sony_property_value_kind;
+
+typedef enum sony2fuji_sony_focus_target {
+    SONY2FUJI_SONY_FOCUS_TARGET_NONE = 0,
+    SONY2FUJI_SONY_FOCUS_TARGET_REMOTE_TOUCH = 1,
+    SONY2FUJI_SONY_FOCUS_TARGET_AF_AREA_POSITION = 2
+} sony2fuji_sony_focus_target;
+
+typedef enum sony2fuji_sony_focus_unavailable_reason {
+    SONY2FUJI_SONY_FOCUS_AVAILABLE = 0,
+    SONY2FUJI_SONY_FOCUS_UNAVAILABLE_MANUAL_FOCUS = 1,
+    SONY2FUJI_SONY_FOCUS_UNAVAILABLE_AREA_FIXED = 2,
+    SONY2FUJI_SONY_FOCUS_UNAVAILABLE_UNSUPPORTED = 3
+} sony2fuji_sony_focus_unavailable_reason;
+
+typedef enum sony2fuji_sony_focus_render_mode {
+    SONY2FUJI_SONY_FOCUS_RENDER_NONE = 0,
+    SONY2FUJI_SONY_FOCUS_RENDER_LIVE_FRAMES = 1,
+    SONY2FUJI_SONY_FOCUS_RENDER_TAP_RETICLE = 2
+} sony2fuji_sony_focus_render_mode;
+
+typedef struct sony2fuji_sony_ptpip_header {
+    uint32_t packet_type;
+    uint32_t payload_size;
+} sony2fuji_sony_ptpip_header;
+
+typedef struct sony2fuji_sony_ptpip_start_data {
+    uint32_t transaction_id;
+    uint32_t reserved0;
+    uint64_t total_bytes;
+} sony2fuji_sony_ptpip_start_data;
+
+typedef struct sony2fuji_sony_ptpip_response {
+    uint16_t response_code;
+    uint16_t reserved0;
+    uint32_t transaction_id;
+    uint32_t param_count;
+    uint32_t params[5];
+} sony2fuji_sony_ptpip_response;
+
+typedef struct sony2fuji_sony_ptpip_event {
+    uint16_t event_code;
+    uint16_t reserved0;
+    uint32_t transaction_id;
+    uint32_t param_count;
+    uint32_t params[3];
+} sony2fuji_sony_ptpip_event;
+
+typedef struct sony2fuji_sony_property_info {
+    uint16_t code;
+    uint16_t type;
+    int32_t writable;
+    uint8_t enabled;
+    uint8_t form;
+    uint16_t reserved0;
+    sony2fuji_sony_property_value_kind value_kind;
+    int64_t number_value;
+    int32_t has_range;
+    uint32_t choice_count;
+    int64_t minimum;
+    int64_t maximum;
+    int64_t step;
+} sony2fuji_sony_property_info;
+
+typedef struct sony2fuji_sony_mobile_asset_info {
+    uint32_t content;
+    uint32_t file;
+    uint64_t size;
+    uint64_t created;
+} sony2fuji_sony_mobile_asset_info;
+
+typedef struct sony2fuji_sony_legacy_object_info {
+    uint32_t storage;
+    uint16_t format;
+    uint16_t reserved0;
+    uint64_t size;
+} sony2fuji_sony_legacy_object_info;
+
+typedef struct sony2fuji_sony_live_frame_bounds {
+    uint32_t body_size;
+    uint32_t image_offset;
+    uint32_t image_length;
+    uint32_t metadata_offset;
+    uint32_t metadata_length;
+    int32_t has_metadata;
+} sony2fuji_sony_live_frame_bounds;
+
+typedef struct sony2fuji_sony_live_view_frame {
+    sony2fuji_sony_live_view_frame_kind kind;
+    int32_t focused;
+    double cx;
+    double cy;
+    double width;
+    double height;
+} sony2fuji_sony_live_view_frame;
+
+typedef struct sony2fuji_sony_focus_tap_point {
+    double u;
+    double v;
+    int32_t x;
+    int32_t y;
+    uint32_t packed;
+    uint32_t reserved0;
+} sony2fuji_sony_focus_tap_point;
+
+typedef struct sony2fuji_sony_focus_overlay_box {
+    double x;
+    double y;
+    double width;
+    double height;
+    int32_t is_normalized_square;
+    int32_t focused;
+} sony2fuji_sony_focus_overlay_box;
+
+typedef struct sony2fuji_sony_focus_state {
+    uint32_t version;
+    uint32_t struct_size;
+    int32_t focus_busy;
+    int32_t tap_active;
+    uint64_t tap_generation;
+    double tap_u;
+    double tap_v;
+    int32_t tap_x;
+    int32_t tap_y;
+    uint64_t tap_deadline_ms;
+    int32_t tap_focus_locked;
+    int32_t props_focus_locked;
+    int32_t can_cancel_touch_focus;
+    int32_t has_live_frames;
+    int32_t has_last_square_ratio;
+    int32_t has_pending_deadline;
+    double last_square_ratio;
+} sony2fuji_sony_focus_state;
+
+typedef struct sony2fuji_sony_focus_render_decision {
+    sony2fuji_sony_focus_render_mode mode;
+    int32_t effective_focus_locked;
+    sony2fuji_sony_focus_overlay_box tap_box;
+} sony2fuji_sony_focus_render_decision;
+
+/* PTP/IP framing */
+
+sony2fuji_status sony2fuji_sony_ptpip_build_init_cmd(
+    const uint8_t* guid16,
+    const char* client_name,
+    uint32_t protocol_version,
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_build_init_evt(
+    uint32_t connection_number,
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_build_op_req(
+    uint32_t data_phase,
+    uint16_t op_code,
+    uint32_t transaction_id,
+    const uint32_t* params,
+    uint32_t param_count,
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_build_start_data(
+    uint32_t transaction_id,
+    uint64_t total_bytes,
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_build_end_data(
+    uint32_t transaction_id,
+    const uint8_t* payload,
+    size_t payload_len,
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_build_probe_resp(
+    uint8_t* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_parse_header(
+    const uint8_t* header8,
+    size_t len,
+    uint64_t max_payload_bytes,
+    sony2fuji_sony_ptpip_header* out_header
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_parse_init_cmd_ack(
+    const uint8_t* payload,
+    size_t len,
+    uint32_t* out_connection_number
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_parse_start_data(
+    const uint8_t* payload,
+    size_t len,
+    sony2fuji_sony_ptpip_start_data* out_start
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_parse_response(
+    const uint8_t* payload,
+    size_t len,
+    sony2fuji_sony_ptpip_response* out_resp
+);
+
+sony2fuji_status sony2fuji_sony_ptpip_parse_event(
+    const uint8_t* payload,
+    size_t len,
+    sony2fuji_sony_ptpip_event* out_evt
+);
+
+/* Validation & Wi-Fi credentials */
+
+sony2fuji_status sony2fuji_sony_parse_wifi_credential(
+    const uint8_t* data,
+    size_t len,
+    int32_t is_password,
+    char* out_buf,
+    size_t capacity,
+    size_t* out_len
+);
+
+int32_t sony2fuji_sony_is_valid_photo_filename(const char* name);
+int32_t sony2fuji_sony_is_photo_filename(const char* name);
+int32_t sony2fuji_sony_validate_photo_header(
+    const char* name,
+    const uint8_t* prefix,
+    size_t prefix_len
+);
+
+/* 0x1001 Device Info */
+
+sony2fuji_status sony2fuji_sony_parse_device_info(
+    const uint8_t* data,
+    size_t len,
+    sony2fuji_sony_device_info** out_info
+);
+
+void sony2fuji_sony_device_info_free(sony2fuji_sony_device_info* info);
+const char* sony2fuji_sony_device_info_manufacturer(const sony2fuji_sony_device_info* info);
+const char* sony2fuji_sony_device_info_model(const sony2fuji_sony_device_info* info);
+const char* sony2fuji_sony_device_info_firmware(const sony2fuji_sony_device_info* info);
+const char* sony2fuji_sony_device_info_serial(const sony2fuji_sony_device_info* info);
+
+sony2fuji_status sony2fuji_sony_device_info_operations(
+    const sony2fuji_sony_device_info* info,
+    uint16_t* out_ops,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+/* 0x9202 Remote Descriptor */
+
+sony2fuji_status sony2fuji_sony_parse_remote_descriptor(
+    const uint8_t* data,
+    size_t len,
+    uint16_t* out_version,
+    int32_t* out_enum_tables,
+    sony2fuji_sony_remote_descriptor** out_desc
+);
+
+void sony2fuji_sony_remote_descriptor_free(sony2fuji_sony_remote_descriptor* desc);
+
+sony2fuji_status sony2fuji_sony_remote_descriptor_properties(
+    const sony2fuji_sony_remote_descriptor* desc,
+    uint16_t* out_props,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_sony_remote_descriptor_controls(
+    const sony2fuji_sony_remote_descriptor* desc,
+    uint16_t* out_controls,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+/* 0x9209 Property Table, Focus Policy & Options */
+
+sony2fuji_status sony2fuji_sony_parse_properties(
+    const uint8_t* data,
+    size_t len,
+    int32_t enum_tables,
+    sony2fuji_sony_property_table** out_table
+);
+
+void sony2fuji_sony_property_table_free(sony2fuji_sony_property_table* table);
+uint32_t sony2fuji_sony_property_table_count(const sony2fuji_sony_property_table* table);
+
+sony2fuji_status sony2fuji_sony_property_table_get_at(
+    const sony2fuji_sony_property_table* table,
+    uint32_t index,
+    sony2fuji_sony_property_info* out_info
+);
+
+sony2fuji_status sony2fuji_sony_property_table_find(
+    const sony2fuji_sony_property_table* table,
+    uint16_t code,
+    sony2fuji_sony_property_info* out_info
+);
+
+const char* sony2fuji_sony_property_table_text_at(
+    const sony2fuji_sony_property_table* table,
+    uint32_t index
+);
+
+sony2fuji_status sony2fuji_sony_property_table_choices_at(
+    const sony2fuji_sony_property_table* table,
+    uint32_t index,
+    int64_t* out_choices,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+int32_t sony2fuji_sony_property_accepts(
+    const sony2fuji_sony_property_info* info,
+    const int64_t* choices,
+    uint32_t choice_count,
+    int64_t value
+);
+
+sony2fuji_status sony2fuji_sony_property_options(
+    const sony2fuji_sony_property_info* info,
+    const int64_t* choices,
+    uint32_t choice_count,
+    int32_t only_settable,
+    int32_t sort_unique,
+    uint32_t max_range_count,
+    int64_t* out_values,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+void sony2fuji_sony_property_table_focus_indication(
+    const sony2fuji_sony_property_table* table,
+    int32_t* out_locked,
+    int32_t* out_failed
+);
+
+int32_t sony2fuji_sony_property_table_can_cancel_touch_focus(
+    const sony2fuji_sony_property_table* table,
+    const uint16_t* controls,
+    uint32_t control_count,
+    const uint16_t* operations,
+    uint32_t operation_count,
+    int32_t remote_ready
+);
+
+sony2fuji_status sony2fuji_sony_property_table_resolve_focus_target(
+    const sony2fuji_sony_property_table* table,
+    const uint16_t* controls,
+    uint32_t control_count,
+    const uint16_t* operations,
+    uint32_t operation_count,
+    int32_t remote_ready,
+    sony2fuji_sony_focus_target* out_target,
+    sony2fuji_sony_focus_unavailable_reason* out_reason
+);
+
+/* 0x923b / 0x923c / 0x1008 Contents */
+
+sony2fuji_status sony2fuji_sony_parse_slot_photo_count(
+    const uint8_t* data,
+    size_t len,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_sony_parse_mobile_page(
+    const uint8_t* data,
+    size_t len,
+    sony2fuji_sony_mobile_page** out_page
+);
+
+void sony2fuji_sony_mobile_page_free(sony2fuji_sony_mobile_page* page);
+uint32_t sony2fuji_sony_mobile_page_entry_count(const sony2fuji_sony_mobile_page* page);
+uint64_t sony2fuji_sony_mobile_page_cursor(const sony2fuji_sony_mobile_page* page);
+uint32_t sony2fuji_sony_mobile_page_asset_count(const sony2fuji_sony_mobile_page* page);
+
+sony2fuji_status sony2fuji_sony_mobile_page_asset_at(
+    const sony2fuji_sony_mobile_page* page,
+    uint32_t index,
+    sony2fuji_sony_mobile_asset_info* out_info,
+    const char** out_name
+);
+
+sony2fuji_status sony2fuji_sony_parse_legacy_object(
+    const uint8_t* data,
+    size_t len,
+    sony2fuji_sony_legacy_object** out_obj
+);
+
+void sony2fuji_sony_legacy_object_free(sony2fuji_sony_legacy_object* obj);
+
+sony2fuji_status sony2fuji_sony_legacy_object_get(
+    const sony2fuji_sony_legacy_object* obj,
+    sony2fuji_sony_legacy_object_info* out_info,
+    const char** out_name,
+    const char** out_created,
+    const char** out_modified
+);
+
+/* Live-View Bounds, Metadata & 640x480 Projection */
+
+sony2fuji_status sony2fuji_sony_parse_live_frame_bounds(
+    const uint32_t fields4[4],
+    uint64_t max_total_bytes,
+    sony2fuji_sony_live_frame_bounds* out_bounds
+);
+
+sony2fuji_status sony2fuji_sony_parse_live_view_frames(
+    const uint8_t* metadata,
+    size_t len,
+    sony2fuji_sony_live_view_frame* out_frames,
+    uint32_t capacity,
+    uint32_t* out_count
+);
+
+sony2fuji_status sony2fuji_sony_focus_point_from_tap(
+    double tap_x,
+    double tap_y,
+    double container_width,
+    double container_height,
+    double image_width,
+    double image_height,
+    int32_t* out_valid,
+    sony2fuji_sony_focus_tap_point* out_tap
+);
+
+sony2fuji_status sony2fuji_sony_compute_focus_overlay_box(
+    const sony2fuji_sony_live_view_frame* frame,
+    double left,
+    double top,
+    double fitted_width,
+    double fitted_height,
+    sony2fuji_sony_focus_overlay_box* out_box
+);
+
+sony2fuji_status sony2fuji_sony_normalized_focus_square_ratio(
+    const sony2fuji_sony_live_view_frame* frame,
+    double image_width,
+    double image_height,
+    int32_t* out_valid,
+    double* out_ratio
+);
+
+sony2fuji_status sony2fuji_sony_tap_focus_side(
+    double fitted_width,
+    double fitted_height,
+    double min_default_px,
+    double max_default_px,
+    double min_learned_px,
+    int32_t has_last_ratio,
+    double last_ratio,
+    double* out_side
+);
+
+/* Virtual-Clock Focus State Machine */
+
+sony2fuji_status sony2fuji_sony_focus_state_init(sony2fuji_sony_focus_state* state);
+
+sony2fuji_status sony2fuji_sony_focus_state_reset(
+    sony2fuji_sony_focus_state* state,
+    int32_t preserve_last_ratio
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_tap(
+    sony2fuji_sony_focus_state* state,
+    double u,
+    double v,
+    int32_t x,
+    int32_t y,
+    uint64_t now_ms
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_cancel_start(sony2fuji_sony_focus_state* state);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_focus_finished(
+    sony2fuji_sony_focus_state* state,
+    int32_t succeeded,
+    int32_t focus_locked,
+    uint64_t now_ms
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_live_frame(
+    sony2fuji_sony_focus_state* state,
+    const sony2fuji_sony_live_view_frame* frames,
+    uint32_t frame_count,
+    double image_width,
+    double image_height
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_properties(
+    sony2fuji_sony_focus_state* state,
+    int32_t can_cancel_touch_focus,
+    int32_t props_focus_locked,
+    int32_t props_focus_failed
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_capture_or_param_start(sony2fuji_sony_focus_state* state);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_live_changed(
+    sony2fuji_sony_focus_state* state,
+    int32_t live_active
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_tick(
+    sony2fuji_sony_focus_state* state,
+    uint64_t now_ms
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_on_timeout(
+    sony2fuji_sony_focus_state* state,
+    uint64_t generation,
+    uint64_t now_ms
+);
+
+sony2fuji_status sony2fuji_sony_focus_state_resolve_render(
+    const sony2fuji_sony_focus_state* state,
+    double left,
+    double top,
+    double fitted_width,
+    double fitted_height,
+    double min_default_px,
+    double max_default_px,
+    double min_learned_px,
+    sony2fuji_sony_focus_render_decision* out_decision
+);
 
 #ifdef __cplusplus
 } // extern "C"

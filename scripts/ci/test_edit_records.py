@@ -403,7 +403,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
                 self.assertNotIn('modeStr == "as_shot"', stripped)
                 self.assertNotIn('var sdrValues = record.GetProperty("sdr_values")', stripped)
 
-    def test_wavelet_preset_wb_mode_and_sdr_post_rgb_coverage(self):
+    def test_wavelet_preset_wb_mode_and_hdr_post_rgb_coverage(self):
         wb_modes = {
             r["sdr_values"].get("color.white_balance.mode")
             for r in self.document["roundtrip_records"]
@@ -419,12 +419,19 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertGreaterEqual(wavelet_presets, {"detail", "clean", "custom"})
 
         sdr_post_rgb = [
-            float(r["sdr_values"]["detail.denoise.post_rgb"])
+            r["id"]
             for r in self.document["roundtrip_records"]
             if r.get("sdr_values") and "detail.denoise.post_rgb" in r["sdr_values"]
         ]
-        self.assertIn(1.0, sdr_post_rgb)
-        self.assertTrue(any(0.0 < v < 1.0 for v in sdr_post_rgb))
+        self.assertEqual(sdr_post_rgb, [], "detail.denoise.post_rgb is HDR-only across all 4 platforms")
+
+        hdr_post_rgb = [
+            float(r["hdr_values"]["detail.denoise.post_rgb"])
+            for r in self.document["roundtrip_records"]
+            if r.get("hdr_values") and "detail.denoise.post_rgb" in r["hdr_values"]
+        ]
+        self.assertIn(1.0, hdr_post_rgb)
+        self.assertTrue(any(0.0 < v < 1.0 for v in hdr_post_rgb))
 
     def test_runner_divergence_ratchet_and_ledger_entries(self):
         self.assertEqual(KNOWN_DIVERGENCE_CEILINGS, {"macos": 0, "ios": 0, "android": 9, "windows": 0})

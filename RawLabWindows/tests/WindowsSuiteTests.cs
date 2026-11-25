@@ -33,20 +33,22 @@ public sealed class ModelRegressionTests
     public void AdjustmentParametersLatestWorkAndRawExtensionsWork()
     {
         var settings = new Adjustments();
-        settings.Set(Parameter.Strength, 250);
-        Check(settings[Parameter.Strength] == 200 && settings.Request("test.arw", "test.cube", 2000, null).LutStrength == 2,
+        settings.Set(Parameter.Strength, 2.5);
+        Check(settings[Parameter.Strength] == 2 && settings.Request("test.arw", "test.cube", 2000, null).LutStrength == 2,
             "Film strength clamps at 200% and reaches the native renderer");
         var strengthSpec = ParameterSpec.All[(int)Parameter.Strength];
-        Check(strengthSpec.Parse("150") == 150 && strengthSpec.Parse("201") == null && strengthSpec.Value(.5) == 100,
+        var strengthRange = NumericRange.For(strengthSpec);
+        Check(strengthSpec.Parse("1.5") == 1.5 && strengthSpec.Parse("2.1") == null && strengthSpec.Value(.5) == 1 &&
+            strengthRange.Parse("150") == 150 && strengthRange.Parse("201") == null && strengthRange.Value(.5) == 100,
             "Film slider supports 0-200% and numeric input rejects out-of-range text");
         settings.Reset(Parameter.Strength);
-        Check(settings[Parameter.Strength] == 100, "Film strength resets to 100%");
+        Check(settings[Parameter.Strength] == 1, "Film strength resets to 100%");
 
         var wb = (Temperature: 4870.0, Tint: 17.0);
         settings.ResolveWhiteBalance(wb);
         settings.Set(Parameter.Temperature, 8000);
-        settings.Set(Parameter.Highlights, 30);
-        settings.Set(Parameter.Contrast, -20);
+        settings.Set(Parameter.Highlights, -.3);
+        settings.Set(Parameter.Contrast, .8);
         var mapped = settings.Request("test.arw", "test.cube", 2000, null);
         Check(mapped.WbMode == 3 && mapped.Temperature == 8000 && Math.Abs(mapped.Highlights + .3) < 1e-6 && Math.Abs(mapped.Contrast - .8) < 1e-6,
             "Mac adjustment mapping including highlight sign");
@@ -290,6 +292,24 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrRenditionInlineWorks() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunRendition(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrEffectsWork() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunEffects(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-workflow")]
+    public void HdrInlineLookAndProcessingWork() =>
+        WpfTestHost.Run(() => HDRWorkflowChecks.RunInlineLookAndProcessing(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
     [Trait("Suite", "first-preview")]
     public void FirstPreviewWorks() =>
         WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
@@ -362,7 +382,7 @@ public sealed class WpfSuiteTests
                 Check(Math.Max(rendered.Image.PixelWidth, rendered.Image.PixelHeight) == 800, "Real ARW and UTF-8 LUT paths");
                 Check(rendered.Backend == 3, "Actual Direct3D 11 hardware completes RAW rendering");
                 Check(!Pixels(neutral.Image).SequenceEqual(Pixels(rendered.Image)), "Film branch changes pixels");
-                settings.Set(Parameter.Strength, 200);
+                settings.Set(Parameter.Strength, 2);
                 var strong = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
                 Check(!Pixels(strong.Image).SequenceEqual(Pixels(rendered.Image)), "200% film differs from 100% on Direct3D 11");
                 using (var cpuStrength = new RenderEngine(0))
@@ -392,7 +412,7 @@ public sealed class WpfSuiteTests
                 settings.ResolveWhiteBalance(rendered.WhiteBalance);
                 foreach (var parameter in new[] { Parameter.Exposure, Parameter.Contrast, Parameter.Highlights, Parameter.Shadows, Parameter.ToneCurve, Parameter.Saturation, Parameter.Sharpening })
                 {
-                    settings.Set(parameter, parameter == Parameter.Exposure ? 1 : 40);
+                    settings.Set(parameter, parameter == Parameter.Exposure ? 1 : parameter is Parameter.Contrast or Parameter.Saturation ? 1.4 : .4);
                     var changed = engine.Render(unicodeRaw, settings, unicodeLut, 800)!;
                     Check(!Pixels(rendered.Image).SequenceEqual(Pixels(changed.Image)) && changed.Baseline == rendered.Baseline,
                         "Adjustment affects pixels, preserves baseline: " + parameter);
@@ -427,7 +447,7 @@ public sealed class WpfSuiteTests
                     finally { Environment.SetEnvironmentVariable("RAWLAB_DISABLE_D3D11", previous); engine.SetGpuMode(1); }
                 }
                 var png = Path.Combine(unicodeDir, "原尺寸.png"); var jpeg = Path.Combine(unicodeDir, "原尺寸.jpg");
-                settings.Set(Parameter.Strength, 200);
+                settings.Set(Parameter.Strength, 2);
                 engine.Render(unicodeRaw, settings, unicodeLut, 0, true, png); engine.Render(unicodeRaw, settings, unicodeLut, 0, false, jpeg);
                 var sourceTags = ExportMetadataChecks.Read(unicodeRaw);
                 foreach (var path in new[] { png, jpeg })

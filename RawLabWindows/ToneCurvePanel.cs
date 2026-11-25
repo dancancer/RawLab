@@ -50,7 +50,7 @@ public sealed class ToneCurvePanel : StackPanel
     internal event Action? TargetInputCancelled;
     public ToneCurvePanel()
     {
-        MaxWidth = 720; Margin = new Thickness(12, 6, 12, 6);
+        MaxWidth = 720; Margin = new Thickness(4);
         Children.Add(targetToggle); Children.Add(targetStatus);
         targetStatus.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
         AutomationProperties.SetAutomationId(targetToggle, "curve.target");
@@ -79,7 +79,13 @@ public sealed class ToneCurvePanel : StackPanel
         AutomationProperties.SetAutomationId(pointModeButton, "curve.submode.point");
         AutomationProperties.SetAutomationId(parametricModeButton, "curve.submode.parametric");
         pointModeButton.Click += (_, _) => { if (!syncing && showParametric) { showParametric = false; Refresh(settings, scalar, source, usesExposureStops); } };
-        parametricModeButton.Click += (_, _) => { if (!syncing && !showParametric) { showParametric = true; Refresh(settings, scalar, source, usesExposureStops); } };
+        parametricModeButton.Click += (_, _) => {
+            if (!syncing && !showParametric) {
+                showParametric = true;
+                if (TargetEnabled) TargetChanged?.Invoke(false, channel);
+                Refresh(settings, scalar, source, usesExposureStops);
+            }
+        };
         subModeTabs.Children.Add(pointModeButton); subModeTabs.Children.Add(parametricModeButton);
         Children.Add(subModeTabs);
 
@@ -108,7 +114,7 @@ public sealed class ToneCurvePanel : StackPanel
         exposureAxis.Children.Add(referenceWhite); Grid.SetColumn(referenceWhite, 1);
         exposureAxis.Children.Add(maximum); Grid.SetColumn(maximum, 2);
         AutomationProperties.SetAutomationId(exposureAxis, "curve.hdr.ev-axis");
-        plot.Width = canvas.Width; plot.HorizontalAlignment = HorizontalAlignment.Center;
+        plot.HorizontalAlignment = HorizontalAlignment.Stretch;
         plot.Children.Add(canvas); plot.Children.Add(exposureAxis);
         content.Children.Add(plot); content.Children.Add(rows); custom.Children.Add(content); custom.Children.Add(hint);
         actions.Children.Add(add); actions.Children.Add(remove); actions.Children.Add(reset); custom.Children.Add(actions); Children.Add(custom);
@@ -158,7 +164,7 @@ public sealed class ToneCurvePanel : StackPanel
         };
         x.Changed += (next, dragging) => {
             var active = ActiveChannelSettings();
-            if (active.IsInterior(selected)) Change(active.Moving(selected, Normalize(next), active.Points[selected].Y), dragging);
+            if (active.CanMoveX(selected)) Change(active.Moving(selected, Normalize(next), active.Points[selected].Y), dragging);
         };
         y.Changed += (next, dragging) => {
             var active = ActiveChannelSettings();
@@ -169,9 +175,9 @@ public sealed class ToneCurvePanel : StackPanel
         lightsRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { Lights = next }, dragging);
         darksRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { Darks = next }, dragging);
         shadowsRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { Shadows = next }, dragging);
-        splitShadowRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitShadow = next }, dragging);
-        splitMidtoneRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitMidtone = next }, dragging);
-        splitHighlightRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitHighlight = next }, dragging);
+        splitShadowRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitShadow = next / 100.0 }, dragging);
+        splitMidtoneRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitMidtone = next / 100.0 }, dragging);
+        splitHighlightRow.Changed += (next, dragging) => UpdateParametric(settings.Parametric with { SplitHighlight = next / 100.0 }, dragging);
 
         switchMode.Click += (_, _) => {
             if (!CommitInputs()) return;
@@ -217,6 +223,10 @@ public sealed class ToneCurvePanel : StackPanel
     {
         TargetEnabled = enabled;
         if (enabled && channel != targetChannel) channel = targetChannel;
+        if (enabled && channel == ToneCurveChannel.Rgb && showParametric) {
+            showParametric = false;
+            Refresh(settings, scalar, source, usesExposureStops);
+        }
         targetWaiting = waiting; targetSample = sample; targetNotice = notice;
         RefreshTargetControls();
     }
@@ -225,10 +235,12 @@ public sealed class ToneCurvePanel : StackPanel
     {
         var wasSyncing = syncing; syncing = true;
         try {
+            var hideTarget = channel == ToneCurveChannel.Rgb && showParametric;
             targetToggle.Content = Loc.Text("目标调整");
             targetToggle.IsChecked = TargetEnabled;
+            targetToggle.Visibility = hideTarget ? Visibility.Collapsed : Visibility.Visible;
             AutomationProperties.SetName(targetToggle, Loc.Text("目标调整"));
-            targetStatus.Visibility = TargetEnabled ? Visibility.Visible : Visibility.Collapsed;
+            targetStatus.Visibility = !hideTarget && TargetEnabled ? Visibility.Visible : Visibility.Collapsed;
             var key = targetNotice switch {
                 HslTargetAvailability.Outside => "请在调整后的照片区域取色。",
                 HslTargetAvailability.Stale => "预览已变化，请重新取色。",
@@ -262,9 +274,9 @@ public sealed class ToneCurvePanel : StackPanel
         parametricModeButton.Content = Loc.Text("参数曲线");
         luminosityToggle.Content = Loc.Text("仅作用于明度");
         splitHeader.Text = Loc.Text("拆分点");
-        resetParametric.Content = Loc.Text("重置曲线");
+        resetParametric.Content = Loc.Text("重置参数曲线");
         add.Content = Loc.Text("添加控制点"); remove.Content = Loc.Text("删除控制点"); reset.Content = Loc.Text("重置为直线");
-        hint.Text = Loc.Text("点击曲线区域添加控制点，拖动中间点调整。");
+        hint.Text = Loc.Text("点击添加控制点；双击控制点或拖出画布可删除。");
         referenceWhite.Text = "0 EV\n" + Loc.Text("参考白");
         RefreshTargetControls();
         Refresh(settings, scalar, source, usesExposureStops);
@@ -273,20 +285,45 @@ public sealed class ToneCurvePanel : StackPanel
     {
         var wasSyncing = syncing; syncing = true;
         try {
+            var nextPointModified = !next.Shape(ToneCurveChannel.Rgb).IsIdentity ||
+                (next.Mode == ToneCurveMode.Legacy && Math.Abs(legacyValue) > 1e-6);
             if (!Equals(source, identity) || usesExposureStops != hdr) {
                 CancelInputs(); selected = 0; channel = ToneCurveChannel.Rgb;
-                showParametric = !next.Parametric.IsDefault && next.Mode == ToneCurveMode.Legacy;
+                showParametric = !next.Parametric.IsDefault && !nextPointModified;
             }
             source = identity; settings = next; scalar = legacyValue; usesExposureStops = hdr;
             var active = ActiveChannelSettings();
             selected = Math.Clamp(selected, 0, Math.Max(0, active.Points.Count - 1));
             var isRgb = channel == ToneCurveChannel.Rgb;
+            var pointTitle = Loc.Text("点曲线");
+            var parametricTitle = Loc.Text("参数曲线");
+            var pointModified = !settings.Shape(ToneCurveChannel.Rgb).IsIdentity ||
+                (settings.Mode == ToneCurveMode.Legacy && Math.Abs(scalar) > 1e-6);
             subModeTabs.Visibility = isRgb ? Visibility.Visible : Visibility.Collapsed;
+            luminosityToggle.Visibility = isRgb ? Visibility.Visible : Visibility.Collapsed;
+            pointModeButton.Tag = !showParametric ? "selected" : null;
+            parametricModeButton.Tag = showParametric ? "selected" : null;
+            pointModeButton.Content = pointTitle + (pointModified ? " •" : "");
+            parametricModeButton.Content = parametricTitle + (settings.Parametric.IsDefault ? "" : " •");
+            AutomationProperties.SetName(pointModeButton, pointTitle);
+            AutomationProperties.SetName(parametricModeButton, parametricTitle);
             pointModeButton.FontWeight = !showParametric ? FontWeights.SemiBold : FontWeights.Normal;
             parametricModeButton.FontWeight = showParametric ? FontWeights.SemiBold : FontWeights.Normal;
             for (var i = 0; i < channelButtons.Length; i++) {
                 var item = (ToneCurveChannel)i;
+                var channelTitle = item switch {
+                    ToneCurveChannel.Red => Loc.Text("红"),
+                    ToneCurveChannel.Green => Loc.Text("绿"),
+                    ToneCurveChannel.Blue => Loc.Text("蓝"),
+                    _ => "RGB"
+                };
+                var modified = item == ToneCurveChannel.Rgb
+                    ? !settings.Shape(item).IsIdentity || !settings.Parametric.IsDefault || (settings.Mode == ToneCurveMode.Legacy && scalar != 0)
+                    : !settings.Shape(item).IsIdentity;
+                channelButtons[i].Content = channelTitle + (modified ? " •" : "");
+                channelButtons[i].Tag = item == channel ? "selected" : null;
                 channelButtons[i].FontWeight = item == channel ? FontWeights.SemiBold : FontWeights.Normal;
+                AutomationProperties.SetName(channelButtons[i], channelTitle);
                 AutomationProperties.SetItemStatus(channelButtons[i], item == channel ? "selected" : "");
             }
             luminosityToggle.IsChecked = settings.ApplyToLuminosity;
@@ -302,7 +339,8 @@ public sealed class ToneCurvePanel : StackPanel
             actions.Visibility = parametricVisible ? Visibility.Collapsed : Visibility.Visible;
             parametricPanel.Visibility = parametricVisible ? Visibility.Visible : Visibility.Collapsed;
             exposureAxis.Visibility = hdr ? Visibility.Visible : Visibility.Collapsed;
-            legacy.SourceIdentity = identity; legacy.Refresh(Loc.Text("S 曲线"), new(-100, 100), scalar, 0, "%");
+            var toneCurveSpec = ParameterSpec.All[(int)Parameter.ToneCurve];
+            legacy.SourceIdentity = identity; legacy.Refresh(Loc.Text("S 曲线"), NumericRange.For(toneCurveSpec), scalar, 0, toneCurveSpec.Unit);
             RefreshRows();
             RefreshParametricRows();
             canvas.Refresh(active, identity, selected, channel, parametricVisible);
@@ -329,8 +367,9 @@ public sealed class ToneCurvePanel : StackPanel
             var range = usesExposureStops ? new NumericRange(-8, 8, .01, .1, .01, AllowOffGrid: true) :
                 new NumericRange(0, 1, .001, .01, .001, AllowOffGrid: true);
             var unit = usesExposureStops ? "EV" : "";
-            x.Refresh(Loc.Text("输入坐标"), range, Coordinate(point.X), Coordinate(point.X), unit,
-                enabled: active.IsInterior(selected), inputScope: (channel, selected));
+            var defaultX = selected == 0 ? 0.0 : selected == active.Points.Count - 1 ? 1.0 : point.X;
+            x.Refresh(Loc.Text("输入坐标"), range, Coordinate(point.X), Coordinate(defaultX), unit,
+                enabled: active.CanMoveX(selected), inputScope: (channel, selected));
             y.Refresh(Loc.Text("输出坐标"), range, Coordinate(point.Y), Coordinate(point.X), unit,
                 enabled: active.CanMoveY(selected), inputScope: (channel, selected));
         } finally { syncing = wasSyncing; }
@@ -352,12 +391,12 @@ public sealed class ToneCurvePanel : StackPanel
         var midMin = Math.Max(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMin, p.SplitShadow + minGap);
         var midMax = Math.Min(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneMax, p.SplitHighlight - minGap);
         var highMin = Math.Max(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMin, p.SplitMidtone + minGap);
-        splitShadowRow.Refresh(Loc.Text("阴影"), new NumericRange(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMin, shadowMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitShadow, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowDefault, "");
-        splitMidtoneRow.Refresh(Loc.Text("中间调"), new NumericRange(midMin, midMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitMidtone, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneDefault, "");
-        splitHighlightRow.Refresh(Loc.Text("高光"), new NumericRange(highMin, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMax, .01, .05, .001, AllowOffGrid: true),
-            p.SplitHighlight, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightDefault, "");
+        splitShadowRow.Refresh(Loc.Text("阴影拆分"), new NumericRange(AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowMin * 100, shadowMax * 100, 1, 5, 1, CompactPercent: true, AllowOffGrid: true),
+            p.SplitShadow * 100, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitShadowDefault * 100, "%");
+        splitMidtoneRow.Refresh(Loc.Text("中间调拆分"), new NumericRange(midMin * 100, midMax * 100, 1, 5, 1, CompactPercent: true, AllowOffGrid: true),
+            p.SplitMidtone * 100, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitMidtoneDefault * 100, "%");
+        splitHighlightRow.Refresh(Loc.Text("高光拆分"), new NumericRange(highMin * 100, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightMax * 100, 1, 5, 1, CompactPercent: true, AllowOffGrid: true),
+            p.SplitHighlight * 100, AdjustmentFieldSpec.SubFields.LightCurveParametric.SplitHighlightDefault * 100, "%");
     }
     private void LayoutControls()
     {

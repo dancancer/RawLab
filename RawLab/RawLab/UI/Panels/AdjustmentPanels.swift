@@ -62,7 +62,7 @@ extension ContentView {
         } else if selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing {
             IOSDenoiseControls(settings: Binding(
                 get: { workingSettings.denoise },
-                set: { workingSettings.denoise = $0; workingSettings.noiseReduction = 0 }
+                set: { workingSettings.denoise = $0 }
             ), onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)

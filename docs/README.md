@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-The current mobile release is [v0.12.1, build 24](releases/v0.12/v0.12.1.md) (desktop packages remain at [v0.12.0, build 23](releases/v0.12/v0.12.0.md)).
+The current release is [v0.13.0, build 25](releases/v0.13/v0.13.0.md).
 The [GitHub release record](https://github.com/dancancer/RawLab/releases) owns
 published packages, checksums and package provenance.
 
@@ -55,6 +55,7 @@ deliverables.
 
 | Release line | Notes and source instructions |
 | --- | --- |
+| 0.13 | [0.13.0](releases/v0.13/v0.13.0.md) |
 | 0.12 | [0.12.1](releases/v0.12/v0.12.1.md); [0.12.0](releases/v0.12/v0.12.0.md) |
 | 0.11 | [0.11.0](releases/v0.11/v0.11.0.md) |
 | 0.10 | [0.10.0](releases/v0.10/v0.10.0.md) |

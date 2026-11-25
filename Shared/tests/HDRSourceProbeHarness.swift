@@ -1,11 +1,10 @@
 import Foundation
 
 // 此 harness 只运行探测决策；RAW 解码和原生探测由其他原生测试覆盖。
-struct ProRAWSource {
-    let width: Int
-    let height: Int
-    static func probe(_ url: URL) throws -> ProRAWSource? { fatalError("unexpected ProRAW probe") }
-    static func validatedDecodeVersion(_ saved: Int?) throws -> Int { fatalError("unexpected ProRAW decode validation") }
+@_cdecl("sony2fuji_hdr_probe_apple_proraw")
+func unusedAppleProRAWProbe(_ path: UnsafePointer<CChar>?, _ info: UnsafeMutablePointer<sony2fuji_hdr_source_info_v1>?,
+                            _ diagnostic: UnsafeMutablePointer<sony2fuji_hdr_diagnostic_v1>?) -> sony2fuji_status {
+    fatalError("unexpected Apple ProRAW probe")
 }
 
 @_cdecl("sony2fuji_hdr_probe")

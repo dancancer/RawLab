@@ -226,19 +226,25 @@
           "processingPopoverWidth": "320pt"
         },
         "behaviors": {
-          "workspaces": "Edit, Select (contact sheet + folder tree + bottom batch bar), and Preview (Escape restores prior mode).",
+          "workspaces": "Edit, Select (contact sheet + folder tree + bottom batch bar), and Preview (Escape restores prior mode), with native ViewCommands shortcuts, HDR-aware File export routing (HDR JPEG/HEIF + 16-bit PNG), merged split Compare menu, and dark utility/update windows + updates.lock modal overlay.",
+          "canvasViewing": "Cursor-anchored scroll/pinch zoom, cursor-anchored 1:1 double-click, trackpad two-finger scroll pan, 30x30pt circular chevron wipe handle with resize cursor, and center loading/error cards.",
+          "inspectionSuite": "Collapsible Sampling Monitor (live RGB/HSB + pinned anchors; collapses cleanly even with pinned anchors) and 5 canvas Inspection Overlays including G 50% Neutral Gray.",
           "adjustmentGroups": "6 SDR groups / 7 HDR groups (adds HDR Rendition); Look Strength pinned above SDR Looks; HDR replaces Looks pane with HDRLookControls + QuickPresetView.",
-          "processingSettings": "Lives inside 320pt footer popover (processing version, auto-migration progress & rollback, X3F mode, exposure baseline, HDR toggle/monitoring/rendition/HDR RAW dev).",
-          "toneCurve": "Master RGB curve UI only (S-curve & multi-point); preserves and renders stored R/G/B channel curves.",
-          "lensAndGeometry": "Explicit Geometry/Lens draft footer; SDR Lens is RAW-only without a vignetting switch, whereas Bayer HDR RAW camera dev exposes all 4 lens switches including vignetting."
+          "processingSettings": "Lives inside 320pt footer popover (HDR toggle/monitoring/rendition/HDR RAW dev, processing version, auto-migration progress & rollback, X3F mode, exposure baseline).",
+          "toneCurveAndGrading": "Full Tone Curve v2 (RGB/R/G/B, S-curve, Parametric 1% split steps, Multi-point, Luminosity toggle) and Color Grading v2 (4 zones incl. Global + Luminance/Blending/Balance).",
+          "lensAndGeometry": "Explicit Geometry/Lens draft footer; RAW-only SDR Lens exposes Distortion, TCA, Vignetting, and Auto-Crop alongside Bayer HDR RAW camera dev."
         },
         "sources": [
           "RawLabMac/Sources/Editor/View/EditorView.swift",
+          "RawLabMac/Sources/System/AdjustmentCommands.swift",
+          "RawLabMac/Sources/System/RawLabMacApp.swift",
           "RawLabMac/Sources/Editor/View/AdjustmentDock.swift",
           "RawLabMac/Sources/Editor/View/AdjustmentRow.swift",
           "RawLabMac/Sources/Editor/View/MacWorkspaceComponents.swift",
           "RawLabMac/Sources/Library/MacWorkspaceBrowser.swift",
           "RawLabMac/Sources/Presentation/PhotoCanvas.swift",
+          "RawLabMac/Sources/Presentation/MacPhotoViewport.swift",
+          "RawLabMac/Sources/Presentation/MacCanvasInput.swift",
           "RawLabMac/Sources/Geometry/MacGeometryWorkspace.swift",
           "RawLabMac/Sources/Export/BatchSelectionView.swift",
           "RawLabMac/Sources/Export/BatchExportView.swift"
@@ -294,13 +300,18 @@
           "shellRows": "Menu 28px / Toolbar 48px / WorkspaceBody * / StatusBar 40px",
           "libraryWidth": "default 232px; resizable 200..288px; 264px LibraryOverlay below 1180px",
           "inspectorWidth": "default 304px; resizable 280..360px via 5px GridSplitter; locked 280px below 1180px",
-          "histogram": "92px inline; reparents to 280px HistogramPopup when hidden or height < 400px",
-          "processingPopup": "330px wide, maxHeight 380px"
+          "histogram": "68px inline; reparents to 280px HistogramPopup when hidden or height < 640px",
+          "toolbar": "Centered 3-column ToolbarGrid (* / Auto / *), 36x36px icon buttons (24px CompareModeButton), and ToolbarOverflowButton below 1180px",
+          "processingPopup": "330px wide, maxHeight 380px (inline HDR toggle/monitoring/HDR RAW shortcut; SDR settings hidden in HDR mode)"
         },
         "behaviors": {
-          "hdrDisplay": "D3D11 + DXGI 1.6 R16G16B16A16_FLOAT FLIP_DISCARD linear scRGB HwndHost with up to 32 overlay cutouts and SDR fallback.",
-          "toneCurve": "Master RGB curve UI only; preserves and renders stored R/G/B channel curves.",
-          "lensAndDenoise": "SDR LensPanel is RAW-only without a vignetting toggle (HDR RAW dialog exposes vignetting); DirectML hardware-GPU AI denoise with VRAM picker and diagnostics export.",
+          "hdrDisplay": "D3D11 + DXGI 1.6 R16G16B16A16_FLOAT FLIP_DISCARD linear scRGB HwndHost with up to 32 overlay cutouts (incl. CanvasEmptyStatus & CanvasErrorBanner) and SDR fallback.",
+          "hdrAlignment": "ProcessingPopup exposes HDR controls, HDR Looks embeds HdrLookPanel (HDR LUT/Silver/Master/Strength) above QuickPresetSurface, and HDRRenditionMenu routes to the inline 7th inspector group.",
+          "canvasViewing": "Cursor-anchored wheel and 1:1 double-click zoom, centered CanvasEmptyStatus loading/error card, and bottom CanvasErrorBanner stale-preview retry.",
+          "inspectionSuite": "Collapsible Sampling Monitor + 5 overlays (G 50% Neutral Gray with distinct half-filled Gray50 icon) synced with menu and toolbar.",
+          "toneCurveAndGrading": "Full Tone Curve v2 (RGB/R/G/B, S-curve, Parametric 1% split steps, Multi-point, Luminosity toggle) and Color Grading v2 (4 zones incl. Global + Luminance/Blending/Balance).",
+          "lensAndDenoise": "RAW-only SDR LensPanel (320px chooser popup) exposes Distortion, TCA, Vignetting, and Auto-Crop; DirectML hardware-GPU AI denoise with VRAM picker and diagnostics export.",
+          "dialogHierarchyAndTokens": "Consistent AccentButton on primary non-destructive dialog confirms, LongEdgeDialog Cancel-left/Accept-right order, muted HSL ChannelColors aligned to macOS/mobile, and frozen HistogramView brushes/pens.",
           "batchCancel": "Cancelling mid-render lets the active photo finish and publish cleanly before stopping; BatchJournal supports interrupted-task resume.",
           "singleInstanceAndUpdates": "Named-pipe Open With forwarding and Velopack 1.2.161 update workflow with UpdateLockBanner."
         },
@@ -479,9 +490,8 @@
         ]
       },
       "knownDiscrepancies": [
-        "macOS and Windows Tone Curve UI edits only the master RGB curve (no R/G/B channel selector), whereas iOS and Android expose RGB/R/G/B editing.",
-        "macOS and Windows SDR Lens panels enforce RAW-only editing and omit a Vignetting toggle (Vignetting is exposed in desktop Bayer HDR RAW camera development and mobile RAW+JPEG Lens workspaces).",
-        "Dead legacy UI symbols remain in desktop source: macOS HorizontalPicker / MacRotationRuler / ToolCaption, Windows StraightenRuler.cs."
+        "Desktop SDR Lens panels enforce RAW-only editing, whereas mobile Lens also supports JPEG/raster photos and manual focal-length/crop-factor entry.",
+        "RawLabMac/Sources/System/HorizontalPicker.swift is retained solely for the scripts/ci/apple-models.sh contract (unused in active UI)."
       ],
       "verificationLimits": [
         "Physical haptics",
@@ -526,10 +536,10 @@
       "name": "Windows Workspace Shell & HDR Surface",
       "kind": "custom",
       "refersTo": "win-histogram-plot",
-      "description": "Edit/Select/Preview WPF workspace shell pairing D3D11 FP16 scRGB HwndHost rendering with a 92px inline or 280px popup histogram.",
+      "description": "Edit/Select/Preview WPF workspace shell with centered 3-col toolbar (+ narrow overflow), cursor-anchored zoom, canvas loading/error overlays, D3D11 FP16 scRGB HwndHost rendering, and a 68px inline or 280px popup histogram.",
       "nativeSource": {
         "path": "RawLabWindows/MainWindow.xaml",
-        "symbol": "EditorShell / HDRSurface / HistogramView"
+        "symbol": "EditorShell / ToolbarGrid / HDRSurface / HistogramView"
       }
     },
     {

@@ -175,6 +175,10 @@ extension ContentView {
                         Label(L10n.text("隐私设置"), systemImage: "gearshape")
                     }
                     .accessibilityIdentifier("editor.privacy.open")
+                    Button { coordinator.presentPrivacy() } label: {
+                        Label(L10n.text("故障诊断"), systemImage: "stethoscope")
+                    }
+                    .accessibilityIdentifier("diagnostics.open")
                     Button(action: exportErrorDiagnostics) {
                         Label(L10n.text("导出错误日志"), systemImage: "doc.text")
                     }
@@ -588,7 +592,7 @@ extension ContentView {
                         ), onEditingChanged: setSliderEditing, onCancelled: cancelSliderInteraction)
                             .id(viewModel.sourceRevision)
                             .disabled(isEditorDraftActive || editorBusy)
-                        if viewModel.sourceSupportsCameraHDR, viewModel.sourceProRAW == nil, let hdr = settings.hdr {
+                        if viewModel.sourceSupportsCameraHDR, !viewModel.sourceIsProRAW, let hdr = settings.hdr {
                             HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
                                 supportsBayerDevelopment: viewModel.rawHDRSource?.supportsBayerDevelopment == true,
                                 apply: applyHDRCameraDevelopment,

@@ -1,29 +1,25 @@
 package com.rawlab.android.engine
 
-import com.rawlab.android.format.ExportFormat
-import com.rawlab.android.raster.DecodedRaster
+import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.settings.EditSettings
-import com.rawlab.android.settings.HslTargetRevision
 import com.rawlab.android.settings.ProcessingIdentity
 import com.rawlab.android.settings.X3fMode
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.ByteBuffer
 
 class NativeProcessRequestTest {
-    @Test fun rawPreviewMapsCoreUnitsWithoutJniProductSemantics() {
+    @Test fun sdrSessionStateSerializesCoreUnitsWithoutFakePaths() {
         val settings = EditSettings(
             strength = 0.8f,
             exposure = 1.5f,
-            highlights = 0.4f,
+            highlights = -0.4f,
             shadows = -0.25f,
-            contrast = 0.3f,
+            contrast = 1.3f,
             toneCurve = -0.2f,
-            saturation = -0.15f,
+            saturation = 0.85f,
             customWb = true,
             temperature = 5200f,
             tint = 14f,
@@ -32,111 +28,93 @@ class NativeProcessRequestTest {
             processing = ProcessingIdentity.CURRENT,
             x3fMode = X3fMode.LEGACY,
         )
-        val probe = FloatArray(13)
-        val req = settings.toNativeProcessRequest(
-            inputPath = "/tmp/sample.arw",
-            pixels = null,
+        val json = settings.toSdrSessionStateJson(
+            isRaster = false,
             lutPath = "/tmp/provia.cube",
-            edge = 1200,
-            interactive = true,
-            revision = HslTargetRevision(7L, 9L),
-            probe = probe,
-            cancellationGeneration = 42L,
+            outputSharpening = OutputSharpening.STANDARD,
         )
+        assertFalse(json.contains("session.raw"))
+        assertFalse(json.contains("session.png"))
 
-        assertEquals("/tmp/sample.arw", req.input.path)
-        assertNull(req.input.pixels)
-        assertNull(req.output.path)
-        assertEquals(1200, req.output.edge)
-        assertEquals(0, req.output.longEdge)
-        assertTrue(req.output.interactive)
-        assertTrue(req.output.viewportPreview)
-        assertEquals("/tmp/provia.cube", req.lutPath)
-        assertEquals(0.8f, req.lutStrength, 0f)
-        assertEquals(NativeProcessWhiteBalance(custom = true, temperature = 5200f, tint = 14f, recipeActive = false, recipeStrength = 0.8f), req.whiteBalance)
-        assertEquals(1.5f, req.tone.exposureEv, 0f)
-        assertEquals(1.3f, req.tone.contrast, 1e-6f)
-        assertEquals(-0.4f, req.tone.highlights, 0f)
-        assertEquals(-0.25f, req.tone.shadows, 0f)
-        assertEquals(-0.2f, req.tone.toneCurve, 0f)
-        assertEquals(0.85f, req.tone.saturation, 1e-6f)
-        assertEquals(0.9f, req.tone.sharpening, 0f)
-        assertEquals(0, req.exposureMode)
-        assertEquals(3, req.processingVersion)
-        assertEquals(X3fMode.LEGACY.nativeValue, req.x3fMode)
-        assertEquals(42L, req.cancellationGeneration)
-        val target = requireNotNull(req.hslProbe)
-        assertEquals(7L, target.sourceRevision)
-        assertEquals(9L, target.requestRevision)
-        assertSame(probe, target.output)
+        val root = JSONObject(json)
+        assertEquals(17, root.getInt("schema_version"))
+        assertEquals("legacy", root.getString("x3f_mode"))
+        assertEquals(3, root.getJSONObject("processing").getInt("version"))
+        assertEquals("standard", root.getJSONObject("output").getString("output_sharpening"))
+
+        val edits = root.getJSONObject("edits")
+        assertEquals("scene", edits.getJSONObject("exposure").getString("mode"))
+        assertEquals(1.5, edits.getJSONObject("exposure").getDouble("ev"), 1e-6)
+        val wb = edits.getJSONObject("white_balance")
+        assertEquals("temperature", wb.getString("mode"))
+        assertEquals(5200.0, wb.getDouble("temperature_kelvin"), 1e-6)
+        assertEquals(14.0, wb.getDouble("tint"), 1e-6)
+        val look = edits.getJSONObject("look")
+        assertEquals("/tmp/provia.cube", look.getString("path"))
+        assertEquals(0.8, look.getDouble("strength"), 1e-6)
+        val tone = edits.getJSONObject("tone")
+        assertEquals(1.3, tone.getDouble("contrast"), 1e-6)
+        assertEquals(-0.4, tone.getDouble("highlights"), 1e-6)
+        assertEquals(-0.25, tone.getDouble("shadows"), 1e-6)
+        assertEquals(-0.2, tone.getDouble("s_curve"), 1e-6)
+        assertEquals(0.85, tone.getDouble("saturation"), 1e-6)
+        assertEquals(0.9, edits.getJSONObject("detail").getDouble("sharpening"), 1e-6)
     }
 
-    @Test fun recipeScalingAppliesInKotlinBeforeJniMarshalling() {
+    @Test fun recipeScalingAppliesCoreClampAndMasterRecipeWb() {
         val settings = EditSettings(
             recipeID = "hamada",
             strength = 2.0f,
             exposure = 1.5f,
-            highlights = 0.3f,
-            shadows = -0.2f,
-            contrast = 0.4f,
+            highlights = -0.8f,
+            shadows = 0.75f,
+            contrast = 1.8f,
             toneCurve = 0.25f,
-            saturation = -0.3f,
+            saturation = 0.2f,
+            sharpening = 1.9f,
             customWb = false,
             tint = 6f,
         )
-        val req = settings.toNativeProcessRequest(
-            inputPath = "/tmp/raw.dng",
-            pixels = null,
-            lutPath = null,
-            edge = 800,
-        )
-        assertNull(req.lutPath)
-        assertEquals(0f, req.lutStrength, 0f)
-        assertTrue(req.whiteBalance.recipeActive)
-        assertEquals(2.0f, req.whiteBalance.recipeStrength, 0f)
-        assertEquals(3.0f, req.tone.exposureEv, 0f)
-        assertEquals(1.8f, req.tone.contrast, 1e-6f)
-        assertEquals(-0.6f, req.tone.highlights, 1e-6f)
-        assertEquals(-0.4f, req.tone.shadows, 0f)
-        assertEquals(0.4f, req.tone.saturation, 1e-6f)
+        val json = settings.toSdrSessionStateJson(isRaster = false, lutPath = null)
+        val root = JSONObject(json)
+        val edits = root.getJSONObject("edits")
+
+        assertTrue(edits.getJSONObject("look").isNull("path"))
+        assertEquals(0.0, edits.getJSONObject("look").getDouble("strength"), 0.0)
+        assertEquals("camera", edits.getJSONObject("white_balance").getString("mode"))
+        val masterRecipe = edits.getJSONObject("master_recipe")
+        assertTrue(masterRecipe.getBoolean("active"))
+        assertEquals(2.0, masterRecipe.getDouble("strength"), 0.0)
+        assertFalse(masterRecipe.getBoolean("custom_wb"))
+        assertEquals(6500.0, masterRecipe.getDouble("temperature_kelvin"), 0.0)
+        assertEquals(6.0, masterRecipe.getDouble("tint"), 0.0)
+        assertEquals("error", masterRecipe.getString("uncalibrated_fallback"))
+
+        assertEquals(3.0, edits.getJSONObject("exposure").getDouble("ev"), 1e-6)
+        val tone = edits.getJSONObject("tone")
+        // Scaled values (contrast=2.6, saturation=-0.6, highlights=-1.6, shadows=1.5) are clamped by core-clamp!
+        assertEquals(2.0, tone.getDouble("contrast"), 1e-6)
+        assertEquals(0.0, tone.getDouble("saturation"), 1e-6)
+        assertEquals(-1.0, tone.getDouble("highlights"), 1e-6)
+        assertEquals(1.0, tone.getDouble("shadows"), 1e-6)
+        assertEquals(1.9, edits.getJSONObject("detail").getDouble("sharpening"), 1e-6)
     }
 
-    @Test fun exportDisplayBufferAndMigrationFlagsConfigureOutputAndWhiteBalance() {
-        val raster = DecodedRaster(ByteBuffer.allocateDirect(4 * 2 * 8), 2, 2)
-        val backend = intArrayOf(-1)
-        val exportReq = EditSettings(customWb = true, temperature = 4500f, tint = 10f, recipeID = "r").toNativeProcessRequest(
-            inputPath = "/tmp/photo.png",
-            pixels = raster,
-            lutPath = "",
-            outputPath = "/tmp/out.png",
-            edge = 512,
-            interactive = true,
-            format = ExportFormat.PNG,
-            longEdge = 2048,
-            backendOut = backend,
-        )
-        assertEquals(2, exportReq.input.width)
-        assertEquals(2, exportReq.input.pixelFormat)
-        assertEquals("/tmp/out.png", exportReq.output.path)
-        assertEquals(ExportFormat.PNG.nativeValue, exportReq.output.format)
-        assertEquals(0, exportReq.output.edge)
-        assertEquals(2048, exportReq.output.longEdge)
-        assertFalse(exportReq.output.interactive)
-        assertFalse(exportReq.output.viewportPreview)
-        assertEquals(0f, exportReq.lutStrength, 0f)
-        assertEquals(NativeProcessWhiteBalance(), exportReq.whiteBalance)
-        assertSame(backend, exportReq.backendOut)
+    @Test fun processingAndCompatibilitySessionStatesCarryMinimalExpectedFields() {
+        val proc = JSONObject(CanonicalEditRecipe.processingSessionStateJson(2, "sensor"))
+        assertEquals(2, proc.getJSONObject("processing").getInt("version"))
+        assertEquals("sensor", proc.getJSONObject("edits").getJSONObject("exposure").getString("mode"))
 
-        val migration = FloatArray(20)
-        val migrationReq = EditSettings().toNativeProcessRequest(
-            inputPath = "/tmp/raw.dng",
-            pixels = null,
-            lutPath = null,
-            edge = 600,
-            migrationOut = migration,
+        val compat = JSONObject(
+            CanonicalEditRecipe.compatibilityPreviewStateJson(
+                processingVersion = 3,
+                exposureMode = "preview",
+                lutPath = "/tmp/look.cube",
+                lutStrength = 0.75,
+            ),
         )
-        assertEquals(0, migrationReq.output.edge)
-        assertFalse(migrationReq.output.viewportPreview)
-        assertSame(migration, migrationReq.migrationOut)
+        assertEquals("preview", compat.getJSONObject("edits").getJSONObject("exposure").getString("mode"))
+        assertEquals("/tmp/look.cube", compat.getJSONObject("edits").getJSONObject("look").getString("path"))
+        assertEquals(0.75, compat.getJSONObject("edits").getJSONObject("look").getDouble("strength"), 1e-6)
     }
 }

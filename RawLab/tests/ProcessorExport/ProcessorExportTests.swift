@@ -104,14 +104,14 @@ struct ProcessorExportTests {
         check(try processor.processBuffer(buffer: noiseBuffer, settings: denoised, previewLongEdge: 128, lutURL: nil).data == noiseOff.data,
               "iOS disabling denoise restores the original output")
         var effects = RawSettings.default
-        effects.photoEffects.vignetteAmount = -65
-        effects.photoEffects.vignetteMidpoint = 52
-        effects.photoEffects.vignetteRoundness = -35
-        effects.photoEffects.vignetteFeather = 70
-        effects.photoEffects.vignetteHighlights = 75
-        effects.photoEffects.grainAmount = 70
-        effects.photoEffects.grainSize = 60
-        effects.photoEffects.grainRoughness = 80
+        effects.effectSettings.vignetteAmount = -65
+        effects.effectSettings.vignetteMidpoint = 52
+        effects.effectSettings.vignetteRoundness = -35
+        effects.effectSettings.vignetteFeather = 70
+        effects.effectSettings.vignetteHighlights = 75
+        effects.effectSettings.grainAmount = 70
+        effects.effectSettings.grainSize = 60
+        effects.effectSettings.grainRoughness = 80
         let effectsOn = try processor.processBuffer(buffer: noiseBuffer, settings: effects,
                                                      previewLongEdge: 128, lutURL: nil)
         check(effectsOn.data != noiseOff.data, "iOS photo effects reach native vignette and grain processing")
@@ -197,7 +197,7 @@ struct ProcessorExportTests {
         let doubled = try processor.processBuffer(buffer: buffer, settings: stronger, previewLongEdge: nil, lutURL: lut)
         check(normal.data != doubled.data, "iOS buffer processing actually renders 200 percent differently from 100")
         var hsl = RawSettings.default
-        for channel in 0..<8 { hsl.hsl.set(.saturation, channel: channel, value: -100) }
+        for channel in 0..<8 { hsl.hslSettings.set(.saturation, channel: channel, value: -100) }
         let neutral = try processor.processBuffer(buffer: buffer, settings: .default, previewLongEdge: nil, lutURL: nil)
         let displayNeutral = try processor.processBuffer(buffer: displayBuffer, settings: .default,
                                                          previewLongEdge: nil, lutURL: nil)
@@ -210,13 +210,13 @@ struct ProcessorExportTests {
         displaySettings.exposure = 0.35
         displaySettings.contrast = 1.12
         displaySettings.saturation = 0.88
-        displaySettings.hsl.set(.saturation, channel: 2, value: -35)
+        displaySettings.hslSettings.set(.saturation, channel: 2, value: -35)
         displaySettings.denoise.apply(.detail)
-        displaySettings.photoEffects.vignetteAmount = -35
-        displaySettings.photoEffects.grainAmount = 18
-        displaySettings.geometry.quarterTurns = 1
-        displaySettings.geometry.cropX = 0.1
-        displaySettings.geometry.cropWidth = 0.8
+        displaySettings.effectSettings.vignetteAmount = -35
+        displaySettings.effectSettings.grainAmount = 18
+        displaySettings.geometrySettings.quarterTurns = 1
+        displaySettings.geometrySettings.cropX = 0.1
+        displaySettings.geometrySettings.cropWidth = 0.8
         let displayFinal = try processor.processBuffer(buffer: raster.buffer, settings: displaySettings,
                                                        previewLongEdge: nil, lutURL: nil)
         let displayCPU = try cpuProcessor.processBuffer(buffer: raster.buffer, settings: displaySettings,
@@ -310,13 +310,13 @@ struct ProcessorExportTests {
                 for strength in [0.0, 0.5, 1.0, 2.0] {
                     var current = RawSettings.default
                     current.applyMasterRecipe(recipe); current.lutStrength = strength
-                    current.hsl.set(.hue, channel: 7, value: 37)
+                    current.hslSettings.set(.hue, channel: 7, value: 37)
                     var manual = current
                     manual.masterRecipeID = nil
                     manual.exposure *= strength; manual.highlights *= strength; manual.shadows *= strength
                     manual.contrast = 1 + (current.contrast - 1) * strength
                     manual.saturation = 1 + (current.saturation - 1) * strength
-                    manual.hsl = current.hsl.scaled(by: strength)
+                    manual.hslSettings = current.hslSettings.scaled(by: strength)
                     manual.temperature = camera.temperature; manual.tint = min(150, max(-150, camera.tint + current.tint * strength))
                     manual.whiteBalanceMode = strength == 0 ? .camera : .custom
                     let actual = try cpuProcessor.processRaw(url: raw, settings: current, previewLongEdge: 128, lutURL: recipeLut)
@@ -354,7 +354,7 @@ struct ProcessorExportTests {
         rawDNGSettings.toneCurve = 0.2
         rawDNGSettings.saturation = 1.12
         rawDNGSettings.lutStrength = 0.65
-        rawDNGSettings.hsl.set(.hue, channel: 3, value: 18)
+        rawDNGSettings.hslSettings.set(.hue, channel: 3, value: 18)
         let rawDNGURL = output.appendingPathComponent("ios-raw-rendered.dng")
         try cpuProcessor.exportDNG(url: raw, settings: rawDNGSettings, lutURL: lut,
                                    outputURL: rawDNGURL, exportLongEdge: 128)

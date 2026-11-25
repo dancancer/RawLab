@@ -1,17 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 project(Sony2FujiLUT VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_OBJCXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # 选项
 option(BUILD_CLI "Build command line tool" ON)
 option(BUILD_SHARED_LIB "Build shared library for mobile integration" ON)
 option(BUILD_EXAMPLES "Build examples" OFF)
+option(SONY2FUJI_ENABLE_GPU "Enable GPU acceleration" ON)
 include(CTest)
-include(cmake/x3f.cmake)
+include(cmake/ThirdPartyDeps.cmake)
 include(cmake/rawlab_add_test.cmake)
 if(NOT COMMAND _rawlab_add_test)
     function(rawlab_add_test)
@@ -65,135 +63,6 @@ if(NOT COMMAND _rawlab_add_test)
     endfunction()
 endif()
 
-# 依赖库查找
-find_package(PkgConfig)
-if(NOT TARGET ZLIB::ZLIB)
-    find_package(ZLIB REQUIRED)
-endif()
-
-# libtiff handles rendered-DNG writing and Apple TIFF directory metadata.
-# Desktop builds use the system package. Mobile builds use a pinned static copy.
-set(SONY2FUJI_BUILD_TIFF_DEPS_DEFAULT OFF)
-if(IOS OR ANDROID OR WIN32)
-    set(SONY2FUJI_BUILD_TIFF_DEPS_DEFAULT ON)
-endif()
-option(SONY2FUJI_BUILD_TIFF_DEPS
-    "Build the pinned libtiff dependency instead of using pkg-config"
-    ${SONY2FUJI_BUILD_TIFF_DEPS_DEFAULT})
-if(SONY2FUJI_BUILD_TIFF_DEPS)
-    enable_language(C)
-    include(cmake/tiff-dependencies.cmake)
-else()
-    pkg_check_modules(TIFF REQUIRED IMPORTED_TARGET "libtiff-4>=4.7.1")
-    set(SONY2FUJI_TIFF_TARGET PkgConfig::TIFF)
-endif()
-
-# OpenMP (optional)
-set(SONY2FUJI_ENABLE_OPENMP_DEFAULT ON)
-if(IOS OR ANDROID)
-    set(SONY2FUJI_ENABLE_OPENMP_DEFAULT OFF)
-endif()
-option(SONY2FUJI_ENABLE_OPENMP "Enable OpenMP for CPU parallelism" ${SONY2FUJI_ENABLE_OPENMP_DEFAULT})
-if(SONY2FUJI_ENABLE_OPENMP)
-    find_package(OpenMP)
-endif()
-
-# GPU acceleration (optional)
-option(SONY2FUJI_ENABLE_GPU "Enable GPU acceleration" ON)
-if(APPLE)
-    # 源码构建的 OpenCV 也使用 Objective-C++，需在共同父目录提前启用。
-    enable_language(OBJCXX)
-endif()
-if(IOS)
-    add_compile_definitions(SONY2FUJI_PLATFORM_IOS)
-endif()
-if(ANDROID)
-    add_compile_definitions(SONY2FUJI_PLATFORM_ANDROID)
-endif()
-
-# LibRaw
-include("${CMAKE_CURRENT_LIST_DIR}/cmake/libraw/libraw.cmake")
-rawlab_load_libraw_manifest()
-option(SONY2FUJI_BUILD_RAW_DEPS "Build pinned LibRaw and DNG SDK dependencies" OFF)
-if(SONY2FUJI_BUILD_RAW_DEPS)
-    add_subdirectory(cmake/libraw raw-dependencies)
-    set(SONY2FUJI_LIBRAW_TARGET raw_r)
-    set(SONY2FUJI_DNGSDK_TARGET rawlab_dng_sdk)
-endif()
-if(SONY2FUJI_LIBRAW_TARGET AND TARGET ${SONY2FUJI_LIBRAW_TARGET})
-    set(LIBRAW_LIBRARY ${SONY2FUJI_LIBRAW_TARGET})
-else()
-    pkg_check_modules(LIBRAW REQUIRED "libraw_r>=${RAWLAB_LIBRAW_VERSION}")
-    # Keep the library in sync with headers when switching dependency prefixes.
-    unset(LIBRAW_LIBRARY CACHE)
-    find_library(LIBRAW_LIBRARY NAMES raw_r HINTS ${LIBRAW_LIBRARY_DIRS} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
-    if(NOT LIBRAW_LIBRARY)
-        message(FATAL_ERROR "libraw_r not found in ${LIBRAW_LIBRARY_DIRS}")
-    endif()
-endif()
-
-option(SONY2FUJI_BUILD_LENS_DEPS "Build pinned target Lensfun and GLib dependencies" OFF)
-if(SONY2FUJI_BUILD_LENS_DEPS)
-    include(cmake/lens-dependencies.cmake)
-else()
-    pkg_check_modules(LENSFUN QUIET IMPORTED_TARGET lensfun>=0.3.4)
-    set(LENSFUN_LIBRARY PkgConfig::LENSFUN)
-endif()
-set(SONY2FUJI_LENSFUN_DEFAULT ${LENSFUN_FOUND})
-if((IOS OR ANDROID) AND NOT SONY2FUJI_BUILD_LENS_DEPS)
-    set(SONY2FUJI_LENSFUN_DEFAULT OFF)
-endif()
-option(SONY2FUJI_ENABLE_LENSFUN "Enable profile-based RAW lens correction" ${SONY2FUJI_LENSFUN_DEFAULT})
-if(SONY2FUJI_ENABLE_LENSFUN)
-    if(NOT LENSFUN_FOUND)
-        message(FATAL_ERROR "Lens correction requires Lensfun >= 0.3.4")
-    endif()
-    add_compile_definitions(SONY2FUJI_ENABLE_LENSFUN)
-endif()
-
-if(SONY2FUJI_DNGSDK_TARGET AND TARGET ${SONY2FUJI_DNGSDK_TARGET})
-    set(DNGSDK_LIBRARY ${SONY2FUJI_DNGSDK_TARGET})
-else()
-    pkg_check_modules(DNGSDK QUIET IMPORTED_TARGET rawlab-dng-sdk>=1.7.1)
-    if(DNGSDK_FOUND)
-        set(DNGSDK_LIBRARY PkgConfig::DNGSDK)
-    endif()
-endif()
-set(SONY2FUJI_DNGSDK_DEFAULT OFF)
-if(DNGSDK_LIBRARY)
-    set(SONY2FUJI_DNGSDK_DEFAULT ON)
-endif()
-option(SONY2FUJI_ENABLE_DNGSDK "Enable JPEG XL DNG decoding" ${SONY2FUJI_DNGSDK_DEFAULT})
-if(SONY2FUJI_ENABLE_DNGSDK AND NOT DNGSDK_LIBRARY)
-    message(FATAL_ERROR "JPEG XL DNG decoding requires rawlab-dng-sdk")
-endif()
-
-# 包含目录
-option(SONY2FUJI_ENABLE_CHROMA_DENOISE "Enable OpenCV display chroma denoising" OFF)
-option(SONY2FUJI_ENABLE_WAVELET_DENOISE "Enable linear wavelet denoising" ${SONY2FUJI_ENABLE_CHROMA_DENOISE})
-option(SONY2FUJI_BUILD_DENOISE_DEPS "Build pinned denoise dependencies for the target platform" OFF)
-if(SONY2FUJI_ENABLE_CHROMA_DENOISE OR SONY2FUJI_ENABLE_WAVELET_DENOISE)
-    if(SONY2FUJI_BUILD_DENOISE_DEPS)
-        include(cmake/denoise-dependencies.cmake)
-    else()
-        pkg_check_modules(WAVELIB REQUIRED IMPORTED_TARGET wavelib>=1.0.0)
-        set(denoise_components core imgproc)
-        if(SONY2FUJI_ENABLE_CHROMA_DENOISE)
-            list(APPEND denoise_components ximgproc)
-        endif()
-        find_package(OpenCV 4.12 REQUIRED COMPONENTS ${denoise_components}
-            HINTS "${LIBRAW_LIBRARY_DIRS}/cmake/opencv4")
-        set(SONY2FUJI_DENOISE_LIBRARIES ${OpenCV_LIBS} PkgConfig::WAVELIB)
-        include_directories(SYSTEM ${OpenCV_INCLUDE_DIRS})
-    endif()
-endif()
-if(SONY2FUJI_ENABLE_CHROMA_DENOISE)
-    add_compile_definitions(SONY2FUJI_ENABLE_CHROMA_DENOISE)
-endif()
-if(SONY2FUJI_ENABLE_WAVELET_DENOISE)
-    add_compile_definitions(SONY2FUJI_ENABLE_WAVELET_DENOISE)
-endif()
-
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -218,6 +87,7 @@ set(CORE_SOURCES
     src/core/wavelet_denoise.cpp
     src/core/photo_effects.cpp
     src/core/photo_geometry.cpp
+    src/core/inspection_overlay.cpp
     src/core/hdr_rendering.cpp
     src/core/hdr_pipeline.cpp
     src/core/hdr_detail.cpp
@@ -232,8 +102,12 @@ set(CORE_SOURCES
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
     src/core/rendered_dng.cpp
+    src/core/pinned_source_file.cpp
+    src/core/atomic_output_transaction.cpp
     src/core/render_params.cpp
     src/core/edit_recipe_core.cpp
+    src/core/gui_store.cpp
+    src/platform/file_lock.cpp
     src/core/image_header_probe.cpp
     src/core/photo_pipeline_stages.cpp
     src/core/hsl_probe.cpp
@@ -245,10 +119,15 @@ set(CORE_SOURCES
     src/core/pipeline_x3f.cpp
     src/core/pipeline_geometry.cpp
     src/core/pipeline_io.cpp
+    src/core/viewport_pyramid.cpp
+    src/core/sony_ptpip.cpp
     src/ffi/sony2fuji_c.cpp
+    src/ffi/viewport_pyramid_c.cpp
+    src/ffi/sony_ptpip_c.cpp
     src/ffi/edit_recipe.cpp
     src/ffi/sony2fuji_lens_c.cpp
     src/ffi/sony2fuji_buffer_c.cpp
+    src/ffi/inspection_c.cpp
     src/ffi/sony2fuji_hdr.cpp
     src/ffi/dcp_compiler_c.cpp
     src/ffi/lut_compatibility_c.cpp
@@ -268,11 +147,6 @@ if(WIN32)
 else()
     list(APPEND CORE_SOURCES src/platform/display_image.cpp)
 endif()
-set(portable_hdr_test_default ON)
-if(APPLE)
-    set(portable_hdr_test_default OFF)
-endif()
-option(SONY2FUJI_TEST_PORTABLE_HDR "Exercise non-Apple HDR file adapters on the host" ${portable_hdr_test_default})
 if(APPLE)
     list(APPEND CORE_SOURCES src/platform/hdr_image_apple.mm)
     set_source_files_properties(src/platform/hdr_image_apple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc -Werror=unguarded-availability")
@@ -281,12 +155,6 @@ else()
 endif()
 list(APPEND CORE_SOURCES src/core/jpeg_mpf.cpp src/core/hdr_jpeg.cpp
     src/core/proraw_source.cpp src/core/hdr_storage.cpp src/core/hdr_stream.cpp)
-enable_language(C)
-include(cmake/raw-png.cmake)
-include(cmake/hdr-codec.cmake)
-if(NOT APPLE OR SONY2FUJI_TEST_PORTABLE_HDR)
-    include(cmake/hdr-portable.cmake)
-endif()
 
 if(SONY2FUJI_ENABLE_GPU)
     if(WIN32)
@@ -331,7 +199,7 @@ target_include_directories(sony2fuji_core_objects PRIVATE
     "${RAWLAB_HDR_XML_INCLUDE}"
 )
 if(WIN32)
-    list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES windowscodecs ole32 psapi bcrypt)
+    list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES windowscodecs ole32 psapi bcrypt normaliz)
 endif()
 if(SONY2FUJI_ENABLE_GPU AND WIN32)
     list(APPEND SONY2FUJI_CORE_LINK_LIBRARIES d3d11 dxgi d3dcompiler)
@@ -409,7 +277,7 @@ if(BUILD_CLI)
     add_executable(rawlab_lut_probe tools/lut_contract_probe.cpp)
     target_include_directories(rawlab_lut_probe PRIVATE third_party)
     target_link_libraries(rawlab_lut_probe sony2fuji_core)
-    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/raw_info.cpp)
+    add_executable(sony2fuji_cli src/cli/main.cpp src/cli/agent_commands.cpp src/cli/bsh_cli_report.cpp src/cli/raw_info.cpp)
     if(SONY2FUJI_ENABLE_DNGSDK)
         target_compile_definitions(sony2fuji_cli PRIVATE SONY2FUJI_ENABLE_DNGSDK)
     endif()
@@ -543,6 +411,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME pinned_source_atomic_write
+        SOURCES tests/pinned_source_atomic_write_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME jpeg_mpf
         SOURCES tests/jpeg_mpf_tests.cpp
         INCLUDES src
@@ -567,6 +443,13 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/bsh_diagnostics_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME rgba16_api
+        SOURCES tests/rgba16_api_tests.cpp
+        DEFINES TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        LIBRARIES sony2fuji_core
+        LABELS core hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     if(SONY2FUJI_ENABLE_X3F)
         rawlab_add_test(
@@ -1063,9 +946,20 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     )
     rawlab_add_test(
         NAME inspection_geometry_parity
-        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp
+        SOURCES tests/inspection_geometry_parity_tests.cpp src/core/photo_geometry.cpp src/core/inspection_overlay.cpp src/ffi/inspection_c.cpp
         LIBRARIES ${geometry_libs}
         LABELS geometry ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME inspection_overlay
+        SOURCES tests/inspection_overlay_tests.cpp src/core/photo_geometry.cpp src/core/inspection_overlay.cpp src/ffi/inspection_c.cpp
+        LIBRARIES ${geometry_libs}
+        LABELS inspection ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME sony_ptpip
+        SOURCES tests/sony_ptpip_tests.cpp src/core/sony_ptpip.cpp src/ffi/sony_ptpip_c.cpp
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME perspective_api
@@ -1130,6 +1024,14 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         SOURCES tests/apply_params_api_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME viewport_pyramid
+        SOURCES tests/viewport_pyramid_tests.cpp
+        INCLUDES third_party
+        DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples" TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        LIBRARIES sony2fuji_core
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME hdr_recipe_roundtrip
@@ -1554,7 +1456,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     endif()
     rawlab_add_test(
         NAME d3d11_shader_cache
-        SOURCES tests/d3d11_shader_cache_tests.cpp
+        SOURCES tests/d3d11_shader_cache_tests.cpp src/core/atomic_output_transaction.cpp
         LIBRARIES ${d3d11_cache_libs}
         COMPILE_OPTIONS ${d3d11_cache_opts}
         LABELS gpu d3d11 ci_macos_arm64 ci_macos_x86_64 ci_windows
@@ -2140,6 +2042,22 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
         LABELS core recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
+    rawlab_add_test(
+        NAME gui_store
+        SOURCES tests/gui_store_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core cli ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME canonical_edit_state
+        SOURCES tests/canonical_edit_state_tests.cpp
+        INCLUDES src third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core hdr recipe ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
     if(SONY2FUJI_ENABLE_LENSFUN)
         rawlab_add_test(
             NAME lens_database_cache
@@ -2152,6 +2070,10 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
 endif()
 
 include(cmake/ai-denoise.cmake)
+
+if(TARGET rawlab_dualdn_core)
+    target_sources(rawlab_dualdn_core PRIVATE src/core/atomic_output_transaction.cpp)
+endif()
 
 if(BUILD_TESTING)
     get_property(_rawlab_registered_test_targets GLOBAL PROPERTY RAWLAB_REGISTERED_TEST_TARGETS)

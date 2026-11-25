@@ -199,11 +199,11 @@ extension RawEditorViewModel {
                             ? try HDRSourceInfo.probe(localURL)
                             : try HDRSourceInfo.probeRAW(localURL, processing: restoredSettings.processing.core)
                         if cancellation.isCancelled { throw CancellationError() }
-                        let proRAW = hdrInfo?.proRAW
+                        let isProRAW = hdrInfo?.isProRAW == true
                         if state != nil, restoredSettings.isHDREditing, let hdrInfo {
                             try hdrInfo.validateEditDecodeVersion(restoredSettings.proRAWDecodeVersion)
-                        } else if proRAW != nil, restoredSettings.isHDREditing {
-                            try ProRAWSource.validatedDecodeVersion(restoredSettings.proRAWDecodeVersion)
+                        } else if isProRAW, restoredSettings.isHDREditing {
+                            try HDRSourceInfo.validatedProRAWDecodeVersion(restoredSettings.proRAWDecodeVersion)
                         }
                         let cameraHDR = hdrInfo?.isDevelopedRAW == true
                         let rasterHDR = hdrInfo != nil && !cameraHDR
@@ -211,6 +211,12 @@ extension RawEditorViewModel {
                         context["mode"] = restoredSettings.isHDREditing ? "hdr" : "sdr"
                         stage = "renderPreview"
                         let importContext = context.merging(ErrorDiagnostics.fileContext(localURL)) { first, _ in first }
+                        DiagnosticCenter.recordBreadcrumb(
+                            category: "import",
+                            stage: "importPreviewStart",
+                            message: "Starting iOS photo preview pipeline",
+                            context: importContext
+                        )
                         let restoredSettings=restoredSettings
                         let missingLook = !self.isLookAvailable(for: restoredSettings)
                         if let hdr=restoredSettings.hdr,restoredSettings.isHDREditing {

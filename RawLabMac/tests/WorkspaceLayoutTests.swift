@@ -16,6 +16,12 @@ import Foundation
 
         layout.toggleLibrary(width: 950)
         precondition(layout.libraryPresentation(width: 950) == .drawer)
+        precondition(layout.dismissDrawer())
+        precondition(layout.libraryPresentation(width: 950) == .hidden)
+        precondition(!layout.dismissDrawer())
+        layout.setMode(.preview)
+        precondition(!layout.dismissDrawer() && layout.mode == .preview)
+        layout.setMode(.editing)
         layout.windowResized(from: 950, to: 1180)
         precondition(layout.libraryPresentation(width: 1180) == .pinned)
         layout.windowResized(from: 1180, to: 950)
@@ -52,9 +58,6 @@ import Foundation
         precondition(layout.libraryPresentation(width: 1440) == .pinned && layout.showsInspector(hasPhoto: true))
         precondition(AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 280) > 70)
         precondition(AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 360) > AdjustmentPanelLayout.RecipeCard.textWidth(inspectorWidth: 280))
-        precondition(AdjustmentPanelLayout.ToolCaption.lineLimit(for: "Tone Curve") == 2)
-        precondition(AdjustmentPanelLayout.ToolCaption.lineLimit(for: "曝光") == 1)
-        precondition(AdjustmentPanelLayout.ToolCaption.minimumScale(for: "曝光") < 1)
         print("PASS Mac workspace widths, docked/overlay browser, edit/selection/preview restoration")
     }
 }

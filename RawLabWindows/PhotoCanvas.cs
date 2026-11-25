@@ -21,7 +21,35 @@ public sealed class Viewport
     public void Fit() { var wasActual=ActualPixels;ActualPixels=false; Zoom=1; focusX=focusY=.5; Changed?.Invoke();if(wasActual)ResolutionChanged?.Invoke(); }
     public void Actual() { var wasActual=ActualPixels;ActualPixels=true; Zoom=1; focusX=focusY=.5; Changed?.Invoke();if(!wasActual)ResolutionChanged?.Invoke(); }
     public void ToggleActualPixels() { if(ActualPixels || Zoom!=1)Fit();else Actual(); }
+    public void ToggleActualPixelsAt(Point cursor,Rect imageBounds)
+    {
+        if(ActualPixels || Zoom!=1) { Fit(); return; }
+        var wasActual=ActualPixels;
+        ActualPixels=true;
+        Zoom=1;
+        if(imageBounds.Width>0 && imageBounds.Height>0 && imageBounds.Contains(cursor))
+        {
+            focusX=Math.Clamp((cursor.X-imageBounds.X)/imageBounds.Width,0,1);
+            focusY=Math.Clamp((cursor.Y-imageBounds.Y)/imageBounds.Height,0,1);
+        }
+        else { focusX=focusY=.5; }
+        Changed?.Invoke();
+        if(!wasActual)ResolutionChanged?.Invoke();
+    }
     public void Magnify(double factor) { Zoom=Math.Clamp(Zoom*factor,.1,16); Changed?.Invoke(); }
+    public void MagnifyAt(double factor,Point cursor,Rect imageBounds)
+    {
+        if(!double.IsFinite(factor) || factor<=0)return;
+        var old=Zoom;
+        var next=Math.Clamp(old*factor,.1,16);
+        if(next!=old && imageBounds.Width>0 && imageBounds.Height>0 && imageBounds.Contains(cursor))
+        {
+            focusX=PhotoViewProjection.ZoomFocus(focusX,(cursor.X-imageBounds.X)/imageBounds.Width,old,next);
+            focusY=PhotoViewProjection.ZoomFocus(focusY,(cursor.Y-imageBounds.Y)/imageBounds.Height,old,next);
+        }
+        Zoom=next;
+        Changed?.Invoke();
+    }
     public void Move(Vector delta)=>Move(delta,lastProjection);
     internal void Move(Vector delta,Size photo)
     {if(photo.Width<=0 || photo.Height<=0)return;focusX-=delta.X/photo.Width;focusY-=delta.Y/photo.Height;Changed?.Invoke();}
@@ -107,7 +135,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         InputMethod.SetIsInputMethodEnabled(this,false);
         holdTimer.Interval=TimeSpan.FromMilliseconds(Math.Max(1,SystemParameters.MouseHoverTime.TotalMilliseconds));
         holdTimer.Tick+=(_,_)=>{holdTimer.Stop();if(drag!=null && !panning && !GeometryEditing && !ComparisonEnabled && Mouse.LeftButton==MouseButtonState.Pressed)HoldStarted?.Invoke();};
-        MouseWheel+=(_,e)=> { CancelHslPointer();CancelHold();if(!GeometryEditing && image!=null)Viewport?.Magnify(e.Delta>0 ? 1.2 : 1/1.2);e.Handled=image!=null; };
+        MouseWheel+=(_,e)=> { CancelHslPointer();CancelHold();if(!GeometryEditing && image!=null)Viewport?.MagnifyAt(e.Delta>0 ? 1.2 : 1/1.2,e.GetPosition(this),ImageBounds);e.Handled=image!=null; };
         MouseLeftButtonDown+=(_,e)=> {
             Focus();var point=e.GetPosition(this);CancelHold();
             if(HandleCropDown(point)){e.Handled=true;return;}
@@ -121,11 +149,11 @@ public sealed partial class PhotoCanvas : FrameworkElement
                 else WbProbeRejected?.Invoke();
                 e.Handled=true;return;
             }
-            if(HandleInspectionDown(point)){e.Handled=true;return;}
-            if(e.ClickCount==2 && !draggingDivider && image!=null)
-            {drag=null;Viewport?.ToggleActualPixels();e.Handled=true;return;}
+            BeginPendingInspectionPin(point);
+            if(e.ClickCount==2 && !draggingDivider && !pendingInspectionPin && image!=null)
+            {drag=null;Viewport?.ToggleActualPixelsAt(point,ImageBounds);e.Handled=true;return;}
             pressOrigin=point;panning=false;
-            if(!draggingDivider){drag=point;if(image!=null && ImageBounds.Contains(point) && !ComparisonEnabled)holdTimer.Start();}
+            if(!draggingDivider){drag=point;if(image!=null && ImageBounds.Contains(point) && !ComparisonEnabled && !pendingInspectionPin)holdTimer.Start();}
             CaptureMouse();e.Handled=true;
         };
         MouseMove+=(_,e)=> {
@@ -133,15 +161,15 @@ public sealed partial class PhotoCanvas : FrameworkElement
             if(MoveHslPointer(next)){e.Handled=true;return;}
             if(HandleCropMove(next)){CancelHold();e.Handled=true;return;}
             HandleInspectionMove(next);
-            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : (WbProbeEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand);
+            Cursor=ComparisonEnabled && VisibleImageBounds.Contains(next) && (draggingDivider || Math.Abs(next.X-DividerX)<=18) ? Cursors.SizeWE : (WbProbeEnabled || HslTargetEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand);
             if(draggingDivider){if(ImageBounds.Width>0)Divider=(next.X-ImageBounds.X)/ImageBounds.Width;return;}
             if(drag is not {} point)return;
             if(!panning && (Math.Abs(next.X-pressOrigin.X)>SystemParameters.MinimumHorizontalDragDistance || Math.Abs(next.Y-pressOrigin.Y)>SystemParameters.MinimumVerticalDragDistance))
-            {panning=true;CancelHold();}
+            {panning=true;pendingInspectionPin=false;CancelHold();}
             if(panning){Viewport?.Move(next-point,ImageBounds.Size);drag=next;}
         };
-        MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;EndPointer();};
-        LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;};
+        MouseLeftButtonUp+=(_,e)=>{if(FinishHslPointer(e.GetPosition(this)) || HslTargetEnabled && !draggingDivider)return;var shouldPin=pendingInspectionPin && !panning && !draggingDivider;var upPoint=e.GetPosition(this);EndPointer();if(shouldPin)CommitInspectionPin(upPoint);};
+        LostMouseCapture+=(_,_)=>{if(hslPointerOrigin!=null)CancelHslPointer();CancelHold();EndCropDrag();drag=null;pendingInspectionPin=draggingDivider=panning=false;};
         MouseLeave+=(_,_)=>InspectionHoverChanged?.Invoke(null);
         LostKeyboardFocus+=(_,_)=>{CancelHslPointer();CancelHold();};
         TouchDown+=(_,_)=>{CancelHslPointer();CancelHold();};
@@ -151,7 +179,7 @@ public sealed partial class PhotoCanvas : FrameworkElement
         IsKeyboardFocusedChanged+=(_,_)=>UpdateComparison();
     }
     internal void CancelHold(){holdTimer.Stop();HoldEnded?.Invoke();}
-    internal void CancelPointer(){CancelHslPointer();CancelHold();EndCropDrag();drag=null;draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
+    internal void CancelPointer(){CancelHslPointer();CancelHold();EndCropDrag();drag=null;pendingInspectionPin=draggingDivider=panning=false;if(IsMouseCaptured)ReleaseMouseCapture();}
     private void EndPointer(){CancelPointer();}
     protected override int VisualChildrenCount=>layers.Count;
     protected override Visual GetVisualChild(int index)=>layers[index];
@@ -253,6 +281,33 @@ public sealed class HistogramView : FrameworkElement
         InvalidateVisual();
     }
     private static readonly DependencyProperty OutlineBrushProperty=DependencyProperty.Register("OutlineBrush",typeof(Brush),typeof(HistogramView),new FrameworkPropertyMetadata(Brushes.Transparent,FrameworkPropertyMetadataOptions.AffectsRender));
+    private static readonly Brush[] ChannelMixBrushes = BuildChannelMixBrushes();
+    private static readonly Pen HdrBlackPen = CreateFrozenPen(Brushes.Black, 5);
+    private static readonly Pen HdrWhitePen = CreateFrozenPen(Brushes.White, 2);
+    private static readonly Pen HdrScreenPen = CreateFrozenPen(Brushes.Yellow, 2, DashStyles.Dash);
+    private static readonly Pen CursorBlackPen = CreateFrozenPen(Brushes.Black, 3.0);
+    private static readonly Pen CursorWhitePen = CreateFrozenPen(Brushes.White, 1.2);
+    private static Brush[] BuildChannelMixBrushes()
+    {
+        var brushes = new Brush[8];
+        for (var mask = 0; mask < 8; mask++)
+        {
+            var brush = new SolidColorBrush(Color.FromRgb(
+                (mask & 1) != 0 ? (byte)190 : (byte)24,
+                (mask & 2) != 0 ? (byte)190 : (byte)24,
+                (mask & 4) != 0 ? (byte)190 : (byte)24));
+            brush.Freeze();
+            brushes[mask] = brush;
+        }
+        return brushes;
+    }
+    private static Pen CreateFrozenPen(Brush brush, double thickness, DashStyle? dashStyle = null)
+    {
+        var pen = new Pen(brush, thickness);
+        if (dashStyle != null) pen.DashStyle = dashStyle;
+        pen.Freeze();
+        return pen;
+    }
     public HistogramView()=>SetResourceReference(OutlineBrushProperty,"HistogramOutline");
     // 高度不足时由 Grid 收缩图形区域，给下方统计文字保留完整行。
     protected override Size MeasureOverride(Size availableSize)=>new(Math.Min(200,availableSize.Width),Math.Min(105,availableSize.Height));
@@ -260,31 +315,34 @@ public sealed class HistogramView : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         if(hdrBins is {Length:256} hdr) {
-            var maximum=Math.Max(1,hdr.Max());
+            uint maximum=1;
+            for(var i=0;i<256;i++)if(hdr[i]>maximum)maximum=hdr[i];
             for(var i=0;i<256;i++)dc.DrawRectangle(Brushes.LightGray,null,
                 new Rect(i*ActualWidth/256,ActualHeight*(1-hdr[i]/(double)maximum),ActualWidth/256+.2,ActualHeight*hdr[i]/maximum));
             var reference=ActualWidth/2;var screen=Math.Clamp((Math.Log2(Math.Max(1,hdrHeadroom))+8)/16*ActualWidth,0,ActualWidth);
-            dc.DrawLine(new Pen(Brushes.Black,5),new Point(reference,0),new Point(reference,ActualHeight));
-            dc.DrawLine(new Pen(Brushes.White,2),new Point(reference,0),new Point(reference,ActualHeight));
-            dc.DrawLine(new Pen(Brushes.Black,5),new Point(screen,0),new Point(screen,ActualHeight));
-            dc.DrawLine(new Pen(Brushes.Yellow,2){DashStyle=DashStyles.Dash},new Point(screen,0),new Point(screen,ActualHeight));
+            dc.DrawLine(HdrBlackPen,new Point(reference,0),new Point(reference,ActualHeight));
+            dc.DrawLine(HdrWhitePen,new Point(reference,0),new Point(reference,ActualHeight));
+            dc.DrawLine(HdrBlackPen,new Point(screen,0),new Point(screen,ActualHeight));
+            dc.DrawLine(HdrScreenPen,new Point(screen,0),new Point(screen,ActualHeight));
             DrawLuminanceCursor(dc);
             return;
         }
-        if(Bins==null)return;
-        var peak=Math.Max(1,Bins.Max());
+        if(Bins==null || Bins.Length<768)return;
+        uint peak=1;
+        for(var i=0;i<768;i++)if(Bins[i]>peak)peak=Bins[i];
         // Shared linear count axis, additive RGB/CMY/gray overlap colors.
+        var barWidth = ActualWidth/256+.2;
         for(var x=0;x<256;x++)
         {
-            var heights=new[]{Bins[x],Bins[256+x],Bins[512+x]};
-            var levels=heights.Append(0u).Distinct().Order().ToArray();
-            for(var i=1;i<levels.Length;i++)
-            {
-                var level=levels[i]; var top=ActualHeight*(1-level/(double)peak);
-                var bottom=ActualHeight*(1-levels[i-1]/(double)peak);
-                var color=Color.FromRgb(heights[0]>=level ? (byte)190 : (byte)24,heights[1]>=level ? (byte)190 : (byte)24,heights[2]>=level ? (byte)190 : (byte)24);
-                dc.DrawRectangle(new SolidColorBrush(color),null,new Rect(x*ActualWidth/256,top,ActualWidth/256+.2,bottom-top));
-            }
+            var r=Bins[x]; var g=Bins[256+x]; var b=Bins[512+x];
+            var l0=r; var l1=g; var l2=b;
+            if(l0>l1)(l0,l1)=(l1,l0);
+            if(l1>l2)(l1,l2)=(l2,l1);
+            if(l0>l1)(l0,l1)=(l1,l0);
+            var barX = x*ActualWidth/256;
+            DrawHistogramBand(dc, barX, barWidth, ActualHeight, peak, r, g, b, 0, l0);
+            DrawHistogramBand(dc, barX, barWidth, ActualHeight, peak, r, g, b, l0, l1);
+            DrawHistogramBand(dc, barX, barWidth, ActualHeight, peak, r, g, b, l1, l2);
         }
         var outline=(Brush)GetValue(OutlineBrushProperty);
         if(outline is not SolidColorBrush { Color.A:0 })
@@ -303,8 +361,8 @@ public sealed class HistogramView : FrameworkElement
     {
         if (LuminanceCursor is not { } cursor || ActualWidth <= 0 || ActualHeight <= 0) return;
         var x = Math.Clamp(cursor, 0.0, 1.0) * ActualWidth;
-        dc.DrawLine(new Pen(Brushes.Black, 3.0), new Point(x, 0), new Point(x, ActualHeight));
-        dc.DrawLine(new Pen(Brushes.White, 1.2), new Point(x, 0), new Point(x, ActualHeight));
+        dc.DrawLine(CursorBlackPen, new Point(x, 0), new Point(x, ActualHeight));
+        dc.DrawLine(CursorWhitePen, new Point(x, 0), new Point(x, ActualHeight));
         var triangle = new StreamGeometry();
         using (var ctx = triangle.Open())
         {
@@ -315,33 +373,26 @@ public sealed class HistogramView : FrameworkElement
         triangle.Freeze();
         dc.DrawGeometry(Brushes.Gold, null, triangle);
     }
+
+    private static void DrawHistogramBand(DrawingContext dc, double barX, double barWidth, double height, uint peak, uint r, uint g, uint b, uint low, uint high)
+    {
+        if (high <= low) return;
+        var top = height * (1 - high / (double)peak);
+        var bottom = height * (1 - low / (double)peak);
+        var mask = (r >= high ? 1 : 0) | (g >= high ? 2 : 0) | (b >= high ? 4 : 0);
+        dc.DrawRectangle(ChannelMixBrushes[mask], null, new Rect(barX, top, barWidth, bottom - top));
+    }
 }
 
 public sealed class AdjustmentRing : FrameworkElement
 {
-    private static readonly DependencyProperty TrackBrushProperty=DependencyProperty.Register("TrackBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gray,FrameworkPropertyMetadataOptions.AffectsRender));
     private static readonly DependencyProperty ProgressBrushProperty=DependencyProperty.Register("ProgressBrush",typeof(Brush),typeof(AdjustmentRing),new FrameworkPropertyMetadata(Brushes.Gold,FrameworkPropertyMetadataOptions.AffectsRender));
-    public AdjustmentRing(){SetResourceReference(TrackBrushProperty,"Outline");SetResourceReference(ProgressBrushProperty,"Indicator");}
+    public AdjustmentRing()=>SetResourceReference(ProgressBrushProperty,"Indicator");
     public bool Compact { get; set; }
     public double Progress { get; set; }
     public bool Selected { get; set; }
     protected override void OnRender(DrawingContext dc)
     {
-        if(Compact) {
-            if(Math.Abs(Progress)>=.001)dc.DrawEllipse((Brush)GetValue(ProgressBrushProperty),null,new Point(ActualWidth-1,ActualHeight-1),2,2);
-            return;
-        }
-        var center=new Point(ActualWidth/2,ActualHeight/2); var radius=Math.Min(ActualWidth,ActualHeight)/2-3;
-        var active=Selected ? System.Windows.Documents.TextElement.GetForeground(this) : (Brush)GetValue(ProgressBrushProperty);
-        dc.DrawEllipse(null,new Pen(Selected ? active : (Brush)GetValue(TrackBrushProperty),1),center,radius,radius);
-        if(Math.Abs(Progress)<.001)return;
-        var geometry=new StreamGeometry();
-        using(var context=geometry.Open())
-        {
-            context.BeginFigure(new Point(center.X,center.Y-radius),false,false);
-            var angle=Math.Clamp(Progress,-.99999,.99999)*Math.PI*2;
-            context.ArcTo(new Point(center.X+radius*Math.Sin(angle),center.Y-radius*Math.Cos(angle)),new Size(radius,radius),0,Math.Abs(Progress)>.5,Progress>0 ? SweepDirection.Clockwise : SweepDirection.Counterclockwise,true,false);
-        }
-        dc.DrawGeometry(null,new Pen(active,3),geometry);
+        if(Math.Abs(Progress)>=.001)dc.DrawEllipse((Brush)GetValue(ProgressBrushProperty),null,new Point(ActualWidth-1,ActualHeight-1),2,2);
     }
 }

@@ -114,9 +114,25 @@ public partial class MainWindow
         SelectionWorkspaceButton.Tag = workspaceLayout.Mode == WorkspaceMode.Selection ? "selected" : null;
         PreviewWorkspaceButton.Tag = workspaceLayout.Mode == WorkspaceMode.Preview ? "selected" : null;
         RefreshWorkspaceAvailability();
+        RefreshToolbarOverflow();
         RefreshHistogramWorkspace();
         RefreshWorkspaceBrowserLayout();
+        RefreshInspection();
         RefreshHDRPresentation();
+    }
+
+    private void RefreshToolbarOverflow()
+    {
+        var compact = WorkspaceLayout.Compact(WorkspaceWidth);
+        ClippingButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        InfoButton.Visibility = compact ? Visibility.Collapsed : Visibility.Visible;
+        ToolbarOverflowButton.Visibility = compact ? Visibility.Visible : Visibility.Collapsed;
+        var photoReady = file != null && !exporting && ShowsPhotoWorkspace;
+        ToolbarOverflowButton.IsEnabled = photoReady;
+        OverflowClippingMenu.IsEnabled = OverflowInfoMenu.IsEnabled = photoReady;
+        OverflowClippingMenu.IsChecked = clipping;
+        OverflowInfoMenu.IsChecked = photoInfoMode != PhotoInfoMode.Hidden;
+        ToolbarOverflowButton.Tag = compact && (clipping || photoInfoMode != PhotoInfoMode.Hidden) ? "selected" : null;
     }
 
     private void RefreshWorkspaceAvailability()
@@ -149,6 +165,12 @@ public partial class MainWindow
         if (workspaceLayout.Mode == WorkspaceMode.Editing && !SuspendInspectorTool()) return;
         if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
         if (mode != WorkspaceMode.Editing && curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
+        if (mode != WorkspaceMode.Editing && wbProbeEnabled) CancelWbProbe();
+        if (mode != WorkspaceMode.Editing && inspection.PinModeEnabled)
+        {
+            inspection.PinModeEnabled = false;
+            RefreshInspection();
+        }
         CancelViewingInput();
         HistogramPopup.IsOpen = ProcessingPopup.IsOpen = false;
         workspaceLayout.SetMode(mode);
@@ -207,7 +229,18 @@ public partial class MainWindow
     {
         if (file == null || pendingAllReset != null || closing || exporting || UpdateInstallationActive ||
             workspaceLayout.Mode != WorkspaceMode.Editing) return;
-        if (ShowsInspector && !SuspendInspectorTool()) return;
+        if (ShowsInspector)
+        {
+            if (!SuspendInspectorTool()) return;
+            if (hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
+            if (curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
+            if (wbProbeEnabled) CancelWbProbe();
+            if (inspection.PinModeEnabled)
+            {
+                inspection.PinModeEnabled = false;
+                RefreshInspection();
+            }
+        }
         workspaceLayout.ToggleInspector();
         ProcessingPopup.IsOpen = false;
         RefreshWorkspace();
@@ -219,7 +252,7 @@ public partial class MainWindow
     {
         get
         {
-            var minimumHeight = TextElement.GetFontSize(AdjustmentPanel) >= 20 ? 700 : 400;
+            var minimumHeight = TextElement.GetFontSize(AdjustmentPanel) >= 20 ? 700 : 640;
             return ShowsInspector && (WorkspaceBody.ActualHeight == 0 || WorkspaceBody.ActualHeight >= minimumHeight);
         }
     }

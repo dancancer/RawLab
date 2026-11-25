@@ -21,13 +21,13 @@ import ImageIO
         if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
             let raw = URL(fileURLWithPath: path)
             let info = try HDRSourceInfo.probeRAW(raw)
-            check(info?.proRAW != nil, "ProRAW fixture was not recognized")
+            check(info?.isProRAW == true, "ProRAW fixture was not recognized")
             let item = try MacBatchExportItem(url: raw)
             let fresh = try preparer.prepare(item, ordinal: 2, format: .jpeg, longEdge: nil)
             check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
                   "fresh ProRAW batch target was silently upgraded to HDR")
             var saved = Adjustments(); saved.exposure = -2; saved.hdr = HDRSettings()
-            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+            saved.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion + 1
             try store.save(raw, state: MacPhotoEditState(settings: saved, filmID: ""))
             do {
                 _ = try preparer.prepare(item, ordinal: 2, format: .hdrJPEG, longEdge: nil)
@@ -91,7 +91,7 @@ import ImageIO
         check(!freshCamera.settings.isHDREditing && freshCamera.settings.exposure == 1,
               "New camera RAW should remain in SDR editing")
         var cameraEdit = Adjustments(); cameraEdit.exposure = -2; cameraEdit.hdr = HDRSettings()
-        cameraEdit.proRAWDecodeVersion = ProRAWSource.decodeVersion
+        cameraEdit.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion
         try store.save(camera, state: MacPhotoEditState(settings: cameraEdit, filmID: ""))
         do {
             _ = try preparer.prepare(cameraItem, ordinal: 0, format: .hdrJPEG, longEdge: 64)

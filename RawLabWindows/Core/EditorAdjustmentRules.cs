@@ -128,7 +128,7 @@ public static class EditorAdjustmentRules
             return new(EditorResetStatus.Blocked, Reason: "Unknown master recipe.");
         var defaults = Defaults(edit);
         if (SameScope(scope, edit, defaults)) return new(EditorResetStatus.NoChange);
-        var source = edit.Settings.Copy();
+        var source = edit.Settings.Normalized().Copy();
         var candidate = source.Copy();
         var look = edit.Look;
         var detached = false;
@@ -154,7 +154,7 @@ public static class EditorAdjustmentRules
                 candidate = state.Capture();
                 detached = true;
             }
-            if (detached || scope.Kind != EditorResetKind.Tool) candidate.Values[(int)Parameter.Strength] = 100;
+            if (detached || scope.Kind != EditorResetKind.Tool) candidate.Values[(int)Parameter.Strength] = 1;
             look = null;
         }
         else candidate = ResetGroup(scope.Group, candidate, defaults.Settings);
@@ -265,6 +265,7 @@ public static class EditorAdjustmentRules
     };
     private static bool SameScope(EditorResetScope scope, SavedEdit value, SavedEdit defaults)
     {
+        value = value with { Settings = value.Settings.Normalized() };
         if (value.Settings.HDR is { Mode: HDRMode.Hdr }) return ResetHDR(scope, value.Settings) == value.Settings;
         if (PhotoInput.IsRaster(value.Identity.Path)) {
             // 普通图片的 RAW 专属元数据不参与标记；配方 tint 与自主相对白平衡（CameraWhiteBalance && AsShotTemperature == null）仍是有效贡献。
@@ -292,7 +293,7 @@ public static class EditorAdjustmentRules
             if (scope.Tool == EditorAdjustmentTool.MasterRecipe) return value.Settings.MasterRecipeID == null;
             return value.Settings.SameAs(ResetTool(scope.Tool, value.Settings.Copy(), defaults.Settings));
         }
-        if (scope.Group == EditorAdjustmentGroup.Looks) return value.Look == null && value.Settings.MasterRecipeID == null && value.Settings.Values[0] == 100;
+        if (scope.Group == EditorAdjustmentGroup.Looks) return value.Look == null && value.Settings.MasterRecipeID == null && value.Settings.Values[0] == 1;
         // 配方 tint 是相对偏移，默认 0；不能与相机绝对 tint 比较。
         var groupDefaults = defaults.Settings.Copy();
         if (scope.Group == EditorAdjustmentGroup.Color && value.Settings.MasterRecipeID != null) groupDefaults.Values[(int)Parameter.Tint] = 0;

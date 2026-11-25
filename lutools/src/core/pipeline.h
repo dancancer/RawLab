@@ -4,6 +4,7 @@
 #include "sony2fuji/lens_correction.h"
 #include "sony2fuji/processing_version.h"
 #include "sony2fuji/raw_processor.h"
+#include "core/edit_recipe_params.h"
 #include "core/hsl_probe.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_basic_controls_v3.h"
@@ -64,12 +65,6 @@ enum class GpuFallbackReason : int32_t {
     DeviceError = 12,
     FilterError = 13,
     UnsupportedCapability = 14
-};
-
-enum class RawExposureMode : int32_t {
-    Scene = 0,
-    Preview = 1,
-    Sensor = 2
 };
 
 enum class LookFormat : int32_t {
@@ -188,6 +183,7 @@ public:
     // Atomic edit-state application (replaces all edit-state fields transactionally)
     RenderStatus applyParams(const char* recipeJson);
     RenderStatus applyParams(const CanonicalSdrRecipe& recipe);
+    RenderStatus applyEditState(const CanonicalEditState& state, bool preserveUnsetAiBlend = false);
 
     // Configuration setters & diagnostics
     void setCancellation(int32_t (*callback)(void*), void* context);
@@ -298,6 +294,48 @@ public:
     WaveletCacheDiagnostics waveletCacheDiagnostics() const;
     PreviewExposureDiagnostics previewExposureDiagnostics() const;
 
+    struct RenderExecutionOptions {
+        RenderInputType inputType = RenderInputType::Raw;
+        PixelBufferFormat inputPixelFormat = PixelBufferFormat::RGB8;
+        std::string inputPath;
+        const void* inputPixels = nullptr;
+        uint32_t inputWidth = 0;
+        uint32_t inputHeight = 0;
+        ColorSpace inputColorSpace = ColorSpace::sRGB;
+        bool inputIsLinear = false;
+
+        RenderIntent intent = RenderIntent::Preview;
+        RenderSizeMode sizeMode = RenderSizeMode::Native;
+        uint32_t targetWidth = 0;
+        uint32_t targetHeight = 0;
+        uint32_t longEdge = 0;
+        uint32_t shortEdge = 0;
+        uint32_t previewLongEdge = 0;
+
+        bool interactivePreview = false;
+        bool viewportPreview = false;
+        ViewportRoiConfig viewportRoi{};
+
+        RenderOutputTarget outputTarget = RenderOutputTarget::Buffer;
+        RenderOutputFormat outputFormat = RenderOutputFormat::PNG;
+        std::string outputPath;
+        uint32_t jpegQuality = 95;
+    };
+
+    struct FastFullResGpuQuery {
+        RenderInputType inputType = RenderInputType::Raw;
+        uint32_t inputWidth = 0;
+        uint32_t inputHeight = 0;
+        uint32_t maxPixels = 0;
+        std::string inputPath;
+    };
+
+    RenderStatus supportsFastFullResGpu(
+        const FastFullResGpuQuery& query,
+        const char* editStateJson,
+        bool& outSupported
+    ) const;
+
     // Core processing entry points
     RenderStatus process(const RenderParams& params, OwnedPixelBuffer* outBuffer);
     RenderStatus processToImageData(const RenderParams& params, ImageData& outImage);
@@ -307,7 +345,61 @@ public:
     RenderStatus estimateAutoExposure(const RenderParams& params, float& outExposureEv);
     RenderStatus migrateProcessing(const RenderParams& params, ProcessingMigrationResult& outResult) const;
 
+    // Stateless execution-options + CanonicalEditState JSON entry points
+    RenderStatus renderWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        OwnedPixelBuffer* outBuffer,
+        ViewportRoiResult* outRoi = nullptr
+    );
+    RenderStatus renderToImageDataWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        ImageData& outImage
+    );
+    RenderStatus createHslProbeWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        uint64_t sourceRevision,
+        uint64_t requestRevision,
+        HslProbeData& outProbe
+    );
+    RenderStatus estimateAutoExposureWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        float& outExposureEv
+    );
+    RenderStatus sampleWbProbeWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        const WbProbeQuery& query,
+        WbProbeResult& outResult
+    );
+    RenderStatus prepareAiWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        const AiProgressCallback& progress
+    );
+    RenderStatus previewLutCompatibilityWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        const char* configuration,
+        OwnedPixelBuffer& outBuffer
+    );
+    RenderStatus migrateProcessingWithOptions(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        ProcessingMigrationResult& outResult
+    );
+
 private:
+    RenderStatus prepareStatefulParams(
+        const RenderExecutionOptions& options,
+        const char* editStateJson,
+        RenderParams& outParams,
+        bool resolveMasterWb = true
+    );
+    RenderStatus resolveStateWhiteBalanceIfNeeded(RenderParams& params);
     RenderStatus processImpl(
         const RenderParams& params,
         OwnedPixelBuffer* outBuffer,
@@ -407,6 +499,9 @@ private:
     bool curveApplyToLuminosity_ = false;
     ToneCurveParametricConfig parametricCurve_{};
     float aiDenoiseBlend_ = 1.0f;
+    bool hasCommittedEditState_ = false;
+    CanonicalEditState committedEditState_{};
+    MasterRecipeWbConfig masterRecipeWb_{};
     OutputSharpening outputSharpening_ = OutputSharpening::Off;
     bool rasterRelativeWbActive_ = false;
     float rasterRelativeTemp_ = 6500.0f;

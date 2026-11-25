@@ -1,5 +1,6 @@
 package com.rawlab.android.camera
 
+import android.util.Log
 import com.jcraft.jsch.ChannelDirectTCPIP
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
@@ -8,15 +9,21 @@ import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import com.jcraft.jsch.UIKeyboardInteractive
 import com.jcraft.jsch.UserInfo
-import java.io.ByteArrayOutputStream
+import com.rawlab.android.BuildConfig
+import okhttp3.ConnectionPool
+import okhttp3.ConnectionSpec
+import okhttp3.Dns
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
 import java.io.Closeable
-import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import java.io.InterruptedIOException
 import java.io.OutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.Proxy
 import java.net.Socket
 import java.net.SocketAddress
 import java.net.SocketException
@@ -63,8 +70,8 @@ internal class CameraLiveStream(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        runCatching { inputStream.close() }
         runCatching { onClose() }
+        runCatching { inputStream.close() }
     }
 }
 
@@ -140,13 +147,22 @@ internal fun probeSshHostKey(
     try {
         session.connect(timeoutMs)
     } catch (error: Exception) {
-        probed?.let { return it }
+        probed?.let {
+            SonySshTunnel.debugLog("probeSsh succeeded keyType=${it.keyType}")
+            return it
+        }
+        SonySshTunnel.debugLog("probeSsh failed ${error.javaClass.simpleName}: ${SonySshTunnel.redactIps(error.message)}")
         throw IOException("Failed to probe camera SSH host key: ${error.message}", error)
     } finally {
         runCatching { session.disconnect() }
         runCatching { rawSocketHolder[0]?.close() }
     }
-    return probed ?: throw IOException("Camera SSH server did not present a host key")
+    return probed?.also {
+        SonySshTunnel.debugLog("probeSsh succeeded keyType=${it.keyType}")
+    } ?: run {
+        SonySshTunnel.debugLog("probeSsh failed: server did not present a host key")
+        throw IOException("Camera SSH server did not present a host key")
+    }
 }
 
 internal class SonySshTunnel private constructor(
@@ -208,60 +224,42 @@ internal class SonySshTunnel private constructor(
         if (port !in 1..65535) {
             throw IOException("Invalid live view port: $port")
         }
-        val pathAndQuery = url.file.ifBlank { "/" }
-        val socket = SshChannelSocket(setOf(port))
-        try {
-            socket.soTimeout = timeoutMs
-            socket.connect(InetSocketAddress(address, port), timeoutMs)
-            val request = buildString {
-                append("GET ").append(pathAndQuery).append(" HTTP/1.1\r\n")
-                append("Host: localhost:").append(port).append("\r\n")
-                append("Connection: close\r\n")
-                append("Accept: */*\r\n")
-                append("\r\n")
-            }.toByteArray(StandardCharsets.US_ASCII)
-            socket.getOutputStream().apply {
-                write(request)
-                flush()
-            }
-
-            val rawInput = socket.getInputStream()
-            val statusLine = readHttpLine(rawInput)
-                ?: throw EOFException("Unexpected EOF reading live view HTTP status")
-            val statusParts = statusLine.split(' ', limit = 3)
-            val statusCode = statusParts.getOrNull(1)?.toIntOrNull()
-                ?: throw IOException("Malformed live view HTTP status: $statusLine")
-
-            var chunked = false
-            var headerBytes = statusLine.length + 2
-            while (true) {
-                val line = readHttpLine(rawInput)
-                    ?: throw EOFException("Unexpected EOF reading live view HTTP headers")
-                headerBytes += line.length + 2
-                if (headerBytes > MAX_HTTP_HEADER_BYTES) {
-                    throw IOException("Live view HTTP headers too large")
-                }
-                if (line.isEmpty()) break
-                val colon = line.indexOf(':')
-                if (colon > 0) {
-                    val name = line.substring(0, colon).trim().lowercase(Locale.ROOT)
-                    val value = line.substring(colon + 1).trim().lowercase(Locale.ROOT)
-                    if (name == "transfer-encoding" && value.contains("chunked")) {
-                        chunked = true
-                    }
-                }
-            }
-            if (statusCode !in 200..299) {
-                throw IOException("Unexpected live view HTTP status $statusCode")
-            }
-
-            val bodyStream: InputStream = if (chunked) ChunkedHttpInputStream(rawInput) else rawInput
-            return CameraLiveStream(bodyStream) {
-                runCatching { socket.close() }
-            }
-        } catch (error: Throwable) {
-            runCatching { socket.close() }
-            throw error
+        val client = OkHttpClient.Builder()
+            .socketFactory(socketFactory(setOf(port)))
+            .dns(object : Dns {
+                override fun lookup(hostname: String): List<InetAddress> = listOf(address)
+            })
+            .proxy(Proxy.NO_PROXY)
+            .connectionPool(ConnectionPool(0, 1, TimeUnit.MILLISECONDS))
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .connectionSpecs(listOf(ConnectionSpec.CLEARTEXT))
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .retryOnConnectionFailure(false)
+            .connectTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            .readTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            .writeTimeout(timeoutMs.toLong(), TimeUnit.MILLISECONDS)
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Host", "$FORWARD_TARGET_HOST:$port")
+            .header("Connection", "close")
+            .header("Accept", "*/*")
+            .build()
+        val call = client.newCall(request)
+        val response = call.execute()
+        if (!response.isSuccessful) {
+            val statusCode = response.code
+            runCatching { response.close() }
+            throw IOException("Unexpected live view HTTP status $statusCode")
+        }
+        val stream = response.body?.byteStream() ?: run {
+            runCatching { response.close() }
+            throw IOException("Missing live view HTTP body")
+        }
+        return CameraLiveStream(stream) {
+            runCatching { call.cancel() }
+            runCatching { response.close() }
         }
     }
 
@@ -312,7 +310,7 @@ internal class SonySshTunnel private constructor(
             val connectTimeout = if (timeout > 0) timeout else DEFAULT_TIMEOUT_MS
             val openedChannel = session.openChannel("direct-tcpip") as? ChannelDirectTCPIP
                 ?: throw IOException("Failed to open SSH direct-tcpip channel")
-            openedChannel.setHost("127.0.0.1")
+            openedChannel.setHost(FORWARD_TARGET_HOST)
             openedChannel.setPort(port)
             openedChannel.setOrgIPAddress("127.0.0.1")
             openedChannel.setOrgPort(0)
@@ -325,6 +323,7 @@ internal class SonySshTunnel private constructor(
                 rawOut = openedChannel.outputStream
                 openedChannel.connect(connectTimeout)
             } catch (error: Throwable) {
+                debugLog("SSH direct-tcpip to $FORWARD_TARGET_HOST:$port failed: ${error.javaClass.simpleName}: ${redactIps(error.message)}")
                 runCatching { openedChannel.disconnect() }
                 if (error is IOException) throw error
                 throw IOException("Failed to open forwarded channel to port $port: ${error.message}", error)
@@ -543,9 +542,19 @@ internal class SonySshTunnel private constructor(
     companion object {
         const val DEFAULT_SSH_PORT = 22
         const val DEFAULT_FORWARD_PORT = 15740
-        const val DEFAULT_TIMEOUT_MS = 5_000
-        private const val MAX_HTTP_HEADER_BYTES = 16 * 1024
+        const val DEFAULT_TIMEOUT_MS = 10_000
+        private const val FORWARD_TARGET_HOST = "localhost"
+        private val IPV4_REGEX = Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b""")
         private val CHANNEL_SEQ = AtomicInteger(0)
+
+        internal fun redactIps(message: String?): String =
+            message?.replace(IPV4_REGEX, "<ip>").orEmpty()
+
+        internal fun debugLog(message: String) {
+            if (BuildConfig.DEBUG) {
+                runCatching { Log.d("RawLabCamera", message) }
+            }
+        }
 
         fun connect(
             address: InetAddress,
@@ -573,7 +582,7 @@ internal class SonySshTunnel private constructor(
                 timeout = timeoutMs
                 setPassword(password)
                 setConfig("StrictHostKeyChecking", "yes")
-                setConfig("PreferredAuthentications", "password,keyboard-interactive")
+                setConfig("PreferredAuthentications", "keyboard-interactive,password")
                 setConfig("enable_auth_none", "yes")
                 setSocketFactory(BoundJschSocketFactory(address, rawSocketFactory, timeoutMs, rawSocketHolder))
                 setHostKeyRepository(object : HostKeyRepository {
@@ -612,8 +621,10 @@ internal class SonySshTunnel private constructor(
                         prompt: Array<out String>?,
                         echo: BooleanArray?,
                     ): Array<String>? {
-                        if (prompt == null || prompt.isEmpty() || kbAttempts.incrementAndGet() > 2) return null
-                        return Array(prompt.size) { idx -> if (idx == 0) password else "" }
+                        if (prompt == null) return null
+                        if (prompt.isEmpty()) return emptyArray()
+                        if (kbAttempts.incrementAndGet() > 2) return null
+                        return Array(prompt.size) { password }
                     }
                 })
             }
@@ -623,16 +634,22 @@ internal class SonySshTunnel private constructor(
             } catch (error: Exception) {
                 runCatching { session.disconnect() }
                 runCatching { rawSocketHolder[0]?.close() }
-                mismatchError?.let { throw it }
+                mismatchError?.let {
+                    debugLog("SSH host key mismatch keyType=${it.keyType}")
+                    throw it
+                }
                 if (isAuthenticationFailure(error)) {
+                    debugLog("SSH authentication failed: ${error.javaClass.simpleName}")
                     throw SshAuthenticationException("Camera SSH authentication failed", error)
                 }
+                debugLog("SSH connect failed: ${error.javaClass.simpleName}: ${redactIps(error.message)}")
                 throw IOException("Camera SSH connection failed: ${error.message}", error)
             }
 
             val probe = matchedProbe ?: run {
                 runCatching { session.disconnect() }
                 runCatching { rawSocketHolder[0]?.close() }
+                debugLog("SSH connect failed: host key missing after connect")
                 throw SshFingerprintMismatchException(expectedNormalized, "", "unknown")
             }
 
@@ -641,6 +658,7 @@ internal class SonySshTunnel private constructor(
                 runCatching { raw.soTimeout = 0 }
             }
             runCatching { session.timeout = 0 }
+            debugLog("SSH connect succeeded keyType=${probe.keyType}")
 
             return SonySshTunnel(address, port, session, rawSocketHolder[0], probe)
         }
@@ -658,80 +676,6 @@ internal class SonySshTunnel private constructor(
                 current = current.cause
             }
             return false
-        }
-
-        private fun readHttpLine(input: InputStream): String? {
-            val buffer = ByteArrayOutputStream(128)
-            while (true) {
-                val b = input.read()
-                if (b < 0) {
-                    return if (buffer.size() == 0) null else buffer.toString(StandardCharsets.US_ASCII.name())
-                }
-                if (b == '\n'.code) {
-                    val bytes = buffer.toByteArray()
-                    val length = if (bytes.isNotEmpty() && bytes[bytes.size - 1] == '\r'.code.toByte()) {
-                        bytes.size - 1
-                    } else {
-                        bytes.size
-                    }
-                    return String(bytes, 0, length, StandardCharsets.US_ASCII)
-                }
-                buffer.write(b)
-                if (buffer.size() > MAX_HTTP_HEADER_BYTES) {
-                    throw IOException("Live view HTTP header line too long")
-                }
-            }
-        }
-    }
-
-    private class ChunkedHttpInputStream(
-        private val raw: InputStream,
-    ) : InputStream() {
-        private var remainingInChunk = 0
-        private var finished = false
-
-        override fun read(): Int {
-            val one = ByteArray(1)
-            val count = read(one, 0, 1)
-            return if (count < 0) -1 else one[0].toInt() and 0xFF
-        }
-
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
-            if (off < 0 || len < 0 || off + len > b.size) throw IndexOutOfBoundsException()
-            if (len == 0) return 0
-            if (finished) return -1
-            while (remainingInChunk == 0) {
-                val sizeLine = readHttpLine(raw)
-                    ?: throw EOFException("Unexpected EOF in chunked live view stream")
-                val hex = sizeLine.substringBefore(';').trim()
-                val nextSize = hex.toIntOrNull(16)
-                    ?: throw IOException("Invalid HTTP chunk size: $sizeLine")
-                if (nextSize == 0) {
-                    // Drain optional trailers up to blank line.
-                    while (true) {
-                        val trailer = readHttpLine(raw) ?: break
-                        if (trailer.isEmpty()) break
-                    }
-                    finished = true
-                    return -1
-                }
-                remainingInChunk = nextSize
-            }
-            val read = raw.read(b, off, minOf(len, remainingInChunk))
-            if (read < 0) throw EOFException("Unexpected EOF inside HTTP chunk")
-            remainingInChunk -= read
-            if (remainingInChunk == 0) {
-                val crlf = readHttpLine(raw)
-                    ?: throw EOFException("Missing CRLF after HTTP chunk")
-                if (crlf.isNotEmpty()) {
-                    throw IOException("Expected empty line after HTTP chunk")
-                }
-            }
-            return read
-        }
-
-        override fun close() {
-            raw.close()
         }
     }
 }

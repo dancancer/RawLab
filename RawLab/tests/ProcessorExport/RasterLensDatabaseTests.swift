@@ -10,7 +10,7 @@ extension ProcessorExportTests {
         var settings = RawSettings.default
         settings.exposure = 0.7
         settings.contrast = 1.1
-        settings.geometry.quarterTurns = 1
+        settings.geometrySettings.quarterTurns = 1
         settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, autoCrop: true,
                                                          mode: .manual, profileID: "unused-display-profile")
 

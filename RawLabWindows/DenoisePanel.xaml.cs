@@ -46,7 +46,7 @@ public partial class DenoisePanel : UserControl
         }
         EnabledBox.IsChecked=value.Enabled;PresetBox.SelectedIndex=value.Preset;
         var numbers=new[]{value.Luma,value.Chroma,value.Coarse};var defaults=new[]{0.0,46,50};
-        for(var i=0;i<rows.Length;++i)rows[i].Refresh(Loc.Text(titles[i]),new(0,100),numbers[i],defaults[i],"%",value.Enabled);
+        for(var i=0;i<rows.Length;++i)rows[i].Refresh(Loc.Text(titles[i]),new(0,100),numbers[i],defaults[i],"",value.Enabled);
         syncing=false;
     }
     private void Publish(DenoiseSettings next,bool interactive=false)

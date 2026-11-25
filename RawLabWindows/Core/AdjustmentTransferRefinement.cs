@@ -59,8 +59,17 @@ internal static class AdjustmentTransferRefinement
         var result = desired;
         foreach (var channel in Enum.GetValues<ToneCurveChannel>()) {
             var shape = desired.Shape(channel);
-            if (shape.Mode == ToneCurveMode.Custom) result = result.Replacing(channel,
-                new(ToneCurveMode.Custom, shape.Points.Select(p => new ToneCurvePoint(p.X, p.X + (p.Y - p.X) / strength))));
+            if (shape.Mode == ToneCurveMode.Custom) {
+                var last = shape.Points.Count - 1;
+                try {
+                    result = result.Replacing(channel, new(ToneCurveMode.Custom, shape.Points.Select((p, idx) =>
+                        idx == 0 ? new ToneCurvePoint(p.X / strength, p.Y / strength) :
+                        idx == last ? new ToneCurvePoint(1.0 + (p.X - 1.0) / strength, 1.0 + (p.Y - 1.0) / strength) :
+                        new ToneCurvePoint(p.X, p.X + (p.Y - p.X) / strength))));
+                } catch (ArgumentOutOfRangeException) {
+                    throw Unrepresentable(F.Curve);
+                }
+            }
         }
         var p = desired.Parametric;
         var logicalParametric = p.IsIdentity || strength == 1 ? p : new ToneCurveParametric(
@@ -91,7 +100,7 @@ internal static class AdjustmentTransferRefinement
         Enum.GetValues<ToneCurveChannel>().All(channel => {
             var first = a.Shape(channel); var second = b.Shape(channel);
             return first.Mode == second.Mode && (first.IsIdentity && second.IsIdentity || first.Points.Count == second.Points.Count &&
-                first.Points.Zip(second.Points).All(pair => pair.First.X == pair.Second.X && Math.Abs(pair.First.Y - pair.Second.Y) <= 1e-12));
+                first.Points.Zip(second.Points).All(pair => Math.Abs(pair.First.X - pair.Second.X) <= 1e-12 && Math.Abs(pair.First.Y - pair.Second.Y) <= 1e-12));
         });
     private static AdjustmentTransferException Unrepresentable(F field) => new(AdjustmentFailure.Unrepresentable, field.ID());
 }

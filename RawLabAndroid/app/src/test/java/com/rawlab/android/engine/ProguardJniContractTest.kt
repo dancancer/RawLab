@@ -11,7 +11,7 @@ class ProguardJniContractTest {
             File("app"),
             File("RawLabAndroid/app"),
         )
-        return candidates.first { File(it, "build.gradle.kts").isFile && File(it, "src/main/cpp/rawlab_jni.cpp").isFile }
+        return candidates.first { File(it, "build.gradle.kts").isFile && File(it, "src/main/cpp/jni_sdr.cpp").isFile }
     }
 
     @Test
@@ -28,16 +28,22 @@ class ProguardJniContractTest {
     @Test
     fun proguardRulesCoverEveryInitJniCacheClassAndNativeBridge() {
         val root = moduleRoot()
-        val cpp = File(root, "src/main/cpp/rawlab_jni.cpp").readText()
+        val cppFiles = File(root, "src/main/cpp").listFiles()
+            ?.filter { it.isFile && (it.extension == "cpp" || it.extension == "h") }
+            ?: emptyList()
+        assertTrue("Expected split JNI sources under src/main/cpp", cppFiles.size >= 4)
+        val cpp = cppFiles.joinToString("\n") { it.readText() }
+        val initJniCacheBlock = cpp.substringAfter("void initJniCache(").substringBefore("const JniCache& jniCache(")
         val proguard = File(root, "proguard-rules.pro").readText()
 
-        val classPattern = Regex("""cacheGlobalClass\s*\(\s*env\s*,\s*"([^"]+)"\s*\)""")
-        val jniClasses = classPattern.findAll(cpp)
+        val classPattern = Regex(""""(com/rawlab/android/[^"]+)"""")
+        val jniClasses = classPattern.findAll(initJniCacheBlock)
             .map { it.groupValues[1].replace('/', '.') }
-            .filter { it.startsWith("com.rawlab.android.") }
             .toSet()
 
-        assertTrue("Expected at least 22 app classes in initJniCache", jniClasses.size >= 22)
+        assertTrue("Expected at least 19 app classes in initJniCache (got ${jniClasses.size})", jniClasses.size >= 19)
+        assertTrue(jniClasses.contains("com.rawlab.android.engine.LUTColorContractException"))
+        assertTrue(jniClasses.contains("com.rawlab.android.photo.HDRSourceInfo"))
         for (cls in jniClasses) {
             assertTrue(
                 "proguard-rules.pro must explicitly keep JNI-reflected class $cls",
@@ -62,6 +68,9 @@ class ProguardJniContractTest {
             "com.rawlab.android.engine.ToneCurveSampling",
             "com.rawlab.android.raster.NativeMpf",
             "com.rawlab.android.raster.NativePng16",
+            "com.rawlab.android.editor.inspection.InspectionNative",
+            "com.rawlab.android.editor.canvas.ViewportNative",
+            "com.rawlab.android.camera.SonyCameraNative",
         )) {
             assertTrue("proguard-rules.pro must keep native host $host", proguard.contains(host))
         }

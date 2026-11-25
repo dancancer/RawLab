@@ -27,7 +27,7 @@ public partial class GeometryPanel : UserControl
     public GeometryPanel()
     {
         InitializeComponent();
-        TransformRows.Children.Add(angle);PerspectiveRows.Children.Add(horizontal);PerspectiveRows.Children.Add(vertical);
+        TransformRows.Children.Add(angle);PerspectiveSliders.Children.Add(horizontal);PerspectiveSliders.Children.Add(vertical);
         for(var i=0;i<crops.Length;++i){
             var component=(CropComponent)i;var row=crops[i];CropRows.Children.Add(row);
             row.Changed+=(number,dragging)=>SetCrop(component,number,dragging);
@@ -37,8 +37,8 @@ public partial class GeometryPanel : UserControl
         RegisterName("CropWidth",crops[2].Number);RegisterName("CropHeight",crops[3].Number);
         RegisterName("StraightenSlider",angle.Slider);
         angle.Changed+=(number,dragging)=>Publish(value with{StraightenDegrees=number},dragging);
-        horizontal.Changed+=(number,dragging)=>Publish(value with{PerspectiveHorizontal=number},dragging);
-        vertical.Changed+=(number,dragging)=>Publish(value with{PerspectiveVertical=number},dragging);
+        horizontal.Changed+=(number,dragging)=>Publish(value with{PerspectiveHorizontal=number/100},dragging);
+        vertical.Changed+=(number,dragging)=>Publish(value with{PerspectiveVertical=number/100},dragging);
         RefreshLanguage();Refresh(value);
     }
     public void Begin(GeometrySettings settings)
@@ -72,8 +72,8 @@ public partial class GeometryPanel : UserControl
         syncing=true;value=settings;
         HorizontalFlip.IsChecked=value.FlipHorizontal;VerticalFlip.IsChecked=value.FlipVertical;
         angle.Refresh(Loc.Text("拉直"),new(-45,45,.01,.1,.01,false,2),value.StraightenDegrees,0,"°");
-        horizontal.Refresh(Loc.Text("水平透视"),new(-1,1,.001,.01,.001),value.PerspectiveHorizontal,0);
-        vertical.Refresh(Loc.Text("垂直透视"),new(-1,1,.001,.01,.001),value.PerspectiveVertical,0);
+        horizontal.Refresh(Loc.Text("水平透视"),new(-100,100,.1,1,.1),value.PerspectiveHorizontal*100,0);
+        vertical.Refresh(Loc.Text("垂直透视"),new(-100,100,.1,1,.1),value.PerspectiveVertical*100,0);
         var numbers=new[]{value.CropX,value.CropY,value.CropWidth,value.CropHeight};
         var names=new[]{"裁切左边","裁切上边","裁切宽度","裁切高度"};
         var normalized=AspectRatio is {} ratio && canvasWidth>0 ? ratio*canvasHeight/canvasWidth : (double?)null;
@@ -81,10 +81,11 @@ public partial class GeometryPanel : UserControl
         var maxHeight=normalized is {} h ? Math.Min(1-value.CropY,(1-value.CropX)/h) : 1-value.CropY;
         var maxima=new[]{1-value.CropWidth,1-value.CropHeight,maxWidth,maxHeight};
         for(var i=0;i<crops.Length;++i)crops[i].Refresh(Loc.Text(names[i]),
-            new(i<2 ? 0 : .01,maxima[i]*100,.01,.1,.01,CompactPercent:true),numbers[i]*100,i<2 ? 0 : 100,"%");
+            new(i<2 ? 0 : .1,maxima[i]*100,.01,.1,.01,CompactPercent:true),numbers[i]*100,i<2 ? 0 : 100,"%");
         LockIcon.Kind=AspectRatio==null ? "Unlock" : "Lock";
         AutomationProperties.SetItemStatus(AspectLock,Loc.Text(AspectRatio==null ? "已停用" : "已启用"));
         SwapAspect.IsEnabled=AspectRatio!=null && AspectRatio!=1;
+        ResetPerspective.IsEnabled=value.PerspectiveHorizontal!=0 || value.PerspectiveVertical!=0;
         syncing=false;
     }
     private void Publish(GeometrySettings next,bool dragging=false)
@@ -123,6 +124,7 @@ public partial class GeometryPanel : UserControl
             CropY=y!=value.FlipVertical ? Math.Max(0,1-value.CropY-value.CropHeight) : value.CropY});
     }
     private void ResetClicked(object sender,RoutedEventArgs e){if(!syncing && IsEnabled)ResetRequested?.Invoke();}
+    private void ResetPerspectiveClicked(object sender,RoutedEventArgs e){if(syncing || !IsEnabled)return;horizontal.CancelInput();vertical.CancelInput();Publish(value with{PerspectiveHorizontal=0,PerspectiveVertical=0});}
     private void RefreshAspectChoices() {
         syncing=true;
         var choices=new List<string>{Loc.Text("自由"),Loc.Text("原始比例"),"1:1","3:2","4:3","16:9"};

@@ -8,7 +8,6 @@ import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.editor.canvas.DetailTileKey
 import com.rawlab.android.editor.canvas.NormalizedRect
 import com.rawlab.android.editor.canvas.ViewportRoiRequest
-import com.rawlab.android.editor.canvas.detailTileSpecs
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
 import com.rawlab.android.editor.render.Work
@@ -969,7 +968,7 @@ class EditorViewModelRaceTest {
 
                 val visible = NormalizedRect(0.20f, 0.10f, 0.55f, 0.65f)
                 val baseScale = 1600f / 6000f
-                val visibleKeys = detailTileSpecs(visible, 6000, 4000, 1.0f, baseScale, overscanRing = 0)
+                val visibleKeys = harness.tilePlanner.pyramidTiles(visible, 6000, 4000, 1.0f, baseScale, overscanRing = 0)
                     .mapTo(HashSet()) { it.key }
                 assertTrue("Test scenario must span at least 9 visible tiles", visibleKeys.size >= 9)
 

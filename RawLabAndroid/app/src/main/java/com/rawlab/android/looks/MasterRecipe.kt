@@ -10,6 +10,7 @@ import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.ColorGradingSettings
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.ToneCurveSettings
+import com.rawlab.android.settings.canonicalZero
 
 data class MasterRecipe(val id: String, val name: String, val subtitle: String, val summary: String,
     val lutFileName: String, val exposure: Float, val shadows: Float, val highlights: Float,
@@ -65,8 +66,8 @@ data class MasterRecipe(val id: String, val name: String, val subtitle: String, 
 /** 选用配方：胶片回到中性，配方自带的曝光、影调、色彩与 HSL 覆盖当前参数 */
 fun EditSettings.applyRecipe(recipe: MasterRecipe): EditSettings {
     val applied = copy(film = "neutral", recipeID = recipe.id, strength = 1f, masterRecipeSettingsVersion = recipe.settingsVersion,
-        exposure = recipe.exposure, shadows = recipe.shadows, highlights = recipe.highlights,
-        contrast = recipe.contrast, saturation = recipe.saturation, tint = recipe.tint, hsl = recipe.hsl)
+        exposure = recipe.exposure, shadows = recipe.shadows, highlights = (-recipe.highlights).canonicalZero(),
+        contrast = 1f + recipe.contrast, saturation = 1f + recipe.saturation, tint = recipe.tint, hsl = recipe.hsl)
     return if (recipe.settingsVersion < 4) applied else applied.copy(blackPoint = recipe.blackPoint,
         whitePoint = recipe.whitePoint, vibrance = recipe.vibrance, clarity = recipe.clarity, dehaze = recipe.dehaze,
         colorGrading = recipe.grading, curve = recipe.curve, toneCurve = 0f)

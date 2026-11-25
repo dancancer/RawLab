@@ -15,22 +15,23 @@ RAW="${1:-${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DN
 test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2; exit 1; }
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 SOURCES=()
-for name in MacNeutralReference Engine RenderError Adjustments+Native BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget EditorModel+WBProbe FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField AdjustmentRow MacRotationRuler MacStraightenPreview MacCropInteraction; do
+for name in MacNeutralReference RenderScheduling MacFilm ParameterPrecision Engine RenderError Adjustments+Native BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget EditorModel+WBProbe FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField AdjustmentRow MacStraightenPreview MacCropInteraction; do
     source="$(find "$ROOT/RawLabMac/Sources" -name "$name.swift" -print -quit)"
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")
 done
-for name in AtmosphereNative HSLNative HSLTargetNative ToneControlsNative ToneCurveNative ToneCurveSampling ColorGradingNative DCPCompiler LookLibrary LUTCompatibilityPreview LUTCompatibilityView; do
+for name in HSLTargetNative LUTCompatibilityPreview LUTCompatibilityView; do
     SOURCES+=("$ROOT/Shared/$name.swift")
 done
 TRANSFER_SOURCES=(
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
   "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentPresets.swift"
+  "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+ExternalReload.swift"
 )
-rawlabkit_flags link "$OUT/swiftpm" macos 0
+rawlabnative_flags link "$OUT/swiftpm" macos 0 all
 rawlab_mac_native_link_flags NATIVE_LINK
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" "${TRANSFER_SOURCES[@]}" -parse-as-library \
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" "${TRANSFER_SOURCES[@]}" -parse-as-library \
     -module-cache-path "$OUT/ModuleCache" -import-objc-header "$MAC_NATIVE_BRIDGING_HEADER" \
     "${SOURCES[@]}" "${MAC_NATIVE_SWIFT_SOURCES[@]}" "$ROOT/RawLabMac/tests/Geometry/"*.swift \
     "${NATIVE_LINK[@]}" -Xlinker -rpath -Xlinker "$(pkg-config --variable=libdir opencv4)" -o "$OUT/test"

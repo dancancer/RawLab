@@ -58,7 +58,7 @@ private func rendered(_ model: EditorModel) throws {
         // 1. Export & Import Transfer JSON (including 1-step Undo and AI denoise field scoping)
         model.prepareAIOperation = { _, _, _ in }
         model.settings.exposure = 0.55
-        model.settings.contrast = 12
+        model.settings.contrast = 1.12
         model.settings.aiDenoiseEnabled = true
         try check(waitUntil(3.0) { !model.aiState.isRunning }, "AI denoise stub settles")
         try check(model.saveEdits(), "initial adjustment save succeeds")
@@ -68,12 +68,12 @@ private func rendered(_ model: EditorModel) throws {
         try check(abs((exportedPayload[.exposure]?.number ?? 0) - 0.55) < 1e-6, "exported transfer JSON preserves exposure even with AI denoise enabled")
 
         model.settings.exposure = -0.25
-        model.settings.contrast = -10
+        model.settings.contrast = 0.9
         model.settings.aiDenoiseEnabled = false
         try check(model.saveEdits(), "reset state before JSON import saves")
 
         try model.importAdjustmentTransfer(data: exportedData)
-        try check(abs(model.settings.exposure - 0.55) < 1e-6 && abs(model.settings.contrast - 12) < 1e-6,
+        try check(abs(model.settings.exposure - 0.55) < 1e-6 && abs(model.settings.contrast - 1.12) < 1e-6,
                   "importing transfer JSON updates EditorModel sliders")
         model.undoAdjustment()
         try check(abs(model.settings.exposure - (-0.25)) < 1e-6, "importing transfer JSON is 1-step undoable")
@@ -94,11 +94,11 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj1 = Adjustments()
         extAdj1.exposureMode = .sensor
         extAdj1.exposure = 0.95
-        extAdj1.saturation = 14
+        extAdj1.saturation = 1.14
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj1, filmID: ""))
 
         let autoReloaded = waitUntil(3.0) {
-            abs(model.settings.exposure - 0.95) < 1e-6 && abs(model.settings.saturation - 14) < 1e-6
+            abs(model.settings.exposure - 0.95) < 1e-6 && abs(model.settings.saturation - 1.14) < 1e-6
         }
         try check(autoReloaded && !model.hasActiveExternalReloadBanner && !model.dirty,
                   "clean state auto-reloads external edits.json changes without showing banner")
@@ -119,7 +119,7 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj2 = Adjustments()
         extAdj2.exposureMode = .sensor
         extAdj2.exposure = 1.4
-        extAdj2.contrast = 33
+        extAdj2.contrast = 1.33
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj2, filmID: ""))
 
         let bannerShown = waitUntil(3.0) { model.hasActiveExternalReloadBanner }
@@ -137,7 +137,7 @@ private func rendered(_ model: EditorModel) throws {
         var extAdj3 = Adjustments()
         extAdj3.exposureMode = .sensor
         extAdj3.exposure = 1.65
-        extAdj3.contrast = 42
+        extAdj3.contrast = 1.42
         _ = try externalStore.saveState(identity: identity, state: MacPhotoEditState(settings: extAdj3, filmID: ""))
 
         let bannerResurfaced = waitUntil(3.0) { model.hasActiveExternalReloadBanner }
@@ -145,7 +145,7 @@ private func rendered(_ model: EditorModel) throws {
 
         model.reloadFromExternalUpdate()
         try check(!model.hasActiveExternalReloadBanner && !model.dirty &&
-                  abs(model.settings.exposure - 1.65) < 1e-6 && abs(model.settings.contrast - 42) < 1e-6,
+                  abs(model.settings.exposure - 1.65) < 1e-6 && abs(model.settings.contrast - 1.42) < 1e-6,
                   "clicking Reload Sliders applies external edit and clears draft")
         model.undoAdjustment()
         try check(abs(model.settings.exposure - 0.95) < 1e-6,
@@ -180,6 +180,121 @@ private func rendered(_ model: EditorModel) throws {
         try check(reloadedAfterCancel, "cancelling un-dirtied geometry draft re-triggers external check and auto-reloads")
 
         try rendered(model)
+
+        // 7. Live sony2fuji CLI --save-preset & --sync-photo-edit round-trip + hot reload in EditorModel
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let buildDir = ProcessInfo.processInfo.environment["RAWLAB_BUILD_DIR"]
+            ?? repoRoot.appendingPathComponent("lutools/build-macos").path
+        let cliPath = URL(fileURLWithPath: buildDir).appendingPathComponent("sony2fuji").path
+        try check(FileManager.default.isExecutableFile(atPath: cliPath), "sony2fuji CLI binary exists at \(cliPath)")
+
+        func runCliSubcommand(_ flag: String, requestObject: [String: Any]) throws -> [String: Any] {
+            let reqFile = root.appendingPathComponent("cli-req-\(UUID().uuidString).json")
+            let reqData = try JSONSerialization.data(withJSONObject: requestObject, options: [.sortedKeys])
+            try reqData.write(to: reqFile)
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: cliPath)
+            proc.arguments = [flag, "--request", reqFile.path, "--json"]
+            let outPipe = Pipe()
+            let errPipe = Pipe()
+            proc.standardOutput = outPipe
+            proc.standardError = errPipe
+            try proc.run()
+            proc.waitUntilExit()
+            let stdoutData = outPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrText = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            try check(proc.terminationStatus == 0, "\(flag) exited 0 (stderr: \(stderrText))")
+            let envelope = try JSONSerialization.jsonObject(with: stdoutData) as? [String: Any]
+            try check((envelope?["ok"] as? Bool) == true, "\(flag) envelope ok=true")
+            return envelope?["result"] as? [String: Any] ?? [:]
+        }
+
+        let cliPresetRevBefore = model.presetLibraryRevision
+        let cliPresetRes = try runCliSubcommand("--save-preset", requestObject: [
+            "data_dir": root.path,
+            "name": "Live CLI Look",
+            "is_raw": true,
+            "processing_version": 3,
+            "values": [
+                "light.exposure": -0.75,
+                "light.curve.apply_to_luminosity": true,
+                "color.grading.balance": -10.0,
+            ],
+        ])
+        try check((cliPresetRes["action"] as? String) == "created", "live CLI save_preset created preset")
+        let cliPresetWatched = waitUntil(3.0) { model.presetLibraryRevision > cliPresetRevBefore }
+        try check(cliPresetWatched, "live CLI save_preset bumps EditorModel.presetLibraryRevision")
+        let cliPresetsList = try externalPresetStore.list()
+        try check(cliPresetsList.contains(where: { $0.name == "Live CLI Look" }),
+                  "AdjustmentPresetStore decodes live CLI presets.json entry")
+
+        let cliSyncRes = try runCliSubcommand("--sync-photo-edit", requestObject: [
+            "data_dir": root.path,
+            "photo_path": photo.path,
+            "is_raster": true,
+            "adjustments": [
+                "exposure": -1.25,
+                "contrast": 18.0,
+                "white_balance_mode": "relative",
+                "temperature": 6100.0,
+                "tint": 6.0,
+            ],
+        ])
+        try check((cliSyncRes["action"] as? String) == "updated", "live CLI sync_photo_edit updated record")
+        let cliEditReloaded = waitUntil(3.0) {
+            abs(model.settings.exposure - (-1.25)) < 1e-6 && abs(model.settings.contrast - 1.18) < 1e-6
+        }
+        try check(cliEditReloaded && !model.hasActiveExternalReloadBanner,
+                  "EditorModel hot-reloads live CLI --sync-photo-edit update")
+        try rendered(model)
+
+        // 8. CanonicalV2 + lutID record upgraded by live sony2fuji --sync-photo-edit remains decodable by MacEditPersistence
+        let canonicalPhoto = root.appendingPathComponent("canonical-v2-photo.png")
+        let canonicalDest = CGImageDestinationCreateWithURL(canonicalPhoto as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(canonicalDest, image, nil)
+        guard CGImageDestinationFinalize(canonicalDest) else { fatalError("canonical fixture write failed") }
+        let canonicalIdentity = try OriginalFileIdentity(canonicalPhoto)
+        let editsFile = editDir.appendingPathComponent("edits.json")
+        var rawEditsObj = try JSONSerialization.jsonObject(with: Data(contentsOf: editsFile)) as! [String: Any]
+        var rawRecords = rawEditsObj["records"] as! [String: Any]
+        rawRecords[canonicalPhoto.path] = [
+            "identity": [
+                "fileNumber": canonicalIdentity.fileNumber,
+                "modified": canonicalIdentity.modified.timeIntervalSinceReferenceDate,
+                "path": canonicalIdentity.path,
+                "size": canonicalIdentity.size,
+            ],
+            "state": [
+                "filmID": "builtin:astia",
+                "settings": [
+                    "settingsVersion": 2,
+                    "processing": ["family": "rawlab", "quality": "standard", "version": 3],
+                    "exposureMode": "scene",
+                    "whiteBalanceMode": "camera",
+                    "contrast": 1.25,
+                    "lutID": "builtin:astia",
+                ],
+            ],
+        ]
+        rawEditsObj["records"] = rawRecords
+        let seededData = try JSONSerialization.data(withJSONObject: rawEditsObj, options: [.sortedKeys])
+        try seededData.write(to: editsFile, options: .atomic)
+
+        let canonicalSyncRes = try runCliSubcommand("--sync-photo-edit", requestObject: [
+            "data_dir": root.path,
+            "photo_path": canonicalPhoto.path,
+            "is_raster": true,
+            "adjustments": ["exposure": 0.4],
+        ])
+        try check((canonicalSyncRes["action"] as? String) == "updated", "CLI sync_photo_edit updates CanonicalV2+lutID record")
+        let decodedCanonical = try externalStore.readState(for: canonicalPhoto)
+        try check(abs((decodedCanonical.state?.settings.exposure ?? 0) - 0.4) < 1e-6 &&
+                  abs((decodedCanonical.state?.settings.contrast ?? 0) - 1.25) < 1e-6 &&
+                  decodedCanonical.state?.filmID == "builtin:astia",
+                  "MacEditPersistence decodes CanonicalV2+lutID record after CLI --sync-photo-edit")
         print("ALL AgentTransferHotReloadTests PASSED")
     }
 }

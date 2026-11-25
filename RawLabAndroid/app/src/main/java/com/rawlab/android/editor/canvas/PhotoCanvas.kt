@@ -224,14 +224,12 @@ internal fun PhotoCanvas(
             primary.previewLongEdge(projectedZoom.scale)
         }
         val baseLongEdge = maxOf(pair.result.width, pair.result.height)
-        var detailActive by remember(pair.nativeWidth, pair.nativeHeight) { mutableStateOf(false) }
         val detailRequest = primary.detailRequest(
             projectedZoom,
             baseLongEdge,
             if (pair.hdr != null) 1280 else 2048,
-            active = detailActive,
+            active = true,
         )
-        SideEffect { detailActive = detailRequest != null }
         // Use the current pane geometry, not globally-positioned hit-test bounds: those
         // also contain this overlay and arrive a frame after a resize/zoom/mode change.
         val captionTop = if (sideBySide && horizontal) {
@@ -243,7 +241,7 @@ internal fun PhotoCanvas(
                 with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
         } else null
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
-        LaunchedEffect(detailRequest) { latestOnDetailRequest(detailRequest) }
+        LaunchedEffect(detailRequest, pair.nativeWidth, pair.nativeHeight) { latestOnDetailRequest(detailRequest) }
         val percent = "${(projectedZoom.scale * 100).roundToInt()}%"
         val before = holdingBefore && !compare && hslTarget == null && wbProbe == null
         val resultOrigin = Offset(if (sideBySide && horizontal) primary.width + gapPx else 0f,

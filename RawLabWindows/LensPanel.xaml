@@ -8,6 +8,7 @@
    <RadioButton x:Name="Manual" Content="{DynamicResource '手动'}" GroupName="LensMode" Checked="ModeChanged" Margin="0,4,20,4" AutomationProperties.Name="{DynamicResource '选择镜头'}"/>
    <CheckBox x:Name="Distortion" Content="{DynamicResource '畸变矫正'}" AutomationProperties.Name="{DynamicResource '畸变矫正'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <CheckBox x:Name="Tca" Content="{DynamicResource '横向色差'}" AutomationProperties.Name="{DynamicResource '横向色差'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
+   <CheckBox x:Name="Vignetting" Content="{DynamicResource '暗角校正'}" AutomationProperties.Name="{DynamicResource '暗角校正'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <CheckBox x:Name="AutoCrop" Content="{DynamicResource '自动裁边'}" AutomationProperties.Name="{DynamicResource '自动裁边'}" Checked="SwitchChanged" Unchecked="SwitchChanged" Margin="0,4,16,4"/>
    <Button Click="ResetClicked" ToolTip="{DynamicResource '重置镜头校正'}" AutomationProperties.Name="{DynamicResource '重置镜头校正'}" Padding="6,3"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   </WrapPanel>
@@ -16,7 +17,7 @@
   </Button>
   <StackPanel><TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></StackPanel>
   <Popup x:Name="Chooser" PlacementTarget="{Binding ElementName=ProfileButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True">
-   <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="8" CornerRadius="4" Width="500">
+   <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="8" CornerRadius="4" Width="320">
     <StackPanel>
      <TextBox x:Name="Search" TextChanged="SearchChanged" Margin="0,0,0,8" AutomationProperties.Name="{DynamicResource '搜索镜头'}"/>
      <ListBox x:Name="Profiles" MaxHeight="260" SelectionChanged="ProfileChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="{DynamicResource '镜头配置'}">

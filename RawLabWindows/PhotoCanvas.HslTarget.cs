@@ -17,11 +17,11 @@ public sealed partial class PhotoCanvas
     internal Func<Point,bool>? HslTargetAllowed;
     internal bool WbProbeEnabled {
         get=>wbProbeEnabled;
-        set {if(wbProbeEnabled==value)return;wbProbeEnabled=value;if(wbProbeEnabled)CancelHold();Cursor=wbProbeEnabled ? Cursors.Cross : Cursors.Hand;DrawImages();}
+        set {if(wbProbeEnabled==value)return;wbProbeEnabled=value;if(wbProbeEnabled)CancelHold();UpdateInspectionCursor();DrawImages();}
     }
     internal bool HslTargetEnabled {
         get=>hslTargetEnabled;
-        set {if(hslTargetEnabled==value)return;hslTargetEnabled=value;ResetHslPointer();CancelHold();DrawImages();DrawHslTarget();}
+        set {if(hslTargetEnabled==value)return;hslTargetEnabled=value;ResetHslPointer();CancelHold();UpdateInspectionCursor();DrawImages();DrawHslTarget();}
     }
     internal Point? HslTargetPoint {get=>hslTargetPoint;set{hslTargetPoint=value;DrawHslTarget();}}
     internal Point? HslCoordinates(Point point)

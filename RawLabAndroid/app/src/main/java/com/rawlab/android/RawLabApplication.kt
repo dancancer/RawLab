@@ -11,8 +11,17 @@ class RawLabApplication : Application() {
     @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
+        if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
             com.rawlab.android.engine.HDRSourceCache.clearAsync()
+            com.rawlab.android.editor.inspection.InspectionBitmap.clearOverlayCache()
+            com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
+                level = "warn",
+                category = "memory",
+                stage = "onTrimMemory",
+                message = "Android trim memory callback",
+                context = mapOf("level" to level.toString()),
+            )
+        }
     }
     override fun onCreate() {
         super.onCreate()

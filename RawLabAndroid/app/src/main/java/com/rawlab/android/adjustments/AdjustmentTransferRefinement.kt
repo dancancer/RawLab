@@ -81,8 +81,21 @@ internal object AdjustmentTransferRefinement {
         )
         val scaledShape = ToneCurveChannel.entries.fold(desired) { result, channel ->
             val shape = desired.shape(channel)
-            if (shape.mode == ToneCurveMode.LEGACY) result else result.replacing(channel,
-                ToneCurveShape(ToneCurveMode.CUSTOM, shape.points.map { ToneCurvePoint(it.x, it.x + (it.y - it.x) / strength) }))
+            if (shape.mode == ToneCurveMode.LEGACY) result else {
+                val last = shape.points.lastIndex
+                val inverted = try {
+                    ToneCurveShape(ToneCurveMode.CUSTOM, shape.points.mapIndexed { idx, pt ->
+                        when (idx) {
+                            0 -> ToneCurvePoint(pt.x / strength, pt.y / strength)
+                            last -> ToneCurvePoint(1.0 + (pt.x - 1.0) / strength, 1.0 + (pt.y - 1.0) / strength)
+                            else -> ToneCurvePoint(pt.x, pt.x + (pt.y - pt.x) / strength)
+                        }
+                    })
+                } catch (_: IllegalArgumentException) {
+                    unrepresentable(AdjustmentField.CURVE)
+                }
+                result.replacing(channel, inverted)
+            }
         }
         val p = desired.parametric
         val logicalParametric = if (p.isIdentity || strength == 1.0) p else {
@@ -127,7 +140,7 @@ internal object AdjustmentTransferRefinement {
         ToneCurveChannel.entries.all { channel ->
             val first = a.shape(channel); val second = b.shape(channel)
             first.mode == second.mode && (first.isIdentity && second.isIdentity || first.points.size == second.points.size &&
-                first.points.zip(second.points).all { it.first.x == it.second.x && abs(it.first.y - it.second.y) <= 1e-12 })
+                first.points.zip(second.points).all { abs(it.first.x - it.second.x) <= 1e-12 && abs(it.first.y - it.second.y) <= 1e-12 })
         }
     private fun unrepresentable(field: AdjustmentField): Nothing = throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
 }

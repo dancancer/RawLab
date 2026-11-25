@@ -160,8 +160,8 @@ android {
         applicationId = "com.rawlab.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.12.1"
+        versionCode = 25
+        versionName = "0.13.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         externalNativeBuild { cmake { arguments += listOf("-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON", "-DANDROID_STL=c++_shared") } }
@@ -205,6 +205,97 @@ android {
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
+val hostCameraJniDir = layout.buildDirectory.dir("host-jni")
+val hostCameraJniLib = hostCameraJniDir.map { it.file(System.mapLibraryName("rawlab-jni")) }
+
+val compileHostCameraJni by tasks.registering {
+    val repoRoot = rootProject.projectDir.parentFile
+    val sonyPtpipCpp = File(repoRoot, "lutools/src/core/sony_ptpip.cpp")
+    val sonyPtpipH = File(repoRoot, "lutools/src/core/sony_ptpip.h")
+    val sonyPtpipCCpp = File(repoRoot, "lutools/src/ffi/sony_ptpip_c.cpp")
+    val jniCameraCpp = file("src/main/cpp/jni_camera.cpp")
+    val cHeader = File(repoRoot, "lutools/include/sony2fuji/ffi/sony2fuji_c.h")
+    val includeDir = File(repoRoot, "lutools/include")
+    val srcDir = File(repoRoot, "lutools/src")
+
+    inputs.files(sonyPtpipCpp, sonyPtpipH, sonyPtpipCCpp, jniCameraCpp, cHeader)
+    inputs.property("osName", System.getProperty("os.name").orEmpty())
+    inputs.property("osArch", System.getProperty("os.arch").orEmpty())
+    outputs.file(hostCameraJniLib)
+
+    doLast {
+        val osName = System.getProperty("os.name").orEmpty().lowercase()
+        val osArch = System.getProperty("os.arch").orEmpty().lowercase()
+        val osInclude = when {
+            osName.contains("mac") || osName.contains("darwin") -> "darwin"
+            osName.contains("linux") -> "linux"
+            else -> throw GradleException("Unsupported host OS for compileHostCameraJni: $osName")
+        }
+        val javaHomeCandidates = listOfNotNull(
+            System.getProperty("java.home")?.let(::File),
+            System.getProperty("java.home")?.let(::File)?.parentFile,
+            System.getenv("JAVA_HOME")?.takeIf { it.isNotBlank() }?.let(::File),
+        )
+        val jdkHome = javaHomeCandidates.firstOrNull { File(it, "include/jni.h").isFile }
+            ?: throw GradleException(
+                "Could not locate JDK headers (include/jni.h) in ${javaHomeCandidates.map { it.absolutePath }}",
+            )
+        val pathDirs = (System.getenv("PATH")?.split(File.pathSeparator) ?: emptyList()) +
+            listOf("/usr/bin", "/opt/homebrew/bin", "/usr/local/bin")
+        val compiler = System.getenv("CXX")?.takeIf { it.isNotBlank() }
+            ?: listOf("clang++", "g++", "c++")
+                .firstNotNullOfOrNull { name ->
+                    pathDirs.asSequence()
+                        .filter { it.isNotBlank() }
+                        .map { File(it, name) }
+                        .firstOrNull { it.isFile && it.canExecute() }
+                        ?.absolutePath
+                }
+            ?: throw GradleException("No C++ compiler found (CXX/clang++/g++/c++) for compileHostCameraJni")
+
+        val outFile = hostCameraJniLib.get().asFile
+        outFile.parentFile.mkdirs()
+
+        val cmd = mutableListOf(
+            compiler,
+            "-std=c++17",
+            "-O2",
+            "-shared",
+            "-fPIC",
+            "-Wall",
+            "-Wextra",
+        )
+        if (osInclude == "darwin") {
+            when {
+                osArch == "aarch64" || osArch == "arm64" -> cmd += listOf("-arch", "arm64")
+                osArch == "x86_64" || osArch == "amd64" -> cmd += listOf("-arch", "x86_64")
+            }
+        }
+        cmd += listOf(
+            "-I${includeDir.absolutePath}",
+            "-I${srcDir.absolutePath}",
+            "-I${File(jdkHome, "include").absolutePath}",
+            "-I${File(jdkHome, "include/$osInclude").absolutePath}",
+            sonyPtpipCpp.absolutePath,
+            sonyPtpipCCpp.absolutePath,
+            jniCameraCpp.absolutePath,
+            "-o",
+            outFile.absolutePath,
+        )
+        val proc = ProcessBuilder(cmd).redirectErrorStream(true).start()
+        val output = proc.inputStream.bufferedReader().readText()
+        val exitCode = proc.waitFor()
+        if (exitCode != 0) {
+            throw GradleException("compileHostCameraJni failed (exit $exitCode):\n$output")
+        }
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(compileHostCameraJni)
+    systemProperty("java.library.path", hostCameraJniDir.get().asFile.absolutePath)
+}
+
 tasks.named("preBuild").configure { dependsOn(prepareAssets) }
 // Native archives carry Rust and decoder notices; package the notices from the same ABI build.
 for (variant in listOf("Debug", "Release")) {
@@ -231,6 +322,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.fasterxml.jackson.core:jackson-core:2.18.3")
     implementation("com.github.mwiede:jsch:2.28.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")

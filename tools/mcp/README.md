@@ -43,7 +43,7 @@ uv sync --project tools/mcp --frozen
 | `diagnose_image` | `image_path` 或 `recipe_path`、可选 `samples`（`x,y[,label]`）、可选 `long_edge`（默认 1024） | `--input/--recipe PATH --analyze [--sample ...] [--long-edge N] --json` |
 | `list_catalog_looks` | 可选 `category`、`query` | 离线读取仓库目录内建造型目录 |
 | `save_preset`（默认隐藏） | `name`、`values` 等 | 仅 `--enable-gui-sync` 开启，原子写入 `<data-dir>/Presets/presets.json` |
-| `sync_photo_edit`（默认隐藏） | `photo_path`、`adjustments` 等 | 仅 `--enable-gui-sync` 开启（macOS），原子写入 `<data-dir>/Edits/edits.json` |
+| `sync_photo_edit`（默认隐藏） | `photo_path`、`adjustments` 等 | 仅 `--enable-gui-sync` 开启（macOS / Windows），原子写入 `<data-dir>/Edits/edits.json` |
 
 默认运行仅暴露 7 个只读/导出沙盒工具；`save_preset` 与 `sync_photo_edit` 默认不注册且拒绝调用，必须显式传入 `--enable-gui-sync`（以及可选 `--data-dir` 指定受控应用数据根目录）才会启用，并严格校验目录与目标文件不得为逃逸符号链接。
 

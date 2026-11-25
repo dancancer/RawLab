@@ -78,11 +78,11 @@ public partial class BatchExportWindow : Window
         var state = RenderEngine.PrepareInputSettings(job.Source,job.Settings.Restore());
         var raster=LibraryEntry.IsRaster(job.Source);
         var lookName = job.Look == null ? Loc.Text("中性") : job.LookName;
-        SourceLook.Text = $"{lookName} · {job.Settings.Values[(int)Parameter.Strength]:0}%";
+        SourceLook.Text = $"{lookName} · {ParameterSpec.All[(int)Parameter.Strength].ToDisplay(state[Parameter.Strength]):0}%";
         SourceSummary.Text = Loc.Format("曝光  {0:+0.00;-0.00;0.00} EV\n白平衡  {1}\n曝光基准  {2}", state[Parameter.Exposure], raster ? Loc.Text("不适用") : state.CameraWhiteBalance ? Loc.Text("拍摄时设置") : Loc.Text("自定义"), raster ? Loc.Text("显示图像") : new[] { Loc.Text("标准显影"), Loc.Text("匹配内嵌预览"), Loc.Text("传感器基准") }[state.ExposureMode]);
         AllSettings.Text = Frozen ? string.Join("\n\n",job.Items.Select(item=>
             item.Frozen is {} frozen ?
-                Path.GetFileName(item.Input)+" · "+frozen.OutputFormat+" · "+(frozen.LongEdge?.ToString() ?? Loc.Text("原尺寸"))+"\n"+
+                Path.GetFileName(item.Input)+" · "+frozen.OutputFormat.Title()+" · "+(frozen.LongEdge?.ToString() ?? Loc.Text("原尺寸"))+"\n"+
                 BatchSettingsText.Describe(frozen.Settings,frozen.LookName,item.Input) :
                 Path.GetFileName(item.Input)+"\n"+item.Error)) :
             BatchSettingsText.Describe(job.Settings,lookName,job.Source);

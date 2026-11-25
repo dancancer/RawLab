@@ -697,7 +697,7 @@ int main() {
         bypassParams.curveApplyToLuminosity = true;
         bypassParams.parametricCurve = {0.f, 0.f, 0.f, 0.f, 0.15f, 0.40f, 0.85f};
         bypassParams.customCurve = sony2fuji::ToneCurve(
-            {sony2fuji::ToneCurveMode::Custom, 3, {{{0, 0}, {0.5, 0.5}, {1, 1}}}}, true);
+            {sony2fuji::ToneCurveMode::Custom, 3, {{{0, 0}, {0.5, 0.5}, {1, 1}}}}, sony2fuji::ToneCurveEndpoints::Free);
         sony2fuji::ImageData bypassOut;
 #ifdef SONY2FUJI_ENABLE_D3D11
         sony2fuji::D3D11PhotoRenderer bypassRenderer;

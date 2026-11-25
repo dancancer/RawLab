@@ -312,7 +312,7 @@ struct CompactControlsPresentationTests {
                     source: "grading-fixture", isCurrent: { true }, onEditingChanged: { _ in }, onCancelled: {})
                     .padding(16)
             }.background(Color(nsColor: .windowBackgroundColor)), name: "grading-wide", language: language,
-                size: NSSize(width: 650, height: 340), expectedFields: 2, output: output))
+                size: NSSize(width: 650, height: 340), expectedFields: 5, output: output))
             snapshots.append(try await snapshot(PhotoEffectsControls(model: model, tool: .grainAmount).padding(.vertical, 12)
                 .frame(width: 650, height: 200, alignment: .top).background(Color(nsColor: .windowBackgroundColor)),
                 name: "grain-workspace-650", language: language, size: NSSize(width: 650, height: 200),

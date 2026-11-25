@@ -4,13 +4,23 @@ import SwiftUI
 /// Keep the editor's native close action inside the same draft transaction.
 struct MacGeometryWindowGuard: NSViewRepresentable {
     let model: EditorModel
+    var onWindowChange: ((NSWindow?) -> Void)? = nil
 
-    func makeNSView(context: Context) -> GuardView { GuardView(model: model) }
-    func updateNSView(_ view: GuardView, context: Context) { view.proxy.model = model }
+    func makeNSView(context: Context) -> GuardView {
+        let view = GuardView(model: model)
+        view.onWindowChange = onWindowChange
+        return view
+    }
+    func updateNSView(_ view: GuardView, context: Context) {
+        view.proxy.model = model
+        view.onWindowChange = onWindowChange
+        view.notifyWindowIfAttached()
+    }
     static func dismantleNSView(_ view: GuardView, coordinator: ()) { view.restoreDelegate() }
 
     final class GuardView: NSView {
         let proxy: CloseDelegate
+        var onWindowChange: ((NSWindow?) -> Void)?
         private weak var guardedWindow: NSWindow?
 
         init(model: EditorModel) {
@@ -21,16 +31,27 @@ struct MacGeometryWindowGuard: NSViewRepresentable {
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            restoreDelegate()
-            guard let window else { return }
-            guardedWindow = window
-            proxy.previous = window.delegate
-            window.delegate = proxy
+            let nextWindow = window
+            restoreDelegate(notifyNil: nextWindow == nil)
+            guard let nextWindow else { return }
+            guardedWindow = nextWindow
+            proxy.previous = nextWindow.delegate
+            nextWindow.delegate = proxy
+            onWindowChange?(nextWindow)
         }
 
-        func restoreDelegate() {
-            if let window = guardedWindow, window.delegate === proxy { window.delegate = proxy.previous }
-            guardedWindow = nil
+        func notifyWindowIfAttached() {
+            if let window = guardedWindow {
+                onWindowChange?(window)
+            }
+        }
+
+        func restoreDelegate(notifyNil: Bool = true) {
+            if let window = guardedWindow {
+                if window.delegate === proxy { window.delegate = proxy.previous }
+                guardedWindow = nil
+                if notifyNil { onWindowChange?(nil) }
+            }
         }
     }
 

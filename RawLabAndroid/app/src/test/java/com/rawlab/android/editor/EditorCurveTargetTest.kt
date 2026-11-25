@@ -1,6 +1,5 @@
 package com.rawlab.android.editor
 
-import android.net.TestUri
 import com.rawlab.android.adjustments.AdjustmentFailure
 import com.rawlab.android.adjustments.AdjustmentField
 import com.rawlab.android.adjustments.AdjustmentPayload
@@ -26,12 +25,10 @@ import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurvePoint
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.ToneCurveShape
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
-import java.nio.file.Files
 import kotlin.math.abs
 
 class EditorCurveTargetTest {
@@ -42,11 +39,10 @@ class EditorCurveTargetTest {
 
     @Test
     fun curveTargetClickWithActiveParametricPlacesPointAtParametricXWithZeroJump() {
-        val root = Files.createTempDirectory("curve-target-parametric").toFile()
-        try {
-            val file = File(root, "photo.raw").apply { writeText("raw") }
+        EditorViewModelTestHarness().use { harness ->
+            val (file, uri) = harness.createTempPhoto("curve-target.raw")
             val photo = ImportedPhoto(
-                TestUri.of("/${file.absolutePath.trimStart('/')}", scheme = "file", authority = ""),
+                uri,
                 file.name,
                 file,
                 PhotoIdentity("photo-1"),
@@ -59,30 +55,28 @@ class EditorCurveTargetTest {
             )
             val baseEdits = EditSettings(curve = curve)
             val previewPair = TestBitmaps.pair(800, 600)
-            val state = MutableStateFlow(
-                EditorState(
+            val session = EditorDocumentSession(harness.createDependencies(), harness.scope).apply {
+                mutable.value = EditorState(
                     photo = photo,
                     edits = baseEdits,
                     preview = previewPair,
                     exact = true,
                     draft = AdjustmentDraft.begin(AdjustmentGroup.CURVE, baseEdits, 4f / 3f, 4f / 3f),
-                ),
-            )
+                )
+                incrementSourceRevision()
+                updateCurrentRevision(1L)
+            }
             val revision = HslTargetRevision(1L, 1L)
             val previewWork = Work.Preview(photo, baseEdits, interactive = false, gpuMode = 0, edge = 800, draft = true)
             var submittedProbe: Work.HslProbe? = null
             var parametricCalls = 0
+            session.actions.submitRender = { work -> submittedProbe = work as Work.HslProbe; 2L }
+            session.actions.changeDraft = { next, interactive ->
+                session.mutable.value = session.mutable.value.copy(draft = session.mutable.value.draft?.update(next, interactive))
+            }
 
             val holder = EditorHslEyedropperStateHolder(
-                mutable = state,
-                currentSourceRevision = { 1L },
-                currentRenderRevision = { 1L },
-                submitProbe = { submittedProbe = it },
-                onChangeDraft = { next, interactive ->
-                    state.value = state.value.copy(draft = state.value.draft?.update(next, interactive))
-                },
-                onIncrementDraftRevision = {},
-                onRenderDraft = {},
+                session = session,
                 sampleCurve = { settings, channel ->
                     // Sample combined curve pointCurve(parametric(x)) when RGB parametric is active.
                     val shape = settings.shape(channel)
@@ -121,7 +115,7 @@ class EditorCurveTargetTest {
             holder.accept(WorkResult.HslProbe(probe, sample))
 
             assertTrue("Expected sampleParametric to be invoked for active RGB parametric curve", parametricCalls > 0)
-            val updatedCurve = state.value.visibleEdits.curve
+            val updatedCurve = session.mutable.value.visibleEdits.curve
             assertEquals(4, updatedCurve.points.size)
             val inserted = updatedCurve.points[1]
             // Point must land at (parametric(0.2), yOut) == (0.286, 0.286) with zero jump on click!
@@ -147,8 +141,6 @@ class EditorCurveTargetTest {
                 ),
             )
             assertEquals(redCallsBefore, parametricCalls)
-        } finally {
-            root.deleteRecursively()
         }
     }
 
@@ -158,57 +150,41 @@ class EditorCurveTargetTest {
             val (file, uri) = harness.createTempPhoto("curve-draft.raw")
             val photo = ImportedPhoto(uri, file.name, file, PhotoIdentity("curve-draft"), PhotoInputKind.RAW)
             val curveEdits = EditSettings(curve = ToneCurveSettings.identity.inserting(0.5, 0.6))
-            val state = MutableStateFlow(
-                EditorState(
+            val session = EditorDocumentSession(
+                harness.createDependencies(previewResizeDelayMs = 10L),
+                harness.scope,
+            ).apply {
+                mutable.value = EditorState(
                     photo = photo,
                     edits = EditSettings(),
                     preview = TestBitmaps.pair(800, 600),
                     exact = true,
-                ),
-            )
+                )
+                incrementSourceRevision()
+                incrementEditRevision()
+                updateCurrentRevision(1L)
+            }
             var cancelCalls = 0
             var clearDisableCalls = 0
-            val holder = EditorDraftStateHolder(
-                mutable = state,
-                draftStore = EditorDraftStore(File(harness.root, "drafts")),
-                scope = harness.scope,
-                strings = EditorStrings(),
-                uptimeMillis = { harness.uptime.get() },
-                previewResizeDelayMs = 10L,
-                loadMasterRecipes = { emptyList() },
-                uncroppedGeometrySize = { pair, _ -> pair.nativeWidth to pair.nativeHeight },
-                isDisposed = { false },
-                currentSourceRevision = { 1L },
-                currentEditRevision = { 1L },
-                currentRenderRevision = { 1L },
-                getPreviewLongEdge = { 1600 },
-                setPreviewLongEdge = {},
-                gpuMode = { 0 },
-                isCameraHDRPreflightPending = { false },
-                isQuickPresetPreparing = { false },
-                onCancelQuickPreset = {},
-                onCancelHslTarget = { cancelCalls += 1 },
-                onClearHslTarget = { disable -> if (disable) clearDisableCalls += 1 },
-                onClearPendingResetMigration = {},
-                onClearDeferredMigrationPreview = {},
-                onIncrementEditRevision = {},
-                onSubmitPreview = { 2L },
-                onPersist = { _, _, completed -> completed(EditSaveResult(EditSaveState.SAVED)) },
-                onEdit = { _, _, _ -> },
-            )
+            session.actions.cancelHslTarget = { cancelCalls += 1 }
+            session.actions.clearHslTarget = { disable -> if (disable) clearDisableCalls += 1 }
+            session.actions.submitRender = { 2L }
+            session.actions.persist = { _, _, _, completed -> completed(EditSaveResult(EditSaveState.SAVED)) }
+
+            val holder = EditorDraftStateHolder(session)
 
             holder.beginDraft(AdjustmentGroup.CURVE)
             holder.updatePreviewSize(800)
             assertEquals("updatePreviewSize during CURVE draft should cancel target interaction", 1, cancelCalls)
 
             holder.changeDraft(curveEdits, false)
-            state.value = state.value.copy(exact = true, rendering = false)
+            session.mutable.value = session.mutable.value.copy(exact = true, rendering = false)
             var applied = false
             holder.applyDraft { applied = it }
             assertTrue(applied)
             assertEquals("applyDraft on CURVE draft should clear(disable=true) target interaction", 1, clearDisableCalls)
 
-            state.value = state.value.copy(exact = true, rendering = false)
+            session.mutable.value = session.mutable.value.copy(exact = true, rendering = false)
             holder.beginDraft(AdjustmentGroup.CURVE)
             holder.changeDraft(EditSettings(curve = ToneCurveSettings.identity.inserting(0.5, 0.7)), false)
             holder.discardDraft()

@@ -13,7 +13,10 @@ struct MacCanvasInput: NSViewRepresentable {
     var onHold: (Bool) -> Void
     var onPan: (CGSize) -> Void
     var onPanEnd: () -> Void
-    var onDoubleClick: () -> Void
+    var onDoubleClick: () -> Void = {}
+    var onDoubleClickPoint: ((CGPoint?) -> Void)? = nil
+    var onMagnify: ((CGFloat, CGPoint) -> Void)? = nil
+    var onScrollPan: ((CGSize) -> Void)? = nil
     var onHover: ((CGPoint?) -> Void)? = nil
     var onPin: ((CGPoint) -> Void)? = nil
     func makeNSView(context: Context) -> InputView { InputView() }
@@ -27,8 +30,14 @@ struct MacCanvasInput: NSViewRepresentable {
         private var trackingArea: NSTrackingArea?
         private var targetOrigin: CGPoint?
         private var targetFine = false
+        private var pendingPinPoint: CGPoint?
+        private var pendingPinViewLocation: CGPoint?
+        private var pannedSinceMouseDown = false
         private weak var pressRecognizer: NSPressGestureRecognizer?
         func configure(_ next: MacCanvasInput) {
+            let needsCursorReset = owner?.imageRect != next.imageRect ||
+                (owner?.target != nil) != (next.target != nil) ||
+                owner?.pinMode != next.pinMode
             if owner?.target?.scope != next.target?.scope { cancelInput() }
             owner = next
             for recognizer in gestureRecognizers {
@@ -38,6 +47,17 @@ struct MacCanvasInput: NSViewRepresentable {
                     recognizer.isEnabled = next.target == nil
                 }
             }
+            if needsCursorReset {
+                window?.invalidateCursorRects(for: self)
+            }
+        }
+        override func resetCursorRects() {
+            super.resetCursorRects()
+            guard let owner, (owner.target != nil || owner.pinMode),
+                  owner.imageRect.width > 0, owner.imageRect.height > 0 else { return }
+            let clipped = owner.imageRect.intersection(bounds)
+            guard !clipped.isEmpty else { return }
+            addCursorRect(clipped, cursor: .crosshair)
         }
         override func resignFirstResponder() -> Bool { cancelInput(); return super.resignFirstResponder() }
 
@@ -95,7 +115,8 @@ struct MacCanvasInput: NSViewRepresentable {
             observers.append(NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.cancelInput() })
         }
         func cancelInput() {
-            targetOrigin = nil; owner?.target?.cancel()
+            targetOrigin = nil; pendingPinPoint = nil; pendingPinViewLocation = nil; pannedSinceMouseDown = false
+            owner?.target?.cancel()
             owner?.onHold(false); owner?.onPanEnd(); owner?.onHover?(nil)
             for recognizer in gestureRecognizers {
                 recognizer.isEnabled = false
@@ -131,6 +152,9 @@ struct MacCanvasInput: NSViewRepresentable {
         }
         override func mouseDown(with event: NSEvent) {
             owner?.onHold(false)
+            pendingPinPoint = nil
+            pendingPinViewLocation = nil
+            pannedSinceMouseDown = false
             if let owner, let target = owner.target {
                 let point = convert(event.locationInWindow, from: nil)
                 guard owner.imageRect.contains(point), bounds.contains(point),
@@ -143,14 +167,26 @@ struct MacCanvasInput: NSViewRepresentable {
                 window?.makeFirstResponder(self)
             } else if let owner, owner.pinMode || event.modifierFlags.contains(.option), let pinPoint = normalizedImagePoint(for: event) {
                 window?.makeFirstResponder(self)
-                owner.onPin?(pinPoint)
+                pendingPinPoint = pinPoint
+                pendingPinViewLocation = convert(event.locationInWindow, from: nil)
             } else {
                 window?.makeFirstResponder(self)
-                if event.clickCount == 2 { owner?.onDoubleClick() }
+                if event.clickCount == 2 {
+                    if let onDoubleClickPoint = owner?.onDoubleClickPoint {
+                        onDoubleClickPoint(normalizedImagePoint(for: event))
+                    } else {
+                        owner?.onDoubleClick()
+                    }
+                }
             }
         }
         @objc private func panned(_ gesture: NSPanGestureRecognizer) {
             if gesture.state == .began || gesture.state == .changed {
+                if gesture.state == .began {
+                    pannedSinceMouseDown = true
+                    pendingPinPoint = nil
+                    pendingPinViewLocation = nil
+                }
                 owner?.onHold(false)
                 let translation = gesture.translation(in: self)
                 owner?.onPan(CGSize(width: translation.x, height: translation.y))
@@ -162,15 +198,49 @@ struct MacCanvasInput: NSViewRepresentable {
                 owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
             } else { super.mouseDragged(with: event) }
         }
-        override func magnify(with event: NSEvent) { cancelInput(); super.magnify(with: event) }
-        override func scrollWheel(with event: NSEvent) { cancelInput(); super.scrollWheel(with: event) }
+        override func magnify(with event: NSEvent) {
+            cancelInput()
+            if event.magnification.isFinite, let onMagnify = owner?.onMagnify {
+                let multiplier = max(0.5, min(2.0, 1 + event.magnification))
+                onMagnify(multiplier, convert(event.locationInWindow, from: nil))
+            }
+        }
+        override func scrollWheel(with event: NSEvent) {
+            cancelInput()
+            let point = convert(event.locationInWindow, from: nil)
+            let zoomModifier = event.modifierFlags.contains(.option) || event.modifierFlags.contains(.command)
+            if (!event.hasPreciseScrollingDeltas || zoomModifier), let onMagnify = owner?.onMagnify {
+                if event.scrollingDeltaY.isFinite, abs(event.scrollingDeltaY) > 0.001 {
+                    let steps = event.hasPreciseScrollingDeltas
+                        ? max(-4.0, min(4.0, event.scrollingDeltaY / 30.0))
+                        : (event.scrollingDeltaY > 0 ? 1.0 : -1.0)
+                    onMagnify(pow(1.18, steps), point)
+                    return
+                }
+            } else if event.hasPreciseScrollingDeltas, let onScrollPan = owner?.onScrollPan {
+                if event.scrollingDeltaX.isFinite, event.scrollingDeltaY.isFinite,
+                   abs(event.scrollingDeltaX) > 0.001 || abs(event.scrollingDeltaY) > 0.001 {
+                    onScrollPan(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
+                    return
+                }
+            }
+            super.scrollWheel(with: event)
+        }
         override func mouseUp(with event: NSEvent) {
             if let origin = targetOrigin {
                 let point = convert(event.locationInWindow, from: nil)
                 owner?.target?.change(Double(origin.y-point.y) * (targetFine ? 0.125 : 0.5))
                 targetOrigin = nil
                 owner?.target?.end()
+            } else if !pannedSinceMouseDown, let pinPoint = pendingPinPoint, let start = pendingPinViewLocation {
+                let end = convert(event.locationInWindow, from: nil)
+                if hypot(end.x - start.x, end.y - start.y) < 4 {
+                    owner?.onPin?(pinPoint)
+                }
             }
+            pendingPinPoint = nil
+            pendingPinViewLocation = nil
+            pannedSinceMouseDown = false
             owner?.onHold(false); owner?.onPanEnd()
         }
     }
@@ -181,7 +251,14 @@ struct MacViewingKeyboard: NSViewRepresentable {
     var onHold: (Bool) -> Void
     var onInformation: () -> Void
     var onToggleGray50: (() -> Void)? = nil
+    var onZoomIn: (() -> Bool)? = nil
     var onEscape: () -> Bool
+
+    static func isCommandEqualsZoomShortcut(modifiers: NSEvent.ModifierFlags, charactersIgnoringModifiers: String?) -> Bool {
+        modifiers.intersection([.command, .option, .control, .shift]) == .command &&
+            charactersIgnoringModifiers == "="
+    }
+
     func makeNSView(context: Context) -> KeyboardView { KeyboardView() }
     func updateNSView(_ view: KeyboardView, context: Context) { view.owner = self }
     static func dismantleNSView(_ view: KeyboardView, coordinator: ()) { view.stop() }
@@ -199,8 +276,14 @@ struct MacViewingKeyboard: NSViewRepresentable {
                 if event.type == .keyUp && event.keyCode == self.heldKeyCode { self.heldKeyCode = nil; owner.onHold(false); return event }
                 guard event.type == .keyDown else { return event }
                 guard event.window === self.window, self.window?.isKeyWindow == true, NSApp.isActive,
-                      self.window?.attachedSheet == nil, !self.menuActive,
-                      !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
+                      self.window?.attachedSheet == nil, !self.menuActive else { return event }
+                if MacViewingKeyboard.isCommandEqualsZoomShortcut(
+                    modifiers: event.modifierFlags,
+                    charactersIgnoringModifiers: event.charactersIgnoringModifiers
+                ), let onZoomIn = owner.onZoomIn, onZoomIn() {
+                    return nil
+                }
+                guard !(self.window?.firstResponder is NSTextView), !(self.window?.firstResponder is NSTextField),
                       event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
                 if event.keyCode == 53, event.modifierFlags.intersection([.option, .shift]).isEmpty,
                    !event.isARepeat, owner.onEscape() { return nil }

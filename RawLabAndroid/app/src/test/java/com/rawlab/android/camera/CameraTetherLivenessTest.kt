@@ -1481,4 +1481,90 @@ class CameraTetherLivenessTest {
             }
         }
     }
+
+    @Test
+    fun tapFocusReticleExpiresAt1800MsOnVirtualClockAndRespectsBusyGuard() = withWorkspace { _, store, journal, lock ->
+        FakeTetherCameraServer().use { camera ->
+            camera.tetherControls = listOf(0xd2c1, 0xd2c2, 0xd2e4, 0xd2e5, 0xd2dc)
+            camera.extraProps.addAll(
+                listOf(
+                    FakeTetherCameraServer.ExtraProp(0x500a, 4, true, 1, 2),
+                    FakeTetherCameraServer.ExtraProp(0xd22c, 4, true, 1, 0x0001),
+                    FakeTetherCameraServer.ExtraProp(0xd284, 2, false, 1, 1),
+                    FakeTetherCameraServer.ExtraProp(0xd285, 2, false, 0, 0),
+                    FakeTetherCameraServer.ExtraProp(0xd213, 2, false, 1, 1),
+                ),
+            )
+            camera.on9207 = { control, value ->
+                if (control == 0xd2e4) {
+                    camera.setExtraProp(0xd285, 1, enabled = 1)
+                } else if (control == 0xd2c1 && value == 2L) {
+                    camera.setExtraProp(0xd213, 6, enabled = 1)
+                } else if (control == 0xd2c1 && value == 1L) {
+                    camera.setExtraProp(0xd213, 1, enabled = 1)
+                }
+            }
+            val focusTimeOffset = AtomicLong(0L)
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            data class PendingTimer(val deadlineMs: Long, val action: () -> Unit, var cancelled: Boolean = false)
+            val pendingTimers = java.util.Collections.synchronizedList(mutableListOf<PendingTimer>())
+            val virtualClockNow = { clock.now() + focusTimeOffset.get() }
+            val virtualFocusScheduler = FocusScheduler { delayMs, action ->
+                val timer = PendingTimer(virtualClockNow() + delayMs, action)
+                pendingTimers.add(timer)
+                object : FocusCancellable {
+                    override fun cancel() { timer.cancelled = true }
+                }
+            }
+            fun advanceVirtualFocusBy(ms: Long) {
+                focusTimeOffset.addAndGet(ms)
+                while (true) {
+                    val due = synchronized(pendingTimers) {
+                        pendingTimers.filter { !it.cancelled && it.deadlineMs <= virtualClockNow() }
+                            .minByOrNull { it.deadlineMs }
+                            ?.also { it.cancelled = true }
+                    } ?: break
+                    due.action()
+                }
+            }
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(
+                controllerScope, store, journal, lock, {}, virtualClockNow, clock::pause, virtualFocusScheduler
+            )
+            try {
+                controller.start(
+                    camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.A7CII, "BLE:focus-timer", CameraImportDestination(), false, false,
+                )
+                clock.awaitParked(controller)
+
+                // Start tap focus -> focusBusy=true, reticle visible, no expiry timer armed yet.
+                controller.setFocusTap(CameraFocusTap(0.25f, 0.5f, 160, 240))
+                assertTrue(controller.state.value.focusBusy)
+                assertEquals(0.25f, controller.state.value.focusTapU!!, 1e-6f)
+                assertEquals(0.5f, controller.state.value.focusTapV!!, 1e-6f)
+                advanceVirtualFocusBy(2_500L)
+                assertEquals(0.25f, controller.state.value.focusTapU!!, 1e-6f)
+
+                // Complete camera roundtrip -> arms 1800ms timer.
+                assertTrue(clock.stepParkedTick(controller))
+                assertFalse(controller.state.value.focusBusy)
+                assertTrue(controller.state.value.isFocusLocked)
+                assertEquals(0.25f, controller.state.value.focusTapU!!, 1e-6f)
+
+                // 1799ms: still visible.
+                advanceVirtualFocusBy(1_799L)
+                assertEquals(0.25f, controller.state.value.focusTapU!!, 1e-6f)
+                assertEquals(0.5f, controller.state.value.focusTapV!!, 1e-6f)
+
+                // +1ms (= 1800ms): reticle clears while focus lock persists.
+                advanceVirtualFocusBy(1L)
+                assertNull(controller.state.value.focusTapU)
+                assertNull(controller.state.value.focusTapV)
+                assertTrue(controller.state.value.isFocusLocked)
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
 }

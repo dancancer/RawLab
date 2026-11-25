@@ -74,6 +74,12 @@ struct MacWorkspaceLayout {
         if mode == .selection { setMode(.editing) }
     }
 
+    @discardableResult mutating func dismissDrawer() -> Bool {
+        guard drawerOpen else { return false }
+        drawerOpen = false
+        return true
+    }
+
     @discardableResult mutating func dismissTransient() -> Bool {
         if drawerOpen { drawerOpen = false; return true }
         if mode == .preview { setMode(modeBeforePreview); return true }
@@ -101,21 +107,5 @@ extension AdjustmentPanelLayout {
             let gridWidth = inspectorWidth - sectionHorizontalPadding - columnSpacing * CGFloat(columns - 1)
             return max(0, gridWidth / CGFloat(columns) - cardPadding * 2)
         }
-    }
-}
-
-// ----------------------------------------------------------------------------
-//  工具按钮下的名称：宽 72 pt，11 pt 字，只在空格或连字符处换行
-//  没有断点的名称（日文、中文、德文复合词）只占一行，放不下就缩小字号，
-//  不会出现"ホワイトバラ / ンス"这种从词中间断开的换行
-// ----------------------------------------------------------------------------
-extension AdjustmentPanelLayout {
-    enum ToolCaption {
-        static let width: CGFloat = 72
-        static let size: CGFloat = 11
-
-        static func breaksBetweenWords(_ title: String) -> Bool { title.contains(" ") || title.contains("-") }
-        static func lineLimit(for title: String) -> Int { breaksBetweenWords(title) ? 2 : 1 }
-        static func minimumScale(for title: String) -> CGFloat { breaksBetweenWords(title) ? 1 : 0.75 }
     }
 }

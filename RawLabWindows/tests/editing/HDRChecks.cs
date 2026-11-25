@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using RawLab.Windows;
 
 internal static class HDRChecks
@@ -33,7 +34,51 @@ internal static class HDRChecks
         Check(JsonSerializer.Deserialize<ExportFormat>("1")==ExportFormat.Png &&
             JsonSerializer.Deserialize<ExportFormat>("2")==ExportFormat.RenderedDng,
             "Existing journal enum numbers keep PNG and DNG meanings");
+        CanonicalHdrSdrParityChecks();
         Console.WriteLine("PASS: Windows HDR settings, snapshot isolation, transfer v2 and ABI model");
+    }
+
+    private static void CanonicalHdrSdrParityChecks()
+    {
+        var parity = new Adjustments { HDR = new HDRSettings { Mode = HDRMode.Hdr } };
+        parity.Set(Parameter.Contrast, 1.25);
+        parity.Set(Parameter.Highlights, 0.2);
+        parity.Set(Parameter.Shadows, -0.3);
+        parity.Set(Parameter.ToneCurve, 0.4);
+        parity.Set(Parameter.Saturation, 0.85);
+        parity.Set(Parameter.Sharpening, 0.65);
+        Check(Math.Abs(parity.HDR.Contrast - 25) < 1e-9 &&
+              Math.Abs(parity.HDR.Highlights - (-20)) < 1e-9 &&
+              Math.Abs(parity.HDR.Shadows - (-30)) < 1e-9 &&
+              Math.Abs(parity.HDR.ToneSettings.CurveStrength - 40) < 1e-9 &&
+              Math.Abs(parity.HDR.Saturation - (-15)) < 1e-9 &&
+              Math.Abs(parity.HDR.DetailSettings.Sharpening - 0.65) < 1e-9 &&
+              Math.Abs(parity[Parameter.Contrast] - 1.25) < 1e-9 &&
+              Math.Abs(parity[Parameter.Highlights] - 0.2) < 1e-9 &&
+              Math.Abs(parity[Parameter.Shadows] - (-0.3)) < 1e-9 &&
+              Math.Abs(parity[Parameter.ToneCurve] - 0.4) < 1e-9 &&
+              Math.Abs(parity[Parameter.Saturation] - 0.85) < 1e-9 &&
+              Math.Abs(parity[Parameter.Sharpening] - 0.65) < 1e-9 &&
+              Math.Abs(ParameterSpec.All[(int)Parameter.Highlights].ToDisplay(parity[Parameter.Highlights]) - (-20)) < 1e-9 &&
+              Math.Abs(ParameterSpec.All[(int)Parameter.Contrast].ToDisplay(parity[Parameter.Contrast]) - 25) < 1e-9 &&
+              Math.Abs(ParameterSpec.All[(int)Parameter.Saturation].ToDisplay(parity[Parameter.Saturation]) - (-15)) < 1e-9 &&
+              Math.Abs(ParameterSpec.All[(int)Parameter.Sharpening].ToDisplay(parity[Parameter.Sharpening]) - 65) < 1e-9,
+            "HDR and SDR share canonical model units and ParameterSpec display conversions");
+
+        var contrastSpec = ParameterSpec.All[(int)Parameter.Contrast];
+        var saturationSpec = ParameterSpec.All[(int)Parameter.Saturation];
+        Check(contrastSpec.ToDisplay(1.4) == 40 &&
+              contrastSpec.ToDisplay(contrastSpec.ToCanonical(1.1)) == 1.1 &&
+              saturationSpec.ToDisplay(0.9) == -10 &&
+              saturationSpec.ToDisplay(saturationSpec.ToCanonical(-10)) == -10,
+            "ParameterSpec display conversion avoids IEEE 754 binary64 1-ULP drift");
+
+        var precisionHdr = new HDRSettings { Mode = HDRMode.Hdr }
+            .Set(Parameter.Contrast, 1.4)
+            .Set(Parameter.Saturation, 0.9)
+            .Set(Parameter.ToneCurve, 0.14);
+        Check(precisionHdr.Contrast == 40 && precisionHdr.Saturation == -10 && precisionHdr.ToneSettings.CurveStrength == 14,
+            "HDRSettings.Set avoids IEEE 754 binary64 1-ULP percentage drift");
     }
 
     private static void NeutralReferenceKeepsOnlyCameraLensSettings()
@@ -214,15 +259,21 @@ internal static class HDRChecks
     {
         var recipe = new Adjustments();
         recipe.ApplyMasterRecipe(MasterRecipe.All[0]);
-        recipe.Set(Parameter.Strength, 50); recipe.Set(Parameter.Exposure, 1);
-        recipe.Set(Parameter.Contrast, 40); recipe.Set(Parameter.Highlights, -60);
-        recipe.Set(Parameter.Shadows, 80); recipe.Set(Parameter.Saturation, -20);
+        recipe.Set(Parameter.Strength, .5); recipe.Set(Parameter.Exposure, 1);
+        recipe.Set(Parameter.Contrast, 1.4); recipe.Set(Parameter.Highlights, .6);
+        recipe.Set(Parameter.Shadows, .8); recipe.Set(Parameter.Saturation, .8);
         var effective = HDRSettings.FromSdr(recipe);
-        Check(effective.Exposure == .5 && effective.Contrast == 20 && effective.Highlights == -30 &&
-              effective.Shadows == 40 && effective.Saturation == -10, "Gain-map HDR uses effective recipe values");
-        recipe.Set(Parameter.Strength, 200); recipe.Set(Parameter.Exposure, 4);
-        recipe.Set(Parameter.Contrast, 100); recipe.Set(Parameter.Highlights, -100);
-        recipe.Set(Parameter.Shadows, 100); recipe.Set(Parameter.Saturation, -100);
+        Check(Math.Abs(effective.Exposure - .5) < 1e-9 &&
+              Math.Abs(effective.Contrast - 20) < 1e-9 &&
+              Math.Abs(effective.Highlights - (-30)) < 1e-9 &&
+              Math.Abs(effective.Shadows - 40) < 1e-9 &&
+              Math.Abs(effective.Saturation - (-10)) < 1e-9,
+            "Gain-map HDR uses effective recipe values");
+        Check(effective.Contrast == 20 && effective.Saturation == -10,
+            "Gain-map HDR FromSdr rounds percentage conversions cleanly without IEEE 754 1-ULP drift");
+        recipe.Set(Parameter.Strength, 2); recipe.Set(Parameter.Exposure, 4);
+        recipe.Set(Parameter.Contrast, 2); recipe.Set(Parameter.Highlights, 1);
+        recipe.Set(Parameter.Shadows, 1); recipe.Set(Parameter.Saturation, 0);
         var bounded = HDRSettings.FromSdr(recipe);
         Check(bounded.Exposure == 4 && bounded.Contrast == 100 && bounded.Highlights == -100 &&
               bounded.Shadows == 100 && bounded.Saturation == -100 && bounded.IsValid, "Gain-map HDR clamps effective values");
@@ -321,32 +372,16 @@ internal static class HDRChecks
 
     private static void NativeLayoutsMatchHDRContract()
     {
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequest>() == 88,
-            "HDR request layout is stable");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV2>() == 648 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV2>(nameof(Native.HDRRequestV2.Curve)).ToInt32() == 104,
-            "HDR v2 request preserves the base prefix and aligned curve tail");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV3>() == 792 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV3>(nameof(Native.HDRRequestV3.Hsl)).ToInt32() == 656 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV3>(nameof(Native.HDRRequestV3.Grading)).ToInt32() == 760,
-            "HDR v3 preserves the native tone prefix and color tail");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV4>() == 808 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV4>(nameof(Native.HDRRequestV4.PeakLimitEV)).ToInt32() == 792,
-            "HDR v4 preserves the native color prefix and rendition tail");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV5>() == 848 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV5>(nameof(Native.HDRRequestV5.Effects)).ToInt32() == 808,
-            "HDR v5 preserves the native rendition prefix and effects tail");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV6>() == 864 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV6>(nameof(Native.HDRRequestV6.Sharpening)).ToInt32() == 848,
-            "HDR v6 preserves the effects prefix and detail tail");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV7>() == 952 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV7>(nameof(Native.HDRRequestV7.LookPath)).ToInt32() == 864 &&
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.RenderOptions>() == 120 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.RenderOptions>(nameof(Native.RenderOptions.InputPath)).ToInt32() == 16 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.RenderOptions>(nameof(Native.RenderOptions.OutputPath)).ToInt32() == 104 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.RenderOptions>(nameof(Native.RenderOptions.JpegQuality)).ToInt32() == 112,
+            "Session render options layout matches sony2fuji_render_options_v1");
+        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRenderOptions>() == 16 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRenderOptions>(nameof(Native.HDRRenderOptions.Intent)).ToInt32() == 8 &&
+              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRenderOptions>(nameof(Native.HDRRenderOptions.LongEdge)).ToInt32() == 12 &&
               System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRLookInfo>() == 108,
-            "HDR v7 preserves the detail prefix and look probe layout");
-        Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() == 2696 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.ParametricCurve)).ToInt32() == 2592 &&
-              System.Runtime.InteropServices.Marshal.OffsetOf<Native.HDRRequestV9>(nameof(Native.HDRRequestV9.GradingV2)).ToInt32() == 2632,
-            "HDR v9 preserves the channel-curve prefix and v2 grading/parametric curve tail");
+            "HDR execution options and look probe layouts are stable");
         var hdrV9 = new HDRSettings
         {
             Color = new HDRColorSettings
@@ -361,15 +396,15 @@ internal static class HDRChecks
             }
         };
         Check(hdrV9.ProcessingVersion == 9, "Grading v2 extensions promote HDR ProcessingVersion to 9");
-        var v9Native = hdrV9.NativeRenderRequest(HDRIntent.Preview);
-        Check(v9Native.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == 2696 &&
-              v9Native.ParametricCurve.Version == 1 && v9Native.ParametricCurve.StructSize == 40 &&
-              v9Native.ParametricCurve.SplitShadow == 0.25f &&
-              v9Native.GradingV2.Version == 2 && v9Native.GradingV2.StructSize == 64 &&
-              v9Native.GradingV2.ShadowsLuminance == -10f &&
-              v9Native.GradingV2.GlobalHue == 45f && v9Native.GradingV2.GlobalLuminance == -15f &&
-              v9Native.GradingV2.Blending == 80f && v9Native.GradingV2.Balance == 30f,
-            "HDR v9 native request marshals parametric defaults and Color Grading v2 fields");
+        var v9State = JsonNode.Parse(hdrV9.ToCanonicalEditStateJson())!.AsObject();
+        Check(v9State["schema_version"]!.GetValue<int>() == 16 &&
+              v9State["processing"]!["version"]!.GetValue<int>() == 9 &&
+              v9State["edits"]!["color_grading"]!["shadows"]!["luminance"]!.GetValue<double>() == -10 &&
+              v9State["edits"]!["color_grading"]!["global"]!["hue"]!.GetValue<double>() == 45 &&
+              v9State["edits"]!["color_grading"]!["global"]!["luminance"]!.GetValue<double>() == -15 &&
+              v9State["edits"]!["color_grading"]!["blending"]!.GetValue<double>() == 80 &&
+              v9State["edits"]!["color_grading"]!["balance"]!.GetValue<double>() == 30,
+            "HDR v9 canonical edit state serializes Color Grading v2 fields");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRCameraDevelopment>() == 40,
             "Camera development has a stable ABI");
         Check(System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRSourceInfo>() == 76 &&
@@ -393,9 +428,13 @@ internal static class HDRChecks
         var neutral = new SavedEdit(identity, adjustments.Capture(), null);
         var rendition = new HDRRenditionSettings { PeakLimitEV=2, SdrExposureEV=-.75, SdrContrast=25, SdrSaturation=-15 };
         adjustments.HDR = adjustments.HDR.WithRendition(rendition);
-        var native = adjustments.HDR.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base.Base;
-        Check(native.Base.Base.Base.StructSize == 808 && native.PeakLimitEV == 2 && native.SdrExposureEV == -.75 &&
-              native.SdrContrast == 25 && native.SdrSaturation == -15, "Native HDR v4 values");
+        var v4State = JsonNode.Parse(adjustments.HDR.ToCanonicalEditStateJson())!.AsObject();
+        Check(v4State["processing"]!["version"]!.GetValue<int>() == 4 &&
+              v4State["edits"]!["rendition"]!["peak_limit_ev"]!.GetValue<double>() == 2 &&
+              v4State["edits"]!["rendition"]!["sdr_exposure_ev"]!.GetValue<double>() == -0.75 &&
+              Math.Abs(v4State["edits"]!["rendition"]!["sdr_contrast"]!.GetValue<double>() - 0.25) < 1e-6 &&
+              Math.Abs(v4State["edits"]!["rendition"]!["sdr_saturation"]!.GetValue<double>() - (-0.15)) < 1e-6,
+            "Canonical HDR v4 values");
         var context = new AdjustmentTransferContext("hdr.jpg", false);
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Modified,new(identity,adjustments.Capture(),null),context);
         var prepared = AdjustmentTransfer.Prepare(AdjustmentPayload.Parse(payload.ToJson()),neutral,context);
@@ -425,9 +464,11 @@ internal static class HDRChecks
         Check(restored.SameAs(snapshot) && restored.Effects == sdr &&
               restored.HDR!.ProcessingVersion == 5 && restored.HDR.EffectSettings.GrainAmount == 40,
             "HDR effects round-trip independently of the ordinary SDR effect");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base.Base;
-        Check(native.Base.Base.Base.Base.StructSize == 848 && native.Effects.GrainAmount == 40 &&
-              native.Effects.VignetteAmount == -55,"Native HDR v5 effects match the saved record");
+        var v5State = JsonNode.Parse(restored.HDR!.ToCanonicalEditStateJson())!.AsObject();
+        Check(v5State["processing"]!["version"]!.GetValue<int>() == 5 &&
+              v5State["edits"]!["effects"]!["grain_amount"]!.GetValue<double>() == 40 &&
+              v5State["edits"]!["effects"]!["vignette_amount"]!.GetValue<double>() == -55,
+            "Canonical HDR v5 effects match the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
         var context = new AdjustmentTransferContext("hdr.jpg",false);
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Modified,new(id,snapshot,null),context);
@@ -441,21 +482,25 @@ internal static class HDRChecks
     private static void DetailKeepsHDRAndSDRIndependent()
     {
         var state = new Adjustments();
-        state.Set(Parameter.Sharpening, 25);
+        state.Set(Parameter.Sharpening, .25);
         state.SetAtmosphere(AtmosphereParameter.Clarity, -15);
         state.HDR = new HDRSettings();
-        state.Set(Parameter.Sharpening, 130);
+        state.Set(Parameter.Sharpening, 1.3);
         state.SetAtmosphere(AtmosphereParameter.Clarity, 50);
         state.SetAtmosphere(AtmosphereParameter.Dehaze, -25);
         state.HDR = state.HDR.WithDetail(state.HDR.DetailSettings with { Denoise = .75 });
         var snapshot = state.Capture();
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.HDR!.ProcessingVersion == 6 &&
-            restored.Values[(int)Parameter.Sharpening] == 25 && restored.Atmosphere!.Clarity == -15,
+            restored.Values[(int)Parameter.Sharpening] == .25 && restored.Atmosphere!.Clarity == -15,
             "HDR detail persists independently of dormant SDR settings");
-        var native = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base.Base;
-        Check(native.Base.Base.Base.Base.Base.StructSize == 864 && native.Sharpening == 1.3f && native.Clarity == .5f &&
-            native.Dehaze == -.25f && native.Denoise == .75f,"Native HDR v6 detail matches the saved record");
+        var v6State = JsonNode.Parse(restored.HDR!.ToCanonicalEditStateJson())!.AsObject();
+        Check(v6State["processing"]!["version"]!.GetValue<int>() == 6 &&
+              Math.Abs(v6State["edits"]!["detail"]!["sharpening"]!.GetValue<double>() - 1.3) < 1e-6 &&
+              Math.Abs(v6State["edits"]!["detail"]!["clarity"]!.GetValue<double>() - 0.5) < 1e-6 &&
+              Math.Abs(v6State["edits"]!["detail"]!["dehaze"]!.GetValue<double>() - (-0.25)) < 1e-6 &&
+              Math.Abs(v6State["edits"]!["detail"]!["denoise"]!.GetValue<double>() - 0.75) < 1e-6,
+            "Canonical HDR v6 detail matches the saved record");
         var id = new OriginalIdentity("hdr.jpg",1,2,3);
         var context = new AdjustmentTransferContext("hdr.jpg",false);
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Modified,new(id,snapshot,null),context);
@@ -481,10 +526,12 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.HDR is { ProcessingVersion: 7 } &&
             restored.HDR.LookSettings == look, "HDR look round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final).Base.Base;
-        Check(request.Base.Base.Base.Base.Base.Base.StructSize == 952 && request.LookPath == look.AssetPath() &&
-            request.LookStrength == .65f && System.Text.Encoding.ASCII.GetString(request.LookSha256, 0, 64) == look.Sha256,
-            "HDR look maps to the v7 request");
+        var v7State = JsonNode.Parse(restored.HDR!.ToCanonicalEditStateJson())!.AsObject();
+        Check(v7State["processing"]!["version"]!.GetValue<int>() == 7 &&
+              v7State["edits"]!["look"]!["path"]!.GetValue<string>() == look.AssetPath() &&
+              Math.Abs(v7State["edits"]!["look"]!["strength"]!.GetValue<double>() - 0.65) < 1e-6 &&
+              v7State["edits"]!["look"]!["sha256"]!.GetValue<string>() == look.Sha256,
+            "HDR look maps to the v7 canonical JSON");
         var context = new AdjustmentTransferContext("hdr.jpg",false);
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Modified, saved, context);
         Check(payload.Source.HdrProcessingVersion == 7 && payload.Fields.SetEquals(new[] { AdjustmentField.HdrLook }) &&
@@ -494,6 +541,28 @@ internal static class HDRChecks
             AdjustmentTransfer.Prepare(payload,saved,context);
             throw new Exception("Missing HDR look was accepted");
         } catch (AdjustmentTransferException error) when (error.Failure == AdjustmentFailure.MissingLook) { }
+        var isolatedLooksDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "rawlab-hdr-looks-" + Guid.NewGuid().ToString("N"));
+        try {
+            System.IO.Directory.CreateDirectory(isolatedLooksDir);
+            var cubeBytes = System.Text.Encoding.ASCII.GetBytes("LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n");
+            var isolatedDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cubeBytes)).ToLowerInvariant();
+            var isolatedLook = new HDRLookSettings(isolatedDigest, "Isolated HDR LUT", .75);
+            System.IO.File.WriteAllBytes(isolatedLook.AssetPath(isolatedLooksDir)!, cubeBytes);
+            var isolatedSaved = new SavedEdit(new OriginalIdentity("hdr.jpg",1,2,3),
+                new Adjustments { HDR = new HDRSettings().WithLook(isolatedLook) }.Capture(), null);
+            var isolatedPayload = AdjustmentTransfer.Capture(AdjustmentScope.Modified, isolatedSaved, context);
+            var isolatedTarget = new SavedEdit(new OriginalIdentity("hdr.jpg",1,2,3),
+                new Adjustments { HDR = new HDRSettings() }.Capture(), null);
+            try {
+                AdjustmentTransfer.Prepare(isolatedPayload, isolatedTarget, context);
+                throw new Exception("Default look directory unexpectedly resolved isolated HDR look");
+            } catch (AdjustmentTransferException error) when (error.Failure == AdjustmentFailure.MissingLook) { }
+            var prepared = AdjustmentTransfer.Prepare(isolatedPayload, isolatedTarget, context with { HdrLooksDirectory = isolatedLooksDir });
+            Check(prepared.Settings.HDR?.LookSettings == isolatedLook,
+                "HDR look transfer honors custom HdrLooksDirectory");
+        } finally {
+            if (System.IO.Directory.Exists(isolatedLooksDir)) System.IO.Directory.Delete(isolatedLooksDir, true);
+        }
         Check(state.HDR.Reset() is { ProcessingVersion: 7, IsIdentity: true },
             "Clearing the look keeps HDR v7");
     }
@@ -533,26 +602,31 @@ internal static class HDRChecks
     {
         var sdrCurve = ToneCurveSettings.Identity;
         var settings = new Adjustments { Curve = sdrCurve, ToneControls = new(-8, 9) };
-        settings.Set(Parameter.ToneCurve, 12);
+        settings.Set(Parameter.ToneCurve, .12);
         settings.HDR = new();
-        Check(settings.HDR.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base.Base.Base.StructSize == 88,
-            "Unedited HDR stays on request v1");
+        var v1State = JsonNode.Parse(settings.HDR.ToCanonicalEditStateJson())!.AsObject();
+        Check(v1State["schema_version"]!.GetValue<int>() == 6 && v1State["processing"]!["version"]!.GetValue<int>() == 1,
+            "Unedited HDR stays on processing version 1");
         settings.SetTone(ToneControlParameter.BlackPoint, -25);
         settings.SetTone(ToneControlParameter.WhitePoint, 50);
-        settings.Set(Parameter.ToneCurve, 30);
+        settings.Set(Parameter.ToneCurve, .30);
         settings.EditingCurve = ToneCurveSettings.Identity.Inserting(.5, .625);
-        Check(settings[Parameter.ToneCurve] == 30 && settings.EditingToneValue(ToneControlParameter.BlackPoint) == -25 &&
+        Check(settings[Parameter.ToneCurve] == .30 && settings.EditingToneValue(ToneControlParameter.BlackPoint) == -25 &&
               settings.EditingToneValue(ToneControlParameter.WhitePoint) == 50 && settings.HDR.ProcessingVersion == 2,
             "HDR tone edits use the active v2 record");
         var snapshot = settings.Capture();
-        Check(snapshot.Values[(int)Parameter.ToneCurve] == 12 && snapshot.Curve == sdrCurve && snapshot.ToneControls == new ToneControlsSettings(-8, 9),
+        Check(snapshot.Values[(int)Parameter.ToneCurve] == .12 && snapshot.Curve == sdrCurve && snapshot.ToneControls == new ToneControlsSettings(-8, 9),
             "HDR tone edits preserve the dormant SDR record");
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!.Restore();
         Check(restored.Capture().SameAs(snapshot), "Windows HDR tone settings round-trip");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Final, 512).Base.Base.Base.Base.Base.Base.Base;
-        Check(request.Base.Version == 1 && request.Base.HDRProcessingVersion == 2 && request.Base.StructSize == 648 &&
-              request.BlackPoint == -25 && request.WhitePoint == 50 && request.CurveStrength == 30 &&
-              request.Curve.Count == 3 && request.Curve.Points[3] == .625, "Windows maps HDR tone to the C ABI");
+        var v2State = JsonNode.Parse(restored.HDR!.ToCanonicalEditStateJson())!.AsObject();
+        Check(v2State["processing"]!["version"]!.GetValue<int>() == 2 &&
+              Math.Abs(v2State["edits"]!["tone"]!["black_point"]!.GetValue<double>() - (-0.25)) < 1e-6 &&
+              Math.Abs(v2State["edits"]!["tone"]!["white_point"]!.GetValue<double>() - 0.5) < 1e-6 &&
+              v2State["edits"]!["tone"]!["s_curve"]!.GetValue<double>() == 0 &&
+              v2State["edits"]!["tone"]!["curve"]!["points"]!.AsArray().Count == 3 &&
+              Math.Abs(v2State["edits"]!["tone"]!["curve"]!["points"]![1]![1]!.GetValue<double>() - 0.625) < 1e-6,
+            "Windows maps HDR tone to canonical JSON");
         var identity = new OriginalIdentity("hdr.jpg", 1, 2, 3);
         var source = new SavedEdit(identity, snapshot, null);
         var reset = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.Group, EditorAdjustmentGroup.Light), source).Candidate!;
@@ -583,9 +657,13 @@ internal static class HDRChecks
         var restored = JsonSerializer.Deserialize<AdjustmentSnapshot>(JsonSerializer.Serialize(snapshot))!;
         Check(restored.SameAs(snapshot) && restored.Hsl!.Equals(sdrHsl) && (restored.ToneControls?.Vibrance ?? 0) == 0 &&
               restored.HDR!.ProcessingVersion == 3 && restored.HDR.ToneSettings.IsDefault, "HDR color round-trips independently");
-        var request = restored.HDR!.NativeRenderRequest(HDRIntent.Preview).Base.Base.Base.Base.Base.Base;
-        Check(request.Base.Base.StructSize == 792 && request.Vibrance == 35 && request.Hsl.Saturation[5] == -12.5 &&
-              request.Grading.HighlightsHue == 215 && request.Grading.HighlightsSaturation == 30, "HDR colors map to ABI");
+        var v3State = JsonNode.Parse(restored.HDR!.ToCanonicalEditStateJson())!.AsObject();
+        Check(v3State["processing"]!["version"]!.GetValue<int>() == 3 &&
+              Math.Abs(v3State["edits"]!["color"]!["vibrance"]!.GetValue<double>() - 0.35) < 1e-6 &&
+              Math.Abs(v3State["edits"]!["hsl"]!["saturation"]![5]!.GetValue<double>() - (-12.5)) < 1e-6 &&
+              v3State["edits"]!["color_grading"]!["highlights"]!["hue"]!.GetValue<double>() == 215 &&
+              v3State["edits"]!["color_grading"]!["highlights"]!["saturation"]!.GetValue<double>() == 30,
+            "HDR colors map to canonical JSON");
         var source = new SavedEdit(new OriginalIdentity("hdr.jpg", 1, 2, 3), snapshot, null);
         var context = new AdjustmentTransferContext("hdr.jpg", false);
         var payload = AdjustmentTransfer.Capture(AdjustmentScope.Modified, source, context);
@@ -629,7 +707,7 @@ internal static class HDRChecks
         var identity = new OriginalIdentity("hdr.arw", 1, 2, 3);
         var sdrBase = new Adjustments();
         sdrBase.Set(Parameter.Exposure, -.5);
-        sdrBase.Set(Parameter.Contrast, 25);
+        sdrBase.Set(Parameter.Contrast, 1.25);
         var renditionHdr = sdrBase.Clone();
         renditionHdr.SetHDRMode(true, sourceIsHDR: true, cameraRaw: true);
         renditionHdr.Set(Parameter.Exposure, 1.5);
@@ -790,7 +868,7 @@ internal static class HDRChecks
         };
         sdrEdited.ResolveWhiteBalance((5200, 4));
         sdrEdited.Set(Parameter.Exposure, .9);
-        sdrEdited.Set(Parameter.Saturation, 22);
+        sdrEdited.Set(Parameter.Saturation, 1.22);
 
         var edit = new SavedEdit(identity, sdrEdited.Capture(), "builtin:provia.cube");
         var ruleReset = EditorAdjustmentRules.PrepareReset(all, edit);
@@ -799,7 +877,7 @@ internal static class HDRChecks
         var ruleRestored = ruleReset.Candidate!.Settings.Restore();
         Check(ruleReset.Candidate.Look == null &&
               ruleRestored[Parameter.Exposure] == 0 &&
-              ruleRestored[Parameter.Saturation] == 0 &&
+              ruleRestored[Parameter.Saturation] == 1 &&
               ruleRestored.Denoise == new DenoiseSettings() &&
               !ruleRestored.AIDenoiseEnabled &&
               ruleRestored.Effects == new PhotoEffectsSettings() &&

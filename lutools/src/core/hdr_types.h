@@ -13,6 +13,7 @@ inline constexpr uint32_t kHdrProcessingDetailVersion = 6u;
 inline constexpr uint32_t kHdrProcessingLookVersion = 7u;
 inline constexpr uint32_t kHdrProcessingChannelCurvesVersion = 8u;
 inline constexpr uint32_t kHdrProcessingV2GradingCurveVersion = 9u;
+inline constexpr uint32_t kHdrProcessingFreeCurveXVersion = 10u;
 
 inline constexpr uint32_t kHdrHeadroomUnknown = 0u;
 inline constexpr uint32_t kHdrHeadroomDeclared = 1u;
@@ -44,6 +45,11 @@ inline constexpr uint32_t kHdrIntentFinal = 1u;
 inline constexpr uint32_t kHdrSdrOutputJpeg = 0u;
 inline constexpr uint32_t kHdrSdrOutputPng = 1u;
 inline constexpr uint32_t kHdrSdrOutputDng = 4u;
+
+inline constexpr uint32_t kHdrCameraLensDistortion = 1u;
+inline constexpr uint32_t kHdrCameraLensTca = 2u;
+inline constexpr uint32_t kHdrCameraLensAutoCrop = 4u;
+inline constexpr uint32_t kHdrCameraLensVignetting = 8u;
 
 inline constexpr uint32_t kHdrReasonNone = 0u;
 inline constexpr uint32_t kHdrReasonUnsupportedSystem = 1u;

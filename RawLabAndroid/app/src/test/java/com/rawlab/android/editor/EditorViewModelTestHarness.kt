@@ -13,6 +13,10 @@ import com.rawlab.android.analytics.UsageAnalytics
 import com.rawlab.android.analytics.UsageConsentStore
 import com.rawlab.android.analytics.UsageInstallId
 import com.rawlab.android.analytics.UnavailableUsageTransport
+import com.rawlab.android.editor.canvas.DetailTileKey
+import com.rawlab.android.editor.canvas.DetailTileSpec
+import com.rawlab.android.editor.canvas.NormalizedRect
+import com.rawlab.android.editor.canvas.ViewportTilePlanner
 import com.rawlab.android.editor.render.ExportDestinationCleanup
 import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
@@ -256,6 +260,115 @@ internal class EditorViewModelTestHarness : AutoCloseable {
         else throw IllegalArgumentException("Invalid look: ${file.name}")
     }
     val testDcpCompiler = DcpCompiler { _, _, _, _ -> throw UnsupportedOperationException("No DCP in JVM test") }
+    val tilePlanner: ViewportTilePlanner = object : ViewportTilePlanner {
+        override fun pyramidLevel(zoomScale: Float, baseScale: Float): Int? {
+            if (!zoomScale.isFinite() || !baseScale.isFinite() || zoomScale <= 0f ||
+                minOf(1f, zoomScale) <= baseScale * 1.05f
+            ) return null
+            val threshold = baseScale * 1.05f
+            val skipLevel1Threshold = baseScale * 1.35f
+            return when {
+                zoomScale >= 0.65f -> 0
+                zoomScale >= 0.325f && 0.5f > skipLevel1Threshold -> 1
+                0.25f > threshold -> 2
+                0.5f > skipLevel1Threshold -> 1
+                else -> 0
+            }
+        }
+
+        override fun pyramidTiles(
+            visibleRect: NormalizedRect,
+            fullNativeWidth: Int,
+            fullNativeHeight: Int,
+            zoomScale: Float,
+            baseScale: Float,
+            tileSize: Int,
+            overscanRing: Int,
+        ): List<DetailTileSpec> {
+            val level = pyramidLevel(zoomScale, baseScale) ?: return emptyList()
+            if (tileSize <= 0 || fullNativeWidth <= 0 || fullNativeHeight <= 0 ||
+                visibleRect.width <= 0f || visibleRect.height <= 0f
+            ) return emptyList()
+            val levelScale = 1f / (1 shl level)
+            val nativeSpan = tileSize shl level
+            val vx0 = kotlin.math.floor(visibleRect.x0 * fullNativeWidth).toInt().coerceIn(0, fullNativeWidth - 1)
+            val vy0 = kotlin.math.floor(visibleRect.y0 * fullNativeHeight).toInt().coerceIn(0, fullNativeHeight - 1)
+            val vx1 = kotlin.math.ceil(visibleRect.x1 * fullNativeWidth).toInt().coerceIn(vx0 + 1, fullNativeWidth)
+            val vy1 = kotlin.math.ceil(visibleRect.y1 * fullNativeHeight).toInt().coerceIn(vy0 + 1, fullNativeHeight)
+            val maxCol = (fullNativeWidth - 1) / nativeSpan
+            val maxRow = (fullNativeHeight - 1) / nativeSpan
+            val colMin = maxOf(0, vx0 / nativeSpan)
+            val colMax = minOf(maxCol, maxOf(0, (vx1 - 1) / nativeSpan))
+            val rowMin = maxOf(0, vy0 / nativeSpan)
+            val rowMax = minOf(maxRow, maxOf(0, (vy1 - 1) / nativeSpan))
+            val cx = (visibleRect.x0 + visibleRect.x1) * 0.5f
+            val cy = (visibleRect.y0 + visibleRect.y1) * 0.5f
+            fun makeSpec(col: Int, row: Int): DetailTileSpec? {
+                val px0 = col * nativeSpan
+                val px1 = minOf(fullNativeWidth, px0 + nativeSpan)
+                val py0 = row * nativeSpan
+                val py1 = minOf(fullNativeHeight, py0 + nativeSpan)
+                if (px1 <= px0 || py1 <= py0) return null
+                val rect = NormalizedRect(
+                    px0.toFloat() / fullNativeWidth,
+                    py0.toFloat() / fullNativeHeight,
+                    px1.toFloat() / fullNativeWidth,
+                    py1.toFloat() / fullNativeHeight,
+                )
+                val edge = minOf(tileSize, maxOf(1, kotlin.math.round(maxOf(px1 - px0, py1 - py0) * levelScale).toInt()))
+                return DetailTileSpec(DetailTileKey(level, col, row), rect, edge)
+            }
+            val visibleSpecs = ArrayList<DetailTileSpec>()
+            for (r in rowMin..rowMax) for (c in colMin..colMax) makeSpec(c, r)?.let { visibleSpecs += it }
+            visibleSpecs.sortBy { s ->
+                val dx = (s.rect.x0 + s.rect.x1) * 0.5f - cx
+                val dy = (s.rect.y0 + s.rect.y1) * 0.5f - cy
+                dx * dx + dy * dy
+            }
+            if (overscanRing <= 0) return visibleSpecs
+            val seen = visibleSpecs.mapTo(HashSet()) { it.key }
+            val oColMin = maxOf(0, colMin - overscanRing)
+            val oColMax = minOf(maxCol, colMax + overscanRing)
+            val oRowMin = maxOf(0, rowMin - overscanRing)
+            val oRowMax = minOf(maxRow, rowMax + overscanRing)
+            val overscanSpecs = ArrayList<DetailTileSpec>()
+            for (r in oRowMin..oRowMax) for (c in oColMin..oColMax) {
+                if (DetailTileKey(level, c, r) !in seen) makeSpec(c, r)?.let { overscanSpecs += it }
+            }
+            overscanSpecs.sortBy { s ->
+                val dx = (s.rect.x0 + s.rect.x1) * 0.5f - cx
+                val dy = (s.rect.y0 + s.rect.y1) * 0.5f - cy
+                dx * dx + dy * dy
+            }
+            return visibleSpecs + overscanSpecs
+        }
+
+        override fun pyramidLevel0Grid(fullNativeWidth: Int, fullNativeHeight: Int, tileSize: Int): List<DetailTileSpec> =
+            pyramidTiles(NormalizedRect(0f, 0f, 1f, 1f), fullNativeWidth, fullNativeHeight, 1f, 0.1f, tileSize, 0)
+
+        override fun detailOverlayCovers(
+            normalizedRect: NormalizedRect,
+            pixelWidth: Int,
+            pixelHeight: Int,
+            fullNativeWidth: Int,
+            fullNativeHeight: Int,
+            visibleRect: NormalizedRect,
+            requiredZoomScale: Float,
+            maxOutputLongEdge: Int,
+        ): Boolean {
+            val tol = 0.0005f
+            if (normalizedRect.x0 > visibleRect.x0 + tol || normalizedRect.y0 > visibleRect.y0 + tol ||
+                normalizedRect.x1 < visibleRect.x1 - tol || normalizedRect.y1 < visibleRect.y1 - tol ||
+                normalizedRect.width <= 0f || pixelWidth <= 0 || pixelHeight <= 0 ||
+                fullNativeWidth <= 0 || fullNativeHeight <= 0
+            ) return false
+            val nativeW = normalizedRect.width * fullNativeWidth.toFloat()
+            val nativeH = normalizedRect.height * fullNativeHeight.toFloat()
+            val density = pixelWidth.toFloat() / nativeW
+            val maxAch = if (maxOutputLongEdge > 0) minOf(1f, maxOutputLongEdge.toFloat() / maxOf(1f, maxOf(nativeW, nativeH))) else 1f
+            return density >= minOf(1f, requiredZoomScale, maxAch) * 0.9f
+        }
+    }
 
     init {
         mainExecutor.submit { mainThread = Thread.currentThread() }.get(5, TimeUnit.SECONDS)
@@ -346,6 +459,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
                     com.rawlab.android.settings.ToneCurvePoint(1.0, 1.0),
                 )
             },
+            viewportTilePlanner = tilePlanner,
         )
     }
 

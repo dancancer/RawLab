@@ -87,6 +87,7 @@ public static class AdjustmentFieldSpec
             public const int CustomMaxPoints = 33;
             public const double CoordMin = 0.0;
             public const double CoordMax = 1.0;
+            public const bool EndpointsXUnpinned = true;
             public const bool EndpointsYUnpinned = true;
             public static readonly IReadOnlyList<string> AllowedChannels = ["red", "green", "blue"];
         }
@@ -161,7 +162,7 @@ public static class AdjustmentFieldSpec
             "looks.strength",
             "looks",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 2.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr"], "double", false, 0.0, 200.0, AdjustmentModelDefault.FromNumber(100.0), "p * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr"], "double", false, 0.0, 2.0, AdjustmentModelDefault.FromNumber(1.0), "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition LightExposure = new(
             "light.exposure",
             "light",
@@ -176,22 +177,22 @@ public static class AdjustmentFieldSpec
             "light.contrast",
             "light",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 2.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "(p - 1) * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, 0.0, 2.0, AdjustmentModelDefault.FromNumber(1.0), "p", AdjustmentModelQuantization.Continuous, -100.0, 100.0, 0.0, "(p - 1) * 100"));
         public static readonly AdjustmentFieldDefinition LightHighlights = new(
             "light.highlights",
             "light",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, -1.0, 1.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "-p * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -1.0, 1.0, AdjustmentModelDefault.FromNumber(0.0), "p", AdjustmentModelQuantization.Continuous, -100.0, 100.0, 0.0, "-p * 100"));
         public static readonly AdjustmentFieldDefinition LightShadows = new(
             "light.shadows",
             "light",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, -1.0, 1.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "p * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -1.0, 1.0, AdjustmentModelDefault.FromNumber(0.0), "p", AdjustmentModelQuantization.Continuous, -100.0, 100.0, 0.0, "p * 100"));
         public static readonly AdjustmentFieldDefinition LightSCurve = new(
             "light.s_curve",
             "light",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, -1.0, 1.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "p * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -1.0, 1.0, AdjustmentModelDefault.FromNumber(0.0), "p", AdjustmentModelQuantization.Continuous, -100.0, 100.0, 0.0, "p * 100"));
         public static readonly AdjustmentFieldDefinition LightCurve = new(
             "light.curve",
             "light",
@@ -271,7 +272,7 @@ public static class AdjustmentFieldSpec
             "color.saturation",
             "color",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 2.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, -100.0, 100.0, AdjustmentModelDefault.FromNumber(0.0), "(p - 1) * 100", AdjustmentModelQuantization.Continuous, null, null, null, null));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, 0.0, 2.0, AdjustmentModelDefault.FromNumber(1.0), "p", AdjustmentModelQuantization.Continuous, -100.0, 100.0, 0.0, "(p - 1) * 100"));
         public static readonly AdjustmentFieldDefinition HdrRelativeTemperature = new(
             "hdr.relative_temperature",
             "color",
@@ -486,7 +487,7 @@ public static class AdjustmentFieldSpec
             "detail.sharpening",
             "detail",
             new AdjustmentProtocolSpec(true, AdjustmentProtocolValueType.Number, AdjustmentWirePrecision.ContinuousDouble, false, 0.0, 2.0, false, false, [], [], [], [], false, false, false),
-            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, 0.0, 200.0, AdjustmentModelDefault.FromNumber(0.0), "p * 100", AdjustmentModelQuantization.Continuous, 0.0, 2.0, 0.0, "p"));
+            new AdjustmentFieldModelSpec(true, ["sdr", "hdr"], "double", false, 0.0, 2.0, AdjustmentModelDefault.FromNumber(0.0), "p", AdjustmentModelQuantization.Continuous, null, null, null, null));
         public static readonly AdjustmentFieldDefinition DetailDenoiseRawLevel = new(
             "detail.denoise.raw_level",
             "detail",

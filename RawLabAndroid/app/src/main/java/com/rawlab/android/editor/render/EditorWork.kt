@@ -21,7 +21,6 @@ import com.rawlab.android.editor.PendingLookImport
 import com.rawlab.android.editor.canvas.DetailTileKey
 import com.rawlab.android.editor.canvas.NormalizedRect
 import com.rawlab.android.editor.canvas.ViewportRoiRequest
-import com.rawlab.android.editor.canvas.detailOverlayCovers
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.DcpCompilationException
 import com.rawlab.android.looks.DcpFailureReason
@@ -90,13 +89,7 @@ data class PreviewDetailOverlay(
     val sourceRevision: Long,
     val editRevision: Long,
     val tileKey: DetailTileKey? = null,
-) {
-    fun covers(visibleRect: NormalizedRect, requiredZoomScale: Float, maxOutputLongEdge: Int = 0): Boolean =
-        detailOverlayCovers(
-            normalizedRect, pixelWidth, pixelHeight, fullNativeWidth, fullNativeHeight,
-            visibleRect, requiredZoomScale, maxOutputLongEdge,
-        )
-}
+)
 
 internal sealed interface Work {
     data class Import(val uri: Uri, val gpuMode: Int, val retained: ImportedPhoto? = null,

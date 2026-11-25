@@ -110,16 +110,16 @@ internal sealed partial class RenderEngine : IDisposable
             settings.Processing.Version is not (1 or 2))
             throw new InvalidOperationException(Loc.Text("此照片的调整保留原处理版本。"));
         cancellationToken.ThrowIfCancellationRequested();
-        var prepared=PrepareRequest(path,settings,lut,0,false,null,null,false);
+        var (options, editStateJson) = PrepareExecution(path, settings, lut, 0, false, null, null, false);
         try
         {
             SetCancellation(cancellationToken);
-            var result=new Native.ProcessingMigrationResult {
-                Version=1,StructSize=(uint)Marshal.SizeOf<Native.ProcessingMigrationResult>()
+            var result = new Native.ProcessingMigrationResult {
+                Version = 1, StructSize = (uint)Marshal.SizeOf<Native.ProcessingMigrationResult>()
             };
-            var status=Native.sony2fuji_session_migrate_processing(session,ref prepared.Item2,ref result);
-            if(status==7)throw new OperationCanceledException(cancellationToken);
-            Native.Check(status,session);
+            var status = Native.sony2fuji_session_migrate_processing_json(session, ref options, editStateJson, ref result);
+            if (status == 7) throw new OperationCanceledException(cancellationToken);
+            Native.Check(status, session);
             return result;
         }
         finally { ClearCancellation(); }
@@ -145,30 +145,23 @@ internal sealed partial class RenderEngine : IDisposable
             return HDRNative.EstimateAutoExposure(source.Owner, hdr);
         }
         if (PhotoInput.IsHDRContainer(path) && PhotoInput.ProbeHDR(path, out var info) == HDRProbeState.Supported)
-            return AutoExposureHDRSource(path, settings,info!);
-        var prepared = PrepareRecipe(path, settings);
-        settings = prepared.Settings;
-        EnsureInput(path);
-        ApplyParams(path, settings, includeDenoise: false, validateAiX3f: true);
-        ConfigureAI(settings.AIDenoiseEnabled, settings.AIDenoiseStrength);
-        var request = prepared.Request(path, null, 0, null);
-        SetInput(ref request,path);
-        aiNativeOperationStarted=true;
-        var status=Native.sony2fuji_session_estimate_auto_exposure(session,ref request,out var ev);
-        if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
+            return AutoExposureHDRSource(path, settings, info!);
+        var (options, editStateJson) = PrepareExecution(path, settings, null, 0, false, null, null, false, includeDenoise: false);
+        aiNativeOperationStarted = true;
+        var status = Native.sony2fuji_session_estimate_auto_exposure_json(session, ref options, editStateJson, out var ev);
+        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status, session);
         return ev;
     }
 
-    private double AutoExposureHDRSource(string path, Adjustments settings,HDRSourceInfo info)
+    private double AutoExposureHDRSource(string path, Adjustments settings, HDRSourceInfo info)
     {
-        using var source = HDRSourceCache.Acquire(path,info,false,256,session,
-            temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory);
+        using var source = HDRSourceCache.Acquire(path, info, false, 256, session,
+            temporaryRoot: appPaths.HdrCacheDirectory, cameraProfileDirectory: appPaths.HdrCameraProfilesDirectory);
         var pair = HDRDisplay.CopySDROnly(source.Owner.Pair);
         using var input = new HDRSdrInput(pair.SDR);
-        var prepared = PrepareRequest(path, settings, null, 256, false, null, null, true, input.Buffer);
-        var request = prepared.Item2;
-        var status = Native.sony2fuji_session_estimate_auto_exposure(session, ref request, out var ev);
-        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status,session);
+        var (options, editStateJson) = PrepareExecution(path, settings, null, 256, false, null, null, true, input.Buffer);
+        var status = Native.sony2fuji_session_estimate_auto_exposure_json(session, ref options, editStateJson, out var ev);
+        if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status, session);
         return ev;
     }
     public PreviewFrame RenderPreview(string path,Adjustments settings,string? lut,int edge,bool interactive,bool compare,bool clipping,Action? renderStarted=null,Func<bool>? shouldCancel=null)
@@ -356,12 +349,12 @@ internal sealed partial class RenderEngine : IDisposable
         }
         var format=output==null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
         var effectiveSharpening = output == null || format == ExportFormat.RenderedDng ? OutputSharpening.Off : outputSharpening;
-        (settings,var request)=PrepareRequest(path,settings,lut,edge,interactive,output,longEdge,viewportPreview,outputSharpening:effectiveSharpening);
+        var (options, editStateJson) = PrepareExecution(path, settings, lut, edge, interactive, output, longEdge, viewportPreview, outputSharpening: effectiveSharpening);
         Native.Buffer buffer = default, mask = default;
         try
         {
             aiNativeOperationStarted=true;
-            var status = Native.sony2fuji_process(session,ref request,out buffer);
+            var status = Native.sony2fuji_session_render(session, ref options, editStateJson, out buffer, IntPtr.Zero);
             if (output != null && (status == 6 || (status == 3 && format != ExportFormat.RenderedDng)))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
             if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
@@ -464,12 +457,11 @@ internal sealed partial class RenderEngine : IDisposable
         using var input = new HDRSdrInput(pair.SDR);
         var format = output == null ? (ExportFormat?)null : formatOverride ?? ExportFormatExtensions.FromPath(output);
         var effectiveSharpening = (output == null || format == ExportFormat.RenderedDng) ? OutputSharpening.Off : outputSharpening;
-        var prepared = PrepareRequest(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer, outputSharpening: effectiveSharpening);
-        var request = prepared.Item2;
+        var (options, editStateJson) = PrepareExecution(path, settings, lut, edge, false, output, longEdge, output == null, input.Buffer, outputSharpening: effectiveSharpening);
         Native.Buffer buffer = default, mask = default;
         try
         {
-            var status = Native.sony2fuji_process(session, ref request, out buffer);
+            var status = Native.sony2fuji_session_render(session, ref options, editStateJson, out buffer, IntPtr.Zero);
             if (output != null && (status == 6 || status == 3 && format != ExportFormat.RenderedDng))
                 throw new OutputWriteException(Loc.Text("无法写入成片，请检查输出位置和剩余空间。"));
             Native.Check(status, session);
@@ -495,18 +487,44 @@ internal sealed partial class RenderEngine : IDisposable
         finally { Native.sony2fuji_release_buffer(ref buffer); Native.sony2fuji_release_buffer(ref mask); }
     }
 
-    private (Adjustments,Native.Request) PrepareRequest(string path,Adjustments settings,string? lut,int edge,bool interactive,string? output,int? longEdge,bool viewportPreview,Native.Buffer? inputOverride = null,OutputSharpening outputSharpening = OutputSharpening.Off)
+    private static Native.RenderOptions BuildRenderOptions(string path, int edge, string? output, int? longEdge, bool interactive, bool viewportPreview)
+    {
+        if (longEdge is { } requested && !ExportSize.IsValid(requested))
+            throw new ArgumentOutOfRangeException(nameof(longEdge), Loc.Text("导出长边必须为 1-65535 像素。"));
+        var limitedFinal = output != null && longEdge.HasValue;
+        return new Native.RenderOptions
+        {
+            Version = 1,
+            StructSize = (uint)Marshal.SizeOf<Native.RenderOptions>(),
+            InputPath = path,
+            Intent = output != null || edge == 0 ? 1 : 0,
+            SizeMode = limitedFinal ? 4 : 3,
+            LongEdge = limitedFinal ? (uint)longEdge!.Value : 0,
+            PreviewLongEdge = (uint)edge,
+            InteractivePreview = interactive && edge > 0 && output == null ? 1 : 0,
+            ViewportPreview = viewportPreview && edge > 0 && output == null ? 1 : 0,
+            OutputTarget = output == null ? 1 : 0,
+            OutputFormat = output == null ? 3 : ExportFormatExtensions.FromPath(output).NativeValue(),
+            OutputPath = output,
+            JpegQuality = 95
+        };
+    }
+
+    private (Native.RenderOptions Options, string EditStateJson) PrepareExecution(string path, Adjustments settings, string? lut, int edge,
+        bool interactive, string? output, int? longEdge, bool viewportPreview, Native.Buffer? inputOverride = null,
+        OutputSharpening outputSharpening = OutputSharpening.Off, bool includeDenoise = true)
     {
         var prepared = PrepareRecipe(path, settings);
         settings = prepared.Settings;
         if (inputOverride == null) EnsureInput(path);
-        ApplyParams(path, settings, includeDenoise: true, validateAiX3f: true, isRaster: inputOverride != null || PhotoInput.IsRaster(path), outputSharpening: outputSharpening);
-        ConfigureAI(settings.AIDenoiseEnabled, settings.AIDenoiseStrength);
-        Native.Check(Native.sony2fuji_session_set_interactive_preview(session,interactive && edge>0 && output == null ? 1 : 0), session);
-        Native.Check(Native.sony2fuji_session_set_viewport_preview(session,viewportPreview && edge>0 && output == null ? 1 : 0), session);
-        var request = prepared.Request(path,lut,edge,output,longEdge);
-        if (inputOverride is { } display) SetInput(ref request, display); else SetInput(ref request,path);
-        return (settings,request);
+        if (settings.AIDenoiseEnabled && Native.sony2fuji_is_normal_x3f(path, settings.X3fMode) != 0)
+            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
+        ConfigureAI(settings.AIDenoiseEnabled);
+        var options = BuildRenderOptions(path, edge, output, longEdge, interactive, viewportPreview);
+        if (inputOverride is { } display) SetInput(ref options, display); else SetInput(ref options, path);
+        var isRaster = inputOverride != null || PhotoInput.IsRaster(path);
+        var editStateJson = CanonicalEditRecipe.EncodeState(settings, isRaster, includeDenoise, outputSharpening, lut);
+        return (options, editStateJson);
     }
     internal sealed record WbProbeSample(Native.WbProbeAvailability Availability, double Temperature, double Tint, uint ValidPixelCount, uint RejectedOverexposedCount);
     internal WbProbeSample SampleWhiteBalance(string path, Adjustments settings, string? lut, int edge, double x, double y, uint windowSize = 3)
@@ -516,7 +534,7 @@ internal sealed partial class RenderEngine : IDisposable
         BeginAIOperation("wb_probe", path);
         try
         {
-            var (_, request) = PrepareRequest(path, settings, lut, edge, false, null, null, true);
+            var (options, editStateJson) = PrepareExecution(path, settings, lut, edge, false, null, null, true);
             var query = new Native.WbProbeQuery {
                 Version = 1, StructSize = (uint)Marshal.SizeOf<Native.WbProbeQuery>(),
                 NormX = (float)x, NormY = (float)y, WindowSize = windowSize, Reserved = 0
@@ -526,7 +544,7 @@ internal sealed partial class RenderEngine : IDisposable
                 SampledRgb = new float[3], WbMul = new float[3]
             };
             aiNativeOperationStarted = true;
-            var status = Native.sony2fuji_session_sample_wb_probe(session, ref request, ref query, ref result);
+            var status = Native.sony2fuji_session_sample_wb_probe_json(session, ref options, editStateJson, ref query, ref result);
             if (settings.AIDenoiseEnabled) CheckAI(status); else Native.Check(status, session);
             return new((Native.WbProbeAvailability)result.Availability, result.Temperature, result.Tint, result.ValidPixelCount, result.RejectedOverexposedCount);
         }
@@ -568,12 +586,11 @@ internal sealed partial class RenderEngine : IDisposable
             ? HDRSourceCache.Acquire(path,info!,false,hdrEdge,session,
                 temporaryRoot:appPaths.HdrCacheDirectory,cameraProfileDirectory:appPaths.HdrCameraProfilesDirectory) : null;
         using var input=source==null ? null : new HDRSdrInput(HDRDisplay.CopySDROnly(source.Owner.Pair).SDR);
-        var prepared=PrepareRequest(path,settings,lut,edge,interactive,null,null,true,input?.Buffer);
-        var request=prepared.Item2;
-        IntPtr probe=IntPtr.Zero;
+        var (options, editStateJson) = PrepareExecution(path, settings, lut, edge, interactive, null, null, true, input?.Buffer);
+        IntPtr probe = IntPtr.Zero;
         try {
-            aiNativeOperationStarted=true;
-            var status=Native.sony2fuji_session_create_hsl_probe(session,ref request,revision.Source,revision.Request,out probe);
+            aiNativeOperationStarted = true;
+            var status = Native.sony2fuji_session_create_hsl_probe_json(session, ref options, editStateJson, revision.Source, revision.Request, out probe);
             if(settings.AIDenoiseEnabled)CheckAI(status);else Native.Check(status,session);
             return ReadHslProbe(probe, revision, x, y);
         } finally { if(probe!=IntPtr.Zero)Native.sony2fuji_hsl_probe_destroy(probe); }
@@ -595,17 +612,9 @@ internal sealed partial class RenderEngine : IDisposable
         mask=default;
         return Native.AnalyzeWithoutMask(ref buffer,0,bins,out shadows,out highlights,IntPtr.Zero);
     }
-    private void ApplyParams(string path, Adjustments settings, bool includeDenoise, bool validateAiX3f, bool? isRaster = null, OutputSharpening outputSharpening = OutputSharpening.Off)
-    {
-        if (validateAiX3f && settings.AIDenoiseEnabled && Native.sony2fuji_is_normal_x3f(path, settings.X3fMode) != 0)
-            throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
-        var raster = isRaster ?? PhotoInput.IsRaster(path);
-        var recipeJson = CanonicalEditRecipe.Encode(settings, raster, includeDenoise, outputSharpening);
-        Native.Check(Native.sony2fuji_apply_params(session, recipeJson), session);
-    }
     private void ApplyProcessingOnly(ProcessingIdentity value) =>
         Native.Check(Native.sony2fuji_apply_params(session,
-            CanonicalEditRecipe.ProcessingOnlyJson(ProcessingIdentity.Require(value).Version)), session);
+            CanonicalEditRecipe.ProcessingStateJson(ProcessingIdentity.Require(value).Version)), session);
     internal static bool X3fAvailable => Native.sony2fuji_x3f_available() != 0;
     internal static X3fMode X3fDefaultMode(string path)
     {
@@ -640,7 +649,7 @@ internal sealed partial class RenderEngine : IDisposable
             X3fMode = (int)settings.X3fMode,
             ExposureMode = settings.ExposureMode,
             RecipeActive = 1,
-            RecipeStrength = (float)(settings[Parameter.Strength] / 100.0),
+            RecipeStrength = (float)settings[Parameter.Strength],
             CustomWb = settings.CameraWhiteBalance ? 0 : 1,
             Temperature = (float)settings[Parameter.Temperature],
             Tint = (float)settings[Parameter.Tint],
@@ -656,7 +665,7 @@ internal sealed partial class RenderEngine : IDisposable
             res.WbMode == 3 ? res.Tint : 0f);
         return new(prepared, whiteBalance);
     }
-    private static unsafe BitmapSource Bitmap(Native.Buffer buffer,bool opaque=true)
+    internal static unsafe BitmapSource Bitmap(Native.Buffer buffer,bool opaque=true)
     {
         // WPF copies these private RGBA8 buffers before their native allocations are freed.
         var pixels=new Span<uint>((void*)buffer.Data,checked((int)buffer.Size/4));
@@ -690,7 +699,7 @@ internal sealed partial class RenderEngine : IDisposable
             }
             if(LibraryEntry.IsRaster(path))
             {
-                if(Native.rawlab_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
+                if(Native.sony2fuji_load_display_preview(path,(uint)edge,ref buffer,out var sourceWidth,out var sourceHeight)!=0)return new(null,0,0);
                 return new(Bitmap(buffer),checked((int)sourceWidth),checked((int)sourceHeight));
             }
             if (Native.rawlab_preview(path,out buffer,out var kind,out var flip,out var width,out var height) != 0) return new(null,width,height);

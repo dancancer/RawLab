@@ -10,31 +10,40 @@ internal static class CanonicalEditRecipe
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    internal static string ProcessingOnlyJson(int processingVersion, string exposureMode = "scene")
+    internal static string ProcessingStateJson(int processingVersion, string? exposureMode = null)
     {
-        var payload = new Payload(
-            SchemaVersion: 5,
-            X3fMode: null,
-            Processing: new ProcessingPayload("rawlab", Math.Clamp(processingVersion, 1, 3), "standard"),
-            Input: new InputPayload("session.raw", "raw"),
-            Edits: new EditsPayload(
-                Exposure: new ExposurePayload(exposureMode, 0, 1),
-                WhiteBalance: new WhiteBalancePayload("camera"),
-                Look: new LookPayload(null, 1),
-                Geometry: null,
-                Tone: null,
-                Color: null,
-                ColorGrading: null,
-                Detail: new DetailPayload(0),
-                Hsl: null,
-                Effects: null,
-                Denoise: null,
-                LensCorrection: null),
-            Output: new OutputPayload("session.png", "png", new SizePayload("native"), null));
+        var edits = exposureMode == null
+            ? null
+            : new Dictionary<string, object?> { ["exposure"] = new { mode = exposureMode } };
+        var payload = new
+        {
+            processing = new ProcessingPayload("rawlab", Math.Clamp(processingVersion, 1, 3), "standard"),
+            edits
+        };
         return JsonSerializer.Serialize(payload, SerializerOptions);
     }
 
-    internal static string Encode(Adjustments settings, bool isRaster, bool includeDenoise = true, OutputSharpening outputSharpening = OutputSharpening.Off)
+    internal static string CompatibilityPreviewStateJson(int processingVersion, string exposureMode, string? lutPath, double lutStrength)
+    {
+        var payload = new
+        {
+            processing = new ProcessingPayload("rawlab", Math.Clamp(processingVersion, 1, 3), "standard"),
+            edits = new
+            {
+                exposure = new ExposurePayload(exposureMode, 0, 1),
+                look = new LookPayload(lutPath, lutStrength)
+            }
+        };
+        return JsonSerializer.Serialize(payload, SerializerOptions);
+    }
+
+    internal static string Encode(Adjustments settings, bool isRaster, bool includeDenoise = true, OutputSharpening outputSharpening = OutputSharpening.Off) =>
+        EncodeCore(settings, isRaster, includeDenoise, outputSharpening, lutPath: null, includeSessionState: false);
+
+    internal static string EncodeState(Adjustments settings, bool isRaster, bool includeDenoise = true, OutputSharpening outputSharpening = OutputSharpening.Off, string? lutPath = null) =>
+        EncodeCore(settings, isRaster, includeDenoise, outputSharpening, lutPath, includeSessionState: true);
+
+    private static string EncodeCore(Adjustments settings, bool isRaster, bool includeDenoise, OutputSharpening outputSharpening, string? lutPath, bool includeSessionState)
     {
         var processingVersion = ProcessingIdentity.Require(settings.Processing).Version;
         if (!Enum.IsDefined(settings.X3fMode))
@@ -84,18 +93,57 @@ internal static class CanonicalEditRecipe
             throw new ArgumentOutOfRangeException(nameof(settings), "Invalid raster relative white balance");
         var hasV12Features = curve.HasV2Extensions || grading.HasV2Extensions || rasterRelativeActive || outputSharpening != OutputSharpening.Off;
         var profileId = string.IsNullOrEmpty(settings.Lens.CoreProfileId) ? null : settings.Lens.CoreProfileId;
+        var scale = settings.MasterRecipeID == null ? 1.0 : settings[Parameter.Strength];
+
+        WhiteBalancePayload whiteBalance;
+        MasterRecipePayload? masterRecipe = null;
+        if (isRaster)
+        {
+            whiteBalance = rasterRelativeActive
+                ? new WhiteBalancePayload("relative", RelativeTemperature: settings[Parameter.Temperature], RelativeTint: settings[Parameter.Tint])
+                : new WhiteBalancePayload("none");
+        }
+        else if (includeSessionState && settings.MasterRecipeID != null)
+        {
+            var customWb = !settings.CameraWhiteBalance;
+            var strength = Math.Clamp(settings[Parameter.Strength], 0.0, 2.0);
+            var tint = settings[Parameter.Tint];
+            whiteBalance = new WhiteBalancePayload("camera");
+            masterRecipe = new MasterRecipePayload(
+                Active: true,
+                Strength: strength,
+                CustomWb: customWb,
+                TemperatureKelvin: customWb ? settings[Parameter.Temperature] : 6500.0,
+                Tint: (!customWb && (strength == 0.0 || tint == 0.0)) ? 0.0 : tint,
+                UncalibratedFallback: "error");
+        }
+        else if (includeSessionState && !settings.CameraWhiteBalance)
+        {
+            whiteBalance = new WhiteBalancePayload("temperature", TemperatureKelvin: settings[Parameter.Temperature], Tint: settings[Parameter.Tint]);
+        }
+        else
+        {
+            whiteBalance = new WhiteBalancePayload("camera");
+        }
+
+        double? aiDenoiseBlend = includeSessionState
+            ? (settings.AIDenoiseEnabled ? Math.Clamp(settings.AIDenoiseStrength / 100.0, 0.0, 1.0) : 1.0)
+            : null;
 
         var payload = new Payload(
-            SchemaVersion: hasV12Features ? 17 : (isRaster ? 5 : 7),
+            SchemaVersion: curve.HasFreeEndpointX ? 18 : hasV12Features ? 17 : (isRaster ? 5 : 7),
             X3fMode: isRaster ? null : (settings.X3fMode == X3fMode.Normal ? "normal-v1" : "legacy"),
             Processing: new ProcessingPayload("rawlab", processingVersion, "standard"),
-            Input: new InputPayload(isRaster ? "session.png" : "session.raw", isRaster ? "raster" : "raw"),
+            Input: new InputPayload(null, isRaster ? "raster" : "raw"),
             Edits: new EditsPayload(
-                Exposure: new ExposurePayload(exposureMode, 0, 1),
-                WhiteBalance: rasterRelativeActive
-                    ? new WhiteBalancePayload("relative", settings[Parameter.Temperature], settings[Parameter.Tint])
-                    : new WhiteBalancePayload(isRaster ? "none" : "camera"),
-                Look: new LookPayload(null, 1),
+                Exposure: new ExposurePayload(
+                    exposureMode,
+                    includeSessionState ? settings[Parameter.Exposure] * scale : 0,
+                    1),
+                WhiteBalance: whiteBalance,
+                Look: new LookPayload(
+                    includeSessionState ? lutPath : null,
+                    includeSessionState && lutPath != null ? Math.Clamp(settings[Parameter.Strength], 0.0, 2.0) : 1),
                 Geometry: new GeometryPayload(
                     Crop: new CropPayload(geometry.CropX, geometry.CropY, geometry.CropWidth, geometry.CropHeight),
                     QuarterTurns: geometry.QuarterTurns,
@@ -104,11 +152,13 @@ internal static class CanonicalEditRecipe
                     StraightenDegrees: geometry.StraightenDegrees,
                     Perspective: new PerspectivePayload(geometry.PerspectiveHorizontal, geometry.PerspectiveVertical)),
                 Tone: new TonePayload(
-                    Contrast: 1,
-                    Saturation: 1,
-                    Highlights: 0,
-                    Shadows: 0,
-                    SCurve: 0,
+                    Contrast: includeSessionState ? Math.Clamp(1.0 + (settings[Parameter.Contrast] - 1.0) * scale, 0.0, 2.0) : 1,
+                    Saturation: includeSessionState ? Math.Clamp(1.0 + (settings[Parameter.Saturation] - 1.0) * scale, 0.0, 2.0) : 1,
+                    Highlights: includeSessionState ? Math.Clamp(settings[Parameter.Highlights] * scale, -1.0, 1.0) : 0,
+                    Shadows: includeSessionState ? Math.Clamp(settings[Parameter.Shadows] * scale, -1.0, 1.0) : 0,
+                    SCurve: includeSessionState && curve.Mode != ToneCurveMode.Custom
+                        ? Math.Clamp(settings[Parameter.ToneCurve] * settings.RefinementScale, -1, 1)
+                        : 0,
                     BlackPoint: tone.BlackPoint / 100.0,
                     WhitePoint: tone.WhitePoint / 100.0,
                     Curve: new CurvePayload(
@@ -125,7 +175,7 @@ internal static class CanonicalEditRecipe
                     Global: grading.Global.IsDefault ? null : ToWheelPayload(grading.Global),
                     Blending: grading.Blending == 50.0 ? null : grading.Blending,
                     Balance: grading.Balance == 0.0 ? null : grading.Balance),
-                Detail: new DetailPayload(0),
+                Detail: new DetailPayload(includeSessionState ? Math.Clamp(settings[Parameter.Sharpening], 0.0, 2.0) : 0),
                 Hsl: new HslPayload(
                     Hue: hslValues.Take(8).ToArray(),
                     Saturation: hslValues.Skip(8).Take(8).ToArray(),
@@ -152,9 +202,12 @@ internal static class CanonicalEditRecipe
                     Tca: settings.Lens.Tca,
                     Vignetting: settings.Lens.Vignetting,
                     AutoCrop: settings.Lens.AutoCrop,
-                    ProfileId: profileId)),
-            Output: new OutputPayload("session.png", "png", new SizePayload("native"),
-                outputSharpening == OutputSharpening.Off ? null : outputSharpening.WireValue()));
+                    ProfileId: profileId),
+                MasterRecipe: masterRecipe,
+                AiDenoiseBlend: aiDenoiseBlend),
+            Output: outputSharpening == OutputSharpening.Off
+                ? null
+                : new OutputPayload(null, null, null, outputSharpening.WireValue()));
 
         return JsonSerializer.Serialize(payload, SerializerOptions);
     }
@@ -175,7 +228,7 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("processing")] ProcessingPayload Processing,
         [property: JsonPropertyName("input")] InputPayload Input,
         [property: JsonPropertyName("edits")] EditsPayload Edits,
-        [property: JsonPropertyName("output")] OutputPayload Output);
+        [property: JsonPropertyName("output")] OutputPayload? Output);
 
     private sealed record ProcessingPayload(
         [property: JsonPropertyName("family")] string Family,
@@ -183,13 +236,13 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("quality")] string Quality);
 
     private sealed record InputPayload(
-        [property: JsonPropertyName("path")] string Path,
+        [property: JsonPropertyName("path")] string? Path,
         [property: JsonPropertyName("type")] string Type);
 
     private sealed record OutputPayload(
-        [property: JsonPropertyName("path")] string Path,
-        [property: JsonPropertyName("format")] string Format,
-        [property: JsonPropertyName("size")] SizePayload Size,
+        [property: JsonPropertyName("path")] string? Path,
+        [property: JsonPropertyName("format")] string? Format,
+        [property: JsonPropertyName("size")] SizePayload? Size,
         [property: JsonPropertyName("output_sharpening")] string? OutputSharpening);
 
     private sealed record SizePayload(
@@ -207,7 +260,17 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("hsl")] HslPayload? Hsl,
         [property: JsonPropertyName("effects")] EffectsPayload? Effects,
         [property: JsonPropertyName("denoise")] DenoisePayload? Denoise,
-        [property: JsonPropertyName("lens_correction")] LensCorrectionPayload? LensCorrection);
+        [property: JsonPropertyName("lens_correction")] LensCorrectionPayload? LensCorrection,
+        [property: JsonPropertyName("master_recipe")] MasterRecipePayload? MasterRecipe = null,
+        [property: JsonPropertyName("ai_denoise_blend")] double? AiDenoiseBlend = null);
+
+    private sealed record MasterRecipePayload(
+        [property: JsonPropertyName("active")] bool Active,
+        [property: JsonPropertyName("strength")] double Strength,
+        [property: JsonPropertyName("custom_wb")] bool CustomWb,
+        [property: JsonPropertyName("temperature_kelvin")] double TemperatureKelvin,
+        [property: JsonPropertyName("tint")] double Tint,
+        [property: JsonPropertyName("uncalibrated_fallback")] string UncalibratedFallback);
 
     private sealed record ExposurePayload(
         [property: JsonPropertyName("mode")] string Mode,
@@ -216,6 +279,8 @@ internal static class CanonicalEditRecipe
 
     private sealed record WhiteBalancePayload(
         [property: JsonPropertyName("mode")] string Mode,
+        [property: JsonPropertyName("temperature_kelvin")] double? TemperatureKelvin = null,
+        [property: JsonPropertyName("tint")] double? Tint = null,
         [property: JsonPropertyName("relative_temperature")] double? RelativeTemperature = null,
         [property: JsonPropertyName("relative_tint")] double? RelativeTint = null);
 

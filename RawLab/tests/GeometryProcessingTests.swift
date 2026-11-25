@@ -84,14 +84,14 @@ struct GeometryProcessingTests {
         let session = try processor.createSession()
         defer { processor.destroySession(session) }
         var neutralPerspective = settings
-        neutralPerspective.geometry.perspectiveHorizontal = 0
-        neutralPerspective.geometry.perspectiveVertical = 0
+        neutralPerspective.geometrySettings.perspectiveHorizontal = 0
+        neutralPerspective.geometrySettings.perspectiveVertical = 0
         try processor.configureSession(session, settings: neutralPerspective, interactive: false)
         var perspective = sony2fuji_perspective_config()
         perspective.version = UInt32(SONY2FUJI_PERSPECTIVE_CONFIG_VERSION)
         perspective.struct_size = UInt32(MemoryLayout<sony2fuji_perspective_config>.size)
-        perspective.horizontal = Float(settings.geometry.perspectiveHorizontal)
-        perspective.vertical = Float(settings.geometry.perspectiveVertical)
+        perspective.horizontal = Float(settings.geometrySettings.perspectiveHorizontal)
+        perspective.vertical = Float(settings.geometrySettings.perspectiveVertical)
         check(sony2fuji_session_set_perspective(session, &perspective) == SONY2FUJI_STATUS_OK,
               "direct C perspective reference accepts both axes")
         var request = processor.makeBaseRequest(settings: settings, inputType: SONY2FUJI_INPUT_BUFFER)
@@ -124,8 +124,8 @@ struct GeometryProcessingTests {
         _ = try perspectiveReference(source, settings: .default, mode: SONY2FUJI_GPU_FORCE)
         for (horizontal, vertical) in [(0.5, 0.0), (0.0, -0.25), (0.5, -0.25)] {
             var settings = RawSettings.default
-            settings.geometry.perspectiveHorizontal = horizontal
-            settings.geometry.perspectiveVertical = vertical
+            settings.geometrySettings.perspectiveHorizontal = horizontal
+            settings.geometrySettings.perspectiveVertical = vertical
             let final = try processor.processBuffer(buffer: source, settings: settings,
                                                     previewLongEdge: nil, lutURL: nil)
             let reference = try perspectiveReference(source, settings: settings, mode: SONY2FUJI_GPU_OFF)
@@ -142,8 +142,8 @@ struct GeometryProcessingTests {
                   "Auto and CPU perspective agree within two RGB8 values")
         }
         var combined = geometry
-        combined.geometry.perspectiveHorizontal = 0.5
-        combined.geometry.perspectiveVertical = -0.25
+        combined.geometrySettings.perspectiveHorizontal = 0.5
+        combined.geometrySettings.perspectiveVertical = -0.25
         let final = try processor.processBuffer(buffer: source, settings: combined,
                                                 previewLongEdge: nil, lutURL: nil)
         let reference = try perspectiveReference(source, settings: combined, mode: SONY2FUJI_GPU_OFF)
@@ -170,9 +170,9 @@ struct GeometryProcessingTests {
                                  sourceURL: url, displayName: "target.jpg", sourceKind: .raster)
         let job = BatchExportJob(source: source, targets: [target], longEdge: 48)
         let restored = try JSONDecoder().decode(BatchExportJob.self, from: JSONEncoder().encode(job))
-        editable.geometry = GeometrySettings()
-        check(restored.source.settings.geometry == settings.geometry &&
-              restored.source.settings.geometry != editable.geometry, "batch journal freezes both perspective axes")
+        editable.geometrySettings = GeometrySettings()
+        check(restored.source.settings.geometrySettings == settings.geometrySettings &&
+              restored.source.settings.geometrySettings != editable.geometrySettings, "batch journal freezes both perspective axes")
         var writes = 0
         let completed = try BatchExportRunner.run(job: restored, journalStore: nil, render: { _, frozen in
             let result = try processor.processBuffer(buffer: buffer, settings: frozen,
@@ -191,7 +191,7 @@ struct GeometryProcessingTests {
         geometry.removeValue(forKey: "perspectiveVertical")
         document["geometry"] = geometry
         let old = try JSONDecoder().decode(RawSettings.self, from: JSONSerialization.data(withJSONObject: document))
-        check(old.geometry == settings.geometry, "old records retain geometry and default both perspective axes to zero")
+        check(old.geometrySettings == settings.geometrySettings, "old records retain geometry and default both perspective axes to zero")
         let legacy = try processor.processBuffer(buffer: source, settings: old, previewLongEdge: nil, lutURL: nil)
         let explicit = try processor.processBuffer(buffer: source, settings: settings, previewLongEdge: nil, lutURL: nil)
         check(same(legacy, explicit), "old geometry records retain their rendered pixels")
@@ -203,8 +203,8 @@ struct GeometryProcessingTests {
         settings.applyMasterRecipe(MasterRecipe.allRecipes[0])
         settings.tint = 20
         settings.lutStrength = 0.65
-        settings.geometry.perspectiveHorizontal = 0.5
-        settings.geometry.perspectiveVertical = -0.25
+        settings.geometrySettings.perspectiveHorizontal = 0.5
+        settings.geometrySettings.perspectiveVertical = -0.25
         let preview = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128,
                                                lutURL: nil, interactive: true, viewportPreview: false).buffer
         let final = try processor.processRaw(url: url, settings: settings, previewLongEdge: nil,
@@ -214,7 +214,7 @@ struct GeometryProcessingTests {
                                                lutURL: nil, interactive: true, viewportPreview: true).buffer
         check(reduced.width == preview.width && reduced.height == preview.height && reduced.nativeSize == preview.nativeSize,
               "reduced RAW geometry keeps preview and full geometry dimensions")
-        settings.geometry = GeometrySettings()
+        settings.geometrySettings = GeometrySettings()
         let reset = try processor.processRaw(url: url, settings: settings, previewLongEdge: 128, lutURL: nil).buffer
         let fresh = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_OFF, lensDatabaseURL: lensDatabase)
         let identity = try fresh.processRaw(url: url, settings: settings, previewLongEdge: 128, lutURL: nil).buffer
@@ -222,8 +222,8 @@ struct GeometryProcessingTests {
         check(preview.nativeSize != identity.nativeSize && preview.data != identity.data,
               "nonzero RAW perspective changes canvas and pixels")
         let auto = Sony2FujiProcessor(gpuMode: SONY2FUJI_GPU_AUTO, lensDatabaseURL: lensDatabase)
-        settings.geometry.perspectiveHorizontal = 0.5
-        settings.geometry.perspectiveVertical = -0.25
+        settings.geometrySettings.perspectiveHorizontal = 0.5
+        settings.geometrySettings.perspectiveVertical = -0.25
         let gpu = try auto.processRaw(url: url, settings: settings, previewLongEdge: 128,
                                       lutURL: nil, interactive: true, viewportPreview: true).buffer
         check(gpu.width == reduced.width && gpu.height == reduced.height && gpu.nativeSize == reduced.nativeSize &&
@@ -256,8 +256,8 @@ struct GeometryProcessingTests {
               oriented.buffer.data == raster.buffer.data,
               "iOS geometry receives an already-oriented raster canvas exactly once")
         var geometry = RawSettings.default
-        geometry.geometry.quarterTurns = 1
-        geometry.geometry.flipHorizontal = true
+        geometry.geometrySettings.quarterTurns = 1
+        geometry.geometrySettings.flipHorizontal = true
         let rotatedRaster = try cpuProcessor.processBuffer(buffer: oriented.buffer, settings: geometry,
                                                            previewLongEdge: nil, lutURL: nil)
         check(rotatedRaster.width == raster.buffer.height && rotatedRaster.height == raster.buffer.width,
@@ -266,10 +266,10 @@ struct GeometryProcessingTests {
                                                       orientation: .up, quality: 0.92)
         check((properties(uprightJPEG)[kCGImagePropertyOrientation] as? NSNumber)?.intValue == 1,
               "iOS geometry JPEG is physically upright with neutral orientation metadata")
-        geometry.geometry.cropX = 0.125
-        geometry.geometry.cropY = 0.25
-        geometry.geometry.cropWidth = 0.75
-        geometry.geometry.cropHeight = 0.5
+        geometry.geometrySettings.cropX = 0.125
+        geometry.geometrySettings.cropY = 0.25
+        geometry.geometrySettings.cropWidth = 0.75
+        geometry.geometrySettings.cropHeight = 0.5
         let geometryFinal = try cpuProcessor.processBuffer(buffer: source, settings: geometry,
                                                             previewLongEdge: nil, lutURL: nil)
         let geometryPreview = try cpuProcessor.processBuffer(buffer: source, settings: geometry,
@@ -295,7 +295,7 @@ struct GeometryProcessingTests {
                                                             previewLongEdge: nil, lutURL: nil)
         check(identityAgain.width == 256 && identityAgain.height == 256,
               "iOS default settings restore identity geometry after an active crop")
-        geometry.geometry.straightenDegrees = 7
+        geometry.geometrySettings.straightenDegrees = 7
         let straightened = try cpuProcessor.processBuffer(buffer: source, settings: geometry,
                                                            previewLongEdge: nil, lutURL: nil)
         check(straightened.width < geometryFinal.width && straightened.height < geometryFinal.height,

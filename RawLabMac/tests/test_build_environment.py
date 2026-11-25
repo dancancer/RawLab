@@ -224,7 +224,9 @@ class BuildEnvironmentTests(unittest.TestCase):
                 'bin="$scratch/fake-bin"\n'
                 'if [ "$show_bin" = 1 ]; then printf "%s\\n" "$bin"; exit 0; fi\n'
                 'mkdir -p "$bin/Modules"\n'
-                'touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a"\n'
+                'touch "$bin/Modules/RawLabKit.swiftmodule" "$bin/libRawLabKit.a" '
+                '"$bin/Modules/RawLabNativeTypes.swiftmodule" "$bin/libRawLabNativeTypes.a" '
+                '"$bin/Modules/RawLabNative.swiftmodule" "$bin/libRawLabNative.a"\n'
             )
             for tool in (compiler, package_config, xcrun_cli, xcode_select_cli, swift_cli):
                 tool.chmod(0o755)
@@ -528,7 +530,10 @@ class BuildEnvironmentTests(unittest.TestCase):
                     "bin=\"$scratch/bin\"\n"
                     "if [ \"$show_bin\" = 1 ]; then echo \"$bin\"; exit 0; fi\n"
                     "mkdir -p \"$bin/Modules\"\n"
-                    "touch \"$bin/Modules/RawLabKit.swiftmodule\" \"$bin/libRawLabKit.a\"\n"
+                    "touch \"$bin/Modules/RawLabKit.swiftmodule\" \"$bin/libRawLabKit.a\" "
+                    "\"$bin/Modules/RawLabNativeTypes.swiftmodule\" \"$bin/libRawLabNativeTypes.a\" "
+                    "\"$bin/Modules/RawLabInspectionNative.swiftmodule\" \"$bin/libRawLabInspectionNative.a\" "
+                    "\"$bin/Modules/RawLabNative.swiftmodule\" \"$bin/libRawLabNative.a\"\n"
                 ),
                 "swiftc": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\nmkdir -p \"$(dirname \"$out\")\"\ntouch \"$out\"\nchmod +x \"$out\"\n",
                 "sips": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in --out) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\ntouch \"$out\"\n",

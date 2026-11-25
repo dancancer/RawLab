@@ -24,6 +24,10 @@ class NativeFrameContractTest {
         val ctorParams = NativeFrame::class.java.constructors.filterNot { it.isSynthetic }.single().parameterTypes
         assertEquals(Bitmap::class.java, ctorParams[2])
         assertTrue(NativeFrame::class.java.declaredMethods.any { it.name == "allocateBitmap" })
-        assertTrue(NativeProcessOutput::class.java.declaredFields.any { it.name == "reusableBitmap" })
+        assertTrue(
+            NativeProcessor::class.java.declaredMethods.any {
+                it.name == "nativeProcess" && Bitmap::class.java in it.parameterTypes
+            },
+        )
     }
 }

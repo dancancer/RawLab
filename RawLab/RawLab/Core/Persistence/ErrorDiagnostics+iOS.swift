@@ -6,25 +6,9 @@ import ImageIO
 import UniformTypeIdentifiers
 
 extension ErrorDiagnostics {
-    static let app: ErrorDiagnostics = {
-        var hardware = utsname()
-        uname(&hardware)
-        let machine = withUnsafeBytes(of: hardware.machine) {
-            String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self)
-        }
-        let process = ProcessInfo.processInfo
-        let version = process.operatingSystemVersion
-        let bundle = Bundle.main
-        return ErrorDiagnostics(
-            directory: URL.applicationSupportDirectory.appendingPathComponent("RawLab/Diagnostics", isDirectory: true),
-            environment: DiagnosticEnvironment(
-                platform: "ios", appVersion: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-                build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
-                osVersion: "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion)",
-                deviceModel: process.environment["SIMULATOR_MODEL_IDENTIFIER"] ?? machine
-            )
-        )
-    }()
+    static var app: ErrorDiagnostics {
+        DiagnosticCenter.appErrorDiagnostics
+    }
 
     @discardableResult static func log(_ error: Error, operation: Operation, stage: String,
                                        attemptID: UUID? = nil, context: [String: String] = [:]) -> Bool {

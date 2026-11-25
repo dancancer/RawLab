@@ -70,6 +70,19 @@ struct MacLensPresentation {
         return calibrated == true && inputAllowsCorrection
     }
 
+    var canChangeVignetting: Bool {
+        if settings.vignetting { return true }
+        return candidate?.hasVignetting == true && inputAllowsCorrection
+    }
+
+    var vignettingDetailKey: String {
+        guard let candidate else { return "未匹配镜头" }
+        if !candidate.hasVignetting { return "此镜头没有所选校正的标定数据" }
+        if !settings.vignetting { return "暗角校正" }
+        if !previewIsCurrent { return "正在预览镜头校正…" }
+        return info?.appliedVignetting == true ? "已应用" : "此镜头没有所选校正的标定数据"
+    }
+
     func correctionDetailKey(tca: Bool) -> String {
         let calibrated = tca ? candidate?.hasTCA : candidate?.hasDistortion
         guard let calibrated else { return "未匹配镜头" }
@@ -134,6 +147,7 @@ struct MacLensChooserState {
 
     static func capabilityKeys(for candidate: LensCandidate) -> [String] {
         [candidate.hasDistortion ? "畸变标定" : "畸变标定不可用",
-         candidate.hasTCA ? "横向色差标定" : "横向色差标定不可用"]
+         candidate.hasTCA ? "横向色差标定" : "横向色差标定不可用",
+         candidate.hasVignetting ? "暗角标定" : "暗角标定不可用"]
     }
 }

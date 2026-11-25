@@ -23,7 +23,7 @@ final class CanonicalEditRecipeTests: XCTestCase {
             midtones: ColorGradingWheel(hue: 45, saturation: 12),
             highlights: ColorGradingWheel(hue: 350, saturation: 20)
         )
-        settings.hsl.setExact(.hue, channel: 0, value: 18)
+        settings.hslSettings.setExact(.hue, channel: 0, value: 18)
         settings.geometry = GeometrySettings(
             cropX: 0.1, cropY: 0.2, cropWidth: 0.7, cropHeight: 0.6,
             quarterTurns: 1, flipHorizontal: true, flipVertical: false,
@@ -137,6 +137,42 @@ final class CanonicalEditRecipeTests: XCTestCase {
         XCTAssertEqual(channelRoot["schema_version"] as? Int, 17)
     }
 
+    func testFreeEndpointXEmitsSchemaVersion18AndHDRSchema19() throws {
+        func schema(_ curve: ToneCurveSettings, isRaster: Bool = false) throws -> Int? {
+            var settings = RawSettings.default
+            settings.toneCurveConfig = curve
+            let root = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: XCTUnwrap(settings.canonicalParamsJSON(isRaster: isRaster).data(using: .utf8))
+            ) as? [String: Any])
+            return root["schema_version"] as? Int
+        }
+        // 已发布的 v17 只放开端点 y；端点 x 内移必须写成 v18，旧客户端按版本拒绝而不是误判数据损坏。
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0.1), .init(x: 1, y: 0.9)])), 17)
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0.15, y: 0), .init(x: 0.85, y: 1)])), 18)
+        XCTAssertEqual(try schema(ToneCurveSettings(mode: .custom, points: [.init(x: 0.1, y: 0.1), .init(x: 0.9, y: 0.9)]), isRaster: true), 18)
+        XCTAssertEqual(try schema(ToneCurveSettings(channels: ToneCurveChannels(
+            blue: ToneCurveShape(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.95, y: 1)])))), 18)
+
+        var hdr = HDRSettings()
+        hdr.toneSettings.curve = ToneCurveSettings(mode: .custom, points: [.init(x: 0.2, y: 0), .init(x: 0.8, y: 1)])
+        let hdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(with: HDRRecipe.document(
+            settings: hdr, input: URL(fileURLWithPath: "/tmp/source.heic"),
+            output: URL(fileURLWithPath: "/tmp/output.jpg"), baseColor: .srgb)) as? [String: Any])
+        XCTAssertEqual(hdrRoot["schema_version"] as? Int, 19)
+        XCTAssertEqual((hdrRoot["processing"] as? [String: Any])?["version"] as? Int, 10)
+
+        // 预览与导出走会话 JSON；核心按 schema 校验端点，HDR 处理版本 10 必须对应 schema 19。
+        let hdrSession = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(CanonicalEditRecipe.hdrSessionStateJSON(settings: hdr).data(using: .utf8))) as? [String: Any])
+        XCTAssertEqual(hdrSession["schema_version"] as? Int, 19)
+        XCTAssertEqual((hdrSession["processing"] as? [String: Any])?["version"] as? Int, 10)
+        var sdr = RawSettings.default
+        sdr.toneCurveConfig = ToneCurveSettings(mode: .custom, points: [.init(x: 0.15, y: 0), .init(x: 0.85, y: 1)])
+        let sdrSession = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(sdr.sdrSessionStateJSON().data(using: .utf8))) as? [String: Any])
+        XCTAssertEqual(sdrSession["schema_version"] as? Int, 18)
+    }
+
     func testOutputSharpeningCanonicalJSONAndHDRRecipeAndSRGBICCProfile() throws {
         let settings = RawSettings.default
         let rawData = try XCTUnwrap(settings.canonicalParamsJSON(isRaster: false, outputSharpening: .standard).data(using: .utf8))
@@ -210,5 +246,47 @@ final class CanonicalEditRecipeTests: XCTestCase {
         XCTAssertEqual(macWb["mode"] as? String, "relative")
         XCTAssertEqual(macWb["relative_temperature"] as? Double, 7800)
         XCTAssertEqual(macWb["relative_tint"] as? Double, 22)
+    }
+
+    func testSessionStateJSONBuildersEmitClosedStateWithoutDummyPaths() throws {
+        let procJSON = CanonicalEditRecipe.processingSessionStateJSON(processingVersion: 2)
+        XCTAssertFalse(procJSON.contains("session.raw"))
+        XCTAssertFalse(procJSON.contains("session.png"))
+        let procRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(procJSON.data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertEqual(Set(procRoot.keys), ["processing"])
+        XCTAssertEqual((procRoot["processing"] as? [String: Any])?["version"] as? Int, 2)
+
+        var sdr = Adjustments()
+        sdr.processing = .c5
+        sdr.lutID = nil
+        sdr.masterRecipeID = MasterRecipe.allRecipes.first?.id
+        sdr.masterRecipeSettingsVersion = 4
+        sdr.strength = 0.5
+        sdr.exposure = 1.0
+        sdr.tint = 10
+        sdr.aiDenoiseEnabled = true
+        sdr.aiDenoiseStrength = 40
+        let sdrJSON = try sdr.sdrSessionStateJSON(isRaster: false, lutPath: nil, includeDenoise: true, outputSharpening: .high)
+        XCTAssertFalse(sdrJSON.contains("session.raw"))
+        XCTAssertFalse(sdrJSON.contains("session.png"))
+        let sdrRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(sdrJSON.data(using: .utf8))
+        ) as? [String: Any])
+        let sdrInput = try XCTUnwrap(sdrRoot["input"] as? [String: Any])
+        XCTAssertNil(sdrInput["path"])
+        let sdrEdits = try XCTUnwrap(sdrRoot["edits"] as? [String: Any])
+        let master = try XCTUnwrap(sdrEdits["master_recipe"] as? [String: Any])
+        XCTAssertEqual(master["active"] as? Bool, true)
+        XCTAssertEqual(master["strength"] as? Double ?? 0, 0.5, accuracy: 1e-6)
+        XCTAssertEqual(master["uncalibrated_fallback"] as? String, "error")
+        let denoise = try XCTUnwrap(sdrEdits["denoise"] as? [String: Any])
+        XCTAssertEqual(denoise["ai_denoise_blend"] as? Double ?? 0, 0.4, accuracy: 1e-6)
+        let look = try XCTUnwrap(sdrEdits["look"] as? [String: Any])
+        XCTAssertEqual(look["strength"] as? Double ?? -1, 0, accuracy: 1e-6)
+        let output = try XCTUnwrap(sdrRoot["output"] as? [String: Any])
+        XCTAssertEqual(output["output_sharpening"] as? String, "high")
+        XCTAssertNil(output["path"])
     }
 }

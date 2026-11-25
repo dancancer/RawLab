@@ -12,6 +12,18 @@ internal static class HDRWorkflowChecks
 {
     private static void Ready(MainWindow window)=>WpfTestHost.PumpUntil(()=>window.ExportPng.IsEnabled);
 
+    private static void WaitForHDRMode(MainWindow window, bool enabled) =>
+        WpfTestHost.PumpUntil(() => window.ExportPng.IsEnabled &&
+            window.Settings.IsHDREditing == enabled &&
+            (window.CurrentResult?.HDR != null) == enabled);
+
+    private static void ToggleHDRMode(MainWindow window, bool enabled)
+    {
+        window.HDREditMenu.IsChecked = enabled;
+        window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        WaitForHDRMode(window, enabled);
+    }
+
     internal static void RunRendition(string repo, string fixture, Action<bool,string> check)
     {
         var root = Path.Combine(repo,"build","windows-hdr-rendition",Guid.NewGuid().ToString("N"));
@@ -24,31 +36,20 @@ internal static class HDRWorkflowChecks
         var window = TestWindowState.CreateIsolatedWindow(root);
         Adjustments Settings() => window.Settings;
         HDRRenderedPair Frame() => window.CurrentResult!.HDR!;
-        void Edit(string field, string value, bool accept)
+        void SelectRenditionTool(EditorAdjustmentTool tool)
         {
-            Exception? error = null;
-            window.Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle,new Action(() => {
-                Window? dialog = null;
-                try {
-                    dialog = window.OwnedWindows.OfType<Window>().Single(child => AutomationProperties.GetAutomationId(child) == "hdr.rendition");
-                    var panel = (StackPanel)dialog.Content;
-                    var row = panel.Children.OfType<ParameterRow>().Single(control =>
-                        AutomationProperties.GetAutomationId(control.Number) == "hdr.rendition."+field+".value");
-                    row.Number.Text=value;
-                    check(row.Commit(),"Visible rendition control accepts "+field);
-                    if (!accept) { dialog.Close(); return; }
-                    Capture(dialog,Path.Combine(root,"hdr-rendition-"+field+".png"));
-                    var apply = panel.Children.OfType<WrapPanel>().Single().Children.OfType<Button>().Single(button =>
-                        AutomationProperties.GetAutomationId(button) == "hdr.rendition.apply");
-                    apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                } catch (Exception failure) {
-                    error=failure;
-                    foreach (var child in window.OwnedWindows.OfType<Window>().ToArray()) child.Close();
-                }
-            }));
-            check(window.HDRRenditionMenu.IsEnabled,"HDR rendition menu is enabled");
-            window.HDRRenditionMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            if (error != null) throw error;
+            var button = window.WorkspaceTools[tool].Button;
+            check(button.IsVisible && button.IsEnabled, "Inline HDR rendition tool is reachable: " + tool);
+            WpfTestHost.Click(button);
+            window.UpdateLayout();
+        }
+        void Edit(EditorAdjustmentTool tool, string value)
+        {
+            SelectRenditionTool(tool);
+            var row = window.OrdinaryParameter;
+            check(row.IsVisible && row.IsEnabled && row.Number.IsEnabled, "Visible inline rendition control accepts " + tool);
+            row.Number.Text = value;
+            check(row.Commit(), "Visible inline rendition control commits " + tool);
             Ready(window);
         }
         try {
@@ -56,30 +57,42 @@ internal static class HDRWorkflowChecks
             var original = Frame();
             var originalHDR = Settings().HDR!;
             var originalSDRExposure = Settings().Capture().Values[(int)Parameter.Exposure];
-            Edit("sdrExposure","-1.5",false);
-            check(Settings().HDR == originalHDR,"Closing the output dialog discards its draft");
-            Edit("sdrExposure","-1.5",true);
+            check(window.HDRRenditionMenu.IsEnabled, "HDR rendition menu is enabled");
+            window.HDRRenditionMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            window.UpdateLayout();
+            Ready(window);
+            check(window.OwnedWindows.Count == 0 &&
+                  window.ExpandedGroup == EditorAdjustmentGroup.HdrRendition &&
+                  window.CurrentToolForTests == EditorAdjustmentTool.HdrPeakLimit &&
+                  window.ToolsScroller.IsVisible,
+                "HDR rendition menu routes to the inline 7th inspector group instead of a modal dialog");
+            SelectRenditionTool(EditorAdjustmentTool.HdrSdrExposure);
+            window.OrdinaryParameter.Number.Text = "-1.5";
+            window.OrdinaryParameter.CancelInput();
+            check(Settings().HDR == originalHDR, "Cancelling inline rendition edit preserves HDR settings");
+            Edit(EditorAdjustmentTool.HdrSdrExposure, "-1.5");
             var baseEdited = Frame();
             check(Settings().HDR!.ProcessingVersion == 4 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5 &&
                   baseEdited.HDR.RGB.SequenceEqual(original.HDR.RGB) && !baseEdited.SDR.RGB.SequenceEqual(original.SDR.RGB),
                 "Editing the SDR base changes only its float plane");
-            Edit("peakLimit","0.3",true);
+            Edit(EditorAdjustmentTool.HdrPeakLimit, "0.3");
             var capped = Frame();
+            Capture(window, Path.Combine(root, "hdr-rendition-inline.png"));
             var edited = Settings().HDR!;
             check(Math.Abs(edited.RenditionSettings.PeakLimitEV-.3) < 1e-9 &&
                   !capped.HDR.RGB.SequenceEqual(baseEdited.HDR.RGB) && capped.SDR.RGB.SequenceEqual(baseEdited.SDR.RGB),
                 "Capping the HDR peak changes only the master");
             window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR!.RenditionSettings.PeakLimitEV == 0 && Settings().HDR!.RenditionSettings.SdrExposureEV == -1.5,
-                "Undo reverts the entire last rendition dialog commit");
+                "Undo reverts only the last inline rendition parameter commit");
             window.RedoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
             check(Settings().HDR == edited,"Redo restores the HDR peak edit");
-            window.HDREditMenu.IsChecked=false;
-            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
-            check(!window.HDRRenditionMenu.IsEnabled && Settings()[Parameter.Exposure] == originalSDRExposure,
-                "Ordinary SDR editing retains its own exposure");
-            window.HDREditMenu.IsChecked=true;
-            window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); Ready(window);
+            ToggleHDRMode(window, false);
+            check(!window.HDRRenditionMenu.IsEnabled &&
+                  window.ExpandedGroup != EditorAdjustmentGroup.HdrRendition &&
+                  Settings()[Parameter.Exposure] == originalSDRExposure,
+                "Ordinary SDR editing disables the 7th rendition group and retains its own exposure");
+            ToggleHDRMode(window, true);
             window.OpenFile(input); Ready(window);
             check(Settings().HDR == edited,"Reopening restores both rendition controls");
             foreach (var format in new[] { ExportFormat.HdrJpeg, ExportFormat.SdrJpeg }) {
@@ -250,7 +263,7 @@ internal static class HDRWorkflowChecks
             check(Settings().HDR == look,"Undo reverts the entire HDR Master recipe");
         } finally {
             window.Close();
-            if (!silverWasInstalled) File.Delete(silverAsset);
+            if (!silverWasInstalled && File.Exists(silverAsset)) File.Delete(silverAsset);
         }
     }
 
@@ -769,7 +782,7 @@ internal static class HDRWorkflowChecks
                 button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 window.OrdinaryParameter.Number.Text=value.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 check(window.OrdinaryParameter.Commit(),"HDR parameter commits through the visible editor: "+tool);Ready(window);
-                check(window.Settings[parameter]==value,"HDR record receives the edited value: "+tool);
+                check(Math.Abs(window.Settings[parameter]-ParameterSpec.All[(int)parameter].ToCanonical(value))<1e-9,"HDR record receives the edited value: "+tool);
             }
             foreach (var (tool, parameter, value) in new[] {
                 (EditorAdjustmentTool.BlackPoint, ToneControlParameter.BlackPoint, -25d),
@@ -800,7 +813,7 @@ internal static class HDRWorkflowChecks
             WpfTestHost.PumpUntil(()=>window.HdrFalseColorCache.Count>0);
             Capture(window,Path.Combine(root,"hdr-false-color.png"));
             window.HDRFalseColorMenu.IsChecked=false;window.HDRFalseColorMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            window.HDREditMenu.IsChecked=false;window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
+            ToggleHDRMode(window, false);
             check(!window.Settings.IsHDREditing && window.CurrentResult!.HDR==null,
                 "HDR toggle produces the ordinary SDR editing frame");
             check(window.AutoExposureButton.IsEnabled && window.MenuAutoExposure.IsEnabled,"SDR editing restores automatic exposure controls");
@@ -817,7 +830,7 @@ internal static class HDRWorkflowChecks
             check(dialog.ConfirmButton.IsEnabled,"LUT wizard displays candidates and accepts a compatible SDR configuration");
             dialog.UpdateLayout();
             Capture(dialog,Path.Combine(root,"sdr-lut-wizard.png"));dialog.Close();
-            window.HDREditMenu.IsChecked=true;window.HDREditMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));Ready(window);
+            ToggleHDRMode(window, true);
             check(window.Settings.IsHDREditing && window.CurrentResult!.HDR!=null,
                 "Returning to HDR invalidates the SDR frame cache");
             Capture(window,Path.Combine(root,"hdr-editor.png"));
@@ -876,14 +889,23 @@ internal static class HDRWorkflowChecks
             check(new FileInfo(sdrOff).Length>100 && new FileInfo(sdrHigh).Length>100 && new FileInfo(sdrDng).Length>100 &&
                   !File.ReadAllBytes(sdrOff).SequenceEqual(File.ReadAllBytes(sdrHigh)),
                 "HDR-as-SDR export applies OutputSharpening for PNG and completes for RenderedDng");
-            var v9Req = neutral.HDR!.NativeRenderRequest(HDRIntent.Final,128,outputSharpening:OutputSharpening.High);
-            check(v9Req.OutputSharpening == 3 &&
-                  v9Req.Base.Base.Base.Base.Base.Base.Base.Base.StructSize == (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.HDRRequestV9>() &&
-                  v9Req.GradingV2.Blending == 50f &&
-                  Math.Abs(v9Req.ParametricCurve.SplitShadow - 0.25f) < 1e-6f &&
-                  Math.Abs(v9Req.ParametricCurve.SplitMidtone - 0.50f) < 1e-6f &&
-                  Math.Abs(v9Req.ParametricCurve.SplitHighlight - 0.75f) < 1e-6f,
-                "HDRRequestV9 populates output_sharpening, v9 struct_size, grading_v2.blending=50, and parametric splits");
+            var v9State = System.Text.Json.Nodes.JsonNode.Parse(
+                neutral.HDR!.ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
+            var v9ParametricState = System.Text.Json.Nodes.JsonNode.Parse(
+                neutral.HDR!.WithTone(neutral.HDR.ToneSettings with
+                {
+                    Curve = new ToneCurveSettings(ToneCurveMode.Custom, [new(0, 0), new(1, 1)],
+                        parametric: new ToneCurveParametric(Shadows: 15))
+                }).ToCanonicalEditStateJson(outputSharpening: OutputSharpening.High))!.AsObject();
+            check(v9State["schema_version"]!.GetValue<int>() == 16 &&
+                  v9State["processing"]!["version"]!.GetValue<int>() == 9 &&
+                  v9State["output"]!["output_sharpening"]!.GetValue<string>() == "high" &&
+                  v9State["edits"]!["tone"]!["curve"]!["parametric"] == null &&
+                  v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["shadows"]!.GetValue<double>() == 15 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_shadow"]!.GetValue<double>() - 0.25) < 1e-6 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_midtone"]!.GetValue<double>() - 0.50) < 1e-6 &&
+                  Math.Abs(v9ParametricState["edits"]!["tone"]!["curve"]!["parametric"]!["split_highlight"]!.GetValue<double>() - 0.75) < 1e-6,
+                "HDR canonical JSON populates output_sharpening, processing v9, default omission, and parametric splits");
             var created=File.GetCreationTimeUtc(source);var modified=File.GetLastWriteTimeUtc(source);
             var originalBytes=File.ReadAllBytes(source);var invalidBytes=originalBytes.ToArray();invalidBytes[0]^=0xff;
             try {
@@ -908,6 +930,221 @@ internal static class HDRWorkflowChecks
             "Mixed HDR/SDR-mode collection rejects HDR JPEG during preflight");
         var rejected=false;try {exporter.Freeze(selection,review,_=>null);}catch(InvalidOperationException){rejected=true;}
         check(rejected && journal.Load()==null,"Rejected collection does not freeze or partially publish outputs");
+    }
+
+    internal static void RunInlineLookAndProcessing(string repo, string fixture, Action<bool, string> check)
+    {
+        var root = Path.Combine(Path.GetFullPath(repo), "build", "windows-hdr-inline", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var source = Path.Combine(root, "source" + Path.GetExtension(fixture));
+        var other = Path.Combine(root, "other" + Path.GetExtension(fixture));
+        File.Copy(fixture, source);
+        File.Copy(fixture, other);
+        var silverSource = Path.Combine(AppContext.BaseDirectory, "BundledLooks", "HDR", "HDR Silver.cube");
+        var silverDigest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(silverSource))).ToLowerInvariant();
+        Loc.Initialize("en");
+        var app = TestWindowState.CreateApplication();
+        SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+        var window = TestWindowState.CreateIsolatedWindow(root);
+        Adjustments Settings() => window.Settings;
+        HDRRenderedPair Frame() => window.CurrentResult!.HDR!;
+        void ClickLookGroup()
+        {
+            var group = window.GroupButtons[EditorAdjustmentGroup.Looks];
+            check(group.IsVisible && group.IsEnabled, "HDR Looks group button is reachable");
+            WpfTestHost.Click(group);
+            window.UpdateLayout();
+        }
+        void PumpDispatcherIdle() => window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+        try
+        {
+            window.Show();
+            WpfTestHost.ArrangeLayout(window, new Size(1024, 720));
+            window.OpenFile(source);
+            Ready(window);
+            window.RefreshWorkspaceForTests();
+            check(window.ToolbarOverflowButton.Visibility == Visibility.Visible &&
+                  window.ToolbarOverflowButton.IsEnabled &&
+                  window.OverflowClippingMenu.IsEnabled &&
+                  window.OverflowInfoMenu.IsEnabled &&
+                  window.ClippingButton.Visibility == Visibility.Collapsed &&
+                  window.InfoButton.Visibility == Visibility.Collapsed,
+                "Compact toolbar (1024px) enables overflow actions when a photo is loaded");
+            window.OverflowClippingMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            window.UpdateLayout();
+            check(window.OverflowClippingMenu.IsChecked &&
+                  Equals(window.ToolbarOverflowButton.Tag, "selected"),
+                "Overflow clipping toggle updates menu check state and compact button selection highlight");
+            window.OverflowClippingMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            window.UpdateLayout();
+            check(!window.OverflowClippingMenu.IsChecked &&
+                  window.ToolbarOverflowButton.Tag == null,
+                "Toggling overflow clipping off clears compact overflow highlight");
+            WpfTestHost.ArrangeLayout(window, new Size(1440, 820));
+            window.RefreshWorkspaceForTests();
+            check(window.ClippingButton.Visibility == Visibility.Visible &&
+                  window.InfoButton.Visibility == Visibility.Visible &&
+                  window.ToolbarOverflowButton.Visibility == Visibility.Collapsed,
+                "Wide toolbar (1440px) reveals inline clipping and info controls with a loaded photo");
+
+            window.OpenFile(source);
+            Ready(window);
+
+            ClickLookGroup();
+            check(window.HdrLookPanel.Visibility == Visibility.Visible &&
+                  window.QuickPresetSurface.Visibility == Visibility.Visible &&
+                  window.HdrLookImportButton.IsEnabled &&
+                  window.HdrLookSilverButton.IsEnabled &&
+                  window.HdrLookSilverMasterButton.IsEnabled &&
+                  !window.HdrLookClearButton.IsEnabled &&
+                  !window.HdrLookStrengthRow.IsEnabled &&
+                  window.HdrLookNotice.Visibility == Visibility.Collapsed,
+                "Inline HDR Looks panel appears inside inspector with default controls enabled");
+
+            var beforeLook = Frame();
+            WpfTestHost.Click(window.HdrLookSilverButton);
+            WpfTestHost.PumpUntil(() => window.HdrLookClearButton.IsEnabled);
+            Ready(window);
+            check(Settings().HDR!.LookSettings == new HDRLookSettings(silverDigest, "HDR Silver", 1) &&
+                  window.HdrLookName.Text == "HDR Silver" &&
+                  window.HdrLookStrengthRow.IsEnabled &&
+                  !Frame().HDR.RGB.SequenceEqual(beforeLook.HDR.RGB) &&
+                  !Frame().SDR.RGB.SequenceEqual(beforeLook.SDR.RGB),
+                "Inline HDR Silver applies look and updates both renditions");
+
+            var fullStrengthFrame = Frame();
+            window.HdrLookStrengthRow.Number.Text = "65";
+            check(window.HdrLookStrengthRow.Commit(), "Inline HDR look strength slider commits 65%");
+            Ready(window);
+            check(Math.Abs(Settings().HDR!.LookSettings.Strength - 0.65) < 1e-9 &&
+                  !Frame().HDR.RGB.SequenceEqual(fullStrengthFrame.HDR.RGB),
+                "Inline HDR look strength adjustment updates settings and rendered HDR frame");
+
+            WpfTestHost.Click(window.HdrLookClearButton);
+            Ready(window);
+            check(Settings().HDR!.LookSettings.IsDefault &&
+                  !window.HdrLookClearButton.IsEnabled &&
+                  !window.HdrLookStrengthRow.IsEnabled &&
+                  Frame().HDR.RGB.SequenceEqual(beforeLook.HDR.RGB),
+                "Inline Neutral button clears HDR look back to baseline");
+
+            WpfTestHost.Click(window.HdrLookSilverMasterButton);
+            WpfTestHost.PumpUntil(() => window.HdrLookClearButton.IsEnabled);
+            Ready(window);
+            var master = Settings().HDR!;
+            check(master.LookSettings.Sha256 == silverDigest &&
+                  master.ToneSettings.BlackPoint == -8 &&
+                  Math.Abs(master.ToneSettings.CurveStrength - 14) < 1e-9 &&
+                  master.EffectSettings.GrainAmount == 14,
+                "Inline HDR Silver Master applies look, curve, and grain in one edit");
+
+            window.UndoAdjustmentMenu.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Ready(window);
+            check(Settings().HDR!.LookSettings.IsDefault, "Undo reverts inline HDR Silver Master");
+
+            var customCube = Path.Combine(root, "custom-inline.cube");
+            File.Copy(silverSource, customCube);
+            var validImport = window.ImportInlineHDRLookForTestsAsync(customCube);
+            WpfTestHost.PumpUntil(() => validImport.IsCompleted);
+            validImport.GetAwaiter().GetResult();
+            Ready(window);
+            check(Settings().HDR!.LookSettings.Sha256 == silverDigest &&
+                  Settings().HDR!.LookSettings.Name == "custom-inline" &&
+                  window.HdrLookName.Text == "custom-inline" &&
+                  window.HdrLookNotice.Visibility == Visibility.Collapsed,
+                "Inline HDR cube import stores and applies custom look without error notice");
+
+            WpfTestHost.Click(window.HdrLookClearButton);
+            Ready(window);
+
+            var badCube = Path.Combine(root, "invalid-inline.cube");
+            File.WriteAllText(badCube, "not a valid 3d lut\n");
+            var invalidImport = window.ImportInlineHDRLookForTestsAsync(badCube);
+            WpfTestHost.PumpUntil(() => invalidImport.IsCompleted);
+            invalidImport.GetAwaiter().GetResult();
+            check(window.HdrLookNotice.Visibility == Visibility.Visible &&
+                  window.HdrLookNotice.Text == Loc.Text("无法读取外观文件。") &&
+                  window.HdrLookSilverButton.IsEnabled &&
+                  Settings().HDR!.LookSettings.IsDefault,
+                "Invalid inline HDR cube shows localized inline error without mutating active HDR look");
+
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            window.InlineHdrLookPrepared = () => { entered.TrySetResult(); return release.Task; };
+            WpfTestHost.Click(window.HdrLookSilverButton);
+            WpfTestHost.PumpUntil(() => entered.Task.IsCompleted);
+            check(!window.HdrLookSilverButton.IsEnabled && !window.HdrLookImportButton.IsEnabled,
+                "Loading state disables inline HDR look buttons while look import runs");
+
+            window.OpenFile(other);
+            Ready(window);
+            check(window.HdrLookSilverButton.IsEnabled &&
+                  window.HdrLookNotice.Visibility == Visibility.Collapsed &&
+                  Settings().HDR!.LookSettings.IsDefault,
+                "Switching photos mid-load resets inline look loading flag and error notice immediately");
+
+            release.TrySetResult();
+            PumpDispatcherIdle();
+            window.InlineHdrLookPrepared = null;
+            check(Settings().HDR!.LookSettings.IsDefault && window.HdrLookSilverButton.IsEnabled,
+                "Completing stale inline look load after photo switch does not mutate the new photo");
+
+            window.OpenFile(source);
+            Ready(window);
+            check(Settings().HDR!.LookSettings.IsDefault,
+                "Stale inline look load was discarded without mutating the original photo");
+
+            check(window.HdrProcessingPanel.Visibility == Visibility.Visible &&
+                  window.SdrProcessingPanel.Visibility == Visibility.Collapsed &&
+                  window.ProcessingHdrMonitoringPanel.Visibility == Visibility.Visible &&
+                  window.ProcessingHdrEditCheck.IsChecked == true &&
+                  window.ProcessingHdrAutoRadio.IsChecked == true &&
+                  window.ProcessingHdrSdrRadio.IsChecked == false &&
+                  window.ProcessingHdrFalseColorCheck.IsChecked == false,
+                "Processing popup displays synced HDR editing and monitoring controls");
+
+            window.ProcessingHdrSdrRadio.IsChecked = true;
+            WpfTestHost.Click(window.ProcessingHdrSdrRadio);
+            check(window.HDRSdrPreviewMenu.IsChecked && !window.HDRPreviewMenu.IsChecked,
+                "Processing popup SDR compatibility radio syncs with menu state");
+
+            window.ProcessingHdrAutoRadio.IsChecked = true;
+            WpfTestHost.Click(window.ProcessingHdrAutoRadio);
+            check(window.HDRPreviewMenu.IsChecked && !window.HDRSdrPreviewMenu.IsChecked,
+                "Processing popup Auto HDR radio restores automatic HDR preview state");
+
+            window.ProcessingHdrFalseColorCheck.IsChecked = true;
+            WpfTestHost.Click(window.ProcessingHdrFalseColorCheck);
+            check(window.HDRFalseColorMenu.IsChecked, "Processing popup HDR false color checkbox syncs to menu");
+            window.ProcessingHdrFalseColorCheck.IsChecked = false;
+            WpfTestHost.Click(window.ProcessingHdrFalseColorCheck);
+            check(!window.HDRFalseColorMenu.IsChecked, "Disabling false color in processing popup syncs back");
+
+            ClickLookGroup();
+            check(window.HdrLookPanel.Visibility == Visibility.Visible,
+                "Looks group opens inline HDR look panel before toggling HDR editing off");
+            window.ProcessingHdrEditCheck.IsChecked = false;
+            WpfTestHost.Click(window.ProcessingHdrEditCheck);
+            WaitForHDRMode(window, false);
+            check(!Settings().IsHDREditing &&
+                  window.SdrProcessingPanel.Visibility == Visibility.Visible &&
+                  window.ProcessingHdrMonitoringPanel.Visibility == Visibility.Collapsed &&
+                  window.HdrLookPanel.Visibility == Visibility.Collapsed,
+                "Turning off HDR edit in processing popup reveals SDR controls and collapses inline HDR look panel");
+
+            window.ProcessingHdrEditCheck.IsChecked = true;
+            WpfTestHost.Click(window.ProcessingHdrEditCheck);
+            WaitForHDRMode(window, true);
+            check(Settings().IsHDREditing &&
+                  window.SdrProcessingPanel.Visibility == Visibility.Collapsed &&
+                  window.ProcessingHdrMonitoringPanel.Visibility == Visibility.Visible,
+                "Turning HDR edit back on in processing popup restores HDR monitoring controls");
+        }
+        finally
+        {
+            window.InlineHdrLookPrepared = null;
+            window.Close();
+        }
     }
     private static void Capture(FrameworkElement element,string path)
     {

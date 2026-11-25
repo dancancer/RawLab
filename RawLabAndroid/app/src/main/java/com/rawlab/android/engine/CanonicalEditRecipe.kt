@@ -3,41 +3,80 @@ package com.rawlab.android.engine
 import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRSettings
+import com.rawlab.android.settings.ToneCurveMode
 import com.rawlab.android.settings.ToneCurveShape
+import com.rawlab.android.settings.canonicalZero
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 internal object CanonicalEditRecipe {
-    fun processingOnlyJson(processingVersion: Int, exposureMode: String = "scene"): String {
+    fun processingSessionStateJson(processingVersion: Int, exposureMode: String? = null): String {
         val root = JSONObject()
-            .put("schema_version", 5)
             .put("processing", JSONObject()
                 .put("family", "rawlab")
                 .put("version", processingVersion.coerceIn(1, 3))
                 .put("quality", "standard"))
-            .put("input", JSONObject()
-                .put("path", "session.raw")
-                .put("type", "raw"))
-            .put("edits", JSONObject()
-                .put("exposure", JSONObject()
-                    .put("mode", exposureMode)
-                    .put("ev", 0.0)
-                    .put("brightness", 1.0))
-                .put("white_balance", JSONObject().put("mode", "camera"))
-                .put("look", JSONObject().put("path", JSONObject.NULL).put("strength", 1.0))
-                .put("detail", JSONObject().put("sharpening", 0.0)))
-            .put("output", JSONObject()
-                .put("path", "session.png")
-                .put("format", "png")
-                .put("size", JSONObject().put("mode", "native")))
+        if (exposureMode != null) {
+            root.put("edits", JSONObject().put("exposure", JSONObject().put("mode", exposureMode)))
+        }
         return root.toString()
     }
+
+    fun compatibilityPreviewStateJson(
+        processingVersion: Int,
+        exposureMode: String,
+        lutPath: String?,
+        lutStrength: Double,
+    ): String = JSONObject()
+        .put("processing", JSONObject()
+            .put("family", "rawlab")
+            .put("version", processingVersion.coerceIn(1, 3))
+            .put("quality", "standard"))
+        .put("edits", JSONObject()
+            .put("exposure", JSONObject()
+                .put("mode", exposureMode)
+                .put("ev", 0.0)
+                .put("brightness", 1.0))
+            .put("look", JSONObject()
+                .put("path", lutPath ?: JSONObject.NULL)
+                .put("strength", lutStrength)))
+        .toString()
 }
 
 internal fun EditSettings.toCanonicalRecipeJson(
     isRaster: Boolean = false,
     includeDenoise: Boolean = true,
     outputSharpening: OutputSharpening = OutputSharpening.OFF,
+): String = encodeSdrCore(
+    isRaster = isRaster,
+    lutPath = null,
+    includeDenoise = includeDenoise,
+    outputSharpening = outputSharpening,
+    includeSessionState = false,
+)
+
+internal fun EditSettings.toSdrSessionStateJson(
+    isRaster: Boolean = false,
+    lutPath: String? = null,
+    includeDenoise: Boolean = true,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
+): String = encodeSdrCore(
+    isRaster = isRaster,
+    lutPath = lutPath,
+    includeDenoise = includeDenoise,
+    outputSharpening = outputSharpening,
+    includeSessionState = true,
+)
+
+private fun EditSettings.encodeSdrCore(
+    isRaster: Boolean,
+    lutPath: String?,
+    includeDenoise: Boolean,
+    outputSharpening: OutputSharpening,
+    includeSessionState: Boolean,
 ): String {
     val exposureString = if (isRaster) {
         "sensor"
@@ -71,24 +110,7 @@ internal fun EditSettings.toCanonicalRecipeJson(
     }
 
     val grading = renderColorGrading
-    fun wheelJson(wheel: ColorGradingWheel): JSONObject = JSONObject()
-        .put("hue", wheel.hue.toDouble())
-        .put("saturation", wheel.saturation.toDouble())
-        .also { if (wheel.luminance != 0f) it.put("luminance", wheel.luminance.toDouble()) }
-
-    val colorGradingObj = JSONObject()
-        .put("shadows", wheelJson(grading.shadows))
-        .put("midtones", wheelJson(grading.midtones))
-        .put("highlights", wheelJson(grading.highlights))
-    if (!grading.global.isDefault) {
-        colorGradingObj.put("global", wheelJson(grading.global))
-    }
-    if (grading.blending != 50f) {
-        colorGradingObj.put("blending", grading.blending.toDouble())
-    }
-    if (grading.balance != 0f) {
-        colorGradingObj.put("balance", grading.balance.toDouble())
-    }
+    val colorGradingObj = colorGradingJson(grading, allowV2 = true)
 
     val lensObj = JSONObject()
         .put("distortion", lens.distortion)
@@ -116,89 +138,291 @@ internal fun EditSettings.toCanonicalRecipeJson(
             "Invalid raster relative white balance"
         }
     }
+    val scale = recipeScale
+    val clampedStrength = strength.coerceIn(0f, 2f)
+    var masterRecipeObj: JSONObject? = null
     val wbObj = when {
         rasterRelativeWb -> JSONObject()
             .put("mode", "relative")
             .put("relative_temperature", temperature.toDouble())
             .put("relative_tint", tint.toDouble())
         isRaster -> JSONObject().put("mode", "none")
+        includeSessionState && recipeID != null -> {
+            val effectiveTemp = if (customWb) temperature else 6500f
+            val effectiveTint = if (!customWb && (clampedStrength == 0f || tint == 0f)) 0f else tint
+            masterRecipeObj = JSONObject()
+                .put("active", true)
+                .put("strength", clampedStrength.toDouble())
+                .put("custom_wb", customWb)
+                .put("temperature_kelvin", effectiveTemp.toDouble())
+                .put("tint", effectiveTint.toDouble())
+                .put("uncalibrated_fallback", "error")
+            JSONObject().put("mode", "camera")
+        }
+        includeSessionState && customWb -> JSONObject()
+            .put("mode", "temperature")
+            .put("temperature_kelvin", temperature.toDouble())
+            .put("tint", tint.toDouble())
         else -> JSONObject().put("mode", "camera")
     }
+
+    val hasLut = includeSessionState && !lutPath.isNullOrEmpty()
+    val lookObj = JSONObject()
+        .put("path", if (hasLut) lutPath else JSONObject.NULL)
+        .put("strength", if (includeSessionState) (if (hasLut) clampedStrength.toDouble() else 0.0) else 1.0)
+
+    val contrastVal = if (includeSessionState) {
+        (if (scale == 1f) contrast else 1f + (contrast - 1f) * scale).coerceIn(0f, 2f).toDouble()
+    } else 1.0
+    val saturationVal = if (includeSessionState) {
+        (if (scale == 1f) saturation else 1f + (saturation - 1f) * scale).coerceIn(0f, 2f).toDouble()
+    } else 1.0
+    val highlightsVal = if (includeSessionState) {
+        (highlights * scale).canonicalZero().coerceIn(-1f, 1f).toDouble()
+    } else 0.0
+    val shadowsVal = if (includeSessionState) {
+        (shadows * scale).coerceIn(-1f, 1f).toDouble()
+    } else 0.0
 
     val edits = JSONObject()
         .put("exposure", JSONObject()
             .put("mode", exposureString)
-            .put("ev", 0.0)
+            .put("ev", if (includeSessionState) (exposure * scale).coerceIn(-20f, 20f).toDouble() else 0.0)
             .put("brightness", 1.0))
         .put("white_balance", wbObj)
-        .put("look", JSONObject().put("path", JSONObject.NULL).put("strength", 1.0))
-        .put("geometry", JSONObject()
-            .put("crop", JSONObject()
-                .put("x", geometry.cropX.toDouble())
-                .put("y", geometry.cropY.toDouble())
-                .put("width", geometry.cropWidth.toDouble())
-                .put("height", geometry.cropHeight.toDouble()))
-            .put("quarter_turns", geometry.quarterTurns)
-            .put("flip_horizontal", geometry.flipHorizontal)
-            .put("flip_vertical", geometry.flipVertical)
-            .put("straighten_degrees", geometry.straightenDegrees.toDouble())
-            .put("perspective", JSONObject()
-                .put("horizontal", geometry.perspectiveHorizontal.toDouble())
-                .put("vertical", geometry.perspectiveVertical.toDouble())))
+        .put("look", lookObj)
+        .put("geometry", geometryJson(geometry))
         .put("tone", JSONObject()
-            .put("contrast", 1.0)
-            .put("saturation", 1.0)
-            .put("highlights", 0.0)
-            .put("shadows", 0.0)
-            .put("s_curve", 0.0)
+            .put("contrast", contrastVal)
+            .put("saturation", saturationVal)
+            .put("highlights", highlightsVal)
+            .put("shadows", shadowsVal)
+            .put("s_curve", if (includeSessionState) renderToneCurve.toDouble() else 0.0)
             .put("black_point", renderBlackPoint.toDouble() / 100.0)
             .put("white_point", renderWhitePoint.toDouble() / 100.0)
             .put("curve", curveObject))
         .put("color", JSONObject().put("vibrance", renderVibrance.toDouble() / 100.0))
         .put("color_grading", colorGradingObj)
-        .put("detail", JSONObject().put("sharpening", 0.0))
+        .put("detail", JSONObject().put("sharpening", if (includeSessionState) sharpening.coerceIn(0f, 2f).toDouble() else 0.0))
         .put("hsl", JSONObject()
             .put("hue", hslAxisJson(0))
             .put("saturation", hslAxisJson(8))
             .put("lightness", hslAxisJson(16)))
-        .put("effects", JSONObject()
-            .put("vignette_amount", effects.vignetteAmount.toDouble())
-            .put("vignette_midpoint", effects.vignetteMidpoint.toDouble())
-            .put("vignette_roundness", effects.vignetteRoundness.toDouble())
-            .put("vignette_feather", effects.vignetteFeather.toDouble())
-            .put("vignette_highlights", effects.vignetteHighlights.toDouble())
-            .put("grain_amount", effects.grainAmount.toDouble())
-            .put("grain_size", effects.grainSize.toDouble())
-            .put("grain_roughness", effects.grainRoughness.toDouble())
+        .put("effects", effectsJson(effects)
             .put("clarity", renderClarity.toDouble() / 100.0)
             .put("dehaze", renderDehaze.toDouble() / 100.0))
         .put("denoise", denoiseObj)
         .put("lens_correction", lensObj)
-
-    val activeV012 = renderCurve.hasV2Extensions || grading.hasV2Extensions || rasterRelativeWb || outputSharpening != OutputSharpening.OFF
-    val outputObj = JSONObject()
-        .put("path", "session.png")
-        .put("format", "png")
-        .put("size", JSONObject().put("mode", "native"))
-    if (outputSharpening != OutputSharpening.OFF) {
-        outputObj.put("output_sharpening", outputSharpening.wireValue)
+    if (masterRecipeObj != null) {
+        edits.put("master_recipe", masterRecipeObj)
     }
 
+    val activeV012 = includeSessionState || renderCurve.hasV2Extensions || grading.hasV2Extensions ||
+        rasterRelativeWb || outputSharpening != OutputSharpening.OFF
     val root = JSONObject()
-        .put("schema_version", if (activeV012) 17 else if (isRaster) 5 else 7)
+        .put("schema_version", if (renderCurve.hasFreeEndpointX) 18 else if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)
             .put("quality", processing.quality))
-        .put("input", JSONObject()
-            .put("path", if (isRaster) "session.png" else "session.raw")
-            .put("type", if (isRaster) "raster" else "raw"))
+        .put("input", JSONObject().put("type", if (isRaster) "raster" else "raw"))
         .put("edits", edits)
-        .put("output", outputObj)
+    if (outputSharpening != OutputSharpening.OFF) {
+        root.put("output", JSONObject().put("output_sharpening", outputSharpening.wireValue))
+    }
     if (!isRaster) {
         root.put("x3f_mode", x3fMode.id)
     }
     return root.toString()
+}
+
+internal fun HDRCameraDevelopmentSettings.toCameraDevelopmentJson(
+    processingVersion: Int,
+    profileDirectory: File? = null,
+    useAi: Boolean = false,
+): String = JSONObject()
+    .put("camera_development", toCameraDevelopmentObject(processingVersion, profileDirectory, useAi))
+    .toString()
+
+internal fun HDRSettings.toHdrSessionStateJson(
+    lookDirectory: File? = null,
+    outputSharpening: OutputSharpening = OutputSharpening.OFF,
+    camera: HDRCameraDevelopmentSettings? = null,
+    profileDirectory: File? = null,
+    cameraProcessingVersion: Int? = null,
+    useCameraAi: Boolean = false,
+): String {
+    val effectiveVersion = maxOf(processingVersion, if (outputSharpening != OutputSharpening.OFF) 9 else 1)
+    val schemaVersion = when (effectiveVersion) {
+        10 -> 19
+        9 -> 16
+        8 -> 15
+        1 -> 6
+        else -> effectiveVersion + 6
+    }
+
+    val toneObj = JSONObject()
+        .put("contrast", 1.0 + contrast.toDouble() / 100.0)
+        .put("saturation", 1.0 + saturation.toDouble() / 100.0)
+        .put("highlights", -highlights.toDouble() / 100.0)
+        .put("shadows", shadows.toDouble() / 100.0)
+    if (effectiveVersion >= 2) {
+        val current = toneSettings
+        val curveObj = curveShapeJson(current.curve.master)
+        if (effectiveVersion >= 8 && current.curve.hasChannelCurves) {
+            curveObj.put("channels", JSONObject()
+                .put("red", curveShapeJson(current.curve.channels.red))
+                .put("green", curveShapeJson(current.curve.channels.green))
+                .put("blue", curveShapeJson(current.curve.channels.blue)))
+        }
+        if (effectiveVersion >= 9 && current.curve.applyToLuminosity) {
+            curveObj.put("apply_to_luminosity", true)
+        }
+        if (effectiveVersion >= 9 && !current.curve.parametric.isDefault) {
+            curveObj.put("parametric", current.curve.parametric.json())
+        }
+        toneObj
+            .put("black_point", current.blackPoint.toDouble() / 100.0)
+            .put("white_point", current.whitePoint.toDouble() / 100.0)
+            .put("s_curve", if (current.curve.mode == ToneCurveMode.CUSTOM) 0.0 else current.curveStrength.toDouble() / 100.0)
+            .put("curve", curveObj)
+    }
+
+    val edits = JSONObject()
+        .put("exposure", JSONObject().put("ev", exposure.toDouble()))
+        .put("white_balance", JSONObject()
+            .put("mode", "relative")
+            .put("relative_temperature", temperature.toDouble())
+            .put("relative_tint", tint.toDouble()))
+        .put("tone", toneObj)
+        .put("geometry", geometryJson(geometry))
+
+    if (effectiveVersion >= 3) {
+        val c = colorSettings
+        val hslValues = c.hsl.packed()
+        fun hslAxis(offset: Int): JSONArray = JSONArray().apply {
+            for (i in 0 until 8) put(hslValues[offset + i].toDouble())
+        }
+        edits.put("color", JSONObject().put("vibrance", c.vibrance.toDouble() / 100.0))
+        edits.put("hsl", JSONObject()
+            .put("hue", hslAxis(0))
+            .put("saturation", hslAxis(8))
+            .put("lightness", hslAxis(16)))
+        edits.put("color_grading", colorGradingJson(c.grading, allowV2 = effectiveVersion >= 9))
+    }
+    if (effectiveVersion >= 4) {
+        val r = renditionSettings
+        edits.put("rendition", JSONObject()
+            .put("peak_limit_ev", r.peakLimitEV.toDouble())
+            .put("sdr_exposure_ev", r.sdrExposureEV.toDouble())
+            .put("sdr_contrast", r.sdrContrast.toDouble() / 100.0)
+            .put("sdr_saturation", r.sdrSaturation.toDouble() / 100.0))
+    }
+    if (effectiveVersion >= 5) {
+        edits.put("effects", effectsJson(effectSettings))
+    }
+    if (effectiveVersion >= 6) {
+        val d = detailSettings
+        edits.put("detail", JSONObject()
+            .put("sharpening", d.sharpening.toDouble())
+            .put("clarity", d.clarity.toDouble())
+            .put("dehaze", d.dehaze.toDouble())
+            .put("denoise", d.denoise.toDouble()))
+    }
+    if (effectiveVersion >= 7) {
+        val l = lookSettings
+        val lookObj = JSONObject().put("strength", l.strength.toDouble())
+        l.asset(lookDirectory)?.absolutePath?.let { lookObj.put("path", it) }
+        l.sha256?.let { lookObj.put("sha256", it) }
+        edits.put("look", lookObj)
+    }
+
+    val root = JSONObject()
+        .put("schema_version", schemaVersion)
+        .put("processing", JSONObject()
+            .put("family", "rawlab_hdr")
+            .put("version", effectiveVersion)
+            .put("quality", "standard"))
+        .put("edits", edits)
+    if (outputSharpening != OutputSharpening.OFF) {
+        root.put("output", JSONObject().put("output_sharpening", outputSharpening.wireValue))
+    }
+    if (camera != null) {
+        root.put("camera_development",
+            camera.toCameraDevelopmentObject(cameraProcessingVersion ?: 3, profileDirectory, useCameraAi))
+    }
+    return root.toString()
+}
+
+private fun HDRCameraDevelopmentSettings.toCameraDevelopmentObject(
+    processingVersion: Int,
+    profileDirectory: File?,
+    useAi: Boolean,
+): JSONObject {
+    val obj = JSONObject()
+        .put("version", 1)
+        .put("wb_mode", if (customWhiteBalance) "temperature" else "as_shot")
+        .put("temperature", if (customWhiteBalance) temperature.toDouble() else 0.0)
+        .put("tint", if (customWhiteBalance) tint.toDouble() else 0.0)
+        .put("exposure_reference", if (sensorExposure) "sensor" else "metadata")
+        .put("fbdd_level", fbddLevel)
+        .put("lens_distortion", lensDistortion)
+        .put("lens_tca", lensTca)
+        .put("lens_vignetting", lensVignetting)
+        .put("lens_auto_crop", lensAutoCrop)
+        .put("use_ai", useAi)
+        .put("processing_version", processingVersion.coerceIn(1, 3))
+    lensProfile?.let { obj.put("lens_profile_id", it) }
+    cameraProfile?.let { profile ->
+        obj.put("camera_profile", JSONObject()
+            .put("path", profile.requireAsset(profileDirectory).absolutePath)
+            .put("sha256", profile.sha256))
+    }
+    return obj
+}
+
+private fun geometryJson(geometry: com.rawlab.android.geometry.GeometrySettings): JSONObject = JSONObject()
+    .put("crop", JSONObject()
+        .put("x", geometry.cropX.toDouble())
+        .put("y", geometry.cropY.toDouble())
+        .put("width", geometry.cropWidth.toDouble())
+        .put("height", geometry.cropHeight.toDouble()))
+    .put("quarter_turns", geometry.quarterTurns)
+    .put("flip_horizontal", geometry.flipHorizontal)
+    .put("flip_vertical", geometry.flipVertical)
+    .put("straighten_degrees", geometry.straightenDegrees.toDouble())
+    .put("perspective", JSONObject()
+        .put("horizontal", geometry.perspectiveHorizontal.toDouble())
+        .put("vertical", geometry.perspectiveVertical.toDouble()))
+
+private fun effectsJson(effects: com.rawlab.android.settings.PhotoEffectsSettings): JSONObject = JSONObject()
+    .put("vignette_amount", effects.vignetteAmount.toDouble())
+    .put("vignette_midpoint", effects.vignetteMidpoint.toDouble())
+    .put("vignette_roundness", effects.vignetteRoundness.toDouble())
+    .put("vignette_feather", effects.vignetteFeather.toDouble())
+    .put("vignette_highlights", effects.vignetteHighlights.toDouble())
+    .put("grain_amount", effects.grainAmount.toDouble())
+    .put("grain_size", effects.grainSize.toDouble())
+    .put("grain_roughness", effects.grainRoughness.toDouble())
+
+private fun colorGradingJson(
+    grading: com.rawlab.android.settings.ColorGradingSettings,
+    allowV2: Boolean,
+): JSONObject {
+    fun wheelJson(wheel: ColorGradingWheel): JSONObject = JSONObject()
+        .put("hue", wheel.hue.toDouble())
+        .put("saturation", wheel.saturation.toDouble())
+        .also { if (allowV2 && wheel.luminance != 0f) it.put("luminance", wheel.luminance.toDouble()) }
+    val obj = JSONObject()
+        .put("shadows", wheelJson(grading.shadows))
+        .put("midtones", wheelJson(grading.midtones))
+        .put("highlights", wheelJson(grading.highlights))
+    if (allowV2) {
+        if (!grading.global.isDefault) obj.put("global", wheelJson(grading.global))
+        if (grading.blending != 50f) obj.put("blending", grading.blending.toDouble())
+        if (grading.balance != 0f) obj.put("balance", grading.balance.toDouble())
+    }
+    return obj
 }
 
 private fun curveShapeJson(shape: ToneCurveShape): JSONObject {

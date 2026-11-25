@@ -29,8 +29,8 @@ PY
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
 
 rawlab_ios_core_shared_sources SOURCES "$ROOT/RawLab/RawLab/Core" "$ROOT/RawLab/RawLab/UI" "$ROOT/Shared"
-rawlabkit_flags typecheck "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -enable-testing -c -parse-as-library -emit-module \
+rawlabnative_flags typecheck "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -enable-testing -c -parse-as-library -emit-module \
     -emit-module-path "$OUT/RawLabSubtoolCoreUI.swiftmodule" \
     -module-name RawLabSubtoolCoreUI -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
@@ -42,8 +42,8 @@ PY
 )
 ar rcs "$OUT/libRawLabSubtoolCoreUI.a" "$OUT/coreobjs"/*.o "$OUT/bridge.o"
 
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -parse-as-library -module-name SubtoolMenuDraftTests \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -parse-as-library -module-name SubtoolMenuDraftTests \
     -module-cache-path "$OUT/module-cache" -I "$OUT" \
     -Xcc -I"$ROOT/lutools/include" -Xcc -I"$ROOT/RawLab/RawLab/Support" \
     "$ROOT/RawLab/tests/SubtoolMenuDraftTests.swift" "$OUT/libRawLabSubtoolCoreUI.a" \

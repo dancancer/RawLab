@@ -10,9 +10,9 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>RawLab</AssemblyName>
-    <Version>0.12.1</Version>
-    <FileVersion>0.12.1.24</FileVersion>
-    <InformationalVersion>0.12.1+build.24</InformationalVersion>
+    <Version>0.13.0</Version>
+    <FileVersion>0.13.0.25</FileVersion>
+    <InformationalVersion>0.13.0+build.25</InformationalVersion>
     <RawLabUpdateTrustFile Condition="'$(RawLabUpdateTrustFile)' == ''">$(MSBuildThisFileDirectory)Updates/UpdateTrust.json</RawLabUpdateTrustFile>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <RawLabPrepareBundledLuts Condition="'$(RawLabPrepareBundledLuts)' == ''">true</RawLabPrepareBundledLuts>

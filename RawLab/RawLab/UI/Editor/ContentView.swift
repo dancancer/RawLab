@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import Photos
 import PhotosUI
 import SwiftUI
@@ -499,6 +500,14 @@ struct ContentView: View {
 private struct UsagePrivacyView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var usage = UsageAnalytics.shared
+    @ObservedObject private var diagnostics = DiagnosticCenter.shared
+    @State private var userNote = ""
+    @State private var copiedCode = false
+    @State private var showingPreview = false
+    @State private var previewText = ""
+    @State private var exportedZipURL: URL?
+    @State private var showingZipPicker = false
+    @State private var shareZipURL: URL?
 
     var body: some View {
         NavigationStack {
@@ -515,6 +524,77 @@ private struct UsagePrivacyView: View {
                     Text(L10n.text("不采集照片、预览、文件名、路径、EXIF 或 AI 内容。关闭后停止新采集，已发出的请求无法撤回。"))
                     Link(L10n.text("阿里云隐私政策"), destination: URL(string: "https://terms.alicdn.com/legal-agreement/terms/privacy_policy_full/20240308104330389/20240308104330389.html")!)
                 }
+                Section(L10n.text("故障诊断与错误日志")) {
+                    Toggle(
+                        L10n.text("记录详细诊断日志"),
+                        isOn: Binding(
+                            get: { diagnostics.isRecording },
+                            set: { diagnostics.setRecordingEnabled($0) }
+                        )
+                    )
+                    .accessibilityIdentifier("diagnostics.recording")
+
+                    Text(L10n.text(diagnostics.statusSummaryKey)).foregroundStyle(.secondary)
+                    Text(L10n.text("诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。"))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+
+                    TextField(L10n.text("问题简述（选填，勿填个人隐私）"), text: $userNote)
+                        .accessibilityIdentifier("diagnostics.note")
+
+                    if let reportID = diagnostics.lastUploadedReportID {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(L10n.format("诊断码：%@", reportID))
+                                .font(.system(.body, design: .monospaced).bold())
+                            Button(L10n.text(copiedCode ? "已复制" : "复制诊断码")) {
+                                UIPasteboard.general.string = reportID
+                                copiedCode = true
+                            }
+                            .accessibilityIdentifier("diagnostics.copyCode")
+                        }
+                    }
+
+                    if let key = diagnostics.feedbackMessageKey {
+                        Text(L10n.text(key))
+                            .foregroundStyle(diagnostics.feedbackIsError ? Color.red : Color.secondary)
+                    }
+
+                    Button(L10n.text("保存到设备…")) {
+                        prepareZipExport(forShare: false)
+                    }
+                    .disabled((!diagnostics.hasExportableLogs && !diagnostics.isRecording) || diagnostics.isUploading)
+                    .accessibilityIdentifier("diagnostics.saveZip")
+
+                    Button(L10n.text("分享诊断包…")) {
+                        prepareZipExport(forShare: true)
+                    }
+                    .disabled((!diagnostics.hasExportableLogs && !diagnostics.isRecording) || diagnostics.isUploading)
+                    .accessibilityIdentifier("diagnostics.shareZip")
+
+                    Button(L10n.text(diagnostics.isUploading ? "正在上传…" : "一键云端上传")) {
+                        copiedCode = false
+                        Task { _ = await diagnostics.uploadLogs(userNote: userNote) }
+                    }
+                    .disabled((!diagnostics.hasExportableLogs && !diagnostics.isRecording) || diagnostics.isUploading)
+                    .accessibilityIdentifier("diagnostics.upload")
+
+                    Button(L10n.text("预览日志")) {
+                        previewText = (try? diagnostics.store.buildReportBundle(userNote: userNote))?.previewText
+                            ?? L10n.text("暂无可导出的错误日志。")
+                        showingPreview = true
+                    }
+                    .disabled(!diagnostics.hasExportableLogs && !diagnostics.isRecording)
+                    .accessibilityIdentifier("diagnostics.preview")
+
+                    if diagnostics.hasExportableLogs {
+                        Button(L10n.text("清除日志"), role: .destructive) {
+                            copiedCode = false
+                            diagnostics.clearLogs()
+                        }
+                        .disabled(diagnostics.isUploading)
+                        .accessibilityIdentifier("diagnostics.clear")
+                    }
+                }
             }
             .navigationTitle(L10n.text("隐私设置"))
             .navigationBarTitleDisplayMode(.inline)
@@ -523,8 +603,91 @@ private struct UsagePrivacyView: View {
                     Button(L10n.text("完成")) { dismiss() }.accessibilityIdentifier("usage.done")
                 }
             }
+            .onAppear { diagnostics.refreshState() }
+            .sheet(isPresented: $showingZipPicker, onDismiss: cleanupExportedZip) {
+                if let url = exportedZipURL {
+                    FileExportPicker(urls: [url]) { saved in
+                        if saved { diagnostics.recordExportSuccess() }
+                        showingZipPicker = false
+                    }
+                }
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { shareZipURL != nil },
+                    set: { if !$0 { cleanupSharedZip() } }
+                )
+            ) {
+                if let url = shareZipURL {
+                    DiagnosticActivityShareView(items: [url])
+                }
+            }
+            .sheet(isPresented: $showingPreview) {
+                NavigationStack {
+                    ScrollView {
+                        Text(previewText)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
+                            .textSelection(.enabled)
+                    }
+                    .navigationTitle(L10n.text("预览日志"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(L10n.text("关闭")) { showingPreview = false }
+                        }
+                    }
+                }
+                .preferredColorScheme(.dark)
+            }
         }.preferredColorScheme(.dark).tint(.yellow)
     }
+
+    private func prepareZipExport(forShare: Bool) {
+        let note = userNote
+        let store = diagnostics.store
+        Task {
+            do {
+                let url = try await Task.detached(priority: .utility) {
+                    try store.makeTemporaryZipFile(userNote: note, stopActiveRecording: true)
+                }.value
+                diagnostics.refreshState()
+                if forShare {
+                    shareZipURL = url
+                } else {
+                    exportedZipURL = url
+                    showingZipPicker = true
+                }
+            } catch {
+                diagnostics.recordExportFailure()
+            }
+        }
+    }
+
+    private func cleanupExportedZip() {
+        if let url = exportedZipURL {
+            try? FileManager.default.removeItem(at: url)
+            exportedZipURL = nil
+        }
+    }
+
+    private func cleanupSharedZip() {
+        if let url = shareZipURL {
+            try? FileManager.default.removeItem(at: url)
+            shareZipURL = nil
+        }
+    }
+}
+
+private struct DiagnosticActivityShareView: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

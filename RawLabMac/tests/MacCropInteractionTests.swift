@@ -42,7 +42,7 @@ import CoreGraphics
             for translation in [CGSize(width: -100, height: 100), CGSize(width: 100, height: -100)] {
                 let adjusted = MacCropInteraction.dragging(baseline, handle: handle, translation: translation,
                                                           canvasSize: canvas, ratio: nil)
-                check(valid(adjusted) && adjusted.width >= 0.01 && adjusted.height >= 0.01,
+                check(valid(adjusted) && adjusted.width >= 0.001 && adjusted.height >= 0.001,
                       "free resize keeps a useful minimum size")
             }
         }

@@ -6,34 +6,19 @@ import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.render.WorkResult
 import com.rawlab.android.editor.render.discardOwnedInput
 import com.rawlab.android.editor.storage.EditSaveResult
-import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.photo.ImportedPhoto
-import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.HDRModeError
 import com.rawlab.android.settings.PhotoIdentity
-import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.File
 
 internal class EditorImportRecoveryStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val editStore: EditorEditStore,
-    private val draftStore: EditorDraftStore,
-    private val strings: EditorStrings,
-    private val isDisposed: () -> Boolean,
-    private val gpuMode: () -> Int,
-    private val formatFailure: (Throwable) -> String,
-    private val collectionPhoto: (String) -> ImportedPhoto?,
-    private val collectionOwns: (File) -> Boolean,
-    private val onReleaseDeferredCollectionCopies: () -> Unit,
-    private val onCancelAdjustmentInteraction: () -> Unit,
-    private val onPersist: (ImportedPhoto, EditSettings, (EditSaveResult) -> Unit) -> Unit,
-    private val onBeforeStartImport: () -> Unit,
-    private val onSubmitImport: (Work.Import) -> Unit,
-    private val onAcceptHistorySource: (ImportedPhoto, com.rawlab.android.settings.PhotoEditState?) -> Unit,
-    private val onCollectionOpened: (String) -> Unit,
-    private val onIncludeIndependentRecipeLook: (EditSettings) -> Unit,
-    private val onCommitAdjustments: (work: () -> Unit, completed: (Result<Unit>) -> Unit) -> Unit,
+    private val session: EditorDocumentSession,
 ) {
+    private val mutable get() = session.mutable
+    private val editStore get() = session.editStore
+    private val draftStore get() = session.draftStore
+    private val strings get() = session.strings
+
     private val pendingPhotoImport = PendingPhotoImport()
     private var failedX3fImport: Work.Import? = null
     private var failedUnusableImport: Pair<Work.Import, PhotoIdentity>? = null
@@ -52,10 +37,10 @@ internal class EditorImportRecoveryStateHolder(
             return completed(false)
         }
         if (mutable.value.operation != Operation.NONE || mutable.value.draft != null) return completed(false)
-        onCancelAdjustmentInteraction()
+        session.actions.cancelAdjustmentInteraction()
         val current = mutable.value
         if (current.photo != null) {
-            onPersist(current.photo, current.edits) { saved ->
+            session.actions.persist(current.photo, current.edits, false) { saved ->
                 if (saved.state == EditSaveState.FAILED) {
                     mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
                     completed(false)
@@ -73,13 +58,13 @@ internal class EditorImportRecoveryStateHolder(
     fun clearX3fRecovery() {
         failedX3fImport?.let { if (it.ownsRetained) it.retained?.file?.delete() }
         failedX3fImport = null
-        onReleaseDeferredCollectionCopies()
+        session.actions.releaseDeferredCollections()
     }
 
     fun clearUnusableImportRecovery() {
         failedUnusableImport?.first?.discardOwnedInput()
         failedUnusableImport = null
-        onReleaseDeferredCollectionCopies()
+        session.actions.releaseDeferredCollections()
     }
 
     fun dismissUnusableImportRecovery() {
@@ -91,12 +76,12 @@ internal class EditorImportRecoveryStateHolder(
 
     fun resetUnusableImportRecord() {
         val pending = failedUnusableImport ?: return
-        if (isDisposed() || mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
+        if (session.disposed || mutable.value.committingAdjustments || mutable.value.operation != Operation.NONE) return
         val (retry, identity) = pending
-        onCommitAdjustments({
+        session.commitAdjustments({
             runCatching { draftStore.clear(identity) }
             editStore.resetToUnmodified(identity)
-        }) { result ->
+        }, false) { result ->
             result.fold({
                 if (failedUnusableImport?.first === retry) {
                     startPhotoImport(retry.uri, retry)
@@ -109,7 +94,7 @@ internal class EditorImportRecoveryStateHolder(
                     recoverUnusableRecord = false,
                     saveState = saveResult.state,
                     saveError = formatted,
-                    error = formatted ?: formatFailure(error),
+                    error = formatted ?: session.failure(error),
                 )
             })
         }
@@ -124,7 +109,10 @@ internal class EditorImportRecoveryStateHolder(
     fun startPhotoImport(uri: Uri, retry: Work.Import? = null) {
         if (retry !== failedX3fImport) clearX3fRecovery()
         if (retry !== failedUnusableImport?.first) clearUnusableImportRecovery()
-        onBeforeStartImport()
+        session.actions.closeQuickPresets()
+        session.incrementSourceRevision()
+        session.actions.closeAdjustmentOperation()
+        session.actions.resetDraftForImport()
         pendingPhotoImport.begin(PhotoIdentity(uri.toString()))
         // A remains the displayed photo until B succeeds; its receipt belongs to that same state.
         // Successful import publishes B and B's receipt together in accept().
@@ -141,8 +129,8 @@ internal class EditorImportRecoveryStateHolder(
         // closeAdjustmentOperation 会释放延迟文件，先建立导入保护再移交恢复引用。
         failedX3fImport = null
         failedUnusableImport = null
-        val retained = collectionPhoto(uri.toString())
-        onSubmitImport(retry?.copy(gpuMode = gpuMode()) ?: Work.Import(uri, gpuMode(), retained))
+        val retained = session.actions.collectionPhoto(uri.toString())
+        session.actions.submitRender(retry?.copy(gpuMode = session.gpuMode()) ?: Work.Import(uri, session.gpuMode(), retained))
     }
 
     fun handleX3fFailure(value: WorkResult.X3fImportFailure) {
@@ -151,7 +139,7 @@ internal class EditorImportRecoveryStateHolder(
         failedX3fImport = value.retry
         pendingPhotoImport.clear()
         mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
-            error = formatFailure(value.error),
+            error = session.failure(value.error),
             retryLegacyX3f = true,
             recoverUnusableRecord = false,
         )
@@ -164,7 +152,7 @@ internal class EditorImportRecoveryStateHolder(
         pendingPhotoImport.clear()
         val message = if (value.error is HDRModeError.InvalidSettings)
             strings.text(R.string.hdr_unsupported)
-        else EditSaveResult(EditSaveState.FAILED, value.error, reading = true).formatMessage(strings) ?: formatFailure(value.error)
+        else EditSaveResult(EditSaveState.FAILED, value.error, reading = true).formatMessage(strings) ?: session.failure(value.error)
         mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
             error = message,
             retryLegacyX3f = false,
@@ -174,8 +162,8 @@ internal class EditorImportRecoveryStateHolder(
 
     fun handleMissingLook(value: WorkResult.MissingLook) {
         releasePreviousPhoto(value.photo)
-        onAcceptHistorySource(value.photo, value.importedRecord)
-        onCollectionOpened(value.photo.identity.value)
+        session.adjustmentHistory.acceptSource(value.photo, value.importedRecord)
+        session.actions.collectionOpened(value.photo.identity.value)
         mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
             photo = value.photo,
             edits = value.edits,
@@ -185,15 +173,15 @@ internal class EditorImportRecoveryStateHolder(
             error = strings.text(R.string.look_unavailable),
             processingMigration = runCatching { editStore.processingMigration(value.photo.identity) }.getOrNull(),
         )
-        onIncludeIndependentRecipeLook(value.edits)
-        if (value.persistOnImport) onPersist(value.photo, value.edits) { saved ->
+        session.actions.includeIndependentRecipeLook(value.edits)
+        if (value.persistOnImport) session.actions.persist(value.photo, value.edits, false) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
         }
     }
 
     fun releasePreviousPhoto(next: ImportedPhoto) {
         val previous = mutable.value.photo ?: return
-        if (previous.file != next.file && !collectionOwns(previous.file)) previous.file.delete()
+        if (previous.file != next.file && !session.actions.collectionOwns(previous.file)) previous.file.delete()
     }
 
     fun clearAll() {

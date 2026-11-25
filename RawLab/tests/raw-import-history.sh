@@ -69,6 +69,26 @@ sony2fuji_status hook_process(sony2fuji_session* session, const sony2fuji_reques
     return status;
 }
 DYLD_INTERPOSE_NAME(hook_process, sony2fuji_process, process)
+
+sony2fuji_status hook_session_render(sony2fuji_session* session, const sony2fuji_render_options_v1* options,
+                                     const char* edit_state_json, sony2fuji_buffer* output,
+                                     sony2fuji_viewport_roi_result* out_roi) {
+    g_process_calls.fetch_add(1);
+    if (auto cb = g_on_process.exchange(nullptr)) {
+        cb();
+    }
+    const uint64_t before = sony2fuji_session_get_raw_decode_count(session);
+    const sony2fuji_status status = sony2fuji_session_render(session, options, edit_state_json, output, out_roi);
+    const uint64_t after = sony2fuji_session_get_raw_decode_count(session);
+    if (after > before) {
+        g_core_decode.fetch_add(static_cast<int32_t>(after - before));
+    }
+    if (status == SONY2FUJI_STATUS_CANCELLED) {
+        g_cancelled_status.fetch_add(1);
+    }
+    return status;
+}
+DYLD_INTERPOSE_NAME(hook_session_render, sony2fuji_session_render, session_render)
 CPP
 
 xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$TARGET" -isysroot "$SDK" \
@@ -78,8 +98,8 @@ xcrun --sdk iphonesimulator clang++ -std=c++17 -shared -target "$TARGET" -isysro
     -Xlinker -rpath -Xlinker @executable_path/Frameworks \
     -o "$HARNESS/Frameworks/libimport_counter.dylib"
 
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/tests/RawImportHistoryTests.swift" "$OUT/bridge.o" \

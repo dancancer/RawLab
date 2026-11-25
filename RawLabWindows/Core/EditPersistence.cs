@@ -55,6 +55,8 @@ public sealed record AdjustmentSnapshot(
     GeometrySettings? Geometry = null,
     HDRSettings? HDR = null)
 {
+    public const int CurrentSettingsVersion = 2;
+    public int SettingsVersion { get; init; }
     public ProcessingIdentity Processing { get; init; } = ProcessingIdentity.Legacy;
     public X3fMode X3fMode { get; init; } = X3fMode.Legacy;
     public bool AIDenoiseEnabled { get; init; }
@@ -79,7 +81,7 @@ public sealed record AdjustmentSnapshot(
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public int? ProRAWDecodeVersion { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
-    public bool SameAs(AdjustmentSnapshot other) => Processing == other.Processing && X3fMode == other.X3fMode &&
+    public bool SameAs(AdjustmentSnapshot other) => SettingsVersion == other.SettingsVersion && Processing == other.Processing && X3fMode == other.X3fMode &&
         AIDenoiseEnabled == other.AIDenoiseEnabled && MasterRecipeID == other.MasterRecipeID && MasterRecipeSettingsVersion == other.MasterRecipeSettingsVersion && ExposureMode == other.ExposureMode && CameraWhiteBalance == other.CameraWhiteBalance &&
         AsShotTemperature == other.AsShotTemperature && AsShotTint == other.AsShotTint && Values.SequenceEqual(other.Values) &&
         (Denoise ?? new()) == (other.Denoise ?? new()) &&
@@ -90,6 +92,15 @@ public sealed record AdjustmentSnapshot(
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
         HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion &&
         AIDenoiseStrength == other.AIDenoiseStrength;
+    internal AdjustmentSnapshot Normalized() => SettingsVersion < CurrentSettingsVersion ? Restore().Capture() : this;
+    internal AdjustmentSnapshot WithAsShotCalibration((double Temperature, double Tint)? calibration)
+    {
+        if (calibration is not { } wb || (AsShotTemperature != null && AsShotTint != null))
+            return this;
+        var restored = Restore();
+        restored.ResolveWhiteBalance(wb);
+        return restored.Capture();
+    }
     public AdjustmentSnapshot Copy() => this with { Values = (double[])Values.Clone() };
 }
 

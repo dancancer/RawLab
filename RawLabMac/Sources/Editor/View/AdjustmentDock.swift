@@ -20,21 +20,13 @@ struct AdjustmentDock: View {
     var body: some View {
         let _ = localizationLocale
         let groups = visibleGroups
-        let split = (groups.count + 1) / 2
         VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
-                groupRow(groups)
-                VStack(alignment: .leading, spacing: 2) {
-                    groupRow(groups.prefix(split))
-                    groupRow(groups.dropFirst(split))
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    groupRow(groups.prefix(3))
-                    groupRow(groups.dropFirst(3).prefix(3))
-                    if groups.count > 6 { groupRow(groups.dropFirst(6)) }
-                }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 6).padding(.vertical, 2)
+            GroupFlowLayout(spacing: 2, lineSpacing: 2) {
+                ForEach(groups) { groupButton($0) }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
             Divider()
             if let group = navigation.expandedGroup, groups.contains(group) {
                 if group == .looks && !model.settings.isHDREditing {
@@ -52,8 +44,10 @@ struct AdjustmentDock: View {
                 if model.geometryDraft != nil && !model.quickPresetsVisible {
                     MacGeometryWorkspace(model: model)
                 } else if model.quickPresetsVisible {
-                    if model.settings.isHDREditing {
-                        let revision = model.sourceRevision
+                    QuickPresetView(model: model)
+                } else if group == .looks && model.settings.isHDREditing {
+                    let revision = model.sourceRevision
+                    VStack(spacing: 0) {
                         HDRLookControls(settings: Binding(
                             get: { model.settings.hdr ?? HDRSettings() },
                             set: { if model.sourceRevision == revision && model.settings.isHDREditing { model.settings.hdr = $0 } }
@@ -61,8 +55,8 @@ struct AdjustmentDock: View {
                            onResourceRestored: { model.schedule(forceExact: true) })
                             .padding(.horizontal, 10).padding(.vertical, 6).id(revision).disabled(model.busy)
                         Divider()
+                        QuickPresetView(model: model)
                     }
-                    QuickPresetView(model: model)
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -81,12 +75,6 @@ struct AdjustmentDock: View {
         .frame(maxWidth: .infinity)
         .environment(\.parameterInputScope, "\(model.file?.absoluteString ?? "").\(navigation.tool.rawValue)")
         .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
-    }
-
-    private func groupRow(_ groups: some RandomAccessCollection<EditorAdjustmentGroup>) -> some View {
-        HStack(spacing: 2) {
-            ForEach(Array(groups)) { groupButton($0) }
-        }.fixedSize(horizontal: true, vertical: false)
     }
 
     private func groupButton(_ group: EditorAdjustmentGroup) -> some View {
@@ -110,17 +98,32 @@ struct AdjustmentDock: View {
     }
 
     @ViewBuilder private var lightSections: some View {
+        let exposureChanged = model.isAdjustmentModified(.tool(.exposure)) || model.isAdjustmentModified(.tool(.contrast))
+        let tonesChanged = model.isAdjustmentModified(.tool(.highlights)) || model.isAdjustmentModified(.tool(.shadows)) ||
+            model.isAdjustmentModified(.tool(.whitePoint)) || model.isAdjustmentModified(.tool(.blackPoint))
         section(title: L10n.text("曝光"), id: "light.exposure", open: showsExposure, available: true,
-                toggle: { showsExposure.toggle() }) {
+                changed: exposureChanged, toggle: { showsExposure.toggle() }) {
             parameterRow(.exposure)
             parameterRow(.contrast)
         }
+        .contextMenu {
+            ForEach([EditorAdjustmentTool.exposure, .contrast], id: \.self) { t in
+                Button(L10n.format("重置%@", t.title)) { model.requestAdjustmentReset(.tool(t)) }
+                    .disabled(!model.isAdjustmentModified(.tool(t)))
+            }
+        }
         section(title: L10n.text("明暗"), id: "light.tones", open: showsTones, available: true,
-                toggle: { showsTones.toggle() }) {
+                changed: tonesChanged, toggle: { showsTones.toggle() }) {
             parameterRow(.highlights, showsTicks: true)
             parameterRow(.shadows)
             parameterRow(.whitePoint)
             parameterRow(.blackPoint)
+        }
+        .contextMenu {
+            ForEach([EditorAdjustmentTool.highlights, .shadows, .whitePoint, .blackPoint], id: \.self) { t in
+                Button(L10n.format("重置%@", t.title)) { model.requestAdjustmentReset(.tool(t)) }
+                    .disabled(!model.isAdjustmentModified(.tool(t)))
+            }
         }
         toolSection(.toneCurve)
     }
@@ -210,9 +213,10 @@ struct AdjustmentDock: View {
         if tool == .toneCurve {
             let source = model.sourceRevision
             let hdr = model.settings.isHDREditing
+            let toneCurveSpec = AdjustmentParameter.toneCurve.spec(for: model.settings)
             MacToneCurveControls(settings: Binding(get: { model.settings.editingCurveSettings }, set: { model.settings.editingCurveSettings = $0 }),
-                legacy: Binding(get: { AdjustmentParameter.toneCurve.value(from: model.settings) },
-                                set: { model.settings.set(.toneCurve, to: $0) }),
+                legacy: Binding(get: { toneCurveSpec.displayValue(AdjustmentParameter.toneCurve.value(from: model.settings)) },
+                                set: { model.settings.set(.toneCurve, to: toneCurveSpec.modelValue($0)) }),
                 usesExposureStops: hdr, source: "\(source).\(hdr)",
                 isCurrent: { model.sourceRevision == source && model.settings.isHDREditing == hdr &&
                     model.adjustmentNavigation.tool == .toneCurve && model.adjustmentNavigation.expandedGroup != nil },
@@ -254,7 +258,7 @@ struct AdjustmentDock: View {
                 }
             } else { DenoiseControls(model: model, onReset: { model.requestAdjustmentReset(.tool(.denoise)) }).id(resetVersion) }
         } else if let parameter = tool.parameter, parameter.isPhotoEffect {
-            PhotoEffectsControls(model: model, tool: parameter, onReset: { model.requestAdjustmentReset(.tool(tool)) })
+            PhotoEffectsControls(model: model, tool: parameter, horizontalPadding: 0, onReset: { model.requestAdjustmentReset(.tool(tool)) })
                 .id("\(parameter.rawValue).\(resetVersion)")
         } else if let keyPath = tool.hdrRenditionKeyPath {
             hdrRenditionRow(tool, keyPath: keyPath)
@@ -347,7 +351,7 @@ struct AdjustmentDock: View {
         case .outside: return L10n.text("请在调整后的照片区域取色。")
         case .stale: return L10n.text("预览已变化，请重新取色。")
         case .unavailable, .failed: return L10n.text("取色失败，请重试。")
-        case nil: return nil
+        case nil: return model.wbEyedropperEnabled ? L10n.text("点击照片中的中性灰区域取样，按 Esc 退出。") : nil
         }
     }
 
@@ -386,5 +390,48 @@ struct AdjustmentDock: View {
     private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {
         tool == .geometry || tool == .whiteBalance || tool == .hsl || tool == .colorGrading ||
             tool == .vignette || tool == .grain || tool.hdrRenditionKeyPath != nil || tool.parameter?.hdrKeyPath != nil
+    }
+}
+
+private struct GroupFlowLayout: Layout {
+    var spacing: CGFloat = 2
+    var lineSpacing: CGFloat = 2
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var usedWidth: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                usedWidth = max(usedWidth, x - spacing)
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        if x > 0 { usedWidth = max(usedWidth, x - spacing) }
+        return CGSize(width: proposal.width ?? usedWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + size.width > bounds.maxX + 0.5 {
+                x = bounds.minX
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+            subview.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }

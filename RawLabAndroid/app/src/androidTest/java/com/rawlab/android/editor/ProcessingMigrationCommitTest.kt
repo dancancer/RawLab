@@ -244,9 +244,9 @@ class ProcessingMigrationCommitTest {
         val identity = PhotoIdentity(Uri.fromFile(source).toString())
         val store = EditStore(File(context.filesDir, "edits"))
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
-        store.save(identity, EditSettings(exposure = .5f, saturation = .2f, processing = ProcessingIdentity.C5))
+        store.save(identity, EditSettings(exposure = .5f, saturation = 1.2f, processing = ProcessingIdentity.C5))
         store.commitProcessingMigration(store.readState(identity),
-            EditSettings(exposure = .6f, saturation = .2f, processing = ProcessingIdentity.CURRENT), quality)
+            EditSettings(exposure = .6f, saturation = 1.2f, processing = ProcessingIdentity.CURRENT), quality)
         val owner = ViewModelStore()
         lateinit var model: EditorViewModel
         try {
@@ -262,7 +262,7 @@ class ProcessingMigrationCommitTest {
                 val reset = requireNotNull(model.prepareReset(EditorResetScope.All).prepared)
                 assertTrue(model.commitReset(reset))
             }
-            await { model.state.value.canExport && model.state.value.edits.exposure == 0f && model.state.value.edits.saturation == 0f }
+            await { model.state.value.canExport && model.state.value.edits.exposure == 0f && model.state.value.edits.saturation == 1f }
             assertNull("Reset All must clear EditorState.processingMigration in memory", model.state.value.processingMigration)
             assertNull("Reset All must clear persisted migration receipt", store.processingMigration(identity))
             val resetStored = requireNotNull(store.load(identity))
@@ -287,7 +287,7 @@ class ProcessingMigrationCommitTest {
             await {
                 model.state.value.canExport &&
                     model.state.value.edits.exposure == .6f &&
-                    model.state.value.edits.saturation == .2f
+                    model.state.value.edits.saturation == 1.2f
             }
             assertNull("Undoing Reset All keeps EditorState.processingMigration null", model.state.value.processingMigration)
             assertNull("Undoing Reset All keeps persisted migration receipt null", store.processingMigration(identity))
@@ -309,9 +309,9 @@ class ProcessingMigrationCommitTest {
         val identity = PhotoIdentity(Uri.fromFile(source).toString())
         val store = EditStore(File(context.filesDir, "edits"))
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
-        store.save(identity, EditSettings(exposure = .5f, saturation = .2f, processing = ProcessingIdentity.C5))
+        store.save(identity, EditSettings(exposure = .5f, saturation = 1.2f, processing = ProcessingIdentity.C5))
         store.commitProcessingMigration(store.readState(identity),
-            EditSettings(exposure = .6f, saturation = .2f, processing = ProcessingIdentity.CURRENT), quality)
+            EditSettings(exposure = .6f, saturation = 1.2f, processing = ProcessingIdentity.CURRENT), quality)
         val owner = ViewModelStore()
         lateinit var model: EditorViewModel
         try {
@@ -328,7 +328,7 @@ class ProcessingMigrationCommitTest {
                 assertTrue(model.commitReset(lightReset))
             }
             await { model.state.value.canExport && model.state.value.edits.exposure == 0f }
-            assertEquals(.2f, model.state.value.edits.saturation, 0f)
+            assertEquals(1.2f, model.state.value.edits.saturation, 0f)
             assertEquals(ProcessingMigrationStatus.MIGRATED, model.state.value.processingMigration?.status)
             assertEquals(ProcessingMigrationStatus.MIGRATED, store.processingMigration(identity)?.status)
 
@@ -337,7 +337,7 @@ class ProcessingMigrationCommitTest {
                 val colorReset = requireNotNull(model.prepareReset(EditorResetScope.Group(EditorAdjustmentGroup.COLOR)).prepared)
                 assertTrue(model.commitReset(colorReset))
             }
-            await { model.state.value.canExport && model.state.value.edits.saturation == 0f }
+            await { model.state.value.canExport && model.state.value.edits.saturation == 1f }
             assertEquals("Non-All group reset must keep EditorState.processingMigration even at neutral values",
                 ProcessingMigrationStatus.MIGRATED, model.state.value.processingMigration?.status)
             assertEquals(ProcessingMigrationStatus.MIGRATED, store.processingMigration(identity)?.status)

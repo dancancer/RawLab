@@ -9,7 +9,7 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     internal AppPaths Paths => appPaths;
-    internal EditStore? EditStoreInstance { get => editStore; set => editStore = value; }
+    internal EditStore? EditStoreInstance { get => persistence.Store; set => persistence.RebindStore(value); }
     internal BatchJournal BatchJournalInstance { get => batchJournal; set => batchJournal = value; }
     internal AdjustmentPresetStore PresetStoreInstance { get => presetStore; set => presetStore = value; }
     internal Library LibraryInstance => library;
@@ -30,7 +30,7 @@ public partial class MainWindow
     internal bool ExactReady => exactReady;
     internal bool EditDirty => editDirty;
     internal long EditRevision => editRevision;
-    internal long OpenRevision => Volatile.Read(ref openRevision);
+    internal long OpenRevision => persistence.OpenRevision;
     internal int? ExportLongEdge { get => exportLongEdge; set => exportLongEdge = value; }
     internal OutputSharpening ExportOutputSharpening { get => exportOutputSharpening; set { exportOutputSharpening = value; RefreshExportSharpeningMenu(); } }
     internal string? LastExportedPath => lastExportedPath;
@@ -113,7 +113,7 @@ public partial class MainWindow
     internal void MarkEditedForTests() => MarkEdited();
     internal bool SaveEditsForTests() => SaveEdits();
     internal Task<bool> FlushSaveEditsForTestsAsync() => FlushSaveEditsAsync();
-    internal bool HasPendingBackgroundSave => editSaveQueue.HasPendingWork;
+    internal bool HasPendingBackgroundSave => persistence.HasPendingBackgroundSave;
     internal void ScheduleForTests(bool initialPreview = false, bool viewportOnly = false) => Schedule(initialPreview, viewportOnly);
     internal void RefreshControlsForTests() => RefreshControls();
     internal void RefreshWorkspaceForTests() => RefreshWorkspace();
@@ -174,7 +174,7 @@ public partial class MainWindow
             new UpdatePreferences { AutomaticCheck = false });
         usageAnalytics = isolatedAnalytics;
         UpdateNotice.Visibility = Visibility.Collapsed;
-        editStore = new EditStore(editDirectory ?? isolatedPaths.EditsDirectory);
+        persistence.RebindStore(new EditStore(editDirectory ?? isolatedPaths.EditsDirectory));
         photoPreviewCacheDirectory = isolatedPaths.EditedPhotoPreviewCacheDirectory;
         recentLooksPath = isolatedPaths.RecentLooksPath;
         workspaceWidthsPath = isolatedPaths.WorkspaceWidthsPath;
@@ -184,8 +184,25 @@ public partial class MainWindow
         exportStagingDirectory = isolatedPaths.ExportStagingDirectory;
         aiPreferenceStore = new AIGpuPreferenceStore(isolatedPaths.AiGpuPreferencesPath);
         aiDiagnostics = new AIDiagnosticStore(isolatedPaths.AiDiagnosticsDirectory);
+        diagnosticSession = new DiagnosticSessionStore(isolatedPaths.DiagnosticsDirectory);
         aiPreference = new AIGpuPreference();
         library.SettingsPath = isolatedPaths.FoldersPath;
         library.Roots.Clear();
+        if (photoPreviews != null && !ReferenceEquals(photoPreviews.Store, editStore))
+        {
+            photoPreviews.Store.Changed -= PhotoEditChanged;
+            photoPreviews.Ready -= PhotoPreviewReady;
+            _ = photoPreviews.DisposeAsync();
+            photoPreviews = null;
+        }
+        StartExternalStoreWatcher();
     }
+
+    internal bool HasActiveExternalReloadBannerForTests => ExternalReloadBanner.Visibility == Visibility.Visible;
+    internal bool HasUnsavedManualDraftForTests => HasUnsavedManualDraft;
+    internal void ReloadExternalUpdateForTests() => ReloadExternalUpdate();
+    internal void KeepManualDraftOnExternalUpdateForTests() => KeepManualDraftOnExternalUpdate();
+    internal void HandleExternalPresetsFileChangeForTests() => HandleExternalPresetsFileChange();
+    internal void HandleExternalEditsFileChangeForTests() => HandleExternalEditsFileChange();
+    internal EditedPhotoPreviews? PhotoPreviewsForTests() => PhotoPreviews();
 }

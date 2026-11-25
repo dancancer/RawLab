@@ -12,14 +12,15 @@ import tempfile
 import anyio
 
 from . import catalog
+from .bsh_guidance import enrich_bsh_diagnosis
 from .config import ServerConfig, default_data_dir
 from .errors import AdapterError
 
 
 REQUIRED_COMMANDS = {"capabilities", "validate_recipe", "info", "preview", "export"}
-OPTIONAL_COMMANDS = {"analyze", "print_transfer"}
+OPTIONAL_COMMANDS = {"analyze", "print_transfer", "save_preset", "sync_photo_edit"}
 COMMANDS = REQUIRED_COMMANDS | OPTIONAL_COMMANDS
-RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
+RECIPE_VERSIONS = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19}
 MAX_JSON_BYTES = 4 * 1024 * 1024
 IO_ERROR_STATUS = 3
 logger = logging.getLogger(__name__)
@@ -406,19 +407,27 @@ class CliAdapter:
 
             if image_path is not None:
                 source = self._read_path(image_path)
-                return await self._run(
+                envelope = await self._run(
                     "analyze",
                     ["--input", source.lexical, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
                 )
-
-            with tempfile.TemporaryDirectory(prefix="rawlab-mcp-analyze-") as tmpdir:
-                _, recipe, _ = await self._recipe(recipe_path, validating=False, ignore_output=True)
-                private_recipe = Path(tmpdir) / "recipe.json"
-                private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
-                return await self._run(
-                    "analyze",
-                    ["--recipe", private_recipe, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+            else:
+                with tempfile.TemporaryDirectory(prefix="rawlab-mcp-analyze-") as tmpdir:
+                    _, recipe, _ = await self._recipe(recipe_path, validating=False, ignore_output=True)
+                    private_recipe = Path(tmpdir) / "recipe.json"
+                    private_recipe.write_text(json.dumps(recipe, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+                    envelope = await self._run(
+                        "analyze",
+                        ["--recipe", private_recipe, "--analyze", "--long-edge", str(long_edge), *sample_args, *lens_args, "--json"],
+                    )
+            if envelope.ok and isinstance(envelope.result, dict):
+                return Envelope(
+                    ok=envelope.ok,
+                    command=envelope.command,
+                    result=enrich_bsh_diagnosis(envelope.result),
+                    error=envelope.error,
                 )
+            return envelope
         except AdapterError as e:
             return failure("analyze", e)
 
@@ -450,8 +459,7 @@ class CliAdapter:
 
         try:
             data_dir = self.config.data_dir or default_data_dir()
-            result = await asyncio.to_thread(
-                gui_sync.save_preset,
+            result = await gui_sync.save_preset_async(
                 data_dir=data_dir,
                 name=name,
                 values=values,
@@ -460,6 +468,7 @@ class CliAdapter:
                 overwrite=overwrite,
                 recipe_context=recipe_context,
                 hdr_processing_version=hdr_processing_version,
+                cli_runner=self._run,
             )
             return Envelope("save_preset", True, result)
         except AdapterError as e:
@@ -481,14 +490,14 @@ class CliAdapter:
             checked = self._read_path(photo_path)
             is_raster = checked.canonical.suffix.lower() in _RASTER_SUFFIXES
             data_dir = self.config.data_dir or default_data_dir()
-            result = await asyncio.to_thread(
-                gui_sync.sync_photo_edit,
+            result = await gui_sync.sync_photo_edit_async(
                 data_dir=data_dir,
                 photo_canonical=checked.canonical,
                 adjustments=adjustments,
                 is_raster=is_raster,
                 film_id=film_id,
                 master_recipe_id=master_recipe_id,
+                cli_runner=self._run,
             )
             return Envelope("sync_photo_edit", True, result)
         except AdapterError as e:

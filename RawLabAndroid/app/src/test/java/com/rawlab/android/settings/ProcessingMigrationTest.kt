@@ -2,6 +2,7 @@ package com.rawlab.android.settings
 
 import com.rawlab.android.adjustments.AdjustmentStatus
 import com.rawlab.android.adjustments.AdjustmentTransferSession
+import com.rawlab.android.engine.NativeMigrationResult
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -10,17 +11,35 @@ import java.nio.file.Files
 
 class ProcessingMigrationTest {
     private fun original() = EditSettings(processing = ProcessingIdentity.C5, film = "saved-look", exposure = .5f,
-        highlights = -.2f, clarity = 14f, denoise = DenoiseSettings(true, 10f, 70f, 90f))
-    private fun result(disposition: Float = 1f) = floatArrayOf(1f, 80f, 2f, 3f, disposition, 20f,
-        .75f, 1.1f, .1f, .2f, 1.15f, -.1f, .2f, .05f, .1f, -.05f, .001f, .003f, .002f, .001f)
+        highlights = .2f, clarity = 14f, denoise = DenoiseSettings(true, 10f, 70f, 90f))
+    private fun result(disposition: Int = 1) = NativeMigrationResult(
+        sourceVersion = 2,
+        targetVersion = 3,
+        disposition = disposition,
+        evaluationCount = 20,
+        exposureEv = .75f,
+        contrast = 1.1f,
+        highlights = .1f,
+        shadows = .2f,
+        saturation = 1.15f,
+        blackPoint = -.1f,
+        whitePoint = .2f,
+        vibrance = .05f,
+        clarity = .1f,
+        dehaze = -.05f,
+        rgbRmse = .001f,
+        p99Error = .003f,
+        worstTileRmse = .002f,
+        detailRmse = .001f,
+    )
 
     @Test fun canonicalMappingPreservesAllOtherEdits() {
         val before = original()
-        val after = requireNotNull(ProcessingMigrationOutcome.decode(before, result()).candidate(before))
+        val after = requireNotNull(ProcessingMigrationOutcome.fromNative(before, result()).candidate(before))
         assertEquals(.75f, after.exposure, 1e-6f)
-        assertEquals(.1f, after.contrast, 1e-6f)
-        assertEquals(-.1f, after.highlights, 1e-6f)
-        assertEquals(.15f, after.saturation, 1e-6f)
+        assertEquals(1.1f, after.contrast, 1e-6f)
+        assertEquals(.1f, after.highlights, 1e-6f)
+        assertEquals(1.15f, after.saturation, 1e-6f)
         assertEquals(-10f, after.blackPoint, 1e-6f)
         assertEquals(5f, after.vibrance, 1e-6f)
         assertEquals(before.denoise, after.denoise)
@@ -29,15 +48,15 @@ class ProcessingMigrationTest {
         assertEquals(before.temperature, after.temperature, 0f)
         assertEquals(before.tint, after.tint, 0f)
         assertThrows(IllegalArgumentException::class.java) {
-            ProcessingMigrationOutcome.decode(before, result().also { it[5] = 0f })
+            ProcessingMigrationOutcome.fromNative(before, result().copy(evaluationCount = 0))
         }
         assertEquals(ProcessingIdentity.CURRENT, after.processing)
-        assertNull(ProcessingMigrationOutcome.decode(before, result(2f)).candidate(before))
+        assertNull(ProcessingMigrationOutcome.fromNative(before, result(2)).candidate(before))
         assertThrows(IllegalArgumentException::class.java) {
-            ProcessingMigrationOutcome.decode(before, result().also { it[16] = .2f })
+            ProcessingMigrationOutcome.fromNative(before, result().copy(rgbRmse = .2f))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            ProcessingMigrationOutcome.decode(before, result().also { it[3] = 4f })
+            ProcessingMigrationOutcome.fromNative(before, result().copy(targetVersion = 4))
         }
     }
 
@@ -49,7 +68,7 @@ class ProcessingMigrationTest {
             val store = EditStore(directory)
             store.save(identity, before)
             val expected = store.readState(identity)
-            val fit = ProcessingMigrationOutcome.decode(before, result())
+            val fit = ProcessingMigrationOutcome.fromNative(before, result())
             val candidate = requireNotNull(fit.candidate(before))
             val originalBytes = File(directory, "edits.properties").readBytes()
             val failing = EditStore(directory) { _, _ -> throw IOException("injected write failure") }
@@ -79,7 +98,7 @@ class ProcessingMigrationTest {
             val before = original(); val store = EditStore(directory)
             store.save(identity, before)
             val expected = store.readState(identity)
-            val fit = ProcessingMigrationOutcome.decode(before, result(2f))
+            val fit = ProcessingMigrationOutcome.fromNative(before, result(2))
             assertEquals(expected, store.commitProcessingMigration(expected, null, fit.quality))
             val kept = store.processingMigration(identity)!!
             assertFalse(kept.shouldAttempt(before, 2))
@@ -101,7 +120,7 @@ class ProcessingMigrationTest {
             val store = EditStore(directory)
             val session = AdjustmentTransferSession(store)
             store.save(identity, before)
-            val fit = ProcessingMigrationOutcome.decode(before, result())
+            val fit = ProcessingMigrationOutcome.fromNative(before, result())
             val candidate = requireNotNull(fit.candidate(before))
             val accepted = store.commitProcessingMigration(store.readState(identity), candidate, fit.quality)
             session.adoptProcessingMigration(accepted)
@@ -141,7 +160,7 @@ class ProcessingMigrationTest {
             // Also verify KEPT and ROLLED_BACK receipts are cleared by explicit reset intent.
             val keptIdentity = PhotoIdentity("content://test/kept-photo")
             store.save(keptIdentity, before)
-            val keptFit = ProcessingMigrationOutcome.decode(before, result(2f))
+            val keptFit = ProcessingMigrationOutcome.fromNative(before, result(2))
             val keptState = store.commitProcessingMigration(store.readState(keptIdentity), null, keptFit.quality)
             session.adoptProcessingMigration(keptState)
             assertEquals(ProcessingMigrationStatus.KEPT, store.processingMigration(keptIdentity)?.status)

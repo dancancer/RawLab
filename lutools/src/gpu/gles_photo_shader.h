@@ -91,8 +91,8 @@ float toneCurve(float x) {
 }
 float customToneCurve(float x, int count, int base) {
     if (count == 0) return x;
-    if (x <= 0.0) return curveRanges[base].z;
-    if (x >= 1.0) return curveRanges[base + count - 1].w;
+    if (x <= curveRanges[base].x) return curveRanges[base].z;
+    if (x >= curveRanges[base + count - 1].y) return curveRanges[base + count - 1].w;
     int i = 0;
     while (i + 1 < count && x > curveRanges[base + i].y) ++i;
     vec4 r = curveRanges[base + i];

@@ -32,8 +32,9 @@ import SwiftUI
     }
 
     static func draft(_ model: EditorModel) -> (ParameterValueField, NumericTextField, ParameterValueField.Coordinator) {
-        let parent = ParameterValueField(value: Binding(get: { model.settings.contrast }, set: { model.settings.contrast = $0 }),
-            range: -100...100, precision: .standard, title: "Contrast", unit: "%", identifier: "value.contrast")
+        let spec = AdjustmentParameter.contrast.spec
+        let parent = ParameterValueField(value: Binding(get: { spec.displayValue(model.settings.contrast) }, set: { model.settings.contrast = spec.modelValue($0) }),
+            range: spec.displayRange, precision: .standard, title: "Contrast", unit: "%", identifier: "value.contrast")
         let field = NumericTextField()
         field.cell = NumericTextFieldCell(textCell: "")
         let coordinator = ParameterValueField.Coordinator(parent)

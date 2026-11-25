@@ -5503,13 +5503,13 @@
     "ja": "端点は固定されています",
     "zh-Hans": "端点固定"
   },
-  "点击曲线区域添加控制点，拖动中间点调整。": {
-    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen.",
-    "en": "Tap the curve area to add a point. Drag interior points to adjust.",
-    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.",
-    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster.",
-    "ja": "カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。",
-    "zh-Hans": "点击曲线区域添加控制点，拖动中间点调整。"
+  "点击添加控制点；双击控制点或拖出画布可删除。": {
+    "de": "Zum Hinzufügen tippen oder klicken; Punkt zum Löschen doppeltippen oder herausziehen.",
+    "en": "Click or tap to add a point; double-tap a point or drag it outside to delete.",
+    "es": "Haz clic o toca para añadir un punto; haz doble clic sobre él o arrástralo fuera para eliminarlo.",
+    "fr": "Cliquez ou touchez pour ajouter un point ; double-cliquez dessus ou glissez-le hors du cadre pour le supprimer.",
+    "ja": "クリック／タップで点を追加。制御点のダブルタップまたは枠外へのドラッグで削除できます。",
+    "zh-Hans": "点击添加控制点；双击控制点或拖出画布可删除。"
   },
   "曲线模式与控制点": {
     "de": "Kurvenmodus und Punkte",
@@ -8927,14 +8927,6 @@
     "ja": "分割ポイント",
     "zh-Hans": "拆分点"
   },
-  "重置曲线": {
-    "en": "Reset Curve",
-    "de": "Kurve zurücksetzen",
-    "fr": "Réinitialiser la courbe",
-    "es": "Restablecer curva",
-    "ja": "カーブをリセット",
-    "zh-Hans": "重置曲线"
-  },
   "明亮度": {
     "en": "Luminance",
     "de": "Luminanz",
@@ -9190,5 +9182,509 @@
     "fr": "Effacer les filtres",
     "ja": "フィルタを解除",
     "zh-Hans": "清除筛选"
+  },
+  "旧版 FBDD": {
+    "de": "Älteres FBDD",
+    "en": "Legacy FBDD",
+    "es": "FBDD heredado",
+    "fr": "Ancien FBDD",
+    "ja": "旧方式 FBDD",
+    "zh-Hans": "旧版 FBDD"
+  },
+  "旧版：{0}": {
+    "de": "Älteres Verfahren: {0}",
+    "en": "Legacy: {0}",
+    "es": "Heredado: {0}",
+    "fr": "Ancien : {0}",
+    "ja": "旧方式: {0}",
+    "zh-Hans": "旧版：{0}"
+  },
+  "几何编辑": {
+    "de": "Geometrie bearbeiten",
+    "en": "Geometry edits",
+    "es": "Edición de geometría",
+    "fr": "Réglages géométriques",
+    "ja": "ジオメトリ編集",
+    "zh-Hans": "几何编辑"
+  },
+  "胶片模拟": {
+    "de": "Filmsimulation",
+    "en": "Film simulation",
+    "es": "Simulación de película",
+    "fr": "Simulation de film",
+    "ja": "フィルムシミュレーション",
+    "zh-Hans": "胶片模拟"
+  },
+  "轻度": {
+    "de": "Mild",
+    "en": "Mild",
+    "es": "Leve",
+    "fr": "Doux",
+    "ja": "マイルド",
+    "zh-Hans": "轻度"
+  },
+  "降噪亮度": {
+    "de": "Luminanz",
+    "en": "Luminance",
+    "es": "Luminancia",
+    "fr": "Luminance",
+    "ja": "輝度",
+    "zh-Hans": "亮度"
+  },
+  "降噪粗色斑": {
+    "de": "Farbflecken",
+    "en": "Blotches",
+    "es": "Manchas",
+    "fr": "Taches",
+    "ja": "色斑",
+    "zh-Hans": "粗色斑"
+  },
+  "降噪色彩": {
+    "de": "Farbe",
+    "en": "Color",
+    "es": "Color",
+    "fr": "Chrominance",
+    "ja": "カラー",
+    "zh-Hans": "色彩"
+  },
+  "拍摄时：{0} K · 色调 {1}": {
+    "de": "Wie aufgenommen: {0} K · Tönung {1}",
+    "en": "As Shot: {0} K · Tint {1}",
+    "es": "Según la toma: {0} K · Matiz {1}",
+    "fr": "Selon la prise : {0} K · Teinte {1}",
+    "ja": "撮影時：{0} K · 色かぶり {1}",
+    "zh-Hans": "拍摄时：{0} K · 色调 {1}"
+  },
+  "无法识别原始照片，调整尚未保存。": {
+    "de": "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.",
+    "en": "Unable to Identify the Original Photo; Adjustments Were Not Saved.",
+    "es": "No se puede identificar la foto original; los ajustes no se guardaron.",
+    "fr": "Impossible d’identifier la photo originale ; les réglages n’ont pas été enregistrés.",
+    "ja": "元の写真を識別できないため、調整は保存されませんでした。",
+    "zh-Hans": "无法识别原始照片，调整尚未保存。"
+  },
+  "无法读取已保存的调整，原有记录未被覆盖。": {
+    "de": "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.",
+    "en": "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.",
+    "es": "No se pueden leer los ajustes guardados; no se sobrescribió el registro existente.",
+    "fr": "Impossible de lire les réglages enregistrés ; l’enregistrement existant n’a pas été remplacé.",
+    "ja": "保存済みの調整を読み取れないため、既存の記録は上書きされませんでした。",
+    "zh-Hans": "无法读取已保存的调整，原有记录未被覆盖。"
+  },
+  "请先打开这张照片，确认是否恢复旧调整。": {
+    "en": "Open this photo first to decide whether to restore its previous adjustments.",
+    "de": "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.",
+    "fr": "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.",
+    "es": "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.",
+    "ja": "先にこの写真を開き、以前の調整を復元するか選択してください。",
+    "zh-Hans": "请先打开这张照片，确认是否恢复旧调整。"
+  },
+  "保存时发生中断，请先核对照片图库，避免重复生成。": {
+    "de": "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.",
+    "en": "An interruption occurred while saving. Check Photos before generating again.",
+    "es": "La escritura se interrumpió. Comprueba Fotos antes de volver a generar.",
+    "fr": "Une interruption s’est produite lors de l’enregistrement. Vérifiez Photos avant de générer à nouveau.",
+    "ja": "保存中に中断しました。再生成する前に写真を確認してください。",
+    "zh-Hans": "保存时发生中断，请先核对照片图库，避免重复生成。"
+  },
+  "保存结果待确认": {
+    "de": "Speicherergebnis muss bestätigt werden",
+    "en": "Save Result Needs Confirmation",
+    "es": "Se debe confirmar el resultado guardado",
+    "fr": "Confirmation de l’enregistrement requise",
+    "ja": "保存結果の確認待ち",
+    "zh-Hans": "保存结果待确认"
+  },
+  "所选外观不可用，请重新选择外观。": {
+    "de": "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.",
+    "en": "Selected Look Unavailable; Choose Another Look.",
+    "es": "El aspecto seleccionado no está disponible; elige otro.",
+    "fr": "Le look sélectionné est indisponible ; choisissez-en un autre.",
+    "ja": "選択したルックを利用できません。別のルックを選択してください。",
+    "zh-Hans": "所选外观不可用，请重新选择外观。"
+  },
+  "未处理": {
+    "de": "Nicht verarbeitet",
+    "en": "Not Processed",
+    "es": "Sin procesar",
+    "fr": "Non traité",
+    "ja": "未処理",
+    "zh-Hans": "未处理"
+  },
+  "正在显影": {
+    "de": "Wird entwickelt",
+    "en": "Developing",
+    "es": "Revelando",
+    "fr": "Développement",
+    "ja": "現像中",
+    "zh-Hans": "正在显影"
+  },
+  "中间调拆分": {
+    "en": "Midtones Split",
+    "de": "Mitteltöne-Trennpunkt",
+    "fr": "Séparation des tons moyens",
+    "es": "División de medios tonos",
+    "ja": "中間調分割",
+    "zh-Hans": "中间调拆分"
+  },
+  "展开取样监视": {
+    "en": "Expand Sampling Monitor",
+    "de": "Messmonitor einblenden",
+    "fr": "Développer le moniteur d’échantillonnage",
+    "es": "Expandir monitor de muestreo",
+    "ja": "サンプリングモニターを展開",
+    "zh-Hans": "展开取样监视"
+  },
+  "恢复阴影、中间调、高光、全局、融合和平衡的默认值？": {
+    "en": "Restore default color grading for shadows, midtones, highlights, global, blending, and balance?",
+    "de": "Color-Grading für Schatten, Mitteltöne, Lichter, Global, Überblendung und Balance zurücksetzen?",
+    "fr": "Rétablir l’étalonnage par défaut des ombres, tons moyens, hautes lumières, global, fusion et équilibre ?",
+    "es": "¿Restaurar la gradación de color predeterminada de sombras, medios tonos, luces, global, fusión y equilibrio?",
+    "ja": "シャドウ、中間調、ハイライト、グローバル、ブレンディング、バランスのカラーグレーディングを初期値に戻しますか？",
+    "zh-Hans": "恢复阴影、中间调、高光、全局、融合和平衡的默认值？"
+  },
+  "拖动照片调整曲线；退出目标模式后可平移。": {
+    "en": "Drag the photo to adjust the curve. Exit target mode to pan.",
+    "de": "Foto ziehen, um die Kurve anzupassen. Zum Verschieben den Zielmodus beenden.",
+    "fr": "Faites glisser la photo pour régler la courbe. Quittez le mode ciblé pour la déplacer.",
+    "es": "Arrastra la foto para ajustar la curva. Sal del modo dirigido para desplazarla.",
+    "ja": "写真をドラッグしてカーブを調整します。移動するにはターゲットモードを終了してください。",
+    "zh-Hans": "拖动照片调整曲线；退出目标模式后可平移。"
+  },
+  "收起取样监视": {
+    "en": "Collapse Sampling Monitor",
+    "de": "Messmonitor ausblenden",
+    "fr": "Réduire le moniteur d’échantillonnage",
+    "es": "Contraer monitor de muestreo",
+    "ja": "サンプリングモニターを折りたたむ",
+    "zh-Hans": "收起取样监视"
+  },
+  "点击照片中的中性灰区域取样，按 Esc 退出。": {
+    "en": "Click a neutral gray area on the photo to sample. Press Esc to exit.",
+    "de": "Auf einen neutralgrauen Bereich im Foto klicken. Mit Esc beenden.",
+    "fr": "Cliquez sur une zone gris neutre de la photo pour échantillonner. Échap pour quitter.",
+    "es": "Haz clic en un área gris neutro de la foto para muestrear. Pulsa Esc para salir.",
+    "ja": "写真内のニュートラルグレー部分をクリックしてサンプルします。Esc で終了します。",
+    "zh-Hans": "点击照片中的中性灰区域取样，按 Esc 退出。"
+  },
+  "点选添加锚点": {
+    "en": "Click to Pin Anchor",
+    "de": "Klicken zum Anker setzen",
+    "fr": "Cliquer pour épingler un repère",
+    "es": "Clic para fijar ancla",
+    "ja": "クリックでアンカー追加",
+    "zh-Hans": "点选添加锚点"
+  },
+  "重置参数曲线": {
+    "en": "Reset Parametric Curve",
+    "de": "Parametrische Kurve zurücksetzen",
+    "fr": "Réinitialiser la courbe paramétrique",
+    "es": "Restablecer curva paramétrica",
+    "ja": "パラメトリックカーブをリセット",
+    "zh-Hans": "重置参数曲线"
+  },
+  "阴影拆分": {
+    "en": "Shadows Split",
+    "de": "Schatten-Trennpunkt",
+    "fr": "Séparation des ombres",
+    "es": "División de sombras",
+    "ja": "シャドウ分割",
+    "zh-Hans": "阴影拆分"
+  },
+  "高光拆分": {
+    "en": "Highlights Split",
+    "de": "Lichter-Trennpunkt",
+    "fr": "Séparation des hautes lumières",
+    "es": "División de luces",
+    "ja": "ハイライト分割",
+    "zh-Hans": "高光拆分"
+  },
+  "已复制": {
+    "de": "Kopiert",
+    "en": "Copied",
+    "es": "Copiada",
+    "fr": "Copié",
+    "ja": "コピー済み",
+    "zh-Hans": "已复制"
+  },
+  "暂无可导出的错误日志。": {
+    "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
+    "en": "There is no error log to export.",
+    "es": "No hay ningún registro de errores para exportar.",
+    "fr": "Aucun journal des erreurs à exporter.",
+    "ja": "書き出せるエラーログがありません。",
+    "zh-Hans": "暂无可导出的错误日志。"
+  },
+  "故障诊断与错误日志": {
+    "en": "Diagnostics & Error Logs",
+    "de": "Diagnose & Fehlerprotokolle",
+    "fr": "Diagnostic et journaux d’erreurs",
+    "es": "Diagnóstico y registros de errores",
+    "ja": "診断とエラーログ",
+    "zh-Hans": "故障诊断与错误日志"
+  },
+  "记录详细诊断日志": {
+    "en": "Record Detailed Diagnostic Logs",
+    "de": "Detaillierte Diagnoseprotokolle aufzeichnen",
+    "fr": "Enregistrer des journaux de diagnostic détaillés",
+    "es": "Registrar diagnósticos detallados",
+    "ja": "詳細な診断ログを記録",
+    "zh-Hans": "记录详细诊断日志"
+  },
+  "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。": {
+    "en": "Diagnostic packages contain only app version, system environment, step summaries, and error codes. Photo data, file names, and personal paths are excluded.",
+    "de": "Diagnosepakete enthalten nur App-Version, Systemumgebung, Schrittzusammenfassungen und Fehlercodes. Fotodaten, Dateinamen und persönliche Pfade sind ausgeschlossen.",
+    "fr": "Les archives de diagnostic ne contiennent que la version de l’application, l’environnement système, le résumé des étapes et les codes d’erreur. Les photos, noms de fichiers et chemins personnels sont exclus.",
+    "es": "Los paquetes de diagnóstico solo incluyen la versión de la aplicación, el entorno del sistema, resúmenes de pasos y códigos de error. Se excluyen fotos, nombres de archivo y rutas personales.",
+    "ja": "診断パッケージにはアプリバージョン、システム環境、操作ステップの概要、エラーコードのみが含まれます。写真データ、ファイル名、個人パスは含まれません。",
+    "zh-Hans": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。"
+  },
+  "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。": {
+    "en": "Recording detailed diagnostic logs (turns off automatically after 30 minutes or the next restart). Reproduce the issue, then save or upload.",
+    "de": "Detaillierte Diagnoseprotokolle werden aufgezeichnet (wird nach 30 Minuten oder nach dem nächsten Neustart automatisch beendet). Reproduzieren Sie das Problem und speichern oder senden Sie das Paket.",
+    "fr": "Enregistrement détaillé actif (désactivation automatique après 30 minutes ou après le prochain redémarrage). Reproduisez le problème puis enregistrez ou envoyez les journaux.",
+    "es": "Registrando diagnósticos detallados (se desactiva automáticamente tras 30 minutos o tras el próximo reinicio). Reproduce el problema y luego guarda o sube el paquete.",
+    "ja": "詳細な診断ログを記録中です（30 分後または次回再起動後に自動でオフになります）。問題を再現した後に保存またはアップロードしてください。",
+    "zh-Hans": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。"
+  },
+  "检测到上次录制的诊断日志，可直接保存到设备或一键上传。": {
+    "en": "Diagnostic logs from the previous session are ready to save to device or upload.",
+    "de": "Diagnoseprotokolle aus der vorherigen Sitzung stehen zum Speichern oder Hochladen bereit.",
+    "fr": "Les journaux de diagnostic de la session précédente sont prêts à être enregistrés ou envoyés.",
+    "es": "Se detectaron registros de diagnóstico de la sesión anterior listos para guardar o subir.",
+    "ja": "前回記録された診断ログがあります。端末への保存またはアップロードが可能です。",
+    "zh-Hans": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。"
+  },
+  "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。": {
+    "en": "Local diagnostic entries are available to export; detailed recording is currently off.",
+    "de": "Lokale Diagnoseeinträge sind zum Export verfügbar; die detaillierte Aufzeichnung ist derzeit deaktiviert.",
+    "fr": "Des entrées de diagnostic locales sont disponibles ; l’enregistrement détaillé est actuellement désactivé.",
+    "es": "Hay registros de diagnóstico locales disponibles; la grabación detallada está desactivada.",
+    "ja": "書き出し可能なローカル診断記録があります。詳細ログの記録は現在オフです。",
+    "zh-Hans": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。"
+  },
+  "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。": {
+    "en": "Off by default. Turn this on when troubleshooting to reproduce an issue, then save the diagnostic package to your device or upload it.",
+    "de": "Standardmäßig deaktiviert. Aktivieren Sie diese Option zur Fehlerreproduktion und speichern Sie das Diagnosepaket anschließend auf dem Gerät oder laden Sie es hoch.",
+    "fr": "Désactivé par défaut. Activez cette option pour reproduire un problème, puis enregistrez l’archive sur l’appareil ou envoyez-la.",
+    "es": "Desactivado por defecto. Actívalo para reproducir un problema y luego guarda el paquete en tu dispositivo o súbelo.",
+    "ja": "既定ではオフです。問題発生時にオンにして操作を再現し、診断パッケージを端末に保存するかアップロードしてください。",
+    "zh-Hans": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。"
+  },
+  "问题简述（选填，勿填个人隐私）": {
+    "en": "Brief issue note (optional, omit personal info)",
+    "de": "Kurze Problembeschreibung (optional, keine persönlichen Daten)",
+    "fr": "Brève description du problème (facultatif, sans données personnelles)",
+    "es": "Breve descripción del problema (opcional, sin datos personales)",
+    "ja": "問題の概要（任意・個人情報は入力しないでください）",
+    "zh-Hans": "问题简述（选填，勿填个人隐私）"
+  },
+  "保存到设备…": {
+    "en": "Save to Device…",
+    "de": "Auf Gerät speichern…",
+    "fr": "Enregistrer sur l’appareil…",
+    "es": "Guardar en el dispositivo…",
+    "ja": "端末に保存…",
+    "zh-Hans": "保存到设备…"
+  },
+  "分享诊断包…": {
+    "en": "Share Diagnostic Package…",
+    "de": "Diagnosepaket teilen…",
+    "fr": "Partager l’archive de diagnostic…",
+    "es": "Compartir paquete de diagnóstico…",
+    "ja": "診断パッケージを共有…",
+    "zh-Hans": "分享诊断包…"
+  },
+  "上传或预览日志…": {
+    "en": "Upload or Preview Logs…",
+    "de": "Protokolle hochladen oder prüfen…",
+    "fr": "Envoyer ou prévisualiser les journaux…",
+    "es": "Subir o previsualizar registros…",
+    "ja": "ログをアップロード・確認…",
+    "zh-Hans": "上传或预览日志…"
+  },
+  "一键云端上传": {
+    "en": "Upload to Cloud",
+    "de": "In die Cloud hochladen",
+    "fr": "Envoyer vers le cloud",
+    "es": "Subir a la nube",
+    "ja": "クラウドにアップロード",
+    "zh-Hans": "一键云端上传"
+  },
+  "正在上传…": {
+    "en": "Uploading…",
+    "de": "Wird hochgeladen…",
+    "fr": "Envoi en cours…",
+    "es": "Subiendo…",
+    "ja": "アップロード中…",
+    "zh-Hans": "正在上传…"
+  },
+  "预览日志": {
+    "en": "Preview Logs",
+    "de": "Protokollvorschau",
+    "fr": "Aperçu des journaux",
+    "es": "Vista previa del registro",
+    "ja": "ログをプレビュー",
+    "zh-Hans": "预览日志"
+  },
+  "收起预览": {
+    "en": "Hide Preview",
+    "de": "Vorschau ausblenden",
+    "fr": "Masquer l’aperçu",
+    "es": "Ocultar vista previa",
+    "ja": "プレビューを閉じる",
+    "zh-Hans": "收起预览"
+  },
+  "清除日志": {
+    "en": "Clear Logs",
+    "de": "Protokolle löschen",
+    "fr": "Effacer les journaux",
+    "es": "Borrar registros",
+    "ja": "ログを消去",
+    "zh-Hans": "清除日志"
+  },
+  "诊断码：{0}": {
+    "en": "Diagnostic Code: {0}",
+    "de": "Diagnosecode: {0}",
+    "fr": "Code de diagnostic : {0}",
+    "es": "Código de diagnóstico: {0}",
+    "ja": "診断コード: {0}",
+    "zh-Hans": "诊断码：{0}"
+  },
+  "复制诊断码": {
+    "en": "Copy Code",
+    "de": "Code kopieren",
+    "fr": "Copier le code",
+    "es": "Copiar código",
+    "ja": "診断コードをコピー",
+    "zh-Hans": "复制诊断码"
+  },
+  "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。": {
+    "en": "Diagnostic package saved. You can share the ZIP file with the developer via GitHub Issues or messaging apps.",
+    "de": "Diagnosepaket gespeichert. Sie können die ZIP-Datei über GitHub Issues oder Messenger an den Entwickler senden.",
+    "fr": "Archive de diagnostic enregistrée. Vous pouvez l’envoyer au développeur via GitHub Issues ou votre messagerie.",
+    "es": "Paquete de diagnóstico guardado. Puedes enviar el archivo ZIP al desarrollador por GitHub Issues o mensajería.",
+    "ja": "診断パッケージを保存しました。GitHub Issue やメッセージアプリから開発者に送信できます。",
+    "zh-Hans": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。"
+  },
+  "无法导出诊断包。": {
+    "en": "Could not export the diagnostic package.",
+    "de": "Das Diagnosepaket konnte nicht exportiert werden.",
+    "fr": "Impossible d’exporter l’archive de diagnostic.",
+    "es": "No se pudo exportar el paquete de diagnóstico.",
+    "ja": "診断パッケージを書き出せませんでした。",
+    "zh-Hans": "无法导出诊断包。"
+  },
+  "上传成功，请复制诊断码发送给开发者。": {
+    "en": "Upload succeeded. Copy the diagnostic code and share it with the developer.",
+    "de": "Upload erfolgreich. Kopieren Sie den Diagnosecode und teilen Sie ihn dem Entwickler mit.",
+    "fr": "Envoi réussi. Copiez le code de diagnostic et transmettez-le au développeur.",
+    "es": "Subida completada. Copia el código de diagnóstico y compártelo con el desarrollador.",
+    "ja": "アップロードが完了しました。診断コードをコピーして開発者にお知らせください。",
+    "zh-Hans": "上传成功，请复制诊断码发送给开发者。"
+  },
+  "云端上传暂不可用，请先将诊断包保存到设备后发送。": {
+    "en": "Cloud upload is currently unavailable. Save the diagnostic package to your device and send it manually.",
+    "de": "Cloud-Upload ist derzeit nicht verfügbar. Bitte speichern Sie das Diagnosepaket auf dem Gerät und senden Sie es manuell.",
+    "fr": "L’envoi vers le cloud est indisponible pour le moment. Enregistrez l’archive sur votre appareil pour l’envoyer manuellement.",
+    "es": "La subida a la nube no está disponible ahora. Guarda el paquete en tu dispositivo y envíalo manualmente.",
+    "ja": "現在クラウドアップロードを利用できません。診断パッケージを端末に保存して送信してください。",
+    "zh-Hans": "云端上传暂不可用，请先将诊断包保存到设备后发送。"
+  },
+  "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。": {
+    "en": "The log exceeds the single-upload size limit. Use Save to Device to export the diagnostic package.",
+    "de": "Das Protokoll überschreitet das Größenlimit für den Cloud-Upload. Verwenden Sie „Auf Gerät speichern“.",
+    "fr": "Le journal dépasse la taille maximale d’envoi cloud. Utilisez « Enregistrer sur l’appareil ».",
+    "es": "El registro supera el límite de subida a la nube. Usa «Guardar en el dispositivo».",
+    "ja": "ログのサイズがクラウド送信の上限を超えています。「端末に保存」で書き出してください。",
+    "zh-Hans": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。"
+  },
+  "已清除本地诊断日志。": {
+    "en": "Local diagnostic logs cleared.",
+    "de": "Lokale Diagnoseprotokolle wurden gelöscht.",
+    "fr": "Les journaux de diagnostic locaux ont été effacés.",
+    "es": "Se borraron los registros de diagnóstico locales.",
+    "ja": "ローカルの診断ログを消去しました。",
+    "zh-Hans": "已清除本地诊断日志。"
+  },
+  "相机访问验证": {
+    "de": "Kamera-Zugriffsauthentifizierung",
+    "en": "Camera Access Authentication",
+    "es": "Autenticación de acceso a la cámara",
+    "fr": "Authentification d'accès à l'appareil photo",
+    "ja": "カメラのアクセス認証",
+    "zh-Hans": "相机访问验证"
+  },
+  "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。": {
+    "de": "Prüfen Sie Benutzername und Passwort im Menü „Zugriffsaut.-Info“ der Kamera, vergleichen Sie den Fingerabdruck unten und melden Sie sich an.",
+    "en": "Check the username and password in the camera's Access Authen. Info menu, verify the fingerprint below, then sign in.",
+    "es": "Consulta el nombre de usuario y la contraseña en el menú Información de autenticación de acceso de la cámara, comprueba la huella siguiente e inicia sesión.",
+    "fr": "Consultez le nom d'utilisateur et le mot de passe dans le menu Infos d'authentification d'accès de l'appareil photo, vérifiez l'empreinte ci-dessous, puis connectez-vous.",
+    "ja": "カメラの「アクセス認証情報」メニューでユーザー名とパスワードを確認し、下のフィンガープリントと一致していることを確認してから入力してください。",
+    "zh-Hans": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"
+  },
+  "相机密钥指纹（请与相机屏幕核对）": {
+    "de": "Kameraschlüssel-Fingerabdruck (mit Kamerabildschirm abgleichen)",
+    "en": "Camera key fingerprint (verify against the camera screen)",
+    "es": "Huella de clave de la cámara (compruébala en la pantalla)",
+    "fr": "Empreinte de clé de l'appareil photo (à vérifier sur l'écran)",
+    "ja": "カメラ鍵フィンガープリント（カメラ画面と照合）",
+    "zh-Hans": "相机密钥指纹（请与相机屏幕核对）"
+  },
+  "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。": {
+    "de": "Der Schlüssel-Fingerabdruck der Kamera hat sich geändert. Prüfen Sie den Fingerabdruck auf dem Kamerabildschirm, bevor Sie die Zugangsdaten erneut eingeben.",
+    "en": "The camera's key fingerprint changed. Verify the fingerprint on the camera screen before re-entering credentials.",
+    "es": "La huella de clave de la cámara ha cambiado. Compruébala en la pantalla de la cámara antes de volver a introducir las credenciales.",
+    "fr": "L'empreinte de clé de l'appareil photo a changé. Vérifiez l'empreinte sur l'écran de l'appareil avant de saisir à nouveau les identifiants.",
+    "ja": "カメラの鍵フィンガープリントが変更されました。カメラ画面で照合してから認証情報を再入力してください。",
+    "zh-Hans": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
+  },
+  "用户名": {
+    "de": "Benutzername",
+    "en": "Username",
+    "es": "Nombre de usuario",
+    "fr": "Nom d'utilisateur",
+    "ja": "ユーザー名",
+    "zh-Hans": "用户名"
+  },
+  "密码": {
+    "de": "Passwort",
+    "en": "Password",
+    "es": "Contraseña",
+    "fr": "Mot de passe",
+    "ja": "パスワード",
+    "zh-Hans": "密码"
+  },
+  "验证并连接": {
+    "de": "Prüfen & verbinden",
+    "en": "Verify & Connect",
+    "es": "Verificar y conectar",
+    "fr": "Vérifier et connecter",
+    "ja": "認証して接続",
+    "zh-Hans": "验证并连接"
+  },
+  "正在验证访问凭据…": {
+    "de": "Zugangsdaten werden geprüft…",
+    "en": "Verifying access credentials…",
+    "es": "Verificando credenciales de acceso…",
+    "fr": "Vérification des identifiants d'accès…",
+    "ja": "アクセス認証情報を確認中…",
+    "zh-Hans": "正在验证访问凭据…"
+  },
+  "访问验证失败，请核对相机屏幕中的用户名与密码。": {
+    "de": "Zugriffsauthentifizierung fehlgeschlagen. Prüfen Sie Benutzername und Passwort auf dem Kamerabildschirm.",
+    "en": "Access authentication failed. Check the username and password shown on the camera screen.",
+    "es": "Error de autenticación de acceso. Comprueba el nombre de usuario y la contraseña en la pantalla de la cámara.",
+    "fr": "Échec de l'authentification d'accès. Vérifiez le nom d'utilisateur et le mot de passe affichés sur l'appareil photo.",
+    "ja": "アクセス認証に失敗しました。カメラ画面に表示されたユーザー名とパスワードを確認してください。",
+    "zh-Hans": "访问验证失败，请核对相机屏幕中的用户名与密码。"
+  },
+  "忘记已保存凭据": {
+    "de": "Gespeicherte Zugangsdaten löschen",
+    "en": "Forget saved credentials",
+    "es": "Olvidar credenciales guardadas",
+    "fr": "Oublier les identifiants enregistrés",
+    "ja": "保存済みの認証情報を削除",
+    "zh-Hans": "忘记已保存凭据"
   }
 }

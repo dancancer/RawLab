@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import AppKit
 import ImageIO
 
@@ -26,7 +27,7 @@ import ImageIO
             try engine.render(url, settings: settings, lut: nil, edge: nil)!.image.dataProvider!.data! as Data
         }
         let baseline = try bytes(Adjustments())
-        var settings = Adjustments(); settings.toneCurve = 65
+        var settings = Adjustments(); settings.toneCurve = 0.65
         let legacy = try bytes(settings)
         require(legacy != baseline, "legacy S curve remains effective")
         settings.curveSettings = .identity
@@ -78,9 +79,20 @@ import ImageIO
             parametric: ToneCurveParametric(highlights: -10, lights: 15, darks: -5, shadows: 20, splitShadow: 0.2, splitMidtone: 0.5, splitHighlight: 0.8)
         )
         let rgbSamples = v2.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        let pointOnlySamples = v2.curveSettings.sampledPoints(channel: .rgb, includeParametric: false, count: 257)
+        let parametricOnlySamples = ToneCurveSettings(
+            mode: .custom,
+            points: ToneCurveShape.identity.points,
+            parametric: v2.curveSettings.parametric
+        ).sampledPoints(channel: .rgb, includeParametric: true, count: 257)
         let redSamples = v2.curveSettings.sampledPoints(channel: .red, count: 256)
         require(abs(rgbSamples[0].y - 0.1) < 1e-5 && abs(rgbSamples[255].y - 0.9) < 1e-5,
             "v2 RGB sampling reflects unpinned matte-fade endpoints")
+        require(abs(pointOnlySamples[128].y - 0.55) < 1e-9 && abs(rgbSamples[128].y - 0.55) > 1e-3,
+            "Point-curve canvas sampling isolates control points from active parametric curve")
+        require(abs(parametricOnlySamples[0].y - 0.0) < 1e-9 && abs(parametricOnlySamples[256].y - 1.0) < 1e-9 &&
+            abs(parametricOnlySamples[64].y - 0.25) > 1e-3,
+            "Parametric-curve canvas sampling isolates parametric bands from point-curve endpoints")
         require(abs(redSamples[0].y - 0.05) < 1e-5 && abs(redSamples[255].y - 0.95) < 1e-5,
             "v2 Red channel sampling reflects red unpinned endpoints without parametric")
         let v2RgbBytes = try bytes(v2)
@@ -102,6 +114,37 @@ import ImageIO
             let agentImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(v2Agent as CFURL, nil)!, 0, nil)!
             require(nativeImage.dataProvider!.data! as Data == agentImage.dataProvider!.data! as Data,
                 "Mac v2 native and Agent FINAL 16-bit pixels agree exactly")
+        }
+
+        var freeX = Adjustments()
+        freeX.curveSettings = ToneCurveSettings(
+            mode: .custom,
+            points: [.init(x: 0.2, y: 0.0), .init(x: 0.8, y: 1.0)],
+            channels: ToneCurveChannels(red: ToneCurveShape(mode: .custom, points: [.init(x: 0.15, y: 0.05), .init(x: 0.85, y: 0.95)]))
+        )
+        let freeXSamples = freeX.curveSettings.sampledPoints(channel: .rgb, count: 256)
+        require(freeXSamples[0].y == 0.0 && freeXSamples[255].y == 1.0,
+            "free-X RGB sampling clamps flat outside [x0, x1]")
+        let freeXRedSamples = freeX.curveSettings.sampledPoints(channel: .red, count: 256)
+        require(abs(freeXRedSamples[0].y - 0.05) < 1e-5 && abs(freeXRedSamples[255].y - 0.95) < 1e-5,
+            "free-X Red channel sampling clamps flat outside [x0, x1]")
+        let freeXBytes = try bytes(freeX)
+        require(freeXBytes != baseline && freeXBytes != v2RgbBytes, "free-X curve reaches Mac native render")
+        if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_CLI"] {
+            let fxOut = directory.appendingPathComponent("freex-native.png")
+            let fxAgent = directory.appendingPathComponent("freex-agent.png")
+            let fxRecipe = directory.appendingPathComponent("freex-curve.json")
+            _ = try engine.render(url, settings: freeX, lut: nil, edge: nil, output: fxOut)
+            let data = try engine.agentRecipe(url, settings: freeX, lut: nil, output: fxAgent)
+            let obj = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+            require((obj["schema_version"] as? Int) == 18, "free-X Agent emits schema_version 18")
+            try data.write(to: fxRecipe)
+            let process = Process(); process.executableURL = URL(fileURLWithPath: path); process.arguments = ["--recipe", fxRecipe.path]
+            try process.run(); process.waitUntilExit(); require(process.terminationStatus == 0, "Mac free-X Agent recipe succeeds")
+            let nativeImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(fxOut as CFURL, nil)!, 0, nil)!
+            let agentImage = CGImageSourceCreateImageAtIndex(CGImageSourceCreateWithURL(fxAgent as CFURL, nil)!, 0, nil)!
+            require(nativeImage.dataProvider!.data! as Data == agentImage.dataProvider!.data! as Data,
+                "Mac free-X native and Agent FINAL 16-bit pixels agree exactly")
         }
     }
 }

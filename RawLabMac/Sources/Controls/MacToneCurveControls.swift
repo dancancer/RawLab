@@ -37,45 +37,53 @@ struct MacToneCurveControls: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if let targetEnabled {
+            if let targetEnabled, !(channel == .rgb && subMode == .parametric) {
                 CurveTargetControls(enabled: targetEnabled, channel: channel, sample: targetSample,
                     waiting: targetWaiting, notice: targetNotice, onCancel: onCancelTarget)
             }
             HStack(spacing: 4) {
                 ForEach(ToneCurveChannel.allCases) { item in
+                    let modified = channelIsModified(item)
                     Button {
                         onCancelled(); onCancelTarget()
                         setChannel(item)
                     } label: {
-                        Text(channelLabel(item))
-                            .font(.subheadline.weight(item == channel ? .semibold : .regular))
-                            .frame(maxWidth: .infinity, minHeight: 26)
+                        HStack(spacing: 3) {
+                            Text(channelLabel(item))
+                                .font(.system(size: 12, weight: item == channel ? .semibold : .regular))
+                                .fixedSize()
+                            if modified {
+                                Circle().fill(.yellow).frame(width: 3, height: 3).accessibilityHidden(true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 26)
                     }
                     .buttonStyle(.bordered)
                     .tint(item == channel ? .yellow : .secondary)
                     .accessibilityIdentifier("curve.channel.\(item.rawValue)")
                     .accessibilityAddTraits(item == channel ? .isSelected : [])
+                    .accessibilityValue(L10n.text(modified ? "已调整" : "未调整"))
                 }
             }
             if channel == .rgb {
                 Picker(L10n.text("参数曲线"), selection: $subMode) {
                     ForEach(MacCurveSubMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(subModeLabel(mode)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented).labelsHidden()
                 .accessibilityIdentifier("curve.submode")
+                Toggle(L10n.text("仅作用于明度"), isOn: Binding(
+                    get: { settings.applyToLuminosity },
+                    set: { next in
+                        onCancelled(); onCancelTarget()
+                        guard isCurrent(), ParameterValueField.commitPendingInputs() else { return }
+                        onEditingChanged(true)
+                        settings.applyToLuminosity = next
+                        onEditingChanged(false)
+                    }
+                )).accessibilityIdentifier("curve.luminosity")
             }
-            Toggle(L10n.text("仅作用于明度"), isOn: Binding(
-                get: { settings.applyToLuminosity },
-                set: { next in
-                    onCancelled(); onCancelTarget()
-                    guard isCurrent(), ParameterValueField.commitPendingInputs() else { return }
-                    onEditingChanged(true)
-                    settings.applyToLuminosity = next
-                    onEditingChanged(false)
-                }
-            )).accessibilityIdentifier("curve.luminosity")
             ToneCurveEditor(value: $settings, scope: source, channel: channel,
                 showSplitMarkers: channel == .rgb && subMode == .parametric,
                 usesExposureStops: usesExposureStops, isCurrent: isCurrent,
@@ -95,10 +103,50 @@ struct MacToneCurveControls: View {
                 parametricControls
             }
         }
+        .onAppear {
+            subMode = preferredInitialSubMode
+        }
+        .onChange(of: subMode) { _, next in
+            if next == .parametric {
+                onCancelTarget()
+                if targetEnabled?.wrappedValue == true {
+                    targetEnabled?.wrappedValue = false
+                }
+            }
+        }
+        .onChange(of: targetEnabled?.wrappedValue ?? false) { _, enabled in
+            if enabled && channel == .rgb && subMode == .parametric {
+                subMode = .point
+            }
+        }
         .onChange(of: source) { _, _ in
             setChannel(.rgb)
-            subMode = !settings.parametric.isDefault && settings.mode == .legacy ? .parametric : .point
+            subMode = preferredInitialSubMode
         }
+    }
+
+    private var pointCurveIsModified: Bool {
+        !settings.shape(.rgb).isIdentity || (settings.mode == .legacy && abs(legacy) > 1e-6)
+    }
+
+    private var parametricIsModified: Bool {
+        !settings.parametric.isDefault
+    }
+
+    private var preferredInitialSubMode: MacCurveSubMode {
+        parametricIsModified && !pointCurveIsModified ? .parametric : .point
+    }
+
+    private func subModeLabel(_ mode: MacCurveSubMode) -> String {
+        let modified = mode == .point ? pointCurveIsModified : parametricIsModified
+        return modified ? "\(mode.title) •" : mode.title
+    }
+
+    private func channelIsModified(_ item: ToneCurveChannel) -> Bool {
+        if item == .rgb {
+            return pointCurveIsModified || parametricIsModified
+        }
+        return !settings.shape(item).isIdentity
     }
 
     private func channelLabel(_ item: ToneCurveChannel) -> String {
@@ -117,7 +165,7 @@ struct MacToneCurveControls: View {
 
     private func coordinates(_ index: Int, point: ToneCurvePoint) -> some View {
         VStack(spacing: 6) {
-            coordinate(index, point: point, horizontal: true).disabled(!editingShape.isInterior(index))
+            coordinate(index, point: point, horizontal: true).disabled(!editingShape.canMoveX(index))
             coordinate(index, point: point, horizontal: false).disabled(!editingShape.canMoveY(index))
         }
     }
@@ -137,19 +185,22 @@ struct MacToneCurveControls: View {
             guard isCurrent() else { return }
             let s = settings.shape(owner)
             let shape = s.mode == .legacy ? ToneCurveShape.identity : s
-            if horizontal { guard shape.isInterior(index) else { return } }
+            if horizontal { guard shape.canMoveX(index) else { return } }
             else { guard shape.canMoveY(index) else { return } }
             let pt = shape.points[index]
             let value = (next - range.lowerBound) / span
             let updated = shape.moving(index: index, x: horizontal ? value : pt.x, y: horizontal ? pt.y : value)
             settings = settings.replacing(owner, with: updated)
         })
+        let defaultCoord = horizontal
+            ? (index == 0 ? 0.0 : (index == editingShape.points.count - 1 ? 1.0 : point.x))
+            : point.x
         return HStack {
             Text(title).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             ParameterValueField(value: binding, range: range, precision: usesExposureStops ? .exposure : .curveCoordinate,
                 title: title, unit: usesExposureStops ? "EV" : "", identifier: horizontal ? "curve.value.x" : "curve.value.y",
-                defaultValue: range.lowerBound + point.x * span, inputScope: "\(source).\(owner.rawValue).\(index)",
+                defaultValue: range.lowerBound + defaultCoord * span, inputScope: "\(source).\(owner.rawValue).\(index)",
                 onEditingChanged: onEditingChanged)
                 .frame(width: 122, height: 30)
         }
@@ -176,18 +227,18 @@ struct MacToneCurveControls: View {
                 range: sub.bandRange, defaultValue: sub.bandDefault, identifier: "value.curve.shadows",
                 onEditingChanged: onEditingChanged)
             Text(L10n.text("拆分点")).font(.caption).foregroundStyle(.secondary).padding(.top, 2)
-            ParameterRow(title: L10n.text("阴影"), value: parametricBinding(\.splitShadow, in: sub.splitShadowRange.lowerBound...shadowMax),
-                range: sub.splitShadowRange.lowerBound...shadowMax, defaultValue: sub.splitShadowDefault,
-                precision: .cropPercent, identifier: "value.curve.splitShadow", onEditingChanged: onEditingChanged)
-            ParameterRow(title: L10n.text("中间调"), value: parametricBinding(\.splitMidtone, in: midMin...midMax),
-                range: midMin...midMax, defaultValue: sub.splitMidtoneDefault,
-                precision: .cropPercent, identifier: "value.curve.splitMidtone", onEditingChanged: onEditingChanged)
-            ParameterRow(title: L10n.text("高光"), value: parametricBinding(\.splitHighlight, in: highMin...sub.splitHighlightRange.upperBound),
-                range: highMin...sub.splitHighlightRange.upperBound, defaultValue: sub.splitHighlightDefault,
-                precision: .cropPercent, identifier: "value.curve.splitHighlight", onEditingChanged: onEditingChanged)
+            ParameterRow(title: L10n.text("阴影拆分"), value: parametricPercentBinding(\.splitShadow, in: sub.splitShadowRange.lowerBound...shadowMax),
+                range: (sub.splitShadowRange.lowerBound * 100)...(shadowMax * 100), defaultValue: sub.splitShadowDefault * 100,
+                unit: "%", precision: .standard, identifier: "value.curve.splitShadow", onEditingChanged: onEditingChanged)
+            ParameterRow(title: L10n.text("中间调拆分"), value: parametricPercentBinding(\.splitMidtone, in: midMin...midMax),
+                range: (midMin * 100)...(midMax * 100), defaultValue: sub.splitMidtoneDefault * 100,
+                unit: "%", precision: .standard, identifier: "value.curve.splitMidtone", onEditingChanged: onEditingChanged)
+            ParameterRow(title: L10n.text("高光拆分"), value: parametricPercentBinding(\.splitHighlight, in: highMin...sub.splitHighlightRange.upperBound),
+                range: (highMin * 100)...(sub.splitHighlightRange.upperBound * 100), defaultValue: sub.splitHighlightDefault * 100,
+                unit: "%", precision: .standard, identifier: "value.curve.splitHighlight", onEditingChanged: onEditingChanged)
             HStack {
                 Spacer()
-                Button(L10n.text("重置曲线")) {
+                Button(L10n.text("重置参数曲线")) {
                     onCancelled(); onCancelTarget()
                     guard isCurrent(), ParameterValueField.commitPendingInputs(), !settings.parametric.isDefault else { return }
                     onEditingChanged(true)
@@ -198,6 +249,19 @@ struct MacToneCurveControls: View {
                 .accessibilityIdentifier("curve.parametric.reset")
             }
         }
+    }
+
+    private func parametricPercentBinding(_ keyPath: WritableKeyPath<ToneCurveParametric, Double>, in range: ClosedRange<Double>) -> Binding<Double> {
+        Binding(
+            get: { settings.parametric[keyPath: keyPath] * 100 },
+            set: { next in
+                guard isCurrent() else { return }
+                var copy = settings.parametric
+                copy[keyPath: keyPath] = min(range.upperBound, max(range.lowerBound, next / 100))
+                guard copy.isValid else { return }
+                settings.parametric = copy
+            }
+        )
     }
 
     private func parametricBinding(_ keyPath: WritableKeyPath<ToneCurveParametric, Double>, in range: ClosedRange<Double>) -> Binding<Double> {

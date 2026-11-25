@@ -154,10 +154,10 @@ struct ViewingRenderTests {
         }
         print("PASS: identical failed preview can retry without changing edit settings")
         var committed = RawSettings.default
-        committed.geometry.cropWidth = 0.75
+        committed.geometrySettings.cropWidth = 0.75
         model.committedPreviewSettings = committed
         var draft = committed
-        draft.geometry.cropWidth = 1
+        draft.geometrySettings.cropWidth = 1
         draft.exposure = 1
         model.updatePreview(settings: draft, includeHistogram: false)
         wait(model)
@@ -243,8 +243,8 @@ struct ViewingRenderTests {
             edited.whiteBalanceMode = .custom
             edited.temperature = 7800
             edited.tint = 20
-            edited.hsl.set(.hue, channel: 0, value: 25)
-            edited.geometry.cropWidth = 0.85
+            edited.hslSettings.set(.hue, channel: 0, value: 25)
+            edited.geometrySettings.cropWidth = 0.85
             edited.lensCorrection = LensCorrectionSettings(distortion: true, tca: true)
             try rawStore.save(identity, state: PhotoEditState(settings: edited))
             let rawModel = RawEditorViewModel(editPersistence: rawStore)
@@ -268,7 +268,7 @@ struct ViewingRenderTests {
                 baseScale: 0.21,
                 maxOutputLongEdge: 2048
             )
-            let expectedA = PhotoDetailTilePlan.tiles(
+            let expectedA = ViewportNative.pyramidTiles(
                 visibleRect: regionA.visibleRect,
                 fullNativeSize: rawModel.viewportNativeSize ?? .zero,
                 zoomScale: regionA.zoomScale,
@@ -311,7 +311,7 @@ struct ViewingRenderTests {
                 baseScale: 0.21,
                 maxOutputLongEdge: 2048
             )
-            let expectedB = PhotoDetailTilePlan.tiles(
+            let expectedB = ViewportNative.pyramidTiles(
                 visibleRect: regionB.visibleRect,
                 fullNativeSize: rawModel.viewportNativeSize ?? .zero,
                 zoomScale: regionB.zoomScale,
@@ -346,7 +346,7 @@ struct ViewingRenderTests {
             check(rawModel.comparisonReferenceKey?.kind == .raw && rawModel.comparisonReferenceKey?.longEdge == 320)
             var neutral = RawSettings.default
             neutral.processing = .legacy
-            neutral.geometry = edited.geometry
+            neutral.geometrySettings = edited.geometrySettings
             neutral.lensCorrection = edited.lensCorrection
             let expected = try rawModel.processor.processRaw(url: raw, settings: neutral,
                 previewLongEdge: 320, lutURL: nil, viewportPreview: true)

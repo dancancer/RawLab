@@ -117,7 +117,14 @@ import Foundation
         try test552IncrementalCursorVerification()
         try testFocusCoordinateMappingAndMetadata()
         try testSonySessionTouchFocusAndFocusArea()
+        try testDualSlot0x923bAndForwardCompatible0x9202()
         try testSequentialPTPIPInitializationAndNetworkErrors()
+        try testDualSlotListingPreviewRangeAndOriginal()
+        try testLargeSlotDatesPayload()
+        try testImportModeRemoteInitRetry()
+        try testSlotSnapshotCodableAndKeys()
+        try testLiveStreamOverInjectedChannel()
+        try testResolveCameraAccessAuthStateMachine()
     }
 
     static func mobileDeviceInfo() -> Data {
@@ -556,6 +563,96 @@ import Foundation
         try check(exhaustedBusy && !touchChannel.closed && touchChannel.queued9209Statuses.isEmpty,
                   "properties() propagates 0x2019 after 3 exhausted attempts without closing channel")
     }
+
+    static func testDualSlot0x923bAndForwardCompatible0x9202() throws {
+        // 1. Forward-compatible 0x9202 descriptor v0x190 (a7M5) with trailing bytes
+        var dev = Data()
+        dev.appendLE(UInt16(100)); dev.appendLE(UInt32(17)); dev.appendLE(UInt16(100))
+        dev.append(0); dev.appendLE(UInt16(0))
+        let ops: [UInt16] = [0x1001, 0x1002, 0x9201, 0x9202, 0x9209, 0x923b, 0x923c, 0x923d, 0x923e]
+        dev.appendLE(UInt32(ops.count)); ops.forEach { dev.appendLE($0) }
+        for _ in 0..<4 { dev.appendLE(UInt32(0)) }
+        for v in ["Sony Corporation", "ILCE-7M5", "1.00", "dual-slot"] { dev.append(ptpString(v)) }
+
+        var ext190 = Data()
+        ext190.appendLE(UInt16(0x190))
+        ext190.appendLE(UInt32(1)); ext190.appendLE(UInt16(0x5013))
+        ext190.appendLE(UInt32(0))
+        ext190.appendLE(UInt16(0x1234)) // trailing future descriptor bytes
+
+        final class DualSlotChannel: CameraByteChannel {
+            let dev: Data
+            let ext: Data
+            let slot1Dates: Data
+            let slot2Payload: Data
+            let originalBytes: Data
+            private var outgoing = Data()
+            private(set) var listedSlots: [UInt32] = []
+            private(set) var downloadSlotParams: [UInt32] = []
+            private(set) var previewSlotParams: [UInt32] = []
+            private(set) var closed = false
+
+            init(dev: Data, ext: Data, slot1Dates: Data, slot2Payload: Data, originalBytes: Data) {
+                self.dev = dev; self.ext = ext; self.slot1Dates = slot1Dates
+                self.slot2Payload = slot2Payload; self.originalBytes = originalBytes
+            }
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let d = Data(outgoing.prefix(count)); outgoing.removeFirst(count); return d
+            }
+            func write(_ data: Data) throws {
+                var r = CameraDataReader(data)
+                _ = try r.u32(); let type = try r.u32(); guard type == 6 else { return }
+                _ = try r.u32(); let op = try r.u16(); let tid = try r.u32()
+                var params: [UInt32] = []
+                while r.remaining >= 4 { params.append(try r.u32()) }
+                switch op {
+                case 0x1001: outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dev))
+                case 0x1002, 0x9201: outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x9202: outgoing.append(CameraProtocolTests.transactionResponse(tid, data: ext))
+                case 0x923b:
+                    if params[0] == 1 {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: slot1Dates))
+                    } else {
+                        var s2 = Data(); s2.appendLE(UInt32(1)); s2.append(Data(repeating: 0, count: 8))
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: s2))
+                    }
+                case 0x923c:
+                    let slot = params[3]
+                    listedSlots.append(slot)
+                    if slot == 2 {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: slot2Payload))
+                    } else {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: CameraProtocolTests.mobilePagePayload([])))
+                    }
+                case 0x923d:
+                    downloadSlotParams.append(params[1])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: originalBytes))
+                case 0x923e:
+                    previewSlotParams.append(params[1])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: Data([0xff, 0xd8, 0xff, 0xd9])))
+                default:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                }
+            }
+            func close() { closed = true }
+        }
+
+        // Large 0x923b payload (> 1024 bytes, within 256 KiB) with count = 0 on slot 1, slot 2 has 1 photo
+        var largeEmptyDates = Data(); largeEmptyDates.appendLE(UInt32(0)); largeEmptyDates.append(Data(repeating: 0, count: 2048))
+        let arwBytes = Data([0x49, 0x49, 0x2a, 0x00, 1, 2, 3, 4])
+        let slot2Page = mobilePagePayload([(content: 10, file: 7, name: "DSC00007.ARW", size: UInt64(arwBytes.count), created: 2_000)])
+        let dualChannel = DualSlotChannel(dev: dev, ext: ext190, slot1Dates: largeEmptyDates, slot2Payload: slot2Page, originalBytes: arwBytes)
+        let dualSession = try SonyCameraSession(client: CameraPTPClient(command: dualChannel, event: nil), purpose: .tethering)
+        let listed = try dualSession.listAssets()
+        try check(listed.count == 1 && listed[0].snapshot.slot == 2 && listed[0].snapshot.key.hasPrefix("slot2:") &&
+                  !dualChannel.listedSlots.contains(1) && dualChannel.listedSlots.contains(2),
+                  "0x923b skips empty slot 1 (even >1KiB date payload) and lists slot 2 with slot2: key")
+        let _ = try dualSession.preview(listed[0], large: true)
+        let _ = try dualSession.originalDigest(listed[0]) { _ in }
+        try check(dualChannel.previewSlotParams == [(2 << 24) | 7] && dualChannel.downloadSlotParams == [(2 << 24) | 7],
+                  "Slot 2 preview (0x923e) and download (0x923d) encode (2 << 24) | file")
+    }
 }
 
 final class MockFocusCameraChannel: CameraByteChannel {
@@ -775,6 +872,482 @@ extension CameraProtocolTests {
         try check(!localDeniedDesc.isEmpty && !refusedDesc.isEmpty
                   && localDeniedDesc != timeoutDesc && refusedDesc != timeoutDesc && localDeniedDesc != refusedDesc,
                   "localNetworkDenied and connectionRefused provide distinct error descriptions")
+    }
+
+    static func mobileDeviceInfoWithSlotDates(remoteControls: Bool = false) -> Data {
+        var device = Data()
+        device.appendLE(UInt16(100)); device.appendLE(UInt32(17)); device.appendLE(UInt16(100))
+        device.append(0); device.appendLE(UInt16(0))
+        var operations: [UInt16] = [0x1001, 0x1002, 0x923b, 0x923c, 0x923d, 0x923e]
+        if remoteControls {
+            operations.append(contentsOf: [0x9201, 0x9202, 0x9209])
+        }
+        device.appendLE(UInt32(operations.count)); operations.forEach { device.appendLE($0) }
+        for _ in 0..<4 { device.appendLE(UInt32(0)) }
+        for value in ["Sony", "ILCE-7M5", "1.00", "dual-slot"] { device.append(ptpString(value)) }
+        return device
+    }
+
+    static func testDualSlotListingPreviewRangeAndOriginal() throws {
+        var rawBytes = Data([0x49, 0x49, 0x2a, 0x00, 0x08, 0x00, 0x00, 0x22])
+        rawBytes.append(Data(repeating: 0x37, count: 56))
+        final class DualSlotMobileChannel: CameraByteChannel {
+            let rawBytes: Data
+            let deviceInfo: Data
+            private(set) var closed = false
+            private(set) var slotDateQueries: [UInt32] = []
+            private(set) var listedSlots: [UInt32] = []
+            private(set) var previewHandles: [UInt32] = []
+            private(set) var rangeHandles: [UInt32] = []
+            private var outgoing = Data()
+
+            init(rawBytes: Data, deviceInfo: Data) {
+                self.rawBytes = rawBytes
+                self.deviceInfo = deviceInfo
+            }
+
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let slice = Data(outgoing.prefix(count))
+                outgoing.removeFirst(count)
+                return slice
+            }
+
+            func write(_ data: Data) throws {
+                var reader = CameraDataReader(data)
+                _ = try reader.u32()
+                guard try reader.u32() == 6 else { return }
+                _ = try reader.u32()
+                let op = try reader.u16()
+                let tid = try reader.u32()
+                var params: [UInt32] = []
+                while reader.remaining >= 4 { params.append(try reader.u32()) }
+                switch op {
+                case 0x1001:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: deviceInfo))
+                case 0x1002:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x923b:
+                    let slot = params.first ?? 1
+                    slotDateQueries.append(slot)
+                    var dates = Data()
+                    if slot == 2 {
+                        dates.appendLE(UInt32(1))
+                        dates.append(Data(repeating: 0x11, count: 16))
+                    } else {
+                        dates.appendLE(UInt32(0))
+                    }
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dates))
+                case 0x923c:
+                    let cursor = UInt64(params[0]) | (UInt64(params[1]) << 32)
+                    let slot = params.count > 3 ? params[3] : 1
+                    listedSlots.append(slot)
+                    if slot == 2 && cursor < 1_700_000_000_000 {
+                        let page = CameraProtocolTests.mobilePagePayload([
+                            (content: 0x0000_0100, file: 7, name: "DSC02001.ARW", size: UInt64(rawBytes.count), created: 1_700_000_000_000)
+                        ])
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: page))
+                    } else {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, data: CameraProtocolTests.mobilePagePayload([])))
+                    }
+                case 0x923e:
+                    previewHandles.append(params[1])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: Data([0xff, 0xd8, 0xff, 0xd9])))
+                case 0x923d:
+                    let handle = params[1]
+                    rangeHandles.append(handle)
+                    guard handle == ((2 << 24) | 7) else {
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2009))
+                        return
+                    }
+                    let offset = Int(UInt64(params[2]) | (UInt64(params[3]) << 32))
+                    let length = Int(params[4])
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: rawBytes.subdata(in: offset..<(offset + length))))
+                default:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                }
+            }
+
+            func close() { closed = true }
+        }
+
+        let channel = DualSlotMobileChannel(rawBytes: rawBytes, deviceInfo: mobileDeviceInfoWithSlotDates())
+        let session = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: .importing)
+        let assets = try session.listAssets()
+        try check(assets.count == 1
+                  && assets[0].snapshot.slot == 2
+                  && assets[0].snapshot.effectiveSlot == 2
+                  && assets[0].snapshot.key.hasPrefix("slot2:")
+                  && channel.slotDateQueries == [1, 2]
+                  && channel.listedSlots == [2],
+                  "Dual-slot 0x923b probes Slot 1/2 and lists populated Slot 2 when Slot 1 has 0 dates")
+        let thumb = try session.preview(assets[0], large: false)
+        let range = try session.readMobileRange(assets[0], offset: 4, length: 8)
+        let digest = try session.originalDigest(assets[0]) { _ in }
+        try check(thumb == Data([0xff, 0xd8, 0xff, 0xd9])
+                  && channel.previewHandles == [(2 << 24) | 7]
+                  && range == rawBytes.subdata(in: 4..<12)
+                  && channel.rangeHandles == [(2 << 24) | 7, (2 << 24) | 7]
+                  && channel.listedSlots == [2, 2]
+                  && !digest.isEmpty,
+                  "Slot 2 preview, range read, original download, and hasMobileAsset all address slot 2")
+    }
+
+    static func testLargeSlotDatesPayload() throws {
+        final class LargeDateTableChannel: CameraByteChannel {
+            let deviceInfo: Data
+            private var outgoing = Data()
+            private(set) var closed = false
+            init(deviceInfo: Data) { self.deviceInfo = deviceInfo }
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let slice = Data(outgoing.prefix(count))
+                outgoing.removeFirst(count)
+                return slice
+            }
+            func write(_ data: Data) throws {
+                var reader = CameraDataReader(data)
+                _ = try reader.u32()
+                guard try reader.u32() == 6 else { return }
+                _ = try reader.u32()
+                let op = try reader.u16()
+                let tid = try reader.u32()
+                var params: [UInt32] = []
+                while reader.remaining >= 4 { params.append(try reader.u32()) }
+                switch op {
+                case 0x1001:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: deviceInfo))
+                case 0x1002:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x923b:
+                    var dates = Data()
+                    if params.first == 1 {
+                        dates.appendLE(UInt32(200))
+                        dates.append(Data(repeating: 0x22, count: 200 * 16))
+                    } else {
+                        dates.appendLE(UInt32(0))
+                    }
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dates))
+                case 0x923c:
+                    let cursor = UInt64(params[0]) | (UInt64(params[1]) << 32)
+                    let entries: [(content: UInt32, file: UInt32, name: String, size: UInt64, created: UInt64)] = cursor == 0
+                        ? [(content: 1, file: 1, name: "DSC03001.ARW", size: 64, created: 1_700_000_000_000)]
+                        : []
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: CameraProtocolTests.mobilePagePayload(entries)))
+                default:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                }
+            }
+            func close() { closed = true }
+        }
+
+        let channel = LargeDateTableChannel(deviceInfo: mobileDeviceInfoWithSlotDates())
+        let session = try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: .importing)
+        let assets = try session.listAssets()
+        try check(assets.count == 1 && assets[0].snapshot.slot == 1 && assets[0].snapshot.name == "DSC03001.ARW",
+                  "0x923b accepts >1KB date tables without truncating")
+    }
+
+    static func testImportModeRemoteInitRetry() throws {
+        final class RemoteInitRetryChannel: CameraByteChannel {
+            let deviceInfo: Data
+            let reject923bOnce: Bool
+            private var rejectedOnce = false
+            private(set) var remoteInitPhase = 0
+            private var outgoing = Data()
+            private(set) var closed = false
+
+            init(deviceInfo: Data, reject923bOnce: Bool) {
+                self.deviceInfo = deviceInfo
+                self.reject923bOnce = reject923bOnce
+            }
+
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let slice = Data(outgoing.prefix(count))
+                outgoing.removeFirst(count)
+                return slice
+            }
+
+            func write(_ data: Data) throws {
+                var reader = CameraDataReader(data)
+                _ = try reader.u32()
+                guard try reader.u32() == 6 else { return }
+                _ = try reader.u32()
+                let op = try reader.u16()
+                let tid = try reader.u32()
+                var params: [UInt32] = []
+                while reader.remaining >= 4 { params.append(try reader.u32()) }
+                switch op {
+                case 0x1001:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: deviceInfo))
+                case 0x1002:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x9201:
+                    if params.first == 3 { remoteInitPhase = 3 }
+                    else { remoteInitPhase = max(remoteInitPhase, Int(params.first ?? 0)) }
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid))
+                case 0x9202:
+                    var ext = Data()
+                    ext.appendLE(UInt16(0x12c))
+                    ext.appendLE(UInt32(1)); ext.appendLE(UInt16(0x5013))
+                    ext.appendLE(UInt32(1)); ext.appendLE(UInt16(0xd2c1))
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: ext))
+                case 0x923b:
+                    if reject923bOnce && !rejectedOnce && remoteInitPhase < 3 {
+                        rejectedOnce = true
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                        return
+                    }
+                    var dates = Data()
+                    if params.first == 1 {
+                        dates.appendLE(UInt32(1))
+                        dates.append(Data(repeating: 0x33, count: 16))
+                    } else {
+                        dates.appendLE(UInt32(0))
+                    }
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: dates))
+                case 0x923c:
+                    if !reject923bOnce && !rejectedOnce && remoteInitPhase < 3 {
+                        rejectedOnce = true
+                        outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2002))
+                        return
+                    }
+                    let cursor = UInt64(params[0]) | (UInt64(params[1]) << 32)
+                    let entries: [(content: UInt32, file: UInt32, name: String, size: UInt64, created: UInt64)] = cursor == 0
+                        ? [(content: 2, file: 1, name: "DSC04001.ARW", size: 64, created: 1_700_000_000_000)]
+                        : []
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, data: CameraProtocolTests.mobilePagePayload(entries)))
+                default:
+                    outgoing.append(CameraProtocolTests.transactionResponse(tid, code: 0x2005))
+                }
+            }
+            func close() { closed = true }
+        }
+
+        let ch923b = RemoteInitRetryChannel(deviceInfo: mobileDeviceInfoWithSlotDates(remoteControls: true), reject923bOnce: true)
+        let session923b = try SonyCameraSession(client: CameraPTPClient(command: ch923b, event: nil), purpose: .importing)
+        let assets923b = try session923b.listAssets()
+        try check(session923b.remoteReady && ch923b.remoteInitPhase == 3 && assets923b.count == 1,
+                  "Import mode retries via initializeRemote() when 0x923b rejects with 0x2005")
+
+        let ch923c = RemoteInitRetryChannel(deviceInfo: mobileDeviceInfoWithSlotDates(remoteControls: true), reject923bOnce: false)
+        let session923c = try SonyCameraSession(client: CameraPTPClient(command: ch923c, event: nil), purpose: .importing)
+        let assets923c = try session923c.listAssets()
+        try check(session923c.remoteReady && ch923c.remoteInitPhase == 3 && assets923c.count == 1,
+                  "Import mode retries via initializeRemote() when 0x923c rejects with 0x2002")
+    }
+
+    static func testSlotSnapshotCodableAndKeys() throws {
+        let legacyJSON = #"{"content":10,"file":1,"storage":0,"format":0,"name":"DSC00010.ARW","size":1024,"created":"123","modified":""}"#
+        let decodedLegacy = try JSONDecoder().decode(CameraAssetSnapshot.self, from: Data(legacyJSON.utf8))
+        let slot1 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0, name: "DSC00010.ARW", size: 1024, created: "123", modified: "", slot: 1)
+        let slot2 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0, name: "DSC00010.ARW", size: 1024, created: "123", modified: "", slot: 2)
+        let slot1Data = try JSONEncoder().encode(slot1)
+        let slot1String = String(data: slot1Data, encoding: .utf8) ?? ""
+        let roundTripped2 = try JSONDecoder().decode(CameraAssetSnapshot.self, from: try JSONEncoder().encode(slot2))
+        try check(decodedLegacy.slot == 1
+                  && decodedLegacy.key == slot1.key
+                  && !slot1.key.hasPrefix("slot")
+                  && !slot1String.contains("\"slot\"")
+                  && roundTripped2.slot == 2
+                  && roundTripped2.key.hasPrefix("slot2:")
+                  && slot1.key != slot2.key,
+                  "CameraAssetSnapshot preserves legacy Slot 1 Codable/key format and distinguishes Slot 2")
+    }
+
+    static func testLiveStreamOverInjectedChannel() throws {
+        let expectedJPEG = Data([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0xff, 0xd9])
+        final class ScriptedLiveChannel: CameraByteChannel {
+            private var outgoing: Data
+            private(set) var written = Data()
+            private(set) var closed = false
+            init(response: Data) { self.outgoing = response }
+            func read(_ count: Int) throws -> Data {
+                guard !closed, outgoing.count >= count else { throw CameraProtocolError.disconnected }
+                let slice = Data(outgoing.prefix(count))
+                outgoing.removeFirst(count)
+                return slice
+            }
+            func write(_ data: Data) throws { written.append(data) }
+            func close() { closed = true }
+        }
+
+        var packet = Data("HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\r\n".utf8)
+        packet.appendLE(UInt32(16))
+        packet.appendLE(UInt32(expectedJPEG.count))
+        packet.appendLE(UInt32(0))
+        packet.appendLE(UInt32(0))
+        packet.append(expectedJPEG)
+
+        let liveChannel = ScriptedLiveChannel(response: packet)
+        var requestedPort: UInt16?
+        let url = URL(string: "http://192.168.122.1:60152/liveviewstream?k=abc")!
+        let stream = try CameraLiveStream(host: "192.168.122.1", url: url) { port in
+            requestedPort = port
+            return liveChannel
+        }
+        let received = try stream.frameWithMetadata()
+        let requestText = String(data: liveChannel.written, encoding: .utf8) ?? ""
+        stream.close()
+        try check(requestedPort == 60152
+                  && requestText.contains("GET /liveviewstream?k=abc HTTP/1.1\r\nHost: localhost:60152\r\n")
+                  && !requestText.contains("Host: 192.168.122.1")
+                  && received.jpeg == expectedJPEG
+                  && liveChannel.closed,
+                  "CameraLiveStream over injected SSH channel uses Host: localhost:<port> and decodes JPEG")
+    }
+
+    static func testResolveCameraAccessAuthStateMachine() throws {
+        final class TestAuthStore: CameraAccessAuthStoring {
+            var records: [String: CameraAccessAuthRecord] = [:]
+            func load(cameraID: String) -> CameraAccessAuthRecord? { records[cameraID] }
+            func save(cameraID: String, record: CameraAccessAuthRecord) -> Bool {
+                records[cameraID] = record
+                return true
+            }
+            func delete(cameraID: String) { records.removeValue(forKey: cameraID) }
+        }
+
+        final class DummyTunnel: CameraSSHTunneling {
+            let hostProbe: CameraSSHHostProbe
+            private(set) var closed = false
+            init(probe: CameraSSHHostProbe) { self.hostProbe = probe }
+            func openChannel(port: UInt16, allowedPorts: Set<UInt16>, timeout: TimeInterval) throws -> CameraByteChannel {
+                throw CameraProtocolError.unsupported("not needed")
+            }
+            func close() { closed = true }
+        }
+
+        func dummySession() throws -> SonyCameraSession {
+            try SonyCameraSession(
+                client: CameraPTPClient(command: MockMobileCameraChannel(entries: [], deviceInfo: mobileDeviceInfo()), event: nil),
+                purpose: .importing
+            )
+        }
+
+        let validFP = "SHA256:" + Data(repeating: 0x5A, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        let otherFP = "SHA256:" + Data(repeating: 0x3C, count: 32).base64EncodedString().replacingOccurrences(of: "=", with: "")
+        try check(normalizeCameraSSHSHA256Fingerprint(validFP + "=") == validFP
+                  && normalizeCameraSSHSHA256Fingerprint("MD5:aa:bb") == nil
+                  && normalizeCameraSSHSHA256Fingerprint("SHA256:bad") == nil,
+                  "normalizeCameraSSHSHA256Fingerprint canonicalizes padding and rejects invalid formats")
+
+        let probe = CameraSSHHostProbe(host: "192.168.122.1", port: 22, fingerprint: validFP, keyType: "ecdsa-sha2-nistp256")
+        let emptyStore = TestAuthStore()
+
+        // 1. Direct success skips SSH probe.
+        var probeCalls = 0
+        let directRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: emptyStore,
+            probeSSH: { _, _ in probeCalls += 1; return probe },
+            connectSSH: { _, _, _, _, _ in throw CameraProtocolError.cancelled },
+            openOverTunnel: { _ in throw CameraProtocolError.cancelled },
+            tryDirect: { try dummySession() }
+        )
+        guard case .directSuccess = directRes, probeCalls == 0 else {
+            throw CameraProtocolError.invalid("Expected directSuccess without probing SSH")
+        }
+
+        // 2. Direct refuses + SSH probes -> promptAuth (no saved creds).
+        let promptRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: emptyStore,
+            probeSSH: { _, _ in probe },
+            connectSSH: { _, _, _, _, _ in throw CameraProtocolError.cancelled },
+            openOverTunnel: { _ in throw CameraProtocolError.cancelled },
+            tryDirect: { throw CameraProtocolError.connectionRefused }
+        )
+        guard case .promptAuth(let info1) = promptRes,
+              !info1.hasSavedCredentials && !info1.fingerprintChanged && info1.fingerprint == validFP && info1.error == nil else {
+            throw CameraProtocolError.invalid("Expected unauthenticated SSH prompt")
+        }
+
+        // 3. Direct times out + SSH probe fails -> preserves .timeout instead of connectionRefused.
+        let timeoutRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: emptyStore,
+            probeSSH: { _, _ in throw CameraProtocolError.connectionRefused },
+            connectSSH: { _, _, _, _, _ in throw CameraProtocolError.cancelled },
+            openOverTunnel: { _ in throw CameraProtocolError.cancelled },
+            tryDirect: { throw CameraProtocolError.timeout }
+        )
+        guard case .failed(CameraProtocolError.timeout) = timeoutRes else {
+            throw CameraProtocolError.invalid("Expected direct .timeout error to be preserved when SSH probe fails")
+        }
+
+        // 4. Local network denied does not fall back to SSH probe.
+        var localDeniedProbes = 0
+        let deniedRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: emptyStore,
+            probeSSH: { _, _ in localDeniedProbes += 1; return probe },
+            connectSSH: { _, _, _, _, _ in throw CameraProtocolError.cancelled },
+            openOverTunnel: { _ in throw CameraProtocolError.cancelled },
+            tryDirect: { throw CameraProtocolError.localNetworkDenied }
+        )
+        guard case .failed(CameraProtocolError.localNetworkDenied) = deniedRes, localDeniedProbes == 0 else {
+            throw CameraProtocolError.invalid("Expected .localNetworkDenied to stop before probing SSH")
+        }
+
+        // 5. Saved credentials + matching fingerprint -> .sshConnected.
+        let savedStore = TestAuthStore()
+        _ = savedStore.save(cameraID: "SSID:FAKE-SSH", record: CameraAccessAuthRecord(user: "camuser", password: "campass", fingerprint: validFP))
+        let tunnel = DummyTunnel(probe: probe)
+        let autoRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: savedStore,
+            probeSSH: { _, _ in probe },
+            connectSSH: { _, _, u, p, fp in
+                guard u == "camuser", p == "campass", fp == validFP else { throw CameraProtocolError.sshAuthenticationFailed }
+                return tunnel
+            },
+            openOverTunnel: { _ in try dummySession() },
+            tryDirect: { throw CameraProtocolError.connectionRefused }
+        )
+        guard case .sshConnected = autoRes else {
+            throw CameraProtocolError.invalid("Expected auto SSH connection for matching saved credentials")
+        }
+
+        // 6. Saved credentials + changed fingerprint -> promptAuth(fingerprintChanged: true) with 0 connect attempts.
+        let rotatedProbe = CameraSSHHostProbe(host: "192.168.122.1", port: 22, fingerprint: otherFP, keyType: "ecdsa-sha2-nistp256")
+        var connectCallsOnMismatch = 0
+        let mismatchRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: savedStore,
+            probeSSH: { _, _ in rotatedProbe },
+            connectSSH: { _, _, _, _, _ in connectCallsOnMismatch += 1; return tunnel },
+            openOverTunnel: { _ in try dummySession() },
+            tryDirect: { throw CameraProtocolError.connectionRefused }
+        )
+        guard case .promptAuth(let mismatchInfo) = mismatchRes,
+              mismatchInfo.fingerprintChanged && mismatchInfo.hasSavedCredentials && mismatchInfo.fingerprint == otherFP && connectCallsOnMismatch == 0 else {
+            throw CameraProtocolError.invalid("Expected fingerprintChanged prompt with zero SSH login attempts")
+        }
+
+        // 7. Saved credentials rejected -> promptAuth with initialUser & sshAuthenticationFailed.
+        let badPassRes = resolveCameraAccessAuth(
+            host: "192.168.122.1",
+            cameraID: "SSID:FAKE-SSH",
+            authStore: savedStore,
+            probeSSH: { _, _ in probe },
+            connectSSH: { _, _, _, _, _ in throw CameraProtocolError.sshAuthenticationFailed },
+            openOverTunnel: { _ in try dummySession() },
+            tryDirect: { throw CameraProtocolError.connectionRefused }
+        )
+        guard case .promptAuth(let badInfo) = badPassRes,
+              badInfo.hasSavedCredentials && !badInfo.fingerprintChanged && badInfo.initialUser == "camuser",
+              case .sshAuthenticationFailed? = badInfo.error else {
+            throw CameraProtocolError.invalid("Expected authentication failure prompt preserving initialUser")
+        }
+        print("PASS: resolveCameraAccessAuth covers direct, prompt, timeout, localNetworkDenied, auto-login, fingerprint rotation, and bad password")
     }
 }
 

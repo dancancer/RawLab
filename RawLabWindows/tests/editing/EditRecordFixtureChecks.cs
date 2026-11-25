@@ -287,6 +287,16 @@ internal static class EditRecordFixtureChecks
                                 Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Shadows], expDecoded.GetProperty("shadows").GetDouble()), $"{id}: wire shadows");
                                 Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Saturation], expDecoded.GetProperty("saturation").GetDouble()), $"{id}: wire saturation");
                                 Check(Approx(wireLoaded.Settings.Values[(int)Parameter.Sharpening], expDecoded.GetProperty("sharpening").GetDouble()), $"{id}: wire sharpening");
+                                Check(wireLoaded.Settings.SettingsVersion == 0, $"{id}: legacy wire snapshot retains SettingsVersion == 0");
+                                var wireMigrated = wireLoaded.Settings.Restore().Capture();
+                                Check(wireMigrated.SettingsVersion == AdjustmentSnapshot.CurrentSettingsVersion &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Strength], 0.9) &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Contrast], 1.125) &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Highlights], 0.18) &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Shadows], 0.22) &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Saturation], 1.085) &&
+                                      Approx(wireMigrated.Values[(int)Parameter.Sharpening], 0.25),
+                                    $"{id}: legacy wire snapshot migrates to canonical v2 values on Restore()");
                             }
                         });
                         break;
@@ -755,7 +765,7 @@ internal static class EditRecordFixtureChecks
         var hdrEditing = metadata.TryGetProperty("hdr_editing", out var he) && he.GetBoolean();
 
         var values = new double[ParameterSpec.All.Length];
-        values[(int)Parameter.Strength] = 100.0;
+        values[(int)Parameter.Strength] = 1.0;
         values[(int)Parameter.Temperature] = 6500.0;
 
         var procVer = metadata.TryGetProperty("processing", out var procObj) && procObj.ValueKind == JsonValueKind.Object &&
@@ -823,18 +833,18 @@ internal static class EditRecordFixtureChecks
 
         if (hasSdr)
         {
-            if (sdrValues.TryGetProperty("looks.strength", out var ls)) values[(int)Parameter.Strength] = ls.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("looks.strength", out var ls)) values[(int)Parameter.Strength] = ls.GetDouble();
             if (sdrValues.TryGetProperty("light.exposure", out var le)) values[(int)Parameter.Exposure] = le.GetDouble();
             if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
             {
                 exposureMode = em.GetString() switch { "scene" => 0, "preview" => 1, "sensor" => 2, _ => 1 };
             }
-            if (sdrValues.TryGetProperty("light.contrast", out var lc)) values[(int)Parameter.Contrast] = (lc.GetDouble() - 1.0) * 100.0;
-            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) values[(int)Parameter.Highlights] = -lhi.GetDouble() * 100.0;
-            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) values[(int)Parameter.Shadows] = lsh.GetDouble() * 100.0;
-            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) values[(int)Parameter.ToneCurve] = lsc.GetDouble() * 100.0;
-            if (sdrValues.TryGetProperty("color.saturation", out var csa)) values[(int)Parameter.Saturation] = (csa.GetDouble() - 1.0) * 100.0;
-            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) values[(int)Parameter.Sharpening] = dsh.GetDouble() * 100.0;
+            if (sdrValues.TryGetProperty("light.contrast", out var lc)) values[(int)Parameter.Contrast] = lc.GetDouble();
+            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) values[(int)Parameter.Highlights] = lhi.GetDouble();
+            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) values[(int)Parameter.Shadows] = lsh.GetDouble();
+            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) values[(int)Parameter.ToneCurve] = lsc.GetDouble();
+            if (sdrValues.TryGetProperty("color.saturation", out var csa)) values[(int)Parameter.Saturation] = csa.GetDouble();
+            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) values[(int)Parameter.Sharpening] = dsh.GetDouble();
 
             if (sdrValues.TryGetProperty("color.white_balance.mode", out var wbm) && wbm.GetString() == "temperature")
             {
@@ -942,6 +952,7 @@ internal static class EditRecordFixtureChecks
             values, exposureMode, cameraWhiteBalance, asShotTemp, asShotTint,
             denoise, fx, chromaMode, hsl, masterRecipeId, lens, geom, hdr)
         {
+            SettingsVersion = AdjustmentSnapshot.CurrentSettingsVersion,
             Processing = processing,
             X3fMode = x3fMode,
             AIDenoiseEnabled = aiDenoise,
@@ -1073,17 +1084,17 @@ internal static class EditRecordFixtureChecks
 
         if (hasSdr)
         {
-            if (sdrValues.TryGetProperty("looks.strength", out var ls)) Expect(Approx(s.Values[(int)Parameter.Strength] / 100.0, ls.GetDouble()), "looks.strength");
+            if (sdrValues.TryGetProperty("looks.strength", out var ls)) Expect(Approx(s.Values[(int)Parameter.Strength], ls.GetDouble()), "looks.strength");
             if (sdrValues.TryGetProperty("light.exposure", out var le)) Expect(Approx(s.Values[(int)Parameter.Exposure], le.GetDouble()), "exposure");
             if (sdrValues.TryGetProperty("light.exposure_mode", out var em))
             {
                 var actualEm = s.ExposureMode == 0 ? "scene" : s.ExposureMode == 1 ? "preview" : "sensor";
                 Expect(actualEm == em.GetString(), "exposure_mode");
             }
-            if (sdrValues.TryGetProperty("light.contrast", out var lc)) Expect(Approx(1.0 + s.Values[(int)Parameter.Contrast] / 100.0, lc.GetDouble()), "contrast");
-            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) Expect(Approx(-s.Values[(int)Parameter.Highlights] / 100.0, lhi.GetDouble()), "highlights");
-            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) Expect(Approx(s.Values[(int)Parameter.Shadows] / 100.0, lsh.GetDouble()), "shadows");
-            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) Expect(Approx(s.Values[(int)Parameter.ToneCurve] / 100.0, lsc.GetDouble()), "s_curve");
+            if (sdrValues.TryGetProperty("light.contrast", out var lc)) Expect(Approx(s.Values[(int)Parameter.Contrast], lc.GetDouble()), "contrast");
+            if (sdrValues.TryGetProperty("light.highlights", out var lhi)) Expect(Approx(s.Values[(int)Parameter.Highlights], lhi.GetDouble()), "highlights");
+            if (sdrValues.TryGetProperty("light.shadows", out var lsh)) Expect(Approx(s.Values[(int)Parameter.Shadows], lsh.GetDouble()), "shadows");
+            if (sdrValues.TryGetProperty("light.s_curve", out var lsc)) Expect(Approx(s.Values[(int)Parameter.ToneCurve], lsc.GetDouble()), "s_curve");
             if (sdrValues.TryGetProperty("light.curve", out var cv)) VerifyCurve(cv, s.Curve ?? new ToneCurveSettings(), id + ".sdr", mismatches);
             if (sdrValues.TryGetProperty("light.curve.apply_to_luminosity", out var sal))
                 Expect((s.Curve?.ApplyToLuminosity ?? false) == sal.GetBoolean(), "sdr.curve.apply_to_luminosity");
@@ -1125,7 +1136,7 @@ internal static class EditRecordFixtureChecks
                         Expect(Approx(s.Values[(int)Parameter.Tint], ktn.GetDouble()), "wb tint");
                 }
             }
-            if (sdrValues.TryGetProperty("color.saturation", out var csa)) Expect(Approx(1.0 + s.Values[(int)Parameter.Saturation] / 100.0, csa.GetDouble()), "saturation");
+            if (sdrValues.TryGetProperty("color.saturation", out var csa)) Expect(Approx(s.Values[(int)Parameter.Saturation], csa.GetDouble()), "saturation");
 
             var hsl = s.Hsl ?? new HslSettings();
             for (var idx = 0; idx < HslChannels.Length; idx++)
@@ -1149,7 +1160,7 @@ internal static class EditRecordFixtureChecks
             var atm = s.Atmosphere ?? new AtmosphereSettings();
             if (sdrValues.TryGetProperty("effects.clarity", out var cl)) Expect(Approx(atm.Clarity, cl.GetDouble()), "clarity");
             if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) Expect(Approx(atm.Dehaze, dh.GetDouble()), "dehaze");
-            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) Expect(Approx(s.Values[(int)Parameter.Sharpening] / 100.0, dsh.GetDouble()), "sharpening");
+            if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) Expect(Approx(s.Values[(int)Parameter.Sharpening], dsh.GetDouble()), "sharpening");
             if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) Expect(s.DisplayChromaDenoise == cm.GetInt32(), "chroma_mode");
             if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
             {

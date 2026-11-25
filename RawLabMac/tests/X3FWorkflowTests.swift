@@ -56,7 +56,7 @@ private func image(_ url: URL) throws -> CGImage {
         settings.exposure = 0.25
         settings.temperature = 7200
         settings.whiteBalanceMode = .custom
-        settings.saturation = 7
+        settings.saturation = 1.07
         let adjusted = try engine.render(source, settings: settings, lut: nil, edge: nil)!
         try require(pixels(adjusted.image) != pixels(normal.image), "ordinary edits affect normal X3F")
         let apiOutput = work.appendingPathComponent("api.png")

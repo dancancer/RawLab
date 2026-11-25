@@ -16,7 +16,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let edits = try MacEditPersistence(directory: root.appendingPathComponent("edits"))
         let session = AdjustmentTransferSession(store: edits)
         let presets = AdjustmentPresetStore(directory: root.appendingPathComponent("presets"))
-        var settings = Adjustments(); settings.exposure = 1.25; settings.contrast = 35
+        var settings = Adjustments(); settings.exposure = 1.25; settings.contrast = 1.35
         settings.blackPoint = -32.75; settings.whitePoint = 46.5; settings.vibrance = 21.25
         settings.gradingSettings[.shadows] = ColorGradingWheel(hue: 231.25, saturation: 0)
         settings.gradingSettings[.midtones] = ColorGradingWheel(hue: 110.125, saturation: 32.375)
@@ -58,7 +58,7 @@ private func check(_ value: @autoclosure () throws -> Bool, _ label: String) thr
         let preset = try presets.create(name: "Source-independent", payload: captured)
         try check(session.clipboard == clipboard && session.transactions.isEmpty, "Saving a preset does not change clipboard or photo history")
         try FileManager.default.removeItem(at: source)
-        var initial = Adjustments(); initial.contrast = -10; initial.saturation = 25
+        var initial = Adjustments(); initial.contrast = 0.9; initial.saturation = 1.25
         let before = MacPhotoEditState(settings: initial, filmID: "")
         try edits.save(target, state: before)
         let targetContext = MacAdjustmentTransferContext(identifier: target.path, isRaw: true)

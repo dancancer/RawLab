@@ -52,7 +52,7 @@ public partial class PhotoEffectsPanel : UserControl
                 PhotoEffectParameter.VignetteMidpoint or PhotoEffectParameter.VignetteRoundness or PhotoEffectParameter.VignetteFeather=>value.VignetteAmount!=0,
                 PhotoEffectParameter.GrainSize or PhotoEffectParameter.GrainRoughness=>value.GrainAmount!=0,_=>true};
             var key=keys[(int)spec.Id];
-            rows[spec.Id].Refresh(Loc.Text(key.Title),new(spec.Min,spec.Max),value[spec.Id],spec.DefaultValue,"%",enabled);
+            rows[spec.Id].Refresh(Loc.Text(key.Title),new(spec.Min,spec.Max),value[spec.Id],spec.DefaultValue,"",enabled);
             AutomationProperties.SetName(rows[spec.Id].Slider,Loc.Text(key.Name));
             AutomationProperties.SetName(rows[spec.Id].ResetButton,Loc.Text(key.Reset));
             AutomationProperties.SetName(rows[spec.Id].Number,Loc.Text(key.Number));

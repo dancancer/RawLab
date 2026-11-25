@@ -288,7 +288,7 @@ internal static class X3fModeResetChecks
                 Lens = new LensSettings(Distortion: true, Tca: true, Vignetting: true),
             };
             migrateInitial.Set(Parameter.Exposure, 0.7);
-            migrateInitial.Set(Parameter.Contrast, 18);
+            migrateInitial.Set(Parameter.Contrast, 1.18);
             seedStore.Save(migrateX3f, migrateInitial.Capture(), null);
 
             var writes = 0;

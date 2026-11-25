@@ -97,14 +97,19 @@ rawlab_ios_core_shared_sources() {
     shift
     _rawlab_ios_validate_ident "$out_var"
     local _dirs=("$@")
+    local _include_editor_tool_draft=0
     if [ "${#_dirs[@]}" -eq 0 ]; then
         _dirs=("$ROOT/RawLab/RawLab/Core" "$ROOT/Shared")
+        _include_editor_tool_draft=1
     fi
     local _sources=()
     local _src
     while IFS= read -r -d '' _src; do
         _sources+=("$_src")
-    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' -print0 | LC_ALL=C sort -z)
+    done < <(find "${_dirs[@]}" -type f -name '*.swift' ! -path '*/tests/*' ! -path '*/RawLabKit/*' ! -path '*/RawLabInspectionNative/*' ! -path '*/RawLabNative/*' ! -path '*/RawLabNativeTypes/*' -print0 | LC_ALL=C sort -z)
+    if [ "$_include_editor_tool_draft" = 1 ]; then
+        _sources+=("$ROOT/RawLab/RawLab/UI/EditorState/EditorToolDraft.swift")
+    fi
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
 }
 
@@ -116,12 +121,7 @@ rawlab_ios_processor_export_sources() {
     source "$ROOT/Shared/tests/hdr-native-sources.sh"
     local _sources=(
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
-        "$ROOT/Shared/HSLNative.swift"
         "$ROOT/Shared/HSLTargetNative.swift"
-        "$ROOT/Shared/ToneControlsNative.swift"
-        "$ROOT/Shared/AtmosphereNative.swift"
-        "$ROOT/Shared/ColorGradingNative.swift"
-        "$ROOT/Shared/ToneCurveNative.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Errors/ProcessorError.swift"
         "$ROOT/RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Helpers.swift"
@@ -155,12 +155,15 @@ rawlab_ios_camera_sources() {
     _rawlab_ios_validate_ident "$out_var"
     local _core=(
         "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift"
+        "$ROOT/RawLab/RawLab/Core/Camera/CameraFocusController.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift"
+        "$ROOT/RawLab/RawLab/Core/Camera/CameraAccessAuth.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraIncrementalImport.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraJPEGProcessing.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraOriginalStore.swift"
+        "$ROOT/RawLab/RawLab/Core/Batch/Storage/ExportEvidenceStore.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraWorkspaceBackend.swift"
         "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraController.swift"
     )
@@ -187,6 +190,36 @@ rawlab_ios_camera_sources() {
             ;;
     esac
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
+}
+
+# Usage: rawlab_ios_compile_sony_ptpip [host|sim] OUT_DIR
+rawlab_ios_compile_sony_ptpip() {
+    local mode="${1:?Pass host or sim}"
+    local out_dir="${2:?Pass output directory}"
+    local sdk target compiler_cmd
+    mkdir -p "$out_dir"
+    case "$mode" in
+        host)
+            sdk="$RAWLAB_IOS_HOST_SDK"
+            target="$RAWLAB_IOS_HOST_TARGET"
+            compiler_cmd=(clang++)
+            ;;
+        sim)
+            sdk="$RAWLAB_IOS_SIM_SDK"
+            target="$RAWLAB_IOS_SIM_TARGET"
+            compiler_cmd=(xcrun --sdk iphonesimulator clang++)
+            ;;
+        *)
+            echo "Unknown sony_ptpip target mode: $mode" >&2
+            return 2
+            ;;
+    esac
+    for source in core/sony_ptpip ffi/sony_ptpip_c; do
+        "${compiler_cmd[@]}" -std=c++17 -O2 \
+            -isysroot "$sdk" -target "$target" \
+            -I "$ROOT/lutools/include" -I "$ROOT/lutools/src" \
+            -c "$ROOT/lutools/src/$source.cpp" -o "$out_dir/$(basename "$source").o"
+    done
 }
 
 # Usage: rawlab_ios_compile_metadata_bridge OUT_OBJ [bridge_mm] [module_cache_dir]

@@ -1,24 +1,14 @@
 package com.rawlab.android.editor
 
 import android.net.Uri
-import com.rawlab.android.adjustments.AdjustmentFailure
-import com.rawlab.android.adjustments.AdjustmentHistoryTransaction
-import com.rawlab.android.adjustments.AdjustmentPayload
 import com.rawlab.android.adjustments.AdjustmentScope
-import com.rawlab.android.adjustments.AdjustmentStatus
 import com.rawlab.android.adjustments.AdjustmentTransfer
-import com.rawlab.android.adjustments.AdjustmentTransferException
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.CollectionExportReview
 import com.rawlab.android.editor.storage.EditSaveResult
-import com.rawlab.android.editor.storage.EditorEditStore
 import com.rawlab.android.format.ExportFormat
 import com.rawlab.android.format.PhotoInputKind
-import com.rawlab.android.photo.ImportedPhoto
-import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.AdjustmentNotReadyException
-import com.rawlab.android.settings.EditSettings
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -26,38 +16,17 @@ import java.io.File
 import java.util.UUID
 
 internal class EditorCollectionStateHolder(
-    storage: PhotoStorage,
-    scope: CoroutineScope,
+    private val session: EditorDocumentSession,
     journalRoot: File,
-    private val mutable: MutableStateFlow<EditorState>,
-    private val editStore: EditorEditStore,
-    private val adjustmentHistory: EditorAdjustmentHistory,
-    private val strings: EditorStrings,
-    private val isDisposed: () -> Boolean,
-    private val currentSourceRevision: () -> Long,
-    private val hasActivePreparations: () -> Boolean,
-    private val ownsFailedImportRecovery: (File) -> Boolean,
-    private val adjustmentTargetIsCurrent: (String, EditorAdjustmentHistory.Snapshot) -> Boolean,
-    private val hasActiveBatch: () -> Boolean,
-    private val retainBatch: (BatchJob) -> Unit,
-    private val resumeBatchJob: (BatchJob, Boolean) -> Unit,
-    private val releaseEditorRasterForBatch: ((Boolean) -> Unit) -> Unit,
-    private val onCommitAdjustments: (work: () -> Unit, completed: (Result<Unit>) -> Unit) -> Unit,
-    private val onImportPhoto: (Uri, (Boolean) -> Unit) -> Unit,
-    private val onCapturePresetAdjustments: (AdjustmentScope, (Result<AdjustmentPayload>) -> Unit) -> Unit,
-    private val onCancelAdjustmentInteraction: () -> Unit,
-    private val onEdit: (EditSettings, Boolean) -> Unit,
-    private val onApplyDraft: ((Boolean) -> Unit) -> Unit,
-    private val onDiscardDraft: () -> Unit,
-    private val onRetrySave: ((Boolean) -> Unit) -> Unit,
-    private val onClearPendingResetMigration: () -> Unit,
-    private val onIncrementEditRevision: () -> Unit,
-    private val onIncludeIndependentRecipeLook: (EditSettings) -> Unit,
-    private val onRenderCommittedForNavigation: () -> Unit,
 ) {
+    private val mutable get() = session.mutable
+    private val editStore get() = session.editStore
+    private val adjustmentHistory get() = session.adjustmentHistory
+    private val strings get() = session.strings
+
     val collections = EditorCollections(
-        storage,
-        scope,
+        session.storage,
+        session.scope,
         journalRoot,
         editStore::readState,
         { adjustmentHistory.session?.editGeneration(it) ?: 0L },
@@ -65,9 +34,9 @@ internal class EditorCollectionStateHolder(
         awaitPendingEdits = { mutable.first { !it.committingAdjustments } },
         canRelease = { photo ->
             mutable.value.photo?.file != photo.file &&
-                !ownsFailedImportRecovery(photo.file) &&
+                !session.actions.ownsFailedImportRecovery(photo.file) &&
                 mutable.value.operation != Operation.IMPORT &&
-                !hasActivePreparations() &&
+                !session.actions.hasActiveAdjustmentPreparations() &&
                 !mutable.value.committingAdjustments
         },
     )
@@ -97,7 +66,9 @@ internal class EditorCollectionStateHolder(
         val current = mutable.value
         val photo = current.photo?.takeIf { it.identity.value == id } ?: return null
         val history = adjustmentHistory.snapshot()
-        if (!adjustmentTargetIsCurrent(id, history)) return current.saveError ?: "Apply, discard or skip this photo's draft"
+        if (!session.actions.adjustmentTargetIsCurrent(id, history)) {
+            return current.saveError ?: "Apply, discard or skip this photo's draft"
+        }
         val record = history.loaded
         return if (record == null || !AdjustmentTransfer.sameAdjustments(
                 record.settings ?: photo.defaultEditSettings(),
@@ -112,7 +83,7 @@ internal class EditorCollectionStateHolder(
         val photo = current.photo ?: return {}
         val history = adjustmentHistory.snapshot()
         val captured = runCatching {
-            check(adjustmentTargetIsCurrent(photo.identity.value, history)) {
+            check(session.actions.adjustmentTargetIsCurrent(photo.identity.value, history)) {
                 current.saveError ?: "Apply, discard or skip this photo's draft"
             }
             history.committedValidation(photo, current.edits)
@@ -137,19 +108,19 @@ internal class EditorCollectionStateHolder(
         val history = adjustmentHistory.snapshot()
         if (apply) {
             if (history.interacting) {
-                onEdit(mutable.value.edits, false)
+                session.actions.edit(mutable.value.edits, false, false)
                 return completed(false)
             }
             mutable.value.draft?.let { draft ->
                 if (draft.changed) {
-                    onApplyDraft(completed)
+                    session.actions.applyDraft(completed)
                     return
                 }
-                onDiscardDraft()
+                session.actions.discardDraft()
                 completed(true)
                 return
             }
-            onRetrySave(completed)
+            session.actions.retrySave(completed)
         } else {
             val loaded = history.loaded
             if (mutable.value.photo != null && loaded == null) {
@@ -158,14 +129,14 @@ internal class EditorCollectionStateHolder(
                 completed(false)
                 return
             }
-            onClearPendingResetMigration()
-            onCancelAdjustmentInteraction()
-            mutable.value.draft?.let { onDiscardDraft() }
+            session.actions.clearPendingResetMigration(null, null)
+            session.actions.cancelAdjustmentInteraction()
+            mutable.value.draft?.let { session.actions.discardDraft() }
             val current = mutable.value
             val photo = current.photo
             val restored = if (photo == null) null else loaded?.settings ?: photo.defaultEditSettings()
             if (photo != null && restored != null && current.edits != restored) {
-                onIncrementEditRevision()
+                session.incrementEditRevision()
                 mutable.value = current.copy(
                     edits = restored,
                     draft = null,
@@ -174,8 +145,8 @@ internal class EditorCollectionStateHolder(
                     error = null,
                     adjustmentRevision = current.adjustmentRevision + 1,
                 )
-                onIncludeIndependentRecipeLook(restored)
-                onRenderCommittedForNavigation()
+                session.actions.includeIndependentRecipeLook(restored)
+                session.actions.renderCommittedForNavigation()
             } else if (photo != null && current.saveState == EditSaveState.FAILED) {
                 mutable.value = current.copy(
                     saveState = if (loaded?.settings == null) EditSaveState.NONE else EditSaveState.SAVED,
@@ -192,13 +163,13 @@ internal class EditorCollectionStateHolder(
         if (state.value.busy || mutable.value.committingAdjustments || mutable.value.draft != null ||
             mutable.value.operation != Operation.NONE
         ) return completed(false)
-        onCommitAdjustments({ collections.validateForCommit(target) }) { outcome ->
+        session.commitAdjustments({ collections.validateForCommit(target) }, false) { outcome ->
             outcome.fold({
                 if (mutable.value.photo?.identity?.value == id) {
                     collections.opened(id)
                     completed(true)
                 } else {
-                    onImportPhoto(Uri.parse(target.sourceUri), completed)
+                    session.actions.importPhoto(Uri.parse(target.sourceUri), completed)
                 }
             }, { error ->
                 collections.failure(error.message)
@@ -211,13 +182,13 @@ internal class EditorCollectionStateHolder(
         if (mutable.value.draft != null || mutable.value.operation != Operation.NONE || mutable.value.committingAdjustments) {
             return completed(false)
         }
-        onCancelAdjustmentInteraction()
+        session.actions.cancelAdjustmentInteraction()
         if (mutable.value.photo == null) {
             collections.returnToCollection()
             collections.refresh()
             completed(true)
         } else {
-            onRetrySave { accepted ->
+            session.actions.retrySave { accepted ->
                 if (accepted) {
                     collections.returnToCollection()
                     collections.refresh()
@@ -240,7 +211,7 @@ internal class EditorCollectionStateHolder(
             completed(null)
             return
         }
-        onCapturePresetAdjustments(scope) { result ->
+        session.actions.capturePresetAdjustments(scope) { result ->
             result.fold(
                 { completed(CollectionSynchronization(photo.identity.value, photo.name, it, targets)) },
                 { collections.failure(it.message); completed(null) },
@@ -278,13 +249,13 @@ internal class EditorCollectionStateHolder(
         cancelExport()
         val generation = exportGeneration
         val source = mutable.value.photo
-        val sourceVersion = currentSourceRevision()
+        val sourceVersion = session.sourceRevision
         val revision = mutable.value.adjustmentRevision
         val selected = state.value.selected
         val current = {
-            !isDisposed() &&
+            !session.disposed &&
                 generation == exportGeneration &&
-                currentSourceRevision() == sourceVersion &&
+                session.sourceRevision == sourceVersion &&
                 mutable.value.photo === source &&
                 mutable.value.adjustmentRevision == revision &&
                 state.value.selected == selected
@@ -313,7 +284,7 @@ internal class EditorCollectionStateHolder(
         isCurrent: () -> Boolean,
         completed: (BatchJob?, Boolean) -> Unit,
     ) {
-        if (hasActiveBatch()) {
+        if (session.actions.hasActiveOrPendingBatch()) {
             collections.failure("Close the current export task first")
             completed(null, false)
             return
@@ -322,9 +293,9 @@ internal class EditorCollectionStateHolder(
             if (job == null) {
                 completed(null, false)
             } else {
-                retainBatch(job)
-                releaseEditorRasterForBatch { released ->
-                    if (released) resumeBatchJob(job, automaticallyStart && isCurrent())
+                session.actions.retainBatch(job)
+                session.actions.releaseEditorRasterForBatch { released ->
+                    if (released) session.actions.resumeAttachedBatch(job, automaticallyStart && isCurrent())
                     else collections.failure(mutable.value.error)
                     completed(job, released)
                 }

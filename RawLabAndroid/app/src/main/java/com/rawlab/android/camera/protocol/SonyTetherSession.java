@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.util.*;
 import javax.net.SocketFactory;
+import com.rawlab.android.camera.SonyCameraNative;
 import com.rawlab.android.camera.protocol.SonyMobileSession.Reader;
 import static com.rawlab.android.camera.protocol.SonyMobileSession.*;
 
@@ -15,6 +16,7 @@ public final class SonyTetherSession implements Closeable {
     public enum Profile { A7CII_2_00, ZVE10_2_02, GENERIC }
     public enum Purpose { IMPORT, TETHER }
     private static final int LIMIT = 8 << 20;
+    private static final int SLOT_DATES_LIMIT = 256 << 10;
     private final Socket command, event;
     private final Reporter reporter;
     private final Purpose purpose;
@@ -47,15 +49,16 @@ public final class SonyTetherSession implements Closeable {
         command = factory.createSocket(); event = factory.createSocket();
         try {
             command.connect(new InetSocketAddress(address,15740),10000); command.setSoTimeout(10000); command.setTcpNoDelay(true);
-            ByteArrayOutputStream init = new ByteArrayOutputStream();
-            init.write(ByteBuffer.allocate(16).putLong(guid.getMostSignificantBits()).putLong(guid.getLeastSignificantBits()).array());
-            init.write("RawLab\0".getBytes(StandardCharsets.UTF_16LE)); init.write(u32(0x10000));
-            writePacket(command,1,init.toByteArray());
+            byte[] initCmd = SonyCameraNative.initCmdPacket(guid, "RawLab", 0x10000);
+            OutputStream cmdOut = command.getOutputStream();
+            cmdOut.write(initCmd); cmdOut.flush();
             Packet ack = readPacket(command,4096);
-            if (ack.type != 2 || ack.bytes.length < 24) throw new IOException("Remote PTP command init rejected");
-            int connection = new Reader(ack.bytes).i32();
+            if (ack.type != 2) throw new IOException("Remote PTP command init rejected");
+            int connection = SonyCameraNative.nativeParseInitCmdAck(ack.bytes);
             event.connect(new InetSocketAddress(address,15740),10000); event.setSoTimeout(10000);
-            writePacket(event,3,u32(connection));
+            byte[] initEvt = SonyCameraNative.nativeInitEvtPacket(connection);
+            OutputStream evtOut = event.getOutputStream();
+            evtOut.write(initEvt); evtOut.flush();
             Packet ready = readPacket(event,4096);
             if (ready.type != 4 || ready.bytes.length != 0) throw new IOException("Remote PTP event init rejected");
             event.setSoTimeout(0); event.setTcpNoDelay(true);
@@ -64,26 +67,32 @@ public final class SonyTetherSession implements Closeable {
     }
 
     private void readEvents() {
+        final byte[] probeResp = SonyCameraNative.nativeProbeRespPacket();
         try {
+            OutputStream evtOut = event.getOutputStream();
             while (!closed) {
                 Packet packet = readPacket(event,4096);
-                if (packet.type == 13 && packet.bytes.length == 0) { writePacket(event,14,new byte[0]); continue; }
-                if (packet.type != 8 || packet.bytes.length < 6 || packet.bytes.length > 18 || (packet.bytes.length - 6) % 4 != 0)
-                    throw new IOException("Invalid remote event");
-                Reader r = new Reader(packet.bytes); int code = r.u16(); long tid = r.u32();
-                List<Long> params = new ArrayList<>(); while (r.remaining() > 0) params.add(r.u32());
+                if (packet.type == 13 && packet.bytes.length == 0) {
+                    evtOut.write(probeResp); evtOut.flush(); continue;
+                }
+                if (packet.type != 8) throw new IOException("Invalid remote event");
+                int[] ev = SonyCameraNative.nativeParseEvent(packet.bytes);
+                int code = ev[0];
+                long tid = Integer.toUnsignedLong(ev[1]);
+                int paramCount = ev[2];
+                List<Long> params = new ArrayList<>(paramCount);
+                for (int i = 0; i < paramCount; i++) params.add(Integer.toUnsignedLong(ev[3 + i]));
                 reporter.report(String.format(Locale.ROOT,"remote_event code=0x%04x tid=%d parameters=%s",code,tid,params));
             }
         } catch (IOException failure) { if (!closed) { reporter.report("remote_event_failed " + failure.getClass().getSimpleName()); close(); } }
     }
 
     public synchronized Device inspectDevice() throws IOException {
-        Reader d = new Reader(call(0x1001,new int[0],null,1 << 20,true));
-        d.u16(); long vendor = d.u32(); d.u16(); d.ptpString(); d.u16(); operations = d.u16Array();
-        for (int i=0;i<4;i++) d.u16Array();
-        String maker = d.ptpString(), model = d.ptpString(), firmware = d.ptpString(), serial = d.ptpString();
-        if(vendor!=17 || !(maker.equals("Sony") || maker.equals("Sony Corporation"))) throw new IOException("Not a Sony PTP device");
-        return new Device(maker,model,firmware,serial,operations);
+        SonyCameraNative.DecodedDeviceInfo info = SonyCameraNative.parseDeviceInfo(
+            call(0x1001,new int[0],null,1 << 20,true));
+        if (info.getStatus() != SonyCameraNative.STATUS_OK) throw new IOException("Not a Sony PTP device");
+        operations = info.getOperations();
+        return new Device(info.getManufacturer(), info.getModel(), info.getFirmware(), info.getSerial(), operations);
     }
 
     public Device connectRemote() throws IOException { return connectRemote(Profile.GENERIC); }
@@ -101,14 +110,13 @@ public final class SonyTetherSession implements Closeable {
         for (int retry=0;retry<20;retry++) {
             byte[] bytes = call(0x9202,new int[]{0x12c,1},null,65536,true);
             if (bytes.length > 0) {
-                Reader info = new Reader(bytes); int version = info.u16();
-                Set<Integer> properties = info.u16Array(); controls.addAll(info.u16Array());
-                boolean supported = (version == 0xc8 && info.remaining() == 0) || version >= 0x12c;
-                if (!supported)
-                    throw new IOException("Unsupported Sony remote protocol descriptor version="+version);
-                propertyEnumTables=version>=0x12c?2:1;
-                reporter.report("remote_extended protocol=" + version + " properties=" + properties.size() + " controls=" + controls);
-                if (!properties.isEmpty() || !controls.isEmpty()) break;
+                SonyCameraNative.DecodedRemoteDescriptor desc = SonyCameraNative.parseRemoteDescriptor(bytes);
+                if (desc.getStatus() != SonyCameraNative.STATUS_OK)
+                    throw new IOException("Unsupported Sony remote protocol descriptor version="+desc.getVersion());
+                controls.addAll(desc.getControls());
+                propertyEnumTables=desc.getEnumTables();
+                reporter.report("remote_extended protocol=" + desc.getVersion() + " properties=" + desc.getProperties().size() + " controls=" + controls);
+                if (!desc.getProperties().isEmpty() || !controls.isEmpty()) break;
             }
             pause(100);
         }
@@ -184,15 +192,12 @@ public final class SonyTetherSession implements Closeable {
             this.owner=owner;this.handle=handle;this.storage=storage;this.format=format;this.size=size;this.name=name;this.created=created;this.modified=modified;
         }
         public String key() { return storage+":"+handle+":"+format+":"+size+":"+name+":"+created+":"+modified; }
-        public boolean isPhoto() { String lower=name.toLowerCase(Locale.ROOT);return size>0 && size<=(1L<<30) && (lower.endsWith(".arw") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")); }
+        public boolean isPhoto() { return size>0 && size<=(1L<<30) && SonyCameraNative.nativeIsPhotoFilename(name); }
     }
 
     static LegacyObject parseLegacyObject(int handle,byte[] bytes) throws IOException {
-        Reader r=new Reader(bytes);int storage=r.i32(),format=r.u16();r.u16();long size=r.u32();r.take(40);
-        String name=r.ptpString(),created=r.ptpString(),modified=r.ptpString();r.ptpString();
-        if(r.remaining()!=0 || name.isEmpty() || name.equals(".") || name.equals("..") || name.indexOf('/')>=0 || name.indexOf('\\')>=0 || name.indexOf('\0')>=0)
-            throw new IOException("Invalid legacy object metadata");
-        return new LegacyObject(handle,storage,format,size,name,created,modified);
+        SonyCameraNative.DecodedLegacyObject obj = SonyCameraNative.parseLegacyObject(bytes);
+        return new LegacyObject(handle,obj.getStorage(),obj.getFormat(),obj.getSize(),obj.getName(),obj.getCreated(),obj.getModified());
     }
 
     private LegacyObject legacyObject(int handle) throws IOException {
@@ -261,9 +266,7 @@ public final class SonyTetherSession implements Closeable {
             byte[] bytes=call(0x101b,new int[]{object.handle,(int)offset,count},null,count,true);
             if(bytes.length!=count) throw new CameraMediaSession.PhotoTransferException("Legacy original chunk truncated");
             if(offset==0) {
-                boolean tiff=bytes.length>=4 && (bytes[0]==73 && bytes[1]==73 && bytes[2]==42 && bytes[3]==0 || bytes[0]==77 && bytes[1]==77 && bytes[2]==0 && bytes[3]==42);
-                boolean jpeg=bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
-                if(object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
+                if(!SonyCameraNative.nativeValidatePhotoHeader(object.name, bytes)) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
             }
             destination.write(bytes);digest.update(bytes);offset+=bytes.length;
         }
@@ -304,9 +307,7 @@ public final class SonyTetherSession implements Closeable {
             }
         };
         streamObject(object.handle,object.size,verified);
-        boolean tiff=prefix[0]==73 && prefix[1]==73 && prefix[2]==42 && prefix[3]==0 || prefix[0]==77 && prefix[1]==77 && prefix[2]==0 && prefix[3]==42;
-        boolean jpeg=prefix[0]==(byte)255 && prefix[1]==(byte)216 && prefix[2]==(byte)255;
-        if(prefixSize[0]<4 || (object.name.toLowerCase(Locale.ROOT).endsWith(".arw")?!tiff:!jpeg)) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
+        if(prefixSize[0]<4 || !SonyCameraNative.nativeValidatePhotoHeader(object.name, prefix)) throw new CameraMediaSession.PhotoTransferException("Legacy original header mismatch");
         destination.flush();StringBuilder hash=new StringBuilder();for(byte b:digest.digest()) hash.append(String.format(Locale.ROOT,"%02x",b&255));return hash.toString();
     }
 
@@ -314,30 +315,39 @@ public final class SonyTetherSession implements Closeable {
     private void streamObject(int handle,long size,OutputStream destination) throws IOException {
         int tid=++transaction;long received=0;boolean started=false,ended=false;
         try {
-            ByteArrayOutputStream request=new ByteArrayOutputStream();request.write(u32(1));request.write(u16(0x1009));request.write(u32(tid));request.write(u32(handle));
-            writePacket(command,6,request.toByteArray());
+            byte[] request = SonyCameraNative.nativeOpReqPacket(1, 0x1009, tid, new int[]{handle});
+            OutputStream cmdOut = command.getOutputStream();
+            cmdOut.write(request); cmdOut.flush();
             DataInputStream input=new DataInputStream(command.getInputStream());byte[] header=new byte[8],buffer=new byte[65536];
+            byte[] probeResp = null;
             for(int packets=0;packets<100000;packets++) {
-                input.readFully(header);Reader h=new Reader(header);long length=h.u32();int type=h.i32();
-                if(length<8 || length>size+20) throw new IOException("Invalid streamed packet length");
-                int body=(int)(length-8);
+                input.readFully(header);
+                long[] hdr = SonyCameraNative.nativeParseHeader(header, size + 12);
+                int type = (int)hdr[0];
+                int body = (int)hdr[1];
                 if(type==9) {
                     if(started || body!=12) throw new IOException("Invalid streamed data start");
-                    byte[] bytes=new byte[12];input.readFully(bytes);Reader r=new Reader(bytes);
-                    if(r.i32()!=tid || r.i64()!=size) throw new IOException("Streamed object size/transaction mismatch");started=true;
+                    byte[] bytes=new byte[12];input.readFully(bytes);
+                    long[] start = SonyCameraNative.nativeParseStartData(bytes);
+                    if((int)start[0]!=tid || start[1]!=size) throw new IOException("Streamed object size/transaction mismatch");
+                    started=true;
                 } else if(type==10 || type==12) {
                     if(!started || ended || body<4 || body-4>size-received) throw new IOException("Invalid streamed object data");
                     byte[] id=new byte[4];input.readFully(id);if(new Reader(id).i32()!=tid) throw new IOException("Streamed data transaction mismatch");
                     for(int remaining=body-4;remaining>0;) { int count=Math.min(buffer.length,remaining);input.readFully(buffer,0,count);destination.write(buffer,0,count);received+=count;remaining-=count; }
                     if(type==12) { if(received!=size) throw new IOException("Streamed object truncated");ended=true; }
                 } else if(type==7) {
-                    if(body<6 || body>26 || (body-6)%4!=0) throw new IOException("Invalid streamed response");
-                    byte[] bytes=new byte[body];input.readFully(bytes);Reader r=new Reader(bytes);int code=r.u16();
-                    if(r.i32()!=tid || started && !ended) throw new IOException("Streamed response transaction mismatch");
+                    byte[] bytes=new byte[body];input.readFully(bytes);
+                    int[] resp = SonyCameraNative.nativeParseResponse(bytes);
+                    int code=resp[0];
+                    if(resp[1]!=tid || started && !ended) throw new IOException("Streamed response transaction mismatch");
                     if(code!=0x2001) throw new RemoteResponseException(0x1009,code);
                     if(!ended) throw new IOException("Streamed object missing");
                     reporter.report("remote_operation op=0x1009 bytes="+received);return;
-                } else if(type==13 && body==0) writePacket(command,14,new byte[0]);
+                } else if(type==13 && body==0) {
+                    if (probeResp == null) probeResp = SonyCameraNative.nativeProbeRespPacket();
+                    cmdOut.write(probeResp); cmdOut.flush();
+                }
                 else throw new IOException("Unexpected streamed object packet");
             }
             throw new IOException("Streamed object packet budget exceeded");
@@ -452,77 +462,56 @@ public final class SonyTetherSession implements Closeable {
         }
     }
 
-    private static final Set<Long> FIXED_FOCUS_AREAS = Collections.unmodifiableSet(
-        new HashSet<>(Arrays.asList(0x0001L, 0x0003L, 0x0201L, 0x0203L)));
+    private static byte[] encodeNumericProperties(Map<Integer,Property> latest) {
+        if (latest == null || latest.isEmpty()) return new byte[0];
+        List<long[]> entries = new ArrayList<>();
+        for (Property p : latest.values()) {
+            if (p.value instanceof Long) {
+                entries.add(new long[]{p.code, p.writable ? 1L : 0L, p.enabled, (Long)p.value});
+            }
+        }
+        if (entries.isEmpty()) return new byte[0];
+        return SonyCameraNative.encodeNumericPropertyTable(entries);
+    }
+
+    private static int[] toIntArray(Set<Integer> values) {
+        int[] out = new int[values.size()];
+        int i = 0;
+        for (Integer v : values) out[i++] = v;
+        return out;
+    }
 
     public static boolean isFocusLocked(Map<Integer,Property> latest) {
-        if (latest==null) return false;
-        Property indication = latest.get(0xd213);
-        if (indication==null) return false;
-        try {
-            long v = indication.number();
-            return v==2L || v==6L;
-        } catch (IOException ignored) {
-            return false;
-        }
+        byte[] encoded = encodeNumericProperties(latest);
+        if (encoded.length == 0) return false;
+        return SonyCameraNative.nativeFocusIndication(encoded)[0] != 0;
     }
 
     public static boolean isFocusFailed(Map<Integer,Property> latest) {
-        if (latest==null) return false;
-        Property indication = latest.get(0xd213);
-        if (indication==null) return false;
-        try {
-            long v = indication.number();
-            return v==3L || v==7L;
-        } catch (IOException ignored) {
-            return false;
-        }
+        byte[] encoded = encodeNumericProperties(latest);
+        if (encoded.length == 0) return false;
+        return SonyCameraNative.nativeFocusIndication(encoded)[1] != 0;
     }
 
     public boolean canCancelTouchFocus(Map<Integer,Property> latest) {
-        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null ||
-            !operations.contains(0x9207) || !controls.contains(0xd2e5)) return false;
-        Property property = latest.get(0xd285);
-        if (property==null || property.enabled!=1) return false;
-        try { return property.number()==1L; } catch (IOException ignored) { return false; }
+        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null) return false;
+        return SonyCameraNative.nativeCanCancelTouchFocus(
+            encodeNumericProperties(latest), toIntArray(controls), toIntArray(operations), remoteReady);
     }
 
     public FocusTarget resolveFocusTarget(Map<Integer,Property> latest) throws FocusUnavailableException {
-        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null ||
-            !operations.contains(0x9207)) {
+        if (purpose!=Purpose.TETHER || !remoteReady || !captureReady || closed || latest==null) {
             throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
         }
-        if (controls.contains(0xd2e4)) {
-            Property touchUsable = latest.get(0xd284);
-            if (touchUsable!=null && touchUsable.enabled==1) {
-                try {
-                    if (touchUsable.number()==1L) return FocusTarget.REMOTE_TOUCH;
-                } catch (IOException ignored) {}
-            }
+        int[] resolved = SonyCameraNative.nativeResolveFocusTarget(
+            encodeNumericProperties(latest), toIntArray(controls), toIntArray(operations), remoteReady);
+        if (resolved[0] == 1) return FocusTarget.REMOTE_TOUCH;
+        if (resolved[0] == 2) return FocusTarget.AF_AREA_POSITION;
+        switch (resolved[1]) {
+            case 1: throw new FocusUnavailableException(FocusUnavailableReason.MANUAL_FOCUS);
+            case 2: throw new FocusUnavailableException(FocusUnavailableReason.FOCUS_AREA_FIXED);
+            default: throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
         }
-        Property focusMode = latest.get(0x500a);
-        Long focusModeValue = null;
-        if (focusMode!=null) {
-            try { focusModeValue = focusMode.number(); } catch (IOException ignored) {}
-        }
-        if (focusModeValue!=null && focusModeValue==1L) {
-            throw new FocusUnavailableException(FocusUnavailableReason.MANUAL_FOCUS);
-        }
-        Long focusArea = null;
-        Property focusAreaProp = latest.get(0xd22c);
-        if (focusAreaProp!=null) {
-            try { focusArea = focusAreaProp.number(); } catch (IOException ignored) {}
-        }
-        if (controls.contains(0xd2dc)) {
-            if (focusArea!=null && FIXED_FOCUS_AREAS.contains(focusArea)) {
-                throw new FocusUnavailableException(FocusUnavailableReason.FOCUS_AREA_FIXED);
-            }
-            return FocusTarget.AF_AREA_POSITION;
-        }
-        if (controls.contains(0xd2e4) && focusArea!=null && FIXED_FOCUS_AREAS.contains(focusArea)) {
-            throw new FocusUnavailableException(FocusUnavailableReason.FOCUS_AREA_FIXED);
-        }
-        throw new FocusUnavailableException(FocusUnavailableReason.UNSUPPORTED);
     }
 
     public synchronized FocusPointResult setFocusPoint(int x, int y) throws IOException {
@@ -742,31 +731,58 @@ public final class SonyTetherSession implements Closeable {
         return listPhotosFrom(0L).assets;
     }
 
+    private boolean shouldListSlot(int slot, boolean defaultWhenUnknown) throws IOException {
+        if (!operations.contains(0x923b)) return slot == 1;
+        try {
+            byte[] info = call(0x923b, new int[]{slot}, null, SLOT_DATES_LIMIT, true);
+            if (info.length < 4) return false;
+            return SonyCameraNative.nativeParseSlotPhotoCount(info) > 0;
+        } catch (RemoteResponseException error) {
+            if (error.code == 0x201d || error.code == 0x2013) return false;
+            return defaultWhenUnknown;
+        }
+    }
+
     public synchronized IncrementalContents listPhotosFrom(long startCursor) throws IOException {
         if (!remoteReady) throw new IOException("Remote handshake incomplete");
-        List<Asset> result = new ArrayList<>(); Set<String> seen = new HashSet<>(); long cursor = Math.max(0L, startCursor);
-        long latestCursor = 0L; boolean hasEntries = false;
-        boolean exceeded = false;
-        for (int page=0;page<1000;page++) {
-            byte[] bytes=call(0x923c,new int[]{(int)cursor,(int)(cursor>>>32),100,1,0},null,LIMIT,true);
+        List<Asset> result = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        long[] latestCursor = {0L};
+        boolean[] hasEntries = {false};
+        boolean[] exceeded = {false};
+        if (shouldListSlot(1, true)) {
+            listSlotFrom(1, startCursor, result, seen, latestCursor, hasEntries, exceeded);
+        }
+        if (shouldListSlot(2, false)) {
+            listSlotFrom(2, startCursor, result, seen, latestCursor, hasEntries, exceeded);
+        }
+        if (exceeded[0]) SonyMobileSession.trimRecentAssets(result);
+        rememberAssets(result);
+        // 超过枚举上限时返回最近窗口并保持连接，由调用方提示截断，而不是断开会话。
+        return new IncrementalContents(result, hasEntries[0] ? latestCursor[0] : 0L, hasEntries[0], exceeded[0]);
+    }
+
+    private void listSlotFrom(int slot, long startCursor, List<Asset> result, Set<String> seen,
+                              long[] latestCursorOut, boolean[] hasEntriesOut, boolean[] exceededOut) throws IOException {
+        long cursor = Math.max(0L, startCursor);
+        for (int page = 0; page < 1000; page++) {
+            byte[] bytes = call(0x923c, new int[]{(int) cursor, (int) (cursor >>> 32), 100, slot, 0}, null, LIMIT, true);
             SonyMobileSession.Page data;
-            try { data=parseContents(bytes,this); } catch(IOException invalid) { close();throw invalid; }
-            if (data.count > 0) { hasEntries = true; latestCursor = data.cursor; }
+            try { data = parseContents(bytes, this, slot); } catch (IOException invalid) { close(); throw invalid; }
+            if (data.count > 0) {
+                hasEntriesOut[0] = true;
+                latestCursorOut[0] = Math.max(latestCursorOut[0], data.cursor);
+            }
             for (Asset asset : data.assets) if (seen.add(asset.key())) {
                 result.add(asset);
-                if (result.size()>CameraMediaSession.MAX_LISTED_PHOTOS) {
-                    exceeded = true;
-                    if (result.size()>=CameraMediaSession.MAX_LISTED_PHOTOS*2) SonyMobileSession.trimRecentAssets(result);
+                if (result.size() > CameraMediaSession.MAX_LISTED_PHOTOS) {
+                    exceededOut[0] = true;
+                    if (result.size() >= CameraMediaSession.MAX_LISTED_PHOTOS * 2) SonyMobileSession.trimRecentAssets(result);
                 }
             }
-            if (data.count<100) {
-                if (exceeded) SonyMobileSession.trimRecentAssets(result);
-                rememberAssets(result);
-                // 超过枚举上限时返回最近窗口并保持连接，由调用方提示截断，而不是断开会话。
-                return new IncrementalContents(result, hasEntries ? latestCursor : 0L, hasEntries, exceeded);
-            }
-            if (data.cursor<=cursor) throw new IOException("Remote contents cursor did not advance");
-            cursor=data.cursor;
+            if (data.count < 100) return;
+            if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
+            cursor = data.cursor;
         }
         // 1000 页仍未到卡尾时游标停在卡中段，不能当增量起点静默放行：继续按上限拒绝，避免把卡内既有照片当新拍下载。
         SonyMobileSession.trimRecentAssets(result);
@@ -782,9 +798,9 @@ public final class SonyTetherSession implements Closeable {
     private boolean hasRemoteAsset(Asset target) throws IOException {
         long cursor = target.created > 0 ? target.created - 1 : 0;
         for (int page = 0; page < 1000; page++) {
-            byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, 1, 0}, null, LIMIT, true);
+            byte[] bytes = call(0x923c, new int[]{(int)cursor, (int)(cursor>>>32), 100, target.slot, 0}, null, LIMIT, true);
             SonyMobileSession.Page data;
-            try { data = parseContents(bytes, this); } catch (IOException invalid) { close(); throw invalid; }
+            try { data = parseContents(bytes, this, target.slot); } catch (IOException invalid) { close(); throw invalid; }
             for (Asset candidate : data.assets) if (target.same(candidate)) return true;
             if (data.count < 100 || data.cursor > target.created) return false;
             if (data.cursor <= cursor) throw new IOException("Remote contents cursor did not advance");
@@ -800,13 +816,10 @@ public final class SonyTetherSession implements Closeable {
         try { digest=MessageDigest.getInstance("SHA-256"); } catch (NoSuchAlgorithmException e) { throw new IOException(e); }
         for (long offset=0;offset<asset.size;) {
             int count=(int)Math.min(3<<20,asset.size-offset);
-            byte[] bytes=call(0x923d,new int[]{asset.content,(1<<24)|asset.file,(int)offset,(int)(offset>>>32),count},null,count,true);
+            byte[] bytes=call(0x923d,new int[]{asset.content,(asset.slot<<24)|asset.file,(int)offset,(int)(offset>>>32),count},null,count,true);
             if (bytes.length!=count) throw new CameraMediaSession.PhotoTransferException("Remote original chunk truncated");
             if (offset==0) {
-                boolean tiff=bytes.length>=4 && ((bytes[0]==73 && bytes[1]==73 && bytes[2]==42 && bytes[3]==0) ||
-                    (bytes[0]==77 && bytes[1]==77 && bytes[2]==0 && bytes[3]==42));
-                boolean jpeg=bytes.length>=3 && bytes[0]==(byte)255 && bytes[1]==(byte)216 && bytes[2]==(byte)255;
-                if (asset.name.toLowerCase(Locale.ROOT).endsWith(".arw") ? !tiff : !jpeg) throw new CameraMediaSession.PhotoTransferException("Remote original header mismatch");
+                if (!SonyCameraNative.nativeValidatePhotoHeader(asset.name, bytes)) throw new CameraMediaSession.PhotoTransferException("Remote original header mismatch");
             }
             destination.write(bytes); digest.update(bytes); offset+=bytes.length;
         }
@@ -818,7 +831,7 @@ public final class SonyTetherSession implements Closeable {
 
     private synchronized byte[] call(int op,int[] params,byte[] outgoing,int limit,boolean required) throws IOException {
         if (closed) throw new IOException("Remote session closed");
-        if (!Arrays.asList(0x1001,0x1002,0x1004,0x1007,0x1008,0x100a,0x101b,0x9201,0x9202,0x9205,0x9207,0x9209,0x9212,0x923c,0x923d).contains(op) || params.length>5 || limit<0 || limit>LIMIT)
+        if (!Arrays.asList(0x1001,0x1002,0x1004,0x1007,0x1008,0x100a,0x101b,0x9201,0x9202,0x9205,0x9207,0x9209,0x9212,0x923b,0x923c,0x923d).contains(op) || params.length>5 || limit<0 || limit>LIMIT)
             throw new IOException("Operation outside the remote profile");
         if(outgoing!=null) {
             if(purpose!=Purpose.TETHER || !remoteReady || params.length!=1) throw new IOException("Write outside tether ownership");
@@ -855,36 +868,44 @@ public final class SonyTetherSession implements Closeable {
 
     private byte[] exchange(int op,int[] params,byte[] outgoing,int limit,boolean required) throws IOException {
         int tid=op==0x1002 ? (transaction=0) : ++transaction;
-        ByteArrayOutputStream request=new ByteArrayOutputStream();
-        request.write(u32(outgoing==null?1:2)); request.write(u16(op)); request.write(u32(tid));
-        for (int param:params) request.write(u32(param));
-        writePacket(command,6,request.toByteArray());
+        OutputStream cmdOut = command.getOutputStream();
+        byte[] opReq = SonyCameraNative.nativeOpReqPacket(outgoing==null?1:2, op, tid, params);
         if (outgoing!=null) {
-            ByteArrayOutputStream start=new ByteArrayOutputStream(); start.write(u32(tid)); start.write(u32(outgoing.length)); start.write(u32(0));
-            writePacket(command,9,start.toByteArray());
-            ByteArrayOutputStream end=new ByteArrayOutputStream(); end.write(u32(tid)); end.write(outgoing); writePacket(command,12,end.toByteArray());
+            byte[] start = SonyCameraNative.nativeStartDataPacket(tid, outgoing.length);
+            byte[] end = SonyCameraNative.nativeEndDataPacket(tid, outgoing);
+            ByteArrayOutputStream batch = new ByteArrayOutputStream(opReq.length + start.length + end.length);
+            batch.write(opReq); batch.write(start); batch.write(end);
+            cmdOut.write(batch.toByteArray()); cmdOut.flush();
+        } else {
+            cmdOut.write(opReq); cmdOut.flush();
         }
         boolean started=false,ended=false; long expected=-1;
         ByteArrayOutputStream data=new ByteArrayOutputStream();
+        byte[] probeResp = null;
         for (int packetCount=0;packetCount<10000;packetCount++) {
-            Packet packet=readPacket(command,Math.max(4096,limit+4)); Reader r=new Reader(packet.bytes);
+            Packet packet=readPacket(command,Math.max(4096,limit+4));
             if (packet.type==9) {
-                if (started || packet.bytes.length!=12 || r.i32()!=tid) throw new IOException("Invalid remote data start");
-                expected=r.i64(); if (expected<0 || expected>limit) throw new IOException("Remote data budget exceeded"); started=true;
+                long[] start = SonyCameraNative.nativeParseStartData(packet.bytes);
+                if (started || (int)start[0]!=tid) throw new IOException("Invalid remote data start");
+                expected=start[1]; if (expected<0 || expected>limit) throw new IOException("Remote data budget exceeded"); started=true;
             } else if (packet.type==10 || packet.type==12) {
+                Reader r=new Reader(packet.bytes);
                 if (!started || ended || r.i32()!=tid) throw new IOException("Remote data transaction mismatch");
                 int count=r.remaining(); if (count>limit-data.size() || data.size()+count>expected) throw new IOException("Remote data length exceeded");
                 data.write(r.take(count));
                 if (packet.type==12) { if (data.size()!=expected) throw new IOException("Remote data truncated"); ended=true; }
             } else if (packet.type==7) {
-                if (packet.bytes.length<6 || packet.bytes.length>26 || (packet.bytes.length-6)%4!=0) throw new IOException("Invalid remote response");
-                int code=r.u16(); if (r.i32()!=tid) throw new IOException("Remote response transaction mismatch");
+                int[] resp = SonyCameraNative.nativeParseResponse(packet.bytes);
+                int code=resp[0]; if (resp[1]!=tid) throw new IOException("Remote response transaction mismatch");
                 if (started && !ended) throw new IOException("Remote response before complete data");
                 if (code!=0x2001) throw new RemoteResponseException(op,code);
                 if (required && !started) throw new IOException("Remote data missing");
                 reporter.report(String.format(Locale.ROOT,"remote_operation op=0x%04x bytes=%d",op,data.size()));
                 return data.toByteArray();
-            } else if (packet.type==13 && packet.bytes.length==0) writePacket(command,14,new byte[0]);
+            } else if (packet.type==13 && packet.bytes.length==0) {
+                if (probeResp == null) probeResp = SonyCameraNative.nativeProbeRespPacket();
+                cmdOut.write(probeResp); cmdOut.flush();
+            }
             else throw new IOException("Unexpected remote packet "+packet.type);
         }
         throw new IOException("Remote packet budget exceeded");
@@ -916,63 +937,53 @@ public final class SonyTetherSession implements Closeable {
         }
         public long number() throws IOException { if (!(value instanceof Long)) throw new IOException("Property is not numeric"); return (Long)value; }
         public String text() throws IOException { if (!(value instanceof String)) throw new IOException("Property is not text"); return (String)value; }
+        private long[] toChoiceArray() {
+            long[] arr = new long[settable.size()];
+            for (int i = 0; i < settable.size(); i++) arr[i] = settable.get(i);
+            return arr;
+        }
         public List<Long> options() {
-            if(form==2) return settable;
-            if(form!=1 || minimum==null || maximum==null || step==null || step<=0 || maximum<minimum) return Collections.emptyList();
-            long distance;
-            try { distance=Math.subtractExact(maximum,minimum); } catch(ArithmeticException overflow) { return Collections.emptyList(); }
-            long count=distance/step+1;
-            if(count<=0 || count>4096) return Collections.emptyList();
-            List<Long> result=new ArrayList<>();for(long i=0;i<count;i++) result.add(minimum+i*step);
+            long[] opts = SonyCameraNative.nativePropertyOptions(
+                code, type, writable, enabled, form,
+                minimum != null && maximum != null && step != null,
+                minimum != null ? minimum : 0L,
+                maximum != null ? maximum : 0L,
+                step != null ? step : 0L,
+                toChoiceArray(),
+                false, false, 4096);
+            if (opts.length == 0) return Collections.emptyList();
+            List<Long> result = new ArrayList<>(opts.length);
+            for (long v : opts) result.add(v);
             return Collections.unmodifiableList(result);
         }
         public boolean canSet(long requested) {
-            if(!writable || enabled!=1 || !(type==3 && requested>=Short.MIN_VALUE && requested<=Short.MAX_VALUE ||
-                type==4 && requested>=0 && requested<=0xffff || type==6 && requested>=0 && requested<=0xffffffffL)) return false;
-            if(form==2) return settable.contains(requested);
-            return form==1 && minimum!=null && maximum!=null && step!=null && step>0 && requested>=minimum && requested<=maximum && (requested-minimum)%step==0;
+            return SonyCameraNative.nativePropertyCanSet(
+                code, type, writable, enabled, form,
+                minimum != null && maximum != null && step != null,
+                minimum != null ? minimum : 0L,
+                maximum != null ? maximum : 0L,
+                step != null ? step : 0L,
+                toChoiceArray(),
+                requested);
         }
     }
     public static Map<Integer,Property> parseProperties(byte[] bytes) throws IOException { return parseProperties(bytes,2); }
     static Map<Integer,Property> parseProperties(byte[] bytes,int enumTables) throws IOException {
-        if(enumTables!=1 && enumTables!=2) throw new IOException("Unknown property profile");
-        Reader r=new Reader(bytes);long count=r.i64();if(count<0 || count>4096) throw new IOException("Property count exceeds budget");
-        Map<Integer,Property> result=new LinkedHashMap<>();int enumCount=0;
-        for(int i=0;i<count;i++) {
-            int code=r.u16(),type=r.u16(),writable=r.u8(),enabled=r.u8();
-            value(r,type);Object current=value(r,type);int form=r.u8();
-            Long minimum=null,maximum=null,step=null;List<Long> settable=new ArrayList<>();
-            if(form==1) {
-                Object low=value(r,type),high=value(r,type),increment=value(r,type);
-                if(low instanceof Long && high instanceof Long && increment instanceof Long) { minimum=(Long)low;maximum=(Long)high;step=(Long)increment; }
-            } else if(form==2) for(int table=0;table<enumTables;table++) {
-                int n=r.u16();enumCount+=n;
-                if(n>4096 || enumCount>65536) throw new IOException("Property enum exceeds budget");
-                for(int j=0;j<n;j++) { Object option=value(r,type);if(table==0 && option instanceof Long) settable.add((Long)option); }
-            } else if(form!=0) throw new IOException("Unknown property form="+form+" code=0x"+Integer.toHexString(code));
-            if(result.put(code,new Property(code,type,writable==1,enabled,current,form,minimum,maximum,step,settable))!=null) throw new IOException("Duplicate property");
+        List<SonyCameraNative.DecodedProperty> decoded = SonyCameraNative.parseProperties(bytes, enumTables);
+        Map<Integer,Property> result=new LinkedHashMap<>();
+        for(SonyCameraNative.DecodedProperty p : decoded) {
+            Object val;
+            if (p.getValueKind() == SonyCameraNative.VALUE_KIND_NUMBER) val = p.getNumberValue();
+            else if (p.getValueKind() == SonyCameraNative.VALUE_KIND_TEXT) val = p.getTextValue();
+            else val = new byte[0];
+            Long min = p.getHasRange() ? p.getMinimum() : null;
+            Long max = p.getHasRange() ? p.getMaximum() : null;
+            Long step = p.getHasRange() ? p.getStep() : null;
+            List<Long> choices = new ArrayList<>(p.getChoices().length);
+            for (long c : p.getChoices()) choices.add(c);
+            result.put(p.getCode(), new Property(p.getCode(), p.getType(), p.getWritable(), p.getEnabled(), val, p.getForm(), min, max, step, choices));
         }
-        if(r.remaining()!=0) throw new IOException("Trailing property bytes");
         return result;
-    }
-    private static Object value(Reader r,int type) throws IOException {
-        if (type==0xffff) {
-            int count=r.u8(); byte[] bytes=r.take(count*2); int size=bytes.length;
-            if (size>=2 && bytes[size-1]==0 && bytes[size-2]==0) size-=2;
-            String text=new String(bytes,0,size,StandardCharsets.UTF_16LE);
-            if (text.indexOf('\0')>=0) throw new IOException("Embedded NUL in property string"); return text;
-        }
-        if ((type&0x4000)!=0) {
-            long count=r.u32(); int scalar=type&~0x4000;
-            if (scalar<1 || scalar>10 || count>4096) throw new IOException("Property array exceeds budget");
-            for (int i=0;i<count;i++) value(r,scalar); return new byte[0];
-        }
-        switch(type) {
-            case 1:return (long)(byte)r.u8(); case 2:return (long)r.u8();
-            case 3:return (long)(short)r.u16(); case 4:return (long)r.u16();
-            case 5:return (long)r.i32(); case 6:return r.u32(); case 7:case 8:return r.i64();
-            case 9:case 10:return r.take(16); default:throw new IOException("Unknown property type "+type);
-        }
     }
     public static URL liveViewURL(String raw,InetAddress camera) throws IOException {
         try {
@@ -985,55 +996,37 @@ public final class SonyTetherSession implements Closeable {
     }
     public static LiveViewFrame readFrameWithMetadata(InputStream input) throws IOException {
         DataInputStream stream=new DataInputStream(input); byte[] header=new byte[16]; stream.readFully(header); Reader r=new Reader(header);
-        long imageOffset=r.u32(),imageLength=r.u32(),metaOffset=r.u32(),metaLength=r.u32();
-        long imageEnd=imageOffset+imageLength,metaEnd=metaOffset+metaLength,total=Math.max(imageEnd,metaLength==0?16:metaEnd);
-        if (imageOffset<16 || imageLength<4 || total>LIMIT || (metaLength>0 && (metaOffset<16 || imageOffset<metaEnd && metaOffset<imageEnd)))
-            throw new IOException("Invalid live frame bounds");
-        byte[] body=new byte[(int)total-16]; stream.readFully(body);
-        byte[] jpeg=Arrays.copyOfRange(body,(int)imageOffset-16,(int)imageEnd-16);
+        int[] fields = {r.i32(), r.i32(), r.i32(), r.i32()};
+        SonyCameraNative.LiveFrameBounds bounds = SonyCameraNative.parseLiveFrameBounds(fields, LIMIT);
+        byte[] body=new byte[bounds.getBodySize()]; stream.readFully(body);
+        int imgOff = bounds.getImageOffset();
+        byte[] jpeg=Arrays.copyOfRange(body, imgOff, imgOff + bounds.getImageLength());
         if (jpeg[0]!=(byte)255 || jpeg[1]!=(byte)216) throw new IOException("Live frame is not JPEG");
-        byte[] meta=metaLength>0?Arrays.copyOfRange(body,(int)metaOffset-16,(int)metaEnd-16):new byte[0];
+        byte[] meta;
+        if (bounds.getHasMetadata()) {
+            int metaOff = bounds.getMetadataOffset();
+            meta = Arrays.copyOfRange(body, metaOff, metaOff + bounds.getMetadataLength());
+        } else {
+            meta = new byte[0];
+        }
         return new LiveViewFrame(jpeg,meta);
     }
     public static byte[] readFrame(InputStream input) throws IOException {
         return readFrameWithMetadata(input).jpeg;
     }
     public static List<LiveViewFocusFrame> parseLiveViewFrames(byte[] metadata) {
-        if (metadata==null || metadata.length<0x28) return Collections.emptyList();
-        int version=leU16(metadata,0);
-        if (version<=0x27) return Collections.emptyList();
-        int[] offset={0x28};
-        List<LiveViewFocusFrame> frames=new ArrayList<>();
-        if (!readMetaBlock(metadata,offset,null,frames)) return Collections.emptyList();
-        if (!readMetaBlock(metadata,offset,LiveViewFrameKind.FOCUS,frames)) return Collections.emptyList();
-        if (version>0x64) {
-            if (!readMetaBlock(metadata,offset,LiveViewFrameKind.FACE,frames)) return Collections.emptyList();
-            if (!readMetaBlock(metadata,offset,LiveViewFrameKind.TRACKING,frames)) return Collections.emptyList();
+        if (metadata==null) return Collections.emptyList();
+        List<SonyCameraNative.DecodedLiveFrame> decoded = SonyCameraNative.parseLiveViewFrames(metadata);
+        if (decoded.isEmpty()) return Collections.emptyList();
+        List<LiveViewFocusFrame> frames=new ArrayList<>(decoded.size());
+        for (SonyCameraNative.DecodedLiveFrame f : decoded) {
+            LiveViewFrameKind kind;
+            if (f.getKind() == 0) kind = LiveViewFrameKind.FOCUS;
+            else if (f.getKind() == 1) kind = LiveViewFrameKind.FACE;
+            else kind = LiveViewFrameKind.TRACKING;
+            frames.add(new LiveViewFocusFrame(kind, (float)f.getCx(), (float)f.getCy(), (float)f.getWidth(), (float)f.getHeight(), f.getFocused()));
         }
         return Collections.unmodifiableList(frames);
-    }
-    private static boolean readMetaBlock(byte[] meta, int[] offsetRef, LiveViewFrameKind kind, List<LiveViewFocusFrame> out) {
-        int off=offsetRef[0];
-        if (off+16>meta.length) return false;
-        long xMax=leU32(meta,off), yMax=leU32(meta,off+4);
-        int count=leU16(meta,off+8);
-        off+=16;
-        if (count>128 || (long)count*24L>meta.length-off) return false;
-        for (int i=0;i<count;i++) {
-            int type=leU16(meta,off), state=leU16(meta,off+2);
-            long cx=leU32(meta,off+8), cy=leU32(meta,off+12), h=leU32(meta,off+16), w=leU32(meta,off+20);
-            off+=24;
-            if (kind!=null && xMax>0 && yMax>0 && w>0 && h>0 && w<=xMax && h<=yMax && cx<=xMax && cy<=yMax) {
-                boolean focused=kind==LiveViewFrameKind.FACE?type==2:state==2;
-                out.add(new LiveViewFocusFrame(kind,(float)((double)cx/(double)xMax),(float)((double)cy/(double)yMax),
-                    (float)((double)w/(double)xMax),(float)((double)h/(double)yMax),focused));
-            }
-        }
-        offsetRef[0]=off;
-        return true;
-    }
-    private static int leU16(byte[] b, int off) {
-        return (b[off]&0xff)|((b[off+1]&0xff)<<8);
     }
     private static long leU32(byte[] b, int off) {
         return (b[off]&0xffL)|((b[off+1]&0xffL)<<8)|((b[off+2]&0xffL)<<16)|((b[off+3]&0xffL)<<24);

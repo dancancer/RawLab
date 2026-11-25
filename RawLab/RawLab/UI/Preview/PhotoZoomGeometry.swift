@@ -13,27 +13,6 @@ struct PhotoZoomGeometry {
     static let defaultMargin: CGFloat = 16
     static let defaultPreviewLongEdge = 1280
 
-    static func detailOverlayCovers(
-        normalizedRect: CGRect,
-        pixelSize: CGSize,
-        fullNativeSize: CGSize,
-        visibleRect: CGRect,
-        requiredZoomScale: CGFloat
-    ) -> Bool {
-        let tolerance: CGFloat = 0.0005
-        guard normalizedRect.minX <= visibleRect.minX + tolerance,
-              normalizedRect.minY <= visibleRect.minY + tolerance,
-              normalizedRect.maxX >= visibleRect.maxX - tolerance,
-              normalizedRect.maxY >= visibleRect.maxY - tolerance,
-              normalizedRect.width > 0,
-              fullNativeSize.width > 0 else {
-            return false
-        }
-        let tileDensity = pixelSize.width / (normalizedRect.width * fullNativeSize.width)
-        let neededDensity = min(1, requiredZoomScale)
-        return tileDensity >= neededDensity * 0.9
-    }
-
     static func marginInset(viewport: CGSize, margin: CGFloat) -> CGFloat {
         max(0, min(margin, min(viewport.width, viewport.height) / 4))
     }

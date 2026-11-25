@@ -298,6 +298,7 @@ struct AdjustmentTransferSessionTests {
             preflight.start({ cancelled in
                 try session.prepare(payload: oldPayload, targets: [first, second], shouldCancel: cancelled)
             }, completed: receive)
+            check(preflight.isRunning, "Preflight sets isRunning while work is active")
             check(entered.wait(timeout: .now() + 5) == .success, "First preflight entered its current target")
             preflight.start({ cancelled in
                 skippedCalls += 1
@@ -307,9 +308,13 @@ struct AdjustmentTransferSessionTests {
                 latestCalls += 1
                 return try session.prepare(payload: newPayload, targets: [target(b)], shouldCancel: cancelled)
             }, completed: receive)
-            if close { preflight.cancel() }
+            if close {
+                preflight.cancel()
+                check(!preflight.isRunning, "Preflight cancel immediately resets isRunning to false")
+            }
             release.signal()
             drain(queue)
+            check(!preflight.isRunning, "Preflight isRunning is false after queue drains")
             check(firstVisits == 1 && skippedCalls == 0 && latestCalls == (close ? 0 : 1),
                 "Replacement/close stops the active round and skips obsolete queued work (visits=\(firstVisits), skipped=\(skippedCalls), latest=\(latestCalls))")
             check(deliveries == (close ? [] : [2]), "Only the latest open preflight generation delivers a result")
@@ -323,11 +328,14 @@ struct AdjustmentTransferSessionTests {
         let value = try session.prepare(payload: payload(1), targets: [target(a)])
         var deliveries = 0
         preflight.start({ _ in value }, completed: { _ in deliveries += 1 })
+        check(preflight.isRunning, "Late preflight starts in running state")
         let queued = DispatchSemaphore(value: 0)
         queue.async { queued.signal() }
         check(queued.wait(timeout: .now() + 5) == .success, "Old completion is queued before cancellation")
         preflight.cancel()
+        check(!preflight.isRunning, "Late preflight cancel resets isRunning immediately")
         drain(queue)
+        check(!preflight.isRunning, "Late preflight stays not running after main queue drains")
         check(deliveries == 0, "A completion already queued on main cannot write after cancellation")
     }
 
@@ -572,12 +580,12 @@ struct AdjustmentTransferSessionTests {
         let directory = root.appendingPathComponent("migration-reset")
         let store = try MacEditPersistence(directory: directory)
         let session = AdjustmentTransferSession(store: store)
-        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = -18
+        var oldSettings = Adjustments(); oldSettings.processing = .c5; oldSettings.exposure = 0.6; oldSettings.highlights = 0.18
         let original = MacPhotoEditState(settings: oldSettings, filmID: "saved-look")
         try store.save(a, state: original)
         let initial = try store.readState(for: a)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.002, detailRMSE: 0.001, evaluations: 24)
-        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = -12
+        var migratedSettings = oldSettings; migratedSettings.processing = .current; migratedSettings.highlights = 0.12
         let migrated = MacPhotoEditState(settings: migratedSettings, filmID: "saved-look")
         let accepted = try store.commitProcessingMigration(expected: initial, candidate: migrated, quality: quality)
         session.adoptProcessingMigration(accepted)

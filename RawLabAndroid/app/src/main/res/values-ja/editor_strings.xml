@@ -86,7 +86,7 @@
     <string name="curve_darks">"ダーク"</string>
     <string name="curve_edit_point">"制御点を編集"</string>
     <string name="curve_fixed_endpoint">"端点は固定されています"</string>
-    <string name="curve_hint">"カーブ領域をタップして点を追加します。中間の点をドラッグして調整します。"</string>
+    <string name="curve_hint">"クリック／タップで点を追加。制御点のダブルタップまたは枠外へのドラッグで削除できます。"</string>
     <string name="curve_input">"入力"</string>
     <string name="curve_lights">"ライト"</string>
     <string name="curve_luminosity_only">"輝度のみに適用"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"ポイントカーブ"</string>
     <string name="curve_point_number">"制御点 %1$d"</string>
     <string name="curve_remove_point">"制御点を削除"</string>
-    <string name="curve_reset">"カーブをリセット"</string>
+    <string name="curve_reset">"パラメトリックカーブをリセット"</string>
     <string name="curve_reset_identity">"直線にリセット"</string>
     <string name="curve_split_points">"分割ポイント"</string>
     <string name="curve_summary">"ポイントカーブ（%1$d点）"</string>

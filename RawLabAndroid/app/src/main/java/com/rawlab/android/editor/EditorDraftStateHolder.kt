@@ -7,48 +7,26 @@ import com.rawlab.android.editor.render.Work
 import com.rawlab.android.editor.storage.EditSaveResult
 import com.rawlab.android.geometry.GeometryRatio
 import com.rawlab.android.geometry.GeometrySettings
-import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.synchronizeHDR
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 private const val DRAFT_TAG = "com.rawlab.EditorViewModel"
 
 internal class EditorDraftStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val draftStore: EditorDraftStore,
-    private val scope: CoroutineScope,
-    private val strings: EditorStrings,
-    private val uptimeMillis: () -> Long,
-    private val previewResizeDelayMs: Long,
-    private val loadMasterRecipes: () -> List<MasterRecipe>,
-    private val uncroppedGeometrySize: (PreviewPair, GeometrySettings) -> Pair<Int, Int>,
-    private val isDisposed: () -> Boolean,
-    private val currentSourceRevision: () -> Long,
-    private val currentEditRevision: () -> Long,
-    private val currentRenderRevision: () -> Long,
-    private val getPreviewLongEdge: () -> Int,
-    private val setPreviewLongEdge: (Int) -> Unit,
-    private val gpuMode: () -> Int,
-    private val isCameraHDRPreflightPending: () -> Boolean,
-    private val isQuickPresetPreparing: () -> Boolean,
-    private val onCancelQuickPreset: () -> Unit,
-    private val onCancelHslTarget: () -> Unit,
-    private val onClearHslTarget: (Boolean) -> Unit,
-    private val onClearPendingResetMigration: () -> Unit,
-    private val onClearDeferredMigrationPreview: () -> Unit,
-    private val onIncrementEditRevision: () -> Unit,
-    private val onSubmitPreview: (Work.Preview) -> Long,
-    private val onPersist: (ImportedPhoto, EditSettings, (EditSaveResult) -> Unit) -> Unit,
-    private val onEdit: (EditSettings, Boolean, Boolean) -> Unit,
-    private val onCancelWbProbe: () -> Unit = {},
-    private val onClearWbProbe: (Boolean) -> Unit = {},
+    private val session: EditorDocumentSession,
 ) {
+    private val mutable get() = session.mutable
+    private val draftStore get() = session.draftStore
+    private val scope get() = session.scope
+    private val strings get() = session.strings
+    private val uptimeMillis get() = session.dependencies.uptimeMillis
+    private val previewResizeDelayMs get() = session.dependencies.previewResizedDelayMs
+    private val uncroppedGeometrySize get() = session.dependencies.uncroppedGeometrySize
+
     var draftRevision: Long = 0L
         private set
     var failedDraftSave: Boolean = false
@@ -60,7 +38,7 @@ internal class EditorDraftStateHolder(
         private set
     private var previewResizeJob: Job? = null
     private val interactivePreviewSize = InteractivePreviewSize()
-    private val resetRecipeIds by lazy { loadMasterRecipes().map { it.id }.toSet() }
+    private val resetRecipeIds by lazy { session.dependencies.masterRecipesLoader().map { it.id }.toSet() }
 
     fun interactiveEdge(maxEdge: Int, interactive: Boolean): Int =
         interactivePreviewSize.edge(maxEdge, interactive, uptimeMillis())
@@ -84,7 +62,7 @@ internal class EditorDraftStateHolder(
     fun resetForImport() {
         durablePreview = null
         cancelResize()
-        setPreviewLongEdge(1600)
+        session.previewLongEdge = 1600
         requestedPreviewLongEdge = 1600
     }
 
@@ -102,27 +80,29 @@ internal class EditorDraftStateHolder(
 
     fun updatePreviewSize(edge: Int) {
         var current = mutable.value
-        if (isDisposed() || current.photo == null || edge !in 1..1600) return
+        if (session.disposed || current.photo == null || edge !in 1..1600) return
         if (current.draft != null) {
             if (edge == requestedPreviewLongEdge) return
             requestedPreviewLongEdge = edge
-            if (current.draft?.group == AdjustmentGroup.HSL || current.draft?.group == AdjustmentGroup.CURVE) onCancelHslTarget()
+            if (current.draft?.group == AdjustmentGroup.HSL || current.draft?.group == AdjustmentGroup.CURVE) {
+                session.actions.cancelHslTarget()
+            }
             return
         }
-        if (edge == requestedPreviewLongEdge && (edge == getPreviewLongEdge() || previewResizeJob != null)) return
-        if (isCameraHDRPreflightPending()) {
+        if (edge == requestedPreviewLongEdge && (edge == session.previewLongEdge || previewResizeJob != null)) return
+        if (session.actions.isCameraHDRPreflightPending()) {
             requestedPreviewLongEdge = edge
             return
         }
-        onCancelHslTarget()
+        session.actions.cancelHslTarget()
         current = mutable.value
         requestedPreviewLongEdge = edge
         if (!current.controlsEnabled) return
         cancelResize()
         mutable.value = current.copy(previewResizePending = false)
-        if (edge == getPreviewLongEdge()) return
+        if (edge == session.previewLongEdge) return
         if (!current.edits.denoise.enabled) {
-            setPreviewLongEdge(edge)
+            session.previewLongEdge = edge
             renderCommittedForNavigation()
             return
         }
@@ -132,13 +112,13 @@ internal class EditorDraftStateHolder(
             previewResizeJob = null
             mutable.value = mutable.value.copy(previewResizePending = false)
             if (!mutable.value.controlsEnabled) return@launch
-            setPreviewLongEdge(requestedPreviewLongEdge)
+            session.previewLongEdge = requestedPreviewLongEdge
             renderCommittedForNavigation()
         }
     }
 
     fun beginDraft(group: AdjustmentGroup) {
-        if (isQuickPresetPreparing()) onCancelQuickPreset()
+        if (session.actions.isQuickPresetPreparing()) session.actions.cancelQuickPreset()
         val current = mutable.value
         if (!current.canExport) return
         cancelResize()
@@ -190,8 +170,8 @@ internal class EditorDraftStateHolder(
         if (current.draft == null) return
         val edits = current.draftRenderEdits()
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        onSubmitPreview(
-            Work.Preview(photo, edits, interactive, gpuMode(), edge = interactiveEdge(1600, interactive), draft = true),
+        session.actions.submitRender(
+            Work.Preview(photo, edits, interactive, session.gpuMode(), edge = interactiveEdge(1600, interactive), draft = true),
         )
     }
 
@@ -232,7 +212,7 @@ internal class EditorDraftStateHolder(
 
     fun applyDraft(completed: (Boolean) -> Unit = {}) {
         val current = mutable.value
-        if (isDisposed() || !current.draftReady) return completed(false)
+        if (session.disposed || !current.draftReady) return completed(false)
         if (current.draft?.changed != true) {
             discardDraft()
             completed(true)
@@ -241,8 +221,8 @@ internal class EditorDraftStateHolder(
         val photo = current.photo ?: return completed(false)
         val edits = current.draft!!.project(current.edits)
         cancelResize()
-        onClearPendingResetMigration()
-        onPersist(photo, edits) { saved ->
+        session.actions.clearPendingResetMigration(null, null)
+        session.actions.persist(photo, edits, false) { saved ->
             if (saved.state == EditSaveState.FAILED) {
                 failedDraftSave = true
                 mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.formatMessage(strings))
@@ -250,18 +230,20 @@ internal class EditorDraftStateHolder(
             } else {
                 failedDraftSave = false
                 draftSaveBaseline = null
-                if (current.draft.group == AdjustmentGroup.HSL || current.draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
-                if (current.draft.group == AdjustmentGroup.WHITE_BALANCE) onClearWbProbe(true)
+                if (current.draft.group == AdjustmentGroup.HSL || current.draft.group == AdjustmentGroup.CURVE) {
+                    session.actions.clearHslTarget(true)
+                }
+                if (current.draft.group == AdjustmentGroup.WHITE_BALANCE) session.actions.clearWbProbe(true)
                 runCatching { draftStore.clear(photo.identity) }
-                onIncrementEditRevision()
+                session.incrementEditRevision()
                 draftRevision += 1
-                setPreviewLongEdge(requestedPreviewLongEdge)
+                session.previewLongEdge = requestedPreviewLongEdge
                 mutable.value = mutable.value.copy(
                     edits = edits, draft = null, rendering = true, exact = false, previewResizePending = false,
                     error = null, saveState = saved.state, saveError = saved.formatMessage(strings),
                 )
-                val renderRev = onSubmitPreview(Work.Preview(photo, edits, false, gpuMode(), edge = getPreviewLongEdge()))
-                durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, currentSourceRevision(), renderRev, edits)
+                val renderRev = session.actions.submitRender(Work.Preview(photo, edits, false, session.gpuMode(), edge = session.previewLongEdge))
+                durablePreview = EditorDurablePreview(photo.identity, photo.file.absolutePath, session.sourceRevision, renderRev, edits)
                 completed(true)
             }
         }
@@ -271,8 +253,8 @@ internal class EditorDraftStateHolder(
         if (mutable.value.committingAdjustments) return
         val current = mutable.value
         val draft = current.draft ?: return
-        if (draft.group == AdjustmentGroup.HSL || draft.group == AdjustmentGroup.CURVE) onClearHslTarget(true)
-        if (draft.group == AdjustmentGroup.WHITE_BALANCE) onClearWbProbe(true)
+        if (draft.group == AdjustmentGroup.HSL || draft.group == AdjustmentGroup.CURVE) session.actions.clearHslTarget(true)
+        if (draft.group == AdjustmentGroup.WHITE_BALANCE) session.actions.clearWbProbe(true)
         current.photo?.let { runCatching { draftStore.clear(it.identity) } }
         val saved = draftSaveBaseline.takeIf { failedDraftSave }
         failedDraftSave = false
@@ -292,16 +274,16 @@ internal class EditorDraftStateHolder(
     }
 
     fun renderCommittedForNavigation() {
-        onCancelHslTarget()
-        onCancelWbProbe()
+        session.actions.cancelHslTarget()
+        session.actions.cancelWbProbe()
         val current = mutable.value
         val photo = current.photo ?: return
-        onClearDeferredMigrationPreview()
-        setPreviewLongEdge(requestedPreviewLongEdge)
+        session.actions.clearDeferredMigrationPreview()
+        session.previewLongEdge = requestedPreviewLongEdge
         mutable.value = current.copy(rendering = true, exact = false, error = null)
-        val renderRev = onSubmitPreview(Work.Preview(photo, current.edits, false, gpuMode(), edge = getPreviewLongEdge()))
+        val renderRev = session.actions.submitRender(Work.Preview(photo, current.edits, false, session.gpuMode(), edge = session.previewLongEdge))
         navigationPreview = EditorDurablePreview(
-            photo.identity, photo.file.absolutePath, currentSourceRevision(), renderRev, current.edits,
+            photo.identity, photo.file.absolutePath, session.sourceRevision, renderRev, current.edits,
         )
     }
 
@@ -331,28 +313,28 @@ internal class EditorDraftStateHolder(
 
     fun prepareReset(scope: EditorResetScope): EditorResetPreparation {
         val current = mutable.value
-        val session = resetSession()
-        if (isDisposed() || session == null || !current.controlsEnabled || !current.exact ||
+        val resetSession = resetSession()
+        if (session.disposed || resetSession == null || !current.controlsEnabled || !current.exact ||
             current.rendering || current.previewResizePending || current.error != null
         ) {
             return EditorResetPreparation(EditorResetResult.Blocked("The current preview is not ready"))
         }
-        return EditorResetTransaction.prepare(scope, session)
+        return EditorResetTransaction.prepare(scope, resetSession)
     }
 
     fun commitReset(prepared: PreparedEditorReset): Boolean {
         val current = mutable.value
-        val session = resetSession() ?: return false
-        if (isDisposed() || !current.controlsEnabled || !current.exact || current.rendering ||
-            current.previewResizePending || current.error != null || !prepared.matches(session)
+        val resetSession = resetSession() ?: return false
+        if (session.disposed || !current.controlsEnabled || !current.exact || current.rendering ||
+            current.previewResizePending || current.error != null || !prepared.matches(resetSession)
         ) return false
         prepared.draftCandidate?.let { next ->
             if (next != current.draft) updateDraft(current, next)
             return next != current.draft
         }
-        val previousRequest = currentRenderRevision()
-        onEdit(prepared.result.candidate, false, prepared.scope == EditorResetScope.All)
-        return currentRenderRevision() != previousRequest
+        val previousRequest = session.currentRevision
+        session.actions.edit(prepared.result.candidate, false, prepared.scope == EditorResetScope.All)
+        return session.currentRevision != previousRequest
     }
 
     private fun resetSession(): EditorResetSession? {
@@ -362,7 +344,7 @@ internal class EditorDraftStateHolder(
             ?.let { AsShotWhiteBalance(it.temperature, it.tint) }
         val context = EditorResetContext(photo.inputKind, EditSettings().effectiveFor(photo.inputKind), shot, resetRecipeIds)
         return EditorResetSession(
-            photo.identity, photo.file.absolutePath, currentSourceRevision(), currentEditRevision(),
+            photo.identity, photo.file.absolutePath, session.sourceRevision, session.editRevision,
             current.edits, current.draft, draftRevision, context,
         )
     }

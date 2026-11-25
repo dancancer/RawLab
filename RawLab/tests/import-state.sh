@@ -24,8 +24,8 @@ rawlab_ios_compile_metadata_bridge "$OUT/bridge.o"
 rawlab_ios_core_shared_sources SOURCES
 TEST_SOURCES=("$ROOT/RawLab/tests/ImportState/"*.swift)
 if [[ -n "${RAWLAB_IMPORT_STATE_TEST_SOURCE:-}" ]]; then TEST_SOURCES=("$RAWLAB_IMPORT_STATE_TEST_SOURCE"); fi
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" \
     "${SOURCES[@]}" "$ROOT/RawLab/RawLab/UI/EditorState/EditorCropOverlay.swift" \

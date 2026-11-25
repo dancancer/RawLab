@@ -19,48 +19,87 @@ public sealed class ToneCurveShape : IEquatable<ToneCurveShape>
     }
     public static ToneCurveShape Identity { get; } = new(ToneCurveMode.Custom, [new(0, 0), new(1, 1)]);
     public bool IsDefault => Mode == ToneCurveMode.Legacy;
-    public bool IsIdentity => IsDefault || Points.All(p => p.X == p.Y);
-    internal bool HasUnpinnedEndpoints => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (Points[0].Y != 0 || Points[^1].Y != 1);
-    public double Progress => Points.Count == 0 ? 0 : Points.Max(p => Math.Abs(p.Y - p.X));
+    public bool IsIdentity => IsDefault || (!HasUnpinnedEndpoints && Points.All(p => p.X == p.Y));
+    internal bool HasUnpinnedEndpoints => Mode == ToneCurveMode.Custom && Points.Count >= 2 &&
+        (Points[0].X != 0 || Points[0].Y != 0 || Points[^1].X != 1 || Points[^1].Y != 1);
+    // 端点 x 内移需要 SDR 配方 v18 / HDR 处理 v10；已发布的 v17 / v9 只放开端点 y。
+    internal bool HasFreeEndpointX => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (Points[0].X != 0 || Points[^1].X != 1);
+    public double Progress => Mode != ToneCurveMode.Custom || Points.Count == 0 ? 0 :
+        Math.Max(Points.Max(p => Math.Abs(p.Y - p.X)), Math.Max(Points[0].Y, 1.0 - Points[^1].Y));
     public ToneCurveShape Scaled(double strength)
     {
         if (Mode != ToneCurveMode.Custom || strength == 1) return this;
         if (strength == 0) return Identity;
+        var result = Points.ToArray();
+        var last = result.Length - 1;
+        if (result.Length == 2) {
+            var rawX0 = Math.Clamp(Points[0].X * strength, 0.0, 1.0);
+            var rawX1 = Math.Clamp(1.0 + (Points[1].X - 1.0) * strength, 0.0, 1.0);
+            if (rawX0 < rawX1) {
+                result[0] = new(rawX0, Points[0].Y);
+                result[1] = new(rawX1, Points[1].Y);
+            } else if (rawX1 <= 0.0) {
+                result[0] = new(0.0, Points[0].Y);
+                result[1] = new(Math.BitIncrement(0.0), Points[1].Y);
+            } else if (rawX0 >= 1.0) {
+                result[0] = new(Math.BitDecrement(1.0), Points[0].Y);
+                result[1] = new(1.0, Points[1].Y);
+            } else {
+                var mid = Points[0].X / (Points[0].X + (1.0 - Points[1].X));
+                result[0] = new(Math.BitDecrement(mid), Points[0].Y);
+                result[1] = new(Math.BitIncrement(mid), Points[1].Y);
+            }
+        } else {
+            result[0] = new(Math.Clamp(Points[0].X * strength, 0.0, Math.BitDecrement(Points[1].X)), Points[0].Y);
+            result[last] = new(Math.Clamp(1.0 + (Points[last].X - 1.0) * strength, Math.BitIncrement(Points[last - 1].X), 1.0), Points[last].Y);
+        }
         var previous = 0.0;
-        return new(Mode, Points.Select(point => {
-            var y = Math.Clamp(point.X + (point.Y - point.X) * strength, previous, 1);
+        for (var i = 0; i < result.Length; i++) {
+            var point = Points[i];
+            var rawY = i == 0 ? point.Y * strength : i == last ? 1.0 + (point.Y - 1.0) * strength : point.X + (point.Y - point.X) * strength;
+            var y = Math.Clamp(rawY, previous, 1);
             previous = y;
-            return new ToneCurvePoint(point.X, y);
-        }));
+            result[i] = new(result[i].X, y);
+        }
+        return new(Mode, result);
     }
     private bool IsValid => Mode == ToneCurveMode.Legacy ? Points.Count == 0 : Mode == ToneCurveMode.Custom &&
-        Points.Count is >= 2 and <= 33 && Points[0].X == 0 && Points[^1].X == 1 &&
+        Points.Count is >= 2 and <= 33 &&
+        (AdjustmentFieldSpec.SubFields.LightCurve.EndpointsXUnpinned || (Points[0].X == 0 && Points[^1].X == 1)) &&
         (AdjustmentFieldSpec.SubFields.LightCurve.EndpointsYUnpinned || (Points[0].Y == 0 && Points[^1].Y == 1)) &&
         Points.All(p => double.IsFinite(p.X) && double.IsFinite(p.Y) && p.X is >= 0 and <= 1 && p.Y is >= 0 and <= 1) &&
         Points.Zip(Points.Skip(1)).All(pair => pair.First.X < pair.Second.X && pair.First.Y <= pair.Second.Y);
     public bool IsInterior(int index) => Mode == ToneCurveMode.Custom && index > 0 && index + 1 < Points.Count;
     public bool IsEndpoint(int index) => Mode == ToneCurveMode.Custom && Points.Count >= 2 && (index == 0 || index == Points.Count - 1);
+    public bool CanMoveX(int index) => Mode == ToneCurveMode.Custom && index >= 0 && index < Points.Count &&
+        (AdjustmentFieldSpec.SubFields.LightCurve.EndpointsXUnpinned || IsInterior(index));
     public bool CanMoveY(int index) => Mode == ToneCurveMode.Custom && index >= 0 && index < Points.Count;
     public ToneCurveShape Inserting(double x, double y)
     {
         if (Mode != ToneCurveMode.Custom || Points.Count >= 33 || !double.IsFinite(x) || !double.IsFinite(y) ||
-            x <= 0 || x >= 1 || Points.Any(p => p.X == x)) return this;
+            x is < 0 or > 1 || Points.Any(p => p.X == x)) return this;
         var result = Points.ToList(); var next = result.FindIndex(p => p.X > x);
-        result.Insert(next, new(x, Math.Clamp(y, Points[next - 1].Y, Points[next].Y)));
+        if (next < 0) next = result.Count;
+        var minY = next > 0 ? Points[next - 1].Y : 0.0;
+        var maxY = next < Points.Count ? Points[next].Y : 1.0;
+        result.Insert(next, new(x, Math.Clamp(y, minY, maxY)));
         return new(Mode, result);
     }
     public ToneCurveShape Moving(int index, double x, double y)
     {
         if (!CanMoveY(index) || !double.IsFinite(x) || !double.IsFinite(y)) return this;
+        var allowX = AdjustmentFieldSpec.SubFields.LightCurve.EndpointsXUnpinned;
         var result = Points.ToArray();
         if (index == 0) {
+            var highX = Points.Count > 1 ? Math.BitDecrement(Points[1].X) : 1.0;
             var maxY = Points.Count > 1 ? Points[1].Y : 1.0;
-            result[0] = new(0.0, Math.Clamp(y, 0.0, maxY));
+            result[0] = new(allowX ? Math.Clamp(x, 0.0, highX) : 0.0, Math.Clamp(y, 0.0, maxY));
             return new(Mode, result);
         }
         if (index == Points.Count - 1) {
+            var lowX = Points.Count > 1 ? Math.BitIncrement(Points[index - 1].X) : 0.0;
             var minY = Points.Count > 1 ? Points[index - 1].Y : 0.0;
-            result[index] = new(1.0, Math.Clamp(y, minY, 1.0));
+            result[index] = new(allowX ? Math.Clamp(x, lowX, 1.0) : 1.0, Math.Clamp(y, minY, 1.0));
             return new(Mode, result);
         }
         var low = Math.BitIncrement(Points[index - 1].X); var high = Math.BitDecrement(Points[index + 1].X);
@@ -127,6 +166,7 @@ public sealed record ToneCurveChannels(ToneCurveShape Red, ToneCurveShape Green,
     public bool IsDefault => Red.IsDefault && Green.IsDefault && Blue.IsDefault;
     public bool IsIdentity => Red.IsIdentity && Green.IsIdentity && Blue.IsIdentity;
     internal bool HasUnpinnedEndpoints => Red.HasUnpinnedEndpoints || Green.HasUnpinnedEndpoints || Blue.HasUnpinnedEndpoints;
+    internal bool HasFreeEndpointX => Red.HasFreeEndpointX || Green.HasFreeEndpointX || Blue.HasFreeEndpointX;
     public ToneCurveChannels Scaled(double strength) => new(Red.Scaled(strength), Green.Scaled(strength), Blue.Scaled(strength));
 }
 
@@ -233,6 +273,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     public bool IsIdentity => Master.IsIdentity && Channels.IsIdentity && Parametric.IsIdentity;
     public bool HasChannelCurves => !Channels.IsDefault;
     public bool HasV2Extensions => ApplyToLuminosity || !Parametric.IsDefault || Master.HasUnpinnedEndpoints || Channels.HasUnpinnedEndpoints;
+    public bool HasFreeEndpointX => Master.HasFreeEndpointX || Channels.HasFreeEndpointX;
     public double Progress => new[] { Master.Progress, Channels.Red.Progress, Channels.Green.Progress, Channels.Blue.Progress, Parametric.Progress }.Max();
     public ToneCurveShape Shape(ToneCurveChannel channel) => channel switch {
         ToneCurveChannel.Rgb => Master, ToneCurveChannel.Red => Channels.Red, ToneCurveChannel.Green => Channels.Green, _ => Channels.Blue };
@@ -247,6 +288,7 @@ public sealed class ToneCurveSettings : IEquatable<ToneCurveSettings>
     }
     public bool IsInterior(int index) => Master.IsInterior(index);
     public bool IsEndpoint(int index) => Master.IsEndpoint(index);
+    public bool CanMoveX(int index) => Master.CanMoveX(index);
     public bool CanMoveY(int index) => Master.CanMoveY(index);
     public ToneCurveSettings Inserting(double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Inserting(x, y));
     public ToneCurveSettings Moving(int index, double x, double y) => Replacing(ToneCurveChannel.Rgb, Master.Moving(index, x, y));

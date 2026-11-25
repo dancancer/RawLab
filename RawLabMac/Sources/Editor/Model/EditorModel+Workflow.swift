@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -145,10 +146,11 @@ extension EditorModel {
 
     func selectAdjustmentGroup(_ group: EditorAdjustmentGroup) {
         guard group.isVisible(isHDREditing: settings.isHDREditing) else { return }
-        if group == .looks && !quickPresetsVisible && (settings.isHDREditing || geometryDraft != nil) {
+        if group == .looks && !quickPresetsVisible && geometryDraft != nil {
             showQuickPresets(); return
         }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation
         target.selectGroup(group)
         navigateAdjustment(to: target)
@@ -158,6 +160,7 @@ extension EditorModel {
         guard tool.group.isVisible(isHDREditing: settings.isHDREditing),
               quickPresetsVisible || tool != adjustmentNavigation.tool || adjustmentNavigation.expandedGroup == nil else { return }
         if quickPresetsVisible { closeQuickPresets() }
+        else if settings.isHDREditing && tool.group != .looks { cancelQuickPreset() }
         var target = adjustmentNavigation; target.selectTool(tool)
         navigateAdjustment(to: target)
     }
@@ -300,7 +303,7 @@ extension EditorModel {
 
     func recordSavedLookChange(from previous: MacPhotoEditState?, to saved: MacPhotoEditState) {
         guard saved.settings.masterRecipeID == nil, saved.filmID != previous?.filmID else { return }
-        recentLooks.record(saved.filmID, available: readableLookBrowserIDs)
+        recentLooks.record(saved.filmID ?? "", available: readableLookBrowserIDs)
         // 最近使用是界面偏好；偏好写入失败不能把已保存的照片报告为失败。
         try? recentLooks.save(to: recentLooksURL)
     }
@@ -511,11 +514,20 @@ extension EditorModel {
         }
         let info: HDRSourceInfo?
         var sdrFallback = false
+        var openContext: [String: String] = [:]
+        if let ext = ErrorDiagnostics.fileNameExtension(url) { openContext["extension"] = ext }
+        DiagnosticCenter.recordBreadcrumb(category: "import", stage: "openStart", message: "Opening photo", context: openContext)
         do { info=try probeHDRSource(url, { sdrFallback = true }) }
-        catch { self.error=error.localizedDescription; return }
+        catch {
+            DiagnosticCenter.appErrorDiagnostics.record(error as NSError, operation: .photoImport, stage: "probeHDR", context: openContext)
+            self.error=error.localizedDescription; return
+        }
         var candidate: Adjustments
         do { candidate = try restoredRecord.state?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: info != nil) }
-        catch { self.error=error.localizedDescription; return }
+        catch {
+            DiagnosticCenter.appErrorDiagnostics.record(error as NSError, operation: .photoImport, stage: "defaultSettings", context: openContext)
+            self.error=error.localizedDescription; return
+        }
         if sdrFallback { candidate.hdr?.mode = .sdr }
         var cameraHDR = info == nil ? try? HDRSourceInfo.probeRAW(url, processing: candidate.processing.core) : nil
         guard !candidate.isHDREditing || info != nil || cameraHDR != nil else {
@@ -901,11 +913,23 @@ extension EditorModel {
                                              interactive: false, exportLongEdge: longEdge, exportFormat: format,
                                              outputSharpening: sharpening)
                 DispatchQueue.main.async {
+                    DiagnosticCenter.recordBreadcrumb(
+                        category: "export",
+                        stage: "exportCompleted",
+                        message: "Single photo export succeeded",
+                        context: ["format": resolvedFormat.suffix]
+                    )
                     self.exporting = false; self.statusState = .exported(output.lastPathComponent)
                     self.onUsage(.exportCompleted)
                 }
             } catch {
                 DispatchQueue.main.async {
+                    DiagnosticCenter.appErrorDiagnostics.record(
+                        error as NSError,
+                        operation: .photoExport,
+                        stage: "exportFile",
+                        context: ["format": resolvedFormat.suffix]
+                    )
                     self.exporting = false; self.error = error.localizedDescription
                     if self.file == file, self.settings == settings, self.aiGeneration == generation {
                         self.handleAIFailure(error)

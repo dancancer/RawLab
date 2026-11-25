@@ -100,7 +100,9 @@ public final class FileDigestCache: @unchecked Sendable {
 
     private struct Entry {
         let fingerprint: FileStatFingerprint
-        let digest: String
+        let digestData: Data
+        let digestHex: String
+        let fileIdentity: OriginalFileIdentity?
     }
 
     public let maximumEntries: Int
@@ -222,7 +224,7 @@ public final class FileDigestCache: @unchecked Sendable {
 
             recordCompute(forPath: resolvedPath)
             readObserver?(url, attempt)
-            let (digest, totalBytes) = try Self.hashFileDescriptor(fd, maximumBytes: maximumBytes)
+            let (digestData, digest, totalBytes) = try Self.hashFileDescriptorData(fd, maximumBytes: maximumBytes)
             guard let fdAfter = FileStatFingerprint.fileDescriptor(fd) else {
                 continue
             }
@@ -232,8 +234,152 @@ public final class FileDigestCache: @unchecked Sendable {
                 if let maximumBytes, totalBytes == 0 || totalBytes > maximumBytes {
                     throw CocoaError(.fileReadCorruptFile)
                 }
-                store(Entry(fingerprint: fdBefore, digest: digest), forPath: resolvedPath, expectedEpoch: startEpoch)
+                store(Entry(fingerprint: fdBefore, digestData: digestData, digestHex: digest, fileIdentity: nil),
+                      forPath: resolvedPath, expectedEpoch: startEpoch)
                 return digest
+            }
+        }
+        throw CocoaError(.fileReadUnknown)
+    }
+
+    public func digestAndFingerprint(
+        for url: URL,
+        maximumBytes: Int? = nil,
+        returnOnUnstableThirdAttempt: Bool = false,
+        onHash: (() -> Void)? = nil,
+        readData: ((URL) throws -> Data)? = nil
+    ) throws -> (identity: OriginalFileIdentity, digest: Data, hex: String, fingerprint: FileStatFingerprint) {
+        guard url.isFileURL else { throw CocoaError(.fileReadCorruptFile) }
+        let initialPath = Self.canonicalPath(for: url)
+        let initialFingerprint: FileStatFingerprint
+        do {
+            initialFingerprint = try Self.statOrThrow(resolvedPath: initialPath)
+        } catch {
+            invalidate(for: url)
+            if returnOnUnstableThirdAttempt {
+                _ = try OriginalFileIdentity(url)
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            throw error
+        }
+        guard initialFingerprint.isRegularFile else {
+            if returnOnUnstableThirdAttempt {
+                _ = try OriginalFileIdentity(url)
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        if let maximumBytes {
+            guard initialFingerprint.size > 0 && initialFingerprint.size <= Int64(maximumBytes) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        }
+        if readData == nil,
+           let hit = cachedEntry(forPath: initialPath, fingerprint: initialFingerprint),
+           let fileIdentity = hit.fileIdentity {
+            return (fileIdentity, hit.digestData, hit.digestHex, initialFingerprint)
+        }
+
+        let stripe = stripeLocks[Self.stripeIndex(for: initialPath)]
+        stripe.lock(); defer { stripe.unlock() }
+
+        for attempt in 0..<3 {
+            let resolvedURL = Self.canonicalURL(for: url)
+            let resolvedPath = resolvedURL.path
+            let before: FileStatFingerprint
+            do {
+                before = try Self.statOrThrow(resolvedPath: resolvedPath)
+            } catch {
+                invalidate(for: url)
+                if returnOnUnstableThirdAttempt {
+                    _ = try OriginalFileIdentity(url)
+                    throw CocoaError(.fileReadNoSuchFile)
+                }
+                throw error
+            }
+            guard before.isRegularFile else {
+                if returnOnUnstableThirdAttempt {
+                    _ = try OriginalFileIdentity(url)
+                    throw CocoaError(.fileReadNoSuchFile)
+                }
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if let maximumBytes {
+                guard before.size > 0 && before.size <= Int64(maximumBytes) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+            }
+            if readData == nil,
+               let hit = cachedEntry(forPath: resolvedPath, fingerprint: before),
+               let fileIdentity = hit.fileIdentity {
+                return (fileIdentity, hit.digestData, hit.digestHex, before)
+            }
+            let startEpoch = epoch(for: resolvedPath)
+            let identity = try OriginalFileIdentity(resolvedURL)
+
+            if let readData {
+                let data = try readData(resolvedURL)
+                if let maximumBytes, data.isEmpty || data.count > maximumBytes {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                recordCompute(forPath: resolvedPath)
+                readObserver?(url, attempt)
+                onHash?()
+                let digestData = Data(SHA256.hash(data: data))
+                let hex = digestData.map { String(format: "%02x", $0) }.joined()
+                let afterPath = Self.canonicalPath(for: url)
+                let afterStat = FileStatFingerprint(resolvedPath: afterPath)
+                if afterPath == resolvedPath,
+                   afterStat == before,
+                   Int64(data.count) == before.size,
+                   identity.size == UInt64(before.size) {
+                    store(Entry(fingerprint: before, digestData: digestData, digestHex: hex, fileIdentity: identity),
+                          forPath: resolvedPath, expectedEpoch: startEpoch)
+                    return (identity, digestData, hex, before)
+                }
+                invalidate(for: url)
+                if returnOnUnstableThirdAttempt && attempt == 2 {
+                    return (identity, digestData, hex, before)
+                }
+                continue
+            }
+
+            let fd = Darwin.open(resolvedPath, O_RDONLY)
+            if fd < 0 {
+                let code = errno
+                if code == ENOENT { invalidate(for: url) }
+                throw Self.posixOrCocoaError(for: code)
+            }
+            defer { Darwin.close(fd) }
+            guard let fdBefore = FileStatFingerprint.fileDescriptor(fd), fdBefore.isRegularFile else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            if fdBefore != before { continue }
+
+            recordCompute(forPath: resolvedPath)
+            readObserver?(url, attempt)
+            onHash?()
+            let (digestData, hex, totalBytes) = try Self.hashFileDescriptorData(fd, maximumBytes: maximumBytes)
+            guard let fdAfter = FileStatFingerprint.fileDescriptor(fd) else {
+                if returnOnUnstableThirdAttempt && attempt == 2 {
+                    invalidate(for: url)
+                    return (identity, digestData, hex, fdBefore)
+                }
+                continue
+            }
+            let afterPath = Self.canonicalPath(for: url)
+            let afterStat = FileStatFingerprint(resolvedPath: afterPath)
+            if fdAfter == fdBefore && afterPath == resolvedPath && afterStat == fdBefore && identity.size == UInt64(fdBefore.size) {
+                if let maximumBytes, totalBytes == 0 || totalBytes > maximumBytes {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                store(Entry(fingerprint: fdBefore, digestData: digestData, digestHex: hex, fileIdentity: identity),
+                      forPath: resolvedPath, expectedEpoch: startEpoch)
+                return (identity, digestData, hex, fdBefore)
+            }
+            if returnOnUnstableThirdAttempt && attempt == 2 {
+                invalidate(for: url)
+                return (identity, digestData, hex, fdBefore)
             }
         }
         throw CocoaError(.fileReadUnknown)
@@ -257,9 +403,13 @@ public final class FileDigestCache: @unchecked Sendable {
     }
 
     private func cachedDigest(forPath path: String, fingerprint: FileStatFingerprint) -> String? {
+        cachedEntry(forPath: path, fingerprint: fingerprint)?.digestHex
+    }
+
+    private func cachedEntry(forPath path: String, fingerprint: FileStatFingerprint) -> Entry? {
         cacheLock.lock(); defer { cacheLock.unlock() }
         guard let entry = cache.value(forKey: path), entry.fingerprint == fingerprint else { return nil }
-        return entry.digest
+        return entry
     }
 
     private func epoch(for path: String) -> UInt64 {
@@ -280,7 +430,7 @@ public final class FileDigestCache: @unchecked Sendable {
         _digestComputeCountsByPath[path, default: 0] += 1
     }
 
-    private static func hashFileDescriptor(_ fd: Int32, maximumBytes: Int?) throws -> (String, Int) {
+    private static func hashFileDescriptorData(_ fd: Int32, maximumBytes: Int?) throws -> (Data, String, Int) {
         var hasher = SHA256()
         let chunkSize = 1024 * 1024
         var buffer = [UInt8](repeating: 0, count: chunkSize)
@@ -303,7 +453,9 @@ public final class FileDigestCache: @unchecked Sendable {
         if maximumBytes != nil && total == 0 {
             throw CocoaError(.fileReadCorruptFile)
         }
-        return (hasher.finalize().map { String(format: "%02x", $0) }.joined(), total)
+        let digestData = Data(hasher.finalize())
+        let digestHex = digestData.map { String(format: "%02x", $0) }.joined()
+        return (digestData, digestHex, total)
     }
 
     private static func statOrThrow(resolvedPath: String) throws -> FileStatFingerprint {

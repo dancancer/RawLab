@@ -40,8 +40,8 @@ struct RasterExportTests {
             for longEdge in [nil, 48] as [Int?] {
                 var settings = RawSettings.default
                 settings.exposure = 0.35
-                settings.geometry.quarterTurns = 1
-                settings.geometry.cropWidth = 0.75
+                settings.geometrySettings.quarterTurns = 1
+                settings.geometrySettings.cropWidth = 0.75
                 let expectedJPEG = try fixture.referenceJPEG(buffer: decoded.buffer, source: url,
                                                              settings: settings, longEdge: longEdge)
                 let actualJPEG = try fixture.jpeg(settings: settings, longEdge: longEdge)
@@ -318,6 +318,11 @@ struct RasterExportTests {
     }
 
     private static func boundedLargeRasterPreviewAndExport(_ fixture: RasterExportFixture) throws {
+        // Isolate import + single-export decode counts from background ROI detail prewarm.
+        let wasPrewarmEnabled = fixture.model.viewportEngine.detailPrewarmEnabled
+        fixture.model.viewportEngine.detailPrewarmEnabled = false
+        defer { fixture.model.viewportEngine.detailPrewarmEnabled = wasPrewarmEnabled }
+
         // 1. Small raster export reuses draftBuffer with 0 loadDisplayImage calls.
         let small = fixture.directory.appendingPathComponent("small-reuse.jpg")
         try RasterExportFixture.writeRaster(small, orientation: 1)
@@ -345,8 +350,9 @@ struct RasterExportTests {
         rawlabRasterCounterReset()
         let fullJPEG = try fixture.jpeg()
         let fullDims = imageDimensions(ofData: fullJPEG)
-        try check(fullDims?.0 == 2000 && fullDims?.1 == 1500 && rawlabRasterCounterLoadDisplayImage() == 1,
-                  "large JPEG export produces full 2000x1500 output with 1 loadDisplayImage call")
+        let jpegLoads = rawlabRasterCounterLoadDisplayImage()
+        try check(fullDims?.0 == 2000 && fullDims?.1 == 1500 && jpegLoads == 1,
+                  "large JPEG export produces full 2000x1500 output with 1 loadDisplayImage call (dims=\(String(describing: fullDims)) loads=\(jpegLoads))")
 
         rawlabRasterCounterReset()
         let fullDNG = try fixture.dng()
@@ -379,6 +385,20 @@ struct RasterExportTests {
         let png16DNGDims = dngDimensions(ofData: try fixture.dng())
         try check(png16DNGDims?.0 == 1600 && png16DNGDims?.1 == 1200,
                   "16-bit PNG DNG export produces full 1600x1200 (dims=\(String(describing: png16DNGDims)))")
+
+        // 4b. Small 16-bit PNG (<= 1280px) marks hasFullBitDepth=false and reloads 16-bit via loadDisplayImage on export.
+        let small16PNG = fixture.directory.appendingPathComponent("small-16bit.png")
+        try writeLargeImage(small16PNG, width: 160, height: 120, bitsPerComponent: 16)
+        try fixture.importRaster(small16PNG)
+        let small16Draft = fixture.model.draftBuffer
+        try check(small16Draft?.isProxy == false && small16Draft?.hasFullBitDepth == false &&
+                  small16Draft?.width == 160 && small16Draft?.height == 120,
+                  "16-bit <= 1280px PNG marks hasFullBitDepth=false on 8-bit preview buffer")
+        rawlabRasterCounterReset()
+        let small16DNGDims = dngDimensions(ofData: try fixture.dng())
+        try check(small16DNGDims?.0 == 160 && small16DNGDims?.1 == 120 &&
+                  rawlabRasterCounterLoadDisplayImage() == 1,
+                  "16-bit <= 1280px PNG DNG export reloads full 16-bit buffer via loadDisplayImage")
 
         // 5. Transparent PNG (alpha=128) is rejected by bounded preview decode too.
         let alphaPNG = fixture.directory.appendingPathComponent("transparent.png")

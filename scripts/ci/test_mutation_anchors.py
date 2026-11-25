@@ -186,6 +186,124 @@ class MutationAnchorTests(unittest.TestCase):
             self.assertNotEqual(mutated.returncode, 0, "makeLatest=true must fail test_assets_prepare.py")
             self.assertIn("makeLatest", mutated.stdout + mutated.stderr)
 
+    def test_anchor_6_cli_private_include_fails_test_cli_layering(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="rawlab-mut-cli-") as tmp:
+            root = Path(tmp)
+            _copy_files(root, ("scripts/ci/test_cli_layering.py",))
+            shutil.copytree(ROOT / "lutools/src/cli", root / "lutools/src/cli")
+
+            test_target = root / "scripts/ci/test_cli_layering.py"
+            baseline = _run_test_script(test_target, root)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            agent_cpp = root / "lutools/src/cli/agent_commands.cpp"
+            agent_cpp.write_text(
+                '#include "core/pipeline.h"\n' + agent_cpp.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+
+            mutated = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated.returncode, 0, "Injected CLI private include must fail test_cli_layering.py")
+            self.assertIn("core/pipeline.h", mutated.stdout + mutated.stderr)
+
+    def test_anchor_7_parallel_skip_swallow_fails_test_apple_models(self) -> None:
+        files = (
+            "scripts/ci/apple-models.sh",
+            "scripts/ci/swiftpm-rawlabkit.sh",
+            "scripts/ci/test_apple_models.py",
+        )
+        with tempfile.TemporaryDirectory(prefix="rawlab-mut-apple-skip-") as tmp:
+            root = Path(tmp)
+            _copy_files(root, files)
+            test_target = root / "scripts/ci/test_apple_models.py"
+            baseline = _run_test_script(test_target, root)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            runner = root / "scripts/ci/apple-models.sh"
+            source = runner.read_text(encoding="utf-8")
+            old_block = (
+                '                if ! fail_on_logged_skip "$suite_log" "$suite"; then\n'
+                '                    skip_fail=1\n'
+                '                fi\n'
+            )
+            self.assertEqual(source.count(old_block), 1)
+            runner.write_text(source.replace(old_block, "", 1), encoding="utf-8")
+
+            mutated = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated.returncode, 0, "Dropping parallel SKIP check must fail test_apple_models.py")
+            self.assertIn("test_parallel_logged_skip_in_any_concurrent_worker_fails_without_swallowing", mutated.stdout + mutated.stderr)
+
+    def test_anchor_8_native_cache_decoupling_revert_to_red(self) -> None:
+        patterns = (
+            "scripts/ci/native_cache.py",
+            "scripts/ci/test_native_cache.py",
+            "scripts/ci/affected_platforms.py",
+            "scripts/ci/requirements.txt",
+            ".github/workflows/ci.yml",
+            "lutools/CMakeLists.txt",
+            "lutools/cmake/**/*.cmake",
+            "lutools/cmake/**/CMakeLists.txt",
+            "lutools/cmake/**/*.py",
+            "lutools/cmake/**/*.json",
+            "lutools/cmake/**/*.in",
+            "lutools/cmake/**/*.inc",
+            "lutools/third_party/rawspeed-camera-calibration.inc",
+            "lutools/third_party/lensfun/*.*",
+            "lutools/third_party/nikon_he/*",
+            "lutools/third_party/libraw/*",
+            "RawLabMac/build*.sh",
+            "RawLabWindows/build.ps1",
+            "RawLabWindows/native/CMakeLists.txt",
+            "RawLabAndroid/app/src/main/cpp/CMakeLists.txt",
+            "RawLabAndroid/*.gradle.kts",
+            "RawLabAndroid/app/build.gradle.kts",
+            "RawLabAndroid/gradle.properties",
+            "RawLabAndroid/gradle/wrapper/gradle-wrapper.properties",
+            "lutools/platform/ios/build-framework.sh",
+        )
+        with tempfile.TemporaryDirectory(prefix="rawlab-mut-native-cache-") as tmp:
+            root = Path(tmp)
+            rel_files = []
+            for pattern in patterns:
+                for src in ROOT.glob(pattern):
+                    if src.is_file():
+                        rel_files.append(src.relative_to(ROOT).as_posix())
+            _copy_files(root, sorted(set(rel_files)))
+
+            test_target = root / "scripts/ci/test_native_cache.py"
+            baseline = _run_test_script(test_target, root)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            # Mutation A: re-coupling lutools/CMakeLists.txt into COMMON_INPUTS must fail RED.
+            nc_file = root / "scripts/ci/native_cache.py"
+            nc_orig = nc_file.read_text(encoding="utf-8")
+            old_line = '    "scripts/ci/native_cache.py", "scripts/ci/requirements.txt",'
+            new_line = '    "scripts/ci/native_cache.py", "scripts/ci/requirements.txt", "lutools/CMakeLists.txt",'
+            self.assertEqual(nc_orig.count(old_line), 1)
+            nc_file.write_text(nc_orig.replace(old_line, new_line, 1), encoding="utf-8")
+            mutated_a = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated_a.returncode, 0, "Re-adding lutools/CMakeLists.txt to COMMON_INPUTS must fail RED")
+            self.assertIn("test_first_party_cmakelists_edits_preserve_cache_key_across_all_platforms", mutated_a.stdout + mutated_a.stderr)
+            nc_file.write_text(nc_orig, encoding="utf-8")
+
+            # Mutation B: dropping lutools/cmake/**/*.cmake from COMMON_INPUTS must fail RED.
+            old_cmake_glob = '    "lutools/cmake/**/*.cmake", "lutools/cmake/**/CMakeLists.txt",'
+            new_cmake_glob = '    "lutools/cmake/**/CMakeLists.txt",'
+            self.assertEqual(nc_orig.count(old_cmake_glob), 1)
+            nc_file.write_text(nc_orig.replace(old_cmake_glob, new_cmake_glob, 1), encoding="utf-8")
+            mutated_b = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated_b.returncode, 0, "Dropping lutools/cmake/**/*.cmake must fail RED")
+            self.assertIn("test_third_party_cmake_edits_invalidate_cache_key_across_all_platforms", mutated_b.stdout + mutated_b.stderr)
+            nc_file.write_text(nc_orig, encoding="utf-8")
+
+            # Mutation C: injecting third-party FetchContent/pkg_check_modules into lutools/CMakeLists.txt must fail RED.
+            cm_file = root / "lutools/CMakeLists.txt"
+            cm_orig = cm_file.read_text(encoding="utf-8")
+            cm_file.write_text(cm_orig + "\npkg_check_modules(BAD REQUIRED libbad)\n", encoding="utf-8")
+            mutated_c = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated_c.returncode, 0, "Injecting third-party lookup into lutools/CMakeLists.txt must fail RED")
+            self.assertIn("test_lutools_cmakelists_delegates_third_party_deps_to_cmake_dir", mutated_c.stdout + mutated_c.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

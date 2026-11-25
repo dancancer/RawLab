@@ -52,6 +52,7 @@ import com.rawlab.android.looks.localizedName
 import com.rawlab.android.photo.PhotoStorage
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.Film
+import com.rawlab.android.settings.canonicalZero
 import com.rawlab.android.ui.ExportFormatControls
 import com.rawlab.android.ui.ExportSizeControls
 import com.rawlab.android.ui.OutputSharpeningControls
@@ -383,9 +384,9 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
                 "${stringResource(label)} ${String.format(java.util.Locale.ROOT, "%+.1f", settings.hsl.value(axis, channel))}"
             }.joinToString(" · "))
         }
-        SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.highlights * 100))
+        SettingLine(AppStrings.text(R.string.message_highlights), String.format(java.util.Locale.ROOT, "%+.0f%%", (-settings.highlights * 100).canonicalZero()))
         SettingLine(AppStrings.text(R.string.message_shadows), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.shadows * 100))
-        SettingLine(AppStrings.text(R.string.message_contrast), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.contrast * 100))
+        SettingLine(AppStrings.text(R.string.message_contrast), String.format(java.util.Locale.ROOT, "%+.0f%%", ((settings.contrast - 1f) * 100).canonicalZero()))
         if (settings.curve.mode == com.rawlab.android.settings.ToneCurveMode.LEGACY) {
             SettingLine(AppStrings.text(R.string.message_s_curve), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.toneCurve * 100))
         }
@@ -404,7 +405,7 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
         SettingLine(AppStrings.text(R.string.vibrance), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.vibrance))
         SettingLine(AppStrings.text(R.string.clarity), formatAdjustment(settings.clarity, 1f) + "%")
         SettingLine(AppStrings.text(R.string.dehaze), formatAdjustment(settings.dehaze, 1f) + "%")
-        SettingLine(AppStrings.text(R.string.message_saturation), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.saturation * 100))
+        SettingLine(AppStrings.text(R.string.message_saturation), String.format(java.util.Locale.ROOT, "%+.0f%%", ((settings.saturation - 1f) * 100).canonicalZero()))
         SettingLine(AppStrings.text(R.string.message_white_balance), if (settings.customWb) AppStrings.text(R.string.message_custom) else AppStrings.text(R.string.message_as_shot_for_each_photo))
         if (settings.customWb) {
             SettingLine(AppStrings.text(R.string.message_temperature), String.format(java.util.Locale.ROOT, "%.0f K", settings.temperature))
@@ -428,8 +429,8 @@ internal fun SettingsSummary(settings: EditSettings, lookName: String) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         SettingLine(AppStrings.text(R.string.geometry_flip_horizontal), if (settings.geometry.flipHorizontal) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
         SettingLine(AppStrings.text(R.string.geometry_flip_vertical), if (settings.geometry.flipVertical) AppStrings.text(R.string.message_on) else AppStrings.text(R.string.disabled))
-        SettingLine(AppStrings.text(R.string.geometry_perspective_horizontal), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.geometry.perspectiveHorizontal * 100f))
-        SettingLine(AppStrings.text(R.string.geometry_perspective_vertical), String.format(java.util.Locale.ROOT, "%+.0f%%", settings.geometry.perspectiveVertical * 100f))
+        SettingLine(AppStrings.text(R.string.geometry_perspective_horizontal), String.format(java.util.Locale.ROOT, "%+.0f", (settings.geometry.perspectiveHorizontal * 100f).canonicalZero()))
+        SettingLine(AppStrings.text(R.string.geometry_perspective_vertical), String.format(java.util.Locale.ROOT, "%+.0f", (settings.geometry.perspectiveVertical * 100f).canonicalZero()))
         SettingLine(AppStrings.text(R.string.display_chroma_denoise), AppStrings.text(when (settings.displayChromaDenoise) {
             1 -> R.string.denoise_detail
             2 -> R.string.denoise_clean

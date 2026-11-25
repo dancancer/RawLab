@@ -86,7 +86,7 @@
     <string name="curve_darks">"Darks"</string>
     <string name="curve_edit_point">"Edit point"</string>
     <string name="curve_fixed_endpoint">"Endpoints are fixed"</string>
-    <string name="curve_hint">"Tap the curve area to add a point. Drag interior points to adjust."</string>
+    <string name="curve_hint">"Click or tap to add a point; double-tap a point or drag it outside to delete."</string>
     <string name="curve_input">"Input"</string>
     <string name="curve_lights">"Lights"</string>
     <string name="curve_luminosity_only">"Luminosity Only"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"Point Curve"</string>
     <string name="curve_point_number">"Point %1$d"</string>
     <string name="curve_remove_point">"Delete point"</string>
-    <string name="curve_reset">"Reset Curve"</string>
+    <string name="curve_reset">"Reset Parametric Curve"</string>
     <string name="curve_reset_identity">"Reset to straight line"</string>
     <string name="curve_split_points">"Split Points"</string>
     <string name="curve_summary">"Point curve (%1$d points)"</string>

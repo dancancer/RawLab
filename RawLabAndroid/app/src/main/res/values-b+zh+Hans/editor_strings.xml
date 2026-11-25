@@ -86,7 +86,7 @@
     <string name="curve_darks">"暗部"</string>
     <string name="curve_edit_point">"编辑控制点"</string>
     <string name="curve_fixed_endpoint">"端点固定"</string>
-    <string name="curve_hint">"点击曲线区域添加控制点，拖动中间点调整。"</string>
+    <string name="curve_hint">"点击添加控制点；双击控制点或拖出画布可删除。"</string>
     <string name="curve_input">"输入坐标"</string>
     <string name="curve_lights">"亮部"</string>
     <string name="curve_luminosity_only">"仅作用于明度"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"点曲线"</string>
     <string name="curve_point_number">"控制点 %1$d"</string>
     <string name="curve_remove_point">"删除控制点"</string>
-    <string name="curve_reset">"重置曲线"</string>
+    <string name="curve_reset">"重置参数曲线"</string>
     <string name="curve_reset_identity">"重置为直线"</string>
     <string name="curve_split_points">"拆分点"</string>
     <string name="curve_summary">"多点曲线（%1$d 个控制点）"</string>

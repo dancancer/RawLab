@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import SwiftUI
 
 struct ToneCurveCanvas: View {
@@ -7,6 +8,7 @@ struct ToneCurveCanvas: View {
     let scope: String
     var channel: ToneCurveChannel = .rgb
     var showSplitMarkers = false
+    var allowsPointEditing = true
     var fine = false
     var isCurrent: () -> Bool = { true }
     var canChange: () -> Bool = { true }
@@ -24,8 +26,22 @@ struct ToneCurveCanvas: View {
         }
     }
 
+    private var isParametricView: Bool { showSplitMarkers && channel == .rgb }
+
+    private var sampledCurvePoints: [ToneCurvePoint] {
+        if isParametricView {
+            let parametricOnly = ToneCurveSettings(
+                mode: .custom,
+                points: ToneCurveShape.identity.points,
+                parametric: value.parametric
+            )
+            return parametricOnly.sampledPoints(channel: .rgb, includeParametric: true)
+        }
+        return value.sampledPoints(channel: .rgb, includeParametric: false)
+    }
+
     var body: some View {
-        let samples = value.sampledPoints(channel: .rgb, includeParametric: channel == .rgb)
+        let samples = sampledCurvePoints
         ZStack {
             Canvas { context, size in
                 let rect = CGRect(origin: .zero, size: size).insetBy(dx: 12, dy: 12)
@@ -37,7 +53,7 @@ struct ToneCurveCanvas: View {
                     grid.move(to: point(.init(x: 0, y: offset))); grid.addLine(to: point(.init(x: 1, y: offset)))
                 }
                 context.stroke(grid, with: .color(.secondary.opacity(0.2)), lineWidth: 1)
-                if showSplitMarkers && channel == .rgb {
+                if isParametricView {
                     var splits = Path()
                     for s in [value.parametric.splitShadow, value.parametric.splitMidtone, value.parametric.splitHighlight] {
                         splits.move(to: point(.init(x: s, y: 0)))
@@ -52,21 +68,27 @@ struct ToneCurveCanvas: View {
                     for sample in samples.dropFirst() { curve.addLine(to: point(sample)) }
                     context.stroke(curve, with: .color(strokeColor), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
                 }
-                for (index, p) in value.points.enumerated() {
-                    let center = point(p), radius: CGFloat = selected == index ? 6 : 4
-                    let circle = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-                    context.fill(circle, with: .color(index == selected ? .yellow : strokeColor))
-                    context.stroke(circle, with: .color(.black.opacity(0.8)), lineWidth: 1)
+                if !isParametricView {
+                    for (index, p) in value.points.enumerated() {
+                        let center = point(p), radius: CGFloat = selected == index ? 6 : 4
+                        let circle = Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+                        context.fill(circle, with: .color(index == selected ? .yellow : strokeColor))
+                        context.stroke(circle, with: .color(.black.opacity(0.8)), lineWidth: 1)
+                    }
                 }
             }.accessibilityHidden(true)
-            ToneCurveInput(configuration: configuration)
+            if allowsPointEditing && !isParametricView {
+                ToneCurveInput(configuration: configuration)
+            }
         }
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
         .opacity(enabled ? 1 : 0.4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(L10n.text("曲线"))
-        .accessibilityValue(L10n.format("多点曲线（%d 个控制点）", value.points.count))
-        .accessibilityHint(L10n.text("点击曲线区域添加控制点，拖动中间点调整。"))
+        .accessibilityLabel(L10n.text(isParametricView ? "参数曲线" : "曲线"))
+        .accessibilityValue(isParametricView
+            ? L10n.text(value.parametric.isDefault ? "未调整" : "已调整")
+            : L10n.format("多点曲线（%d 个控制点）", value.points.count))
+        .accessibilityHint(isParametricView ? "" : L10n.text("点击添加控制点；双击控制点或拖出画布可删除。"))
         .accessibilityIdentifier("curve.canvas")
     }
     private var configuration: ToneCurveInputConfiguration {
@@ -170,10 +192,29 @@ final class ToneCurveInputView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         return (Double((location.x - 12) / max(1, bounds.width - 24)), Double(1 - (location.y - 12) / max(1, bounds.height - 24)))
     }
+    private var hitTolerance: (Double, Double) {
+        (Double(12 / max(1, bounds.width - 24)), Double(12 / max(1, bounds.height - 24)))
+    }
     override func mouseDown(with event: NSEvent) {
-        fineAtStart = event.modifierFlags.contains(.shift); let p = point(event)
-        if session.begin(x: p.0, y: p.1, toleranceX: Double(12 / max(1, bounds.width - 24)),
-            toleranceY: Double(12 / max(1, bounds.height - 24)), fine: fineAtStart) { window?.makeFirstResponder(self) }
+        if event.modifierFlags.contains(.control) {
+            let p = point(event), tol = hitTolerance
+            if session.removePoint(x: p.0, y: p.1, toleranceX: tol.0, toleranceY: tol.1) {
+                window?.makeFirstResponder(self)
+            }
+            return
+        }
+        fineAtStart = event.modifierFlags.contains(.shift); let p = point(event), tol = hitTolerance
+        if session.begin(x: p.0, y: p.1, toleranceX: tol.0, toleranceY: tol.1, fine: fineAtStart) {
+            window?.makeFirstResponder(self)
+        }
+    }
+    override func rightMouseDown(with event: NSEvent) {
+        let p = point(event), tol = hitTolerance
+        if session.removePoint(x: p.0, y: p.1, toleranceX: tol.0, toleranceY: tol.1) {
+            window?.makeFirstResponder(self)
+        } else {
+            super.rightMouseDown(with: event)
+        }
     }
     override func mouseDragged(with event: NSEvent) { let p = point(event); session.move(x: p.0, y: p.1) }
     override func mouseUp(with event: NSEvent) { let p = point(event); session.move(x: p.0, y: p.1); session.end() }

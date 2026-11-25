@@ -27,14 +27,14 @@ import UIKit
         if let path = ProcessInfo.processInfo.environment["RAWLAB_TEST_PRORAW"] {
             let raw = URL(fileURLWithPath: path)
             let info = try HDRSourceInfo.probeRAW(raw)
-            check(info?.proRAW != nil, "ProRAW fixture was not recognized")
+            check(info?.isProRAW == true, "ProRAW fixture was not recognized")
             let rawID = PhotoIdentity(resourceIdentifier: "proraw")
             let target = BatchTarget(identity: rawID, sourceURL: raw, displayName: raw.lastPathComponent, sourceKind: .raw)
             let fresh = try preparation.prepare(target, ordinal: 2, format: .jpeg, longEdge: nil)
             check(!fresh.settings.isHDREditing && fresh.settings.exposure == 1,
                   "fresh ProRAW batch target was silently upgraded to HDR")
             var saved = RawSettings.default; saved.exposure = -2; saved.hdr = HDRSettings()
-            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion + 1
+            saved.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion + 1
             try store.save(rawID, state: PhotoEditState(settings: saved))
             do {
                 _ = try preparation.prepare(target, ordinal: 2, format: .hdrJPEG, longEdge: nil)
@@ -51,7 +51,7 @@ import UIKit
             check(!sdr.settings.isHDREditing && sdr.settings.proRAWDecodeVersion == saved.proRAWDecodeVersion,
                   "ProRAW preflight rejected or rewrote the dormant decoder version in SDR mode")
             saved.hdr?.mode = .hdr
-            saved.proRAWDecodeVersion = ProRAWSource.decodeVersion
+            saved.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion
             try store.save(rawID, state: PhotoEditState(settings: saved))
             let beforeRaw = try store.readState(for: rawID)
             let hdr = try preparation.prepare(target, ordinal: 2, format: .hdrJPEG, longEdge: nil)
@@ -71,7 +71,7 @@ import UIKit
               "New camera RAW should remain in SDR editing")
         var cameraEdit = RawSettings.default; cameraEdit.exposure = -2; cameraEdit.hdr = HDRSettings()
         cameraEdit.hdr?.renditionSettings.sdrExposureEV = -0.75
-        cameraEdit.proRAWDecodeVersion = ProRAWSource.decodeVersion
+        cameraEdit.proRAWDecodeVersion = HDRSourceInfo.proRAWDecodeVersion
         try store.save(cameraID, state: PhotoEditState(settings: cameraEdit))
         do {
             _ = try preparation.prepare(cameraTarget, ordinal: 2, format: .hdrJPEG, longEdge: 64)

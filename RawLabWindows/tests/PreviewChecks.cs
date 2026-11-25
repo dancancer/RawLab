@@ -123,7 +123,7 @@ internal static class PreviewChecks
         check(cpu.Result.Backend!=3,"CPU mode cannot reuse a GPU-labelled cached frame");engine.SetGpuMode(1);
         var versioned = new Adjustments();
         versioned.ApplyMasterRecipe(MasterRecipe.All[0]);
-        versioned.Set(Parameter.Strength, 50);
+        versioned.Set(Parameter.Strength, .5);
         versioned.ToneControls = new(35, -20, 30);
         versioned = (versioned.Capture() with { MasterRecipeSettingsVersion = 3 }).Restore();
         var legacyFrame = engine.RenderPreview(raw, versioned, lut, 256, false, false, false);
@@ -135,7 +135,7 @@ internal static class PreviewChecks
         foreach (var parameter in new[] { Parameter.Exposure, Parameter.Contrast, Parameter.Saturation,
             Parameter.Highlights, Parameter.Shadows, Parameter.Tint }) versioned.Set(parameter, 0);
         var halfRefinement = engine.RenderPreview(raw, versioned, null, 256, false, false, false);
-        versioned.Set(Parameter.Strength, 100);
+        versioned.Set(Parameter.Strength, 1);
         check(!ReferenceEquals(halfRefinement, engine.RenderPreview(raw, versioned, null, 256, false, false, false)),
             "Modern controls invalidate the preview when only strength changes, including without a LUT");
         var originalTime=File.GetLastWriteTimeUtc(raw);

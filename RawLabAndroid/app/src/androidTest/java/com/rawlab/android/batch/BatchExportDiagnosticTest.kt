@@ -73,7 +73,7 @@ class BatchExportDiagnosticTest {
                 }
                 // Batch export creates a fresh processor, separate from its target preview.
                 NativeProcessor(mode, storage.lensDatabase()).use { processor ->
-                    val settings = EditSettings(exposure = .5f, contrast = .2f,
+                    val settings = EditSettings(exposure = .5f, contrast = 1.2f,
                         temperature = frame.temperature, tint = frame.tint,
                         denoise = DenoiseSettings(denoise, 10f, 72f, 100f))
                     result.put("settings", SettingsCodec.encode(settings))

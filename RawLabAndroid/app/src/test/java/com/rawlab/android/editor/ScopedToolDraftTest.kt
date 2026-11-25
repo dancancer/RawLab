@@ -27,10 +27,10 @@ class ScopedToolDraftTest {
         assertEquals(draft.project(rotated).geometry, draft.project(rotated).hdr!!.geometry)
     }
     @Test fun scalarProjectionKeepsUnrelatedCommittedFields() {
-        val base = EditSettings(exposure = 1f, saturation = .2f)
+        val base = EditSettings(exposure = 1f, saturation = 1.2f)
         val draft = AdjustmentDraft.begin(AdjustmentGroup.EXPOSURE, base)
-            .update(base.copy(exposure = 2f, saturation = .9f))
-        val committed = base.copy(saturation = .5f, strength = .7f)
+            .update(base.copy(exposure = 2f, saturation = 1.9f))
+        val committed = base.copy(saturation = 1.5f, strength = .7f)
         assertEquals(committed.copy(exposure = 2f), draft.project(committed))
         assertEquals(base.copy(exposure = 2f), draft.value)
         assertEquals(base, draft.undo().value)
@@ -40,12 +40,12 @@ class ScopedToolDraftTest {
     @Test fun gestureCreatesOneLocalUndoStepAndNewEditClearsRedo() {
         val base = EditSettings()
         val draft = AdjustmentDraft.begin(AdjustmentGroup.SATURATION, base)
-            .update(base.copy(saturation = .1f), interactive = true)
-            .update(base.copy(saturation = .3f), interactive = true)
-            .update(base.copy(saturation = .3f), interactive = false)
+            .update(base.copy(saturation = 1.1f), interactive = true)
+            .update(base.copy(saturation = 1.3f), interactive = true)
+            .update(base.copy(saturation = 1.3f), interactive = false)
         assertEquals(1, draft.undoValues.size)
         assertEquals(base, draft.undo().value)
-        assertFalse(draft.undo().update(base.copy(saturation = -.2f)).canRedo)
+        assertFalse(draft.undo().update(base.copy(saturation = .8f)).canRedo)
     }
 
     @Test fun hslDraftRetainsOtherChannelsAndIgnoresOtherTools() {
@@ -66,7 +66,7 @@ class ScopedToolDraftTest {
     }
 
     @Test fun resetOnlyAcceptsActiveToolOrItsSubscope() {
-        val base = EditSettings(exposure = 1f, saturation = .3f)
+        val base = EditSettings(exposure = 1f, saturation = 1.3f)
         val session = EditorResetSession(PhotoIdentity("photo"), "/photo", 1, 1, base,
             AdjustmentDraft.begin(AdjustmentGroup.EXPOSURE, base), 1,
             EditorResetContext(com.rawlab.android.format.PhotoInputKind.RAW, EditSettings()))

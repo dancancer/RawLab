@@ -36,13 +36,13 @@ class MasterRecipeTest {
             assertEquals(state.exposure * strength, removed.exposure)
         }
         assertThrows(IllegalArgumentException::class.java) { applied.copy(exposure = 4f, strength = 2f).selectFilm("neutral", 8f, 5300f) }
-        val legacy = org.json.JSONObject(SettingsCodec.encode(applied.copy(strength = 2f)).removePrefix("v2:"))
+        val legacy = org.json.JSONObject(SettingsCodec.encode(applied.copy(strength = 2f)).removePrefix("v3:"))
         legacy.getJSONObject("settings").remove("masterRecipeSettingsVersion")
-        val old = SettingsCodec.decode("v2:$legacy")
+        val old = SettingsCodec.decode("v3:$legacy")
         assertEquals(3, old.masterRecipeSettingsVersion); assertEquals(old.blackPoint, old.renderBlackPoint)
         assertEquals(old.curve, old.renderCurve); assertEquals(old.colorGrading, old.renderColorGrading)
         legacy.getJSONObject("settings").put("masterRecipeSettingsVersion", 5)
-        assertThrows(IllegalArgumentException::class.java) { SettingsCodec.decode("v2:$legacy") }
+        assertThrows(IllegalArgumentException::class.java) { SettingsCodec.decode("v3:$legacy") }
         val flat = ToneCurveSettings(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.0),
             ToneCurvePoint(.2, .8), ToneCurvePoint(.4, .8), ToneCurvePoint(1.0, 1.0)))
         assertEquals(listOf(0.0, 1.0, 1.0, 1.0), flat.scaled(2f).points.map { it.y })

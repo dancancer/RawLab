@@ -265,10 +265,8 @@ bash lutools/test.sh
 # Running emulator or USB device: UI, storage and real Sony RAW integration.
 ./gradlew :app:connectedDebugAndroidTest
 bash scripts/check-native.sh
-# Host-only native request contract test (from repository root).
-c++ -std=c++17 -I RawLabAndroid/app/src/main/cpp -I lutools/include \
-  RawLabAndroid/tests/request_test.cpp -o /tmp/rawlab-android-request-test
-/tmp/rawlab-android-request-test
+# Host-only JNI session/marshalling contract test (from repository root).
+bash RawLabAndroid/tests/jni-session-lock.sh
 ```
 
 相机 MediaStore 进程死亡测试默认跳过，不会终止普通 `connectedDebugAndroidTest`。

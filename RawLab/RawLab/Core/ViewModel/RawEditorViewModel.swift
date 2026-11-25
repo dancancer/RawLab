@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -19,7 +20,7 @@ final class RawEditorViewModel: ObservableObject {
     @Published var sourceIsHDR=false
     @Published var rawHDRSource: HDRSourceInfo?
     var sourceSupportsCameraHDR: Bool { rawHDRSource != nil }
-    var sourceProRAW: ProRAWSource? { rawHDRSource?.proRAW }
+    var sourceIsProRAW: Bool { rawHDRSource?.isProRAW == true }
     @Published var cameraHDRPreflight=false
     var importPreviousRevision: UUID?
     @Published var nativeImageSize: CGSize?
@@ -177,9 +178,7 @@ final class RawEditorViewModel: ObservableObject {
             pendingResetMigrationClear = nil
             hslSourceRevision &+= 1
             acceptedPreviewRequest = nil
-            completedPreviewCache.removeAll()
-            completedPreviewCacheBytes = 0
-            fullRasterROIBuffer = nil
+            viewportEngine.sourceDidChange()
             sourceNativeSize = nil
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
@@ -236,54 +235,32 @@ final class RawEditorViewModel: ObservableObject {
     var sourceOrientation: CGImagePropertyOrientation?
     var draftBuffer: Sony2FujiProcessor.Buffer?
     var draftPreviewBuffer: Sony2FujiProcessor.Buffer?
-    var fullRasterROIBuffer: Sony2FujiProcessor.Buffer?
+    var fullRasterROIBuffer: Sony2FujiProcessor.Buffer? {
+        get { viewportEngine.fullRasterROIBuffer }
+        set { viewportEngine.fullRasterROIBuffer = newValue }
+    }
     var latestRenderID = UUID()
     var activeImportRevision: UUID?
     let resultDelivery: (@escaping () -> Void) -> Void
     let exportQueue: DispatchQueue
     let importQueue: DispatchQueue
     let lookImportCoordinator: LookImportCoordinator
+    let viewportEngine: ViewportRenderEngine
     var previewWorkItem: DispatchWorkItem?
-    var detailDebounceWorkItem: DispatchWorkItem?
-    var detailRenderToken = UUID()
-    var lastDetailRequest: PhotoDetailRequest?
-    var detailTileCache: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
-    var detailTileLRU: [PhotoDetailTileKey] = []
-    var detailTileCacheBytes: Int = 0
-    var detailTileFrameID: UUID?
-    let detailTileByteBudget = 112 * 1024 * 1024
-    let detailTileMaxCount = 36
-    let detailBackingMaxLongEdge = 3072
-    let fastMetalFullResMaxPixels = 28_000_000
-    var detailPrewarmEnabled = true
-    var detailNeedsBefore = false
-    var desiredDetailSpecs: [PhotoDetailTileSpec] = []
-    var desiredDetailKeys: Set<PhotoDetailTileKey> = []
-    var desiredDetailVisibleKeys: Set<PhotoDetailTileKey> = []
-    var desiredDetailRequiredKeys: Set<PhotoDetailTileKey> = []
-    var inFlightDetailTileKey: PhotoDetailTileKey?
-    var detailWorkerActive = false
-    var detailWorkerFrameID: UUID?
-    var detailBackingRenderedFrameID: UUID?
-    var detailPrewarmScheduledFrameID: UUID?
-    var detailMetalFullResFailedFrameID: UUID?
-    var detailNeedsBeforeLocked = false
-    var detailPrewarmPending = false
-    var detailBeforeBackingPending = false
-    var cachedDetailTileBeforeLocked: [PhotoDetailTileKey: Bool] = [:]
-    var detailTileAfterLocked: [PhotoDetailTileKey: PhotoDetailOverlay] = [:]
-    var detailDeliverySequence: UInt64 = 0
-    var pendingDetailDeliveryKeys: [PhotoDetailTileKey: (hasBefore: Bool, seq: UInt64)] = [:]
-    var hdrDetailCache: [PhotoDetailOverlay] = []
-    let hdrDetailMaxCount = 4
+    var detailDebounceWorkItem: DispatchWorkItem? { viewportEngine.detailDebounceWorkItem }
+    var lastDetailRequest: PhotoDetailRequest? { viewportEngine.lastDetailRequest }
+    var detailTileCache: [PhotoDetailTileKey: PhotoDetailOverlay] { viewportEngine.tileCache.tiles }
+    var detailBackingMaxLongEdge: Int { viewportEngine.detailBackingMaxLongEdge }
     private var memoryWarningObserver: NSObjectProtocol?
     var histogramWorkItem: DispatchWorkItem?
     var lastPreviewRequest: PreviewRequest?
     var onPreviewRequest: ((PreviewRequest, UUID) -> Void)?
     var onViewportResize: ((Bool) -> Void)?
-    var completedPreviewCache: [CompletedPreview] = []
-    let completedPreviewCacheLimit = 3
-    var completedPreviewCacheBytes = 0
+    var completedPreviewCache: [CompletedPreview] {
+        get { viewportEngine.completedPreviewCache }
+        set { viewportEngine.setCompletedPreviewCache(newValue) }
+    }
+    var completedPreviewCacheBytes: Int { viewportEngine.completedPreviewCacheBytes }
     var previewLongEdge = 1280
     var requestedPreviewLongEdge = 1280
     var previewResizeWorkItem: DispatchWorkItem?
@@ -311,6 +288,13 @@ final class RawEditorViewModel: ObservableObject {
         self.resultDelivery = resultDelivery
         self.exportQueue = exportQueue
         self.importQueue = importQueue
+        self.viewportEngine = ViewportRenderEngine(
+            processor: processor,
+            renderQueue: renderQueue,
+            renderStateLock: renderStateLock,
+            resultDelivery: resultDelivery
+        )
+        self.viewportEngine.attach(self)
         do {
             let store = try editPersistence ?? openEditPersistence()
             self.editPersistence = store
@@ -332,12 +316,13 @@ final class RawEditorViewModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            self.clearDetailState(releaseRaster: true, keepRequest: true)
+            self.viewportEngine.reclaimMemory(
+                releaseRaster: true,
+                keepRequest: true,
+                preservePrewarmFrameID: self.acceptedPreviewFrameID
+            )
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
-            self.renderStateLock.lock()
-            self.detailPrewarmScheduledFrameID = self.acceptedPreviewFrameID
-            self.renderStateLock.unlock()
             self.renderQueue.async { [weak self] in
                 self?.processor.clearHDRSessionCache()
             }
@@ -348,7 +333,6 @@ final class RawEditorViewModel: ObservableObject {
         if let memoryWarningObserver {
             NotificationCenter.default.removeObserver(memoryWarningObserver)
         }
-        detailDebounceWorkItem?.cancel()
     }
 
 }

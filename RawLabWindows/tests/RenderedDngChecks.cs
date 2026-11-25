@@ -50,10 +50,10 @@ internal static class RenderedDngChecks
         var settings = new Adjustments { Denoise = DenoiseSettings.Clean, DisplayChromaDenoise = 2,
             Effects = new PhotoEffectsSettings(-30, 42, -15, 65, 35, 20, 38, 65) };
         foreach (var (parameter, value) in new[] {
-            (Parameter.Strength, 65d), (Parameter.Exposure, .35), (Parameter.Temperature, 5800d),
-            (Parameter.Tint, 8d), (Parameter.Highlights, 20d), (Parameter.Shadows, 15d),
-            (Parameter.Contrast, 10d), (Parameter.ToneCurve, 15d),
-            (Parameter.Saturation, -10d), (Parameter.Sharpening, 20d)
+            (Parameter.Strength, .65), (Parameter.Exposure, .35), (Parameter.Temperature, 5800d),
+            (Parameter.Tint, 8d), (Parameter.Highlights, -.2), (Parameter.Shadows, .15),
+            (Parameter.Contrast, 1.1), (Parameter.ToneCurve, .15),
+            (Parameter.Saturation, .9), (Parameter.Sharpening, .2)
         }) settings.Set(parameter, value);
         settings.Hsl = settings.Hsl.WithValue(0, 2, 12).WithValue(1, 4, -15).WithValue(2, 6, 8);
         return settings;

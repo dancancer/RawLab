@@ -99,3 +99,6 @@ format boundaries: docs/reference/raw-format-support.md.
 JSch 2.28.0 (com.github.mwiede:jsch, https://github.com/mwiede/jsch) is
 licensed under BSD-3-Clause (with bundled JZlib and jBCrypt notices).
 See jsch-LICENSE.txt for the full license text.
+
+OkHttp 4.12.0 (com.squareup.okhttp3:okhttp:4.12.0, https://square.github.io/okhttp/)
+is licensed under Apache 2.0 (see OpenCV-LICENSE.txt).

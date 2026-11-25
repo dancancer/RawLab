@@ -1,12 +1,20 @@
 package com.rawlab.android.camera
 
 import com.rawlab.android.camera.protocol.SonyTetherSession
+import org.apache.sshd.common.SshConstants
 import org.apache.sshd.common.config.keys.KeyUtils
 import org.apache.sshd.common.keyprovider.KeyPairProvider
+import org.apache.sshd.common.session.Session
+import org.apache.sshd.common.util.buffer.Buffer
+import org.apache.sshd.common.util.net.SshdSocketAddress
 import org.apache.sshd.server.SshServer
+import org.apache.sshd.server.auth.UserAuth
+import org.apache.sshd.server.auth.UserAuthFactory
 import org.apache.sshd.server.auth.keyboard.InteractiveChallenge
 import org.apache.sshd.server.auth.keyboard.KeyboardInteractiveAuthenticator
-import org.apache.sshd.server.forward.AcceptAllForwardingFilter
+import org.apache.sshd.server.auth.keyboard.UserAuthKeyboardInteractive
+import org.apache.sshd.server.forward.ForwardingFilter
+import org.apache.sshd.server.forward.TcpForwardingFilter
 import org.apache.sshd.server.session.ServerSession
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -27,6 +35,7 @@ import java.nio.charset.StandardCharsets
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.spec.ECGenParameterSpec
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -45,13 +54,27 @@ class SonySshTunnelTest {
         expectedPass: String = "pass1234",
         allowPassword: Boolean = true,
         allowKeyboardInteractive: Boolean = true,
+        twoStepEmptyChallenge: Boolean = false,
         authAttempts: AtomicInteger = AtomicInteger(0),
+        forwardedHosts: CopyOnWriteArrayList<String> = CopyOnWriteArrayList(),
     ): Triple<SshServer, Int, String> {
         val server = SshServer.setUpDefaultServer()
         server.host = "127.0.0.1"
         server.port = 0
         server.keyPairProvider = KeyPairProvider.wrap(keyPair)
-        server.forwardingFilter = AcceptAllForwardingFilter.INSTANCE
+        server.forwardingFilter = object : ForwardingFilter {
+            override fun canForwardAgent(session: Session, requestType: String) = false
+            override fun canForwardX11(session: Session, requestType: String) = false
+            override fun canListen(address: SshdSocketAddress, session: Session) = false
+            override fun canConnect(
+                type: TcpForwardingFilter.Type,
+                address: SshdSocketAddress,
+                session: Session,
+            ): Boolean {
+                forwardedHosts += address.hostName
+                return type == TcpForwardingFilter.Type.Direct && address.hostName == "localhost"
+            }
+        }
         server.passwordAuthenticator = if (allowPassword) {
             org.apache.sshd.server.auth.password.PasswordAuthenticator { user, pass, _ ->
                 authAttempts.incrementAndGet()
@@ -60,31 +83,89 @@ class SonySshTunnelTest {
         } else {
             null
         }
-        server.keyboardInteractiveAuthenticator = if (allowKeyboardInteractive) {
-            object : KeyboardInteractiveAuthenticator {
-                override fun generateChallenge(
-                    session: ServerSession,
-                    username: String,
-                    lang: String,
-                    subMethods: String,
-                ): InteractiveChallenge {
-                    return InteractiveChallenge().apply {
-                        interactionName = "Sony Access Auth"
-                        addPrompt("Password: ", false)
+        if (twoStepEmptyChallenge) {
+            server.userAuthFactories = listOf(
+                object : UserAuthFactory {
+                    override fun getName(): String = UserAuthKeyboardInteractive.NAME
+                    override fun createUserAuth(session: ServerSession): UserAuth =
+                        object : UserAuthKeyboardInteractive() {
+                            private var stage = 0
+
+                            override fun doInitialAuth(
+                                session: ServerSession,
+                                username: String,
+                                auth: KeyboardInteractiveAuthenticator?,
+                                buffer: Buffer,
+                            ): Boolean? {
+                                buffer.getString()
+                                buffer.getString()
+                                stage = 1
+                                val challenge = InteractiveChallenge().apply {
+                                    interactionName = "Sony Access Auth"
+                                }
+                                val pkt = session.createBuffer(SshConstants.SSH_MSG_USERAUTH_INFO_REQUEST)
+                                challenge.append(pkt)
+                                session.writePacket(pkt)
+                                return null
+                            }
+
+                            override fun doValidateAuthResponse(
+                                session: ServerSession,
+                                username: String,
+                                auth: KeyboardInteractiveAuthenticator?,
+                                buffer: Buffer,
+                            ): Boolean? {
+                                val cmd = buffer.getUByte()
+                                if (cmd != SshConstants.SSH_MSG_USERAUTH_INFO_RESPONSE.toInt()) {
+                                    return false
+                                }
+                                val count = buffer.getInt()
+                                val responses = List(count) { buffer.getString() }
+                                if (stage == 1) {
+                                    if (responses.isNotEmpty()) return false
+                                    stage = 2
+                                    val challenge = InteractiveChallenge().apply {
+                                        interactionName = "Sony Access Auth"
+                                        addPrompt("Enter Sony passcode", false)
+                                    }
+                                    val pkt = session.createBuffer(SshConstants.SSH_MSG_USERAUTH_INFO_REQUEST)
+                                    challenge.append(pkt)
+                                    session.writePacket(pkt)
+                                    return null
+                                }
+                                authAttempts.incrementAndGet()
+                                return username == expectedUser && responses == listOf(expectedPass)
+                            }
+                        }
+                },
+            )
+        } else {
+            server.keyboardInteractiveAuthenticator = if (allowKeyboardInteractive) {
+                object : KeyboardInteractiveAuthenticator {
+                    override fun generateChallenge(
+                        session: ServerSession,
+                        username: String,
+                        lang: String,
+                        subMethods: String,
+                    ): InteractiveChallenge {
+                        return InteractiveChallenge().apply {
+                            interactionName = "Sony Access Auth"
+                            addPrompt("Password: ", false)
+                        }
+                    }
+
+                    override fun authenticate(
+                        session: ServerSession,
+                        username: String,
+                        responses: List<String>,
+                    ): Boolean {
+                        authAttempts.incrementAndGet()
+                        return username == expectedUser && responses.firstOrNull() == expectedPass
                     }
                 }
-
-                override fun authenticate(
-                    session: ServerSession,
-                    username: String,
-                    responses: List<String>,
-                ): Boolean {
-                    authAttempts.incrementAndGet()
-                    return username == expectedUser && responses.firstOrNull() == expectedPass
-                }
+            } else {
+                null
             }
-        } else {
-            null
         }
         server.start()
         val fingerprint = KeyUtils.getFingerPrint(keyPair.public)
@@ -138,7 +219,7 @@ class SonySshTunnelTest {
     @Test
     fun connectsWithPasswordAndForwardsTcpTraffic() {
         val (server, sshPort, expectedFingerprint) = startTestSshServer(allowKeyboardInteractive = false)
-        val echoServer = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val echoServer = ServerSocket(0, 2)
         val worker = Thread {
             echoServer.accept().use { client ->
                 val buf = ByteArray(11)
@@ -182,7 +263,7 @@ class SonySshTunnelTest {
             allowPassword = false,
             allowKeyboardInteractive = true,
         )
-        val target = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val target = ServerSocket(0, 2)
         val worker = Thread {
             target.accept().use { client ->
                 client.getOutputStream().write(byteArrayOf(42))
@@ -205,6 +286,48 @@ class SonySshTunnelTest {
                 }
             }
             worker.join(3_000)
+        } finally {
+            target.close()
+            server.stop(true)
+        }
+    }
+
+    @Test
+    fun connectsWithTwoStepEmptyChallengeKeyboardInteractiveAndLocalhostOnlyForwarding() {
+        val forwardedHosts = CopyOnWriteArrayList<String>()
+        val authAttempts = AtomicInteger(0)
+        val (server, sshPort, expectedFingerprint) = startTestSshServer(
+            allowPassword = false,
+            allowKeyboardInteractive = false,
+            twoStepEmptyChallenge = true,
+            authAttempts = authAttempts,
+            forwardedHosts = forwardedHosts,
+        )
+        val target = ServerSocket(0, 2)
+        val worker = Thread {
+            target.accept().use { client ->
+                client.getOutputStream().write(byteArrayOf(77))
+                client.getOutputStream().flush()
+            }
+        }.apply { start() }
+
+        try {
+            SonySshTunnel.connect(
+                address = InetAddress.getLoopbackAddress(),
+                username = "sonyuser",
+                password = "pass1234",
+                expectedFingerprint = expectedFingerprint,
+                port = sshPort,
+                timeoutMs = 3_000,
+            ).use { tunnel ->
+                tunnel.socketFactory(setOf(target.localPort)).createSocket().use { sock ->
+                    sock.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), target.localPort), 3_000)
+                    assertEquals(77, sock.getInputStream().read())
+                }
+            }
+            worker.join(3_000)
+            assertEquals(1, authAttempts.get())
+            assertEquals(listOf("localhost"), forwardedHosts.toList())
         } finally {
             target.close()
             server.stop(true)
@@ -263,7 +386,7 @@ class SonySshTunnelTest {
     @Test
     fun soTimeoutThrowsWithoutLosingBytesAndIdleChannelSurvivesConnectTimeout() {
         val (server, sshPort, expectedFingerprint) = startTestSshServer()
-        val backend = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val backend = ServerSocket(0, 2)
         val delayedReady = CountDownLatch(1)
         val worker = Thread {
             backend.accept().use { client ->
@@ -324,7 +447,7 @@ class SonySshTunnelTest {
     @Test
     fun openLiveViewStreamReadsPlainAndChunkedHttpFrames() {
         val (server, sshPort, expectedFingerprint) = startTestSshServer()
-        val liveServer = ServerSocket(0, 2, InetAddress.getLoopbackAddress())
+        val liveServer = ServerSocket(0, 2)
 
         fun buildSonyLiveFramePacket(jpegBytes: ByteArray): ByteArray {
             val out = ByteArrayOutputStream()
@@ -396,6 +519,89 @@ class SonySshTunnelTest {
             liveServer.close()
             server.stop(true)
         }
+    }
+
+    @Test
+    fun openLiveViewStreamRejects3xx4xx5xxWithoutFollowingRedirects() {
+        val (server, sshPort, expectedFingerprint) = startTestSshServer()
+        val liveServer = ServerSocket(0, 4)
+        val redirectTrap = ServerSocket(0, 2)
+        val redirectHits = AtomicInteger(0)
+
+        val trapThread = Thread {
+            while (!redirectTrap.isClosed) {
+                try {
+                    redirectTrap.accept().use {
+                        redirectHits.incrementAndGet()
+                    }
+                } catch (_: IOException) {
+                    break
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+
+        val worker = Thread {
+            val statuses = listOf(
+                "302 Found" to "Location: http://127.0.0.1:${redirectTrap.localPort}/trap\r\n",
+                "404 Not Found" to "",
+                "500 Internal Server Error" to "",
+            )
+            for ((statusLine, extraHeaders) in statuses) {
+                liveServer.accept().use { s ->
+                    val reqBuf = ByteArray(512)
+                    s.getInputStream().read(reqBuf)
+                    val out = s.getOutputStream()
+                    val body = "HTTP/1.1 $statusLine\r\n${extraHeaders}Content-Length: 0\r\nConnection: close\r\n\r\n"
+                    out.write(body.toByteArray(StandardCharsets.US_ASCII))
+                    out.flush()
+                }
+            }
+        }.apply { start() }
+
+        try {
+            SonySshTunnel.connect(
+                address = InetAddress.getLoopbackAddress(),
+                username = "sonyuser",
+                password = "pass1234",
+                expectedFingerprint = expectedFingerprint,
+                port = sshPort,
+                timeoutMs = 3_000,
+            ).use { tunnel ->
+                val url = URL("http://127.0.0.1:${liveServer.localPort}/liveviewstream")
+                for (expectedCode in listOf(302, 404, 500)) {
+                    try {
+                        tunnel.openLiveViewStream(url, timeoutMs = 3_000).close()
+                        fail("Expected IOException for HTTP $expectedCode")
+                    } catch (e: IOException) {
+                        assertTrue(
+                            "Expected HTTP $expectedCode in error message: ${e.message}",
+                            e.message?.contains(expectedCode.toString()) == true,
+                        )
+                    }
+                }
+                assertEquals(0, redirectHits.get())
+            }
+            worker.join(3_000)
+        } finally {
+            redirectTrap.close()
+            trapThread.join(1_000)
+            liveServer.close()
+            server.stop(true)
+        }
+    }
+
+    @Test
+    fun redactIpsMasksIpv4AddressesAndHandlesNull() {
+        assertEquals("", SonySshTunnel.redactIps(null))
+        assertEquals("", SonySshTunnel.redactIps(""))
+        assertEquals(
+            "connect failed for <ip> via gateway <ip>",
+            SonySshTunnel.redactIps("connect failed for 192.168.122.1 via gateway 10.0.0.42"),
+        )
+        assertEquals("unchanged status text", SonySshTunnel.redactIps("unchanged status text"))
     }
 
     @Test

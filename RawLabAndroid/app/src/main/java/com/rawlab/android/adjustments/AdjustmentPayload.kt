@@ -51,7 +51,7 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
                 (payloadVersion == 2 && scopeVersion == 2 && source.isHDR)))
             throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
         if (source.isHDR) {
-            val version = source.hdrProcessingVersion?.takeIf { it in 1..9 }
+            val version = source.hdrProcessingVersion?.takeIf { it in 1..10 }
                 ?: throw AdjustmentTransferException(AdjustmentFailure.UNSUPPORTED_VERSION)
             val supported = AdjustmentField.hdrSupported(version) + AdjustmentField.HDR_CAMERA_DEVELOPMENT
             valid(!source.isRaw && source.recipe == null && supported.containsAll(fields), "hdr context")

@@ -75,17 +75,17 @@ struct MasterRecipeTests {
                 check(false, "\(entry.id): dedicated artwork resolves and decodes")
             }
             var applied = Adjustments()
-            applied.exposure = 2; applied.shadows = -60; applied.highlights = 80
-            applied.contrast = 75; applied.saturation = 50; applied.tint = 100
-            applied.temperature = 8000; applied.sharpening = 75
+            applied.exposure = 2; applied.shadows = -0.6; applied.highlights = 0.8
+            applied.contrast = 1.75; applied.saturation = 1.5; applied.tint = 100
+            applied.temperature = 8000; applied.sharpening = 0.75
             applied.setHSL(.saturation, channel: 5, value: -35)
             let originalHSL = applied.hslSettings
             applied.applyMasterRecipe(entry)
-            check(applied.exposure == entry.exposureDelta && applied.shadows == entry.shadowsDelta &&
-                  applied.highlights == entry.highlightsDelta && applied.contrast == entry.contrastDelta &&
-                  applied.saturation == entry.saturationDelta && applied.tint == entry.tintDelta,
+            check(applied.exposure == entry.exposureDelta && applied.shadows == entry.shadowsDelta / 100 &&
+                  applied.highlights == -entry.highlightsDelta / 100 && applied.contrast == 1 + entry.contrastDelta / 100 &&
+                  applied.saturation == 1 + entry.saturationDelta / 100 && applied.tint == entry.tintDelta,
                   "\(entry.id): preset overwrites all six corresponding controls")
-            check(applied.temperature == 8000 && applied.sharpening == 75,
+            check(applied.temperature == 8000 && applied.sharpening == 0.75,
                   "\(entry.id): unrelated controls are preserved")
             check(applied.hslSettings != originalHSL,
                   "\(entry.id): preset replaces corresponding HSL controls")
@@ -128,16 +128,19 @@ struct MasterRecipeTests {
 
         var legacyBase = Adjustments()
         legacyBase.masterRecipeID = recipe.id
-        legacyBase.exposure = 0.25; legacyBase.shadows = 10; legacyBase.highlights = 5
-        legacyBase.contrast = 10; legacyBase.saturation = 3
+        legacyBase.exposure = 0.25; legacyBase.shadows = 0.1; legacyBase.highlights = -0.05
+        legacyBase.contrast = 1.1; legacyBase.saturation = 1.03
         legacyBase.setHSL(.hue, channel: 0, value: 25)
         legacyBase.resolveWhiteBalance(WhiteBalance(temperature: 6500, tint: 10))
-        var legacyPayload = try JSONSerialization.jsonObject(with: JSONEncoder().encode(legacyBase)) as! [String: Any]
+        let legacyEncoder = JSONEncoder()
+        legacyEncoder.userInfo[Adjustments.legacyV1EncodingKey] = true
+        var legacyPayload = try JSONSerialization.jsonObject(with: legacyEncoder.encode(legacyBase)) as! [String: Any]
         legacyPayload.removeValue(forKey: "masterRecipeSettingsVersion")
         legacyPayload["tint"] = 10
         let migrated = try JSONDecoder().decode(Adjustments.self, from: JSONSerialization.data(withJSONObject: legacyPayload))
-        check(abs(migrated.exposure - 0.65) < 1e-6 && migrated.shadows == 30 && migrated.highlights == -10 &&
-              migrated.contrast == -5 && migrated.saturation == -5 && migrated.tint == 5,
+        check(abs(migrated.exposure - 0.65) < 1e-6 && abs(migrated.shadows - 0.3) < 1e-6 &&
+              abs(migrated.highlights - 0.1) < 1e-6 && abs(migrated.contrast - 0.95) < 1e-6 &&
+              abs(migrated.saturation - 0.95) < 1e-6 && migrated.tint == 5,
               "Legacy additive recipe records fold all six preset controls without double-counting camera tint")
         check(migrated.masterRecipeID == recipe.id && migrated.strength == 1,
               "Legacy migration preserves recipe selection and strength")
@@ -234,7 +237,7 @@ struct MasterRecipeTests {
         // Test user manual adjustments on top of recipe
         settings.strength = 1.0
         settings.exposure = 0.25
-        settings.shadows = 10.0
+        settings.shadows = 0.10
         settings.apply(to: &request)
         check(abs(request.exposure_ev - 0.25) < 1e-4, "Manual exposure replaces the preset exposure without a hidden delta")
         check(abs(request.shadows - 0.10) < 1e-4, "Manual shadows replace the preset shadows without a hidden delta")
@@ -342,8 +345,8 @@ struct MasterRecipeTests {
         let recipe = try JSONDecoder().decode(MasterRecipe.self, from: data)
         var state = Adjustments()
         state.blackPoint = -20; state.whitePoint = 30; state.vibrance = -25
-        state.clarity = -40; state.dehaze = 20; state.toneCurve = 35
-        state.temperature = 8000; state.sharpening = 75
+        state.clarity = -40; state.dehaze = 20; state.toneCurve = 0.35
+        state.temperature = 8000; state.sharpening = 0.75
         state.applyMasterRecipe(recipe)
         check(state.recipeSettingsVersion == 4, "Refined recipe stores version four only on explicit application")
         check(state.blackPoint == 50 && state.whitePoint == -60 && state.vibrance == 15,
@@ -355,7 +358,7 @@ struct MasterRecipeTests {
               "Refined recipe replaces visible grading controls")
         check(state.curveSettings.mode == .custom && state.curveSettings.points.count == 5 && state.toneCurve == 0,
               "Refined recipe selects its custom curve and clears inactive legacy S curve")
-        check(state.temperature == 8000 && state.sharpening == 75,
+        check(state.temperature == 8000 && state.sharpening == 0.75,
               "Refinement preserves independent temperature and sharpening")
         let restored = try JSONDecoder().decode(Adjustments.self, from: JSONEncoder().encode(state))
         check(restored == state && restored.recipeSettingsVersion == 4,
@@ -388,7 +391,7 @@ struct MasterRecipeTests {
                   "Version \(version) preserves independent refinements even at zero recipe strength")
         }
         state.curveSettings = ToneCurveSettings()
-        state.toneCurve = 30; state.strength = 0.5
+        state.toneCurve = 0.30; state.strength = 0.5
         var request = sony2fuji_request()
         state.apply(to: &request)
         check(abs(request.tone_curve - 0.15) < 1e-6, "V4 manually selected legacy curve participates in strength")

@@ -115,6 +115,8 @@ public:
     }
 
     bool directory(uint64_t offset, Directory& output) const {
+        const uint64_t minOffset = bigTiff_ ? 16ULL : 8ULL;
+        if (offset < minOffset) return false;
         const size_t countBytes = bigTiff_ ? 8 : 2;
         const size_t entryBytes = bigTiff_ ? 20 : 12;
         const size_t nextBytes = bigTiff_ ? 8 : 4;
@@ -199,7 +201,8 @@ public:
 
     // 子目录与 next 链共用访问记录；默认沿用 HDR 的深度 8、目录总量 32 上限。
     bool open(const Reader& reader, uint64_t offset, unsigned depth, Directory& output) {
-        if (depth > maxDepth_ || visited_.size() >= maxDirectories_) return false;
+        const uint64_t minOffset = reader.bigTiff() ? 16ULL : 8ULL;
+        if (offset < minOffset || depth > maxDepth_ || visited_.size() >= maxDirectories_) return false;
         if (seen(offset)) return false;
         visited_.push_back(offset);
         return reader.directory(offset, output);

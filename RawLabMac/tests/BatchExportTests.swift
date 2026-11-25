@@ -74,6 +74,27 @@ private func perTargetSnapshots(root: URL, inputs: [URL], output: URL) throws {
     do { try journal.save(JSONDecoder().decode(MacBatchExportJob.self, from: JSONSerialization.data(withJSONObject: duplicate))) }
     catch { duplicateRejected = true }
     try check(duplicateRejected, "frozen target identities cannot be duplicated with a new row UUID")
+    let symlinkInput = root.appendingPathComponent("symlink-to-one.ARW")
+    try? FileManager.default.removeItem(at: symlinkInput)
+    try FileManager.default.createSymbolicLink(at: symlinkInput, withDestinationURL: inputs[0])
+    let symlinkItem = try MacBatchExportItem(url: symlinkInput)
+    try check(symlinkItem.input == inputs[0].resolvingSymlinksInPath().standardizedFileURL &&
+              symlinkItem.resourceIdentifier == (items[0]["resourceIdentifier"] as? String),
+              "MacBatchExportItem canonicalizes symlinked input and uses <dev>:<ino> resourceIdentifier")
+    var symlinkDup = object
+    var symlinkRows = items
+    symlinkRows[1]["input"] = symlinkItem.input.absoluteString
+    symlinkRows[1]["identity"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(symlinkItem.identity))
+    symlinkRows[1]["resourceIdentifier"] = symlinkItem.resourceIdentifier
+    symlinkDup["items"] = symlinkRows
+    var symlinkDupRejected = false
+    do { try journal.save(JSONDecoder().decode(MacBatchExportJob.self, from: JSONSerialization.data(withJSONObject: symlinkDup))) }
+    catch { symlinkDupRejected = true }
+    try check(symlinkDupRejected, "MacBatchExportJob.validate rejects duplicate symlinked targets")
+    var sharpeningCheckJob = MacBatchExportJob(source: inputs[0], settings: Adjustments(), look: nil, lookName: "Sharp")
+    sharpeningCheckJob.outputFormat = .renderedDNG
+    sharpeningCheckJob.outputSharpening = .high
+    try check(sharpeningCheckJob.effectiveOutputSharpening == .off, "renderedDNG forces effectiveOutputSharpening to .off")
     var missingLook = object
     var missingLookRows = items
     var missingLookSnapshot = missingLookRows[0]["frozen"] as! [String: Any]
@@ -269,12 +290,12 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         mutate(&jobObj, &settingsObj)
         jobObj["settings"] = settingsObj
         let badData = try JSONSerialization.data(withJSONObject: jobObj)
-        if label == "out-of-range photoEffects" {
-            // PhotoEffectsSettings.init(from:) enforces fail-closed decoding for out-of-range parameters.
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" || label == "out-of-range waveletNoiseReduction" {
+            // PhotoEffectsSettings.init(from:) and Adjustments.init(from:) chromaNoiseReduction enforce fail-closed decoding.
             var decodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badData) }
             catch is DecodingError { decodeRejected = true }
-            try check(decodeRejected, "\(label): uniform job decode rejects out-of-range photoEffects")
+            try check(decodeRejected, "\(label): uniform job decode rejects out-of-range value")
         } else {
             let decodedUniform = try JSONDecoder().decode(MacBatchExportJob.self, from: badData)
             var saveRejected = false
@@ -325,11 +346,11 @@ private func journalIsolation(root: URL, inputs: [URL], output: URL) throws {
         itemRows[0]["frozen"] = frozenObj
         perTargetObj["items"] = itemRows
         let badFrozenData = try JSONSerialization.data(withJSONObject: perTargetObj)
-        if label == "out-of-range photoEffects" {
+        if label == "out-of-range photoEffects" || label == "out-of-range chromaNoiseReduction" || label == "out-of-range waveletNoiseReduction" {
             var frozenDecodeRejected = false
             do { _ = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData) }
             catch is DecodingError { frozenDecodeRejected = true }
-            try check(frozenDecodeRejected, "\(label): per-target frozen job decode rejects out-of-range photoEffects")
+            try check(frozenDecodeRejected, "\(label): per-target frozen job decode rejects out-of-range value")
         } else {
             let decodedFrozen = try JSONDecoder().decode(MacBatchExportJob.self, from: badFrozenData)
             var frozenRejected = false
@@ -525,7 +546,9 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         try check(try JSONDecoder().decode(MacBatchExportJob.self,
                   from: JSONSerialization.data(withJSONObject: legacyPNG)).suffix == "png",
                   "legacy PNG journals retain their original format")
-        var legacyRecipeJob = try JSONSerialization.jsonObject(with: encodedJob) as! [String: Any]
+        let legacyEncoder = JSONEncoder()
+        legacyEncoder.userInfo[Adjustments.legacyV1EncodingKey] = true
+        var legacyRecipeJob = try JSONSerialization.jsonObject(with: legacyEncoder.encode(job)) as! [String: Any]
         var legacyRecipeSettings = legacyRecipeJob["settings"] as! [String: Any]
         legacyRecipeSettings["masterRecipeID"] = MasterRecipe.hamadaDaylightV2.id
         legacyRecipeSettings["exposure"] = 0
@@ -535,7 +558,7 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         try FileManager.default.createDirectory(at: legacyRecipeJournal.directory, withIntermediateDirectories: true)
         try JSONSerialization.data(withJSONObject: legacyRecipeJob).write(to: legacyRecipeJournal.directory.appendingPathComponent("job.json"))
         let restoredRecipeJob = try legacyRecipeJournal.load()!
-        try check(restoredRecipeJob.settings.exposure == 0.4 && restoredRecipeJob.settings.shadows == 20 &&
+        try check(restoredRecipeJob.settings.exposure == 0.4 && restoredRecipeJob.settings.shadows == 0.2 &&
                   restoredRecipeJob.settings.tint == 5,
                   "unfinished legacy recipe jobs migrate their frozen controls")
         try legacyRecipeJournal.save(restoredRecipeJob)
@@ -733,11 +756,11 @@ private func journalWriteAmplification(root: URL, inputs: [URL], output: URL) th
         maxHDR.colorSettings.grading.blending = 75
         maxHDR.toneSettings.curve.channels.red = ToneCurveShape(
             mode: .custom,
-            points: [ToneCurvePoint(x: 0, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
+            points: [ToneCurvePoint(x: 0.1, y: 0), ToneCurvePoint(x: 0.5, y: 0.6), ToneCurvePoint(x: 1, y: 1)]
         )
         maxHDR.toneSettings.curve.applyToLuminosity = true
-        try check(maxHDR.processingVersion == 9 && maxHDR.recordVersion == 10,
-                  "v2 HDR settings exercise processingVersion 9 and recordVersion 10")
+        try check(maxHDR.processingVersion == 10 && maxHDR.recordVersion == 11,
+                  "free endpoint X HDR settings exercise processingVersion 10 and recordVersion 11")
         let expectedMax: (BatchJournalVersionKey) -> Int = { key in
             switch key {
             case .job: return 3

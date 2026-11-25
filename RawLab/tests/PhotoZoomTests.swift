@@ -42,27 +42,6 @@ struct PhotoZoomTests {
         precondition(abs(detail.visibleRect.minX - 0.2) < 0.0001 && abs(detail.visibleRect.width - 0.2) < 0.0001)
         precondition(detail.overscanRect.minX < detail.visibleRect.minX && detail.overscanRect.maxX > detail.visibleRect.maxX)
         precondition(detail.overscanRect.minX >= 0 && detail.overscanRect.maxX <= 1)
-        precondition(PhotoZoomGeometry.detailOverlayCovers(
-            normalizedRect: detail.overscanRect,
-            pixelSize: CGSize(width: 1440, height: 1440),
-            fullNativeSize: CGSize(width: 6000, height: 4000),
-            visibleRect: detail.visibleRect,
-            requiredZoomScale: 1.0
-        ))
-        precondition(!PhotoZoomGeometry.detailOverlayCovers(
-            normalizedRect: detail.overscanRect,
-            pixelSize: CGSize(width: 1440, height: 1440),
-            fullNativeSize: CGSize(width: 6000, height: 4000),
-            visibleRect: detail.visibleRect.offsetBy(dx: 0.5, dy: 0),
-            requiredZoomScale: 1.0
-        ))
-        precondition(!PhotoZoomGeometry.detailOverlayCovers(
-            normalizedRect: detail.overscanRect,
-            pixelSize: CGSize(width: 300, height: 300),
-            fullNativeSize: CGSize(width: 6000, height: 4000),
-            visibleRect: detail.visibleRect,
-            requiredZoomScale: 1.0
-        ))
-        print("PASS: fit, native pixels, display density, small images, landscape, double-tap toggle, ROI detail threshold & coverage")
+        print("PASS: fit, native pixels, display density, small images, landscape, double-tap toggle, ROI detail threshold")
     }
 }

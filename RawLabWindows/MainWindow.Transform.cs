@@ -63,14 +63,16 @@ public partial class MainWindow
                 ? candidate with { HDR = candidate.HDR! with { Geometry = transform.Geometry }, Lens = transform.Lens }
                 : candidate with { Geometry = transform.Geometry, Lens = transform.Lens };
             editSaveTimer.Stop();
-            CommitCurrentEdit(candidate);
+            var outcome = CommitCurrentEdit(candidate);
+            (settings.Geometry, settings.Lens) = transform.Apply();
+            persistence.CompleteTransformCommit(outcome.Saved!);
         }
         catch(Exception error)
         {
             transformSaveFailed=true;SetSaveNotice("调整未保存 · 重试",AdjustmentTransferPresentation.Detail(error),true);return false;
         }
         // 只有候选已落盘，才能提升草稿；不再排队保存旧 committed。
-        (settings.Geometry,settings.Lens)=transform.Apply();++editRevision;editDirty=false;ClearTransferNoticesOnUserEdit();
+        ClearTransferNoticesOnUserEdit();
         EndTransform();SetSaveNotice("调整已保存","",false);RefreshControls();Schedule();return true;
     }
     private void CancelTransformDraft()
@@ -88,7 +90,7 @@ public partial class MainWindow
         toolMode=ended.Mode;selectedParameter=ended.SelectedParameter;selectedToneParameter=ended.SelectedToneParameter;selectedAtmosphereParameter=ended.SelectedAtmosphereParameter;selectedHdrRenditionParameter=ended.SelectedHdrRenditionParameter;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);
         GeometryEditor.Begin(settings.Geometry);
         view.SetEnabled(savedTransformCompare);
-        RefreshComparisonLayout();RefreshComparisonToolTip();viewport.Fit();
+        RefreshComparisonLayout();viewport.Fit();
     }
     private bool ResolveTransformDraft()
     {

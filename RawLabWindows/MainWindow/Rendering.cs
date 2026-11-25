@@ -45,7 +45,6 @@ public partial class MainWindow
             workspaceLayout.PhotoOpened();
             RefreshWorkspace();
             WorkspacePhotoOpened();
-            RefreshComparisonToolTip();
             viewport.SetSourceSize(0,0);
             RefreshViewingFrames();
             previewLongEdge=requestedPreviewLongEdge=ResultCanvas.PreviewLongEdge>0 ? ResultCanvas.PreviewLongEdge : 2000;
@@ -53,7 +52,7 @@ public partial class MainWindow
             RefreshPhotoInfo();
             BackendLabel.Text=Loc.Text("相机预览 · 正在显影");BackendLabel.ToolTip=BackendLabel.Text;BaselineLabel.Text="";
             Title="RawLab · "+Path.GetFileName(path); Welcome.Visibility=Visibility.Collapsed;
-            var nextOpenRevision = Interlocked.Increment(ref openRevision);
+            var nextOpenRevision = persistence.AdvanceOpenRevision();
             embeddedScheduler.Submit(new(path, nextOpenRevision));PumpEmbedded();
             TrackOpenViewSource(path, nextOpenRevision, currentEditRecord?.Identity ?? ViewSourceState.TryReadIdentity(path));
             EnsureLookWatch(lut);
@@ -209,7 +208,7 @@ public partial class MainWindow
                 Func<bool> shouldCancel = () =>
                     Volatile.Read(ref closing) ||
                     ticket.Id != scheduler.Revision ||
-                    Volatile.Read(ref openRevision) != w.OpenRevision;
+                    openRevision != w.OpenRevision;
                 if(w.Probe is {} probe) {
                     engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
                     hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
@@ -378,6 +377,26 @@ public partial class MainWindow
                     {
                         photoImportReportedRevision = openRevision;
                         usageAnalytics.Record(new PhotoImportedEvent());
+                        diagnosticSession.RecordBreadcrumb(
+                            "import",
+                            "photoImported",
+                            "Photo imported and preview delivered",
+                            new() { ["extension"] = Path.GetExtension(work.File) });
+                    }
+                    if (exactReady)
+                    {
+                        var fellBack = renderedGpuMode == 0 && rendered.Backend != 3 && !LibraryEntry.IsRaster(work.File);
+                        diagnosticSession.RecordBreadcrumb(
+                            "preview",
+                            fellBack ? "gpuFallback" : "exactPreviewRendered",
+                            fellBack ? "Preview fell back to CPU" : "Exact preview rendered",
+                            new()
+                            {
+                                ["width"] = rendered.Image.PixelWidth.ToString(),
+                                ["height"] = rendered.Image.PixelHeight.ToString(),
+                                ["backend"] = rendered.Backend.ToString(),
+                            },
+                            level: fellBack ? "warn" : "info");
                     }
                     RefreshControls();
                     UpdatePreviewSize(ResultCanvas.PreviewLongEdge);
@@ -400,6 +419,7 @@ public partial class MainWindow
 
     private void ApplyMainPreviewFailure(Exception? failure)
     {
+        if (failure != null) diagnosticSession.RecordError("preview", "renderPreview", failure);
         Trace.WriteLine($"Main preview fallback for {file}: {failure?.Message ?? "Source unavailable"}");
         var outcome = failure != null
             ? PreviewFallback.DegradeMainPreview(failure, result != null, openingPreview != null)

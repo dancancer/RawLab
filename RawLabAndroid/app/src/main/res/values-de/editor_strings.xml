@@ -86,7 +86,7 @@
     <string name="curve_darks">"Dunkle Mitteltöne"</string>
     <string name="curve_edit_point">"Punkt bearbeiten"</string>
     <string name="curve_fixed_endpoint">"Endpunkte sind fest"</string>
-    <string name="curve_hint">"Zum Hinzufügen in die Kurvenfläche tippen. Innere Punkte zum Anpassen ziehen."</string>
+    <string name="curve_hint">"Zum Hinzufügen tippen oder klicken; Punkt zum Löschen doppeltippen oder herausziehen."</string>
     <string name="curve_input">"Eingabe"</string>
     <string name="curve_lights">"Helle Mitteltöne"</string>
     <string name="curve_luminosity_only">"Nur Luminanz"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"Punktkurve"</string>
     <string name="curve_point_number">"Punkt %1$d"</string>
     <string name="curve_remove_point">"Punkt löschen"</string>
-    <string name="curve_reset">"Kurve zurücksetzen"</string>
+    <string name="curve_reset">"Parametrische Kurve zurücksetzen"</string>
     <string name="curve_reset_identity">"Auf Gerade zurücksetzen"</string>
     <string name="curve_split_points">"Trennpunkte"</string>
     <string name="curve_summary">"Punktkurve (%1$d Punkte)"</string>

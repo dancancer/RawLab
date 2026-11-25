@@ -6,6 +6,8 @@ import com.rawlab.android.settings.ColorGradingSettings
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
@@ -152,6 +154,24 @@ class CanonicalEditRecipeTest {
             ),
         )
         assertEquals(17, JSONObject(unpinnedChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+
+        // 已发布的 v17 只放开端点 y；端点 x 内移必须升到 v18。
+        val freeXMaster = EditSettings(
+            curve = ToneCurveSettings(
+                mode = ToneCurveMode.CUSTOM,
+                points = listOf(ToneCurvePoint(0.15, 0.0), ToneCurvePoint(0.85, 1.0)),
+            ),
+        )
+        assertEquals(18, JSONObject(freeXMaster.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
+        assertEquals(18, JSONObject(freeXMaster.toCanonicalRecipeJson(isRaster = true)).getInt("schema_version"))
+        val freeXChannel = EditSettings(
+            curve = ToneCurveSettings(
+                channels = ToneCurveChannels(
+                    blue = ToneCurveShape(ToneCurveMode.CUSTOM, listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.9, 1.0))),
+                ),
+            ),
+        )
+        assertEquals(18, JSONObject(freeXChannel.toCanonicalRecipeJson(isRaster = false)).getInt("schema_version"))
     }
 
     @Test
@@ -167,5 +187,38 @@ class CanonicalEditRecipeTest {
         assertEquals("relative", wb.getString("mode"))
         assertEquals(5800.0, wb.getDouble("relative_temperature"), 1e-6)
         assertEquals(14.0, wb.getDouble("relative_tint"), 1e-6)
+    }
+
+    @Test
+    fun sdrAndHdrSessionStatesOmitFakePathsAndPreserveCameraVersionAndCoreClamp() {
+        val clamped = EditSettings(
+            recipeID = "classic",
+            strength = 2.0f,
+            contrast = 1.9f,
+            saturation = 0.1f,
+            highlights = 0.9f,
+            shadows = -0.9f,
+            sharpening = 1.8f,
+        )
+        val sdrJson = clamped.toSdrSessionStateJson(isRaster = false, lutPath = "/tmp/look.cube")
+        assertFalse(sdrJson.contains("session.raw"))
+        assertFalse(sdrJson.contains("session.png"))
+        val sdrTone = JSONObject(sdrJson).getJSONObject("edits").getJSONObject("tone")
+        assertEquals(2.0, sdrTone.getDouble("contrast"), 1e-6)
+        assertEquals(0.0, sdrTone.getDouble("saturation"), 1e-6)
+        assertEquals(1.0, sdrTone.getDouble("highlights"), 1e-6)
+        assertEquals(-1.0, sdrTone.getDouble("shadows"), 1e-6)
+        assertEquals(1.8, JSONObject(sdrJson).getJSONObject("edits").getJSONObject("detail").getDouble("sharpening"), 1e-6)
+
+        val cam = HDRCameraDevelopmentSettings(customWhiteBalance = true, temperature = 5100f, tint = -4f)
+        for (version in listOf(1, 2, 3)) {
+            val devJson = cam.toCameraDevelopmentJson(processingVersion = version)
+            assertFalse(devJson.contains("session.raw"))
+            assertEquals(version, JSONObject(devJson).getJSONObject("camera_development").getInt("processing_version"))
+
+            val hdrJson = HDRSettings().toHdrSessionStateJson(camera = cam, cameraProcessingVersion = version)
+            assertFalse(hdrJson.contains("session.raw"))
+            assertEquals(version, JSONObject(hdrJson).getJSONObject("camera_development").getInt("processing_version"))
+        }
     }
 }

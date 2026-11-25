@@ -5,7 +5,7 @@ import SwiftUI
 
 extension RawEditorViewModel {
     func adjustmentTransferFields(for settings: RawSettings) -> Set<AdjustmentTransferField> {
-        settings.isHDREditing ? AdjustmentTransferField.hdrTransferFields(cameraRAW: sourceSupportsCameraHDR && sourceProRAW == nil)
+        settings.isHDREditing ? AdjustmentTransferField.hdrTransferFields(cameraRAW: sourceSupportsCameraHDR && !sourceIsProRAW)
             : AdjustmentTransferField.legacyFields
     }
 
@@ -47,7 +47,7 @@ extension RawEditorViewModel {
         return IOSAdjustmentTransferContext(identifier: identifier, isRaw: isRaw,
             sourceIsHDR:identifier==sourceIdentity?.key && sourceIsHDR,
             sourceSupportsCameraHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR,
-            sourceIsBayerHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR && sourceProRAW == nil,
+            sourceIsBayerHDR: identifier == sourceIdentity?.key && sourceSupportsCameraHDR && !sourceIsProRAW,
             availableLookIDs: lookSnapshot.availableLookIDs,
             builtinLookIDs: lookSnapshot.builtinLookIDs,
             cameraTemperature: whiteBalance?.isCalibrated == true ? whiteBalance?.temperature : nil,
@@ -82,7 +82,7 @@ extension RawEditorViewModel {
         let activeKey = sourceIdentity?.key
         let activeSourceIsHDR = sourceIsHDR
         let activeSupportsCameraHDR = sourceSupportsCameraHDR
-        let activeIsBayerHDR = sourceSupportsCameraHDR && sourceProRAW == nil
+        let activeIsBayerHDR = sourceSupportsCameraHDR && !sourceIsProRAW
         let validateCurrent: (String) -> Bool = { [weak self] key in
             let check = {
                 guard let self else { return false }
@@ -129,7 +129,7 @@ extension RawEditorViewModel {
                                 try rawHDR.validateEditDecodeVersion(saved.proRAWDecodeVersion)
                                 if rawHDR.isCameraRAW {
                                     context.validateHDRCameraRequest = { candidate in
-                                        guard let hdr = candidate.hdr else { throw HDRRequestError.invalidSettings }
+                                        guard let hdr = candidate.hdr else { throw HDRNativeError.invalidSettings }
                                         _ = try file.withReadAccess {
                                             try processor.processHDR(url: $0, settings: hdr, previewLongEdge: 128,
                                                 processing: candidate.processing)
@@ -157,7 +157,7 @@ extension RawEditorViewModel {
                         } else {
                             context.sourceIsHDR = try file.withReadAccess { try HDRSourceInfo.probe($0) != nil }
                             if !context.sourceIsHDR {
-                                _ = try file.withReadAccess { try processor.validateDisplayImageMetadata(url: $0) }
+                                try file.withReadAccess { try processor.validateDisplayImage(url: $0) }
                                 context.validateLensRequest = { lens in
                                     try file.withReadAccess {
                                         try processor.validateLensForTransfer(url: $0, isRaw: false, x3fMode: .normal, lens: lens)

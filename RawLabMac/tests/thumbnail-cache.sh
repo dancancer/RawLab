@@ -5,11 +5,12 @@ source "$ROOT/RawLabMac/tests/lib/compile.sh"
 rawlab_mac_test_init
 rawlab_mac_make_temp_dir OUT rawlab-thumbnail-cache
 rawlab_mac_adjustment_native_sources SOURCES
-rawlabkit_flags link "$OUT/swiftpm" macos 0
-rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization \
+rawlabnative_flags link "$OUT/swiftpm" macos 0 types_only
+rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -whole-module-optimization \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$RAWLAB_MAC_BRIDGING_HEADER" \
     "${SOURCES[@]}" \
+    "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift" \
     "$ROOT/RawLabMac/Sources/Library/FileLibrary.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacWorkspaceBrowserState.swift" \
     "$ROOT/RawLabMac/Sources/Library/MacEditedPhotoPreviews.swift" \

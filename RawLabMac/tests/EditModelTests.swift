@@ -404,8 +404,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let originalPixels = pixels(first.result!.image)
 
         first.settings.exposure = 0.4
-        first.settings.contrast = 36
-        first.settings.saturation = -24
+        first.settings.contrast = 1.36
+        first.settings.saturation = 0.76
         first.settings.setHSL(.hue, channel: 0, value: 31)
         first.settings.setHSL(.lightness, channel: 4, value: -19)
         first.settings.setEffect(.vignetteAmount, to: -42)
@@ -419,7 +419,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let second = makeRasterModel(root: fixtureRoot, lut: lut)
         second.open(png)
         try waitForRender(second, "PNG open in a new EditorModel")
-        try check(second.settings.contrast == 0 && second.settings.saturation == 0 &&
+        try check(second.settings.contrast == 1 && second.settings.saturation == 1 &&
                   second.settings.hslSettings.isIdentity && second.settings.effectSettings == PhotoEffectsSettings(),
                   "PNG open does not inherit another raster's edit history")
         try check(second.selectedFilmID.isEmpty && second.settings.masterRecipeID == nil,
@@ -486,7 +486,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(!model.commitReset(processing), "processing identity change invalidates a prepared current-tool reset")
         model.settings.processing = originalProcessing
         let stale = try prepared(.group(.light))
-        model.settings.saturation = 11
+        model.settings.saturation = 1.11
         try check(!model.commitReset(stale) && model.settings.exposure == 2,
                   "old revision is rejected")
         let switched = try prepared(.group(.light))
@@ -592,7 +592,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
 
         // Full reset (.all) clears processing migration receipt both on disk and in EditorModel memory; partial reset keeps it.
         let migrationStore = try MacEditPersistence(directory: directory)
-        var legacySettings = Adjustments(); legacySettings.processing = .c5; legacySettings.exposure = 0.7; legacySettings.saturation = 12
+        var legacySettings = Adjustments(); legacySettings.processing = .c5; legacySettings.exposure = 0.7; legacySettings.saturation = 1.12
         let legacyState = MacPhotoEditState(settings: legacySettings, filmID: "")
         try migrationStore.save(source, state: legacyState)
         var migratedSettings = legacySettings; migratedSettings.processing = .current
@@ -629,7 +629,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(try MacEditPersistence(directory: directory).processingMigration(for: source) == nil,
                   "cleared migration receipt stays nil after reopening EditPersistence")
         model.undoAdjustment()
-        try check(model.settings.saturation == 12 && model.processingMigrationReceipt == nil &&
+        try check(model.settings.saturation == 1.12 && model.processingMigrationReceipt == nil &&
                   !model.canRollbackProcessingMigration && model.processingMigrationStatus == nil &&
                   (try migrationStore.processingMigration(for: source)) == nil,
                   "undoing reset all restores pre-reset adjustments while keeping migration receipt nil")
@@ -694,23 +694,23 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try resetTransactionChecks(root: root, source: a, otherSource: b)
         let selection = model()
         selection.settings.exposure = 2
-        selection.settings.shadows = -60
-        selection.settings.highlights = 80
-        selection.settings.contrast = 75
-        selection.settings.saturation = 50
+        selection.settings.shadows = -0.6
+        selection.settings.highlights = 0.8
+        selection.settings.contrast = 1.75
+        selection.settings.saturation = 1.5
         selection.settings.set(.temperature, to: 8000)
         selection.settings.set(.tint, to: 100)
-        selection.settings.sharpening = 75
+        selection.settings.sharpening = 0.75
         selection.settings.setEffect(.grainAmount, to: 40)
         selection.selectedFilmID = "PROVIA"
         selection.selectMasterRecipe(.hamadaDaylightV2)
         try check(selection.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id && selection.selectedFilmID.isEmpty,
                   "selecting a recipe clears film selection without clearing the recipe")
-        try check(selection.settings.exposure == 0.4 && selection.settings.shadows == 20 &&
-                  selection.settings.highlights == -15 && selection.settings.contrast == -5 &&
-                  selection.settings.saturation == -8 && selection.settings.tint == 5,
+        try check(selection.settings.exposure == 0.4 && selection.settings.shadows == 0.2 &&
+                  selection.settings.highlights == 0.15 && selection.settings.contrast == 0.95 &&
+                  selection.settings.saturation == 0.92 && selection.settings.tint == 5,
                   "applying a recipe overwrites its six adjustment fields")
-        try check(selection.settings.temperature == 8000 && selection.settings.sharpening == 75 &&
+        try check(selection.settings.temperature == 8000 && selection.settings.sharpening == 0.75 &&
                   selection.settings.grainAmount == 40, "applying a recipe preserves unrelated adjustments")
         selection.settings.exposure = 1
         selection.selectMasterRecipe(.hamadaDaylightV2)
@@ -766,7 +766,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         }
         let migratedEditor = legacyModel()
         migratedEditor.open(a)
-        try check(migratedEditor.settings.exposure == 0.4 && migratedEditor.settings.shadows == 20 &&
+        try check(migratedEditor.settings.exposure == 0.4 && migratedEditor.settings.shadows == 0.2 &&
                   migratedEditor.settings.tint == 5 && migratedEditor.selectedFilmID.isEmpty,
                   "actual EditorModel restoration migrates an old recipe record")
         migratedEditor.settings.exposure = 0.71
@@ -795,7 +795,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         let restoredPreset = model()
         restoredPreset.open(a)
         try check(restoredPreset.settings.masterRecipeID == MasterRecipe.hamadaDaylightV2.id &&
-                  restoredPreset.settings.exposure == 0.6 && restoredPreset.settings.shadows == 20 &&
+                  restoredPreset.settings.exposure == 0.6 && restoredPreset.settings.shadows == 0.2 &&
                   restoredPreset.settings.tint == 5 && restoredPreset.settings.hslSettings.value(.hue, channel: 0) == 37 &&
                   restoredPreset.settings.renderHSLSettings.value(.hue, channel: 0) == 18.5 &&
                   restoredPreset.selectedFilmID.isEmpty,
@@ -809,7 +809,8 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             catalogModel.selectedFilmID = "PROVIA"
             catalogModel.selectMasterRecipe(recipe)
             try check(catalogModel.settings.masterRecipeID == recipe.id && catalogModel.selectedFilmID.isEmpty &&
-                      catalogModel.settings.tint == recipe.tintDelta && catalogModel.settings.contrast == recipe.contrastDelta &&
+                      catalogModel.settings.tint == recipe.tintDelta &&
+                      catalogModel.settings.contrast == 1 + recipe.contrastDelta / 100 &&
                       catalogModel.settings.hslSettings == recipe.hsl,
                       "\(recipe.id): EditorModel applies the catalog entry and clears film")
             catalogModel.settings.exposure = 0.63
@@ -818,7 +819,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
             let restored = model()
             restored.open(recipePhoto)
             try check(restored.settings.masterRecipeID == recipe.id && restored.settings.exposure == 0.63 &&
-                      restored.settings.saturation == recipe.saturationDelta &&
+                      restored.settings.saturation == 1 + recipe.saturationDelta / 100 &&
                       restored.settings.hslSettings.value(.saturation, channel: 4) == -37,
                       "\(recipe.id): editor restoration preserves the recipe and manual change")
         }

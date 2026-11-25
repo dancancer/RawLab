@@ -330,6 +330,8 @@ public partial class MainWindow
             presetLibraryButton.Tag = quickPresetsVisible ? "selected" : null;
         }
         var expanded=expandedGroup!=null;
+        QuickPresetContainer.Visibility = expanded && quickPresetsVisible ? Visibility.Visible : Visibility.Collapsed;
+        HdrLookPanel.Visibility = expanded && quickPresetsVisible && settings.IsHDREditing ? Visibility.Visible : Visibility.Collapsed;
         QuickPresetSurface.Visibility = expanded && quickPresetsVisible ? Visibility.Visible : Visibility.Collapsed;
         QuickPresetSurface.IsEnabled = file != null && !exporting && !closing && !aiJob.State.IsRunning;
         if (expanded && quickPresetsVisible) {
@@ -469,7 +471,7 @@ public partial class MainWindow
         var selected=toolMode==EditorToolMode.Parameter && selectedHdrRenditionParameter==null && selectedToneParameter==null && selectedAtmosphereParameter==null && id==selectedParameter;
         controls.Button.Tag=selected ? "selected" : null;
         controls.Ring.Selected=selected;
-        var p=ParameterSpec.All[(int)id]; var origin=p.Position(settings.Default(id)); var offset=p.Position(settings[id])-origin;
+        var p=ParameterSpec.All[(int)id]; var range=NumericRange.For(p); var origin=range.Position(p.ToDisplay(settings.Default(id))); var offset=range.Position(p.ToDisplay(settings[id]))-origin;
         controls.Ring.Progress=id==Parameter.ToneCurve && !settings.EditingCurve.IsDefault ? settings.EditingCurve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
     }
     private void UpdateToneToolRing(ToneControlParameter id, (Button Button, AdjustmentRing Ring) controls, bool hdrEditing)
@@ -507,6 +509,8 @@ public partial class MainWindow
             if (parameterRowSourceIdentity != rowSource)
             {
                 parameterRowSourceIdentity = rowSource;
+                hdrLookLoading = false;
+                hdrLookError = null;
                 foreach(var row in ParameterRows(AdjustmentPanel)) row.SourceIdentity = rowSource;
             }
             var raster=file!=null && LibraryEntry.IsRaster(file);
@@ -536,9 +540,9 @@ public partial class MainWindow
             var extensionControl=toneSpec!=null || atmosphereSpec!=null;
             var hdrParameter=hdrRenditionSpec!=null || atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
-            var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : settings[selectedParameter];
+            var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : spec.ToDisplay(settings[selectedParameter]);
             var inputRange=extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec);
-            if(settings.IsHDREditing && selectedParameter==Parameter.Exposure)
+            if(settings.IsHDREditing && !extensionControl && hdrRenditionSpec==null && selectedParameter==Parameter.Exposure)
                 inputRange=inputRange with { Min=-4, Max=4 };
             if(hdrRenditionSpec!=null) {
                 title=hdrRenditionSpec.Title;unit=hdrRenditionSpec.Unit;
@@ -548,7 +552,7 @@ public partial class MainWindow
             if (!dragFastPath || ParameterPanel.Visibility == Visibility.Visible)
             {
                 OrdinaryParameter.Refresh(Loc.Text(title),inputRange,
-                    value,hdrRenditionSpec!=null ? 0 : extensionControl ? 0 : settings.Default(selectedParameter),unit,
+                    value,hdrRenditionSpec!=null ? 0 : extensionControl ? 0 : spec.ToDisplay(settings.Default(selectedParameter)),unit,
                     inputScope:(object?)selectedHdrRenditionParameter ?? (object?)selectedAtmosphereParameter ?? (object?)selectedToneParameter ?? selectedParameter);
                 AutomationProperties.SetName(ValueSlider,Loc.Text(title));
                 AutomationProperties.SetName(ValueText,Loc.Format("{0}数值（{1}）",Loc.Text(title),unit));
@@ -623,9 +627,13 @@ public partial class MainWindow
             {
                 if (toolMode==EditorToolMode.Geometry || !dragFastPath)
                 {
+                    var geom=transform.Active && transform.Tool==TransformTool.Geometry ? transform.Geometry : settings.Geometry;
                     GeometryCategoryRing.Selected=toolMode==EditorToolMode.Geometry && !GeometryEditor.ShowPerspective;
-                    GeometryCategoryRing.Progress=settings.Geometry.IsIdentity ? 0 : 1;
+                    GeometryCategoryRing.Progress=(geom with { PerspectiveHorizontal=0, PerspectiveVertical=0 }).IsIdentity ? 0 : 1;
                     GeometryCategoryRing.InvalidateVisual();
+                    PerspectiveCategoryRing.Selected=toolMode==EditorToolMode.Geometry && GeometryEditor.ShowPerspective;
+                    PerspectiveCategoryRing.Progress=geom.PerspectiveHorizontal!=0 || geom.PerspectiveVertical!=0 ? 1 : 0;
+                    PerspectiveCategoryRing.InvalidateVisual();
                 }
                 if (toolMode==EditorToolMode.ColorGrading || !dragFastPath)
                 {
@@ -666,7 +674,7 @@ public partial class MainWindow
                 GeometryEditor.Refresh(transform.Active ? transform.Geometry : settings.Geometry);
             if (InspectorModificationCache.ShouldRefreshSubEditor(CurrentTool==EditorAdjustmentTool.ToneCurve))
             {
-                CurveEditor.Refresh(settings.EditingCurve,settings[Parameter.ToneCurve],(file,openRevision,hdrEditing),hdrEditing);
+                CurveEditor.Refresh(settings.EditingCurve,ParameterSpec.All[(int)Parameter.ToneCurve].ToDisplay(settings[Parameter.ToneCurve]),(file,openRevision,hdrEditing),hdrEditing);
                 RefreshCurveTarget();
             }
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.ColorGrading))
@@ -733,10 +741,12 @@ public partial class MainWindow
             if (!dragFastPath || LookStrengthRow.Visibility == Visibility.Visible)
             {
                 var strength = ParameterSpec.All[(int)Parameter.Strength];
-                LookStrengthRow.Refresh(Loc.Text("外观强度"), NumericRange.For(strength), settings[Parameter.Strength],
-                    settings.Default(Parameter.Strength), strength.Unit,
+                LookStrengthRow.Refresh(Loc.Text("外观强度"), NumericRange.For(strength), strength.ToDisplay(settings[Parameter.Strength]),
+                    strength.ToDisplay(settings.Default(Parameter.Strength)), strength.Unit,
                     enabled: file != null && lut != null && !exporting && !transform.Active, inputScope: Parameter.Strength);
             }
+            if (!dragFastPath || HdrLookPanel.Visibility == Visibility.Visible)
+                RefreshInlineHDRLook();
             if (!dragFastPath)
             {
                 RefreshComparisonLayout();
@@ -772,8 +782,6 @@ public partial class MainWindow
         ClippingButton.IsEnabled=InfoButton.IsEnabled=file!=null && !exporting && ShowsPhotoWorkspace;
         ZoomButton.IsEnabled=file!=null && !exporting && ShowsPhotoWorkspace && !transform.Active;
         CompareButton.IsEnabled=CompareModeButton.IsEnabled=file!=null && !exporting && !transform.Active && ShowsPhotoWorkspace;
-        InfoEntryButton.Visibility=file==null ? Visibility.Collapsed : Visibility.Visible;
-        InfoEntryButton.IsEnabled=file!=null && !exporting;
         AdjustmentPanel.IsEnabled=!exporting;GpuMode.IsEnabled=!exporting && (file==null || !LibraryEntry.IsRaster(file));
         var busy=(scheduler.Busy && scheduler.Revision!=quietViewportRevision) || previewResize.IsEnabled || aiJob.State.IsRunning || processingMigrationBusy;
         BusyIndicator.Visibility=busy ? Visibility.Visible : Visibility.Collapsed;
@@ -781,6 +789,28 @@ public partial class MainWindow
         BusyStill.Visibility=SystemParameters.ClientAreaAnimation ? Visibility.Collapsed : Visibility.Visible;
         AutomationProperties.SetItemStatus(BusyIndicator,Loc.Text(busy ? "正在显影…" : renderFailed ? "预览未更新" : "预览已更新"));
         RetryButton.Visibility=renderFailed && !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
+        var showStaleBanner = file != null && renderFailed && result != null && !scheduler.Busy && !exporting && ShowsPhotoWorkspace;
+        CanvasErrorBanner.Visibility = showStaleBanner ? Visibility.Visible : Visibility.Collapsed;
+        var showEmptyStatus = file != null && result == null && openingPreview == null && ShowsPhotoWorkspace;
+        CanvasEmptyStatus.Visibility = showEmptyStatus ? Visibility.Visible : Visibility.Collapsed;
+        if (showEmptyStatus)
+        {
+            if (renderFailed)
+            {
+                CanvasStatusTitle.Text = Loc.Text("预览未更新");
+                CanvasStatusSubtitle.Text = Status.Text;
+                CanvasStatusProgress.Visibility = Visibility.Collapsed;
+                CanvasStatusRetry.Visibility = !scheduler.Busy && !exporting ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else
+            {
+                CanvasStatusTitle.Text = Loc.Text("正在显影…");
+                CanvasStatusSubtitle.Text = Path.GetFileName(file);
+                CanvasStatusProgress.Visibility = SystemParameters.ClientAreaAnimation ? Visibility.Visible : Visibility.Collapsed;
+                CanvasStatusRetry.Visibility = Visibility.Collapsed;
+            }
+        }
+        RefreshToolbarOverflow();
         ExportButton.ToolTip=file==null ? Loc.Text("载入照片后可用") : transform.Active ? Loc.Text("草稿未应用，无法导出或复制设置。") :
             renderFailed ? Status.Text :
             !exactReady || scheduler.Busy || previewResize.IsEnabled ? Loc.Text("请等待预览完成后导出。") : Loc.Text("导出");
@@ -834,6 +864,10 @@ public partial class MainWindow
         lookAvailability.Invalidate();
         Schedule();
     }
-    private void Report(Exception error)=>SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
-        ? Loc.Text("无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。") : error.Message,true);
+    private void Report(Exception error)
+    {
+        diagnosticSession.RecordError("editor","report",error);
+        SetStatus(error is DllNotFoundException or BadImageFormatException or EntryPointNotFoundException
+            ? Loc.Text("无法加载显影组件。请通过 build.ps1 构建，并保留程序目录内的 DLL。") : error.Message,true);
+    }
 }

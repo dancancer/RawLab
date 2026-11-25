@@ -186,6 +186,170 @@ int main(int argc, const char* argv[]) {
             NSURL* directory = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString]];
             [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
             try {
+                auto checkAppleProRAW = [&]() API_AVAILABLE(macos(15.0), ios(18.0)) {
+                    namespace fs = std::filesystem;
+                    const fs::path root(directory.fileSystemRepresentation);
+                    auto probeRejected = [&](const fs::path& file, sony2fuji_status expectedStatus, uint32_t expectedReason, const char* msg) {
+                        auto pInfo = init<sony2fuji_hdr_source_info_v1>();
+                        auto pDiag = init<sony2fuji_hdr_diagnostic_v1>();
+                        const auto st = sony2fuji_hdr_probe_apple_proraw(file.u8string().c_str(), &pInfo, &pDiag);
+                        require(st == expectedStatus && pDiag.reason == expectedReason, msg);
+                    };
+                    auto writeBytes = [](const fs::path& file, const std::vector<uint8_t>& bytes) {
+                        std::ofstream out(file, std::ios::binary | std::ios::trunc);
+                        out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+                        require(!out.fail(), "cannot write synthetic ProRAW test fixture");
+                    };
+                    auto append16 = [](std::vector<uint8_t>& buf, uint16_t v) {
+                        buf.push_back(uint8_t(v & 0xff));
+                        buf.push_back(uint8_t((v >> 8) & 0xff));
+                    };
+                    auto append32 = [](std::vector<uint8_t>& buf, uint32_t v) {
+                        buf.push_back(uint8_t(v & 0xff));
+                        buf.push_back(uint8_t((v >> 8) & 0xff));
+                        buf.push_back(uint8_t((v >> 16) & 0xff));
+                        buf.push_back(uint8_t((v >> 24) & 0xff));
+                    };
+                    auto appendEntry = [&](std::vector<uint8_t>& buf, uint16_t tag, uint16_t type, uint32_t count, uint32_t value) {
+                        append16(buf, tag);
+                        append16(buf, type);
+                        append32(buf, count);
+                        append32(buf, value);
+                    };
+
+                    // 1. < 8 bytes, missing path, bayer-demosaic.dng
+                    const fs::path tiny = root / "tiny.dng";
+                    writeBytes(tiny, {0x49, 0x49, 42, 0});
+                    probeRejected(tiny, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "tiny <8B DNG was not rejected");
+                    probeRejected(root / "missing.dng", SONY2FUJI_STATUS_IO_ERROR, SONY2FUJI_HDR_REASON_INPUT_IO,
+                        "missing DNG did not return IO_ERROR");
+                    probeRejected(fs::path(TEST_FIXTURE_DIR "/bayer-demosaic.dng"),
+                        SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "bayer-demosaic.dng was accepted as Apple ProRAW");
+
+                    // 2. Truncated IFD
+                    const fs::path truncated = root / "truncated.dng";
+                    writeBytes(truncated, {'I', 'I', 42, 0, 8, 0, 0, 0, 2, 0, 1, 2});
+                    probeRejected(truncated, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "truncated IFD was accepted as Apple ProRAW");
+
+                    // 3. Cyclic SubIFD (tag 330 pointing back to IFD0 at offset 8)
+                    const fs::path cyclic = root / "cyclic.dng";
+                    std::vector<uint8_t> cyc{'I', 'I', 42, 0, 8, 0, 0, 0};
+                    append16(cyc, 2);
+                    appendEntry(cyc, 330, 4, 1, 8);
+                    appendEntry(cyc, 50706, 1, 4, 0x00000401u);
+                    append32(cyc, 0);
+                    writeBytes(cyclic, cyc);
+                    probeRejected(cyclic, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "cyclic SubIFD was accepted as Apple ProRAW");
+
+                    // 4. Oversized SubIFDs (count = 33)
+                    const fs::path oversized = root / "oversized-subifd.dng";
+                    std::vector<uint8_t> over{'I', 'I', 42, 0, 8, 0, 0, 0};
+                    append16(over, 2);
+                    appendEntry(over, 330, 4, 33, 64);
+                    appendEntry(over, 50706, 1, 4, 0x00000401u);
+                    append32(over, 0);
+                    over.resize(64 + 33 * 4, 0);
+                    writeBytes(oversized, over);
+                    probeRejected(oversized, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "oversized SubIFDs count=33 was accepted");
+
+                    // 5. Missing DNGVersion (50706)
+                    const fs::path noVersion = root / "no-dngversion.dng";
+                    std::vector<uint8_t> noVer{'I', 'I', 42, 0, 8, 0, 0, 0};
+                    append16(noVer, 3);
+                    appendEntry(noVer, 262, 3, 1, 34892);
+                    appendEntry(noVer, 50712, 3, 1, 0);
+                    appendEntry(noVer, 52525, 1, 1, 0);
+                    append32(noVer, 0);
+                    writeBytes(noVersion, noVer);
+                    probeRejected(noVersion, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "LinearRaw TIFF without DNGVersion 50706 was accepted");
+
+                    // 6. Real non-Apple LinearRaw DNG (Make="Sony")
+                    const fs::path nonApple = root / "sony-linear.dng";
+                    {
+                        TIFF* tif = TIFFOpen(nonApple.u8string().c_str(), "w");
+                        require(tif != nullptr, "cannot author synthetic non-Apple DNG");
+                        const uint8_t dngVer[4] = {1, 4, 0, 0};
+                        const uint16_t linTable[2] = {0, 65535};
+                        TIFFSetField(tif, TIFFTAG_IMAGEWIDTH, 4);
+                        TIFFSetField(tif, TIFFTAG_IMAGELENGTH, 4);
+                        TIFFSetField(tif, TIFFTAG_SAMPLESPERPIXEL, 3);
+                        TIFFSetField(tif, TIFFTAG_BITSPERSAMPLE, 16);
+                        TIFFSetField(tif, TIFFTAG_PHOTOMETRIC, 34892);
+                        TIFFSetField(tif, TIFFTAG_PLANARCONFIG, PLANARCONFIG_CONTIG);
+                        TIFFSetField(tif, TIFFTAG_COMPRESSION, COMPRESSION_NONE);
+                        TIFFSetField(tif, TIFFTAG_ROWSPERSTRIP, 4);
+                        TIFFSetField(tif, TIFFTAG_MAKE, "Sony");
+                        TIFFSetField(tif, TIFFTAG_MODEL, "iPhone 16 Pro");
+                        TIFFSetField(tif, 50706, dngVer);
+                        TIFFSetField(tif, 50712, 2, linTable);
+                        std::vector<uint16_t> row(4 * 3, 1024);
+                        for (uint32_t r = 0; r < 4; ++r) TIFFWriteScanline(tif, row.data(), r, 0);
+                        TIFFClose(tif);
+                    }
+                    probeRejected(nonApple, SONY2FUJI_STATUS_UNSUPPORTED, SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                        "non-Apple Make DNG was accepted as Apple ProRAW");
+                    auto hProbeInfo = init<sony2fuji_hdr_source_info_v1>();
+                    auto hProbeDiag = init<sony2fuji_hdr_diagnostic_v1>();
+                    require(sony2fuji_hdr_probe(nonApple.u8string().c_str(), &hProbeInfo, &hProbeDiag) != SONY2FUJI_STATUS_OK,
+                        "sony2fuji_hdr_probe accepted a DNG");
+
+                    // Export rejection on non-Apple DNG
+                    {
+                        sony2fuji_session* s = nullptr;
+                        require(sony2fuji_session_create(&s) == SONY2FUJI_STATUS_OK, "session create failed");
+                        auto cfg = init<sony2fuji_hdr_export_config_v1>();
+                        cfg.jpeg_quality = 95;
+                        cfg.base_color = SONY2FUJI_HDR_COLOR_DISPLAY_P3;
+                        cfg.metadata_policy = SONY2FUJI_HDR_METADATA_ISO_XMP;
+                        const std::string srcStr = nonApple.u8string();
+                        cfg.metadata_source_path = srcStr.c_str();
+                        auto res = init<sony2fuji_hdr_stream_result_v1>();
+                        auto diag = init<sony2fuji_hdr_diagnostic_v1>();
+                        const fs::path outPath = root / "rejected-export.jpg";
+                        const auto est = sony2fuji_hdr_export_apple_proraw_json(
+                            s, srcStr.c_str(), nullptr, nullptr, &cfg, 1,
+                            root.u8string().c_str(), outPath.u8string().c_str(), &res, &diag);
+                        sony2fuji_session_destroy(s);
+                        require(est == SONY2FUJI_STATUS_UNSUPPORTED && diag.reason == SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW,
+                            "non-Apple DNG was accepted by export_apple_proraw_json");
+                    }
+
+                    // 7. Optional real Apple ProRAW fixture validation
+                    if (const char* prorawPath = std::getenv("RAWLAB_TEST_PRORAW"); prorawPath && *prorawPath) {
+                        auto pInfo = init<sony2fuji_hdr_source_info_v1>();
+                        auto pDiag = init<sony2fuji_hdr_diagnostic_v1>();
+                        require(sony2fuji_hdr_probe_apple_proraw(prorawPath, &pInfo, &pDiag) == SONY2FUJI_STATUS_OK &&
+                                pInfo.container == SONY2FUJI_HDR_CONTAINER_PRORAW,
+                            "real ProRAW probe_apple_proraw failed");
+                        require(sony2fuji_hdr_probe(prorawPath, &hProbeInfo, &hProbeDiag) != SONY2FUJI_STATUS_OK,
+                            "sony2fuji_hdr_probe leaked real Apple ProRAW");
+                        auto decOpts = init<sony2fuji_hdr_decode_options_v1>();
+                        decOpts.intent = SONY2FUJI_INTENT_PREVIEW;
+                        decOpts.long_edge = 512;
+                        auto prevPair = init<sony2fuji_hdr_image_pair_v1>();
+                        require(sony2fuji_hdr_decode(prorawPath, &decOpts, &prevPair, &pDiag) == SONY2FUJI_STATUS_OK &&
+                                prevPair.decode_revision == 1 &&
+                                prevPair.source_headroom_kind == SONY2FUJI_HDR_HEADROOM_UNKNOWN,
+                            "real ProRAW preview decode failed");
+                        sony2fuji_hdr_release_pair(&prevPair);
+
+                        decOpts.intent = SONY2FUJI_INTENT_FINAL;
+                        decOpts.long_edge = 0;
+                        auto finalPair = init<sony2fuji_hdr_image_pair_v1>();
+                        require(sony2fuji_hdr_decode(prorawPath, &decOpts, &finalPair, &pDiag) == SONY2FUJI_STATUS_OK &&
+                                finalPair.decode_revision == 1 &&
+                                finalPair.source_headroom_kind == SONY2FUJI_HDR_HEADROOM_MEASURED,
+                            "real ProRAW FINAL decode failed");
+                        sony2fuji_hdr_release_pair(&finalPair);
+                    }
+                };
+                checkAppleProRAW();
                 NSURL* file=[directory URLByAppendingPathComponent:@"source.jpg"];
                 require([fixture() writeToURL:file atomically:YES],"fixture write failed");
                 const char* path=argc==2 ? argv[1] : file.fileSystemRepresentation;

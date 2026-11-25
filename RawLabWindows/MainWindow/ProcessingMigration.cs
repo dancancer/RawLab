@@ -104,13 +104,16 @@ public partial class MainWindow
             }
             var targetEdit = isRejected ? before : candidate!;
             var status = isRejected ? ProcessingMigrationReceipt.Kept : ProcessingMigrationReceipt.Migrated;
-            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
-            {
-                var committed = editStore!.CommitProcessingMigration(source, before, targetEdit, status);
-                return (committed, editStore.ReadProcessingMigration(path));
-            });
-            if (processingMigrationCancellation != cancellation ||
-                !MigrationIsCurrent(path, source, before, expectedSettings, expectedLook, lookIdentity, opened, revision))
+            var outcome = await persistence.CommitProcessingMigrationAsync(
+                source,
+                before,
+                targetEdit,
+                status,
+                path,
+                () => processingMigrationCancellation == cancellation &&
+                      MigrationIsCurrent(path, source, before, expectedSettings, expectedLook, lookIdentity, opened, revision),
+                FlushDeferredExternalEditsCheckIfNeeded);
+            if (!outcome.Applied)
             {
                 if (processingMigrationCancellation == cancellation)
                 {
@@ -120,17 +123,12 @@ public partial class MainWindow
                 return;
             }
             processingMigrationCancellation=null;processingMigrationBusy=false;
-            if (isRejected)
+            if (outcome.Migrated)
             {
-                TransferSession.RememberExternalSave(saved);
-            }
-            else
-            {
-                TransferSession.AdoptExternalProcessingMigration(saved);
-                currentEditRecord=saved;settings=candidate!.Settings.Restore();editDirty=false;++editRevision;
+                settings=candidate!.Settings.Restore();
                 ResetAITask();RefreshControls();Schedule();
             }
-            currentEditRecord=saved;processingMigrationReceipt=receipt;
+            processingMigrationReceipt=outcome.Receipt;
             RefreshControls();
         }
         catch (AdjustmentOperationExpiredException)
@@ -204,19 +202,17 @@ public partial class MainWindow
         var opened = openRevision;
         try
         {
-            if (!await FlushSaveEditsAsync()) return;
-            if (closing || file != path || openRevision != opened || processingMigrationBusy ||
-                processingMigrationReceipt?.Status != ProcessingMigrationReceipt.Migrated ||
-                exporting || transform.Active || interacting || editGesture != null || currentEditRecord == null) return;
-            var before=currentEditRecord;var identity=before.Identity;
-            var (saved, receipt) = await editSaveQueue.RunAsync(() =>
-            {
-                var rolledBack = editStore!.RollbackProcessingMigration(identity, before);
-                return (rolledBack, editStore.ReadProcessingMigration(path));
-            });
-            if (closing || file != path || openRevision != opened) return;
-            TransferSession.AdoptExternalProcessingMigration(saved);
-            currentEditRecord=saved;processingMigrationReceipt=receipt;AdoptSavedEdit(saved);
+            var outcome = await persistence.RollbackProcessingMigrationAsync(
+                path,
+                FlushSaveEditsAsync,
+                () => !closing && file == path && openRevision == opened && !processingMigrationBusy &&
+                      processingMigrationReceipt?.Status == ProcessingMigrationReceipt.Migrated &&
+                      !exporting && !transform.Active && !interacting && editGesture == null && currentEditRecord != null,
+                transform.Active || editGesture != null,
+                FlushDeferredExternalEditsCheckIfNeeded);
+            if (!outcome.Applied || outcome.Saved == null) return;
+            processingMigrationReceipt = outcome.Receipt;
+            ApplyAdoptedEditToUi(outcome.Saved, outcome.PreviousRecord);
         }
         catch (Exception error) { if (!closing && file == path && openRevision == opened) Report(error); }
     }

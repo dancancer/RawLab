@@ -140,7 +140,8 @@ enum class AdjustmentField(val id: String) {
             5 -> HDR_V5_SUPPORTED
             6 -> HDR_V6_SUPPORTED
             7, 8 -> HDR_SUPPORTED
-            9 -> HDR_V9_SUPPORTED
+            // v10 只放开曲线端点 x，可迁移字段与 v9 相同。
+            9, 10 -> HDR_V9_SUPPORTED
             else -> error("Unsupported HDR processing version")
         }
         val WHITE_BALANCE = setOf(WHITE_BALANCE_MODE, TEMPERATURE, TINT)

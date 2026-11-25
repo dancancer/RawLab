@@ -1,16 +1,19 @@
 import RawLabKit
+import RawLabNative
 import SwiftUI
 import AppKit
 
 struct EditorView: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    private let viewCommands: MacViewCommandState?
     @Environment(\.openWindow) private var openWindow
     @StateObject private var library = PhotoLibrary()
     @StateObject private var photoPreviews: MacEditedPhotoPreviews
 
-    init(model: EditorModel) {
+    init(model: EditorModel, viewCommands: MacViewCommandState? = nil) {
         self.model = model
+        self.viewCommands = viewCommands
         _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(editDirectory: model.editDirectory))
     }
     @StateObject private var browser = MacWorkspaceBrowserState()
@@ -136,14 +139,22 @@ struct EditorView: View {
                     else { ProgressView().progressViewStyle(.linear).frame(height: 2).clipped() }
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                if model.result != nil && model.geometryDraft == nil {
+                    MacInspectionOverlayChip(model: model)
+                        .padding(10)
+                }
+            }
             .overlay(alignment: .bottomLeading) {
                 if model.result != nil && model.geometryDraft == nil {
+                    let compareLabelAtBottomLeft = (viewing.enabled && model.canComparePreview) || viewing.holdingBefore
                     MacInspectionReadoutPill(
                         model: model,
                         showingBefore: viewing.holdingBefore,
                         showLiveReadout: !showInspector
                     )
-                    .padding(10)
+                    .padding(.leading, 10)
+                    .padding(.bottom, compareLabelAtBottomLeft ? 44 : 10)
                 }
             }
             .overlay(alignment: .bottom) {
@@ -152,6 +163,8 @@ struct EditorView: View {
                         HSLTargetCanvasControls(axis: model.hslTargetAxis, onExit: exitHSLTarget).padding(8)
                     } else if !showInspector && model.curveTargetActive {
                         CurveTargetCanvasControls(channel: model.curveTargetChannel, onExit: exitCurveTarget).padding(8)
+                    } else if !showInspector && model.wbProbeActive {
+                        WBProbeCanvasControls(onExit: exitWBProbe).padding(8)
                     }
                     if model.hasActiveExternalReloadBanner {
                         HStack(spacing: 10) {
@@ -172,7 +185,7 @@ struct EditorView: View {
                         HStack(spacing: 8) {
                             Label(L10n.text("预览未更新"), systemImage: "exclamationmark.triangle")
                             Button(L10n.text("重试"), action: model.schedule)
-                        }.font(.callout).padding(8).background(.black.opacity(0.7)).padding(8)
+                        }.font(.callout).padding(8).background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8)).padding(8)
                     }
                 }
             }
@@ -261,6 +274,9 @@ struct EditorView: View {
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
         }
+        .onChange(of: currentViewCommandSnapshot, initial: true) { _, _ in
+            syncViewCommands()
+        }
         .toolbar {
             if #available(macOS 26.0, *) {
                 editorToolbar.sharedBackgroundVisibility(.hidden)
@@ -282,17 +298,37 @@ struct EditorView: View {
             exitHSLTarget(); exitCurveTarget(); exitWBProbe(); model.cancelAdjustmentInteraction()
         }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
-            onInformation: { infoMode = infoMode.next },
+            onInformation: { if showsPhotoWorkspace { infoMode = infoMode.next } },
             onToggleGray50: {
                 if showsPhotoWorkspace && model.result != nil && model.geometryDraft == nil {
                     model.inspection.toggleNeutralGray50()
                 }
             },
+            onZoomIn: {
+                guard model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace else { return false }
+                zoom(1.25)
+                return true
+            },
             onEscape: {
+                if workspaceLayout.dismissDrawer() { return true }
+                if model.quickPresetsVisible { model.closeQuickPresets(); return true }
+                if model.hslTargetActive || model.curveTargetActive || model.wbProbeActive {
+                    exitHSLTarget(); exitCurveTarget(); exitWBProbe()
+                    model.cancelAdjustmentInteraction()
+                    return true
+                }
+                if model.geometryDraft != nil {
+                    model.requestLeavingGeometryDraft { model.cancelGeometryDraft() }
+                    return true
+                }
                 if model.inspection.handleEscape() { return true }
-                return workspaceLayout.dismissTransient()
+                if workspaceLayout.dismissTransient() { return true }
+                if viewing.enabled { viewing.close(); return true }
+                return false
             }).frame(width: 0, height: 0))
-        .background(MacGeometryWindowGuard(model: model).frame(width: 0, height: 0))
+        .background(MacGeometryWindowGuard(model: model) { window in
+            viewCommands?.attachEditorWindow(window)
+        }.frame(width: 0, height: 0))
         .sheet(isPresented: Binding(get: { model.geometryDraftDeparturePending && model.adjustmentSheet != .presets }, set: { _ in })) {
             MacGeometryDeparturePrompt(model: model)
         }
@@ -368,7 +404,7 @@ struct EditorView: View {
             }.padding(.horizontal, 12).frame(minHeight: 34)
             Divider()
             histogram
-            if model.geometryDraft == nil && model.result != nil {
+            if model.geometryDraft == nil {
                 Divider()
                 MacInspectionHUD(model: model, showingBefore: viewing.holdingBefore)
             }
@@ -405,65 +441,63 @@ struct EditorView: View {
     }
 
     private var processingSettings: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(L10n.text("照片处理设置")).font(.headline)
-            if model.sourceIsHDR || model.sourceSupportsCameraHDR {
-                Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ model.settings.isHDREditing },set:model.setHDREditing))
-                    .disabled(!model.canExport).accessibilityIdentifier("hdr.editMode")
-            }
-            if model.settings.isHDREditing {
-                HDRMonitoringControls(state:hdrDisplay)
-                HDRRenditionControls(settings: Binding(
-                    get: { model.settings.hdr?.renditionSettings ?? HDRRenditionSettings() },
-                    set: { if model.settings.isHDREditing { model.settings.hdr?.renditionSettings = $0 } }
-                ), onEditingChanged: model.setInteracting, onCancelled: model.cancelAdjustmentInteraction)
-                    .id(model.sourceRevision)
-                    .disabled(model.geometryDraft != nil || model.exporting)
-                if model.sourceIsBayerHDR, let hdr = model.settings.hdr {
-                    HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
-                        supportsBayerDevelopment: model.rawHDRSource?.supportsBayerDevelopment == true,
-                        apply: model.applyHDRCameraDevelopment,
-                        onResourceRestored: { model.schedule(forceExact: true) })
-                        .id(model.sourceRevision).disabled(!model.canApplyHDRCameraDevelopment)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(L10n.text("照片处理设置")).font(.headline)
+                if model.sourceIsHDR || model.sourceSupportsCameraHDR {
+                    Toggle(L10n.text("HDR 编辑"),isOn:Binding(get:{ model.settings.isHDREditing },set:model.setHDREditing))
+                        .disabled(!model.canExport).accessibilityIdentifier("hdr.editMode")
                 }
-            } else {
-            Text(activeLookName)
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
-                Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
-                Text(L10n.text("处理 v2")).tag(ProcessingIdentity.c5)
-                Text(L10n.text("处理 v3")).tag(ProcessingIdentity.current)
-            }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
-                .disabled(model.geometryDraft != nil)
-            if let status = model.processingMigrationStatus {
-                Text(L10n.text(status)).font(.caption).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("processing.migration.status")
-            }
-            if model.processingMigrationReceipt?.status == .migrated {
-                Button(L10n.text("回到迁移前"), action: model.rollbackProcessingMigration)
-                    .disabled(!model.canRollbackProcessingMigration)
-                    .accessibilityIdentifier("processing.migration.rollback")
-            }
-            if RenderEngine.isX3fInput(model.file) {
-                Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
-                    ForEach(X3fMode.allCases) { mode in
-                        Text(mode.title).tag(mode).disabled(mode == .normal && !RenderEngine.x3fAvailable)
+                if model.settings.isHDREditing {
+                    HDRMonitoringControls(state:hdrDisplay)
+                    if model.sourceIsBayerHDR, let hdr = model.settings.hdr {
+                        HDRCameraDevelopmentControls(settings: hdr.cameraDevelopmentSettings,
+                            supportsBayerDevelopment: model.rawHDRSource?.supportsBayerDevelopment == true,
+                            apply: model.applyHDRCameraDevelopment,
+                            onResourceRestored: { model.schedule(forceExact: true) })
+                            .id(model.sourceRevision).disabled(!model.canApplyHDRCameraDevelopment)
                     }
-                }.accessibilityIdentifier("x3f.mode").disabled(model.geometryDraft != nil)
-                Text(L10n.text(model.settings.x3fMode == .normal ?
-                    "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
-                    .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-            Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
-                ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
-            }.id(localizationLocale.identifier)
-                .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil ||
-                    (RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal))
-            Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
-                .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
-            }
-        }.padding(18).frame(width: 320)
+                } else {
+                    Text(activeLookName)
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Picker(L10n.text("处理版本"), selection: $model.settings.processing) {
+                        Text(L10n.text("处理 v1（旧版）")).tag(ProcessingIdentity.legacy)
+                        Text(L10n.text("处理 v2")).tag(ProcessingIdentity.c5)
+                        Text(L10n.text("处理 v3")).tag(ProcessingIdentity.current)
+                    }.id(localizationLocale.identifier).accessibilityIdentifier("processing.version")
+                        .disabled(model.geometryDraft != nil)
+                    if let status = model.processingMigrationStatus {
+                        Text(L10n.text(status)).font(.caption).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("processing.migration.status")
+                    }
+                    if model.processingMigrationReceipt?.status == .migrated {
+                        Button(L10n.text("回到迁移前"), action: model.rollbackProcessingMigration)
+                            .disabled(!model.canRollbackProcessingMigration)
+                            .accessibilityIdentifier("processing.migration.rollback")
+                    }
+                    if RenderEngine.isX3fInput(model.file) {
+                        Picker(L10n.text("X3F 显影"), selection: Binding(get: { model.settings.x3fMode }, set: model.selectX3fMode)) {
+                            ForEach(X3fMode.allCases) { mode in
+                                Text(mode.title).tag(mode).disabled(mode == .normal && !RenderEngine.x3fAvailable)
+                            }
+                        }.accessibilityIdentifier("x3f.mode").disabled(model.geometryDraft != nil)
+                        Text(L10n.text(model.settings.x3fMode == .normal ?
+                            "以文件保存的显影为基准，白平衡作相对调整。" : "保留旧版的特殊色彩。"))
+                            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Picker(L10n.text("曝光基准"), selection: $model.settings.exposureMode) {
+                        ForEach(ExposureMode.allCases) { Text($0.title).tag($0) }
+                    }.id(localizationLocale.identifier)
+                        .disabled(RenderEngine.isRasterInput(model.file) || model.geometryDraft != nil ||
+                            (RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal))
+                    Text(RenderEngine.isRasterInput(model.file) ? "-- EV" : model.result.map { String(format: "%+.2f EV", $0.baselineEV) } ?? "-- EV")
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary).help(L10n.text("基础曝光偏移"))
+                }
+            }.padding(18)
+        }
+        .frame(width: 320)
+        .frame(maxHeight: 520)
     }
 
     @ViewBuilder private var workspace: some View {
@@ -598,10 +632,10 @@ struct EditorView: View {
                 Button(L10n.text("重做"), action: model.redoAdjustment).disabled(!model.canRedoAdjustment)
                 Button(L10n.text("本次会话历史…")) { model.requestAdjustmentSheet(.history) }
                 Divider()
-                Button(L10n.text("直方图")) {
-                    if showInspector { histogramExpanded = true }
-                    else { showsHistogram = true }
-                }.disabled(model.result == nil || !showsPhotoWorkspace)
+                Button(L10n.text("直方图")) { openHistogram() }
+                    .disabled(model.result == nil || !showsPhotoWorkspace)
+                Toggle(L10n.text("显示裁切提示"), isOn: $clipping)
+                    .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
                 Button(L10n.text(model.batchSelection.current == nil ? "批量编辑…" : "返回选片集合"), action: openCollection)
                     .accessibilityIdentifier("collection.open")
             } label: { Image(systemName: "ellipsis.circle") }
@@ -615,8 +649,20 @@ struct EditorView: View {
                         .frame(width: 286)
                 }
             Menu {
-                Toggle(L10n.text("取样监视"), isOn: $model.inspection.pinModeEnabled)
-                Button(L10n.text("添加锚点")) { _ = model.pinInspectionAnchor() }
+                Toggle(L10n.text("取样监视"), isOn: Binding(
+                    get: { model.inspection.monitorEnabled },
+                    set: { enabled in
+                        model.inspection.monitorEnabled = enabled
+                        if !enabled { model.inspection.pinModeEnabled = false }
+                    }
+                ))
+                Toggle(L10n.text("点选添加锚点"), isOn: Binding(
+                    get: { model.inspection.pinModeEnabled },
+                    set: { enabled in
+                        if enabled { model.inspection.monitorEnabled = true }
+                        model.inspection.pinModeEnabled = enabled
+                    }
+                ))
                     .disabled(!model.inspection.canPinMore)
                 Button(L10n.text("清除锚点")) { model.inspection.clearAnchors() }
                     .disabled(model.inspection.anchors.isEmpty)
@@ -636,7 +682,7 @@ struct EditorView: View {
                 }
             } label: {
                 Image(systemName: "scope")
-                    .activeTint(model.inspection.overlay != .none || model.inspection.pinModeEnabled)
+                    .activeTint(model.inspection.overlay != .none || model.inspection.monitorEnabled || model.inspection.pinModeEnabled)
             }
                 .help(L10n.text("观察层"))
                 .accessibilityLabel(L10n.text("观察层"))
@@ -650,27 +696,25 @@ struct EditorView: View {
                 .accessibilityLabel(L10n.text("50% 中性灰"))
                 .accessibilityIdentifier("inspection.gray50")
                 .disabled(model.result == nil || model.geometryDraft != nil || !showsPhotoWorkspace)
-            Button { viewing.toggle() } label: { Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled) }
-                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
-                .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
-                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Menu {
                 Button(L10n.text("并排")) { viewing.select(.sideBySide) }
                 Button(L10n.text("分割线")) { viewing.select(.wipe) }
                 Button(L10n.text("关闭对比")) { viewing.close() }
-            } label: { Image(systemName: "chevron.down") }
-                .accessibilityLabel(L10n.text("对比方式")).accessibilityIdentifier("compare.mode")
-                .disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
+            } label: {
+                Image(systemName: "rectangle.split.2x1").activeTint(viewing.enabled)
+            } primaryAction: {
+                viewing.toggle()
+            }
+                .help(L10n.text("中性显影与调整后对比")).accessibilityLabel(L10n.text("对比"))
+                .accessibilityValue(viewing.enabled ? L10n.text("已开启") : L10n.text("已关闭"))
+                .accessibilityIdentifier("compare.toggle").disabled(model.result == nil || !model.canComparePreview || !showsPhotoWorkspace)
             Button { infoMode = infoMode.next } label: { Image(systemName: "info.circle").activeTint(infoMode != .hidden) }
                 .help(L10n.text("照片信息")).accessibilityLabel(L10n.text("照片信息")).accessibilityValue(infoMode.title)
                 .accessibilityIdentifier("photo.information")
                 .disabled(model.file == nil || !showsPhotoWorkspace)
             Menu {
-                Button(L10n.text("适合窗口"), action: fit).keyboardShortcut("0")
-                Button(L10n.text("实际像素 · 100%")) {
-                    viewport.actualPixels(); viewport.focus = CGPoint(x: 0.5, y: 0.5)
-                    if !model.fullResolution { model.fullResolution = true }
-                }.keyboardShortcut("1")
+                Button(L10n.text("适合窗口"), action: fit)
+                Button(L10n.text("实际像素 · 100%"), action: actualPixels)
                 Divider()
                 Button(L10n.text("放大")) { zoom(1.25) }
                 Button(L10n.text("缩小")) { zoom(1 / 1.25) }
@@ -683,7 +727,6 @@ struct EditorView: View {
                 .help(showInspector ? L10n.text("收起调整栏") : L10n.text("展开调整栏"))
                 .accessibilityLabel(L10n.text("调整栏")).accessibilityValue(showInspector ? L10n.text("已展开") : L10n.text("已收起"))
                 .accessibilityIdentifier("workspace.inspector.toggle")
-                .keyboardShortcut("a", modifiers: [.command, .option])
                 .disabled(model.file == nil || workspaceLayout.mode != .editing)
             Menu {
                 // 与批量导出的格式选择同名：JPEG、16 位 PNG、DNG · 渲染型
@@ -732,6 +775,9 @@ struct EditorView: View {
                 model.cancelAdjustmentInteraction()
             }
             exitHSLTarget()
+            exitCurveTarget()
+            exitWBProbe()
+            model.inspection.pinModeEnabled = false
             viewing.hold(false, allowed: false)
             workspaceLayout.setMode(mode)
         }
@@ -770,6 +816,13 @@ struct EditorView: View {
                 resetButton(.hslColor(model.adjustmentNavigation.selectedHSLChannel),
                     title: L10n.format("重置当前颜色（%@）", L10n.text(HSLSettings.channelNames[model.adjustmentNavigation.selectedHSLChannel])))
                 resetButton(.hslAll, title: L10n.text("重置全部 HSL…"))
+            } else if tool.group == .light && tool != .toneCurve {
+                let lightTools: [EditorAdjustmentTool] = [.exposure, .contrast, .highlights, .shadows, .whitePoint, .blackPoint]
+                let modifiedLightTools = lightTools.filter { model.isAdjustmentModified(.tool($0)) }
+                let items = modifiedLightTools.isEmpty ? [tool] : modifiedLightTools
+                ForEach(items, id: \.self) { lightTool in
+                    resetButton(.tool(lightTool), title: L10n.format("重置%@", lightTool.title))
+                }
             } else {
                 resetButton(.tool(tool), title: L10n.format("重置%@", tool.title))
             }
@@ -800,7 +853,7 @@ struct EditorView: View {
         var message: String
         switch model.resetConfirmationScope {
         case .all: message = L10n.text("恢复当前照片的全部调整，不改写原始照片。")
-        case .allGrading, .tool(.colorGrading): message = L10n.text("恢复阴影、中间调和高光的颜色分级默认值？")
+        case .allGrading, .tool(.colorGrading): message = L10n.text("恢复阴影、中间调、高光、全局、融合和平衡的默认值？")
         case .hslAll, .tool(.hsl): message = L10n.text("八个色域的色相、饱和度和明度都会恢复为 0。其他调整保持不变。")
         case .group(let group): message = L10n.format("此操作只恢复%@组内的调整，其他分组保持不变。", group.title)
         default: message = ""
@@ -812,17 +865,100 @@ struct EditorView: View {
         return message
     }
 
+    private struct ViewCommandSnapshot: Equatable {
+        let showFiles: Bool
+        let canToggleLibrary: Bool
+        let showInspector: Bool
+        let canToggleInspector: Bool
+        let canOpenHistogram: Bool
+        let canZoom: Bool
+        let margins: Bool
+        let canCompare: Bool
+        let compareEnabled: Bool
+        let compareMode: MacCompareMode
+        let canToggleClipping: Bool
+        let clipping: Bool
+        let canShowInfo: Bool
+        let infoActive: Bool
+        let canInspect: Bool
+    }
+
+    private var currentViewCommandSnapshot: ViewCommandSnapshot {
+        ViewCommandSnapshot(
+            showFiles: showFiles,
+            canToggleLibrary: workspaceLayout.mode != .preview,
+            showInspector: showInspector,
+            canToggleInspector: model.file != nil && workspaceLayout.mode == .editing,
+            canOpenHistogram: model.result != nil && showsPhotoWorkspace,
+            canZoom: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace,
+            margins: viewing.margins,
+            canCompare: model.result != nil && model.canComparePreview && showsPhotoWorkspace,
+            compareEnabled: viewing.enabled,
+            compareMode: viewing.preferredMode,
+            canToggleClipping: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace,
+            clipping: clipping,
+            canShowInfo: model.file != nil && showsPhotoWorkspace,
+            infoActive: infoMode != .hidden,
+            canInspect: model.result != nil && model.geometryDraft == nil && showsPhotoWorkspace
+        )
+    }
+
+    private func syncViewCommands() {
+        guard let viewCommands else { return }
+        let snapshot = currentViewCommandSnapshot
+        viewCommands.showFiles = snapshot.showFiles
+        viewCommands.canToggleLibrary = snapshot.canToggleLibrary
+        viewCommands.showInspector = snapshot.showInspector
+        viewCommands.canToggleInspector = snapshot.canToggleInspector
+        viewCommands.canOpenHistogram = snapshot.canOpenHistogram
+        viewCommands.canZoom = snapshot.canZoom
+        viewCommands.margins = snapshot.margins
+        viewCommands.canCompare = snapshot.canCompare
+        viewCommands.compareEnabled = snapshot.compareEnabled
+        viewCommands.compareMode = snapshot.compareMode
+        viewCommands.canToggleClipping = snapshot.canToggleClipping
+        viewCommands.clipping = snapshot.clipping
+        viewCommands.canShowInfo = snapshot.canShowInfo
+        viewCommands.infoActive = snapshot.infoActive
+        viewCommands.canInspect = snapshot.canInspect
+        viewCommands.toggleLibrary = { workspaceLayout.toggleLibrary(width: windowWidth) }
+        viewCommands.toggleInspector = toggleInspector
+        viewCommands.openHistogram = openHistogram
+        viewCommands.fit = fit
+        viewCommands.actualPixels = actualPixels
+        viewCommands.zoomIn = { zoom(1.25) }
+        viewCommands.zoomOut = { zoom(1 / 1.25) }
+        viewCommands.setMargins = { viewing.margins = $0 }
+        viewCommands.toggleCompare = { viewing.toggle() }
+        viewCommands.selectCompareMode = { viewing.select($0) }
+        viewCommands.closeCompare = { viewing.close() }
+        viewCommands.setClipping = { clipping = $0 }
+        viewCommands.cycleInfo = { infoMode = infoMode.next }
+    }
+
+    private func openHistogram() {
+        guard model.result != nil && showsPhotoWorkspace else { return }
+        if showInspector { histogramExpanded = true }
+        else { showsHistogram = true }
+    }
+
     private func fit() {
         viewing.holdingBefore = false; viewport.fit()
         if model.fullResolution { model.fullResolution = false }
     }
+    private func actualPixels() {
+        viewing.holdingBefore = false
+        viewport.actualPixels()
+        viewport.focus = CGPoint(x: 0.5, y: 0.5)
+        if !model.fullResolution { model.fullResolution = true }
+    }
     private func zoom(_ multiplier: CGFloat) {
         viewing.holdingBefore = false; viewport.zoom(by: multiplier)
     }
-    private func toggleActualPixels() {
+    private func toggleActualPixels(at anchor: CGPoint? = nil) {
         viewing.holdingBefore = false
-        viewport.toggleActualPixels()
-        viewport.focus = CGPoint(x: 0.5, y: 0.5)
+        viewport.toggleActualPixels(anchor: anchor)
+        if !viewport.pixelMode { viewport.focus = CGPoint(x: 0.5, y: 0.5) }
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
     private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive || model.wbProbeActive }
@@ -878,6 +1014,8 @@ struct EditorView: View {
                     hslTargetPoint: activeTargetPoint,
                     canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) }, onDoubleClick: {
                         if model.geometryDraft == nil { toggleActualPixels() }
+                    }, onDoubleClickPoint: { point in
+                        if model.geometryDraft == nil { toggleActualPixels(at: point) }
                     }, sourceHeight: model.result?.nativeHeight,
                     cropSettings: model.geometryDraftPreviewReady ? model.geometryDraft?.geometry : nil,
                     pendingGeometry: model.geometryDraft == nil ? model.pendingGeometryPresentation : nil,
@@ -918,6 +1056,10 @@ struct EditorView: View {
         if showInspector {
             ParameterValueField.cancelPendingInputs()
             model.requestLeavingGeometryDraft {
+                exitHSLTarget()
+                exitCurveTarget()
+                exitWBProbe()
+                model.inspection.pinModeEnabled = false
                 model.closeQuickPresets()
                 workspaceLayout.toggleInspector()
             }
@@ -950,5 +1092,34 @@ struct EditorView: View {
 private extension View {
     @ViewBuilder func activeTint(_ active: Bool) -> some View {
         if active { foregroundStyle(Color.yellow) } else { self }
+    }
+}
+
+private struct WBProbeCanvasControls: View {
+    let onExit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) { title; exitButton }
+                VStack(alignment: .leading, spacing: 4) { title; exitButton }
+            }
+            Text(L10n.text("点击照片中的中性灰区域取样，按 Esc 退出。"))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10).frame(maxWidth: 560, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain).accessibilityIdentifier("wb.eyedropper.canvas")
+    }
+
+    private var title: some View {
+        Label(L10n.text("白平衡吸管"), systemImage: "eyedropper")
+            .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var exitButton: some View {
+        Button(L10n.text("退出白平衡吸管"), action: onExit)
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("wb.eyedropper.exit")
     }
 }

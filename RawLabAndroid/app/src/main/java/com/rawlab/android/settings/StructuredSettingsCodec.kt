@@ -42,15 +42,19 @@ internal object StructuredSettingsCodec {
         s.proRAWDecodeVersion?.let { value.put("proRAWDecodeVersion", it) }
         if (s.clarity != 0f || s.dehaze != 0f) value.put("atmosphere",
             JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze))
-        return "v2:" + JSONObject().put("format", format).put("version", 2).put("settings", value).toString()
+        return "v3:" + JSONObject().put("format", format).put("version", 3).put("settings", value).toString()
     }
 
     fun decode(encoded: String, format: String): EditSettings {
-        require(encoded.startsWith("v2:")) { "Unsupported settings encoding" }
-        val json = encoded.removePrefix("v2:")
+        val version = when {
+            encoded.startsWith("v3:") -> 3
+            encoded.startsWith("v2:") -> 2
+            else -> throw IllegalArgumentException("Unsupported settings encoding")
+        }
+        val json = encoded.removePrefix("v$version:")
         val root = parseStrictJSONObject(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns", "proRAWDecodeVersion"))
             .keysExactly("format", "version", "settings")
-        require(root.string("format") == format && root.integer("version") == 2) { "Unsupported settings format" }
+        require(root.string("format") == format && root.integer("version") == version) { "Unsupported settings format" }
         val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode", "proRAWDecodeVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
@@ -69,8 +73,12 @@ internal object StructuredSettingsCodec {
         require(hsl.length() == 24)
         return EditSettings(film = s.string("film"), strength = s.number("strength", 0.0..2.0), exposure = s.number("exposure", -5.0..5.0),
             x3fMode = if (s.has("x3fMode")) X3fMode.decode(s.string("x3fMode")) else X3fMode.LEGACY,
-            exposureMode = s.integer("exposureMode"), highlights = s.number("highlights", -1.0..1.0), shadows = s.number("shadows", -1.0..1.0),
-            contrast = s.number("contrast", -1.0..1.0), toneCurve = s.number("toneCurve", -1.0..1.0), saturation = s.number("saturation", -1.0..1.0),
+            exposureMode = s.integer("exposureMode"),
+            highlights = if (version == 2) (-s.number("highlights", -1.0..1.0)).canonicalZero() else s.number("highlights", -1.0..1.0),
+            shadows = s.number("shadows", -1.0..1.0),
+            contrast = if (version == 2) 1f + s.number("contrast", -1.0..1.0) else s.number("contrast", 0.0..2.0),
+            toneCurve = s.number("toneCurve", -1.0..1.0),
+            saturation = if (version == 2) 1f + s.number("saturation", -1.0..1.0) else s.number("saturation", 0.0..2.0),
             sharpening = s.number("sharpening", 0.0..2.0), customWb = s.boolean("customWb"), temperature = s.number("temperature", 2000.0..50000.0),
             tint = s.number("tint", -150.0..150.0), recipeID = s.nullableString("recipeID"), displayChromaDenoise = s.integer("displayChromaDenoise"),
             masterRecipeSettingsVersion = if (s.has("masterRecipeSettingsVersion")) s.integer("masterRecipeSettingsVersion") else 3,
@@ -189,6 +197,7 @@ internal object StructuredSettingsCodec {
                 fields.number("grain_size", 0.0..100.0), fields.number("grain_roughness", 0.0..100.0))
         } else null
         val version = when {
+            tone?.curve?.hasFreeEndpointX == true -> 10
             tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
             tone?.curve?.hasChannelCurves == true -> 8
             value.has("look") -> 7
@@ -212,7 +221,7 @@ internal object StructuredSettingsCodec {
         } else null
         val camera = if (value.has("camera_development")) decodeHDRCamera(value.getJSONObject("camera_development")) else null
         val expectedRecordVersion = when {
-            version >= 9 -> 10
+            version >= 9 -> version + 1
             version == 8 -> 9
             camera == null -> version
             else -> 8

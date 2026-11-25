@@ -15,15 +15,15 @@ import pathlib,shutil,sys,subprocess,json,hashlib
 root,out=map(pathlib.Path,sys.argv[1:]);files=[]
 for folder in ['RawLab/RawLab/Core','RawLab/RawLab/UI/Preview','Shared']:
  files.extend(p for p in (root/folder).rglob('*.swift') if 'tests' not in p.relative_to(root).parts)
-files.extend([root/'RawLab/tests/ViewingRenderTests.swift',root/'RawLab/RawLab/Support/RawMetadataBridge.mm',root/'RawLab/RawLab/Support/RawMetadataBridge.h',root/'RawLab/RawLab/Support/RawLab-Bridging-Header.h'])
+files.extend([root/'RawLab/RawLab/UI/EditorState/EditorToolDraft.swift',root/'RawLab/tests/ViewingRenderTests.swift',root/'RawLab/RawLab/Support/RawMetadataBridge.mm',root/'RawLab/RawLab/Support/RawMetadataBridge.h',root/'RawLab/RawLab/Support/RawLab-Bridging-Header.h'])
 for p in files:
  dest=out/'source'/p.relative_to(root);dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(p,dest)
 (out/'source-receipt.json').write_text(json.dumps({'head':subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip(),'sourceSHA256':{str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files},'scope':'preview view, view model and native processor; no touch input'},indent=2)+'\n')
 PY_SOURCES
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o" "$OUT/source/RawLab/RawLab/Support/RawMetadataBridge.mm"
 rawlab_ios_core_shared_sources SOURCES "$OUT/source/RawLab/RawLab/Core" "$OUT/source/RawLab/RawLab/UI/Preview" "$OUT/source/Shared"
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 all
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -module-cache-path "$OUT/module-cache" -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" -Xcc -I"$ROOT/lutools/include" "${SOURCES[@]}" "$OUT/source/RawLab/RawLab/UI/EditorState/EditorToolDraft.swift" "$OUT/source/RawLab/tests/ViewingRenderTests.swift" "$OUT/bridge.o" -F "$APP/Frameworks" -framework sony2fuji -lc++ -Xlinker -rpath -Xlinker @executable_path/Frameworks -o "$APP/viewing-render"
 codesign --force --deep --sign - "$APP" >/dev/null
 STATUS=0
 xcrun simctl spawn "$DEVICE" "$APP/viewing-render" "$OUT" "${RAWLAB_TEST_RAW:-}" "${RAWLAB_TEST_HDR:-}" || STATUS=$?

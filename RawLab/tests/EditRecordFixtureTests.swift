@@ -311,7 +311,7 @@ struct Harness {
         if let v = num(sdrValues["color.white_balance.tint"]) { settings.tint = v }
         if let v = num(sdrValues["color.saturation"]) { settings.saturation = v }
 
-        settings.hsl = parseHSL(sdrValues)
+        settings.hslSettings = parseHSL(sdrValues)
 
         var effects = PhotoEffectsSettings()
         if let v = num(sdrValues["effects.vignette.amount"]) { effects.vignetteAmount = v }
@@ -322,12 +322,11 @@ struct Harness {
         if let v = num(sdrValues["effects.grain.amount"]) { effects.grainAmount = v }
         if let v = num(sdrValues["effects.grain.size"]) { effects.grainSize = v }
         if let v = num(sdrValues["effects.grain.roughness"]) { effects.grainRoughness = v }
-        settings.photoEffects = effects
+        settings.effectSettings = effects
 
         if let v = num(sdrValues["effects.clarity"]) { settings.clarity = v }
         if let v = num(sdrValues["effects.dehaze"]) { settings.dehaze = v }
         if let v = num(sdrValues["detail.sharpening"]) { settings.sharpening = v }
-        if let v = num(sdrValues["detail.denoise.post_rgb"]) { settings.noiseReduction = v }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { settings.displayChromaDenoise = v }
         if let wObj = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             settings.denoise = RawDenoiseSettings(
@@ -349,7 +348,7 @@ struct Harness {
         if let v = num(sdrValues["geometry.straighten_degrees"]) { geom.straightenDegrees = v }
         if let v = num(sdrValues["geometry.perspective.horizontal"]) { geom.perspectiveHorizontal = v }
         if let v = num(sdrValues["geometry.perspective.vertical"]) { geom.perspectiveVertical = v }
-        settings.geometry = geom
+        settings.geometrySettings = geom
 
         if sdrValues.keys.contains(where: { $0.hasPrefix("geometry.lens.") }) {
             var lens = LensCorrectionSettings()
@@ -516,20 +515,19 @@ struct Harness {
         if let v = num(sdrValues["color.white_balance.temperature_kelvin"]) { verify(approx(s.temperature, v), "wb.temp") }
         if let v = num(sdrValues["color.white_balance.tint"]) { verify(approx(s.tint, v), "wb.tint") }
         if let v = num(sdrValues["color.saturation"]) { verify(approx(s.saturation, v), "color.saturation") }
-        verifyHSLInto(sdrValues, s.hsl, "sdr")
+        verifyHSLInto(sdrValues, s.hslSettings, "sdr")
 
-        if let v = num(sdrValues["effects.vignette.amount"]) { verify(approx(s.photoEffects.vignetteAmount, v), "effects.vignette.amount(exp=\(v),got=\(s.photoEffects.vignetteAmount))") }
-        if let v = num(sdrValues["effects.vignette.midpoint"]) { verify(approx(s.photoEffects.vignetteMidpoint, v), "effects.vignette.midpoint(exp=\(v),got=\(s.photoEffects.vignetteMidpoint))") }
-        if let v = num(sdrValues["effects.vignette.roundness"]) { verify(approx(s.photoEffects.vignetteRoundness, v), "effects.vignette.roundness(exp=\(v),got=\(s.photoEffects.vignetteRoundness))") }
-        if let v = num(sdrValues["effects.vignette.feather"]) { verify(approx(s.photoEffects.vignetteFeather, v), "effects.vignette.feather(exp=\(v),got=\(s.photoEffects.vignetteFeather))") }
-        if let v = num(sdrValues["effects.vignette.highlights"]) { verify(approx(s.photoEffects.vignetteHighlights, v), "effects.vignette.highlights(exp=\(v),got=\(s.photoEffects.vignetteHighlights))") }
-        if let v = num(sdrValues["effects.grain.amount"]) { verify(approx(s.photoEffects.grainAmount, v), "effects.grain.amount(exp=\(v),got=\(s.photoEffects.grainAmount))") }
-        if let v = num(sdrValues["effects.grain.size"]) { verify(approx(s.photoEffects.grainSize, v), "effects.grain.size(exp=\(v),got=\(s.photoEffects.grainSize))") }
-        if let v = num(sdrValues["effects.grain.roughness"]) { verify(approx(s.photoEffects.grainRoughness, v), "effects.grain.roughness(exp=\(v),got=\(s.photoEffects.grainRoughness))") }
+        if let v = num(sdrValues["effects.vignette.amount"]) { verify(approx(s.effectSettings.vignetteAmount, v), "effects.vignette.amount(exp=\(v),got=\(s.effectSettings.vignetteAmount))") }
+        if let v = num(sdrValues["effects.vignette.midpoint"]) { verify(approx(s.effectSettings.vignetteMidpoint, v), "effects.vignette.midpoint(exp=\(v),got=\(s.effectSettings.vignetteMidpoint))") }
+        if let v = num(sdrValues["effects.vignette.roundness"]) { verify(approx(s.effectSettings.vignetteRoundness, v), "effects.vignette.roundness(exp=\(v),got=\(s.effectSettings.vignetteRoundness))") }
+        if let v = num(sdrValues["effects.vignette.feather"]) { verify(approx(s.effectSettings.vignetteFeather, v), "effects.vignette.feather(exp=\(v),got=\(s.effectSettings.vignetteFeather))") }
+        if let v = num(sdrValues["effects.vignette.highlights"]) { verify(approx(s.effectSettings.vignetteHighlights, v), "effects.vignette.highlights(exp=\(v),got=\(s.effectSettings.vignetteHighlights))") }
+        if let v = num(sdrValues["effects.grain.amount"]) { verify(approx(s.effectSettings.grainAmount, v), "effects.grain.amount(exp=\(v),got=\(s.effectSettings.grainAmount))") }
+        if let v = num(sdrValues["effects.grain.size"]) { verify(approx(s.effectSettings.grainSize, v), "effects.grain.size(exp=\(v),got=\(s.effectSettings.grainSize))") }
+        if let v = num(sdrValues["effects.grain.roughness"]) { verify(approx(s.effectSettings.grainRoughness, v), "effects.grain.roughness(exp=\(v),got=\(s.effectSettings.grainRoughness))") }
         if let v = num(sdrValues["effects.clarity"]) { verify(approx(s.clarity, v), "effects.clarity") }
         if let v = num(sdrValues["effects.dehaze"]) { verify(approx(s.dehaze, v), "effects.dehaze") }
         if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening, v), "detail.sharpening") }
-        if let v = num(sdrValues["detail.denoise.post_rgb"]) { verify(approx(s.noiseReduction, v), "detail.denoise.post_rgb") }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { verify(s.displayChromaDenoise == v, "detail.denoise.chroma_mode") }
         if let w = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
             verify(s.denoise.enabled == (w["enabled"] as? Bool ?? false), "wavelet.enabled")
@@ -542,7 +540,7 @@ struct Harness {
             }
         }
 
-        verifyGeomInto(sdrValues, s.geometry, "sdr")
+        verifyGeomInto(sdrValues, s.geometrySettings, "sdr")
         if sdrValues.keys.contains("geometry.lens.distortion") {
             let l = s.lensSettings
             verify(l.distortion == (sdrValues["geometry.lens.distortion"] as? Bool ?? false), "lens.dist")
@@ -725,7 +723,7 @@ struct Harness {
         case "lens":
             var sub = settings["lensCorrection"] as! [String: Any]; inject(&sub); settings["lensCorrection"] = sub
         case "denoise":
-            var sub = settings["denoise"] as! [String: Any]; inject(&sub); settings["denoise"] = sub
+            var sub = settings["waveletNoiseReduction"] as! [String: Any]; inject(&sub); settings["waveletNoiseReduction"] = sub
         case "effects":
             var sub = settings["photoEffects"] as! [String: Any]; inject(&sub); settings["photoEffects"] = sub
         case "hdr":

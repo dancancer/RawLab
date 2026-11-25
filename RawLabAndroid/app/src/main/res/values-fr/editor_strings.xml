@@ -86,7 +86,7 @@
     <string name="curve_darks">"Tons foncés"</string>
     <string name="curve_edit_point">"Modifier le point"</string>
     <string name="curve_fixed_endpoint">"Les extrémités sont fixes"</string>
-    <string name="curve_hint">"Touchez la zone de courbe pour ajouter un point. Faites glisser les points intérieurs pour ajuster."</string>
+    <string name="curve_hint">"Cliquez ou touchez pour ajouter un point ; double-cliquez dessus ou glissez-le hors du cadre pour le supprimer."</string>
     <string name="curve_input">"Entrée"</string>
     <string name="curve_lights">"Tons clairs"</string>
     <string name="curve_luminosity_only">"Luminance uniquement"</string>
@@ -95,7 +95,7 @@
     <string name="curve_point_mode">"Courbe à points"</string>
     <string name="curve_point_number">"Point %1$d"</string>
     <string name="curve_remove_point">"Supprimer le point"</string>
-    <string name="curve_reset">"Réinitialiser la courbe"</string>
+    <string name="curve_reset">"Réinitialiser la courbe paramétrique"</string>
     <string name="curve_reset_identity">"Rétablir une droite"</string>
     <string name="curve_split_points">"Points de séparation"</string>
     <string name="curve_summary">"Courbe à points (%1$d points)"</string>

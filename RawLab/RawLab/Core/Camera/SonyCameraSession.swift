@@ -12,6 +12,9 @@ struct CameraFocusPointResult {
 final class SonyCameraSession {
     static let maximumListedAssets = 10_000
     static let maximumMobilePages = 1_000
+    static let slotDatesLimit = CameraWire.slotDatesLimit
+    private static let remoteInitRetryOps: Set<UInt16> = [0x923b, 0x923c]
+    private static let remoteInitRetryCodes: Set<UInt16> = [0x2002, 0x2005, 0x201e]
 
     let id = UUID()
     let device: CameraDeviceIdentity
@@ -27,14 +30,19 @@ final class SonyCameraSession {
     private var stopping = false, capturing = false
 
     static func open(host: String, purpose: CameraSessionPurpose, clientID: UUID,
+                     openChannel: ((UInt16) throws -> CameraByteChannel)? = nil,
                      register: (CameraPTPClient) -> Void) throws -> SonyCameraSession {
-        let command = try CameraTCPChannel(host: host)
+        let openPTP: () throws -> CameraByteChannel = {
+            if let openChannel {
+                return try openChannel(15740)
+            }
+            return try CameraTCPChannel(host: host)
+        }
+        let command = try openPTP()
         let client = CameraPTPClient(command: command, event: nil)
         register(client)
         do {
-            try client.initialize(clientID: clientID, openEvent: {
-                try CameraTCPChannel(host: host)
-            })
+            try client.initialize(clientID: clientID, openEvent: openPTP)
             return try SonyCameraSession(client: client, purpose: purpose)
         } catch { client.close(); throw error }
     }
@@ -84,14 +92,41 @@ final class SonyCameraSession {
             try checkRunning()
             let bytes = try client.operation(0x9202, parameters: [0x12c, 1], requiresData: true, limit: 65536)
             if !bytes.isEmpty {
-                var reader = CameraDataReader(bytes)
-                let version = try reader.u16(), properties = try reader.u16Array()
-                controls = try reader.u16Array()
-                guard [UInt16(0x12c), 0xc8].contains(version), reader.remaining == 0 else {
+                let raw = Array(bytes)
+                var version: UInt16 = 0
+                var tables: Int32 = 1
+                var descPtr: OpaquePointer?
+                let st = raw.withUnsafeBufferPointer { buf in
+                    sony2fuji_sony_parse_remote_descriptor(buf.baseAddress, buf.count, &version, &tables, &descPtr)
+                }
+                if st == SONY2FUJI_STATUS_UNSUPPORTED {
                     throw CameraProtocolError.unsupported("Unsupported Sony remote descriptor version")
                 }
-                enumTables = version == 0x12c ? 2 : 1
-                if !properties.isEmpty || !controls.isEmpty { initialized = true; break }
+                guard st == SONY2FUJI_STATUS_OK, let descPtr else {
+                    throw CameraProtocolError.invalid("Invalid Sony remote descriptor")
+                }
+                defer { sony2fuji_sony_remote_descriptor_free(descPtr) }
+                var propCount: UInt32 = 0
+                var ctrlCount: UInt32 = 0
+                guard sony2fuji_sony_remote_descriptor_properties(descPtr, nil, 0, &propCount) == SONY2FUJI_STATUS_OK,
+                      sony2fuji_sony_remote_descriptor_controls(descPtr, nil, 0, &ctrlCount) == SONY2FUJI_STATUS_OK else {
+                    throw CameraProtocolError.invalid("Invalid Sony remote descriptor")
+                }
+                var props = [UInt16](repeating: 0, count: Int(propCount))
+                if propCount > 0 {
+                    _ = props.withUnsafeMutableBufferPointer { buf in
+                        sony2fuji_sony_remote_descriptor_properties(descPtr, buf.baseAddress, propCount, &propCount)
+                    }
+                }
+                var ctrls = [UInt16](repeating: 0, count: Int(ctrlCount))
+                if ctrlCount > 0 {
+                    _ = ctrls.withUnsafeMutableBufferPointer { buf in
+                        sony2fuji_sony_remote_descriptor_controls(descPtr, buf.baseAddress, ctrlCount, &ctrlCount)
+                    }
+                }
+                controls = Set(ctrls.prefix(Int(ctrlCount)))
+                enumTables = Int(tables)
+                if propCount > 0 || ctrlCount > 0 { initialized = true; break }
             }
             try pause(0.1)
         }
@@ -120,24 +155,77 @@ final class SonyCameraSession {
         throw CameraProtocolError.unsupported("Camera card is not available")
     }
 
+    private enum MobileSlotState {
+        case hasPhotos, empty, unknown
+    }
+
+    private func probeMobileSlot(_ slot: UInt32) throws -> MobileSlotState {
+        do {
+            let bytes = try client.operation(0x923b, parameters: [slot], requiresData: true, limit: Self.slotDatesLimit)
+            return try CameraWire.slotDateCount(bytes) > 0 ? .hasPhotos : .empty
+        } catch CameraProtocolError.response(let op, let code) where op == 0x923b {
+            if code == 0x201d || code == 0x2013 { return .empty }
+            if slot == 1 && Self.remoteInitRetryCodes.contains(code) {
+                throw CameraProtocolError.response(op, code)
+            }
+            return slot == 1 ? .unknown : .empty
+        }
+    }
+
+    private func listMobileSlot(_ slot: UInt32, into assets: inout [CameraRemoteAsset], seen: inout Set<String>) throws {
+        var cursor: UInt64 = 0
+        for _ in 0..<Self.maximumMobilePages {
+            try checkRunning()
+            let bytes = try client.operation(
+                0x923c,
+                parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, slot, 0],
+                requiresData: true,
+                limit: CameraWire.dataLimit
+            )
+            let page = try CameraWire.mobilePage(bytes, owner: id, slot: slot)
+            for asset in page.assets where seen.insert(asset.snapshot.key).inserted {
+                assets.append(asset)
+            }
+            guard assets.count <= Self.maximumListedAssets else { throw CameraProtocolError.photoLimitExceeded }
+            if page.count < 100 { return }
+            guard page.cursor > cursor else { throw CameraProtocolError.invalid("Camera page cursor did not advance") }
+            cursor = page.cursor
+        }
+        throw CameraProtocolError.photoLimitExceeded
+    }
+
+    private func listMobileAssets() throws -> [CameraRemoteAsset] {
+        var assets: [CameraRemoteAsset] = [], seen: Set<String> = []
+        if device.operations.contains(0x923b) {
+            let slot1 = try probeMobileSlot(1)
+            if slot1 != .empty {
+                try listMobileSlot(1, into: &assets, seen: &seen)
+            }
+            let slot2 = try probeMobileSlot(2)
+            if slot2 == .hasPhotos {
+                try listMobileSlot(2, into: &assets, seen: &seen)
+            }
+            return assets
+        }
+        try listMobileSlot(1, into: &assets, seen: &seen)
+        return assets
+    }
+
     func listAssets() throws -> [CameraRemoteAsset] {
         try checkRunning()
         do {
             switch family {
             case .mobile:
-                var cursor: UInt64 = 0, assets: [CameraRemoteAsset] = [], seen: Set<String> = []
-                for _ in 0..<Self.maximumMobilePages {
-                    try checkRunning()
-                    let bytes = try client.operation(0x923c, parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
-                                                     requiresData: true, limit: CameraWire.dataLimit)
-                    let page = try CameraWire.mobilePage(bytes, owner: id)
-                    for asset in page.assets where seen.insert(asset.snapshot.key).inserted { assets.append(asset) }
-                    guard assets.count <= Self.maximumListedAssets else { throw CameraProtocolError.photoLimitExceeded }
-                    if page.count < 100 { return assets }
-                    guard page.cursor > cursor else { throw CameraProtocolError.invalid("Camera page cursor did not advance") }
-                    cursor = page.cursor
+                do {
+                    return try listMobileAssets()
+                } catch CameraProtocolError.response(let op, let code)
+                    where purpose == .importing && !remoteReady &&
+                        Self.remoteInitRetryOps.contains(op) &&
+                        Self.remoteInitRetryCodes.contains(code) &&
+                        device.operations.isSuperset(of: [0x9201, 0x9202, 0x9209]) {
+                    try initializeRemote()
+                    return try listMobileAssets()
                 }
-                throw CameraProtocolError.photoLimitExceeded
             case .legacy:
                 guard contentsEntered else { throw CameraProtocolError.unsupported("Open a separate card session before reading legacy contents") }
                 var handles: Set<UInt32> = [], assets: [CameraRemoteAsset] = []
@@ -171,7 +259,7 @@ final class SonyCameraSession {
         guard asset.owner == id else { throw CameraProtocolError.invalid("Camera photo belongs to another session") }
         if family == .mobile {
             guard device.operations.contains(0x923e) else { throw CameraProtocolError.unsupported("Camera previews are unavailable") }
-            return try client.operation(0x923e, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file, large ? 2 : 1],
+            return try client.operation(0x923e, parameters: [asset.snapshot.content, asset.snapshot.effectiveSlot << 24 | asset.snapshot.file, large ? 2 : 1],
                                         requiresData: true, limit: large ? 8 << 20 : 2 << 20)
         }
         guard contentsEntered, device.operations.contains(0x100a) else { throw CameraProtocolError.unsupported("Camera thumbnails are unavailable") }
@@ -195,7 +283,7 @@ final class SonyCameraSession {
             throw CameraProtocolError.unsupported("Mobile range read is unavailable")
         }
         let bytes = try client.operation(0x923d, parameters: [
-            asset.snapshot.content, 1 << 24 | asset.snapshot.file,
+            asset.snapshot.content, asset.snapshot.effectiveSlot << 24 | asset.snapshot.file,
             UInt32(truncatingIfNeeded: offset), UInt32(offset >> 32), UInt32(length)
         ], requiresData: true, limit: length)
         guard bytes.count == length else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
@@ -206,17 +294,18 @@ final class SonyCameraSession {
         guard let targetCreated = UInt64(asset.snapshot.created) else {
             return try listAssets().contains(where: { $0.snapshot == asset.snapshot })
         }
+        let slot = asset.snapshot.effectiveSlot
         var cursor: UInt64 = targetCreated > 0 ? targetCreated - 1 : 0
         do {
             for _ in 0..<Self.maximumMobilePages {
                 try checkRunning()
                 let bytes = try client.operation(
                     0x923c,
-                    parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
+                    parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, slot, 0],
                     requiresData: true,
                     limit: CameraWire.dataLimit
                 )
-                let page = try CameraWire.mobilePage(bytes, owner: id)
+                let page = try CameraWire.mobilePage(bytes, owner: id, slot: slot)
                 if page.assets.contains(where: { $0.snapshot == asset.snapshot }) {
                     return true
                 }
@@ -249,9 +338,10 @@ final class SonyCameraSession {
             digest.update(data: data); received += UInt64(data.count); progress(received)
         }
         if family == .mobile {
+            let slot = asset.snapshot.effectiveSlot
             while received < asset.snapshot.size {
                 let count = min(UInt64(3 << 20), asset.snapshot.size - received)
-                let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file,
+                let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, slot << 24 | asset.snapshot.file,
                     UInt32(truncatingIfNeeded: received), UInt32(received >> 32), UInt32(count)], requiresData: true, limit: Int(count))
                 guard bytes.count == count else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
                 try receive(bytes)
@@ -307,43 +397,64 @@ final class SonyCameraSession {
         default: return nil
         }
     }
-    static let fixedFocusAreas: Set<Int64> = [0x0001, 0x0003, 0x0201, 0x0203]
-
     static func isFocusLocked(_ properties: [UInt16: CameraProperty]) -> Bool {
-        guard let value = properties[0xd213]?.number else { return false }
-        return value == 2 || value == 6
+        CameraWire.withPropertyTable(properties) { table in
+            var locked: Int32 = 0
+            sony2fuji_sony_property_table_focus_indication(table, &locked, nil)
+            return locked != 0
+        }
     }
 
     static func isFocusFailed(_ properties: [UInt16: CameraProperty]) -> Bool {
-        guard let value = properties[0xd213]?.number else { return false }
-        return value == 3 || value == 7
+        CameraWire.withPropertyTable(properties) { table in
+            var failed: Int32 = 0
+            sony2fuji_sony_property_table_focus_indication(table, nil, &failed)
+            return failed != 0
+        }
     }
 
     func canCancelTouchFocus(_ properties: [UInt16: CameraProperty]) -> Bool {
-        purpose == .tethering && remoteReady && !contentsEntered && !stopped &&
-            device.operations.contains(0x9207) && controls.contains(0xd2e5) &&
-            properties[0xd285]?.enabled == 1 && properties[0xd285]?.number == 1
+        guard purpose == .tethering, remoteReady, !contentsEntered, !stopped else { return false }
+        let ctrls = Array(controls)
+        let ops = Array(device.operations)
+        return CameraWire.withPropertyTable(properties) { table in
+            ctrls.withUnsafeBufferPointer { cBuf in
+                ops.withUnsafeBufferPointer { oBuf in
+                    sony2fuji_sony_property_table_can_cancel_touch_focus(
+                        table, cBuf.baseAddress, UInt32(cBuf.count), oBuf.baseAddress, UInt32(oBuf.count), 1
+                    ) != 0
+                }
+            }
+        }
     }
 
     func focusTarget(_ properties: [UInt16: CameraProperty]) -> Result<CameraFocusPointTarget, CameraFocusUnavailableReason> {
-        guard purpose == .tethering, remoteReady, !contentsEntered, !stopped,
-              device.operations.contains(0x9207) else { return .failure(.unsupported) }
-        if controls.contains(0xd2e4), properties[0xd284]?.enabled == 1, properties[0xd284]?.number == 1 {
-            return .success(.remoteTouch)
-        }
-        if properties[0x500a]?.number == 1 {
-            return .failure(.manualFocus)
-        }
-        if controls.contains(0xd2dc) {
-            if let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
-                return .failure(.focusAreaFixed)
+        guard purpose == .tethering, remoteReady, !contentsEntered, !stopped else { return .failure(.unsupported) }
+        let ctrls = Array(controls)
+        let ops = Array(device.operations)
+        return CameraWire.withPropertyTable(properties) { table in
+            var target = SONY2FUJI_SONY_FOCUS_TARGET_NONE
+            var reason = SONY2FUJI_SONY_FOCUS_UNAVAILABLE_UNSUPPORTED
+            let status = ctrls.withUnsafeBufferPointer { cBuf in
+                ops.withUnsafeBufferPointer { oBuf in
+                    sony2fuji_sony_property_table_resolve_focus_target(
+                        table, cBuf.baseAddress, UInt32(cBuf.count), oBuf.baseAddress, UInt32(oBuf.count),
+                        1, &target, &reason
+                    )
+                }
             }
-            return .success(.afAreaPosition)
+            guard status == SONY2FUJI_STATUS_OK else { return .failure(.unsupported) }
+            switch target {
+            case SONY2FUJI_SONY_FOCUS_TARGET_REMOTE_TOUCH: return .success(.remoteTouch)
+            case SONY2FUJI_SONY_FOCUS_TARGET_AF_AREA_POSITION: return .success(.afAreaPosition)
+            default:
+                switch reason {
+                case SONY2FUJI_SONY_FOCUS_UNAVAILABLE_MANUAL_FOCUS: return .failure(.manualFocus)
+                case SONY2FUJI_SONY_FOCUS_UNAVAILABLE_AREA_FIXED: return .failure(.focusAreaFixed)
+                default: return .failure(.unsupported)
+                }
+            }
         }
-        if controls.contains(0xd2e4), let area = properties[0xd22c]?.number, Self.fixedFocusAreas.contains(area) {
-            return .failure(.focusAreaFixed)
-        }
-        return .failure(.unsupported)
     }
 
     func setFocusPoint(x: Int, y: Int) throws -> CameraFocusPointResult {

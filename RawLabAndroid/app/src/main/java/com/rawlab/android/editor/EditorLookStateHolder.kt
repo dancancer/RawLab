@@ -1,6 +1,5 @@
 package com.rawlab.android.editor
 
-import android.content.SharedPreferences
 import android.net.Uri
 import android.util.Log
 import com.rawlab.android.R
@@ -8,20 +7,14 @@ import com.rawlab.android.editor.render.LookResult
 import com.rawlab.android.editor.render.LookWork
 import com.rawlab.android.editor.render.RenderQueue
 import com.rawlab.android.editor.render.Work
-import com.rawlab.android.editor.storage.EditSaveResult
-import com.rawlab.android.i18n.AppStrings
 import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.looks.DcpImportChoices
 import com.rawlab.android.looks.LUTCompatibility
-import com.rawlab.android.looks.MasterRecipe
 import com.rawlab.android.looks.RecentLooks
 import com.rawlab.android.looks.UnreadableLook
 import com.rawlab.android.looks.localizedName
-import com.rawlab.android.photo.ImportedPhoto
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.LookChoice
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -29,29 +22,12 @@ import org.json.JSONArray
 private const val LOOK_TAG = "com.rawlab.EditorViewModel"
 
 internal class EditorLookStateHolder(
-    private val mutable: MutableStateFlow<EditorState>,
-    private val scope: CoroutineScope,
-    private val strings: EditorStrings,
-    preferencesFactory: () -> SharedPreferences,
-    private val loadMasterRecipes: () -> List<MasterRecipe>,
-    lookWorkRunner: (LookWork) -> LookResult,
-    onQueueReleased: () -> Unit,
-    private val isDisposed: () -> Boolean,
-    private val currentSourceRevision: () -> Long,
-    private val currentDraftRevision: () -> Long,
-    private val currentPreviewLongEdge: () -> Int,
-    private val requestedPreviewLongEdge: () -> Int,
-    private val gpuMode: () -> Int,
-    private val onEdit: (EditSettings, Boolean) -> Unit,
-    private val onRenderDraft: (Boolean) -> Unit,
-    private val onClearPendingResetMigration: () -> Unit,
-    private val onPersist: (ImportedPhoto, EditSettings, (EditSaveResult) -> Unit) -> Unit,
-    private val onIncrementEditRevision: () -> Unit,
-    private val onClearDurablePreview: () -> Unit,
-    private val onSubmitPreview: (Work.Preview) -> Unit,
-    private val onUpdatePreviewSize: (Int) -> Unit,
+    private val session: EditorDocumentSession,
 ) {
-    private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED, preferencesFactory)
+    private val mutable get() = session.mutable
+    private val scope get() = session.scope
+    private val strings get() = session.strings
+    private val preferences by lazy(LazyThreadSafetyMode.SYNCHRONIZED, session.dependencies.lookPreferencesFactory)
     private val recentLooks by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         RecentLooks(runCatching {
             val entries = JSONArray(preferences.getString("recent", "[]"))
@@ -62,13 +38,13 @@ internal class EditorLookStateHolder(
     private var lookImportSelectionContext: Pair<Long, Long>? = null
 
     val queue = RenderQueue<LookWork, LookResult>(
-        lookWorkRunner,
+        session.dependencies.lookWorkRunner,
         { revision, result ->
             scope.launch {
-                if (!isDisposed() && revision == lookRevision) acceptLook(result)
+                if (!session.disposed && revision == lookRevision) acceptLook(result)
             }
         },
-        onQueueReleased,
+        session.storageRelease.releaserFor("lookQueue"),
     )
 
     fun loadInitial() {
@@ -82,7 +58,7 @@ internal class EditorLookStateHolder(
             val revision = lookRevision
             scope.launch {
                 mutable.first { !it.committingAdjustments }
-                if (!isDisposed() && revision == lookRevision) acceptLook(result)
+                if (!session.disposed && revision == lookRevision) acceptLook(result)
             }
             return
         }
@@ -94,7 +70,7 @@ internal class EditorLookStateHolder(
                 error = strings.text(R.string.look_storage_error) + "\n" + (error.message ?: error.javaClass.simpleName),
             )
         }
-        onUpdatePreviewSize(requestedPreviewLongEdge())
+        session.actions.updatePreviewSize(session.actions.requestedPreviewLongEdge())
     }
 
     private fun acceptLookValue(result: LookResult) {
@@ -115,7 +91,7 @@ internal class EditorLookStateHolder(
                 updateRecentLooks()
             }
             is LookResult.Imported -> {
-                val contextMatches = lookImportSelectionContext == (currentSourceRevision() to currentDraftRevision())
+                val contextMatches = lookImportSelectionContext == (session.sourceRevision to session.actions.draftRevision())
                 val mutation = result.imported.lastOrNull()?.takeIf { contextMatches }
                     ?.let { EditorStateReducer.lookImported(mutable.value, it) }
                     ?: EditorMutation(mutable.value.copy(operation = Operation.NONE, exportStep = SingleExportStep.NONE), null)
@@ -174,15 +150,15 @@ internal class EditorLookStateHolder(
         val photo = mutable.value.photo ?: return
         if (edits == null) return
         if (mutable.value.draft != null) {
-            onRenderDraft(false)
+            session.actions.renderDraft(false)
             return
         }
-        onClearPendingResetMigration()
-        onPersist(photo, edits) { saved ->
+        session.actions.clearPendingResetMigration(null, null)
+        session.actions.persist(photo, edits, false) { saved ->
             mutable.value = mutable.value.copy(saveState = saved.state, saveError = saved.message)
-            onIncrementEditRevision()
-            onClearDurablePreview()
-            onSubmitPreview(Work.Preview(photo, edits, false, gpuMode(), edge = currentPreviewLongEdge()))
+            session.incrementEditRevision()
+            session.actions.clearDurablePreview()
+            session.actions.submitRender(Work.Preview(photo, edits, false, session.gpuMode(), edge = session.previewLongEdge))
         }
     }
 
@@ -215,7 +191,7 @@ internal class EditorLookStateHolder(
             error = null,
             lookImportReport = null,
         )
-        lookImportSelectionContext = currentSourceRevision() to currentDraftRevision()
+        lookImportSelectionContext = session.sourceRevision to session.actions.draftRevision()
         lookRevision = queue.submit(LookWork.Import(uris.toList()))
     }
 
@@ -283,7 +259,7 @@ internal class EditorLookStateHolder(
             )
             return false
         }
-        onEdit(candidate, false)
+        session.actions.edit(candidate, false, false)
         return mutable.value.visibleEdits == candidate
     }
 
@@ -298,7 +274,7 @@ internal class EditorLookStateHolder(
     fun includeIndependentRecipeLook(settings: EditSettings) {
         if (!settings.film.startsWith("recipe-lut:") || mutable.value.looks.any { it.id == settings.film }) return
         val id = settings.film.removePrefix("recipe-lut:")
-        val recipe = loadMasterRecipes().firstOrNull { it.id == id } ?: return
+        val recipe = session.dependencies.masterRecipesLoader().firstOrNull { it.id == id } ?: return
         mutable.value = mutable.value.copy(looks = mutable.value.looks + LookChoice(settings.film, "${recipe.localizedName} LUT", managed = false))
     }
 }

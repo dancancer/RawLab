@@ -84,27 +84,39 @@ class BatchJournal internal constructor(
     /** 「读得到但认识不了」与「版本比本端新」的区分：只在版本号高于本端当前值时判定为未来版本。 */
     private fun isFutureSettings(value: String?): Boolean {
         if (value == null) return false
-        if (!value.startsWith("v2:")) {
-            // 旧管道格式：processing 标识是第 54 字段；解析不出数字的按损坏处理。
+        val prefixMatch = Regex("^v(\\d+):").find(value)
+        if (prefixMatch != null) {
+            val prefixVersion = prefixMatch.groupValues[1].toIntOrNull()
+            val body = value.substring(prefixMatch.range.last + 1)
+            if (body.trimStart().startsWith("{")) {
+                try {
+                    val root = JSONObject(body)
+                    if ((prefixVersion != null && prefixVersion > 3) || root.optInt("version", prefixVersion ?: 3) > 3) return true
+                    val settings = root.optJSONObject("settings") ?: return false
+                    val processing = settings.optJSONObject("processing")
+                    if (processing != null && processing.optString("family") == "rawlab" &&
+                        processing.optInt("version") > ProcessingIdentity.CURRENT.version) return true
+                    if (settings.optInt("masterRecipeSettingsVersion", 3) > 4) return true
+                    val hdr = settings.optJSONObject("hdr")
+                    return hdr != null && (hdr.optInt("hdr_processing_version") > 10 || hdr.optInt("record_version") > 11 ||
+                        (hdr.optJSONObject("camera_development")?.optInt("version") ?: 0) > 1)
+                } catch (_: Exception) {
+                    // Not valid JSON (e.g. legacy film ID like "v2:{custom-look}|..." or corrupt JSON).
+                }
+            }
             val fields = value.split('|')
-            val parts = fields.getOrNull(53)?.split(',') ?: return false
-            val version = parts.getOrNull(1)?.toIntOrNull() ?: return false
-            return parts.getOrNull(0) == "rawlab" && version > ProcessingIdentity.CURRENT.version
+            if (fields.size in listOf(12, 16, 25, 50, 51, 52, 53, 54)) {
+                val parts = fields.getOrNull(53)?.split(',') ?: return false
+                val version = parts.getOrNull(1)?.toIntOrNull() ?: return false
+                return parts.getOrNull(0) == "rawlab" && version > ProcessingIdentity.CURRENT.version
+            }
+            return prefixVersion != null && prefixVersion > 3
         }
-        return try {
-            val root = JSONObject(value.removePrefix("v2:"))
-            if (root.optInt("version", 2) > 2) return true
-            val settings = root.optJSONObject("settings") ?: return false
-            val processing = settings.optJSONObject("processing")
-            if (processing != null && processing.optString("family") == "rawlab" &&
-                processing.optInt("version") > ProcessingIdentity.CURRENT.version) return true
-            if (settings.optInt("masterRecipeSettingsVersion", 3) > 4) return true
-            val hdr = settings.optJSONObject("hdr")
-            hdr != null && (hdr.optInt("hdr_processing_version") > 9 || hdr.optInt("record_version") > 10 ||
-                (hdr.optJSONObject("camera_development")?.optInt("version") ?: 0) > 1)
-        } catch (_: Exception) {
-            false
-        }
+        // 旧管道格式：processing 标识是第 54 字段；解析不出数字的按损坏处理。
+        val fields = value.split('|')
+        val parts = fields.getOrNull(53)?.split(',') ?: return false
+        val version = parts.getOrNull(1)?.toIntOrNull() ?: return false
+        return parts.getOrNull(0) == "rawlab" && version > ProcessingIdentity.CURRENT.version
     }
 
     fun save(job: BatchJob) = synchronized(rootLock) {

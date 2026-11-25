@@ -1,6 +1,6 @@
 import Foundation
 
-public struct DiagnosticEnvironment: Codable, Sendable {
+public struct DiagnosticEnvironment: Codable, Equatable, Sendable {
     public let platform: String
     public let appVersion: String
     public let build: String
@@ -16,7 +16,7 @@ public struct DiagnosticEnvironment: Codable, Sendable {
     }
 }
 
-public struct DiagnosticNativeError: Codable, Sendable {
+public struct DiagnosticNativeError: Codable, Equatable, Sendable {
     public let status: Int
     public var reason: Int?
     public var field: Int?
@@ -112,10 +112,12 @@ public final class ErrorDiagnostics: @unchecked Sendable {
     }
 
     private let directory: URL
-    private let environment: DiagnosticEnvironment
+    public let environment: DiagnosticEnvironment
     private let capacity: Int
     private let queue = DispatchQueue(label: "com.rawlab.error-diagnostics", qos: .utility)
     private var cachedEvents: [Event]?
+    private let observerLock = NSLock()
+    private var failureObserver: (@Sendable (Operation, String, String, Int, [String: String], DiagnosticNativeError?) -> Void)?
 
     public init(directory: URL, environment: DiagnosticEnvironment, capacity: Int = 64) {
         self.directory = directory
@@ -123,11 +125,31 @@ public final class ErrorDiagnostics: @unchecked Sendable {
         self.capacity = max(2, capacity)
     }
 
+    public func setFailureObserver(
+        _ observer: (@Sendable (Operation, String, String, Int, [String: String], DiagnosticNativeError?) -> Void)?
+    ) {
+        observerLock.lock()
+        failureObserver = observer
+        observerLock.unlock()
+    }
+
     public func record(_ error: NSError, operation: Operation, stage: String, attemptID: UUID? = nil,
                        context: [String: String] = [:], native: DiagnosticNativeError? = nil) {
+        let failure = Failure(error, native: native)
         let event = Event(timestamp: Date(), environment: environment, operation: operation, stage: stage,
-                          attemptID: attemptID, outcome: "failed", context: context, error: Failure(error, native: native))
+                          attemptID: attemptID, outcome: "failed", context: context, error: failure)
         queue.async { self.append(event) }
+        observerLock.lock()
+        let observer = failureObserver
+        observerLock.unlock()
+        observer?(operation, stage, failure.domain, failure.code, Self.redactedContext(context), native)
+    }
+
+    public func clear() {
+        queue.sync {
+            cachedEvents = []
+            try? FileManager.default.removeItem(at: journal)
+        }
     }
 
     public func recordImportSuccess(attemptID: UUID, context: [String: String]) {

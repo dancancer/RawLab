@@ -51,7 +51,7 @@ import ImageIO
                     print("PASS ProRAW HDR HEIF \(url.lastPathComponent): P3, ISO gain map, geometry and shooting EXIF")
                 }
                 let output = directory.appendingPathComponent("stream.jpg")
-                let result = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
+                let result = try HDRImage.exportProRAWStream(url: url, info: info, settings: settings, output: output,
                     longEdge: 1024, keepHDR: true, session: session!, temporaryRoot: scratch)
                 let expectedBytes = try Data(contentsOf: expected), outputBytes = try Data(contentsOf: output)
                 require(outputBytes == expectedBytes, "Real ProRAW geometry+resize HDR JPEG differs from whole-frame reference")
@@ -61,18 +61,18 @@ import ImageIO
                 require(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty, "Success leaked scratch files")
 
                 do {
-                    _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
+                    _ = try HDRImage.exportProRAWStream(url: url, info: info, settings: settings, output: output,
                         keepHDR: true, session: session!, temporaryRoot: scratch, cancelled: { true })
                     fatalError("Cancelled stream was published")
                 } catch is CancellationError { }
                 require(try Data(contentsOf: output) == outputBytes, "Cancellation replaced existing output")
                 do {
-                    _ = try ProRAWExporter.export(url: url, info: info, settings: settings, output: scratch,
+                    _ = try HDRImage.exportProRAWStream(url: url, info: info, settings: settings, output: scratch,
                         longEdge: 512, keepHDR: true, session: session!, temporaryRoot: scratch)
                     fatalError("Directory destination was published")
                 } catch let error as HDRNativeError { require(error.status == SONY2FUJI_STATUS_OUTPUT_IO_ERROR, "Wrong rename failure status") }
                 require(try FileManager.default.contentsOfDirectory(atPath: scratch.path).isEmpty, "Failure leaked scratch files")
-                let sdr = try ProRAWExporter.export(url: url, info: info, settings: settings, output: output,
+                let sdr = try HDRImage.exportProRAWStream(url: url, info: info, settings: settings, output: output,
                     longEdge: 1024, keepHDR: false, session: session!, temporaryRoot: scratch)
                 require(try HDRSourceInfo.probe(output) == nil, "SDR output retained a gain map")
                 let imageSource = CGImageSourceCreateWithURL(output as CFURL, nil)!

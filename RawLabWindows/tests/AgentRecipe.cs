@@ -39,7 +39,7 @@ internal static class AgentRecipeTestTool
             edits=new{
                 exposure=new{mode=exposure,ev=request.ExposureEv,brightness=request.Brightness},
                 white_balance=whiteBalance,
-                look=new{path=look==null ? null : Path.GetFullPath(look),strength=(float)state[Parameter.Strength]/100},
+                look=new{path=look==null ? null : Path.GetFullPath(look),strength=(float)state[Parameter.Strength]},
                 tone,
                 detail=new{sharpening=Math.Clamp(request.Sharpening,0,2)},
                 hsl=new{hue=hsl.Hue,saturation=hsl.Saturation,lightness=hsl.Lightness},
@@ -61,13 +61,14 @@ internal static class AgentRecipeTestTool
         _ = state.RenderGrading.NativeConfig();
         var x3f=PhotoInput.IsX3f(path);
         var hasV2Curve=state.RenderCurve.HasV2Extensions;
+        var curveSchema=state.RenderCurve.HasFreeEndpointX ? 18 : 17;
         if(!x3f && !hasV2Curve && toneControls.Vibrance==0 && state.RenderGrading.IsDefault)return json;
         var result=System.Text.Json.Nodes.JsonNode.Parse(json)!;
         if(hasV2Curve) {
-            result["schema_version"]=17;
+            result["schema_version"]=curveSchema;
         }
         if(x3f) {
-            result["schema_version"]=hasV2Curve ? 17 : 7;
+            result["schema_version"]=hasV2Curve ? curveSchema : 7;
             result["x3f_mode"]=state.X3fMode switch { X3fMode.Normal => "normal-v1", X3fMode.Legacy => "legacy", _ => throw new InvalidDataException("Invalid X3F rendering mode") };
         }
         if(toneControls.Vibrance!=0) result["edits"]!["color"]=new System.Text.Json.Nodes.JsonObject { ["vibrance"]=toneControls.Vibrance };

@@ -3032,9 +3032,9 @@
       "formats": [],
       "source": "滨田英明"
     },
-    "点击曲线区域添加控制点，拖动中间点调整。": {
+    "点击添加控制点；双击控制点或拖出画布可删除。": {
       "formats": [],
-      "source": "点击曲线区域添加控制点，拖动中间点调整。"
+      "source": "点击添加控制点；双击控制点或拖出画布可删除。"
     },
     "焦距（mm）": {
       "formats": [],
@@ -4528,9 +4528,9 @@
       "formats": [],
       "source": "拆分点"
     },
-    "重置曲线": {
+    "重置参数曲线": {
       "formats": [],
-      "source": "重置曲线"
+      "source": "重置参数曲线"
     },
     "明亮度": {
       "formats": [],
@@ -4615,6 +4615,220 @@
     "16-bit PNG": {
       "formats": [],
       "source": "16-bit PNG"
+    },
+    "AI 降噪": {
+      "formats": [],
+      "source": "AI 降噪"
+    },
+    "不支持此处理版本，原有记录未被覆盖。": {
+      "formats": [],
+      "source": "不支持此处理版本，原有记录未被覆盖。"
+    },
+    "已导出": {
+      "formats": [],
+      "source": "已导出"
+    },
+    "无法写入输出目录，请检查访问权限和剩余空间。": {
+      "formats": [],
+      "source": "无法写入输出目录，请检查访问权限和剩余空间。"
+    },
+    "无法读取调整记录：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "无法读取调整记录：{0}"
+    },
+    "请至少选择一张照片。": {
+      "formats": [],
+      "source": "请至少选择一张照片。"
+    },
+    "输入调整": {
+      "formats": [],
+      "source": "输入调整"
+    },
+    "明暗": {
+      "formats": [],
+      "source": "明暗"
+    },
+    "色彩": {
+      "formats": [],
+      "source": "色彩"
+    },
+    "旧版 FBDD": {
+      "formats": [],
+      "source": "旧版 FBDD"
+    },
+    "旧版：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "旧版：{0}"
+    },
+    "几何编辑": {
+      "formats": [],
+      "source": "几何编辑"
+    },
+    "胶片模拟": {
+      "formats": [],
+      "source": "胶片模拟"
+    },
+    "轻度": {
+      "formats": [],
+      "source": "轻度"
+    },
+    "降噪亮度": {
+      "formats": [],
+      "source": "降噪亮度"
+    },
+    "降噪粗色斑": {
+      "formats": [],
+      "source": "降噪粗色斑"
+    },
+    "降噪色彩": {
+      "formats": [],
+      "source": "降噪色彩"
+    },
+    "拖动照片调整曲线；退出目标模式后可平移。": {
+      "formats": [],
+      "source": "拖动照片调整曲线；退出目标模式后可平移。"
+    },
+    "故障诊断与错误日志": {
+      "formats": [],
+      "source": "故障诊断与错误日志"
+    },
+    "记录详细诊断日志": {
+      "formats": [],
+      "source": "记录详细诊断日志"
+    },
+    "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。": {
+      "formats": [],
+      "source": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。"
+    },
+    "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。": {
+      "formats": [],
+      "source": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。"
+    },
+    "检测到上次录制的诊断日志，可直接保存到设备或一键上传。": {
+      "formats": [],
+      "source": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。"
+    },
+    "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。": {
+      "formats": [],
+      "source": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。"
+    },
+    "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。": {
+      "formats": [],
+      "source": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。"
+    },
+    "问题简述（选填，勿填个人隐私）": {
+      "formats": [],
+      "source": "问题简述（选填，勿填个人隐私）"
+    },
+    "保存到设备…": {
+      "formats": [],
+      "source": "保存到设备…"
+    },
+    "一键云端上传": {
+      "formats": [],
+      "source": "一键云端上传"
+    },
+    "正在上传…": {
+      "formats": [],
+      "source": "正在上传…"
+    },
+    "预览日志": {
+      "formats": [],
+      "source": "预览日志"
+    },
+    "清除日志": {
+      "formats": [],
+      "source": "清除日志"
+    },
+    "复制诊断码": {
+      "formats": [],
+      "source": "复制诊断码"
+    },
+    "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。": {
+      "formats": [],
+      "source": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。"
+    },
+    "无法导出诊断包。": {
+      "formats": [],
+      "source": "无法导出诊断包。"
+    },
+    "上传成功，请复制诊断码发送给开发者。": {
+      "formats": [],
+      "source": "上传成功，请复制诊断码发送给开发者。"
+    },
+    "云端上传暂不可用，请先将诊断包保存到设备后发送。": {
+      "formats": [],
+      "source": "云端上传暂不可用，请先将诊断包保存到设备后发送。"
+    },
+    "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。": {
+      "formats": [],
+      "source": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。"
+    },
+    "已清除本地诊断日志。": {
+      "formats": [],
+      "source": "已清除本地诊断日志。"
+    },
+    "分享诊断包…": {
+      "formats": [],
+      "source": "分享诊断包…"
+    },
+    "故障诊断": {
+      "formats": [],
+      "source": "故障诊断"
+    },
+    "诊断码：%@": {
+      "formats": [
+        "%@"
+      ],
+      "source": "诊断码：{0}"
+    },
+    "相机访问验证": {
+      "formats": [],
+      "source": "相机访问验证"
+    },
+    "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。": {
+      "formats": [],
+      "source": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"
+    },
+    "相机密钥指纹（请与相机屏幕核对）": {
+      "formats": [],
+      "source": "相机密钥指纹（请与相机屏幕核对）"
+    },
+    "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。": {
+      "formats": [],
+      "source": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
+    },
+    "用户名": {
+      "formats": [],
+      "source": "用户名"
+    },
+    "密码": {
+      "formats": [],
+      "source": "密码"
+    },
+    "验证并连接": {
+      "formats": [],
+      "source": "验证并连接"
+    },
+    "正在验证访问凭据…": {
+      "formats": [],
+      "source": "正在验证访问凭据…"
+    },
+    "访问验证失败，请核对相机屏幕中的用户名与密码。": {
+      "formats": [],
+      "source": "访问验证失败，请核对相机屏幕中的用户名与密码。"
+    },
+    "忘记已保存凭据": {
+      "formats": [],
+      "source": "忘记已保存凭据"
+    },
+    "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。": {
+      "formats": [],
+      "source": "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。"
     }
   },
   "overrides": {
@@ -4895,22 +5109,6 @@
       "ja": "現在の写真を保存",
       "zh-Hans": "保存当前照片"
     },
-    "保存时发生中断，请先核对照片图库，避免重复生成。": {
-      "de": "Beim Speichern ist eine Unterbrechung aufgetreten. Prüfen Sie Fotos, bevor Sie erneut erzeugen.",
-      "en": "An interruption occurred while saving. Check Photos before generating again.",
-      "es": "La escritura se interrumpió. Comprueba Fotos antes de volver a generar.",
-      "fr": "Une interruption s’est produite lors de l’enregistrement. Vérifiez Photos avant de générer à nouveau.",
-      "ja": "保存中に中断しました。再生成する前に写真を確認してください。",
-      "zh-Hans": "保存时发生中断，请先核对照片图库，避免重复生成。"
-    },
-    "保存结果待确认": {
-      "de": "Speicherergebnis muss bestätigt werden",
-      "en": "Save Result Needs Confirmation",
-      "es": "Se debe confirmar el resultado guardado",
-      "fr": "Confirmation de l’enregistrement requise",
-      "ja": "保存結果の確認待ち",
-      "zh-Hans": "保存结果待确认"
-    },
     "保留最近 100 张照片及约 2 GB 本机副本。移除记录不会删除原照片或调整。": {
       "en": "Keeps up to 100 recent photos and about 2 GB of local copies. Removing an entry keeps the original photo and its edits.",
       "de": "Speichert bis zu 100 zuletzt geöffnete Fotos und etwa 2 GB lokale Kopien. Beim Entfernen eines Eintrags bleiben Original und Anpassungen erhalten.",
@@ -5159,14 +5357,6 @@
       "ja": "処理済み {0} / {1}",
       "zh-Hans": "已处理 {0} / {1}"
     },
-    "已复制": {
-      "de": "Kopiert",
-      "en": "Copied",
-      "es": "Copiada",
-      "fr": "Copié",
-      "ja": "コピー済み",
-      "zh-Hans": "已复制"
-    },
     "已获取相机 Wi-Fi 信息": {
       "de": "Kamera-Wi-Fi-Daten abgerufen",
       "en": "Camera Wi-Fi Credentials Ready",
@@ -5231,14 +5421,6 @@
       "ja": "デフォルトに戻す",
       "zh-Hans": "恢复默认"
     },
-    "所选外观不可用，请重新选择外观。": {
-      "de": "Der ausgewählte Look ist nicht verfügbar; wählen Sie einen anderen Look.",
-      "en": "Selected Look Unavailable; Choose Another Look.",
-      "es": "El aspecto seleccionado no está disponible; elige otro.",
-      "fr": "Le look sélectionné est indisponible ; choisissez-en un autre.",
-      "ja": "選択したルックを利用できません。別のルックを選択してください。",
-      "zh-Hans": "所选外观不可用，请重新选择外观。"
-    },
     "所选照片：{0}": {
       "de": "Ausgewähltes Foto: {0}",
       "en": "Selected Photo: {0}",
@@ -5270,14 +5452,6 @@
       "es": "Fecha de toma",
       "ja": "撮影日",
       "zh-Hans": "拍摄日期"
-    },
-    "拍摄时：{0} K · 色调 {1}": {
-      "de": "Wie aufgenommen: {0} K · Tönung {1}",
-      "en": "As Shot: {0} K · Tint {1}",
-      "es": "Según la toma: {0} K · Matiz {1}",
-      "fr": "Selon la prise : {0} K · Teinte {1}",
-      "ja": "撮影時：{0} K · 色かぶり {1}",
-      "zh-Hans": "拍摄时：{0} K · 色调 {1}"
     },
     "按每张调整导出": {
       "de": "Mit den Anpassungen jedes Fotos exportieren",
@@ -5415,22 +5589,6 @@
       "ja": "前回の撮影セッションの写真を確認できないため、自動復旧を停止しました。「カメラから読み込む」で未転送の写真を手動で選択してください。自動で再撮影することはありません。",
       "zh-Hans": "无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。"
     },
-    "无法识别原始照片，调整尚未保存。": {
-      "de": "Das Originalfoto konnte nicht identifiziert werden; Anpassungen wurden nicht gespeichert.",
-      "en": "Unable to Identify the Original Photo; Adjustments Were Not Saved.",
-      "es": "No se puede identificar la foto original; los ajustes no se guardaron.",
-      "fr": "Impossible d’identifier la photo originale ; les réglages n’ont pas été enregistrés.",
-      "ja": "元の写真を識別できないため、調整は保存されませんでした。",
-      "zh-Hans": "无法识别原始照片，调整尚未保存。"
-    },
-    "无法读取已保存的调整，原有记录未被覆盖。": {
-      "de": "Gespeicherte Anpassungen konnten nicht gelesen werden; der vorhandene Datensatz wurde nicht überschrieben.",
-      "en": "Unable to Read Saved Adjustments; Existing Record Was Not Overwritten.",
-      "es": "No se pueden leer los ajustes guardados; no se sobrescribió el registro existente.",
-      "fr": "Impossible de lire les réglages enregistrés ; l’enregistrement existant n’a pas été remplacé.",
-      "ja": "保存済みの調整を読み取れないため、既存の記録は上書きされませんでした。",
-      "zh-Hans": "无法读取已保存的调整，原有记录未被覆盖。"
-    },
     "无法读取最近打开的照片，原有记录未被覆盖。": {
       "en": "Recently opened photos could not be read. Existing records have not been overwritten.",
       "de": "Zuletzt geöffnete Fotos konnten nicht gelesen werden. Vorhandene Einträge wurden nicht überschrieben.",
@@ -5471,14 +5629,6 @@
       "ja": "以前の調整は写真ライブラリの識別子だけで保存されています。同じ元の写真であれば復元できます。",
       "zh-Hans": "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。"
     },
-    "暂无可导出的错误日志。": {
-      "de": "Es ist kein Fehlerprotokoll zum Exportieren vorhanden.",
-      "en": "There is no error log to export.",
-      "es": "No hay ningún registro de errores para exportar.",
-      "fr": "Aucun journal des erreurs à exporter.",
-      "ja": "書き出せるエラーログがありません。",
-      "zh-Hans": "暂无可导出的错误日志。"
-    },
     "最近打开": {
       "en": "Recently opened",
       "de": "Zuletzt geöffnet",
@@ -5502,14 +5652,6 @@
       "fr": "Aucun appareil détecté sur ce Wi-Fi. Rejoignez d’abord le Wi-Fi de l’appareil dans les réglages, puis revenez.",
       "ja": "現在の Wi-Fi でカメラが見つかりません。システム設定でカメラの Wi-Fi に接続してから戻ってください。",
       "zh-Hans": "未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。"
-    },
-    "未处理": {
-      "de": "Nicht verarbeitet",
-      "en": "Not Processed",
-      "es": "Sin procesar",
-      "fr": "Non traité",
-      "ja": "未処理",
-      "zh-Hans": "未处理"
     },
     "未找到胶片 LUT": {
       "de": "Keine Film-LUTs gefunden",
@@ -5630,14 +5772,6 @@
       "fr": "Importation",
       "ja": "読み込み中",
       "zh-Hans": "正在导入"
-    },
-    "正在显影": {
-      "de": "Wird entwickelt",
-      "en": "Developing",
-      "es": "Revelando",
-      "fr": "Développement",
-      "ja": "現像中",
-      "zh-Hans": "正在显影"
     },
     "正在生成效果预览…": {
       "de": "Vorschau wird erstellt…",
@@ -5903,14 +6037,6 @@
       "ja": "写真を先に読み込んでください。",
       "zh-Hans": "请先导入一张照片。"
     },
-    "请先打开这张照片，确认是否恢复旧调整。": {
-      "en": "Open this photo first to decide whether to restore its previous adjustments.",
-      "de": "Öffnen Sie dieses Foto zuerst und entscheiden Sie, ob Sie die früheren Anpassungen wiederherstellen möchten.",
-      "fr": "Ouvrez d’abord cette photo pour choisir de restaurer ou non ses réglages précédents.",
-      "es": "Abre primero esta foto para decidir si quieres restaurar sus ajustes anteriores.",
-      "ja": "先にこの写真を開き、以前の調整を復元するか選択してください。",
-      "zh-Hans": "请先打开这张照片，确认是否恢复旧调整。"
-    },
     "请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。": {
       "en": "Check the capture result on the camera first. A new session will not retake the photo. Resume unfinished transfers from import history.",
       "de": "Prüfen Sie zuerst das Aufnahmeergebnis an der Kamera. Eine neue Sitzung löst nicht erneut aus. Setzen Sie offene Übertragungen im Importverlauf fort.",
@@ -6070,6 +6196,22 @@
       "fr": "Confirmez d’abord l’enregistrement sur carte ci-dessus",
       "ja": "上のカメラカード保存を先に確認してください",
       "zh-Hans": "请先确认上方存储卡保存选项"
+    },
+    "故障诊断": {
+      "de": "Diagnose",
+      "en": "Diagnostics",
+      "es": "Diagnóstico",
+      "fr": "Diagnostic",
+      "ja": "診断",
+      "zh-Hans": "故障诊断"
+    },
+    "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。": {
+      "zh-Hans": "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。",
+      "en": "This camera requires interactive SSH authentication (keyboard-interactive), which is not supported on iOS yet.",
+      "de": "Diese Kamera erfordert interaktive SSH-Authentifizierung (keyboard-interactive), die unter iOS noch nicht unterstützt wird.",
+      "fr": "Cet appareil photo requiert une authentification SSH interactive (keyboard-interactive), qui n’est pas encore prise en charge sur iOS.",
+      "ja": "このカメラは対話型 SSH 認証（keyboard-interactive）が必要なため、現在の iOS 版では未対応です。",
+      "es": "Esta cámara requiere autenticación SSH interactiva (keyboard-interactive), que aún no es compatible con iOS."
     }
   }
 }

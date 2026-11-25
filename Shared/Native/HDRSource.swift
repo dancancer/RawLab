@@ -3,6 +3,12 @@ import Foundation
 import ImageIO
 
 struct HDRNativeError: LocalizedError {
+    static let invalidSettings = HDRNativeError(
+        status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+        reason: UInt32(SONY2FUJI_HDR_REASON_INVALID_ARGUMENT),
+        field: UInt32(SONY2FUJI_HDR_FIELD_REQUEST)
+    )
+
     let status: sony2fuji_status
     let reason: UInt32
     let field: UInt32
@@ -31,16 +37,26 @@ struct HDRNativeError: LocalizedError {
 }
 
 struct HDRSourceInfo {
+    static let proRAWDecodeVersion = 1
+    static let proRAWPreviewLimit = 2048
+
+    @discardableResult
+    static func validatedProRAWDecodeVersion(_ saved: Int?) throws -> Int {
+        let version = saved ?? proRAWDecodeVersion
+        guard version == proRAWDecodeVersion else { throw HDRSettings.ModeError.invalidSettings }
+        return version
+    }
+
     let native: sony2fuji_hdr_source_info_v1
     var cameraStamp: CameraStamp? = nil
-    var proRAW: ProRAWSource? = nil
     var supportsBayerDevelopment = false
     var cameraProcessingVersion = SONY2FUJI_PROCESSING_BASIC_V3
-    var isDevelopedRAW: Bool { isCameraRAW || proRAW != nil }
+    var isProRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_PRORAW) }
+    var isDevelopedRAW: Bool { isCameraRAW || isProRAW }
     var isCameraRAW: Bool { native.container == UInt32(SONY2FUJI_HDR_CONTAINER_CAMERA_RAW) }
 
     func validateEditDecodeVersion(_ saved: Int?) throws {
-        if proRAW != nil { try ProRAWSource.validatedDecodeVersion(saved) }
+        if isProRAW { try Self.validatedProRAWDecodeVersion(saved) }
         else if saved != nil { throw HDRSettings.ModeError.invalidSettings }
     }
 
@@ -72,14 +88,22 @@ struct HDRSourceInfo {
         guard #available(macOS 15, iOS 18, *) else { return nil }
         if url.pathExtension.lowercased() == "dng" {
             let stamp = try CameraStamp(url)
-            if let proRAW = try ProRAWSource.probe(url), try CameraStamp(url) == stamp {
-                var info = sony2fuji_hdr_source_info_v1()
-                info.version = 1
-                info.struct_size = UInt32(MemoryLayout.size(ofValue: info))
-                info.width = UInt32(proRAW.width)
-                info.height = UInt32(proRAW.height)
-                info.orientation = 1
-                return HDRSourceInfo(native: info, cameraStamp: stamp, proRAW: proRAW)
+            var info = sony2fuji_hdr_source_info_v1()
+            info.version = 1
+            info.struct_size = UInt32(MemoryLayout.size(ofValue: info))
+            var diagnostic = sony2fuji_hdr_diagnostic_v1()
+            diagnostic.version = 1
+            diagnostic.struct_size = UInt32(MemoryLayout.size(ofValue: diagnostic))
+            let status = url.path.withCString { sony2fuji_hdr_probe_apple_proraw($0, &info, &diagnostic) }
+            if status == SONY2FUJI_STATUS_OK {
+                guard try CameraStamp(url) == stamp else {
+                    throw HDRNativeError(status: SONY2FUJI_STATUS_INVALID_ARGUMENT,
+                        reason: UInt32(SONY2FUJI_HDR_REASON_SOURCE_CHANGED), field: UInt32(SONY2FUJI_HDR_FIELD_SOURCE))
+                }
+                return HDRSourceInfo(native: info, cameraStamp: stamp)
+            }
+            if !(status == SONY2FUJI_STATUS_UNSUPPORTED && diagnostic.reason == UInt32(SONY2FUJI_HDR_REASON_UNSUPPORTED_RAW)) {
+                throw HDRNativeError(status: status, reason: diagnostic.reason, field: diagnostic.field)
             }
         }
         return try probeCameraRAW(url, processing: processing)

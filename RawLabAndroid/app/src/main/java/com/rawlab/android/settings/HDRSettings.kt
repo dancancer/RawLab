@@ -167,12 +167,13 @@ data class HDRSettings(
     }
 
     val recordVersion get() = when {
-        processingVersion >= 9 -> 10
+        processingVersion >= 9 -> processingVersion + 1
         processingVersion == 8 -> 9
         cameraDevelopment == null -> processingVersion
         else -> 8
     }
     val processingVersion get() = when {
+        tone?.curve?.hasFreeEndpointX == true -> 10
         tone?.curve?.hasV2Extensions == true || color?.grading?.hasV2Extensions == true -> 9
         tone?.curve?.hasChannelCurves == true -> 8
         look != null -> 7
@@ -234,10 +235,10 @@ data class HDRSettings(
     companion object {
         fun from(settings: EditSettings) = HDRSettings(
             exposure = (settings.exposure * settings.recipeScale).coerceIn(-4f, 4f),
-            contrast = (settings.contrast * 100f * settings.recipeScale).coerceIn(-100f, 100f),
-            highlights = (settings.highlights * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            contrast = ((settings.contrast - 1f) * 100f * settings.recipeScale).coerceIn(-100f, 100f).canonicalZero(),
+            highlights = (-settings.highlights * 100f * settings.recipeScale).coerceIn(-100f, 100f).canonicalZero(),
             shadows = (settings.shadows * 100f * settings.recipeScale).coerceIn(-100f, 100f),
-            saturation = (settings.saturation * 100f * settings.recipeScale).coerceIn(-100f, 100f),
+            saturation = ((settings.saturation - 1f) * 100f * settings.recipeScale).coerceIn(-100f, 100f).canonicalZero(),
             geometry = settings.geometry,
         )
     }
@@ -284,10 +285,10 @@ private fun EditSettings.applyHDRValues(value: HDRSettings, mode: HDRMode, snaps
     exposure = value.exposure,
     temperature = value.temperature,
     tint = value.tint,
-    contrast = value.contrast / 100f,
-    highlights = value.highlights / 100f,
+    contrast = 1f + value.contrast / 100f,
+    highlights = (-value.highlights / 100f).canonicalZero(),
     shadows = value.shadows / 100f,
-    saturation = value.saturation / 100f,
+    saturation = 1f + value.saturation / 100f,
     geometry = value.geometry,
     hdr = value.copy(mode = mode),
     sdrSnapshot = snapshot,
@@ -336,8 +337,8 @@ fun EditSettings.synchronizeHDR(): EditSettings {
     val value = hdr ?: return this
     if (!isHDREditing) return this
     return copy(hdr = value.copy(mode = value.mode, exposure = exposure, temperature = temperature,
-        tint = tint, contrast = contrast * 100f, highlights = highlights * 100f,
-        shadows = shadows * 100f, saturation = saturation * 100f, geometry = geometry))
+        tint = tint, contrast = ((contrast - 1f) * 100f).canonicalZero(), highlights = (-highlights * 100f).canonicalZero(),
+        shadows = shadows * 100f, saturation = ((saturation - 1f) * 100f).canonicalZero(), geometry = geometry))
 }
 
 fun EditSettings.sdrSnapshotSettings(): EditSettings? = sdrSnapshot?.let { SettingsCodec.decode(it) }

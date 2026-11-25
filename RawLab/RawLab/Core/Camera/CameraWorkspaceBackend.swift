@@ -88,8 +88,20 @@ final class IOSCameraPhotoLibrarySaver: CameraPhotoLibrarySaving {
 
 enum IOSCameraMode { case importing, tethering }
 enum IOSCameraPhase { case idle, connecting, browsing, ready, receiving, capturing, waiting, paused }
+struct IOSCameraAccessAuthPrompt: Equatable {
+    let cameraID: String
+    let host: String
+    let port: UInt16
+    let fingerprint: String
+    let keyType: String
+    let initialUser: String
+    let fingerprintChanged: Bool
+    let hasSavedCredentials: Bool
+    let error: CameraProtocolError?
+}
 enum IOSCameraEvent {
     case phase(IOSCameraPhase)
+    case accessAuthRequired(IOSCameraAccessAuthPrompt)
     case device(CameraDeviceIdentity, CameraContentsFamily?)
     case assets([CameraRemoteAsset])
     case properties([UInt16: CameraProperty], writable: Bool, shutter: Bool, canCancelTouchFocus: Bool)
@@ -112,11 +124,13 @@ final class IOSCameraRun {
     let id = UUID(), endpoint: IOSCameraEndpoint
     let mode: IOSCameraMode
     let cardConfirmed: Bool
+    let resumeTether: Bool
     let emit: (IOSCameraEvent) -> Void
     private let lock = NSLock()
     private var stopping = false
     private var session: SonyCameraSession?
     private var openingClient: CameraPTPClient?
+    private var sshTunnel: CameraSSHTunneling?
     private var live: CameraLiveStream?
     private var frameTime: Date?
     private var liveToken = UUID()
@@ -129,12 +143,34 @@ final class IOSCameraRun {
     var listingLimitExceeded = false
     var needsTetherBaseline = false
     var needsTetherResume = false
-    init(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool, emit: @escaping (IOSCameraEvent) -> Void) {
-        self.endpoint = endpoint; self.mode = mode; self.cardConfirmed = cardConfirmed; self.emit = emit
+    init(endpoint: IOSCameraEndpoint, mode: IOSCameraMode, cardConfirmed: Bool,
+         resumeTether: Bool = false, emit: @escaping (IOSCameraEvent) -> Void) {
+        self.endpoint = endpoint; self.mode = mode; self.cardConfirmed = cardConfirmed
+        self.resumeTether = resumeTether; self.emit = emit
     }
     var stopped: Bool { lock.lock(); defer { lock.unlock() }; return stopping }
     var lastFrame: Date? { lock.lock(); defer { lock.unlock() }; return frameTime }
     func markFrame(_ date: Date) { lock.lock(); frameTime = date; lock.unlock() }
+    func installTunnel(_ tunnel: CameraSSHTunneling) {
+        lock.lock()
+        let old = sshTunnel
+        let stopped = stopping
+        if !stopped { sshTunnel = tunnel }
+        lock.unlock()
+        old?.close()
+        if stopped { tunnel.close() }
+    }
+    func closeTunnel() {
+        lock.lock(); let current = sshTunnel; sshTunnel = nil; lock.unlock()
+        current?.close()
+    }
+    var channelOpener: ((UInt16) throws -> CameraByteChannel)? {
+        lock.lock(); let tunnel = sshTunnel; lock.unlock()
+        guard let tunnel else { return nil }
+        return { port in
+            try tunnel.openChannel(port: port, allowedPorts: [port], timeout: 10)
+        }
+    }
     func installing(_ client: CameraPTPClient) {
         lock.lock(); openingClient = client; let stopped = stopping; lock.unlock()
         if stopped { client.close() }
@@ -168,14 +204,19 @@ final class IOSCameraRun {
     }
     func stop() {
         lock.lock(); stopping = true
-        let session = session, client = openingClient, live = live
+        let session = session, client = openingClient, live = live, tunnel = sshTunnel
+        sshTunnel = nil
         lock.unlock()
-        session?.requestStop(); client?.close(); live?.close()
+        session?.requestStop(); client?.close(); live?.close(); tunnel?.close()
     }
     func finishSession() {
         lock.lock(); let current = session; session = nil; lock.unlock()
         current?.finish()
     }
+}
+
+struct CameraDirectChannelOpener {
+    let open: (String, UInt16) throws -> CameraByteChannel
 }
 
 final class CameraWorkspaceBackend {
@@ -196,15 +237,32 @@ final class CameraWorkspaceBackend {
     private let clientID: UUID
     private let shutterTimeout: TimeInterval
     private let photoLibrarySaver: CameraPhotoLibrarySaving?
+    private let directChannelOpener: CameraDirectChannelOpener?
     private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
+    private let sshTransport: CameraSSHTransporting?
+    private let authStore: CameraAccessAuthStoring
+
+    private static func defaultSSHTransport() -> CameraSSHTransporting? {
+        #if canImport(RawLabCameraSSH)
+        return NIOCameraSSHTransport()
+        #else
+        return nil
+        #endif
+    }
 
     init(storage: CameraOriginalStore? = nil, clientID: UUID? = nil, shutterTimeout: TimeInterval = 35,
          photoLibrarySaver: CameraPhotoLibrarySaving? = nil,
-         openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil) {
+         openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil,
+         sshTransport: CameraSSHTransporting? = CameraWorkspaceBackend.defaultSSHTransport(),
+         authStore: CameraAccessAuthStoring = KeychainCameraAccessAuthStore(),
+         directChannelOpener: CameraDirectChannelOpener? = nil) {
         self.storage = storage
         self.shutterTimeout = shutterTimeout
         self.photoLibrarySaver = photoLibrarySaver
+        self.directChannelOpener = directChannelOpener
         self.sessionOpener = openSession
+        self.sshTransport = sshTransport
+        self.authStore = authStore
         if let clientID {
             self.clientID = clientID
         } else {
@@ -289,7 +347,13 @@ final class CameraWorkspaceBackend {
     private func open(_ run: IOSCameraRun, purpose: CameraSessionPurpose) throws -> SonyCameraSession {
         guard owns(run) else { throw CameraProtocolError.cancelled }
         let session = try sessionOpener?(run, purpose, clientID) ??
-            SonyCameraSession.open(host: run.endpoint.host, purpose: purpose, clientID: clientID, register: run.installing)
+            SonyCameraSession.open(
+                host: run.endpoint.host,
+                purpose: purpose,
+                clientID: clientID,
+                openChannel: run.channelOpener,
+                register: run.installing
+            )
         run.install(session)
         guard owns(run) else { session.close(); throw CameraProtocolError.cancelled }
         return session
@@ -307,43 +371,209 @@ final class CameraWorkspaceBackend {
                 throw CameraProtocolError.tetherRecoveryRequired
             }
             run.emit(.phase(.connecting))
-            var session = try self.open(run, purpose: run.mode == .importing ? .importing : .tethering)
-            run.emit(.device(session.device, session.family))
-            if run.mode == .importing {
-                let assets = try session.listAssets()
-                run.knownAssets = assets; run.emit(.assets(assets)); run.emit(.phase(.browsing))
+            let purpose: CameraSessionPurpose = run.mode == .importing ? .importing : .tethering
+            let session: SonyCameraSession
+            if self.sessionOpener == nil, let sshTransport = self.sshTransport {
+                let resolution = resolveCameraAccessAuth(
+                    host: run.endpoint.host,
+                    cameraID: run.endpoint.connectionKey,
+                    authStore: self.authStore,
+                    probeSSH: { host, port in
+                        try sshTransport.probeHostKey(host: host, port: port, timeout: 10)
+                    },
+                    connectSSH: { host, port, user, password, fingerprint in
+                        try sshTransport.connect(
+                            host: host,
+                            port: port,
+                            username: user,
+                            password: password,
+                            expectedFingerprint: fingerprint,
+                            timeout: 10
+                        )
+                    },
+                    openOverTunnel: { tunnel in
+                        try SonyCameraSession.open(
+                            host: run.endpoint.host,
+                            purpose: purpose,
+                            clientID: self.clientID,
+                            openChannel: { port in
+                                try tunnel.openChannel(port: port, allowedPorts: [port], timeout: 10)
+                            },
+                            register: run.installing
+                        )
+                    },
+                    tryDirect: {
+                        try SonyCameraSession.open(
+                            host: run.endpoint.host,
+                            purpose: purpose,
+                            clientID: self.clientID,
+                            openChannel: self.directChannelOpener.map { opener in
+                                { port in try opener.open(run.endpoint.host, port) }
+                            },
+                            register: run.installing
+                        )
+                    }
+                )
+                switch resolution {
+                case .directSuccess(let opened):
+                    run.install(opened)
+                    guard self.owns(run) else { opened.close(); throw CameraProtocolError.cancelled }
+                    session = opened
+                case .sshConnected(let opened, let tunnel):
+                    run.installTunnel(tunnel)
+                    run.install(opened)
+                    guard self.owns(run) else { opened.close(); tunnel.close(); throw CameraProtocolError.cancelled }
+                    session = opened
+                case .promptAuth(let info):
+                    run.emit(.phase(.paused))
+                    run.emit(.accessAuthRequired(IOSCameraAccessAuthPrompt(
+                        cameraID: run.endpoint.connectionKey,
+                        host: info.host,
+                        port: info.port,
+                        fingerprint: info.fingerprint,
+                        keyType: info.keyType,
+                        initialUser: info.initialUser,
+                        fingerprintChanged: info.fingerprintChanged,
+                        hasSavedCredentials: info.hasSavedCredentials,
+                        error: info.error
+                    )))
+                    return
+                case .failed(let error):
+                    throw error
+                }
+            } else {
+                session = try self.open(run, purpose: purpose)
+            }
+            try self.completeConnect(run: run, initialSession: session, store: store, resumeTether: resumeTether)
+        }
+    }
+
+    func submitAccessAuth(prompt: IOSCameraAccessAuthPrompt, user: String, password: String, run: IOSCameraRun) {
+        perform(run) {
+            guard self.owns(run) else { throw CameraProtocolError.cancelled }
+            guard let sshTransport = self.sshTransport else {
+                throw CameraProtocolError.connectionRefused
+            }
+            let trimmedUser = user.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedUser.isEmpty, !password.isEmpty else {
+                run.emit(.phase(.paused))
+                run.emit(.accessAuthRequired(IOSCameraAccessAuthPrompt(
+                    cameraID: prompt.cameraID,
+                    host: prompt.host,
+                    port: prompt.port,
+                    fingerprint: prompt.fingerprint,
+                    keyType: prompt.keyType,
+                    initialUser: user,
+                    fingerprintChanged: prompt.fingerprintChanged,
+                    hasSavedCredentials: prompt.hasSavedCredentials,
+                    error: .sshAuthenticationFailed
+                )))
                 return
             }
-            guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
-            if session.family != nil {
-                _ = self.photoLibrarySaver?.requestAddAuthorization()
-                do {
-                    let assets = try self.readCard(run)
-                    session = try run.currentSession()
-                    run.knownAssets = assets
-                    if resumeTether {
-                        try self.finishTetherResume(run: run, store: store, session: session, assets: assets)
-                    } else {
-                        try store.beginTether(device: session.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
-                    }
-                    session = try self.remoteSession(run)
-                } catch CameraProtocolError.photoLimitExceeded {
-                    run.listingLimitExceeded = true
-                    run.knownAssets = []
-                    run.needsTetherResume = resumeTether
-                    run.needsTetherBaseline = !resumeTether
-                    session = try self.remoteSession(run)
-                    self.publishManifest(run)
-                    try self.startRemoteDisplay(run, session: session)
-                    run.emit(.failure(CameraProtocolError.photoLimitExceeded))
-                    self.schedulePoll(run)
-                    return
+            run.emit(.phase(.connecting))
+            do {
+                let tunnel = try sshTransport.connect(
+                    host: prompt.host,
+                    port: prompt.port,
+                    username: trimmedUser,
+                    password: password,
+                    expectedFingerprint: prompt.fingerprint,
+                    timeout: 10
+                )
+                run.installTunnel(tunnel)
+                let purpose: CameraSessionPurpose = run.mode == .importing ? .importing : .tethering
+                let session = try self.open(run, purpose: purpose)
+                if !prompt.cameraID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    _ = self.authStore.save(
+                        cameraID: prompt.cameraID,
+                        record: CameraAccessAuthRecord(
+                            user: trimmedUser,
+                            password: password,
+                            fingerprint: tunnel.hostProbe.fingerprint
+                        )
+                    )
                 }
+                let store = try self.store()
+                try self.completeConnect(run: run, initialSession: session, store: store, resumeTether: run.resumeTether)
+            } catch CameraProtocolError.sshAuthenticationFailed {
+                run.closeTunnel()
+                run.emit(.phase(.paused))
+                run.emit(.accessAuthRequired(IOSCameraAccessAuthPrompt(
+                    cameraID: prompt.cameraID,
+                    host: prompt.host,
+                    port: prompt.port,
+                    fingerprint: prompt.fingerprint,
+                    keyType: prompt.keyType,
+                    initialUser: trimmedUser,
+                    fingerprintChanged: false,
+                    hasSavedCredentials: prompt.hasSavedCredentials,
+                    error: .sshAuthenticationFailed
+                )))
+            } catch CameraProtocolError.sshFingerprintMismatch(let expected, let actual, let keyType) {
+                run.closeTunnel()
+                run.emit(.phase(.paused))
+                run.emit(.accessAuthRequired(IOSCameraAccessAuthPrompt(
+                    cameraID: prompt.cameraID,
+                    host: prompt.host,
+                    port: prompt.port,
+                    fingerprint: actual.isEmpty ? prompt.fingerprint : actual,
+                    keyType: keyType.isEmpty ? prompt.keyType : keyType,
+                    initialUser: trimmedUser,
+                    fingerprintChanged: true,
+                    hasSavedCredentials: prompt.hasSavedCredentials,
+                    error: .sshFingerprintMismatch(expected: expected, actual: actual, keyType: keyType)
+                )))
+            } catch {
+                run.closeTunnel()
+                throw error
             }
-            self.publishManifest(run)
-            try self.startRemoteDisplay(run, session: session)
-            self.schedulePoll(run)
         }
+    }
+
+    func forgetAccessAuth(cameraID: String) {
+        queue.async {
+            self.authStore.delete(cameraID: cameraID)
+        }
+    }
+
+    private func completeConnect(run: IOSCameraRun, initialSession: SonyCameraSession,
+                                 store: CameraOriginalStore, resumeTether: Bool) throws {
+        var session = initialSession
+        run.emit(.device(session.device, session.family))
+        if run.mode == .importing {
+            let assets = try session.listAssets()
+            run.knownAssets = assets; run.emit(.assets(assets)); run.emit(.phase(.browsing))
+            return
+        }
+        guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
+        if session.family != nil {
+            _ = photoLibrarySaver?.requestAddAuthorization()
+            do {
+                let assets = try readCard(run)
+                session = try run.currentSession()
+                run.knownAssets = assets
+                if resumeTether {
+                    try finishTetherResume(run: run, store: store, session: session, assets: assets)
+                } else {
+                    try store.beginTether(device: session.device, connectionKey: run.endpoint.connectionKey, baseline: assets)
+                }
+                session = try remoteSession(run)
+            } catch CameraProtocolError.photoLimitExceeded {
+                run.listingLimitExceeded = true
+                run.knownAssets = []
+                run.needsTetherResume = resumeTether
+                run.needsTetherBaseline = !resumeTether
+                session = try remoteSession(run)
+                publishManifest(run)
+                try startRemoteDisplay(run, session: session)
+                run.emit(.failure(CameraProtocolError.photoLimitExceeded))
+                schedulePoll(run)
+                return
+            }
+        }
+        publishManifest(run)
+        try startRemoteDisplay(run, session: session)
+        schedulePoll(run)
     }
     private func finishTetherResume(run: IOSCameraRun, store: CameraOriginalStore,
                                     session: SonyCameraSession, assets: [CameraRemoteAsset]) throws {
@@ -415,7 +645,7 @@ final class CameraWorkspaceBackend {
             guard let self, self.owns(run) else { return }
             var stream: CameraLiveStream?
             do {
-                let opened = try CameraLiveStream(host: run.endpoint.host, url: url); stream = opened; run.installLive(opened, token: token)
+                let opened = try CameraLiveStream(host: run.endpoint.host, url: url, openChannel: run.channelOpener); stream = opened; run.installLive(opened, token: token)
                 var lastDelivered = Date.distantPast
                 while self.owns(run), run.isLiveCurrent(token) {
                     let liveFrame = try opened.frameWithMetadata(), now = Date()
@@ -439,7 +669,7 @@ final class CameraWorkspaceBackend {
         queue.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             guard let self, self.owns(run) else { return }
             do { try self.poll(run); self.schedulePoll(run) }
-            catch CameraProtocolError.response(let op, let code) where op == 0x923c && code == 0x2005 {
+            catch CameraProtocolError.response(let op, let code) where [UInt16(0x923b), 0x923c].contains(op) && code == 0x2005 {
                 // 完整远端忙响应已对齐；只重读卡，不重发快门。
                 self.schedulePoll(run)
             } catch { self.failure(error, run: run) }

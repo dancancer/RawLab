@@ -9,7 +9,11 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private HDRSourceInfo? hdrSource;
-    private bool hdrSdrPreview, hdrFalseColor, cameraHDRPreflight;
+    private bool hdrSdrPreview, hdrFalseColor, cameraHDRPreflight, hdrModeSwitching, syncingHdrControls, hdrLookLoading;
+    private string? hdrLookError;
+    internal Func<Task>? InlineHdrLookPrepared;
+    internal Task ImportInlineHDRLookForTestsAsync(string path) =>
+        ApplyInlineHDRLookAsync(target => target.WithLook(HDRNative.ImportLook(path, appPaths.HdrLooksDirectory)));
     private readonly DispatcherTimer hdrDisplayTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private readonly Dictionary<HDRFloatImage, BitmapSource> hdrFalseColorCache = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<HDRFloatImage> hdrFalseColorPending = new(ReferenceEqualityComparer.Instance);
@@ -78,7 +82,7 @@ public partial class MainWindow
         if(active && !hdrDisplayTimer.IsEnabled) {
             ResultHDRSurface.RefreshCapabilities();NeutralHDRSurface.RefreshCapabilities();hdrDisplayTimer.Start();
         } else if(!active)hdrDisplayTimer.Stop();
-        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoEntryButton,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner,InspectionHud];
+        var overlays = hdrOverlayElements ??= [NeutralLabel,FilmLabel,InfoOverlay,LibraryOverlay,BusyIndicator,HslTargetBanner,ExternalReloadBanner,CanvasErrorBanner,CanvasEmptyStatus,UpdateLockBanner,InspectionOverlayChip,InspectionHud];
         var resultPresented=false;
         void Present(HDRSurface surface,PhotoCanvas canvas,HDRFloatImage? image,HDRFloatImage? reference) {
             Grid.SetRow(surface,Grid.GetRow(canvas));Grid.SetColumn(surface,Grid.GetColumn(canvas));
@@ -114,84 +118,232 @@ public partial class MainWindow
 
     private void RefreshHDRControls()
     {
-        HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active &&
-            !cameraHDRPreflight;
-        HDREditMenu.IsChecked = settings.IsHDREditing;
-        HDRPreviewMenu.IsEnabled = HDRSdrPreviewMenu.IsEnabled = HDRFalseColorMenu.IsEnabled = settings.IsHDREditing;
-        HDRRenditionMenu.IsEnabled = HDREditMenu.IsEnabled && settings.IsHDREditing;
-        HDRLookMenu.IsEnabled = HDRRenditionMenu.IsEnabled;
-        HDRCameraMenu.IsEnabled = HDRRenditionMenu.IsEnabled && hdrSource is { IsCameraRaw:true, IsProRAW:false };
-        HDRPreviewMenu.IsChecked = !hdrSdrPreview; HDRSdrPreviewMenu.IsChecked = hdrSdrPreview;
-        HDRFalseColorMenu.IsChecked = hdrFalseColor;
+        syncingHdrControls = true;
+        try
+        {
+            HDREditMenu.IsEnabled = file != null && hdrSource != null && !exporting && !transform.Active &&
+                !cameraHDRPreflight && !hdrModeSwitching;
+            HDREditMenu.IsChecked = settings.IsHDREditing;
+            HDRPreviewMenu.IsEnabled = HDRSdrPreviewMenu.IsEnabled = HDRFalseColorMenu.IsEnabled = settings.IsHDREditing;
+            HDRRenditionMenu.IsEnabled = HDREditMenu.IsEnabled && settings.IsHDREditing;
+            HDRLookMenu.IsEnabled = HDRRenditionMenu.IsEnabled;
+            HDRCameraMenu.IsEnabled = HDRRenditionMenu.IsEnabled && hdrSource is { IsCameraRaw:true, IsProRAW:false };
+            HDRPreviewMenu.IsChecked = !hdrSdrPreview; HDRSdrPreviewMenu.IsChecked = hdrSdrPreview;
+            HDRFalseColorMenu.IsChecked = hdrFalseColor;
+
+            HdrProcessingPanel.Visibility = hdrSource != null ? Visibility.Visible : Visibility.Collapsed;
+            SdrProcessingPanel.Visibility = settings.IsHDREditing ? Visibility.Collapsed : Visibility.Visible;
+            ProcessingHdrEditCheck.IsEnabled = HDREditMenu.IsEnabled;
+            ProcessingHdrEditCheck.IsChecked = settings.IsHDREditing;
+            ProcessingHdrMonitoringPanel.Visibility = settings.IsHDREditing ? Visibility.Visible : Visibility.Collapsed;
+            ProcessingHdrAutoRadio.IsEnabled = ProcessingHdrSdrRadio.IsEnabled = ProcessingHdrFalseColorCheck.IsEnabled = settings.IsHDREditing;
+            ProcessingHdrAutoRadio.IsChecked = !hdrSdrPreview;
+            ProcessingHdrSdrRadio.IsChecked = hdrSdrPreview;
+            ProcessingHdrFalseColorCheck.IsChecked = hdrFalseColor;
+            ProcessingHdrCameraButton.Visibility = settings.IsHDREditing && hdrSource is { IsCameraRaw: true, IsProRAW: false }
+                ? Visibility.Visible : Visibility.Collapsed;
+            ProcessingHdrCameraButton.IsEnabled = HDRCameraMenu.IsEnabled;
+        }
+        finally { syncingHdrControls = false; }
     }
 
     private async void HDREditClicked(object sender, RoutedEventArgs e)
     {
-        if (file == null || hdrSource == null || cameraHDRPreflight) { RefreshHDRControls(); return; }
+        if (file == null || hdrSource == null || cameraHDRPreflight || hdrModeSwitching) { RefreshHDRControls(); return; }
         var initialPath = file;
         var initialOpened = openRevision;
-        CancelParameterInputs();
-        if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
-        if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
-        {
-            RefreshHDRControls();
-            return;
-        }
-        var before = settings;
-        var candidate = before.Clone();
         var enabled = HDREditMenu.IsChecked;
-        var cameraRaw = hdrSource.IsCameraRaw;
+        hdrModeSwitching = true;
+        RefreshHDRControls();
         try
         {
-            candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
-        }
-        catch (Exception error) { RefreshControls(); Report(error); return; }
-
-        if (enabled && cameraRaw)
-        {
-            var path = file;
-            var opened = openRevision;
-            var revision = editRevision;
-            var edge = previewLongEdge;
-            var gpu = GpuMode.SelectedIndex == 0 ? 1 : GpuMode.SelectedIndex == 1 ? 0 : 2;
-            bool IsCurrent() => !closing && !exporting && !transform.Active && file == path &&
-                openRevision == opened && editRevision == revision;
-            cameraHDRPreflight = true;
-            RefreshHDRControls();
-            try
+            CancelParameterInputs();
+            if (!ResolveTransformDraft() || !await FlushSaveEditsAsync()) { RefreshHDRControls(); return; }
+            if (closing || file != initialPath || openRevision != initialOpened || hdrSource == null || cameraHDRPreflight)
             {
-                await Task.Run(() =>
-                {
-                    using var validator = CreateRenderEngine(gpuMode: gpu);
-                    var preflight = candidate.Clone();
-                    preflight.HDRCameraAIEnabled = false;
-                    validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
-                });
-                if (!IsCurrent()) return;
-            }
-            catch (Exception error)
-            {
-                if (IsCurrent()) Report(error);
+                RefreshHDRControls();
                 return;
             }
-            finally
+            var before = settings;
+            var candidate = before.Clone();
+            var cameraRaw = hdrSource.IsCameraRaw;
+            try
             {
-                cameraHDRPreflight = false;
+                candidate.SetHDRMode(enabled, hdrSource.IsHDR, cameraRaw: cameraRaw, proRAW: hdrSource.IsProRAW);
+            }
+            catch (Exception error) { RefreshControls(); Report(error); return; }
+
+            if (enabled && cameraRaw)
+            {
+                var path = file;
+                var opened = openRevision;
+                var revision = editRevision;
+                var edge = previewLongEdge;
+                var gpu = GpuMode.SelectedIndex == 0 ? 1 : GpuMode.SelectedIndex == 1 ? 0 : 2;
+                bool IsCurrent() => !closing && !exporting && !transform.Active && file == path &&
+                    openRevision == opened && editRevision == revision;
+                cameraHDRPreflight = true;
+                RefreshHDRControls();
+                try
+                {
+                    await Task.Run(() =>
+                    {
+                        using var validator = CreateRenderEngine(gpuMode: gpu);
+                        var preflight = candidate.Clone();
+                        preflight.HDRCameraAIEnabled = false;
+                        validator.Render(path, preflight, null, edge, statistics: false, clipping: false);
+                    });
+                    if (!IsCurrent()) return;
+                }
+                catch (Exception error)
+                {
+                    if (IsCurrent()) Report(error);
+                    return;
+                }
+                finally
+                {
+                    cameraHDRPreflight = false;
+                    if (!closing) RefreshHDRControls();
+                }
+            }
+
+            ResetAITask();
+            settings = candidate;
+            MarkEdited();
+            if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
+            hdrModeSwitching = false;
+            RefreshControls();
+            Schedule();
+        }
+        finally
+        {
+            if (hdrModeSwitching)
+            {
+                hdrModeSwitching = false;
                 if (!closing) RefreshHDRControls();
             }
         }
-
-        ResetAITask();
-        settings = candidate;
-        MarkEdited();
-        if (!await FlushSaveEditsAsync()) { settings = before; RefreshControls(); return; }
-        RefreshControls();
-        Schedule();
     }
 
     private void HDRPreviewClicked(object sender, RoutedEventArgs e) { hdrSdrPreview = false; RefreshHDRControls(); RefreshViewingFrames(); }
     private void HDRSdrPreviewClicked(object sender, RoutedEventArgs e) { hdrSdrPreview = true; RefreshHDRControls(); RefreshViewingFrames(); }
-    private void HDRFalseColorClicked(object sender, RoutedEventArgs e) { hdrFalseColor = HDRFalseColorMenu.IsChecked; RefreshViewingFrames(); }
+    private void HDRFalseColorClicked(object sender, RoutedEventArgs e) { hdrFalseColor = HDRFalseColorMenu.IsChecked; RefreshHDRControls(); RefreshViewingFrames(); }
+
+    private void ProcessingHdrEditClicked(object sender, RoutedEventArgs e)
+    {
+        if (syncingHdrControls) return;
+        HDREditMenu.IsChecked = ProcessingHdrEditCheck.IsChecked == true;
+        HDREditClicked(sender, e);
+    }
+    private void ProcessingHdrAutoClicked(object sender, RoutedEventArgs e) { if (!syncingHdrControls) HDRPreviewClicked(sender, e); }
+    private void ProcessingHdrSdrClicked(object sender, RoutedEventArgs e) { if (!syncingHdrControls) HDRSdrPreviewClicked(sender, e); }
+    private void ProcessingHdrFalseColorClicked(object sender, RoutedEventArgs e)
+    {
+        if (syncingHdrControls) return;
+        HDRFalseColorMenu.IsChecked = ProcessingHdrFalseColorCheck.IsChecked == true;
+        HDRFalseColorClicked(sender, e);
+    }
+    private void ProcessingHdrCameraClicked(object sender, RoutedEventArgs e)
+    {
+        if (syncingHdrControls) return;
+        ProcessingPopup.IsOpen = false;
+        HDRCameraClicked(sender, e);
+    }
+
+    private static HDRSettings LoadBundledHDRLook(HDRSettings target, string looksDirectory, bool applyMaster)
+    {
+        var directory = System.IO.Path.Combine(AppContext.BaseDirectory, "BundledLooks", "HDR");
+        var look = HDRNative.ImportLook(System.IO.Path.Combine(directory, "HDR Silver.cube"), looksDirectory);
+        if (!applyMaster) return target.WithLook(look);
+        var payload = AdjustmentPayload.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory, "HDR Silver Master.json")));
+        if (AdjustmentPayload.HDRLookValue(payload[AdjustmentField.HdrLook]) != look) throw new HDRSourceException(1, 18, 10);
+        return HDRAdjustmentTransfer.PrepareSettings(payload, target, hdrLooksDirectory: looksDirectory);
+    }
+
+    private void RefreshInlineHDRLook()
+    {
+        var hdr = settings.HDR is { Mode: HDRMode.Hdr } active ? active : null;
+        var look = hdr?.LookSettings;
+        var hasLook = look?.Sha256 != null;
+        HdrLookName.Text = look?.Name ?? "HDR LUT";
+        var canEdit = file != null && !exporting && !closing && !transform.Active && !hdrLookLoading && !aiJob.State.IsRunning && hdr != null;
+        HdrLookImportButton.IsEnabled = canEdit;
+        HdrLookSilverButton.IsEnabled = HdrLookSilverMasterButton.IsEnabled = canEdit;
+        HdrLookClearButton.IsEnabled = canEdit && hasLook;
+        var previousSyncing = syncing;
+        syncing = true;
+        try
+        {
+            HdrLookStrengthRow.Refresh(
+                Loc.Text("外观强度"),
+                new(0, 200, 1),
+                (look?.Strength ?? 1) * 100,
+                100,
+                "%",
+                enabled: canEdit && hasLook,
+                inputScope: "hdr.look.strength");
+        }
+        finally { syncing = previousSyncing; }
+        HdrLookNotice.Text = hdrLookError ?? "";
+        HdrLookNotice.Visibility = string.IsNullOrEmpty(hdrLookError) ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private async Task ApplyInlineHDRLookAsync(Func<HDRSettings, HDRSettings> load)
+    {
+        if (!settings.IsHDREditing || file == null || exporting || closing || transform.Active || hdrLookLoading ||
+            aiJob.State.IsRunning || !PrepareAdjustmentCommand() || settings.HDR is not { Mode: HDRMode.Hdr } hdr) return;
+        var opened = openRevision;
+        var revision = editRevision;
+        var currentPath = file;
+        var applied = false;
+        hdrLookLoading = true;
+        hdrLookError = null;
+        RefreshInlineHDRLook();
+        try
+        {
+            var next = await Task.Run(() => load(hdr));
+            if (InlineHdrLookPrepared is { } prepared) await prepared();
+            if (closing || file != currentPath || opened != openRevision || revision != editRevision ||
+                settings.HDR is not { Mode: HDRMode.Hdr }) return;
+            settings.HDR = next;
+            hdrLookError = null;
+            MarkEdited();
+            applied = true;
+        }
+        catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or AdjustmentTransferException)
+        {
+            if (!closing && file == currentPath && opened == openRevision)
+                hdrLookError = Loc.Text("无法读取外观文件。");
+        }
+        finally
+        {
+            if (!closing && opened == openRevision)
+            {
+                hdrLookLoading = false;
+                RefreshControls();
+                if (applied && file == currentPath) Schedule();
+            }
+        }
+    }
+
+    private async void InlineHdrLookImportClicked(object sender, RoutedEventArgs e)
+    {
+        if (!settings.IsHDREditing || hdrLookLoading || aiJob.State.IsRunning || settings.HDR is not { Mode: HDRMode.Hdr }) return;
+        var picker = new Microsoft.Win32.OpenFileDialog { Title = "HDR LUT", Filter = "CUBE (*.cube)|*.cube", CheckFileExists = true };
+        if (picker.ShowDialog(this) != true) return;
+        await ApplyInlineHDRLookAsync(target => target.WithLook(HDRNative.ImportLook(picker.FileName, appPaths.HdrLooksDirectory)));
+    }
+    private void InlineHdrLookClearClicked(object sender, RoutedEventArgs e)
+    {
+        if (!PrepareAdjustmentCommand() || hdrLookLoading || aiJob.State.IsRunning || settings.HDR is not { Mode: HDRMode.Hdr } hdr) return;
+        hdrLookError = null;
+        settings.HDR = hdr.WithLook(new());
+        MarkEdited(); RefreshControls(); Schedule();
+    }
+    private async void InlineHdrLookSilverClicked(object sender, RoutedEventArgs e) =>
+        await ApplyInlineHDRLookAsync(target => LoadBundledHDRLook(target, appPaths.HdrLooksDirectory, false));
+    private async void InlineHdrLookSilverMasterClicked(object sender, RoutedEventArgs e) =>
+        await ApplyInlineHDRLookAsync(target => LoadBundledHDRLook(target, appPaths.HdrLooksDirectory, true));
 
     private void HDRLookClicked(object sender, RoutedEventArgs e)
     {
@@ -212,6 +364,7 @@ public partial class MainWindow
         var silver = new Button { Content="HDR Silver", Margin=new Thickness(0,6,6,6) };
         var master = new Button { Content="HDR Silver Master", Margin=new Thickness(0,6,6,6) };
         var apply = new Button { Content=Loc.Text("应用"), IsDefault=true, Margin=new Thickness(6,6,0,0) };
+        apply.SetResourceReference(StyleProperty,"AccentButton");
         AutomationProperties.SetAutomationId(pick,"hdr.look.import");
         AutomationProperties.SetAutomationId(clear,"hdr.look.clear");
         AutomationProperties.SetAutomationId(apply,"hdr.look.apply");
@@ -226,19 +379,13 @@ public partial class MainWindow
         async Task Load(Func<HDRSettings> load) {
             pick.IsEnabled=clear.IsEnabled=silver.IsEnabled=master.IsEnabled=apply.IsEnabled=strength.IsEnabled=false;
             try { draft=await Task.Run(load); error.Text=""; }
-            catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException) {
+            catch (Exception failure) when (failure is System.IO.IOException or UnauthorizedAccessException or System.Text.Json.JsonException or AdjustmentTransferException) {
                 error.Text=Loc.Text("无法读取外观文件。");
             }
             finally { pick.IsEnabled=silver.IsEnabled=master.IsEnabled=apply.IsEnabled=strength.IsEnabled=true; RefreshDraft(); }
         }
-        HDRSettings Bundled(HDRSettings target, bool applyMaster) {
-            var directory = System.IO.Path.Combine(AppContext.BaseDirectory,"BundledLooks","HDR");
-            var look = HDRNative.ImportLook(System.IO.Path.Combine(directory,"HDR Silver.cube"), appPaths.HdrLooksDirectory);
-            if (!applyMaster) return target.WithLook(look);
-            var payload = AdjustmentPayload.Parse(System.IO.File.ReadAllText(System.IO.Path.Combine(directory,"HDR Silver Master.json")));
-            if (AdjustmentPayload.HDRLookValue(payload[AdjustmentField.HdrLook]) != look) throw new HDRSourceException(1,18,10);
-            return HDRAdjustmentTransfer.PrepareSettings(payload,target);
-        }
+        HDRSettings Bundled(HDRSettings target, bool applyMaster) =>
+            LoadBundledHDRLook(target, appPaths.HdrLooksDirectory, applyMaster);
         strength.Changed += (value,_) => draft=draft.WithLook(draft.LookSettings with { Strength=value/100 });
         pick.Click += async (_,_) => {
             var picker = new Microsoft.Win32.OpenFileDialog { Title="HDR LUT", Filter="CUBE (*.cube)|*.cube", CheckFileExists=true };
@@ -290,7 +437,7 @@ public partial class MainWindow
         tint.Changed += (value,_) => draft=draft with { Tint=value };
         var exposure = new ComboBox { ItemsSource=new[] { Loc.Text("场景"), Loc.Text("传感器基准") }, SelectedIndex=draft.SensorExposure ? 1 : 0 };
         exposure.SelectionChanged += (_,_) => draft=draft with { SensorExposure=exposure.SelectedIndex==1 };
-        var fbdd = new ComboBox { ItemsSource=new[] { Loc.Text("关闭"), "FBDD 1", "FBDD 2" }, SelectedIndex=draft.FbddLevel };
+        var fbdd = new ComboBox { ItemsSource=new[] { Loc.Text("关"), "FBDD 1", "FBDD 2" }, SelectedIndex=draft.FbddLevel };
         fbdd.SelectionChanged += (_,_) => draft=draft with { FbddLevel=fbdd.SelectedIndex };
         var crop = new CheckBox { Content=Loc.Text("自动裁切"), IsChecked=draft.LensAutoCrop, IsEnabled=draft.LensActive, Margin=new Thickness(0,6,0,0) };
         CheckBox LensToggle(string title, bool current, Action<bool> update) {
@@ -338,6 +485,7 @@ public partial class MainWindow
         var reset = new Button { Content=Loc.Text("重置") };
         AutomationProperties.SetAutomationId(reset,"hdr.camera.reset");
         var apply = new Button { Content=Loc.Text("应用"), IsDefault=true };
+        apply.SetResourceReference(StyleProperty,"AccentButton");
         AutomationProperties.SetAutomationId(apply,"hdr.camera.apply");
         chooseProfile.Click += async (_,_) => {
             var picker = new Microsoft.Win32.OpenFileDialog { Title=Loc.Text("HDR 相机配置"),
@@ -396,66 +544,11 @@ public partial class MainWindow
 
     private void HDRRenditionClicked(object sender, RoutedEventArgs e)
     {
-        if (!HDRRenditionMenu.IsEnabled || !PrepareAdjustmentCommand() || settings.HDR is not { Mode: HDRMode.Hdr } hdr)
+        if (!HDRRenditionMenu.IsEnabled || !PrepareAdjustmentCommand() || settings.HDR is not { Mode: HDRMode.Hdr })
             return;
-        var opened = openRevision;
-        var revision = editRevision;
-        var draft = hdr.RenditionSettings;
-        var dialog = new Window {
-            Owner=this, Title=Loc.Text("HDR 输出与 SDR 底图"), Width=520, SizeToContent=SizeToContent.Height,
-            ResizeMode=ResizeMode.NoResize, ShowInTaskbar=false, WindowStartupLocation=WindowStartupLocation.CenterOwner
-        };
-        AutomationProperties.SetAutomationId(dialog,"hdr.rendition");
-        var panel = new StackPanel { Margin=new Thickness(24) };
-        var rows = new List<ParameterRow>();
-        var resetRows = new List<Action>();
-        foreach (var spec in HDRRenditionSpec.All)
-        {
-            var id = spec.Id switch {
-                HDRRenditionParameter.PeakLimitEV => "peakLimit",
-                HDRRenditionParameter.SdrExposureEV => "sdrExposure",
-                HDRRenditionParameter.SdrContrast => "sdrContrast",
-                HDRRenditionParameter.SdrSaturation => "sdrSaturation",
-                _ => throw new ArgumentOutOfRangeException(nameof(spec.Id))
-            };
-            var localized = Loc.Text(spec.Title);
-            var range = new NumericRange(spec.Min, spec.Max, spec.Grid);
-            var row = new ParameterRow { SourceIdentity=opened, Margin=new Thickness(0,3,0,3), KeepInvalidInput=true };
-            void RefreshRow(double current) => row.Refresh(localized,range,current,0,spec.Unit);
-            RefreshRow(draft[spec.Id]);
-            AutomationProperties.SetAutomationId(row.Slider,"hdr.rendition."+id);
-            AutomationProperties.SetAutomationId(row.Number,"hdr.rendition."+id+".value");
-            row.Changed += (next,_) => draft = draft.With(spec.Id, next);
-            rows.Add(row);
-            resetRows.Add(() => { row.CancelInput(); RefreshRow(0); });
-            panel.Children.Add(row);
-            if (spec.Id == HDRRenditionParameter.PeakLimitEV)
-                panel.Children.Add(new TextBlock { Text="0 EV · " + Loc.Text("不限"), Margin=new Thickness(0,0,0,6) });
-        }
-        var actions = new WrapPanel { HorizontalAlignment=HorizontalAlignment.Right, Margin=new Thickness(0,12,0,0) };
-        var reset = new Button { Content=Loc.Text("重置") };
-        AutomationProperties.SetAutomationId(reset,"hdr.rendition.reset");
-        reset.Click += (_,_) => {
-            draft=new();
-            foreach (var resetRow in resetRows) resetRow();
-        };
-        var cancel = new Button { Content=Loc.Text("取消"), IsCancel=true };
-        var apply = new Button { Content=Loc.Text("应用"), IsDefault=true };
-        AutomationProperties.SetAutomationId(apply,"hdr.rendition.apply");
-        apply.Click += (_,_) => {
-            foreach (var row in rows) {
-                if (row.Commit()) continue;
-                row.Number.Focus(); return;
-            }
-            dialog.DialogResult=true;
-        };
-        actions.Children.Add(reset); actions.Children.Add(cancel); actions.Children.Add(apply); panel.Children.Add(actions);
-        dialog.Content=panel;
-        if (dialog.ShowDialog() != true || opened != openRevision || revision != editRevision || closing ||
-            draft == hdr.RenditionSettings) return;
-        settings.HDR=hdr.WithRendition(draft);
-        MarkEdited();
-        RefreshControls();
-        Schedule();
+        workspaceLayout.SetMode(WorkspaceMode.Editing);
+        workspaceLayout.ShowInspector();
+        RefreshWorkspace();
+        SelectTool(EditorAdjustmentRules.DefaultTool(EditorAdjustmentGroup.HdrRendition));
     }
 }

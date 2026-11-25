@@ -51,8 +51,8 @@ struct BatchPublicationTests {
         try writeRasterFixture(to: rasterURL)
         var settings = RawSettings.default
         settings.exposure = 0.25
-        settings.hsl.set(.saturation, channel: 2, value: -20)
-        settings.photoEffects.vignetteAmount = -25
+        settings.hslSettings.set(.saturation, channel: 2, value: -20)
+        settings.effectSettings.vignetteAmount = -25
         let source = BatchSourceSnapshot(identity: PhotoIdentity(resourceIdentifier: "raster-source"),
                                          sourceFile: .externallyManaged(rasterURL), displayName: "batch-source.jpg",
                                          sourceKind: .raster, settings: settings)

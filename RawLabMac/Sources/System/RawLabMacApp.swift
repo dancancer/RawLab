@@ -8,6 +8,7 @@ struct RawLabMacApp: App {
     @NSApplicationDelegateAdaptor(RawLabMacDelegate.self) private var appDelegate
     @AppStorage(L10n.preferenceKey) private var languagePreference = AppLanguage.system.rawValue
     @StateObject private var runtime = MacUpdateRuntime()
+    @StateObject private var viewCommands = MacViewCommandState()
     @Environment(\.openWindow) private var openWindow
     init() {
         SystemMenuLanguage.apply(UserDefaults.standard.string(forKey: L10n.preferenceKey))
@@ -64,23 +65,48 @@ struct RawLabMacApp: App {
         Window("RawLab Mac", id: "editor") {
             Group {
                 if let model = runtime.model, let updates = runtime.controller {
-                    VStack(spacing: 0) {
-                        UpdateAvailabilityBanner(updates: updates) { showUpdateWindow("update-prompt") }
-                        EditorView(model: model)
-                            .disabled(updates.blocksEditing)
-                            .onReceive(model.$exporting.removeDuplicates()) { if !$0 { retrySystemOpen() } }
-                            .onReceive(model.$importing.removeDuplicates()) { if !$0 { retrySystemOpen() } }
-                            .onReceive(model.$geometryDraftDeparturePending.removeDuplicates()) { if !$0 { retrySystemOpen() } }
-                            .onReceive(model.$saveError.removeDuplicates()) { if $0 == nil { retrySystemOpen() } }
+                    ZStack {
+                        VStack(spacing: 0) {
+                            UpdateAvailabilityBanner(updates: updates) { showUpdateWindow("update-prompt") }
+                            EditorView(model: model, viewCommands: viewCommands)
+                                .disabled(updates.blocksEditing)
+                                .onReceive(model.$exporting.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                                .onReceive(model.$importing.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                                .onReceive(model.$geometryDraftDeparturePending.removeDuplicates()) { if !$0 { retrySystemOpen() } }
+                                .onReceive(model.$saveError.removeDuplicates()) { if $0 == nil { retrySystemOpen() } }
+                        }
+                        if updates.blocksEditing {
+                            Color.black.opacity(0.45)
+                            VStack(spacing: 12) {
+                                Text(L10n.text("正在处理更新，编辑暂不可用。"))
+                                    .font(.headline)
+                                    .multilineTextAlignment(.center)
+                                Button(L10n.text("软件更新")) { showUpdateWindow("software-update") }
+                                    .buttonStyle(.borderedProminent)
+                                    .tint(.yellow)
+                            }
+                            .padding(22)
+                            .frame(maxWidth: 420)
+                            .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                            .overlay { RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1) }
+                            .padding(24)
+                            .accessibilityIdentifier("updates.lock")
+                        }
                     }
                 } else if let error = runtime.startupError {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(L10n.text(error == "other_instance" ? "请先退出其他 RawLab 实例" : "更新恢复需要处理，编辑暂未开放")).font(.headline)
                         if let updates = runtime.controller { SoftwareUpdateView(updates: updates) }
                         else { Text(L10n.text("请保留现有应用和数据，处理问题后重新启动。")) }
-                    }.padding(24)
+                    }.padding(24).preferredColorScheme(.dark)
                 } else { ProgressView(L10n.text("正在检查启动状态…")) }
-            }.task { await runtime.start(delegate: appDelegate); if runtime.model != nil { UsageAnalytics.shared.beginSession() } }
+            }.task {
+                await runtime.start(delegate: appDelegate)
+                if runtime.model != nil {
+                    UsageAnalytics.shared.beginSession()
+                    DiagnosticCenter.shared.beginSession()
+                }
+            }
                 .onChange(of: runtime.model != nil, initial: true) { _, ready in
                     if ready { appDelegate.openPhotos = handleSystemOpen }
                 }
@@ -90,9 +116,20 @@ struct RawLabMacApp: App {
                 }
                 .onChange(of: languagePreference) { _, preference in SystemMenuLanguage.apply(preference) }
                 .environment(\.locale, selectedLocale)
+                .preferredColorScheme(.dark)
         }.defaultSize(width: 1320, height: 850)
             .commands {
-                if let model = runtime.model, !installationActive { AdjustmentCommands(model: model) }
+                if let model = runtime.model, !installationActive {
+                    FileMenuCommands(
+                        model: model,
+                        openBatchSelection: { openWindow(id: "batch-selection") },
+                        openBatchExport: { openWindow(id: "batch-export") }
+                    )
+                    AdjustmentCommands(model: model)
+                    ViewCommands(model: model, commands: viewCommands)
+                } else {
+                    CommandGroup(replacing: .newItem) {}
+                }
                 CommandGroup(replacing: .appSettings) {
                     Button(L10n.text("软件更新…")) { showUpdateWindow("software-update") }.disabled(runtime.controller == nil)
                     Picker(L10n.text("语言"), selection: $languagePreference) {
@@ -101,38 +138,24 @@ struct RawLabMacApp: App {
                 }
                 CommandGroup(replacing: .appInfo) {
                     Button(L10n.text("关于 RawLab…")) { openWindow(id: "about") }
+                    Button(L10n.text("故障诊断…")) { openWindow(id: "about") }
                     Button(L10n.text("检查更新…")) {
                         showUpdateWindow("update-prompt")
                         runtime.controller?.check(manual: true)
                     }.disabled(runtime.controller == nil)
                 }
-                CommandGroup(replacing: .newItem) {
-                    if let model = runtime.model, !installationActive {
-                        Button(L10n.text("打开照片"), action: model.openPanel).keyboardShortcut("o")
-                        Button(L10n.text("导入外观…"), action: model.importLUT)
-                            .disabled(model.lookLibraryBusy || model.exporting || model.geometryDraft != nil)
-                        Divider()
-                        Button(L10n.text("导出 JPEG…")) { model.export(png: false) }
-                            .keyboardShortcut("e", modifiers: [.command, .shift]).disabled(!model.canExport)
-                        Button(L10n.text("导出渲染型 DNG…")) { model.export(format: .renderedDNG) }.disabled(!model.canExport)
-                        Button(L10n.text("使用当前调整批量导出…")) {
-                            if model.prepareBatch() { openWindow(id: "batch-export") }
-                        }.disabled(!model.canExport)
-                        Button(L10n.text("批量编辑…")) { openWindow(id: "batch-selection") }.disabled(model.exporting)
-                        Button(L10n.text("查看批量任务…")) { openWindow(id: "batch-export") }.disabled(model.batch == nil)
-                    }
-                }
             }
         Window(L10n.text("关于 RawLab"), id: "about") {
             AboutView(currentVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown")
                 .environment(\.locale, selectedLocale)
+                .preferredColorScheme(.dark)
         }
             .windowResizability(.contentSize)
         Window(L10n.text("软件更新"), id: "software-update") {
-            if let updates = runtime.controller { SoftwareUpdateView(updates: updates).environment(\.locale, selectedLocale) }
+            if let updates = runtime.controller { SoftwareUpdateView(updates: updates).environment(\.locale, selectedLocale).preferredColorScheme(.dark) }
         }.defaultSize(width: 560, height: 600)
         Window(L10n.text("RawLab 更新"), id: "update-prompt") {
-            if let updates = runtime.controller { SoftwareUpdateView(updates: updates, settings: false).environment(\.locale, selectedLocale) }
+            if let updates = runtime.controller { SoftwareUpdateView(updates: updates, settings: false).environment(\.locale, selectedLocale).preferredColorScheme(.dark) }
         }.defaultSize(width: 560, height: 520)
         Window(L10n.text("批量编辑"), id: "batch-selection") {
             if let model = runtime.model { BatchSelectionView(model: model).disabled(installationActive).environment(\.locale, selectedLocale) }
@@ -204,11 +227,24 @@ private struct UpdateAvailabilityBanner: View {
     var open: () -> Void
     var body: some View {
         if updates.state.phase == .available, let version = updates.state.release?.version {
-            HStack {
-                Text(L10n.format("RawLab %@ 已发布", version))
-                Spacer()
-                Button(L10n.text("查看更新"), action: open)
-            }.padding(8)
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.yellow)
+                    Text(L10n.format("RawLab %@ 已发布", version))
+                        .font(.callout.weight(.medium))
+                    Spacer()
+                    Button(L10n.text("查看更新"), action: open)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.yellow)
+                        .controlSize(.small)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(nsColor: .windowBackgroundColor))
+                Divider()
+            }
+            .preferredColorScheme(.dark)
         }
     }
 }

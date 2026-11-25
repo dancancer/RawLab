@@ -42,6 +42,7 @@ if(SONY2FUJI_ENABLE_X3F)
         "${x3f_source}/vendor/x3f-sys/build.rs" "${x3f_source}/vendor/x3f-sys/wrapper.h"
         "${x3f_source}/vendor/x3f-sys/LICENSE")
     set(x3f_notices "${CMAKE_CURRENT_BINARY_DIR}/x3f-licenses.txt")
+    option(RAWLAB_COLLECT_X3F_LICENSES "Collect X3F Rust dependency and runtime notices" ON)
     set(x3f_environment "CARGO_TARGET_DIR=${x3f_target}")
     if(IOS)
         list(APPEND x3f_environment "IPHONEOS_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
@@ -71,16 +72,27 @@ if(SONY2FUJI_ENABLE_X3F)
             "CARGO_TARGET_${rust_environment_target_upper}_LINKER=${android_cc}"
             "BINDGEN_EXTRA_CLANG_ARGS=--sysroot=${CMAKE_SYSROOT} --target=${android_clang_target}${android_api}")
     endif()
-    add_custom_command(OUTPUT "${x3f_archive}" "${x3f_notices}"
-        COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
-            "${RAWLAB_CARGO}" build --release --locked --manifest-path "${x3f_source}/Cargo.toml"
-            --target "${RAWLAB_X3F_RUST_TARGET}"
-        COMMAND "${Python3_EXECUTABLE}" "${x3f_source}/collect_licenses.py" --cargo "${RAWLAB_CARGO}"
-            --manifest "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}" --output "${x3f_notices}"
-        DEPENDS ${x3f_sources} "${x3f_source}/Cargo.toml" "${x3f_source}/Cargo.lock" "${x3f_source}/collect_licenses.py"
-        WORKING_DIRECTORY "${x3f_source}"
-        COMMENT "Building pinned X3F renderer (${RAWLAB_X3F_RUST_TARGET})" VERBATIM)
-    add_custom_target(rawlab_x3f_build DEPENDS "${x3f_archive}" "${x3f_notices}")
+    if(RAWLAB_COLLECT_X3F_LICENSES)
+        add_custom_command(OUTPUT "${x3f_archive}" "${x3f_notices}"
+            COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+                "${RAWLAB_CARGO}" build --release --locked --manifest-path "${x3f_source}/Cargo.toml"
+                --target "${RAWLAB_X3F_RUST_TARGET}"
+            COMMAND "${Python3_EXECUTABLE}" "${x3f_source}/collect_licenses.py" --cargo "${RAWLAB_CARGO}"
+                --manifest "${x3f_source}/Cargo.toml" --target "${RAWLAB_X3F_RUST_TARGET}" --output "${x3f_notices}"
+            DEPENDS ${x3f_sources} "${x3f_source}/Cargo.toml" "${x3f_source}/Cargo.lock" "${x3f_source}/collect_licenses.py"
+            WORKING_DIRECTORY "${x3f_source}"
+            COMMENT "Building pinned X3F renderer (${RAWLAB_X3F_RUST_TARGET})" VERBATIM)
+        add_custom_target(rawlab_x3f_build DEPENDS "${x3f_archive}" "${x3f_notices}")
+    else()
+        add_custom_command(OUTPUT "${x3f_archive}"
+            COMMAND "${CMAKE_COMMAND}" -E env ${x3f_environment}
+                "${RAWLAB_CARGO}" build --release --locked --manifest-path "${x3f_source}/Cargo.toml"
+                --target "${RAWLAB_X3F_RUST_TARGET}"
+            DEPENDS ${x3f_sources} "${x3f_source}/Cargo.toml" "${x3f_source}/Cargo.lock"
+            WORKING_DIRECTORY "${x3f_source}"
+            COMMENT "Building pinned X3F renderer (${RAWLAB_X3F_RUST_TARGET})" VERBATIM)
+        add_custom_target(rawlab_x3f_build DEPENDS "${x3f_archive}")
+    endif()
     add_library(rawlab_x3f STATIC IMPORTED GLOBAL)
     set_target_properties(rawlab_x3f PROPERTIES IMPORTED_LOCATION "${x3f_archive}"
         INTERFACE_INCLUDE_DIRECTORIES "${x3f_source}")

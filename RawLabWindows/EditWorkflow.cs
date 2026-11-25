@@ -10,16 +10,16 @@ namespace RawLab.Windows;
 
 public partial class MainWindow
 {
-    private EditStore? editStore;
-    private bool editDirty;
-    private bool pendingMigrationReceiptClear;
+    private EditStore? editStore => persistence.Store;
+    private bool editDirty => persistence.EditDirty;
+    private bool pendingMigrationReceiptClear => persistence.PendingMigrationReceiptClear;
+    private long openRevision => persistence.OpenRevision;
+    private long editRevision => persistence.EditRevision;
     internal Func<string, Exception, bool>? confirmUnusableRecordReset;
     private bool updateJournalLoadFailed;
     private string? saveNoticeKey;
     private readonly DispatcherTimer editSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly DispatcherTimer editNoticeTimer = new() { Interval = TimeSpan.FromSeconds(3) };
-    private readonly EditSaveQueue editSaveQueue = new();
-    private readonly EditSaveCommitQueue pendingEditSaves = new();
     private BatchJournal batchJournal;
     private BatchJob? previousBatch;
     private BatchExportWindow? batchWindow;
@@ -40,7 +40,7 @@ public partial class MainWindow
             if(!OwnedWindows.OfType<AdjustmentPresetLibraryDialog>().Any(window=>window.IsVisible))CancelParameterInputs();
             CancelEditGesture();EnqueueSaveEdits();
         };
-        try { editStore ??= new EditStore(appPaths.EditsDirectory); }
+        try { _ = persistence.EnsureStore(); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
         try { previousBatch = batchJournal.Load(); }
         catch (Exception error) { updateJournalLoadFailed=true;Report(new IOException(Loc.Format("无法读取上次批量任务：{0}", AdjustmentTransferPresentation.Detail(error)), error)); }
@@ -56,81 +56,53 @@ public partial class MainWindow
     {
         CancelProcessingMigration();
         if (quickPreset.Phase == QuickPresetPhase.Preparing) CancelQuickPreset();
-        ++editRevision;
-        if (!ready || syncing || file == null) return;
+        var canPersist = ready && !syncing && file != null;
+        if (!canPersist)
+        {
+            persistence.AdvanceEditRevision();
+            return;
+        }
         ClearTransferNoticesOnUserEdit();
-        editDirty = true;
-        if (clearMigrationReceipt) pendingMigrationReceiptClear = true;
-        if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
+        persistence.MarkEdited(canPersist: true, clearMigrationReceipt);
+        if (RetrySave.Visibility != Visibility.Visible) { SaveState.Text = ""; saveNoticeKey = null; }
         editSaveTimer.Stop();
-        if(!interacting)EnqueueSaveEditsCore(clearMigrationReceipt);
+        if (!interacting) EnqueueSaveEditsCore(clearMigrationReceipt);
     }
 
     private void EnqueueSaveEdits() => _ = EnqueueSaveEditsCore(false);
 
+    private (SavedEdit Candidate, SavedEdit? DefaultEdit) CaptureEditForSave()
+    {
+        var capturedPath = file!;
+        var candidate = new SavedEdit(CurrentOrReadViewSource(), settings.Capture(), CurrentLookIdentity());
+        var before = currentEditRecord ?? new PhotoEditState(candidate.Identity, null);
+        SavedEdit? defaultEdit = null;
+        if (before.Edit == null)
+        {
+            var defaults = PhotoInput.PrepareDefaultSettings(capturedPath);
+            defaults.ResolveWhiteBalance(settings.AsShot);
+            defaultEdit = new(candidate.Identity, defaults.Capture(), null);
+        }
+        return (candidate, defaultEdit);
+    }
+
     private Task<bool> EnqueueSaveEditsCore(bool clearMigrationReceipt)
     {
         editSaveTimer.Stop();
-        if (editGesture != null && interacting) return pendingEditSaves.LastPending?.CompletionTask ?? Task.FromResult(true);
-        if (!editDirty || file == null) return pendingEditSaves.LastPending?.CompletionTask ?? Task.FromResult(true);
-
-        var capturedPath = file;
-        var capturedOpenRevision = Volatile.Read(ref openRevision);
-        var capturedRevision = editRevision;
-        var clearReceipt = clearMigrationReceipt || pendingMigrationReceiptClear;
-
-        if (pendingEditSaves.LastPending is { } existing &&
-            existing.Path == capturedPath &&
-            existing.OpenRevision == capturedOpenRevision &&
-            existing.Revision == capturedRevision &&
-            !existing.CompletionTask!.IsCompleted &&
-            (!clearReceipt || Volatile.Read(ref existing.ClearReceipt)))
-        {
-            return existing.CompletionTask;
-        }
+        if (editGesture != null && interacting)
+            return persistence.LastPendingSaveTask ?? Task.FromResult(true);
+        if (!editDirty || file == null)
+            return persistence.LastPendingSaveTask ?? Task.FromResult(true);
 
         editGesture = null;
         try
         {
-            var capturedStore = editStore ?? new EditStore(appPaths.EditsDirectory);
-            editStore = capturedStore;
-            var capturedSession = TransferSession;
-            var candidate = new SavedEdit(CurrentOrReadViewSource(), settings.Capture(), CurrentLookIdentity());
-            var before = currentEditRecord ?? new PhotoEditState(candidate.Identity, null);
-            SavedEdit? defaultEdit = null;
-            if (before.Edit == null)
-            {
-                var defaults = PhotoInput.PrepareDefaultSettings(capturedPath);
-                defaults.ResolveWhiteBalance(settings.AsShot);
-                defaultEdit = new(candidate.Identity, defaults.Capture(), null);
-            }
-            var (baseline, desired) = capturedSession.PrepareEditCommit(before, candidate, defaultEdit);
-            var previousLook = before.Edit?.Look;
-
-            var commit = new PendingEditSaveCommit
-            {
-                Revision = capturedRevision,
-                Path = capturedPath,
-                OpenRevision = capturedOpenRevision,
-                Session = capturedSession,
-                Baseline = baseline,
-                PreviousLook = previousLook,
-                ClearReceipt = clearReceipt
-            };
-            var queueTask = editSaveQueue.EnqueueSave(
-                capturedStore,
-                capturedPath,
-                capturedOpenRevision,
-                clearReceipt,
-                effectiveClear =>
-                {
-                    if (effectiveClear) Volatile.Write(ref commit.ClearReceipt, true);
-                    return capturedStore.SaveState(baseline.Identity, desired, effectiveClear);
-                });
-            commit.QueueTask = queueTask;
-            pendingEditSaves.Enqueue(commit);
-            commit.CompletionTask = CompleteQueuedSaveAsync(commit);
-            return commit.CompletionTask;
+            return persistence.EnqueueSaveAsync(
+                CaptureEditForSave,
+                clearMigrationReceipt,
+                OnEditSaveApplied,
+                OnEditSaveFailed,
+                FlushDeferredExternalEditsCheckIfNeeded);
         }
         catch (Exception error)
         {
@@ -139,93 +111,32 @@ public partial class MainWindow
         }
     }
 
-    private async Task<bool> CompleteQueuedSaveAsync(PendingEditSaveCommit commit)
+    private void OnEditSaveApplied(EditSaveSuccess success)
     {
-        try
-        {
-            await commit.QueueTask;
-        }
-        catch
-        {
-            // ApplyEditSaveResult observes and handles QueueTask exceptions on the UI thread.
-        }
-        return ApplyEditSaveResult(commit);
-    }
-
-    private bool ApplyEditSaveResult(PendingEditSaveCommit commit) =>
-        pendingEditSaves.ApplyResult(
-            commit,
-            IsCurrentCommitPhoto,
-            IsCurrentCommitRevision,
-            OnEditSaveApplied,
-            OnEditSaveFailed);
-
-    private bool ApplyPendingEditSaves() =>
-        pendingEditSaves.ApplyPending(
-            IsCurrentCommitPhoto,
-            IsCurrentCommitRevision,
-            OnEditSaveApplied,
-            OnEditSaveFailed);
-
-    private bool IsCurrentCommitPhoto(PendingEditSaveCommit commit) =>
-        file == commit.Path && Volatile.Read(ref openRevision) == commit.OpenRevision;
-
-    private bool IsCurrentCommitRevision(PendingEditSaveCommit commit) =>
-        editRevision == commit.Revision;
-
-    private void OnEditSaveApplied(PendingEditSaveCommit commit, PhotoEditState saved, bool isCurrentRevision)
-    {
-        currentEditRecord = saved;
-        RecordRecentLook(commit.PreviousLook, saved.Edit?.Look);
+        RecordRecentLook(success.PreviousLook, success.Saved.Edit?.Look);
         if (acceptedPhotoPreviewResources is { } resources) CacheCurrentPhotoPreview(resources);
-        if (isCurrentRevision)
+        if (success.IsCurrentRevision)
         {
-            editDirty = false;
-            pendingMigrationReceiptClear = false;
-            if (Volatile.Read(ref commit.ClearReceipt)) ClearProcessingMigrationReceiptState();
+            if (success.ClearReceiptApplied) ClearProcessingMigrationReceiptState();
             SetSaveNotice("调整已保存", "", false);
         }
-        FlushDeferredExternalEditsCheckIfNeeded();
     }
 
-    private void OnEditSaveFailed(PendingEditSaveCommit commit, Exception error, bool shouldShowNotice)
+    private void OnEditSaveFailed(EditSaveFailure failure)
     {
-        if (shouldShowNotice)
-            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);
-        FlushDeferredExternalEditsCheckIfNeeded();
+        if (failure.ShouldShowNotice)
+            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(failure.Error), true);
     }
 
-    private async Task<bool> FlushSaveEditsAsync()
+    private Task<bool> FlushSaveEditsAsync()
     {
         editSaveTimer.Stop();
-        while (true)
-        {
-            if (editGesture != null && interacting) return true;
-            if (editDirty && file != null)
-            {
-                var currentPending = pendingEditSaves.LastPending;
-                var alreadyQueued = currentPending != null &&
-                    currentPending.Path == file &&
-                    currentPending.OpenRevision == Volatile.Read(ref openRevision) &&
-                    currentPending.Revision == editRevision &&
-                    !currentPending.CompletionTask!.IsCompleted;
-                if (!alreadyQueued)
-                {
-                    if (!await EnqueueSaveEditsCore(false)) return false;
-                    continue;
-                }
-            }
-            if (pendingEditSaves.FirstPending is { CompletionTask: { } pending } firstCommit)
-            {
-                if (!await pending && !pendingEditSaves.HasNewerPendingOrSucceededCommit(firstCommit))
-                    return false;
-                continue;
-            }
-            await editSaveQueue.FlushAsync();
-            if (!ApplyPendingEditSaves()) return false;
-            if (editDirty && file != null) continue;
-            return true;
-        }
+        return persistence.FlushAsync(
+            CaptureEditForSave,
+            pauseForInteractiveGesture: editGesture != null && interacting,
+            OnEditSaveApplied,
+            OnEditSaveFailed,
+            FlushDeferredExternalEditsCheckIfNeeded);
     }
 
     private bool SaveEdits() => SaveEditsCore(false);
@@ -233,51 +144,39 @@ public partial class MainWindow
     private bool SaveEditsCore(bool clearMigrationReceipt)
     {
         editSaveTimer.Stop();
-        if(editGesture!=null && interacting)return true;
-        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
-        {
-            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
-            if (!ApplyPendingEditSaves()) return false;
-        }
-        if (!editDirty || file == null) return true;
-        var clearReceipt = clearMigrationReceipt || pendingMigrationReceiptClear;
+        if (editGesture != null && interacting) return true;
         try
         {
-            if (clearReceipt) CommitResetEdit(settings.Capture());
-            else CommitCurrentEdit(settings.Capture());
-            editGesture=null;editDirty = false;pendingMigrationReceiptClear = false;
-            if (clearReceipt) ClearProcessingMigrationReceiptState();
-            SetSaveNotice("调整已保存", "", false);
-            return true;
+            var ok = persistence.SaveSync(
+                CaptureEditForSave,
+                clearMigrationReceipt,
+                pauseForInteractiveGesture: false,
+                OnEditSaveApplied,
+                OnEditSaveFailed,
+                FlushDeferredExternalEditsCheckIfNeeded);
+            if (ok) editGesture = null;
+            return ok;
         }
-        catch (Exception error) {
-            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);return false;
+        catch (Exception error)
+        {
+            SetSaveNotice("调整未保存 · 重试", AdjustmentTransferPresentation.Detail(error), true);
+            return false;
         }
     }
 
     // 重置全部调整经确认后显式清除该照片的处理迁移回执；随后撤销只恢复调整参数，不恢复已清除的迁移回执（回退仍保持已过期）。
     private AdjustmentOutcome CommitResetEdit(AdjustmentSnapshot snapshot)
     {
-        if(file==null)throw new InvalidOperationException("No photo is open.");
-        if (pendingEditSaves.HasPending || editSaveQueue.HasPendingWork)
-        {
-            editSaveQueue.FlushAsync().GetAwaiter().GetResult();
-            _ = ApplyPendingEditSaves();
-        }
-        var candidate=new SavedEdit(CurrentOrReadViewSource(),snapshot,CurrentLookIdentity());
-        var before=currentEditRecord ?? new PhotoEditState(candidate.Identity,null);
-        SavedEdit? defaultEdit=null;
-        if(before.Edit==null) {
-            var defaults=PhotoInput.PrepareDefaultSettings(file);defaults.ResolveWhiteBalance(settings.AsShot);
-            defaultEdit=new(candidate.Identity,defaults.Capture(),null);
-        }
-        var result=TransferSession.CommitEdit(before,candidate,defaultEdit,clearMigrationReceipt:true);
-        if(result.Status is not (AdjustmentStatus.Applied or AdjustmentStatus.Unchanged))throw result.Error ?? new InvalidOperationException("Adjustment was not saved.");
-        var previousLook=before.Edit?.Look;
-        currentEditRecord=result.Saved;
-        RecordRecentLook(previousLook,result.Saved?.Edit?.Look);
-        if(acceptedPhotoPreviewResources is {} resources)CacheCurrentPhotoPreview(resources);
-        return result;
+        if (file == null) throw new InvalidOperationException("No photo is open.");
+        var (candidate, defaultEdit) = CaptureEditForSave();
+        candidate = candidate with { Settings = snapshot };
+        return persistence.CommitSynchronously(
+            candidate,
+            defaultEdit,
+            clearMigrationReceipt: true,
+            OnEditSaveApplied,
+            OnEditSaveFailed,
+            FlushDeferredExternalEditsCheckIfNeeded);
     }
 
     private SavedEdit CaptureCurrentEdit() => new(CurrentOrReadViewSource(),
@@ -341,18 +240,17 @@ public partial class MainWindow
 
     internal void SaveSettingsCopies(IEnumerable<string> inputs, AdjustmentSnapshot snapshot, string? look)
     {
-        editStore ??= new EditStore(appPaths.EditsDirectory);
-        editStore.Save(inputs, snapshot, look);
+        persistence.EnsureStore().Save(inputs, snapshot, look);
     }
 
     private (PhotoEditState Record, Adjustments Settings) LoadEditsForOpen(string input)
     {
-        editStore ??= new EditStore(appPaths.EditsDirectory);
+        var activeStore = persistence.EnsureStore();
         PhotoEditState nextRecord;
         Adjustments nextSettings;
         try
         {
-            nextRecord = editStore.ReadState(input);
+            nextRecord = activeStore.ReadState(input);
             // New HDR sources start in HDR mode; an existing snapshot without HDR
             // remains the legacy SDR record by construction.
             nextSettings = nextRecord.Edit?.Settings.Restore() ?? PhotoInput.PrepareDefaultSettings(input);
@@ -380,8 +278,9 @@ public partial class MainWindow
     {
         var (nextRecord, nextSettings) = TransferSession.RepairLegacyNormalX3fOnOpen(input, LoadEditsForOpen);
         var saved = nextRecord.Edit;
-        editStore ??= new EditStore(appPaths.EditsDirectory);
-        currentEditRecord=nextRecord;processingMigrationReceipt=editStore.ReadProcessingMigration(input);editGesture=null;pendingMigrationReceiptClear=false;settings=nextSettings;
+        var activeStore = persistence.EnsureStore();
+        persistence.ApplyRestoredOpenState(input, nextRecord);
+        processingMigrationReceipt=activeStore.ReadProcessingMigration(input);editGesture=null;settings=nextSettings;
         lut = saved == null ? null : ResolveLook(saved);
         if (settings.MasterRecipeID == null && lut != null && !films.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path, lut)))
         {
@@ -389,7 +288,6 @@ public partial class MainWindow
             films.Add(new(managed?.Name ?? lookLibrary?.DisplayName(lut,Path.GetFileNameWithoutExtension(lut)) ?? Path.GetFileNameWithoutExtension(lut), lut, null,
                 AppearanceUnverified:managed?.AppearanceUnverified ?? false, CompatibilityMode:managed?.CompatibilityMode ?? 0)); BuildFilms();
         }
-        editDirty = false;
         if (saved != null) SetSaveNotice("已恢复上次调整", "", false);
         else if (RetrySave.Visibility != Visibility.Visible) {SaveState.Text = "";saveNoticeKey=null;}
     }
@@ -455,7 +353,7 @@ public partial class MainWindow
         }catch(Exception error){ShowAdjustmentError(error);return;}
         if(transformSaveFailed && transform.Active) { ApplyTransformDraft(); return; }
         if (editDirty) { EnqueueSaveEdits(); return; }
-        try { editStore = new EditStore(appPaths.EditsDirectory); SetSaveNotice("调整记录可用", "", false); }
+        try { persistence.RebindStore(new EditStore(appPaths.EditsDirectory)); SetSaveNotice("调整记录可用", "", false); }
         catch (Exception error) { SetSaveNotice("无法读取调整记录", AdjustmentTransferPresentation.Detail(error), true); }
     }
 
@@ -504,6 +402,16 @@ public partial class MainWindow
             var outcome = after.Interrupted ? BatchOutcome.Interrupted : after.Cancelled ? BatchOutcome.Cancelled :
                 failed > 0 || after.FailedCount > 0 ? BatchOutcome.Partial : BatchOutcome.Completed;
             usageAnalytics.Record(new BatchExportCompletedEvent(outcome, succeeded, failed));
+            diagnosticSession.RecordBreadcrumb(
+                "batch",
+                "batchExportCompleted",
+                "Batch export reached terminal state",
+                new()
+                {
+                    ["outcome"] = outcome.ToString(),
+                    ["succeeded"] = succeeded.ToString(),
+                    ["failed"] = failed.ToString(),
+                });
         };
         window.BusyChanged += active => {
             var closeFailed=!active && closing && window.CloseFailed;

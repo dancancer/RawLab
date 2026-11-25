@@ -40,23 +40,10 @@ internal sealed record HDRLuminanceStatistics(uint[] Bins, double AboveWhite);
 
 internal static class HDRDisplay
 {
-    private static readonly uint FalseColorOverHeadroom = PackBgra(1f, 0f, .35f);
-    private static readonly uint FalseColorHighlight = PackBgra(1f, .6f, 0f);
-    private static readonly uint FalseColorShadow = PackBgra(.02f, .15f, .7f);
-    private static readonly uint FalseColorMid = PackBgra(.35f, .35f, .35f);
-
-    private static readonly Vector<float> LinearThreshold = new(0.0031308f);
-    private static readonly Vector<float> LinearSlope = new(12.92f);
-    private static readonly Vector<float> GammaScale = new(1.055f);
-    private static readonly Vector<float> GammaOffset = new(0.055f);
-    private static readonly Vector<float> ByteScale = new(255f);
-    private static readonly Vector<float> Half = new(0.5f);
-    private static readonly Vector<float> PolyC0 = new(-0.00633837899f);
-    private static readonly Vector<float> PolyC1 = new(0.156613938f);
-    private static readonly Vector<float> PolyC2 = new(1.17948606f);
-    private static readonly Vector<float> PolyC3 = new(-0.530382713f);
-    private static readonly Vector<float> PolyC4 = new(0.261369359f);
-    private static readonly Vector<float> PolyC5 = new(-0.0607587535f);
+    private static readonly uint FalseColorOverHeadroom = PackBgra(255, 0, 160);
+    private static readonly uint FalseColorHighlight = PackBgra(255, 203, 0);
+    private static readonly uint FalseColorShadow = PackBgra(39, 108, 218);
+    private static readonly uint FalseColorMid = PackBgra(160, 160, 160);
 
     internal static HDRLuminanceStatistics Analyze(HDRFloatImage image)
     {
@@ -121,167 +108,113 @@ internal static class HDRDisplay
             pair.IsProxy != 0, pair.SourceSha256?.ToArray() ?? []);
     }
 
-    internal static byte[] EncodePbgra32(HDRFloatImage image)
+    private static Native.Buffer EncodeSdrBuffer(HDRFloatImage image, bool bgra)
     {
+        if (image.Width <= 0 || image.Height <= 0)
+            throw new InvalidDataException("Invalid HDR image dimensions");
         var pixelCount = checked(image.Width * image.Height);
         var floatCount = checked(pixelCount * 3);
-        var src = image.RGB.AsSpan(0, floatCount);
-        var pixels = new byte[checked(pixelCount * 4)];
-        var simdPixels = Vector<float>.Count;
-        Span<int> encoded = stackalloc int[simdPixels * 3];
-        var p = 0;
-        for (; p <= pixelCount - simdPixels; p += simdPixels)
+        if (image.RGB.Length < floatCount)
+            throw new InvalidDataException("Truncated HDR float buffer");
+
+        var pin = GCHandle.Alloc(image.RGB, GCHandleType.Pinned);
+        Native.Buffer output = default;
+        try
         {
-            var baseFloat = p * 3;
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat))).CopyTo(encoded);
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat + simdPixels))).CopyTo(encoded.Slice(simdPixels));
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat + simdPixels * 2))).CopyTo(encoded.Slice(simdPixels * 2));
-            for (var k = 0; k < simdPixels; k++)
+            var hdrBuffer = new Native.HDRBuffer
             {
-                var srcIdx = k * 3;
-                var dstIdx = (p + k) * 4;
-                pixels[dstIdx] = (byte)encoded[srcIdx + 2];
-                pixels[dstIdx + 1] = (byte)encoded[srcIdx + 1];
-                pixels[dstIdx + 2] = (byte)encoded[srcIdx];
-                pixels[dstIdx + 3] = 255;
-            }
+                Version = 1,
+                StructSize = (uint)Marshal.SizeOf<Native.HDRBuffer>(),
+                Data = pin.AddrOfPinnedObject(),
+                SizeBytes = (ulong)floatCount * sizeof(float),
+                Width = (uint)image.Width,
+                Height = (uint)image.Height,
+                StrideBytes = (ulong)image.Width * 12,
+                PixelFormat = HDRNative.PixelRGB32FLinear,
+                ColorEncoding = HDRNative.LinearSRGB,
+                ContentHeadroom = image.ContentHeadroom,
+                HeadroomKind = image.HeadroomKind
+            };
+            var status = bgra
+                ? Native.sony2fuji_hdr_encode_bgra8(ref hdrBuffer, out output)
+                : Native.sony2fuji_hdr_encode_rgba8(ref hdrBuffer, out output);
+            if (status == Native.StatusInvalidArgument)
+                throw new InvalidDataException("Nonfinite or invalid SDR rendition");
+            Native.CheckWithoutSession(status);
+            var result = output;
+            output = default;
+            return result;
         }
-        for (; p < pixelCount; p++)
+        finally
         {
-            var source = p * 3;
-            var destination = p * 4;
-            pixels[destination] = ToByte(src[source + 2]);
-            pixels[destination + 1] = ToByte(src[source + 1]);
-            pixels[destination + 2] = ToByte(src[source]);
-            pixels[destination + 3] = 255;
+            if (output.Data != IntPtr.Zero) Native.sony2fuji_release_buffer(ref output);
+            pin.Free();
         }
-        return pixels;
     }
 
     internal static BitmapSource SDRBitmap(HDRFloatImage image)
     {
-        var pixels = EncodePbgra32(image);
-        var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Pbgra32, null,
-            pixels, image.Width * 4);
-        bitmap.Freeze();
-        return bitmap;
+        var bgraBuffer = EncodeSdrBuffer(image, bgra: true);
+        try
+        {
+            var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Pbgra32, null,
+                bgraBuffer.Data, checked((int)bgraBuffer.Size), checked((int)bgraBuffer.Stride));
+            bitmap.Freeze();
+            return bitmap;
+        }
+        finally { Native.sony2fuji_release_buffer(ref bgraBuffer); }
     }
 
     internal static (BitmapSource Bitmap, uint[] Histogram, double Shadows, double Highlights, BitmapSource? Clipping)
         RenderSDRWithStatistics(HDRFloatImage image, bool clipping = false)
     {
-        var pixels = EncodePbgra32(image);
-        var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Pbgra32, null,
-            pixels, image.Width * 4);
-        bitmap.Freeze();
-
-        var bins = new uint[768];
-        long shadows = 0, highlights = 0;
-        var mask = clipping ? new byte[pixels.Length] : null;
-        for (var offset = 0; offset < pixels.Length; offset += 4)
+        var bgraBuffer = EncodeSdrBuffer(image, bgra: true);
+        try
         {
-            var b = pixels[offset];
-            var g = pixels[offset + 1];
-            var r = pixels[offset + 2];
-            bins[r]++;
-            bins[256 + g]++;
-            bins[512 + b]++;
-            var highlight = (r == 255) | (g == 255) | (b == 255);
-            var shadow = (r == 0) & (g == 0) & (b == 0);
-            if (highlight)
-            {
-                highlights++;
-                if (mask != null) { mask[offset + 2] = 255; mask[offset + 3] = 160; }
-            }
-            else if (shadow)
-            {
-                shadows++;
-                if (mask != null) { mask[offset] = 255; mask[offset + 1] = 130; mask[offset + 3] = 160; }
-            }
+            var bitmap = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Pbgra32, null,
+                bgraBuffer.Data, checked((int)bgraBuffer.Size), checked((int)bgraBuffer.Stride));
+            bitmap.Freeze();
+            var (bins, shadows, highlights, overlay) = AnalyzeBgraBuffer(ref bgraBuffer, image.Width, image.Height, clipping);
+            return (bitmap, bins, shadows, highlights, overlay);
         }
-        BitmapSource? overlay = null;
-        if (mask != null)
-        {
-            overlay = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, mask, image.Width * 4);
-            overlay.Freeze();
-        }
-        var count = Math.Max(1, image.Width * image.Height);
-        return (bitmap, bins, (double)shadows / count, (double)highlights / count, overlay);
+        finally { Native.sony2fuji_release_buffer(ref bgraBuffer); }
     }
 
-    internal static byte[] SDRRgb8(HDRFloatImage image)
+    internal static byte[] SDRRgba8(HDRFloatImage image)
     {
-        var floatCount = checked(image.Width * image.Height * 3);
-        var src = image.RGB.AsSpan(0, floatCount);
-        var pixels = new byte[floatCount];
-        var simdCount = Vector<float>.Count;
-        Span<int> temp = stackalloc int[simdCount];
-        var i = 0;
-        for (; i <= src.Length - simdCount; i += simdCount)
+        var rgbaBuffer = EncodeSdrBuffer(image, bgra: false);
+        try
         {
-            EncodeSrgbVector(new Vector<float>(src.Slice(i))).CopyTo(temp);
-            for (var k = 0; k < simdCount; k++) pixels[i + k] = (byte)temp[k];
+            var pixels = new byte[checked((int)rgbaBuffer.Size)];
+            Marshal.Copy(rgbaBuffer.Data, pixels, 0, pixels.Length);
+            return pixels;
         }
-        for (; i < src.Length; i++) pixels[i] = ToByte(src[i]);
-        return pixels;
+        finally { Native.sony2fuji_release_buffer(ref rgbaBuffer); }
     }
 
     internal static (uint[] Histogram, double Shadows, double Highlights, BitmapSource? Clipping) Statistics(HDRFloatImage image, bool clipping = false)
     {
-        var pixelCount = checked(image.Width * image.Height);
-        var floatCount = checked(pixelCount * 3);
-        var src = image.RGB.AsSpan(0, floatCount);
-        var bins = new uint[768]; long shadows = 0, highlights = 0;
-        var mask = clipping ? new byte[checked(pixelCount * 4)] : null;
-        var simdPixels = Vector<float>.Count;
-        Span<int> encoded = stackalloc int[simdPixels * 3];
-        var p = 0;
-        for (; p <= pixelCount - simdPixels; p += simdPixels)
+        var bgraBuffer = EncodeSdrBuffer(image, bgra: true);
+        try
         {
-            var baseFloat = p * 3;
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat))).CopyTo(encoded);
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat + simdPixels))).CopyTo(encoded.Slice(simdPixels));
-            EncodeSrgbVector(new Vector<float>(src.Slice(baseFloat + simdPixels * 2))).CopyTo(encoded.Slice(simdPixels * 2));
-            for (var k = 0; k < simdPixels; k++)
-            {
-                var srcIdx = k * 3;
-                var r = (byte)encoded[srcIdx];
-                var g = (byte)encoded[srcIdx + 1];
-                var b = (byte)encoded[srcIdx + 2];
-                bins[r]++;
-                bins[256 + g]++;
-                bins[512 + b]++;
-                var highlight = (r == 255) | (g == 255) | (b == 255);
-                var shadow = (r == 0) & (g == 0) & (b == 0);
-                var offset = (p + k) * 4;
-                // 与普通八位显示统计一致：任一通道为白标红，三通道全黑标蓝。
-                if (highlight) { highlights++; if (mask != null) { mask[offset + 2] = 255; mask[offset + 3] = 160; } }
-                else if (shadow) { shadows++; if (mask != null) { mask[offset] = 255; mask[offset + 1] = 130; mask[offset + 3] = 160; } }
-            }
+            return AnalyzeBgraBuffer(ref bgraBuffer, image.Width, image.Height, clipping);
         }
-        for (; p < pixelCount; p++)
+        finally { Native.sony2fuji_release_buffer(ref bgraBuffer); }
+    }
+
+    private static (uint[] Histogram, double Shadows, double Highlights, BitmapSource? Clipping)
+        AnalyzeBgraBuffer(ref Native.Buffer bgraBuffer, int width, int height, bool clipping)
+    {
+        var bins = new uint[768];
+        Native.Buffer mask = default;
+        try
         {
-            var baseFloat = p * 3;
-            var r = ToByte(src[baseFloat]);
-            var g = ToByte(src[baseFloat + 1]);
-            var b = ToByte(src[baseFloat + 2]);
-            bins[r]++;
-            bins[256 + g]++;
-            bins[512 + b]++;
-            var highlight = (r == 255) | (g == 255) | (b == 255);
-            var shadow = (r == 0) & (g == 0) & (b == 0);
-            var offset = p * 4;
-            if (highlight) { highlights++; if (mask != null) { mask[offset + 2] = 255; mask[offset + 3] = 160; } }
-            else if (shadow) { shadows++; if (mask != null) { mask[offset] = 255; mask[offset + 1] = 130; mask[offset + 3] = 160; } }
+            Native.CheckWithoutSession(RenderEngine.AnalyzeStatistics(ref bgraBuffer, clipping, bins, out var shadows, out var highlights, out mask));
+            var overlay = clipping && mask.Data != IntPtr.Zero ? RenderEngine.Bitmap(mask, opaque: false) : null;
+            var count = Math.Max(1, checked(width * height));
+            return (bins, (double)shadows / count, (double)highlights / count, overlay);
         }
-        BitmapSource? overlay = null;
-        if (mask != null)
-        {
-            overlay = BitmapSource.Create(image.Width, image.Height, 96, 96, PixelFormats.Bgra32, null, mask, image.Width * 4);
-            overlay.Freeze();
-        }
-        var count = Math.Max(1, pixelCount);
-        return (bins, (double)shadows / count, (double)highlights / count, overlay);
+        finally { Native.sony2fuji_release_buffer(ref mask); }
     }
 
     private static bool IsReadable(Native.HDRBuffer buffer) =>
@@ -329,33 +262,6 @@ internal static class HDRDisplay
         return new(width, height, checked((int)buffer.StrideBytes), values, buffer.ContentHeadroom, buffer.HeadroomKind);
     }
 
-    private static Vector<int> EncodeSrgbVector(Vector<float> value)
-    {
-        if (!Vector.EqualsAll(value - value, Vector<float>.Zero))
-            throw new InvalidDataException("Nonfinite SDR rendition");
-        var clamped = Vector.Min(Vector.Max(value, Vector<float>.Zero), Vector<float>.One);
-        var linear = clamped * LinearSlope;
-        var t = Vector.SquareRoot(Vector.SquareRoot(clamped));
-        var poly = PolyC5 * t + PolyC4;
-        poly = poly * t + PolyC3;
-        poly = poly * t + PolyC2;
-        poly = poly * t + PolyC1;
-        poly = poly * t + PolyC0;
-        var gamma = poly * GammaScale - GammaOffset;
-        var isLinear = Vector.LessThanOrEqual(clamped, LinearThreshold);
-        var encoded = Vector.ConditionalSelect(isLinear, linear, gamma);
-        var scaled = Vector.Min(Vector.Max(encoded * ByteScale, Vector<float>.Zero), ByteScale);
-        return Vector.ConvertToInt32(scaled + Half);
-    }
-
-    private static uint PackBgra(float r, float g, float b) =>
-        (uint)ToByte(b) | ((uint)ToByte(g) << 8) | ((uint)ToByte(r) << 16) | 0xFF00_0000u;
-
-    private static byte ToByte(float value)
-    {
-        if (!float.IsFinite(value)) throw new InvalidDataException("Nonfinite SDR rendition");
-        value = Math.Clamp(value, 0, 1);
-        var encoded = value <= .0031308f ? 12.92f * value : 1.055f * MathF.Pow(value, 1 / 2.4f) - .055f;
-        return (byte)Math.Clamp(MathF.Round(encoded * 255, MidpointRounding.AwayFromZero), 0, 255);
-    }
+    private static uint PackBgra(byte r, byte g, byte b) =>
+        (uint)b | ((uint)g << 8) | ((uint)r << 16) | 0xFF00_0000u;
 }

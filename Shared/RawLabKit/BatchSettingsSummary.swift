@@ -26,7 +26,7 @@ public enum BatchSettingsSummary {
             BatchSettingRow(title: AdjustmentKind.exposure.title,
                             value: AdjustmentKind.exposure.displayValue(settings.exposure)),
             row("曝光基准", settings.exposureMode.title),
-            BatchSettingRow(title: "HSL", value: L10n.text(settings.hsl.isIdentity ? "未调整" : "已调整")),
+            BatchSettingRow(title: "HSL", value: L10n.text(settings.hslSettings.isIdentity ? "未调整" : "已调整")),
             row("白平衡", L10n.text(settings.whiteBalanceMode == .camera ? "拍摄时设置" : "自定义"))
         ]
     }
@@ -51,8 +51,8 @@ public enum BatchSettingsSummary {
             BatchSettingRow(title: L10n.text("颜色分级") + " · " + zone.title,
                             value: String(format: "%.1f° · %.1f%%", locale: L10n.locale, settings.gradingSettings[zone].hue, settings.gradingSettings[zone].saturation))
         }
-        return tools + curve + grading + hsl(settings.hsl) + geometry(settings.geometry) + whiteBalance(settings) + denoise(settings.denoise)
-            + effects.map { row($0.key, effectValue(settings.photoEffects, $0.parameter)) } + lens(settings.lensSettings)
+        return tools + curve + grading + hsl(settings.hslSettings) + geometry(settings.geometrySettings) + whiteBalance(settings) + denoise(settings.denoise)
+            + effects.map { row($0.key, effectValue(settings.effectSettings, $0.parameter)) } + lens(settings.lensSettings)
     }
 
     private static func hsl(_ settings: HSLSettings) -> [BatchSettingRow] {

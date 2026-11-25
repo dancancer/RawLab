@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     private readonly LatestWork<Work> scheduler=new();
     private record EmbeddedWork(string Path,long Revision);
     private readonly LatestWork<EmbeddedWork> embeddedScheduler=new();
-    private long openRevision;
+    private readonly EditorPersistenceCoordinator persistence;
     private readonly Dictionary<Parameter,(Button Button,AdjustmentRing Ring)> toolButtons=[];
     private readonly Dictionary<PhotoEffectTool,(Button Button,AdjustmentRing Ring)> effectToolButtons=[];
     private readonly Dictionary<string,Button> filmButtons=new(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +55,6 @@ public partial class MainWindow : Window
     private PhotoEffectTool selectedEffect=PhotoEffectTool.Vignette;
     private bool renderFailed;
     private bool autoExposing;
-    private long editRevision;
     private int? exportLongEdge;
     private OutputSharpening exportOutputSharpening = OutputSharpening.Off;
     private string? lastExportedPath;
@@ -73,6 +72,7 @@ public partial class MainWindow : Window
     private int previewLongEdge=2000,requestedPreviewLongEdge=2000;
     private bool previewDeferred;
     private UsageAnalytics usageAnalytics;
+    private DiagnosticSessionStore diagnosticSession;
     private AboutWindow? aboutWindow;
     private bool startupReported, analyticsDisposed;
     private long photoImportReportedRevision;
@@ -98,11 +98,17 @@ public partial class MainWindow : Window
         ReadEmbeddedPreviewHook = path => RenderEngine.ReadEmbeddedPreview(path, appPaths: this.appPaths);
         this.usageAnalytics = usageAnalytics ?? new UsageAnalytics(appPaths.UsageSettingsPath);
         this.library = library ?? new(appPaths.FoldersPath);
-        this.editStore = editStore;
+        this.persistence = new EditorPersistenceCoordinator(
+            editStore,
+            () => new EditStore(this.appPaths.EditsDirectory),
+            action => Dispatcher.BeginInvoke(action));
+        this.persistence.DeferredExternalCheckReady += FlushDeferredExternalEditsCheckIfNeeded;
         this.batchJournal = batchJournal ?? new(appPaths.BatchDirectory);
         this.presetStore = presetStore ?? new(appPaths.PresetsDirectory);
         this.aiPreferenceStore = aiPreferenceStore ?? new(appPaths.AiGpuPreferencesPath);
         this.aiDiagnostics = aiDiagnostics ?? new(appPaths.AiDiagnosticsDirectory);
+        this.diagnosticSession = new(appPaths.DiagnosticsDirectory);
+        this.diagnosticSession.ResumeOnLaunch();
         workspaceWidthsPath = appPaths.WorkspaceWidthsPath;
         recentLooksPath = appPaths.RecentLooksPath;
         photoPreviewCacheDirectory = appPaths.EditedPhotoPreviewCacheDirectory;
@@ -135,7 +141,6 @@ public partial class MainWindow : Window
             RefreshSaveNotice();
             RefreshInspection();
             if (localizedStatus != null) { var statusText=localizedStatus(); Status.Text=statusText; Status.ToolTip=statusText; }
-            RefreshComparisonToolTip();
             RefreshWorkspaceBrowserLayout();
             foreach(var entry in galleries.SelectMany(gallery=>gallery.Photos).Distinct())entry.RefreshPhotoStatus();
         }
@@ -152,7 +157,7 @@ public partial class MainWindow : Window
         ResultCanvas.HoldStarted+=BeginHoldingBefore;
         ResultCanvas.HoldEnded+=EndHoldingBefore;
         NeutralCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
-        ResultCanvas.ImageBoundsChanged+=RefreshPhotoLabels;
+        ResultCanvas.ImageBoundsChanged+=()=>{RefreshPhotoLabels();if(settings.IsHDREditing)RefreshHDRPresentation();};
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
@@ -209,7 +214,7 @@ public partial class MainWindow : Window
         };
         CurveEditor.LegacyChanged+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
-            settings.Set(Parameter.ToneCurve,value);interacting=dragging;RefreshControls();MarkEdited();Schedule();
+            settings.Set(Parameter.ToneCurve,ParameterSpec.All[(int)Parameter.ToneCurve].ToCanonical(value));interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
         GradingEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
@@ -237,16 +242,23 @@ public partial class MainWindow : Window
             interacting=dragging;
             if(selectedHdrRenditionParameter is {} rendition)settings.SetHDRRendition(rendition,value);
             else if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
-            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,value);
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,ParameterSpec.All[(int)selectedParameter].ToCanonical(value));
             MarkEdited();RefreshControls();Schedule();
         };
         LookStrengthRow.Changed += (value, dragging) => {
             if (!ready || syncing || exporting || transform.Active) return;
             interacting = dragging;
-            settings.Set(Parameter.Strength, value);
+            settings.Set(Parameter.Strength, ParameterSpec.All[(int)Parameter.Strength].ToCanonical(value));
             MarkEdited(); RefreshControls(); Schedule();
         };
         LookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
+        HdrLookStrengthRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active || settings.HDR is not { Mode: HDRMode.Hdr } hdr || hdr.LookSettings.Sha256 == null) return;
+            interacting = dragging;
+            settings.HDR = hdr.WithLook(hdr.LookSettings with { Strength = value / 100 });
+            MarkEdited(); RefreshControls(); Schedule();
+        };
+        HdrLookStrengthRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
         OrdinaryParameter.InvalidInput+=()=>SetStatus(() => Loc.Text("请输入有效数字"),true);
         SetPhotoMargin(true);
         ready=true; RefreshControls(); RefreshRenderLabels(); RefreshCopyLabels();

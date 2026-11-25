@@ -134,9 +134,9 @@ struct MacCollectionExportPreparation {
                 throw BatchExportFailure.missingLook
             }
             look = url; lookName = recipe.title
-        } else if !state.filmID.isEmpty {
-            guard let film = Film.independentRecipe(state.filmID) ?? films.first(where: {
-                $0.id == state.filmID || "builtin:\($0.url.lastPathComponent)" == state.filmID
+        } else if let filmID = state.filmID, !filmID.isEmpty {
+            guard let film = Film.independentRecipe(filmID) ?? films.first(where: {
+                $0.id == filmID || "builtin:\($0.url.lastPathComponent)" == filmID
             }) else { throw BatchExportFailure.missingLook }
             look = film.url; lookName = film.name
         } else { look = nil; lookName = "中性" }

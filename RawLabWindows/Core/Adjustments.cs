@@ -35,8 +35,14 @@ public sealed record LensInfo(int State, string DetectedLens, string SelectedLen
         9 => Loc.Text("此输入不支持镜头校正"), _ => Loc.Text("未匹配镜头，请手动选择")
     };
 }
-public sealed record ParameterSpec(Parameter Id, string Title, string Group, double Min, double Max, double Step, string Unit, int Decimals = 0)
+public sealed record ParameterSpec(Parameter Id, string Title, string Group, double Min, double Max, double Step, string Unit, int Decimals = 0, double UiScale = 1, double UiOffset = 0)
 {
+    public double ToDisplay(double model) => UiScale == 1
+        ? model - UiOffset
+        : Math.Round((model - UiOffset) * UiScale, 10, MidpointRounding.AwayFromZero);
+    public double ToCanonical(double display) => UiOffset + display / UiScale;
+    public double DisplayMin => Math.Min(ToDisplay(Min), ToDisplay(Max));
+    public double DisplayMax => Math.Max(ToDisplay(Min), ToDisplay(Max));
     public double Position(double v) => Id == Parameter.Temperature
         ? (1 / Min - 1 / v) / (1 / Min - 1 / Max) : (v - Min) / (Max - Min);
     public double Value(double position)
@@ -48,16 +54,16 @@ public sealed record ParameterSpec(Parameter Id, string Title, string Group, dou
     public double? Parse(string text) => double.TryParse(text,NumberStyles.Float,CultureInfo.GetCultureInfo(Loc.Language),out var value) && double.IsFinite(value) &&
         value>=Min && value<=Max && Math.Abs(value/Step-Math.Round(value/Step))<=1e-8*Math.Max(1,Math.Abs(value/Step)) ? value : null;
     public static readonly ParameterSpec[] All = [
-        new(Parameter.Strength,"强度","胶片",AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Max!.Value,.1,"%"),
+        new(Parameter.Strength,"强度","胶片",AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LooksStrength.WindowsModel.Max!.Value,.1,"%",0,100,0),
         new(Parameter.Exposure,"曝光","输入",AdjustmentFieldSpec.Fields.LightExposure.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightExposure.WindowsModel.Max!.Value,.01,"EV",2),
         new(Parameter.Temperature,"色温","输入",AdjustmentFieldSpec.Fields.ColorWhiteBalanceTemperatureKelvin.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorWhiteBalanceTemperatureKelvin.WindowsModel.Max!.Value,10,"K"),
         new(Parameter.Tint,"色调","输入",AdjustmentFieldSpec.Fields.ColorWhiteBalanceTint.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorWhiteBalanceTint.WindowsModel.Max!.Value,.1,"",1),
-        new(Parameter.Contrast,"对比度","明暗",AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Max!.Value,.1,"%",1),
-        new(Parameter.Highlights,"高光","明暗",AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Max!.Value,.1,"%",1),
-        new(Parameter.Shadows,"阴影","明暗",AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Max!.Value,.1,"%",1),
-        new(Parameter.ToneCurve,"S 曲线","明暗",AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Max!.Value,.1,"%",1),
-        new(Parameter.Saturation,"饱和度","色彩",AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Max!.Value,.1,"%",1),
-        new(Parameter.Sharpening,"锐化","细节",AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Max!.Value,.1,"%",1)];
+        new(Parameter.Contrast,"对比度","明暗",AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightContrast.WindowsModel.Max!.Value,.1,"%",1,100,1),
+        new(Parameter.Highlights,"高光","明暗",AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightHighlights.WindowsModel.Max!.Value,.1,"%",1,-100,0),
+        new(Parameter.Shadows,"阴影","明暗",AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightShadows.WindowsModel.Max!.Value,.1,"%",1,100,0),
+        new(Parameter.ToneCurve,"S 曲线","明暗",AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.LightSCurve.WindowsModel.Max!.Value,.1,"%",1,100,0),
+        new(Parameter.Saturation,"饱和度","色彩",AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.ColorSaturation.WindowsModel.Max!.Value,.1,"%",1,100,1),
+        new(Parameter.Sharpening,"锐化","细节",AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Min!.Value,AdjustmentFieldSpec.Fields.DetailSharpening.WindowsModel.Max!.Value,.1,"%",1,100,0)];
 }
 
 internal readonly record struct ResolvedNativeWhiteBalance(int WbMode, float Temperature, float Tint);
@@ -71,7 +77,7 @@ internal readonly record struct PreparedRecipeSettings(Adjustments Settings, Res
 public sealed class Adjustments
 {
     internal const int CurrentProRAWDecodeVersion = 2;
-    private double[] values = [100,0,6500,0,0,0,0,0,0,0];
+    private double[] values = [1,0,6500,0,1,0,0,0,1,0];
     private GeometrySettings geometry = new();
     public ProcessingIdentity Processing { get; set; } = ProcessingIdentity.Current;
     public X3fMode X3fMode { get; set; } = X3fMode.Normal;
@@ -149,8 +155,8 @@ public sealed class Adjustments
         }
     }
     public MasterRecipe? Recipe => MasterRecipeID == null ? null : MasterRecipe.Find(MasterRecipeID);
-    public double RefinementScale => MasterRecipeID != null && MasterRecipeSettingsVersion >= 4 ? this[Parameter.Strength] / 100 : 1;
-    public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null || MasterRecipeSettingsVersion < 3 ? 1 : this[Parameter.Strength] / 100);
+    public double RefinementScale => MasterRecipeID != null && MasterRecipeSettingsVersion >= 4 ? this[Parameter.Strength] : 1;
+    public HslSettings RenderHsl => Hsl.Scaled(MasterRecipeID == null || MasterRecipeSettingsVersion < 3 ? 1 : this[Parameter.Strength]);
     public ToneControlsSettings RenderToneControls => ToneControls.Scaled(RefinementScale);
     public AtmosphereSettings RenderAtmosphere => Atmosphere.Scaled(RefinementScale);
     public ColorGradingSettings RenderGrading => ColorGrading.Scaled(RefinementScale);
@@ -160,12 +166,12 @@ public sealed class Adjustments
         recipe.Validate();
         MasterRecipeID = recipe.Id;
         MasterRecipeSettingsVersion = recipe.SettingsVersion;
-        values[0] = 100;
+        values[0] = 1;
         values[(int)Parameter.Exposure] = recipe.ExposureDelta;
-        values[(int)Parameter.Shadows] = recipe.ShadowsDelta;
-        values[(int)Parameter.Highlights] = recipe.HighlightsDelta;
-        values[(int)Parameter.Contrast] = recipe.ContrastDelta;
-        values[(int)Parameter.Saturation] = recipe.SaturationDelta;
+        values[(int)Parameter.Shadows] = recipe.ShadowsDelta / 100.0;
+        values[(int)Parameter.Highlights] = -recipe.HighlightsDelta / 100.0;
+        values[(int)Parameter.Contrast] = 1.0 + recipe.ContrastDelta / 100.0;
+        values[(int)Parameter.Saturation] = 1.0 + recipe.SaturationDelta / 100.0;
         values[(int)Parameter.Tint] = recipe.TintDelta;
         Hsl = recipe.Hsl.Settings();
         if (recipe.SettingsVersion >= 4) {
@@ -177,18 +183,20 @@ public sealed class Adjustments
     public void ClearMasterRecipe(bool isRaw = true)
     {
         if (MasterRecipeID == null) return;
-        var scale = this[Parameter.Strength] / 100;
+        var scale = this[Parameter.Strength];
         var offset = this[Parameter.Tint] * scale;
         if (isRaw && (!CameraWhiteBalance || offset != 0) && AsShot == null)
             throw new System.IO.InvalidDataException(Loc.Text("缺少拍摄时白平衡数据，无法保留配方效果。"));
         var snapshot = Capture().Copy();
-        foreach (var parameter in new[] { Parameter.Exposure, Parameter.Highlights, Parameter.Shadows, Parameter.Contrast, Parameter.Saturation })
+        foreach (var parameter in new[] { Parameter.Exposure, Parameter.Highlights, Parameter.Shadows })
             snapshot.Values[(int)parameter] *= scale;
+        foreach (var parameter in new[] { Parameter.Contrast, Parameter.Saturation })
+            snapshot.Values[(int)parameter] = 1.0 + (snapshot.Values[(int)parameter] - 1.0) * scale;
         var request = Request("", null, 0, null);
         snapshot.Values[(int)Parameter.Tint] = !isRaw ? 0 : request.WbMode == 3
             ? Math.Clamp((AsShot?.Tint ?? 0) + offset, -150, 150) : AsShot?.Tint ?? 0;
         if (!isRaw) snapshot.Values[(int)Parameter.Temperature] = 6500;
-        snapshot.Values[(int)Parameter.ToneCurve] = Math.Clamp(this[Parameter.ToneCurve] * RefinementScale, -100, 100);
+        snapshot.Values[(int)Parameter.ToneCurve] = Math.Clamp(this[Parameter.ToneCurve] * RefinementScale, -1, 1);
         snapshot = snapshot with { MasterRecipeID = null, MasterRecipeSettingsVersion = 3, Hsl = RenderHsl,
             ToneControls = RenderToneControls, Atmosphere = RenderAtmosphere, ColorGrading = RenderGrading, Curve = RenderCurve,
             CameraWhiteBalance = !isRaw || request.WbMode != 3,
@@ -221,6 +229,7 @@ public sealed class Adjustments
         if (HDR is { } hdr && !hdr.IsValid) throw new System.IO.InvalidDataException(Loc.Text("HDR 调整记录无效，原有文件未被覆盖。"));
         return new((double[])values.Clone(), ExposureMode, CameraWhiteBalance, AsShot?.Temperature, AsShot?.Tint,
         Denoise, Effects, DisplayChromaDenoise, Hsl, MasterRecipeID, Lens, geometry) {
+        SettingsVersion = AdjustmentSnapshot.CurrentSettingsVersion,
         Processing = ProcessingIdentity.Require(Processing), X3fMode = X3fMode, AIDenoiseEnabled = AIDenoiseEnabled,
         AIDenoiseBlend = AIDenoiseStrength == 100.0 ? null : AIDenoiseStrength,
         MasterRecipeSettingsVersion = MasterRecipeSettingsVersion,
@@ -237,8 +246,38 @@ public sealed class Adjustments
         if (!Enum.IsDefined(snapshot.X3fMode)) throw new System.IO.InvalidDataException("Invalid X3F rendering mode");
         if (snapshot.MasterRecipeSettingsVersion is not (2 or 3 or 4))
             throw new System.IO.InvalidDataException("Invalid master recipe version");
-        if (snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2 ||
-            snapshot.Values.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
+        if (snapshot.SettingsVersion is < 0 or > AdjustmentSnapshot.CurrentSettingsVersion ||
+            snapshot.Values.Length != ParameterSpec.All.Length || snapshot.ExposureMode is < 0 or > 2)
+            throw new System.IO.InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+        double[] migrated;
+        if (snapshot.SettingsVersion < AdjustmentSnapshot.CurrentSettingsVersion)
+        {
+            for (var i = 0; i < snapshot.Values.Length; i++)
+            {
+                var v = snapshot.Values[i];
+                var (min, max) = (Parameter)i switch
+                {
+                    Parameter.Strength or Parameter.Sharpening => (0.0, 200.0),
+                    Parameter.Contrast or Parameter.Highlights or Parameter.Shadows or Parameter.ToneCurve or Parameter.Saturation => (-100.0, 100.0),
+                    _ => (ParameterSpec.All[i].Min, ParameterSpec.All[i].Max)
+                };
+                if (!double.IsFinite(v) || v < min || v > max)
+                    throw new System.IO.InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
+            }
+            migrated = (double[])snapshot.Values.Clone();
+            migrated[(int)Parameter.Strength] = snapshot.Values[(int)Parameter.Strength] / 100.0;
+            migrated[(int)Parameter.Contrast] = 1.0 + snapshot.Values[(int)Parameter.Contrast] / 100.0;
+            migrated[(int)Parameter.Highlights] = -snapshot.Values[(int)Parameter.Highlights] / 100.0;
+            migrated[(int)Parameter.Shadows] = snapshot.Values[(int)Parameter.Shadows] / 100.0;
+            migrated[(int)Parameter.ToneCurve] = snapshot.Values[(int)Parameter.ToneCurve] / 100.0;
+            migrated[(int)Parameter.Saturation] = 1.0 + snapshot.Values[(int)Parameter.Saturation] / 100.0;
+            migrated[(int)Parameter.Sharpening] = snapshot.Values[(int)Parameter.Sharpening] / 100.0;
+        }
+        else
+        {
+            migrated = (double[])snapshot.Values.Clone();
+        }
+        if (migrated.Where((value, index) => !double.IsFinite(value) || value < ParameterSpec.All[index].Min || value > ParameterSpec.All[index].Max).Any())
             throw new System.IO.InvalidDataException(Loc.Text("调整记录无效，原有文件未被覆盖。"));
         var denoise = snapshot.Denoise ?? new DenoiseSettings();
         var effects = snapshot.Effects ?? new PhotoEffectsSettings();
@@ -277,7 +316,7 @@ public sealed class Adjustments
             MasterRecipeSettingsVersion = snapshot.MasterRecipeSettingsVersion,
             Lens = snapshot.Lens ?? new(),
             DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
-            values = (double[])snapshot.Values.Clone(), ExposureMode = snapshot.ExposureMode,
+            values = migrated, ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
             AsShot = snapshot.AsShotTemperature is {} temperature && snapshot.AsShotTint is {} tint ? (temperature, tint) : null,
             HDR = snapshot.HDR,
@@ -287,7 +326,8 @@ public sealed class Adjustments
         return result;
     }
     public double Default(Parameter id) => IsHDREditing && (id is Parameter.Temperature or Parameter.Tint) ? id == Parameter.Temperature ? 6500 : 0 :
-        id == Parameter.Strength ? 100 : id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? (MasterRecipeID == null ? AsShot?.Tint ?? 0 : 0) : 0;
+        id is Parameter.Strength or Parameter.Contrast or Parameter.Saturation ? 1 :
+        id == Parameter.Temperature ? AsShot?.Temperature ?? 6500 : id == Parameter.Tint ? (MasterRecipeID == null ? AsShot?.Tint ?? 0 : 0) : 0;
     public void Set(Parameter id, double value)
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
@@ -481,7 +521,7 @@ public sealed class Adjustments
         if (longEdge is { } requested && !ExportSize.IsValid(requested))
             throw new ArgumentOutOfRangeException(nameof(longEdge), Loc.Text("导出长边必须为 1-65535 像素。"));
         var limitedFinal = output != null && longEdge.HasValue;
-        var scale = MasterRecipeID == null ? 1 : this[Parameter.Strength] / 100;
+        var scale = MasterRecipeID == null ? 1 : this[Parameter.Strength];
         int wbMode;
         float temperature, tint;
         if (resolvedWhiteBalance is { } wb)
@@ -508,12 +548,12 @@ public sealed class Adjustments
         }
         return new Native.Request {
             Version=2, StructSize=(uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.Request>(), InputPath=path,
-            LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength]/100,
+            LutPath=lut, LutStrength=lut == null ? 0 : (float)this[Parameter.Strength],
             WbMode=wbMode, Wb0=1,Wb1=1,Wb2=1,Wb3=1,
-            ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=1+(float)(this[Parameter.Contrast]*scale)/100,
-            Saturation=1+(float)(this[Parameter.Saturation]*scale)/100, Temperature=temperature,
-            Tint=tint, Highlights=-(float)(this[Parameter.Highlights]*scale)/100,
-            Shadows=(float)(this[Parameter.Shadows]*scale)/100,ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)Math.Clamp(this[Parameter.ToneCurve]*RefinementScale,-100,100)/100,Sharpening=(float)this[Parameter.Sharpening]/100,
+            ExposureEv=(float)(this[Parameter.Exposure]*scale), Brightness=1, Contrast=(float)(1.0+(this[Parameter.Contrast]-1.0)*scale),
+            Saturation=(float)(1.0+(this[Parameter.Saturation]-1.0)*scale), Temperature=temperature,
+            Tint=tint, Highlights=(float)(this[Parameter.Highlights]*scale),
+            Shadows=(float)(this[Parameter.Shadows]*scale),ToneCurve=Curve.Mode == ToneCurveMode.Custom ? 0 : (float)Math.Clamp(this[Parameter.ToneCurve]*RefinementScale,-1,1),Sharpening=(float)this[Parameter.Sharpening],
             // SizeMode 4 is the shared final long-edge contract. PreviewLongEdge
             // remains independent and is never used to size an export.
             SizeMode=limitedFinal ? 4 : 3,LongEdge=limitedFinal ? (uint)longEdge!.Value : 0,

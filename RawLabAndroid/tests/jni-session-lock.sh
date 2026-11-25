@@ -34,15 +34,41 @@ done
 ar rcs "$TMP/liblcms2.a" "$TMP/lcms"/*.o
 
 CXX="${CXX:-clang++}"
-"$CXX" -std=c++17 -O2 -pthread -Wall -Wextra -DSPNG_STATIC \
-  -I"$SPNG_DIR/spng" \
-  -I"$ROOT/RawLabAndroid/tests/host_jni" \
-  -I"$ROOT/RawLabAndroid/app/src/main/cpp" \
-  -I"$ROOT/lutools/include" \
-  -I"$LCMS_DIR/include" \
-  -I"$JDK/include" \
-  -I"$JDK/include/$JNI_MD" \
-  "$ROOT/RawLabAndroid/tests/jni_session_lock_test.cpp" \
+CXXFLAGS=(
+  -std=c++17 -O2 -pthread -Wall -Wextra -DSPNG_STATIC
+  -I"$SPNG_DIR/spng"
+  -I"$ROOT/RawLabAndroid/tests/host_jni"
+  -I"$ROOT/RawLabAndroid/app/src/main/cpp"
+  -I"$ROOT/lutools/include"
+  -I"$LCMS_DIR/include"
+  -I"$JDK/include"
+  -I"$JDK/include/$JNI_MD"
+)
+CORE_CXXFLAGS=(
+  -std=c++17 -O2 -pthread -Wall -Wextra
+  -I"$ROOT/lutools/include"
+  -I"$ROOT/lutools/src"
+)
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/core/photo_geometry.cpp" -o "$TMP/photo_geometry.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/core/inspection_overlay.cpp" -o "$TMP/inspection_overlay.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/ffi/inspection_c.cpp" -o "$TMP/inspection_c.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/core/viewport_pyramid.cpp" -o "$TMP/viewport_pyramid.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/ffi/viewport_pyramid_c.cpp" -o "$TMP/viewport_pyramid_c.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/core/sony_ptpip.cpp" -o "$TMP/sony_ptpip.o"
+"$CXX" "${CORE_CXXFLAGS[@]}" -c "$ROOT/lutools/src/ffi/sony_ptpip_c.cpp" -o "$TMP/sony_ptpip_c.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_sdr.cpp" -o "$TMP/jni_sdr.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_hdr.cpp" -o "$TMP/jni_hdr.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_lens_lut.cpp" -o "$TMP/jni_lens_lut.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_inspection.cpp" -o "$TMP/jni_inspection.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_viewport.cpp" -o "$TMP/jni_viewport.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/app/src/main/cpp/jni_camera.cpp" -o "$TMP/jni_camera.o"
+"$CXX" "${CXXFLAGS[@]}" -c "$ROOT/RawLabAndroid/tests/jni_session_lock_test.cpp" -o "$TMP/jni_session_lock_test.o"
+"$CXX" -std=c++17 -O2 -pthread \
+  "$TMP/photo_geometry.o" "$TMP/inspection_overlay.o" "$TMP/inspection_c.o" \
+  "$TMP/viewport_pyramid.o" "$TMP/viewport_pyramid_c.o" \
+  "$TMP/sony_ptpip.o" "$TMP/sony_ptpip_c.o" \
+  "$TMP/jni_sdr.o" "$TMP/jni_hdr.o" "$TMP/jni_lens_lut.o" "$TMP/jni_inspection.o" "$TMP/jni_viewport.o" "$TMP/jni_camera.o" \
+  "$TMP/jni_session_lock_test.o" \
   "$TMP/liblcms2.a" "$TMP/spng.o" \
   -lm -lz \
   -o "$TMP/jni_session_lock_test"

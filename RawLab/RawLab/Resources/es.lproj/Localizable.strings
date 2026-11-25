@@ -12,6 +12,7 @@
 "3:2" = "3:2";
 "4:3" = "4:3";
 "50% 中性灰" = "Gris neutro 50 %";
+"AI 降噪" = "Reducción de ruido con IA";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "El DCP utiliza un HueSatMap de tres iluminantes, que aún no se admite para la conversión.";
 "DCP 包含暂不支持的空间增益、HDR 或 RGB 表处理，无法转换。" = "El DCP contiene ganancias espaciales, procesamiento HDR o tablas RGB no compatibles y no se puede convertir.";
 "DCP 导入选项" = "Opciones de importación de DCP";
@@ -85,10 +86,12 @@
 "Wi-Fi 密码" = "Contraseña de Wi-Fi";
 "X3F 显影" = "Revelado X3F";
 "一并导入 %@ 个日期未知的文件" = "Incluir %@ archivos sin fecha";
+"一键云端上传" = "Subir a la nube";
 "三分网格" = "Cuadrícula de tercios";
 "三线性" = "Trilineal";
 "上一张" = "Foto anterior";
 "上下拖动调整，方向键微调，Esc 取消" = "Arrastra hacia arriba o abajo para ajustar, usa las flechas para cambios precisos y Esc para cancelar";
+"上传成功，请复制诊断码发送给开发者。" = "Subida completada. Copia el código de diagnóstico y compártelo con el desarrollador.";
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次使用的相机 · 未连接" = "Última cámara utilizada · Desconectada";
 "上次同步结果与历史" = "Resultados e historial de la última sincronización";
@@ -97,6 +100,7 @@
 "下一张" = "Foto siguiente";
 "不可读外观" = "Looks ilegibles";
 "不支持此 HDR 格式或颜色描述。" = "Este formato HDR o descripción de color no es compatible.";
+"不支持此处理版本，原有记录未被覆盖。" = "Esta versión de procesamiento no es compatible. Las ediciones guardadas no se han sobrescrito.";
 "不支持此照片、外观或处理方式。请检查文件兼容性和处理设置。" = "Esta foto, look o modo de procesamiento no es compatible. Comprueba la compatibilidad de los archivos y los ajustes de procesamiento.";
 "不能覆盖原始文件。" = "No se puede sobrescribir el archivo original.";
 "不适用" = "No se aplica";
@@ -112,6 +116,7 @@
 "临时选择" = "Selección provisional";
 "为统计活跃设备数，应用会在本机保存一个随机生成的安装标识，不含个人信息；关闭统计时一并删除。" = "Para contar los dispositivos activos, la aplicación guarda en este dispositivo un identificador de instalación generado al azar. No contiene información personal y se elimina al desactivar el análisis.";
 "乡村秋日 · 古典油画" = "Otoño rural · óleo clásico";
+"云端上传暂不可用，请先将诊断包保存到设备后发送。" = "La subida a la nube no está disponible ahora. Guarda el paquete en tu dispositivo y envíalo manualmente.";
 "交换横纵比例" = "Intercambiar la orientación del formato";
 "亮度降噪" = "Reducción de ruido de luminancia";
 "亮部" = "Claros";
@@ -156,6 +161,7 @@
 "保存 SDR JPEG" = "Guardar JPEG SDR";
 "保存位置" = "Ubicación de guardado";
 "保存到" = "Guardar en";
+"保存到设备…" = "Guardar en el dispositivo…";
 "保存失败" = "Error al guardar";
 "保存失败，请重试。" = "No se pudo guardar. Vuelve a intentarlo.";
 "保存当前照片" = "Guardar foto actual";
@@ -200,6 +206,8 @@
 "几何" = "Geometría";
 "几何与镜头" = "Geometría y objetivo";
 "几何与镜头仅在“全部”或显式选择时包含。" = "La geometría y el objetivo solo se incluyen con Todo o al seleccionarlos expresamente.";
+"几何编辑" = "Edición de geometría";
+"分享诊断包…" = "Compartir paquete de diagnóstico…";
 "分割位置" = "Posición de la división";
 "分割线" = "Línea divisoria";
 "切换" = "Cambiar";
@@ -280,6 +288,7 @@
 "处理版本与来源不同，已沿用当前照片的处理版本" = "La versión de procesamiento difiere de la fuente; se conserva la versión de procesamiento de la foto actual";
 "复制密码" = "Copiar contraseña";
 "复制范围" = "Alcance de la copia";
+"复制诊断码" = "Copiar código";
 "复制调整" = "Copiar ajustes";
 "外观" = "Aspectos";
 "外观不可用" = "Aspecto no disponible";
@@ -302,6 +311,7 @@
 "实时取景" = "Vista en directo";
 "实时取景、调整参数并拍摄" = "Usar la vista en directo, ajustar parámetros y disparar";
 "宽度" = "Anchura";
+"密码" = "Contraseña";
 "密码已复制，仅本机可用，2 分钟后自动清除。" = "Contraseña copiada (solo en este dispositivo; se borra en 2 minutos).";
 "对比" = "Comparación";
 "对比度" = "Contraste";
@@ -375,6 +385,7 @@
 "已复制" = "Copiada";
 "已导入" = "Importada";
 "已导入 %@ 个外观，%@ 个文件导入失败：\n" = "Looks importados: %@; archivos no importados: %@\n";
+"已导出" = "Exportado";
 "已导出 %@ 个渲染型 DNG" = "Archivos DNG revelados exportados: %@";
 "已导出渲染型 DNG。" = "DNG revelado exportado.";
 "已展开" = "Expandido";
@@ -387,9 +398,11 @@
 "已撤销 %@ 张 · 未完成 %@ 张" = "Deshechas %@ · Pendientes %@";
 "已收起" = "Contraído";
 "已显影的照片（JPEG 等）" = "Foto revelada (JPEG, etc.)";
+"已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。" = "Hay registros de diagnóstico locales disponibles; la grabación detallada está desactivada.";
 "已校正%@" = "Corregido: %@";
 "已根据文件中的颜色线索预填部分配置，请核对。" = "Se han rellenado algunos ajustes con la información de color del archivo. Revísalos.";
 "已清理 %d 个文件，释放 %@。" = "Se limpiaron %d archivos y se liberaron %@.";
+"已清除本地诊断日志。" = "Se borraron los registros de diagnóstico locales.";
 "已生成 %@ 个渲染型 DNG" = "Archivos DNG revelados creados: %@";
 "已生成 %@ 个渲染型 DNG，未另存到所选位置" = "Archivos DNG revelados creados: %@ (no se guardaron en la ubicación elegida)";
 "已生成渲染型 DNG，未另存到所选位置。" = "Se creó el DNG revelado, pero no se guardó en la ubicación elegida.";
@@ -432,6 +445,7 @@
 "当前照片或调整记录无效，无法安全重置。" = "La foto actual o su registro de ajustes no son válidos y no se pueden restablecer de forma segura.";
 "当前照片的设置尚不可用。" = "La configuración de la foto actual aún no está disponible.";
 "当前状态下相机未接受对焦点设置。" = "La cámara no aceptó el punto de enfoque en su estado actual.";
+"当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。" = "Esta cámara requiere autenticación SSH interactiva (keyboard-interactive), que aún no es compatible con iOS.";
 "当前相机模式不支持远程选择对焦点。" = "Este modo de cámara no admite la selección remota del punto de enfoque.";
 "当前相机模式未提供此功能。" = "Esta función no está disponible en el modo actual de la cámara.";
 "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "Esta firma no admite la unión automática al Wi-Fi. Vuelve atrás y conéctate usando el método de Ajustes de Wi-Fi.";
@@ -440,6 +454,7 @@
 "待导入 %@ 个文件" = "%@ archivos por importar";
 "待接收 %d 张。" = "%d fotos pendientes de recibir.";
 "待选择的镜头配置" = "Se debe elegir un perfil de lente";
+"忘记已保存凭据" = "Olvidar credenciales guardadas";
 "快门" = "Obturador";
 "恢复上次联机" = "Reanudar el último disparo conectado";
 "恢复当前照片的全部调整，不改写原始照片。" = "Restablece todos los ajustes de la foto actual. La foto original no se modificará.";
@@ -475,6 +490,7 @@
 "拍摄时：%.0f K · 色调 %+.0f" = "Según la toma: %.0f K · Matiz %+.0f";
 "拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。" = "El resultado de la toma aún no se ha confirmado. Comprueba la cámara; volver a conectar solo reanudará la recepción de los originales.";
 "拖动灵敏度为普通模式的四分之一。" = "Al arrastrar, la sensibilidad es una cuarta parte de la normal.";
+"拖动照片调整曲线；退出目标模式后可平移。" = "Arrastra la foto para ajustar la curva. Sal del modo dirigido para desplazarla.";
 "拖动照片调整颜色；退出目标模式后可平移。" = "Arrastra la foto para ajustar el color. Sal del modo dirigido para desplazarla.";
 "拖动边角裁切，拖动画面内移动选区。" = "Arrastre una esquina para recortar; arrastre dentro de la selección para moverla.";
 "指定长边" = "Especificar borde largo";
@@ -504,6 +520,8 @@
 "放弃此任务？已保存的照片会保留。" = "¿Descartar esta tarea? Las fotos guardadas se conservarán.";
 "放弃草稿" = "Descartar borrador";
 "放弃草稿并继续" = "Descartar borrador y continuar";
+"故障诊断" = "Diagnóstico";
+"故障诊断与错误日志" = "Diagnóstico y registros de errores";
 "效果" = "Efecto";
 "效果未验证" = "Aspecto sin verificar";
 "数据与提供方" = "Datos y proveedor";
@@ -539,9 +557,11 @@
 "无法保存编辑草稿。" = "No se pudo guardar el borrador de edición.";
 "无法写入 HDR 导出文件，请检查可用空间和目标权限。" = "No se puede escribir la exportación HDR. Comprueba el espacio libre y los permisos del destino.";
 "无法写入成片，请检查输出位置和剩余空间。" = "No se puede escribir la foto exportada. Verifique la ubicación de salida y el espacio disponible.";
+"无法写入输出目录，请检查访问权限和剩余空间。" = "No se puede escribir en la carpeta de salida. Comprueba los permisos de acceso y el espacio disponible.";
 "无法创建新的预设标识，请重试。" = "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.";
 "无法加入最近打开：%@" = "No se pudo añadir a las fotos recientes: %@";
 "无法取得 RAW 原片，请在系统设置中授权访问这张照片后重试。" = "No se puede obtener el RAW original. Autoriza el acceso a esta foto en Ajustes del sistema y vuelve a intentarlo.";
+"无法导出诊断包。" = "No se pudo exportar el paquete de diagnóstico.";
 "无法导出错误日志。" = "No se pudo exportar el registro de errores.";
 "无法恢复编辑草稿，已保留已应用的调整。" = "No se pudo restaurar el borrador de edición; se conservaron los ajustes aplicados.";
 "无法按所选设置处理 JPEG。" = "No se pudo procesar el JPEG con estos ajustes.";
@@ -565,6 +585,7 @@
 "无法读取照片，请检查文件和访问权限。" = "No se puede leer la foto. Comprueba el archivo y los permisos de acceso.";
 "无法读取相机 Wi-Fi 信息，请手动连接。" = "No se puede leer la información Wi-Fi de la cámara. Conéctate manualmente.";
 "无法读取统计设置，已保持关闭。" = "No se pudo leer el ajuste de análisis; el análisis permanece desactivado.";
+"无法读取调整记录：%@" = "No se puede leer el registro de ajuste: %@";
 "无法读取镜头校正状态" = "No se pudo leer el estado de la corrección del objetivo";
 "无法读取镜头配置列表" = "No se pudieron leer los perfiles de lente";
 "无法重新打开照片" = "No se pudo volver a abrir la foto";
@@ -572,13 +593,17 @@
 "无法重置调整" = "No se pueden restablecer los ajustes";
 "无配方" = "Sin receta";
 "日光" = "Luz diurna";
+"日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。" = "El registro supera el límite de subida a la nube. Usa «Guardar en el dispositivo».";
 "日系通透水光肌，空气感透明青蓝，暗部大面积展开与柔润高光" = "Piel luminosa japonesa, azul cian transparente y aireado, sombras abiertas y altas luces suaves";
 "日系青空 · 高调日光" = "Cielo azul japonés · luz diurna en clave alta";
+"旧版 FBDD" = "FBDD heredado";
 "旧版记录只有相册标识。确认当前照片与原来的照片一致后，可恢复旧调整。" = "Los ajustes anteriores solo se guardaron con el identificador de Fotos. Restáuralos si es la misma foto original.";
 "旧版降噪" = "Reducción de ruido anterior";
+"旧版：%@" = "Heredado: %@";
 "明亮度" = "Luminancia";
 "明度" = "Luminosidad";
 "明度：从暗到亮。" = "Luminosidad: de oscuro a claro.";
+"明暗" = "Tono";
 "显示图像" = "Imagen de pantalla";
 "显示密码" = "Mostrar contraseña";
 "暂停联机" = "Pausar el disparo conectado";
@@ -655,10 +680,12 @@
 "检查 %@ 的效果" = "Inspeccionar resultado de %@";
 "检查并查看最终调整" = "Comprobar y revisar ajustes finales";
 "检查目标" = "Comprobar fotos";
+"检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Se detectaron registros de diagnóstico de la sesión anterior listos para guardar o subir.";
 "横向色差" = "Aberración cromática lateral";
 "横向色差未应用" = "Aberración cromática lateral no corregida";
 "横向色差标定不可用" = "Calibración de aberración cromática lateral no disponible";
 "橙" = "Naranja";
+"正在上传…" = "Subiendo…";
 "正在保存" = "Guardando";
 "正在保存照片…" = "Guardando fotos…";
 "正在停止…" = "Deteniendo…";
@@ -685,8 +712,10 @@
 "正在检查预设…" = "Comprobando ajuste preestablecido…";
 "正在生成效果预览…" = "Generando vista previa del resultado…";
 "正在生成预览…" = "Generando vistas previas…";
+"正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Registrando diagnósticos detallados (se desactiva automáticamente tras 30 minutos o tras el próximo reinicio). Reproduce el problema y luego guarda o sube el paquete.";
 "正在读取镜头信息…" = "Leyendo información de lente…";
 "正在连接相机…" = "Conectando con la cámara…";
+"正在验证访问凭据…" = "Verificando credenciales de acceso…";
 "正常显影" = "Revelado normal";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Este JPEG contiene un mapa de ganancia HDR. Conserva el original para mantener el HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Este LUT no tiene toda la información de color. Confirma cómo aplicarlo. Se marcará como compatible, con un resultado sin verificar.";
@@ -738,13 +767,14 @@
 "清理已导出的相机原件失败，请重试。" = "No se pudieron limpiar los originales exportados de la cámara. Inténtalo de nuevo.";
 "清空选择" = "Borrar selección";
 "清除搜索" = "Borrar búsqueda";
+"清除日志" = "Borrar registros";
 "清除相机配置" = "Quitar perfil de cámara";
 "清除筛选" = "Borrar filtros";
 "清除锚点" = "Borrar anclas";
 "温暖油润复古城市胶片，暗部沉稳不脏，温润暖金高光与漫游故事感" = "Película urbana vintage cálida y rica, sombras estables y limpias, altas luces doradas y sensación de historia errante";
 "渲染型 DNG 未生成。" = "No se creó el DNG revelado.";
 "滨田英明" = "Hideaki Hamada";
-"点击曲线区域添加控制点，拖动中间点调整。" = "Toca el área de la curva para añadir un punto. Arrastra los puntos interiores para ajustar.";
+"点击添加控制点；双击控制点或拖出画布可删除。" = "Haz clic o toca para añadir un punto; haz doble clic sobre él o arrástralo fuera para eliminarlo.";
 "点曲线" = "Curva de puntos";
 "焦距（mm）" = "Distancia focal (mm)";
 "照片" = "Foto";
@@ -759,6 +789,7 @@
 "照片格式" = "Formato de foto";
 "照片缺少有效焦距，未应用校正" = "No hay distancia focal válida; corrección no aplicada";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Los rangos disponibles de los parámetros no permiten conservar todo el aspecto de la receta. Cancela o confirma por separado el restablecimiento de todos los ajustes.";
+"用户名" = "Nombre de usuario";
 "用户外观" = "Mis aspectos";
 "用户外观 · %@" = "Look personal · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Estética cinematográfica panorámica, luz y sombra de alto contraste, negros profundos y dorado de foco";
@@ -788,6 +819,8 @@
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "El Wi-Fi de la cámara normalmente no tiene Internet. Mantén la conexión.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "La cámara no contiene fotos RAW o JPEG que se puedan importar.";
 "相机中的原照片会保留。" = "Las fotos originales de la cámara se conservarán.";
+"相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。" = "La huella de clave de la cámara ha cambiado. Compruébala en la pantalla de la cámara antes de volver a introducir las credenciales.";
+"相机密钥指纹（请与相机屏幕核对）" = "Huella de clave de la cámara (compruébala en la pantalla)";
 "相机数据或原件校验未通过，已暂停。" = "La verificación de los datos o del original ha fallado. La operación está en pausa.";
 "相机时间" = "Hora de la cámara";
 "相机未提供可调整选项" = "La cámara no ofrece opciones ajustables";
@@ -797,6 +830,7 @@
 "相机白平衡（按目标照片）" = "Balance de blancos de cámara (por foto de destino)";
 "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。" = "Los menús varían según el modelo y el firmware. Siga los pasos de conexión al móvil que muestra su cámara.";
 "相机裁切系数" = "Factor de recorte de la cámara";
+"相机访问验证" = "Autenticación de acceso a la cámara";
 "相机连接已断开。已保存的照片仍可查看。" = "La cámara se ha desconectado. Las fotos guardadas siguen disponibles.";
 "省略自动黑位" = "Omitir el ajuste automático del negro";
 "确定" = "Aceptar";
@@ -849,6 +883,7 @@
 "联机拍摄设置" = "Ajustes de disparo conectado";
 "肤色色相放大" = "Amplificación de tono de piel";
 "胶片" = "Película";
+"胶片模拟" = "Simulación de película";
 "自动" = "Automático";
 "自动 HDR" = "HDR automático";
 "自动匹配" = "Coincidencia automática";
@@ -859,6 +894,7 @@
 "自由" = "Libre";
 "致密城市肌理，硬朗大S曲线，浓郁橙青与紫金冷暖对撞" = "Textura urbana densa, curva S marcada, choque de naranjas-cian y púrpuras-dorados intensos";
 "色度降噪" = "Reducción de ruido cromático";
+"色彩" = "Color";
 "色彩降噪" = "Reducción de ruido de crominancia";
 "色温" = "Temperatura";
 "色相" = "Tono";
@@ -895,7 +931,12 @@
 "观察层" = "Capa de inspección";
 "视频范围（10 位 64–940）" = "Rango de vídeo (10 bits 64–940)";
 "计算与参考的差异" = "Calcular la diferencia con la referencia";
+"记录详细诊断日志" = "Registrar diagnósticos detallados";
 "设置结果未确认，请重新连接后检查。" = "No se ha confirmado el resultado del ajuste. Vuelve a conectar y compruébalo.";
+"访问验证失败，请核对相机屏幕中的用户名与密码。" = "Error de autenticación de acceso. Comprueba el nombre de usuario y la contraseña en la pantalla de la cámara.";
+"诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Los paquetes de diagnóstico solo incluyen la versión de la aplicación, el entorno del sistema, resúmenes de pasos y códigos de error. Se excluyen fotos, nombres de archivo y rutas personales.";
+"诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Paquete de diagnóstico guardado. Puedes enviar el archivo ZIP al desarrollador por GitHub Issues o mensajería.";
+"诊断码：%@" = "Código de diagnóstico: %@";
 "试用方案 · 无颜色依据" = "Opción de prueba · Sin base de color";
 "试试其他编辑状态。" = "Prueba otro estado de edición.";
 "语言" = "Idioma";
@@ -911,6 +952,7 @@
 "请先确认上方存储卡保存选项" = "Confirma primero el guardado en tarjeta arriba";
 "请先确认同源图片、处理条件和参考来源。" = "Confirma primero la misma imagen de origen, las condiciones de procesamiento y la fuente de referencia.";
 "请先选择外观或配方。" = "Selecciona primero un look o una receta.";
+"请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。" = "Consulta el nombre de usuario y la contraseña en el menú Información de autenticación de acceso de la cámara, comprueba la huella siguiente e inicia sesión.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Permite a RawLab usar Bluetooth en los ajustes del sistema.";
 "请在系统设置中允许 RawLab 访问本地网络。" = "Permite a RawLab acceder a la red local en los ajustes del sistema.";
 "请在调整后的照片区域取色。" = "Toma una muestra dentro de la foto editada.";
@@ -922,6 +964,7 @@
 "请核对手机和相机的配对数字" = "Comprueba el número de emparejamiento en el teléfono y la cámara";
 "请等待当前任务完成。" = "Espera a que termine la tarea actual.";
 "请等待预览完成后导出。" = "Espera a que termine la vista previa antes de exportar.";
+"请至少选择一张照片。" = "Selecciona al menos una foto.";
 "请输入 1–65535 之间的像素数" = "Introduce un número de píxeles entre 1 y 65.535";
 "请输入不同的预设名称。" = "Introduce otro nombre para el ajuste.";
 "请输入相机显示的 Wi-Fi 名称和密码。" = "Introduce el nombre Wi-Fi y la contraseña que muestra la cámara.";
@@ -948,10 +991,12 @@
 "跟随系统" = "Seguir el sistema";
 "跳过" = "Omitir";
 "跳过以上目标后重试" = "Omitir las fotos indicadas y reintentar";
+"轻度" = "Leve";
 "输入 Wi-Fi 名称与密码" = "Introducir nombre y contraseña Wi-Fi";
 "输入参考" = "Referencia de entrada";
 "输入坐标" = "Entrada";
 "输入范围" = "Rango de entrada";
+"输入调整" = "Ajustes de entrada";
 "输入颜色" = "Espacio de color de entrada";
 "输出" = "Salida";
 "输出参考" = "Referencia de salida";
@@ -1024,11 +1069,11 @@
 "重置全部调整…" = "Restablecer todos los ajustes…";
 "重置全部调整？" = "¿Restablecer todos los ajustes?";
 "重置分割线" = "Restablecer división";
+"重置参数曲线" = "Restablecer curva paramétrica";
 "重置当前分区" = "Restablecer el rango actual";
 "重置当前颜色" = "Restablecer color actual";
 "重置当前颜色（%@）" = "Restablecer el color actual (%@)";
 "重置所有调整并返回中性" = "Restablecer todos los ajustes y volver al estado neutro";
-"重置曲线" = "Restablecer curva";
 "重置本工具" = "Restablecer esta herramienta";
 "重置调整" = "Restablecer ajustes";
 "重置镜头校正" = "Restablecer corrección de lente";
@@ -1052,11 +1097,15 @@
 "长边" = "Borde largo";
 "长边 %@ px" = "Borde largo %@ px";
 "闪光灯" = "Flash";
+"问题简述（选填，勿填个人隐私）" = "Breve descripción del problema (opcional, sin datos personales)";
 "阴天" = "Nublado";
 "阴影" = "Sombras";
 "阿里云隐私政策" = "Política de privacidad de Aliyun";
 "降噪" = "Reducción de ruido";
+"降噪亮度" = "Luminancia";
 "降噪参数" = "Ajustes de reducción de ruido";
+"降噪粗色斑" = "Manchas";
+"降噪色彩" = "Color";
 "隐私设置" = "Configuración de privacidad";
 "隐藏密码" = "Ocultar contraseña";
 "隐藏照片信息" = "Ocultar información de la foto";
@@ -1072,6 +1121,7 @@
 "预览待更新" = "Actualizando vista previa";
 "预览方式" = "Modo de vista previa";
 "预览方式不会改变编辑或导出。" = "El modo de vista previa no cambia los ajustes ni la exportación.";
+"预览日志" = "Vista previa del registro";
 "预览未更新" = "Vista previa sin actualizar";
 "预览条件：C5 显影，相机白平衡，场景曝光归一化，曝光 0，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Condiciones de vista previa: revelado C5, balance de blancos de la cámara, exposición de escena normalizada, exposición 0, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.";
 "预览条件：已显影照片，无额外调整，LUT 强度 100%，输出 sRGB，长边 512 像素。" = "Condiciones de vista previa: foto revelada, sin ajustes adicionales, intensidad de LUT 100%, salida sRGB, lado largo de 512 píxeles.";
@@ -1090,6 +1140,7 @@
 "饱和度" = "Saturación";
 "饱和度：从灰色到彩色。" = "Saturación: de gris a color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Noche urbana de neón en Seúl, base cian fría contra altas luces rosa-púrpura y reflejos de calles mojadas";
+"验证并连接" = "Verificar y conectar";
 "高" = "Alto";
 "高光" = "Altas luces";
 "高光保护" = "Protección de altas luces";
@@ -1104,4 +1155,5 @@
 "黑场" = "Punto negro";
 "默认" = "Predeterminado";
 "默认值：%@；范围：%@ 至 %@；步进：%@。" = "Valor predeterminado: %@; rango: de %@ a %@; incremento: %@.";
+"默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。" = "Desactivado por defecto. Actívalo para reproducir un problema y luego guarda el paquete en tu dispositivo o súbelo.";
 "默认降噪设置" = "Ajustes de reducción de ruido predeterminados";

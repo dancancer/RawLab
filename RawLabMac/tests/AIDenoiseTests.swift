@@ -63,7 +63,7 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         release.signal()
         wait("Successful complete result enables AI") { editor.settings.aiDenoiseEnabled }
         let savedIdentity = editor.aiIdentity
-        editor.settings.exposure = 2; editor.settings.saturation = 10
+        editor.settings.exposure = 2; editor.settings.saturation = 1.10
         check(editor.aiIdentity == savedIdentity && started == 3, "Tone edits retain the completed AI identity")
         editor.settings.whiteBalanceMode = .custom; editor.settings.temperature = 4500
         wait("White balance schedules a new RGB preparation") { started == 4 }

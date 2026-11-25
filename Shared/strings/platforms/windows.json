@@ -1012,14 +1012,6 @@
       "formats": [],
       "source": "拖入照片，或添加目录开始浏览"
     },
-    "拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。": {
-      "formats": [],
-      "source": "拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。"
-    },
-    "拖动平移，滚轮缩放，双击适合窗口。": {
-      "formats": [],
-      "source": "拖动平移，滚轮缩放，双击适合窗口。"
-    },
     "拖动调整文件树宽度": {
       "formats": [],
       "source": "拖动调整文件树宽度"
@@ -3003,10 +2995,6 @@
       "formats": [],
       "source": "重置颜色分级"
     },
-    "恢复阴影、中间调和高光的颜色分级默认值？": {
-      "formats": [],
-      "source": "恢复阴影、中间调和高光的颜色分级默认值？"
-    },
     "上下拖动调整，方向键微调，Esc 取消": {
       "formats": [],
       "source": "上下拖动调整，方向键微调，Esc 取消"
@@ -3266,9 +3254,9 @@
       "formats": [],
       "source": "端点固定"
     },
-    "点击曲线区域添加控制点，拖动中间点调整。": {
+    "点击添加控制点；双击控制点或拖出画布可删除。": {
       "formats": [],
-      "source": "点击曲线区域添加控制点，拖动中间点调整。"
+      "source": "点击添加控制点；双击控制点或拖出画布可删除。"
     },
     "曲线模式与控制点": {
       "formats": [],
@@ -4453,10 +4441,6 @@
       "formats": [],
       "source": "拆分点"
     },
-    "重置曲线": {
-      "formats": [],
-      "source": "重置曲线"
-    },
     "明亮度": {
       "formats": [],
       "source": "明亮度"
@@ -4560,6 +4544,156 @@
     "保留当前手动草稿": {
       "formats": [],
       "source": "保留当前手动草稿"
+    },
+    "中间调拆分": {
+      "formats": [],
+      "source": "中间调拆分"
+    },
+    "展开取样监视": {
+      "formats": [],
+      "source": "展开取样监视"
+    },
+    "恢复阴影、中间调、高光、全局、融合和平衡的默认值？": {
+      "formats": [],
+      "source": "恢复阴影、中间调、高光、全局、融合和平衡的默认值？"
+    },
+    "拖动照片调整曲线；退出目标模式后可平移。": {
+      "formats": [],
+      "source": "拖动照片调整曲线；退出目标模式后可平移。"
+    },
+    "收起取样监视": {
+      "formats": [],
+      "source": "收起取样监视"
+    },
+    "点击照片中的中性灰区域取样，按 Esc 退出。": {
+      "formats": [],
+      "source": "点击照片中的中性灰区域取样，按 Esc 退出。"
+    },
+    "点选添加锚点": {
+      "formats": [],
+      "source": "点选添加锚点"
+    },
+    "重置参数曲线": {
+      "formats": [],
+      "source": "重置参数曲线"
+    },
+    "重置透视": {
+      "formats": [],
+      "source": "重置透视"
+    },
+    "阴影拆分": {
+      "formats": [],
+      "source": "阴影拆分"
+    },
+    "高光拆分": {
+      "formats": [],
+      "source": "高光拆分"
+    },
+    "更多工具": {
+      "formats": [],
+      "source": "更多工具"
+    },
+    "故障诊断与错误日志": {
+      "formats": [],
+      "source": "故障诊断与错误日志"
+    },
+    "记录详细诊断日志": {
+      "formats": [],
+      "source": "记录详细诊断日志"
+    },
+    "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。": {
+      "formats": [],
+      "source": "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。"
+    },
+    "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。": {
+      "formats": [],
+      "source": "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。"
+    },
+    "检测到上次录制的诊断日志，可直接保存到设备或一键上传。": {
+      "formats": [],
+      "source": "检测到上次录制的诊断日志，可直接保存到设备或一键上传。"
+    },
+    "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。": {
+      "formats": [],
+      "source": "已有可导出的本地诊断记录；详细日志录制当前处于关闭状态。"
+    },
+    "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。": {
+      "formats": [],
+      "source": "默认关闭。遇到问题时可打开开关复现操作，随后将诊断包保存到设备或一键上传。"
+    },
+    "问题简述（选填，勿填个人隐私）": {
+      "formats": [],
+      "source": "问题简述（选填，勿填个人隐私）"
+    },
+    "保存到设备…": {
+      "formats": [],
+      "source": "保存到设备…"
+    },
+    "一键云端上传": {
+      "formats": [],
+      "source": "一键云端上传"
+    },
+    "正在上传…": {
+      "formats": [],
+      "source": "正在上传…"
+    },
+    "预览日志": {
+      "formats": [],
+      "source": "预览日志"
+    },
+    "清除日志": {
+      "formats": [],
+      "source": "清除日志"
+    },
+    "复制诊断码": {
+      "formats": [],
+      "source": "复制诊断码"
+    },
+    "已复制": {
+      "formats": [],
+      "source": "已复制"
+    },
+    "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。": {
+      "formats": [],
+      "source": "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。"
+    },
+    "无法导出诊断包。": {
+      "formats": [],
+      "source": "无法导出诊断包。"
+    },
+    "上传成功，请复制诊断码发送给开发者。": {
+      "formats": [],
+      "source": "上传成功，请复制诊断码发送给开发者。"
+    },
+    "云端上传暂不可用，请先将诊断包保存到设备后发送。": {
+      "formats": [],
+      "source": "云端上传暂不可用，请先将诊断包保存到设备后发送。"
+    },
+    "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。": {
+      "formats": [],
+      "source": "日志体积超出云端单次上限，请使用「保存到设备」导出诊断包。"
+    },
+    "暂无可导出的错误日志。": {
+      "formats": [],
+      "source": "暂无可导出的错误日志。"
+    },
+    "已清除本地诊断日志。": {
+      "formats": [],
+      "source": "已清除本地诊断日志。"
+    },
+    "上传或预览日志…": {
+      "formats": [],
+      "source": "上传或预览日志…"
+    },
+    "收起预览": {
+      "formats": [],
+      "source": "收起预览"
+    },
+    "诊断码：{0}": {
+      "formats": [
+        "{0}"
+      ],
+      "source": "诊断码：{0}"
     }
   },
   "overrides": {
@@ -5032,22 +5166,6 @@
       "fr": "Déposez des photos ou ajoutez un dossier pour commencer",
       "ja": "写真をドロップするかフォルダーを追加して開始",
       "zh-Hans": "拖入照片，或添加目录开始浏览"
-    },
-    "拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。": {
-      "de": "Ziehen Sie den Teiler zum Vergleichen; Pfeiltasten justieren fein, Home zentriert. Ziehen Sie das Foto zum Verschieben; mit dem Mausrad zoomen.",
-      "en": "Drag the divider to compare; use arrow keys for fine adjustment and Home to center. Drag the photo to pan; use the scroll wheel to zoom.",
-      "es": "Arrastra el separador para comparar; usa las flechas para ajustar y Home para centrar. Arrastra la foto para desplazarla y usa la rueda para hacer zoom.",
-      "fr": "Faites glisser le séparateur pour comparer ; utilisez les flèches pour ajuster et Origine pour centrer. Faites glisser la photo pour la déplacer ; utilisez la molette pour zoomer.",
-      "ja": "比較するには分割線をドラッグします。矢印キーで微調整し、Homeで中央に戻します。写真をドラッグして移動し、ホイールでズームします。",
-      "zh-Hans": "拖动分隔线对比；方向键微调，Home 居中。拖动照片平移，滚轮缩放。"
-    },
-    "拖动平移，滚轮缩放，双击适合窗口。": {
-      "de": "Zum Verschieben ziehen, mit dem Mausrad zoomen und doppelklicken, um das Fenster anzupassen.",
-      "en": "Drag to pan, use the scroll wheel to zoom, and double-click to fit the window.",
-      "es": "Arrastra para desplazar, usa la rueda para hacer zoom y haz doble clic para ajustar a la ventana.",
-      "fr": "Faites glisser pour déplacer, utilisez la molette pour zoomer et double-cliquez pour ajuster à la fenêtre.",
-      "ja": "ドラッグして移動し、ホイールでズームします。ダブルクリックでウィンドウに合わせます。",
-      "zh-Hans": "拖动平移，滚轮缩放，双击适合窗口。"
     },
     "拖动调整文件树宽度": {
       "de": "Ziehen, um den Dateibaum anzupassen",
@@ -6400,6 +6518,22 @@
       "fr": "Les dimensions, la texture ou le tampon dépassent les limites Direct3D 11",
       "ja": "画像サイズ、テクスチャ、またはバッファーが Direct3D 11 の上限を超えています",
       "es": "Las dimensiones, textura o búfer superan los límites de Direct3D 11"
+    },
+    "重置透视": {
+      "en": "Reset Perspective",
+      "de": "Perspektive zurücksetzen",
+      "fr": "Réinitialiser la perspective",
+      "es": "Restablecer perspectiva",
+      "ja": "パース補正をリセット",
+      "zh-Hans": "重置透视"
+    },
+    "更多工具": {
+      "zh-Hans": "更多工具",
+      "en": "More Tools",
+      "de": "Weitere Werkzeuge",
+      "fr": "Plus d’outils",
+      "ja": "その他のツール",
+      "es": "Más herramientas"
     }
   }
 }

@@ -61,10 +61,10 @@ final class ToneCurveInteractionTests: XCTestCase {
         _ = session.begin(x: 0, y: 0, toleranceX: 0.05, toleranceY: 0.05)
         session.move(x: 0.2, y: 0.3)
         session.end()
-        XCTAssertEqual(value.points[0], ToneCurvePoint(x: 0, y: 0.3))
+        XCTAssertEqual(value.points[0], ToneCurvePoint(x: 0.2, y: 0.3))
         configure()
         session.key(horizontal: 1, vertical: 1, fine: true)
-        XCTAssertEqual(value.points[0].x, 0, accuracy: 1e-12)
+        XCTAssertEqual(value.points[0].x, 0.201, accuracy: 1e-12)
         XCTAssertEqual(value.points[0].y, 0.301, accuracy: 1e-12)
         value = .identity
         selected = 0

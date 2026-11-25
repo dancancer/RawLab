@@ -32,13 +32,13 @@ public partial class MainWindow
             if(CurrentTool==EditorAdjustmentTool.ToneCurve){CancelCurveTarget();curveTargetNotice=HslTargetAvailability.Outside;RefreshCurveTarget();}
             else{CancelHslTarget();hslTargetNotice=HslTargetAvailability.Outside;RefreshHslTarget();}
         };
-        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,InfoEntryButton,HslTargetBanner,InspectionHud}.All(element=>
+        ResultCanvas.HslTargetAllowed=point=>new FrameworkElement[]{NeutralLabel,FilmLabel,InfoOverlay,ExternalReloadBanner,HslTargetBanner,InspectionOverlayChip,InspectionHud}.All(element=>
             !element.IsVisible || !new Rect(element.TranslatePoint(new Point(),ResultCanvas),element.RenderSize).Contains(point));
     }
     private void SetHslTargetMode(bool enabled,int axis)
     {
         CancelHslTarget();hslTargetEnabled=enabled;hslTargetAxis=axis;
-        if(enabled){SetCurveTargetMode(false,curveTargetChannel);EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
+        if(enabled){CancelWbProbe();SetCurveTargetMode(false,curveTargetChannel);EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
         RefreshHslTarget();
     }
     private void RefreshHslTarget()
@@ -47,6 +47,7 @@ public partial class MainWindow
         var curveActive=curveTargetEnabled && CurrentTool==EditorAdjustmentTool.ToneCurve && expandedGroup!=null && !transform.Active;
         ResultCanvas.HslTargetEnabled=hslActive || curveActive;
         HslTargetBanner.Visibility=ResultCanvas.HslTargetEnabled && AdjustmentPanel.Visibility!=Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+        HslTargetBannerCaption.Text=Loc.Text(curveActive ? "拖动照片调整曲线；退出目标模式后可平移。" : "拖动照片调整颜色；退出目标模式后可平移。");
         if(curveActive) {
             var chTitle=curveTargetChannel switch {ToneCurveChannel.Red=>Loc.Text("红"),ToneCurveChannel.Green=>Loc.Text("绿"),ToneCurveChannel.Blue=>Loc.Text("蓝"),_=>"RGB"};
             HslTargetBannerTitle.Text=Loc.Format("目标调整：{0}",chTitle);
@@ -56,6 +57,7 @@ public partial class MainWindow
             ResultCanvas.HslTargetPoint=hslTargetPoint;
         }
         HslEditor.SetTarget(hslTargetEnabled,hslTargetAxis,hslTarget.Waiting,hslTarget.Selection,hslTargetNotice);
+        RefreshHDRPresentation();
     }
     private void ExitHslTargetClicked(object sender,RoutedEventArgs e)
     {
@@ -130,7 +132,7 @@ public partial class MainWindow
     private void SetCurveTargetMode(bool enabled, ToneCurveChannel channel)
     {
         CancelCurveTarget(); curveTargetEnabled = enabled; curveTargetChannel = channel;
-        if (enabled) { SetHslTargetMode(false, hslTargetAxis); EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
+        if (enabled) { CancelWbProbe(); SetHslTargetMode(false, hslTargetAxis); EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
         RefreshCurveTarget();
     }
     private void RefreshCurveTarget()

@@ -10,6 +10,7 @@ public sealed partial class PhotoCanvas
     private readonly DrawingVisual inspectionDrawing = new();
     private bool inspectionMonitorEnabled;
     private bool inspectionPinMode;
+    private bool pendingInspectionPin;
     private bool inspectionOverlayActive;
     private IReadOnlyList<(int Index, double X, double Y, bool Selected)> inspectionMarkers = [];
 
@@ -58,8 +59,8 @@ public sealed partial class PhotoCanvas
 
     private void UpdateInspectionCursor()
     {
-        if (!GeometryEditing && !HslTargetEnabled)
-            Cursor = inspectionPinMode ? Cursors.Cross : Cursors.Hand;
+        if (!GeometryEditing)
+            Cursor = WbProbeEnabled || HslTargetEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand;
     }
 
     private bool HandleInspectionMove(Point point)
@@ -78,20 +79,49 @@ public sealed partial class PhotoCanvas
         return false;
     }
 
-    private bool HandleInspectionDown(Point point)
-    {
-        if (HslTargetEnabled || GeometryEditing || draggingDivider || image == null ||
-            ImageBounds.Width <= 0 || ImageBounds.Height <= 0)
-            return false;
-        var pinRequested = inspectionPinMode || Keyboard.Modifiers == ModifierKeys.Alt;
-        if (!pinRequested) return false;
-        if (!VisibleImageBounds.Contains(point) || (InspectionAllowed != null && !InspectionAllowed(point)))
-            return false;
+    private bool CanPinAt(Point point) =>
+        !HslTargetEnabled && !GeometryEditing && !draggingDivider && image != null &&
+        ImageBounds.Width > 0 && ImageBounds.Height > 0 &&
+        (inspectionPinMode || Keyboard.Modifiers == ModifierKeys.Alt) &&
+        VisibleImageBounds.Contains(point) &&
+        (InspectionAllowed == null || InspectionAllowed(point));
 
+    private void BeginPendingInspectionPin(Point point)
+    {
+        pendingInspectionPin = CanPinAt(point);
+    }
+
+    private void CommitInspectionPin(Point point)
+    {
+        if (!CanPinAt(point)) return;
         var normX = Math.Clamp((point.X - ImageBounds.X) / ImageBounds.Width, 0.0, 1.0);
         var normY = Math.Clamp((point.Y - ImageBounds.Y) / ImageBounds.Height, 0.0, 1.0);
         InspectionPinRequested?.Invoke(new Point(normX, normY));
-        return true;
+    }
+
+    internal IEnumerable<Rect> ActiveMarkerBounds()
+    {
+        if (!GeometryEditing && !inspectionOverlayActive && image != null && !ImageBounds.IsEmpty)
+        {
+            foreach (var marker in inspectionMarkers)
+            {
+                yield return new Rect(
+                    ImageBounds.X + marker.X * ImageBounds.Width - 13,
+                    ImageBounds.Y + marker.Y * ImageBounds.Height - 13,
+                    26,
+                    26);
+            }
+        }
+        if (HslTargetEnabled && hslTargetPoint is { } tp && !ImageBounds.IsEmpty && !VisibleImageBounds.IsEmpty)
+        {
+            var rect = new Rect(
+                ImageBounds.X + tp.X * ImageBounds.Width - 14,
+                ImageBounds.Y + tp.Y * ImageBounds.Height - 14,
+                28,
+                28);
+            rect.Intersect(VisibleImageBounds);
+            if (!rect.IsEmpty) yield return rect;
+        }
     }
 
     private void DrawInspectionAnchors()

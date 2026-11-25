@@ -207,8 +207,8 @@ struct Params {
 };
 
 inline float customToneCurve(float x, constant Params& p) {
-    if (x <= 0.0f) return p.curveRanges[0][2];
-    if (x >= 1.0f) return p.curveRanges[p.customCurveCount - 1u][3];
+    if (x <= p.curveRanges[0][0]) return p.curveRanges[0][2];
+    if (x >= p.curveRanges[p.customCurveCount - 1u][1]) return p.curveRanges[p.customCurveCount - 1u][3];
     uint i = 0;
     while (i + 1u < p.customCurveCount && x > p.curveRanges[i][1]) ++i;
     return pchipSegment(x, p.curveRanges[i][0], p.curveRanges[i][1], p.curveRanges[i][2],
@@ -218,8 +218,8 @@ inline float customToneCurve(float x, constant Params& p) {
 inline float channelToneCurve(float x, uint ch, constant Params& p) {
     uint count = p.channelCurveCount[ch];
     if (count == 0u) return x;
-    if (x <= 0.0f) return p.channelCurveRanges[ch][0][2];
-    if (x >= 1.0f) return p.channelCurveRanges[ch][count - 1u][3];
+    if (x <= p.channelCurveRanges[ch][0][0]) return p.channelCurveRanges[ch][0][2];
+    if (x >= p.channelCurveRanges[ch][count - 1u][1]) return p.channelCurveRanges[ch][count - 1u][3];
     uint i = 0;
     while (i + 1u < count && x > p.channelCurveRanges[ch][i][1]) ++i;
     return pchipSegment(x, p.channelCurveRanges[ch][i][0], p.channelCurveRanges[ch][i][1],
@@ -1498,6 +1498,29 @@ bool renderPhotoMetal(
     return result;
 }
 
+PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t width, uint32_t height) noexcept {
+    PhotoGpuCapabilities caps{};
+    caps.compiled = true;
+    @autoreleasepool {
+        MetalContext& context = metalContext();
+        if (!context.device || !context.ready) {
+            return caps;
+        }
+        caps.ready = true;
+        caps.supportsEffects = context.effectsPipeline != nil;
+        caps.supportsDcp = context.baseDcpPipeline != nil;
+        size_t pixelCount = 0;
+        if (!checkedCount(width, height, &pixelCount)) {
+            caps.dimensionsSupported = false;
+            return caps;
+        }
+        const size_t budget = std::min<size_t>(16u * 1024 * 1024, context.device.maxBufferLength);
+        const size_t rowBytes = static_cast<size_t>(width) * sizeof(RGB);
+        caps.dimensionsSupported = rowBytes > 0 && rowBytes <= budget;
+        return caps;
+    }
+}
+
 } // namespace sony2fuji
 
 #else
@@ -1524,6 +1547,10 @@ bool renderPhotoMetal(
     ImageData&
 ) {
     return false;
+}
+
+PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t, uint32_t) noexcept {
+    return {};
 }
 
 } // namespace sony2fuji

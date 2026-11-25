@@ -155,7 +155,7 @@ struct BatchSelectionView: View {
                     } catch { message = model.adjustmentErrorMessage(error) }
                 }.buttonStyle(.borderedProminent).disabled(count == 0 || (try? model.previewAdjustmentPayload(scope: scope == "all" ? .all : scope == "modified" ? .modified : .custom(fields))) == nil)
             }
-        }.padding(24).frame(width: 580).tint(.yellow)
+        }.padding(24).frame(width: 580).tint(.yellow).preferredColorScheme(.dark)
     }
 }
 
@@ -183,21 +183,27 @@ private struct BatchCollectionExportView: View {
                 }.keyboardShortcut(.cancelAction).accessibilityIdentifier("collection.export.cancel")
             }
             Text(L10n.text("将按每张照片已保存的调整导出。跳过只影响本次导出。")).foregroundStyle(.secondary)
-            HStack(spacing: 20) {
-                Picker(L10n.text("格式"), selection: Binding<ExportFormat?>(
-                    get: { adaptiveJPEG ? nil : format },
-                    set: { value in adaptiveJPEG = value == nil; format = value ?? .jpeg })) {
-                    Text(L10n.text("HDR 照片用 HDR JPEG，其余用 JPEG")).tag(nil as ExportFormat?)
-                    ForEach(ExportFormat.allCases.filter { $0 != .hdrHEIF || HDRImage.heifExportAvailable }) { Text($0.title).tag(Optional($0)) }
-                }.frame(width: 280).accessibilityIdentifier("collection.export.format")
-                ExportSizePicker(longEdge: $longEdge).frame(width: 220)
-                OutputSharpeningPicker(outputSharpening: Binding(
-                    get: { (!adaptiveJPEG && format == .renderedDNG) ? .off : outputSharpening },
-                    set: { outputSharpening = $0 }
-                ))
-                .frame(width: 200)
-                .disabled(!adaptiveJPEG && format == .renderedDNG)
-                Button(directory?.lastPathComponent ?? L10n.text("选择输出文件夹")) { chooseDirectory() }
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 20) {
+                    Picker(L10n.text("格式"), selection: Binding<ExportFormat?>(
+                        get: { adaptiveJPEG ? nil : format },
+                        set: { value in adaptiveJPEG = value == nil; format = value ?? .jpeg })) {
+                        Text(L10n.text("HDR 照片用 HDR JPEG，其余用 JPEG")).tag(nil as ExportFormat?)
+                        ForEach(ExportFormat.allCases.filter { $0 != .hdrHEIF || HDRImage.heifExportAvailable }) { Text($0.title).tag(Optional($0)) }
+                    }.frame(width: 340).accessibilityIdentifier("collection.export.format")
+                    Spacer(minLength: 12)
+                    Button(directory?.lastPathComponent ?? L10n.text("选择输出文件夹")) { chooseDirectory() }
+                }
+                HStack(alignment: .top, spacing: 24) {
+                    ExportSizePicker(longEdge: $longEdge).frame(width: 260, alignment: .leading)
+                    OutputSharpeningPicker(outputSharpening: Binding(
+                        get: { (!adaptiveJPEG && format == .renderedDNG) ? .off : outputSharpening },
+                        set: { outputSharpening = $0 }
+                    ))
+                    .frame(width: 240, alignment: .leading)
+                    .disabled(!adaptiveJPEG && format == .renderedDNG)
+                    Spacer(minLength: 0)
+                }
             }
             if model.collectionExportBlockedByTask {
                 HStack {
@@ -232,7 +238,7 @@ private struct BatchCollectionExportView: View {
                     .disabled(directory == nil || targetCount == 0 || model.collectionExportPreparing || model.collectionExportBlockedByTask)
                     .accessibilityIdentifier("collection.export.start")
             }
-        }.padding(24).frame(width: 870).tint(.yellow)
+        }.padding(24).frame(width: 870).tint(.yellow).preferredColorScheme(.dark)
         .onAppear { invalidate() }
         .onDisappear { model.cancelCollectionExportPreparation() }
         .onChange(of: format) { _, _ in invalidate() }
@@ -307,23 +313,80 @@ private struct BatchCollectionExportView: View {
 
 struct MacBatchSettingsSummaryView: View {
     let settings: Adjustments
+    var perPhotoAdaptive = false
+    var omitTopSummaryFields = false
+
+    static func showsSDRBaselineHeaders(for settings: Adjustments, omitTopSummaryFields: Bool = false) -> Bool {
+        !settings.isHDREditing && !omitTopSummaryFields
+    }
+
+    static func summaryParameters(for settings: Adjustments, omitTopSummaryFields: Bool = false) -> [AdjustmentParameter] {
+        let curve = settings.editingCurveSettings
+        return AdjustmentParameter.allCases.filter { parameter in
+            if settings.isHDREditing { return parameter.hdrKeyPath != nil }
+            if omitTopSummaryFields && parameter == .exposure { return false }
+            return curve.mode == .legacy || parameter != .toneCurve
+        }
+    }
+
     var body: some View {
+        let curve = settings.editingCurveSettings
+        let hsl = settings.editingHSLSettings
+        let grading = settings.editingGradingSettings
         VStack(alignment: .leading, spacing: 7) {
-            if settings.isHDREditing {
-                Text("HDR · "+L10n.text("相对白平衡"))
-            } else {
-            Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
-            Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
+            if settings.isHDREditing, let hdr = settings.hdr {
+                Text("HDR · " + L10n.text("相对白平衡"))
+                if let sha = hdr.lookSettings.sha256, !sha.isEmpty {
+                    summary(hdr.lookSettings.name ?? "HDR LUT", String(format: "%.0f%%", hdr.lookSettings.strength * 100), rawTitle: true)
+                }
+                if hdr.cameraDevelopmentSettings.lensDistortion || hdr.cameraDevelopmentSettings.lensTCA ||
+                    hdr.cameraDevelopmentSettings.lensVignetting || hdr.cameraDevelopmentSettings.fbddLevel != 0 ||
+                    hdr.cameraDevelopmentSettings.cameraProfile != nil {
+                    summary("HDR RAW", L10n.text("开启"), rawTitle: true)
+                }
+                if settings.hdrCameraAIEnabled {
+                    summary("AI 降噪", enabled(true))
+                }
+            } else if Self.showsSDRBaselineHeaders(for: settings, omitTopSummaryFields: omitTopSummaryFields) {
+                Text(L10n.text("曝光基准") + " · " + settings.exposureMode.title)
+                Text(L10n.text("白平衡") + " · " + settings.whiteBalanceMode.title)
             }
-            ForEach(AdjustmentParameter.allCases.filter { settings.isHDREditing ? $0.hdrKeyPath != nil : (settings.curveSettings.mode == .legacy || $0 != .toneCurve) }) { parameter in
+            ForEach(Self.summaryParameters(for: settings, omitTopSummaryFields: omitTopSummaryFields)) { parameter in
                 let spec = parameter.spec(for: settings)
-                HStack { Text(spec.title); Spacer(); Text(spec.display(parameter.value(from:settings))).monospacedDigit() }
+                let adaptive = perPhotoAdaptive && !settings.isHDREditing && parameter.isWhiteBalance && settings.whiteBalanceMode == .asShot
+                HStack {
+                    Text(spec.title)
+                    Spacer()
+                    Text(adaptive ? L10n.text("按每张照片") : spec.display(parameter.value(from: settings))).monospacedDigit()
+                }
             }
-            if !settings.isHDREditing {
-            if !settings.curveSettings.isDefault {
-                DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", settings.curveSettings.labeledPoints.count)) {
-                    ForEach(Array(settings.curveSettings.labeledPoints.enumerated()), id: \.offset) { index, point in
-                        summary(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1), String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y))
+            if settings.isHDREditing, let hdr = settings.hdr {
+                DisclosureGroup(L10n.text("HDR 输出与 SDR 底图")) {
+                    let rendition = hdr.renditionSettings
+                    summary("HDR 亮度上限", String(format: "%+.2f EV", rendition.peakLimitEV))
+                    summary("SDR 底图曝光", String(format: "%+.2f EV", rendition.sdrExposureEV))
+                    summary("SDR 底图对比度", number(rendition.sdrContrast) + "%")
+                    summary("SDR 底图饱和度", number(rendition.sdrSaturation) + "%")
+                }
+            }
+            if !curve.isDefault {
+                DisclosureGroup(L10n.format("多点曲线（%d 个控制点）", curve.labeledPoints.count)) {
+                    if curve.applyToLuminosity {
+                        summary("仅作用于明度", enabled(true))
+                    }
+                    ForEach(Array(curve.labeledPoints.enumerated()), id: \.offset) { index, point in
+                        summary(point.channel.shortLabel + " · " + L10n.format("控制点 %d", index + 1),
+                                String(format: "%.2f → %.2f", locale: L10n.locale, point.point.x, point.point.y),
+                                rawTitle: true)
+                    }
+                    if !curve.parametric.isDefault {
+                        summary("高光", number(curve.parametric.highlights) + "%")
+                        summary("亮部", number(curve.parametric.lights) + "%")
+                        summary("暗部", number(curve.parametric.darks) + "%")
+                        summary("阴影", number(curve.parametric.shadows) + "%")
+                        summary("阴影拆分", String(format: "%.0f%%", curve.parametric.splitShadow * 100))
+                        summary("中间调拆分", String(format: "%.0f%%", curve.parametric.splitMidtone * 100))
+                        summary("高光拆分", String(format: "%.0f%%", curve.parametric.splitHighlight * 100))
                     }
                 }
             }
@@ -332,19 +395,25 @@ struct MacBatchSettingsSummaryView: View {
                     HStack {
                         Text(L10n.text(HSLSettings.channelNames[channel]))
                         Spacer()
-                        Text(HSLAxis.allCases.map { $0.title + " " + number(settings.hslSettings.value($0, channel: channel)) }.joined(separator: " · "))
+                        Text(HSLAxis.allCases.map { $0.title + " " + number(hsl.value($0, channel: channel)) }.joined(separator: " · "))
                     }
                 }
             }
             DisclosureGroup(L10n.text("颜色分级")) {
                 ForEach(ColorGradingZone.allCases) { zone in
                     HStack {
-                        Text(zone.title); Spacer()
-                        Text(L10n.text("色相") + " " + number(settings.gradingSettings[zone].hue) + "° · " +
-                            L10n.text("饱和度") + " " + number(settings.gradingSettings[zone].saturation))
+                        Text(zone.title)
+                        Spacer()
+                        Text(gradingSummary(grading[zone]))
                     }
                 }
-            }
+                HStack {
+                    Text(L10n.text("全局"))
+                    Spacer()
+                    Text(gradingSummary(grading.global))
+                }
+                summary("融合", number(grading.blending) + "%")
+                summary("平衡", number(grading.balance))
             }
             DisclosureGroup(L10n.text("几何与镜头")) {
                 let geometry = settings.geometrySettings
@@ -359,27 +428,38 @@ struct MacBatchSettingsSummaryView: View {
                 summary("水平透视", number(geometry.perspectiveHorizontal))
                 summary("垂直透视", number(geometry.perspectiveVertical))
                 if !settings.isHDREditing {
-                summary("镜头匹配", L10n.text(settings.lensSettings.mode == .automatic ? "自动" : "手动"))
-                summary("畸变矫正", enabled(settings.lensSettings.distortion))
-                summary("横向色差", enabled(settings.lensSettings.tca))
-                summary("自动裁边", enabled(settings.lensSettings.autoCrop))
+                    let lens = settings.lensSettings
+                    summary("镜头匹配", lens.mode == .automatic && perPhotoAdaptive
+                        ? "\(L10n.text("自动")) · \(L10n.text("按每张照片"))"
+                        : L10n.text(lens.mode == .automatic ? "自动" : "手动"))
+                    summary("畸变矫正", enabled(lens.distortion))
+                    summary("横向色差", enabled(lens.tca))
+                    summary("暗角校正", enabled(lens.vignetting))
+                    summary("自动裁边", enabled(lens.autoCrop))
                 }
             }
             if !settings.isHDREditing {
-            DisclosureGroup(L10n.text("降噪")) {
-                summary("RAW 降噪", number(settings.rawNoiseReduction))
-                summary("色度降噪", number(settings.chromaNoiseReduction ?? 0))
-                summary("降噪", enabled(settings.waveletSettings.enabled))
-                summary("亮度降噪", number(settings.waveletSettings.luma))
-                summary("色彩降噪", number(settings.waveletSettings.chroma))
-                summary("粗色斑抑制", number(settings.waveletSettings.coarse))
-            }
+                DisclosureGroup(L10n.text("降噪")) {
+                    summary("AI 降噪", enabled(settings.aiDenoiseEnabled))
+                    if settings.aiDenoiseEnabled {
+                        summary("AI 降噪强度", number(settings.aiDenoiseStrength) + "%")
+                    }
+                    summary("RAW 降噪", number(settings.rawNoiseReduction))
+                    summary("色度降噪", number(Double(settings.chromaNoiseReduction)))
+                    summary("降噪", enabled(settings.waveletSettings.enabled))
+                    summary("亮度降噪", number(settings.waveletSettings.luma))
+                    summary("色彩降噪", number(settings.waveletSettings.chroma))
+                    summary("粗色斑抑制", number(settings.waveletSettings.coarse))
+                }
             }
         }.font(.callout).foregroundStyle(.secondary)
     }
     private func number(_ value: Double) -> String { String(format: "%.2f", value) }
     private func enabled(_ value: Bool) -> String { L10n.text(value ? "开启" : "停用") }
-    private func summary(_ title: String, _ value: String) -> some View {
-        HStack { Text(L10n.text(title)); Spacer(); Text(value).monospacedDigit() }
+    private func gradingSummary(_ wheel: ColorGradingWheel) -> String {
+        "\(L10n.text("色相")) \(number(wheel.hue))° · \(L10n.text("饱和度")) \(number(wheel.saturation)) · \(L10n.text("明亮度")) \(number(wheel.luminance))"
+    }
+    private func summary(_ title: String, _ value: String, rawTitle: Bool = false) -> some View {
+        HStack { Text(rawTitle ? title : L10n.text(title)); Spacer(); Text(value).monospacedDigit() }
     }
 }

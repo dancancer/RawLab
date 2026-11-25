@@ -58,10 +58,25 @@ struct IOSToneCurveControls: View {
     }
     private var point: ToneCurvePoint { selectedCurve.points[min(selected, selectedCurve.points.count - 1)] }
     private var legacyActive: Bool { channel == .rgb && settings.mode == .legacy && legacy != 0 && subMode == .point }
+    private var isParametricSubMode: Bool { channel == .rgb && subMode == .parametric }
+    private var pointCurveIsModified: Bool {
+        !settings.shape(.rgb).isIdentity || (settings.mode == .legacy && abs(legacy) > 1e-6)
+    }
+    private var parametricIsModified: Bool { !settings.parametric.isDefault }
+    private var preferredInitialSubMode: IOSCurveSubMode {
+        parametricIsModified && !pointCurveIsModified ? .parametric : .point
+    }
+    private func channelIsModified(_ item: ToneCurveChannel) -> Bool {
+        item == .rgb ? (pointCurveIsModified || parametricIsModified) : !settings.shape(item).isIdentity
+    }
+    private func subModeLabel(_ mode: IOSCurveSubMode) -> String {
+        let modified = mode == .point ? pointCurveIsModified : parametricIsModified
+        return modified ? "\(mode.title) •" : mode.title
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if let targetEnabled, targetEnabled.wrappedValue {
+            if let targetEnabled, targetEnabled.wrappedValue, !isParametricSubMode {
                 VStack(alignment: .leading, spacing: 4) {
                     Button {
                         onCancelTarget(); targetEnabled.wrappedValue.toggle()
@@ -77,20 +92,27 @@ struct IOSToneCurveControls: View {
             }
             HStack(spacing: 0) {
                 ForEach(ToneCurveChannel.allCases) { item in
+                    let modified = channelIsModified(item)
                     Button {
                         onCancelled(); onCancelTarget(); setChannel(item); selected = 0; showPointEditor = false; showLegacy = false
                     } label: {
-                        Text(label(item)).font(.subheadline.weight(item == channel ? .semibold : .regular))
-                            .foregroundStyle(item == channel ? Color.yellow : Color.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 48)
+                        HStack(spacing: 3) {
+                            Text(label(item)).font(.subheadline.weight(item == channel ? .semibold : .regular))
+                                .foregroundStyle(item == channel ? Color.yellow : Color.secondary)
+                            if modified {
+                                Circle().fill(Color.yellow).frame(width: 4, height: 4).accessibilityHidden(true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 48)
                     }.buttonStyle(.plain).accessibilityIdentifier("curve.channel.\(item.rawValue)")
                         .accessibilityAddTraits(item == channel ? .isSelected : [])
+                        .accessibilityValue(L10n.text(modified ? "已调整" : "未调整"))
                 }
             }
             if channel == .rgb {
                 Picker(L10n.text("参数曲线"), selection: $subMode) {
                     ForEach(IOSCurveSubMode.allCases) { mode in
-                        Text(mode.title).tag(mode)
+                        Text(subModeLabel(mode)).tag(mode)
                     }
                 }
                 .pickerStyle(.segmented).labelsHidden()
@@ -105,7 +127,8 @@ struct IOSToneCurveControls: View {
                 }.frame(height: 170)
             } else {
                 ToneCurveCanvas(value: curveBinding, selected: $selected, scope: scope,
-                    channel: channel, showSplitMarkers: channel == .rgb && subMode == .parametric, fine: fine,
+                    channel: channel, showSplitMarkers: isParametricSubMode,
+                    allowsPointEditing: !isParametricSubMode, fine: fine,
                     isCurrent: inputContext.isCurrent, canChange: inputContext.canChange,
                     onEditingChanged: { editing in
                         if editing { onCancelTarget() }
@@ -130,13 +153,26 @@ struct IOSToneCurveControls: View {
             ))
             .padding(.horizontal, 18).padding(.vertical, 4)
             .accessibilityIdentifier("curve.luminosity")
-            if channel == .rgb && subMode == .parametric {
+            if isParametricSubMode {
                 parametricControls
             } else {
-                HStack {
+                HStack(spacing: 8) {
                     Text("\(L10n.text("输入坐标")) \(coordinateText(point.x)) · \(L10n.text("输出坐标")) \(coordinateText(point.y))")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 4)
+                    Button {
+                        commit(selectedCurve.removing(index: selected))
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.subheadline)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(selectedCurve.isInterior(selected) ? Color.red : Color.secondary.opacity(0.35))
+                    .disabled(!selectedCurve.isInterior(selected))
+                    .accessibilityLabel(L10n.text("删除控制点"))
+                    .accessibilityIdentifier("curve.quick-remove")
                     Button(L10n.text("编辑控制点")) { showPointEditor = true }
                         .font(.subheadline).foregroundStyle(.yellow).frame(minHeight: 48)
                         .accessibilityIdentifier("curve.edit-point")
@@ -144,8 +180,24 @@ struct IOSToneCurveControls: View {
             }
         }
         .sheet(isPresented: $showPointEditor) { pointEditor }
+        .onAppear {
+            subMode = preferredInitialSubMode
+        }
+        .onChange(of: subMode) { _, next in
+            if next == .parametric {
+                onCancelTarget()
+                if targetEnabled?.wrappedValue == true {
+                    targetEnabled?.wrappedValue = false
+                }
+            }
+        }
+        .onChange(of: targetEnabled?.wrappedValue ?? false) { _, enabled in
+            if enabled && isParametricSubMode {
+                subMode = .point
+            }
+        }
         .onChange(of: String(describing: inputContext.id)) { _, _ in
-            setChannel(.rgb); subMode = !settings.parametric.isDefault && settings.mode == .legacy ? .parametric : .point
+            setChannel(.rgb); subMode = preferredInitialSubMode
             selected = 0; showPointEditor = false; showLegacy = false
         }
         .onChange(of: selectedCurve.points.count) { _, count in selected = min(selected, max(0, count - 1)) }
@@ -199,7 +251,7 @@ struct IOSToneCurveControls: View {
                 range: highMin...sub.splitHighlightRange.upperBound, step: 0.01, defaultValue: sub.splitHighlightDefault, unit: "",
                 formatter: { String(format: "%.2f", locale: L10n.locale, $0) }, identifier: "curve.parametric.splitHighlight",
                 compactNumber: true, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            Button(L10n.text("重置曲线")) {
+            Button(L10n.text("重置参数曲线")) {
                 onCancelled(); onCancelTarget()
                 guard inputContext.isCurrent(), inputContext.canChange(), !settings.parametric.isDefault else { return }
                 onEditingChanged(true)
@@ -286,14 +338,17 @@ struct IOSToneCurveControls: View {
             return range.lowerBound + (horizontal ? p.x : p.y) * span
         }, set: { next in
             guard channel == owner, inputContext.isCurrent(), inputContext.canChange() else { return }
-            if horizontal { guard selectedCurve.isInterior(index) else { return } }
+            if horizontal { guard selectedCurve.canMoveX(index) else { return } }
             else { guard selectedCurve.canMoveY(index) else { return } }
             let p = selectedCurve.points[index], value = (next - range.lowerBound) / span
             curveBinding.wrappedValue = selectedCurve.moving(index: index, x: horizontal ? value : p.x, y: horizontal ? p.y : value)
         })
-        let allowed = horizontal ? selectedCurve.isInterior(selected) : selectedCurve.canMoveY(selected)
+        let allowed = horizontal ? selectedCurve.canMoveX(selected) : selectedCurve.canMoveY(selected)
+        let defaultCoord = horizontal
+            ? (selected == 0 ? 0.0 : (selected == selectedCurve.points.count - 1 ? 1.0 : point.x))
+            : point.x
         return AdjustmentControl(title: L10n.text(horizontal ? "输入坐标" : "输出坐标"), value: binding,
-            range: range, step: usesExposureStops ? 0.01 : 0.001, defaultValue: range.lowerBound + point.x * span,
+            range: range, step: usesExposureStops ? 0.01 : 0.001, defaultValue: range.lowerBound + defaultCoord * span,
             unit: usesExposureStops ? "EV" : "", formatter: { String(format: "%.2f", locale: L10n.locale, $0) },
             identifier: horizontal ? "curve.x" : "curve.y", compactNumber: true, compactDecimals: nil,
             onEditingChanged: onEditingChanged).disabled(!allowed)

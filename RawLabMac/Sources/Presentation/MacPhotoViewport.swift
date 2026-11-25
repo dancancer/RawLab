@@ -7,11 +7,31 @@ struct PhotoViewport: Equatable {
     var focus = CGPoint(x: 0.5, y: 0.5)
     mutating func fit() { self = PhotoViewport() }
     mutating func actualPixels() { magnification = 1; pixelMode = true }
-    mutating func toggleActualPixels() {
-        if pixelMode || magnification != 1 { fit() } else { actualPixels() }
+    mutating func toggleActualPixels(anchor: CGPoint? = nil) {
+        if pixelMode || magnification != 1 { fit() }
+        else {
+            actualPixels()
+            if let anchor, anchor.x.isFinite, anchor.y.isFinite {
+                focus = CGPoint(x: min(1, max(0, anchor.x)), y: min(1, max(0, anchor.y)))
+            }
+        }
     }
     mutating func zoom(by multiplier: CGFloat) {
         magnification = min(16, max(0.1, magnification * multiplier))
+    }
+    mutating func zoom(by multiplier: CGFloat, anchor: CGPoint) {
+        guard multiplier.isFinite, multiplier > 0 else { return }
+        let old = magnification
+        let next = min(16, max(0.1, old * multiplier))
+        if next != old, anchor.x.isFinite, anchor.y.isFinite {
+            let clamped = CGPoint(x: min(1, max(0, anchor.x)), y: min(1, max(0, anchor.y)))
+            let ratio = old / next
+            focus = CGPoint(
+                x: min(1, max(0, clamped.x - (clamped.x - focus.x) * ratio)),
+                y: min(1, max(0, clamped.y - (clamped.y - focus.y) * ratio))
+            )
+        }
+        magnification = next
     }
     func factor(fit: CGFloat, displayScale: CGFloat, sourceWidth: CGFloat = 1, renderedWidth: CGFloat = 1) -> CGFloat {
         let pixelFactor = sourceWidth / max(1, renderedWidth) / max(1, displayScale)
@@ -23,6 +43,9 @@ struct PhotoViewport: Equatable {
     mutating func moveFocus(from origin: CGPoint, translation: CGSize, displayed: CGSize) {
         focus = CGPoint(x: min(1, max(0, origin.x - translation.width / max(1, displayed.width))),
                         y: min(1, max(0, origin.y - translation.height / max(1, displayed.height))))
+    }
+    mutating func panBy(delta: CGSize, displayed: CGSize) {
+        moveFocus(from: focus, translation: delta, displayed: displayed)
     }
     func previewLongEdge(canvas: CGSize, displayScale: CGFloat, source: CGSize, margin: CGFloat = 12) -> Int {
         let width = max(1, canvas.width - 2 * margin), height = max(1, canvas.height - 2 * margin)

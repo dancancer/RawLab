@@ -325,6 +325,10 @@ bool GlesPhotoRenderer::render(const ImageData& input, ColorSpace inputSpace,
     return renderImpl(input, inputSpace, params, width, height, revision, output, outcome);
 }
 
+bool GlesPhotoRenderer::isReadyForQuery() const noexcept {
+    return impl_ != nullptr || (!initUnavailable_ && retry_.ready(glesRetryNow()));
+}
+
 bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace,
     const RenderParams& params, uint32_t width, uint32_t height, uint64_t revision, ImageData& output,
     GpuRenderOutcome& outcome) {

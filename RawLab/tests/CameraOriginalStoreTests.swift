@@ -130,6 +130,7 @@ import Darwin
         try samplingValidationAndReuseComputeDigestOnce()
         try thumbnailURLSkipsFullHashAndRejectsInvalidStates()
         try samplingCandidate10kHistoryLatencyAndIndexSync()
+        try dualSlotSnapshotParityAndLegacyDecode()
         if #available(macOS 15.0, iOS 18.0, *) { try isoGainMapJPEG() }
     }
 
@@ -1259,6 +1260,26 @@ import Darwin
         let probeAfterDiscard = try syncStore!.enqueue(device: identity, connectionKey: "sync", assets: [hitSnapshot])
         try check(syncStore!.samplingCandidate(job: probeAfterDiscard.id, item: probeAfterDiscard.items[0].id) == nil,
                   "recover() discarding missing .prepared removes candidate from samplingCandidate index")
+    }
+
+    private static func dualSlotSnapshotParityAndLegacyDecode() throws {
+        // Legacy manifest JSON without "slot" decodes with slot == 1 (effectiveSlot == 1) and equals explicit slot=1
+        let legacyJSON = """
+        {"content":10,"file":1,"storage":0,"format":0,"name":"DSC00001.ARW","size":128,"created":"1700000000000","modified":""}
+        """.data(using: .utf8)!
+        let decodedLegacy = try JSONDecoder().decode(CameraAssetSnapshot.self, from: legacyJSON)
+        let explicitSlot1 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0,
+            name: "DSC00001.ARW", size: 128, created: "1700000000000", modified: "", slot: 1)
+        let slot2 = CameraAssetSnapshot(content: 10, file: 1, storage: 0, format: 0,
+            name: "DSC00001.ARW", size: 128, created: "1700000000000", modified: "", slot: 2)
+        try check(decodedLegacy == explicitSlot1 && decodedLegacy.hashValue == explicitSlot1.hashValue &&
+                  decodedLegacy.slot == 1 && decodedLegacy.effectiveSlot == 1 &&
+                  decodedLegacy.key == explicitSlot1.key && !decodedLegacy.key.hasPrefix("slot"),
+                  "Legacy manifest snapshot decodes identically to slot 1")
+        try check(slot2 != decodedLegacy && slot2.key.hasPrefix("slot2:") && slot2.anchorKey.hasPrefix("slot2:") &&
+                  slot2.withoutLocator.slot == 2 && slot2.withoutLocator.anchorKey.hasPrefix("slot2:") &&
+                  slot2.captureDate != nil,
+                  "Slot 2 preserves slot2: prefix across key, anchorKey, withoutLocator, and mobile captureDate")
     }
 
     private static func write(_ bytes: Data, item: CameraTransferItem, job: CameraTransferJob, store: CameraOriginalStore) throws -> CameraStoredOriginal {

@@ -1,7 +1,5 @@
 package com.rawlab.android.photo
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -20,14 +18,21 @@ class HDRSourceInfoTest {
         assertThrows(IllegalArgumentException::class.java) {value.copy(headroomKind=1)}
     }
     @Test
-    fun parsesTheNativeSourceContractWithoutDroppingFingerprint() {
-        val bytes = ByteBuffer.allocate(64).order(ByteOrder.LITTLE_ENDIAN).apply {
-            putInt(4000).putInt(3000).putInt(6).putInt(2).putInt(2).putInt(2)
-            putFloat(4f).putInt(1)
-            repeat(32) { put(it.toByte()) }
-        }.array()
-
-        val info = HDRSourceInfo.decode(bytes)
+    fun internalJniConstructorPreservesFingerprintAndCameraProcessingVersion() {
+        val fingerprint = ByteArray(32) { it.toByte() }
+        val info = HDRSourceInfo(
+            width = 4000,
+            height = 3000,
+            orientation = 6,
+            container = HDRSourceInfo.CONTAINER_CAMERA_RAW,
+            protocol = 2,
+            colorDescription = 2,
+            contentHeadroom = 4f,
+            headroomKind = 1,
+            fingerprint = fingerprint,
+            supportsBayerDevelopment = true,
+            cameraProcessingVersion = 2,
+        )
 
         assertEquals(4000, info.width)
         assertEquals(3000, info.height)
@@ -36,11 +41,15 @@ class HDRSourceInfoTest {
         assertEquals(32, info.fingerprint.size)
         assertEquals(0, info.fingerprint.first().toInt())
         assertEquals(31, info.fingerprint.last().toInt())
+        assertTrue(info.supportsBayerDevelopment)
+        assertEquals(2, info.cameraProcessingVersion)
     }
 
     @Test
-    fun rejectsMalformedNativeSourceContract() {
-        assertThrows(IllegalArgumentException::class.java) { HDRSourceInfo.decode(ByteArray(63)) }
+    fun rejectsMalformedFingerprintLength() {
+        assertThrows(IllegalArgumentException::class.java) {
+            HDRSourceInfo(64, 32, 1, 1, 1, 1, 0f, 0, ByteArray(31))
+        }
     }
 
     @Test

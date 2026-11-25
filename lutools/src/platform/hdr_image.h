@@ -2,6 +2,7 @@
 
 #include "core/hdr_rendering.h"
 #include "core/hdr_stream.h"
+#include "core/pinned_source_file.h"
 #include "core/pixel_buffer.h"
 #include <stdexcept>
 #include <vector>
@@ -55,6 +56,10 @@ void publishStreamJPEG(std::vector<uint8_t> data, uint32_t width, uint32_t heigh
     bool baseMetadataApplied = false);
 
 #if defined(__APPLE__)
+inline constexpr uint64_t appleProRAWRevision = 1;
+HDRSourceInfo probeAppleProRAW(const char* path);
+HDRSourceInfo probeFileOrAppleProRAW(const char* path);
+HDRRowSource openAppleProRAWRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);
 HDRRowSource openRasterRows(const char* path, const uint8_t expectedSHA[32], StreamSourcePin& pin, uint64_t& decodeRevision);
 void freezeStreamSourceFile(const char* path, StreamSourcePin& pin);
 void verifyStreamSource(const StreamSourcePin& pin);
@@ -62,12 +67,12 @@ void publishTiledHEIF(const HDRStreamFiles& image, const HDRExportConfig& config
     const char* path, const StreamSourcePin& pin);
 #endif
 
-// 平台适配器对元数据源执行整文件摘要的累计次数（测试注入计数，进程级）。
-uint64_t sourceHashPassCount();
-void resetSourceHashPassCount();
+// 平台适配器对元数据源执行整文件摘要的累计次数（由 core/pinned_source_file 统一维护）。
+using sony2fuji::sourceHashPassCount;
+using sony2fuji::resetSourceHashPassCount;
 
 // 测试注入缝：非空时，元数据源首块数据读取完成后恰好触发一次并置空，
 // 用于模拟「读后、快照夹逼前」路径被原子替换（B1 红锚）。生产恒为空。
-extern void (*sourceReadTestHook)();
+using sony2fuji::sourceReadTestHook;
 
 } // namespace sony2fuji::hdr

@@ -11,6 +11,53 @@ public sealed class InspectionSuiteTests
 {
     [Fact]
     [Trait("Category", "Model")]
+    public void ColorSampleTextFormattingMatchesContract()
+    {
+        var sample = new InspectionColorSample(255, 128, 0, 30.1, 100.0, 100.0, 0.568);
+        Assert.Equal("255 128 0", sample.RgbText);
+        Assert.Equal("30° 100% 100%", sample.HsbText);
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void SessionStateFourAnchorCapAndToggleAndZeroRecipePollution()
+    {
+        var session = new InspectionSessionState();
+        for (var i = 0; i < 4; i++)
+            Assert.NotNull(session.PinAnchor(0.1 * (i + 1), 0.5));
+        Assert.False(session.CanPinMore);
+        Assert.Null(session.PinAnchor(0.9, 0.9));
+        Assert.Equal(4, session.Anchors.Count);
+
+        session.SelectOverlay(InspectionOverlayMode.WarmCoolBW);
+        session.ToggleNeutralGray50();
+        Assert.Equal(InspectionOverlayMode.NeutralGray50, session.Overlay);
+        Assert.True(session.HandleEscape());
+        Assert.Equal(InspectionOverlayMode.WarmCoolBW, session.Overlay);
+        Assert.True(session.HandleEscape());
+        Assert.Equal(InspectionOverlayMode.None, session.Overlay);
+
+        // Zero CanonicalEditRecipe pollution
+        var settings = new Adjustments
+        {
+            Geometry = new GeometrySettings(0.1, 0.1, 0.8, 0.8, QuarterTurns: 1),
+        };
+        settings.Set(Parameter.Exposure, 0.4);
+        var baseRecipe = CanonicalEditRecipe.Encode(settings, isRaster: false);
+        foreach (var mode in Enum.GetValues<InspectionOverlayMode>())
+        {
+            session.SelectOverlay(mode);
+            Assert.Equal(baseRecipe, CanonicalEditRecipe.Encode(settings, isRaster: false));
+        }
+
+        session.ResetForNewSource();
+        Assert.Empty(session.Anchors);
+        Assert.Equal(InspectionOverlayMode.None, session.Overlay);
+    }
+
+    [Fact]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "inspection-suite")]
     public void ColorMathAndLuminanceMatchCanonicalContract()
     {
         var red = InspectionColorSample.FromRgb(255, 0, 0);
@@ -55,10 +102,15 @@ public sealed class InspectionSuiteTests
         var straddle = InspectionColorMath.SampleBgra32(buf, w, h, stride, 1.0 / 3.0, 0.5, radiusPx: 1);
         Assert.NotNull(straddle);
         Assert.Equal((byte)133, straddle!.Value.R);
+
+        Assert.Null(InspectionColorMath.SampleBgra32(buf.AsSpan(0, buf.Length - 1), w, h, stride, 0.5, 0.5, radiusPx: 1));
+        Assert.Throws<ArgumentException>(() =>
+            InspectionColorMath.ApplyOverlayBgra32(buf, buf, w, h, stride, stride, InspectionOverlayMode.SketchLuminance));
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "inspection-suite")]
     public void GeometryCoordinateMapperRoundTripsAndDetectsCropOut()
     {
         const int srcW = 4000, srcH = 3000;
@@ -91,22 +143,10 @@ public sealed class InspectionSuiteTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
-    public void SessionStateFourAnchorCapAndOverlaysAndZeroRecipePollution()
+    [Trait("Category", "WpfModel")]
+    [Trait("Suite", "inspection-suite")]
+    public void AllFiveObservationOverlaysMatchCoreContract()
     {
-        var session = new InspectionSessionState();
-        for (var i = 0; i < 4; i++)
-            Assert.NotNull(session.PinAnchor(0.1 * (i + 1), 0.5));
-        Assert.False(session.CanPinMore);
-        Assert.Null(session.PinAnchor(0.9, 0.9));
-        Assert.Equal(4, session.Anchors.Count);
-
-        session.SelectOverlay(InspectionOverlayMode.WarmCoolBW);
-        session.ToggleNeutralGray50();
-        Assert.Equal(InspectionOverlayMode.NeutralGray50, session.Overlay);
-        Assert.True(session.HandleEscape());
-        Assert.Equal(InspectionOverlayMode.WarmCoolBW, session.Overlay);
-
         var (dr, dg, db) = InspectionColorMath.ApplyOverlayPixel(80, 80, 80, InspectionOverlayMode.SketchLuminance);
         var (br, bg, bb) = InspectionColorMath.ApplyOverlayPixel(180, 180, 180, InspectionOverlayMode.SketchLuminance);
         Assert.True(dr == dg && dg == db && dr < 80);
@@ -126,23 +166,6 @@ public sealed class InspectionSuiteTests
 
         var gray50 = InspectionColorMath.ApplyOverlayPixel(20, 200, 250, InspectionOverlayMode.NeutralGray50);
         Assert.Equal(((byte)128, (byte)128, (byte)128), gray50);
-
-        // Zero CanonicalEditRecipe pollution
-        var settings = new Adjustments
-        {
-            Geometry = new GeometrySettings(0.1, 0.1, 0.8, 0.8, QuarterTurns: 1),
-        };
-        settings.Set(Parameter.Exposure, 0.4);
-        var baseRecipe = CanonicalEditRecipe.Encode(settings, isRaster: false);
-        foreach (var mode in Enum.GetValues<InspectionOverlayMode>())
-        {
-            session.SelectOverlay(mode);
-            Assert.Equal(baseRecipe, CanonicalEditRecipe.Encode(settings, isRaster: false));
-        }
-
-        session.ResetForNewSource();
-        Assert.Empty(session.Anchors);
-        Assert.Equal(InspectionOverlayMode.None, session.Overlay);
     }
 
     [StaFact]
@@ -260,14 +283,12 @@ public sealed class InspectionSuiteTests
 
         const InspectionOverlayMode activeMode = InspectionOverlayMode.SketchLuminance;
 
-        // Pass 1: RefreshViewingFrames requests reference (NeutralCanvas), result (ResultCanvas), and reference (Comparison)
         Assert.Same(reference, Resolve(reference, activeMode));
         Assert.Same(result, Resolve(result, activeMode));
         Assert.Same(reference, Resolve(reference, activeMode));
         Assert.Equal(2, renderScheduled);
         Assert.Equal(2, cache.InFlightCount);
 
-        // Complete reference render -> triggers Pass 2 refresh; result is still in-flight (not re-scheduled)
         pending.Dequeue().Invoke();
         Assert.Equal(1, refreshRequests);
         var refPass2 = Resolve(reference, activeMode);
@@ -276,7 +297,6 @@ public sealed class InspectionSuiteTests
         Assert.Same(refPass2, Resolve(reference, activeMode));
         Assert.Equal(2, renderScheduled);
 
-        // Complete result render -> triggers Pass 3 refresh; both remain cached concurrently
         pending.Dequeue().Invoke();
         Assert.Equal(2, refreshRequests);
         var refPass3 = Resolve(reference, activeMode);
@@ -290,7 +310,6 @@ public sealed class InspectionSuiteTests
         Assert.Equal(0, cache.InFlightCount);
         Assert.Empty(pending);
 
-        // Additional distinct bitmaps respect bounded LRU capacity (4 entries)
         var extra1 = MakeBitmap(50, 90, 140);
         var extra2 = MakeBitmap(180, 60, 40);
         var extra3 = MakeBitmap(90, 200, 110);
@@ -301,7 +320,6 @@ public sealed class InspectionSuiteTests
         Assert.Equal(4, cache.Count);
         Assert.True(cache.TryGet(result, activeMode, out _));
 
-        // 5th entry evicts the least-recently-used entry (reference), keeping capacity bounded at 4
         Assert.True(cache.TryBeginRender(extra3, activeMode));
         cache.CompleteRender(extra3, activeMode, InspectionOverlayRenderer.CreateOverlayBitmap(extra3, activeMode));
         Assert.Equal(4, cache.Count);

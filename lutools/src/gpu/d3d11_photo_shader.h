@@ -60,8 +60,8 @@ float curve(float x) {
 }
 float customToneCurve(float x, uint count, uint base) {
     if (count == 0u) return x;
-    if (x <= 0.0) return curveRanges[base].z;
-    if (x >= 1.0) return curveRanges[base + count - 1u].w;
+    if (x <= curveRanges[base].x) return curveRanges[base].z;
+    if (x >= curveRanges[base + count - 1u].y) return curveRanges[base + count - 1u].w;
     uint i = 0u;
     while (i + 1u < count && x > curveRanges[base + i].y) ++i;
     float4 r = curveRanges[base + i];

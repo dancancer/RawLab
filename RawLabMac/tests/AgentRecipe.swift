@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNativeTypes
 import Foundation
 
 // 测试工具（remediation Q9/R18）：生产 UI 没有复制配方入口，只有 tests 的 Agent
@@ -33,9 +34,10 @@ extension RenderEngine {
         let fx = state.photoEffectsConfig
         let geometry = state.geometrySettings
         let lens = state.lensSettings
-        let wavelet = state.waveletNoiseReduction
-        let chroma = wavelet == nil ? (state.chromaNoiseReduction ?? 0) : 0
-        let raw = wavelet == nil && chroma == 0 ? state.rawNoiseReduction : 0
+        let hasWavelet = state.waveletNoiseReduction != WaveletDenoiseSettings()
+        let wavelet: WaveletDenoiseSettings? = hasWavelet ? state.waveletNoiseReduction : nil
+        let chroma = !hasWavelet ? state.chromaNoiseReduction : 0
+        let raw = !hasWavelet && chroma == 0 ? state.rawNoiseReduction : 0
         var wb: [String: Any] = ["mode": "camera"]
         let raster = Self.isRasterInput(url)
         if raster { wb = ["mode": "none"] }
@@ -67,7 +69,7 @@ extension RenderEngine {
         if toneConfig.black_point != 0 { tone["black_point"] = toneConfig.black_point }
         if toneConfig.white_point != 0 { tone["white_point"] = toneConfig.white_point }
         var document: [String: Any] = [
-            "schema_version": state.renderCurveSettings.hasV2Extensions ? 17 : (Self.isX3fInput(url) ? 7 : 5),
+            "schema_version": state.renderCurveSettings.hasFreeEndpointX ? 18 : state.renderCurveSettings.hasV2Extensions ? 17 : (Self.isX3fInput(url) ? 7 : 5),
             "processing": ["family": state.processing.family, "version": state.processing.version,
                            "quality": state.processing.quality],
             "input": ["path": url.standardizedFileURL.path, "type": raster ? "raster" : "raw"],

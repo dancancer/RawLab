@@ -10,9 +10,9 @@ class LensMetadataSettingsTest {
         assertEquals(lens, LensSettings.decode(lens.encode()))
         val encoded = StructuredSettingsCodec.encode(EditSettings(lens = lens), "photo_edit")
         assertEquals(lens, StructuredSettingsCodec.decode(encoded, "photo_edit").lens)
-        val json = JSONObject(encoded.removePrefix("v2:"))
+        val json = JSONObject(encoded.removePrefix("v3:"))
         json.getJSONObject("settings").getJSONObject("lens").apply { remove("focalLength"); remove("cropFactor") }
-        assertEquals(lens.copy(focalLength = null, cropFactor = null), StructuredSettingsCodec.decode("v2:$json", "photo_edit").lens)
+        assertEquals(lens.copy(focalLength = null, cropFactor = null), StructuredSettingsCodec.decode("v3:$json", "photo_edit").lens)
         assertEquals(LensSettings(), LensSettings.decode("0|0|1|0|"))
     }
     @Test fun rasterKeepsExplicitLensSettings() {

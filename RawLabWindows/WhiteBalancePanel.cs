@@ -69,9 +69,12 @@ public sealed class WhiteBalancePanel : StackPanel
             settings[Parameter.Temperature], settings.Default(Parameter.Temperature), temperatureSpec.Unit, enabled);
         tint.Refresh(Loc.Text(tintSpec.Title), NumericRange.For(tintSpec),
             settings[Parameter.Tint], settings.Default(Parameter.Tint), tintSpec.Unit, enabled);
+        var wbModified = settings[Parameter.Temperature] != settings.Default(Parameter.Temperature) ||
+            settings[Parameter.Tint] != settings.Default(Parameter.Tint) ||
+            (!settings.IsHDREditing && !isRaster && !settings.CameraWhiteBalance);
         AutomationProperties.SetName(reset, Loc.Text("重置白平衡"));
         reset.Content = Loc.Text("重置白平衡");
-        reset.IsEnabled = enabled;
+        reset.IsEnabled = enabled && wbModified;
         syncing = false;
     }
 

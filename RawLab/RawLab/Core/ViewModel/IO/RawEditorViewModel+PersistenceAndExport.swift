@@ -205,7 +205,7 @@ extension RawEditorViewModel {
             file: sourceFile,
             kind: sourceKind,
             hasBuffer: draftBuffer != nil,
-            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            fullBuffer: draftBuffer.flatMap { (!$0.isProxy && $0.hasFullBitDepth) ? $0 : nil },
             orientation: sourceOrientation
         )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
@@ -330,6 +330,14 @@ extension RawEditorViewModel {
                         self.isStoppingHDRExport = false
                         self.hdrExportProgress = nil
                         self.hdrExportCancellation = nil
+                        if !cancellation.isCancelled {
+                            DiagnosticCenter.recordBreadcrumb(
+                                category: "export",
+                                stage: "exportCompleted",
+                                message: "Single photo export completed",
+                                context: ["format": format.suffix, "hdr": String(settings.isHDREditing)]
+                            )
+                        }
                         completion(cancellation.isCancelled ? .failure(CancellationError()) : .success(data))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                         if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }
@@ -361,7 +369,7 @@ extension RawEditorViewModel {
             file: sourceFile,
             kind: sourceKind,
             hasBuffer: draftBuffer != nil,
-            fullBuffer: draftBuffer.flatMap { $0.isProxy ? nil : $0 },
+            fullBuffer: draftBuffer.flatMap { (!$0.isProxy && $0.hasFullBitDepth) ? $0 : nil },
             orientation: sourceOrientation
         )
         guard let sourceFile = source.file, let sourceKind = source.kind else {
@@ -430,6 +438,12 @@ extension RawEditorViewModel {
                         self.isStoppingHDRExport = false
                         self.hdrExportProgress = nil
                         self.hdrExportCancellation = nil
+                        DiagnosticCenter.recordBreadcrumb(
+                            category: "export",
+                            stage: "exportDNGCompleted",
+                            message: "Rendered DNG export completed",
+                            context: ["hdr": String(settings.isHDREditing)]
+                        )
                         completion(.success(outputURL))
                         self.updatePreviewSize(self.requestedPreviewLongEdge, settings: self.currentPreviewSettings)
                         if let req = self.lastDetailRequest { self.scheduleDetailRender(for: req) }

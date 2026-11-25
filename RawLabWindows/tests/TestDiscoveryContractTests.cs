@@ -54,6 +54,7 @@ public sealed class TestDiscoveryContractTests
         "hdr-workflow",
         "first-preview",
         "hdr-look-import",
+        "agent-hot-reload",
     };
 
     private static readonly Dictionary<string, string> DedicatedSuitesByCategory = new(StringComparer.Ordinal)
