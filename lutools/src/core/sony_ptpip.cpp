@@ -1187,6 +1187,7 @@ sony2fuji_status parseLiveFrameBounds(
     const uint64_t metadata_end = metadata + metadata_length;
     const uint64_t total = std::max(image_end, metadata_length == 0u ? uint64_t(16u) : metadata_end);
     if (image < 16u || length < 4u || total > max_total_bytes ||
+        (total - 16u) > std::numeric_limits<uint32_t>::max() ||
         (metadata_length != 0u && (metadata < 16u || (image < metadata_end && metadata < image_end)))) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
@@ -1289,9 +1290,14 @@ bool focusPointFromTap(
     const double scale = std::min(container_width / image_width, container_height / image_height);
     const double fitted_w = image_width * scale;
     const double fitted_h = image_height * scale;
+    if (!std::isfinite(scale) || !std::isfinite(fitted_w) || !std::isfinite(fitted_h) ||
+        fitted_w <= 0.0 || fitted_h <= 0.0) {
+        return false;
+    }
     const double left = (container_width - fitted_w) / 2.0;
     const double top = (container_height - fitted_h) / 2.0;
-    if (tap_x < left || tap_x > left + fitted_w || tap_y < top || tap_y > top + fitted_h) {
+    if (!std::isfinite(left) || !std::isfinite(top) ||
+        tap_x < left || tap_x > left + fitted_w || tap_y < top || tap_y > top + fitted_h) {
         return false;
     }
     const double u = std::clamp((tap_x - left) / fitted_w, 0.0, 1.0);

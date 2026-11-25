@@ -452,6 +452,9 @@ void testLiveViewAndProjection() {
     const uint32_t f_overlap[4]{16u, 100u, 20u, 10u};
     check(sony2fuji_sony_parse_live_frame_bounds(f_overlap, SONY2FUJI_SONY_PTPIP_DATA_LIMIT, &bounds) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "parse_live_frame_bounds rejects overlapping regions");
+    const uint32_t f_overflow[4]{0xFFFFFFFFu, 100u, 0u, 0u};
+    check(sony2fuji_sony_parse_live_frame_bounds(f_overflow, UINT64_MAX, &bounds) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "parse_live_frame_bounds rejects >UINT32_MAX body_size truncation");
 
     auto appendMetaBlock = [](std::vector<uint8_t>& m, uint32_t xmax, uint32_t ymax,
                               uint16_t count, uint16_t type, uint16_t state,
@@ -507,6 +510,12 @@ void testLiveViewAndProjection() {
     check(sony2fuji_sony_focus_point_from_tap(640.0, 560.0, 640.0, 640.0, 640.0, 480.0, &valid, &tap) == SONY2FUJI_STATUS_OK &&
               valid == 1 && tap.x == 639 && tap.y == 479,
           "focus_point_from_tap clamps bottom-right to 639x479");
+    check(sony2fuji_sony_focus_point_from_tap(0.5e308, 0.5e308, 1e308, 1e308, 1e-308, 1e-308, &valid, &tap) == SONY2FUJI_STATUS_OK &&
+              valid == 0,
+          "focus_point_from_tap rejects scale overflow to inf/NaN");
+    check(sony2fuji_sony_focus_point_from_tap(0.5e-308, 0.5e-308, 1e-308, 1e-308, 1e308, 1e308, &valid, &tap) == SONY2FUJI_STATUS_OK &&
+              valid == 0,
+          "focus_point_from_tap rejects scale underflow to zero");
 
     sony2fuji_sony_live_view_frame track{SONY2FUJI_SONY_LIVE_FRAME_TRACKING, 0, 0.5, 0.5, 0.10, 0.127};
     sony2fuji_sony_focus_overlay_box box{};
