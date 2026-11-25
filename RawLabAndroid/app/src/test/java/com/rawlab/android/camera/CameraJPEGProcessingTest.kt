@@ -18,6 +18,17 @@ class CameraJPEGProcessingTest {
         assertEquals(4L * (30L * 20 + 21L * 14), CameraJPEGProcessing.requiredBitmapBytes(59, 39, 2, 21, 14))
     }
 
+    @Test fun bitmapBudgetUsesSystemMemoryAboveLowMemoryThreshold() {
+        val mb = 1024L * 1024
+        // 33 MP（7008×4672）原图按 4096 长边处理不做 inSampleSize：解码 + 缩放约 176 MB。
+        val required = CameraJPEGProcessing.requiredBitmapBytes(7008, 4672, 1, 4096, 2731)
+        assertTrue(required > 128 * mb)
+        assertTrue(required <= CameraJPEGProcessing.bitmapBudget(2048 * mb, 216 * mb, lowMemory = false))
+        assertEquals(916 * mb, CameraJPEGProcessing.bitmapBudget(2048 * mb, 216 * mb, lowMemory = false))
+        assertEquals(0L, CameraJPEGProcessing.bitmapBudget(2048 * mb, 216 * mb, lowMemory = true))
+        assertEquals(0L, CameraJPEGProcessing.bitmapBudget(100 * mb, 216 * mb, lowMemory = false))
+    }
+
     @Test fun gainMapAdjustmentIsRejectedBeforeBitmapDecodeForEverySupportedProtocol() {
         val root = Files.createTempDirectory("camera-jpeg-hdr-test").toFile()
         try {

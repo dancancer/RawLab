@@ -20,6 +20,7 @@ import com.rawlab.android.camera.protocol.SonyTetherSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -179,7 +180,9 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private val importsDirectory = File(application.filesDir, "camera-media-imports")
     private val tetherRunsDirectory = File(application.filesDir, "camera-tether-runs")
     private val store = CameraImportStore(importsDirectory,
-        File(application.cacheDir, "camera-media-partials"), MediaPhotoLibrary(application), CameraCaptureDateReader::read)
+        File(application.cacheDir, "camera-media-partials"), MediaPhotoLibrary(application), CameraCaptureDateReader::read,
+        processJpeg = { source, destination, options -> CameraJPEGProcessing.process(application, source, destination, options) },
+        verifyJpeg = CameraJPEGProcessing::ensureAdjustmentSupported)
     private val authStore = CameraAccessAuthStore(application)
     private val connection = SonyCameraConnection(application, this)
     private val sessionLock = Mutex()
@@ -196,6 +199,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     private var transfer: Job? = null
     private var importPreparation: Job? = null
     private var connectionWork: Job? = null
+    private var heartbeat: Job? = null
     private var closingWork: Job? = null
     private var pendingConnected: PendingConnection? = null
     private var pendingAuthTarget: PendingConnection? = null
@@ -755,6 +759,30 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 jpeg = settings.jpeg,
             )
         }
+        startImportHeartbeat(generation)
+    }
+
+    /**
+     * 空闲导入会话没有任何 PTP 流量时，相机会在一段时间后自行断开（用户停下来挑片、锁屏片刻就得重连 BLE + Wi-Fi）。
+     * 定期发一次只读 GetDeviceInfo 维持会话；传输或预览占用会话时跳过，失败时立即把断开同步到界面。
+     */
+    private fun startImportHeartbeat(current: Int) {
+        heartbeat?.cancel()
+        heartbeat = viewModelScope.launch {
+            while (true) {
+                delay(CAMERA_IMPORT_HEARTBEAT_MS)
+                if (current != generation || !mutable.value.connected || mutable.value.mode != CameraMode.IMPORT) return@launch
+                val alive = withContext(Dispatchers.IO) {
+                    if (!sessionLock.tryLock()) return@withContext true
+                    try { current != generation || pingCameraSession(session) } finally { sessionLock.unlock() }
+                }
+                if (!alive && current == generation) {
+                    debugCameraLog("import heartbeat failed")
+                    onFailure(SonyCameraConnection.Failure.DISCONNECTED)
+                    return@launch
+                }
+            }
+        }
     }
 
     override fun onFailure(reason: SonyCameraConnection.Failure) {
@@ -772,6 +800,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
     fun disconnect() {
         generation++
+        heartbeat?.cancel(); heartbeat = null
         pendingConnected = null
         pendingAuthTarget = null
         permit?.cancel()
@@ -1076,6 +1105,22 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
             connection.close()
         }, 2_100)
         super.onCleared()
+    }
+}
+
+internal const val CAMERA_IMPORT_HEARTBEAT_MS = 10_000L
+
+/** 相机能完整应答（含错误响应码）即视为会话仍在；只有已关闭或传输层异常才算断开。 */
+internal fun pingCameraSession(opened: CameraMediaSession?): Boolean {
+    if (opened == null) return true
+    if (!opened.isOpen) return false
+    return try {
+        opened.deviceInfo()
+        true
+    } catch (error: CameraMediaSession.PhotoTransferException) {
+        !error.isSessionFailure
+    } catch (_: java.io.IOException) {
+        false
     }
 }
 
