@@ -2,9 +2,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
-SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-export SDKROOT
 # 不变量 7：套件日志出现行首 SKIP 标记即视为能力未演练，即使退出码为 0 也判败。
 # 锚定行首是为了不误伤路径段、编译器诊断、标识符或 PASS 文案里的合法 "SKIP" 字样。
 # 唯一例外（docs/process/ci.md）：models 清单内的混合 AX 套件（其 Swift 二层闸与
@@ -35,10 +32,14 @@ fail_on_logged_skip() {
     fi
 }
 # 供 apple_models_scheduler.py 回调：对单个已结束套件的日志执行不变量 7 判定，规则只在本文件维护。
+# 放在 xcrun 之前：判定只读日志，工具链偶发失败不应被记成 SKIP。
 if [ "${1:-}" = --check-skip ]; then
     fail_on_logged_skip "$2" "$3"
     exit $?
 fi
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+export SDKROOT
 case "${1:-}" in
     macos)
         python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet

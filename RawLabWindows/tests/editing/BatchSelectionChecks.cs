@@ -8,13 +8,16 @@ static class BatchSelectionChecks
     static void Check(bool condition,string message) { if(!condition)throw new Exception(message); }
     static void Rejected(Action action,string message) { try { action(); }catch { return; }throw new Exception(message); }
     // 在独立的非线程池线程上执行并转抛异常，让线程归属断言不受测试宿主所在线程影响。
-    static void RunOnDedicatedThread(Action action)
+    static void RunOnDedicatedThread(Action action) => RunOnDedicatedThread(()=>{ action(); return 0; });
+    static T RunOnDedicatedThread<T>(Func<T> func)
     {
         System.Runtime.ExceptionServices.ExceptionDispatchInfo? failure=null;
-        var thread=new Thread(()=>{ try { action(); } catch(Exception error) { failure=System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); } }){IsBackground=true,Name="BatchSelectionChecks freeze anchor"};
+        T result=default!;
+        var thread=new Thread(()=>{ try { result=func(); } catch(Exception error) { failure=System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error); } }){IsBackground=true,Name="BatchSelectionChecks freeze anchor"};
         thread.Start();
         thread.Join();
         failure?.Throw();
+        return result;
     }
     public static void Run()
     {
@@ -299,11 +302,13 @@ static class BatchSelectionChecks
             try { disposedTransaction.Commit(); }catch(ObjectDisposedException) { threwDisposed=true; }
             Check(threwDisposed,"Disposed FrozenCollectionExport rejects Commit");
 
-            var stages=new System.Collections.Concurrent.ConcurrentQueue<(string,bool)>();
-            var committedJob=exporter.FreezeAsync(review,selectionIDs,_=>null,
-                observeStage:stage=>stages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread))).GetAwaiter().GetResult();
-            Check(stages.Count(entry=>entry.Item1=="revalidate")==2 && stages.Any(entry=>entry.Item1=="copy") &&
-                stages.All(entry=>entry.Item2),"FreezeAsync runs FreezeCore stages on a thread-pool thread");
+            // 生产路径锚点同样放到独立非池线程：xUnit 池线程上等待时 Task.Run 可能被内联到调用线程而假绿。
+            var stages=new System.Collections.Concurrent.ConcurrentQueue<(string Stage,bool Pool,int Thread)>();
+            var (committedJob,freezeCaller)=RunOnDedicatedThread(()=>(exporter.FreezeAsync(review,selectionIDs,_=>null,
+                observeStage:stage=>stages.Enqueue((stage,Thread.CurrentThread.IsThreadPoolThread,Environment.CurrentManagedThreadId))).GetAwaiter().GetResult(),
+                Environment.CurrentManagedThreadId));
+            Check(stages.Count(entry=>entry.Stage=="revalidate")==2 && stages.Any(entry=>entry.Stage=="copy") &&
+                stages.All(entry=>entry.Pool && entry.Thread!=freezeCaller),"FreezeAsync runs FreezeCore stages on a thread-pool thread");
             Check(journal.Load()?.Id==committedJob.Id && !File.Exists(oldLookCopy),
                 "Successful FreezeAsync persists the new job and releases the previous completed job's look file");
             var expectedNewFiles=committedJob.Items.Select(item=>item.Frozen!.Look!).Append(jobPath)

@@ -450,7 +450,7 @@ for i in $(seq 1 200); do printf 'PASS: %s line %04d %s\\n' "$suite" "$i" "$(pri
                     while not done.wait(0.001):
                         try:
                             os.killpg(process.pid, signal.SIGCHLD)
-                        except ProcessLookupError:
+                        except OSError:  # gone, or EPERM from macOS once the group starts exiting
                             return
                 flooder = threading.Thread(target=flood)
                 flooder.start()
