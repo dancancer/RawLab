@@ -128,9 +128,12 @@ cat > "$BUNDLE/Info.plist" << 'PLIST'
 PLIST
 
 rawlab_ios_camera_sources CAMERA_SOURCES full
+rawlab_ios_compile_sony_ptpip sim "$OUT/ptpip"
 rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
 rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -DRAWLAB_XCTEST -module-name CameraImportFaultToleranceTests \
     -module-cache-path "$OUT/module-cache" \
+    -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
+    -Xcc -I"$ROOT/lutools/include" \
     -parse-as-library -emit-library \
     -I "$PLAT/Developer/usr/lib" -I "$SDK/System/Library/Frameworks" \
     -F "$PLAT/Developer/Library/Frameworks" -F "$PLAT/Developer/Library/PrivateFrameworks" \
@@ -139,7 +142,7 @@ rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -DRAWLAB_XCTEST -module-nam
     "${CAMERA_SOURCES[@]}" \
     "$ROOT/RawLab/tests/CameraSkipAndLimitTests.swift" \
     "$ROOT/RawLab/tests/CameraImportFaultToleranceXCTests.swift" \
-    -o "$BUNDLE/CameraImportFaultToleranceTests"
+    "$OUT/ptpip"/*.o -lc++ -o "$BUNDLE/CameraImportFaultToleranceTests"
 
 mkdir -p "$APP/Frameworks"
 for fw in XCTest.framework XCUIAutomation.framework Testing.framework _Testing_UIKit.framework _Testing_Foundation.framework _Testing_CoreGraphics.framework; do

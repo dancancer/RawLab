@@ -70,6 +70,7 @@ class ProguardJniContractTest {
             "com.rawlab.android.raster.NativePng16",
             "com.rawlab.android.editor.inspection.InspectionNative",
             "com.rawlab.android.editor.canvas.ViewportNative",
+            "com.rawlab.android.camera.SonyCameraNative",
         )) {
             assertTrue("proguard-rules.pro must keep native host $host", proguard.contains(host))
         }

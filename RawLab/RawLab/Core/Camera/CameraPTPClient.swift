@@ -30,21 +30,44 @@ final class CameraPTPClient {
         eventChannel?.close()
     }
 
+    private static func buildPacket(_ build: (UnsafeMutablePointer<UInt8>?, Int, UnsafeMutablePointer<Int>?) -> sony2fuji_status) throws -> Data {
+        var needed = 0
+        guard build(nil, 0, &needed) == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("PTP/IP packet build failed")
+        }
+        var bytes = [UInt8](repeating: 0, count: needed)
+        let status = bytes.withUnsafeMutableBufferPointer { buf in
+            build(buf.baseAddress, buf.count, &needed)
+        }
+        guard status == SONY2FUJI_STATUS_OK else {
+            throw CameraProtocolError.invalid("PTP/IP packet build failed")
+        }
+        return Data(bytes.prefix(needed))
+    }
+
     func initialize(clientID: UUID,
                     openEvent: (() throws -> CameraByteChannel)? = nil,
                     eventReceived: @escaping (UInt16) -> Void = { _ in }) throws {
         do {
             var id = clientID.uuid
-            var payload = withUnsafeBytes(of: &id) { Data($0) }
-            payload.append("RawLab\0".data(using: .utf16LittleEndian)!)
-            payload.appendLE(UInt32(0x10000))
-            try command.write(CameraWire.packet(1, payload))
+            let initCmd = try withUnsafeBytes(of: &id) { rawID -> Data in
+                let guidPtr = rawID.bindMemory(to: UInt8.self).baseAddress
+                return try "RawLab".withCString { namePtr in
+                    try Self.buildPacket { out, cap, outLen in
+                        sony2fuji_sony_ptpip_build_init_cmd(guidPtr, namePtr, 0x10000, out, cap, outLen)
+                    }
+                }
+            }
+            try command.write(initCmd)
             let ack = try packet(command, limit: 4096)
-            guard ack.type == 2, ack.data.count >= 24 else {
+            var connNum: UInt32 = 0
+            let ackBytes = Array(ack.data)
+            let ackStatus = ackBytes.withUnsafeBufferPointer { buf in
+                sony2fuji_sony_ptpip_parse_init_cmd_ack(buf.baseAddress, buf.count, &connNum)
+            }
+            guard ack.type == 2, ackStatus == SONY2FUJI_STATUS_OK else {
                 throw CameraProtocolError.invalid("PTP/IP command initialization rejected")
             }
-            var reader = CameraDataReader(ack.data), connection = Data()
-            connection.appendLE(try reader.u32())
             let eventChannel: CameraByteChannel
             if let openEvent {
                 guard !isClosed else { throw CameraProtocolError.cancelled }
@@ -67,10 +90,16 @@ final class CameraPTPClient {
                 }
                 eventChannel = existing
             }
-            try eventChannel.write(CameraWire.packet(3, connection))
+            let initEvt = try Self.buildPacket { out, cap, outLen in
+                sony2fuji_sony_ptpip_build_init_evt(connNum, out, cap, outLen)
+            }
+            try eventChannel.write(initEvt)
             let ready = try packet(eventChannel, limit: 4096)
             guard ready.type == 4, ready.data.isEmpty else {
                 throw CameraProtocolError.invalid("PTP/IP event initialization rejected")
+            }
+            let probeResp = try Self.buildPacket { out, cap, outLen in
+                sony2fuji_sony_ptpip_build_probe_resp(out, cap, outLen)
             }
             eventChannel.beginEventLoop()
             DispatchQueue(label: "rawlab.camera.events").async { [weak self] in
@@ -79,12 +108,17 @@ final class CameraPTPClient {
                     while !self.isClosed {
                         let eventPacket = try self.packet(eventChannel, limit: 4096)
                         if eventPacket.type == 13, eventPacket.data.isEmpty {
-                            try eventChannel.write(CameraWire.packet(14, Data())); continue
+                            try eventChannel.write(probeResp); continue
                         }
-                        guard eventPacket.type == 8, (6...18).contains(eventPacket.data.count),
-                              (eventPacket.data.count - 6) % 4 == 0 else { throw CameraProtocolError.invalid("Invalid PTP event") }
-                        var data = CameraDataReader(eventPacket.data)
-                        eventReceived(try data.u16())
+                        var parsed = sony2fuji_sony_ptpip_event()
+                        let evtBytes = Array(eventPacket.data)
+                        let evtStatus = evtBytes.withUnsafeBufferPointer { buf in
+                            sony2fuji_sony_ptpip_parse_event(buf.baseAddress, buf.count, &parsed)
+                        }
+                        guard eventPacket.type == 8, evtStatus == SONY2FUJI_STATUS_OK else {
+                            throw CameraProtocolError.invalid("Invalid PTP event")
+                        }
+                        eventReceived(parsed.event_code)
                     }
                 } catch {
                     self.close()
@@ -124,25 +158,42 @@ final class CameraPTPClient {
         }
         let tid = transaction
         do {
-            var request = Data(); request.appendLE(UInt32(outgoing == nil ? 1 : 2))
-            request.appendLE(operation); request.appendLE(tid)
-            for parameter in parameters { request.appendLE(parameter) }
-            try command.write(CameraWire.packet(6, request))
+            let opReq = try Self.buildPacket { out, cap, outLen in
+                parameters.withUnsafeBufferPointer { pBuf in
+                    sony2fuji_sony_ptpip_build_op_req(
+                        UInt32(outgoing == nil ? 1 : 2), operation, tid,
+                        pBuf.baseAddress, UInt32(pBuf.count), out, cap, outLen
+                    )
+                }
+            }
+            try command.write(opReq)
             if let outgoing {
-                var begin = Data(); begin.appendLE(tid); begin.appendLE(UInt64(outgoing.count))
-                try command.write(CameraWire.packet(9, begin))
-                var end = Data(); end.appendLE(tid); end.append(outgoing)
-                try command.write(CameraWire.packet(12, end))
+                let begin = try Self.buildPacket { out, cap, outLen in
+                    sony2fuji_sony_ptpip_build_start_data(tid, UInt64(outgoing.count), out, cap, outLen)
+                }
+                try command.write(begin)
+                let outBytes = Array(outgoing)
+                let end = try Self.buildPacket { out, cap, outLen in
+                    outBytes.withUnsafeBufferPointer { buf in
+                        sony2fuji_sony_ptpip_build_end_data(tid, buf.baseAddress, buf.count, out, cap, outLen)
+                    }
+                }
+                try command.write(end)
             }
             var expected: UInt64?, received: UInt64 = 0, ended = false
             for _ in 0..<10000 {
                 let header = try packetHeader(command, limit: max(4096, limit + 4))
                 switch header.type {
                 case 9:
-                    guard expected == nil, header.size == 12 else { throw CameraProtocolError.invalid("Invalid PTP start data") }
-                    var data = CameraDataReader(try command.read(12))
-                    guard try data.u32() == tid else { throw CameraProtocolError.invalid("PTP start transaction mismatch") }
-                    let count = try data.u64()
+                    guard expected == nil else { throw CameraProtocolError.invalid("Invalid PTP start data") }
+                    let raw = Array(try command.read(header.size))
+                    var startData = sony2fuji_sony_ptpip_start_data()
+                    let st = raw.withUnsafeBufferPointer { buf in
+                        sony2fuji_sony_ptpip_parse_start_data(buf.baseAddress, buf.count, &startData)
+                    }
+                    guard st == SONY2FUJI_STATUS_OK else { throw CameraProtocolError.invalid("Invalid PTP start data") }
+                    guard startData.transaction_id == tid else { throw CameraProtocolError.invalid("PTP start transaction mismatch") }
+                    let count = startData.total_bytes
                     guard count <= limit, exactSize == nil || count == exactSize else { throw CameraProtocolError.invalid("PTP data exceeds declared object size") }
                     expected = count
                 case 10, 12:
@@ -162,14 +213,21 @@ final class CameraPTPClient {
                         ended = true
                     }
                 case 7:
-                    guard (6...26).contains(header.size), (header.size - 6) % 4 == 0 else { throw CameraProtocolError.invalid("Invalid PTP response") }
-                    var data = CameraDataReader(try command.read(header.size))
-                    let code = try data.u16()
-                    guard try data.u32() == tid, expected == nil || ended else { throw CameraProtocolError.invalid("PTP response transaction mismatch") }
-                    guard code == 0x2001 else { throw CameraProtocolError.response(operation, code) }
+                    let raw = Array(try command.read(header.size))
+                    var resp = sony2fuji_sony_ptpip_response()
+                    let st = raw.withUnsafeBufferPointer { buf in
+                        sony2fuji_sony_ptpip_parse_response(buf.baseAddress, buf.count, &resp)
+                    }
+                    guard st == SONY2FUJI_STATUS_OK else { throw CameraProtocolError.invalid("Invalid PTP response") }
+                    guard resp.transaction_id == tid, expected == nil || ended else { throw CameraProtocolError.invalid("PTP response transaction mismatch") }
+                    guard resp.response_code == 0x2001 else { throw CameraProtocolError.response(operation, resp.response_code) }
                     guard !requiresData || ended else { throw CameraProtocolError.invalid("Required camera data missing") }
                     return
-                case 13 where header.size == 0: try command.write(CameraWire.packet(14, Data()))
+                case 13 where header.size == 0:
+                    let probeResp = try Self.buildPacket { out, cap, outLen in
+                        sony2fuji_sony_ptpip_build_probe_resp(out, cap, outLen)
+                    }
+                    try command.write(probeResp)
                 default: throw CameraProtocolError.invalid("Unexpected PTP/IP packet")
                 }
             }
@@ -183,10 +241,13 @@ final class CameraPTPClient {
     }
 
     private func packetHeader(_ channel: CameraByteChannel, limit: UInt64) throws -> (type: UInt32, size: Int) {
-        var reader = CameraDataReader(try channel.read(8))
-        let length = try reader.u32(), type = try reader.u32()
-        guard length >= 8, UInt64(length - 8) <= limit else { throw CameraProtocolError.invalid("Invalid PTP/IP packet length") }
-        return (type, Int(length - 8))
+        let raw = Array(try channel.read(8))
+        var header = sony2fuji_sony_ptpip_header()
+        let st = raw.withUnsafeBufferPointer { buf in
+            sony2fuji_sony_ptpip_parse_header(buf.baseAddress, buf.count, limit, &header)
+        }
+        guard st == SONY2FUJI_STATUS_OK else { throw CameraProtocolError.invalid("Invalid PTP/IP packet length") }
+        return (header.packet_type, Int(header.payload_size))
     }
     private func packet(_ channel: CameraByteChannel, limit: Int) throws -> (type: UInt32, data: Data) {
         let header = try packetHeader(channel, limit: UInt64(limit))

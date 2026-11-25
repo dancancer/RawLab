@@ -155,6 +155,7 @@ rawlab_ios_camera_sources() {
     _rawlab_ios_validate_ident "$out_var"
     local _core=(
         "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift"
+        "$ROOT/RawLab/RawLab/Core/Camera/CameraFocusController.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift"
         "$ROOT/RawLab/RawLab/Core/Camera/CameraAccessAuth.swift"
@@ -189,6 +190,36 @@ rawlab_ios_camera_sources() {
             ;;
     esac
     _rawlab_ios_assign_array "$out_var" "${_sources[@]}"
+}
+
+# Usage: rawlab_ios_compile_sony_ptpip [host|sim] OUT_DIR
+rawlab_ios_compile_sony_ptpip() {
+    local mode="${1:?Pass host or sim}"
+    local out_dir="${2:?Pass output directory}"
+    local sdk target compiler_cmd
+    mkdir -p "$out_dir"
+    case "$mode" in
+        host)
+            sdk="$RAWLAB_IOS_HOST_SDK"
+            target="$RAWLAB_IOS_HOST_TARGET"
+            compiler_cmd=(clang++)
+            ;;
+        sim)
+            sdk="$RAWLAB_IOS_SIM_SDK"
+            target="$RAWLAB_IOS_SIM_TARGET"
+            compiler_cmd=(xcrun --sdk iphonesimulator clang++)
+            ;;
+        *)
+            echo "Unknown sony_ptpip target mode: $mode" >&2
+            return 2
+            ;;
+    esac
+    for source in core/sony_ptpip ffi/sony_ptpip_c; do
+        "${compiler_cmd[@]}" -std=c++17 -O2 \
+            -isysroot "$sdk" -target "$target" \
+            -I "$ROOT/lutools/include" -I "$ROOT/lutools/src" \
+            -c "$ROOT/lutools/src/$source.cpp" -o "$out_dir/$(basename "$source").o"
+    done
 }
 
 # Usage: rawlab_ios_compile_metadata_bridge OUT_OBJ [bridge_mm] [module_cache_dir]

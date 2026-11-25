@@ -522,6 +522,89 @@ class SonySshTunnelTest {
     }
 
     @Test
+    fun openLiveViewStreamRejects3xx4xx5xxWithoutFollowingRedirects() {
+        val (server, sshPort, expectedFingerprint) = startTestSshServer()
+        val liveServer = ServerSocket(0, 4)
+        val redirectTrap = ServerSocket(0, 2)
+        val redirectHits = AtomicInteger(0)
+
+        val trapThread = Thread {
+            while (!redirectTrap.isClosed) {
+                try {
+                    redirectTrap.accept().use {
+                        redirectHits.incrementAndGet()
+                    }
+                } catch (_: IOException) {
+                    break
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+
+        val worker = Thread {
+            val statuses = listOf(
+                "302 Found" to "Location: http://127.0.0.1:${redirectTrap.localPort}/trap\r\n",
+                "404 Not Found" to "",
+                "500 Internal Server Error" to "",
+            )
+            for ((statusLine, extraHeaders) in statuses) {
+                liveServer.accept().use { s ->
+                    val reqBuf = ByteArray(512)
+                    s.getInputStream().read(reqBuf)
+                    val out = s.getOutputStream()
+                    val body = "HTTP/1.1 $statusLine\r\n${extraHeaders}Content-Length: 0\r\nConnection: close\r\n\r\n"
+                    out.write(body.toByteArray(StandardCharsets.US_ASCII))
+                    out.flush()
+                }
+            }
+        }.apply { start() }
+
+        try {
+            SonySshTunnel.connect(
+                address = InetAddress.getLoopbackAddress(),
+                username = "sonyuser",
+                password = "pass1234",
+                expectedFingerprint = expectedFingerprint,
+                port = sshPort,
+                timeoutMs = 3_000,
+            ).use { tunnel ->
+                val url = URL("http://127.0.0.1:${liveServer.localPort}/liveviewstream")
+                for (expectedCode in listOf(302, 404, 500)) {
+                    try {
+                        tunnel.openLiveViewStream(url, timeoutMs = 3_000).close()
+                        fail("Expected IOException for HTTP $expectedCode")
+                    } catch (e: IOException) {
+                        assertTrue(
+                            "Expected HTTP $expectedCode in error message: ${e.message}",
+                            e.message?.contains(expectedCode.toString()) == true,
+                        )
+                    }
+                }
+                assertEquals(0, redirectHits.get())
+            }
+            worker.join(3_000)
+        } finally {
+            redirectTrap.close()
+            trapThread.join(1_000)
+            liveServer.close()
+            server.stop(true)
+        }
+    }
+
+    @Test
+    fun redactIpsMasksIpv4AddressesAndHandlesNull() {
+        assertEquals("", SonySshTunnel.redactIps(null))
+        assertEquals("", SonySshTunnel.redactIps(""))
+        assertEquals(
+            "connect failed for <ip> via gateway <ip>",
+            SonySshTunnel.redactIps("connect failed for 192.168.122.1 via gateway 10.0.0.42"),
+        )
+        assertEquals("unchanged status text", SonySshTunnel.redactIps("unchanged status text"))
+    }
+
+    @Test
     fun fingerprintValidationChecksCanonicalFormat() {
         val valid = formatSha256Fingerprint("test-host-key-bytes".toByteArray(StandardCharsets.UTF_8))
         assertTrue(isValidSha256Fingerprint(valid))

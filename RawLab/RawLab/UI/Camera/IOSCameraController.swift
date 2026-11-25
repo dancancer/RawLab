@@ -135,10 +135,23 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var accessAuthSubmitting = false
     private var receivingSavedToPhotoLibraryCount = 0
     private var receivingOriginals: [CameraStoredOriginal] = []
+    private let focusController: CameraFocusController
 
-    init(backend: CameraWorkspaceBackend = .shared) {
+    init(backend: CameraWorkspaceBackend = .shared,
+         focusClock: (any CameraFocusClock)? = nil) {
         self.backend = backend
+        self.focusController = CameraFocusController(clock: focusClock)
+        self.focusController.onStateChanged = { [weak self] in
+            self?.syncFocusState()
+        }
         reloadHistory()
+    }
+
+    private func syncFocusState() {
+        focusBusy = focusController.focusBusy
+        tapFocusLocked = focusController.tapFocusLocked
+        tapFocusPoint = focusController.tapFocusPoint
+        liveViewFrames = focusController.liveViewFrames
     }
     var connected: Bool { run != nil && phase != .connecting && phase != .paused && phase != .idle }
     var busy: Bool { [.connecting, .receiving, .capturing].contains(phase) || parameterBusy || focusBusy || scanning }
@@ -148,7 +161,18 @@ struct IOSCameraImportPreferences: Codable {
         !selectedAssets.isEmpty && selectedAssets.count <= 64 && selectionBytes <= 2 << 30 && selectedAssets.allSatisfy { $0.snapshot.transferable }
     }
     var canCapture: Bool { connected && phase == .ready && !parameterBusy && !focusBusy && shutterReady && originalBrowsingAvailable }
-    var cameraFocusLocked: Bool { !focusBusy && (tapFocusLocked || SonyCameraSession.isFocusLocked(properties)) }
+    var cameraFocusLocked: Bool {
+        focusController.isCameraFocusLocked(propertiesFocusLocked: SonyCameraSession.isFocusLocked(properties))
+    }
+    func focusRenderContent(left: Double, top: Double, fittedWidth: Double, fittedHeight: Double) -> CameraFocusRenderContent {
+        focusController.renderContent(
+            left: left,
+            top: top,
+            fittedWidth: fittedWidth,
+            fittedHeight: fittedHeight,
+            propertiesFocusLocked: SonyCameraSession.isFocusLocked(properties)
+        )
+    }
     var hasUnknownShot: Bool { manifest.tether?.shutterRequestedAt != nil }
     var unfinishedJobs: [CameraTransferJob] { manifest.jobs.filter { $0.dismissed != true && !$0.pendingItems.isEmpty }.reversed() }
     var originals: [CameraStoredOriginal] { manifest.originals.reversed() }
@@ -178,7 +202,8 @@ struct IOSCameraImportPreferences: Codable {
         assets = []; manualAssets = []; selection = []; thumbnails = [:]; pendingThumbnails = []; unavailableThumbnails = []; thumbnailOrder = []
         latestOriginal = nil; previewLoading = false
         properties = [:]; device = nil; writable = false; shutterReady = false; parameterBusy = false
-        focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
+        canCancelTouchFocus = false
+        focusController.reset(preserveLastRatio: false)
         preview = nil; frame = nil; frameAt = nil; progress = nil; savedCount = 0; notice = nil; phase = .connecting
         let owner = UUID()
         callbackOwner = owner
@@ -203,8 +228,9 @@ struct IOSCameraImportPreferences: Codable {
                 accessAuthSubmitting = false
             }
             if value == .paused {
-                focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
+                canCancelTouchFocus = false
                 accessAuthSubmitting = false
+                focusController.reset(preserveLastRatio: false)
             }
             if previousPhase == .receiving && value == .browsing {
                 if mode == .importing && receivingSavedToPhotoLibraryCount > 0 {
@@ -241,11 +267,12 @@ struct IOSCameraImportPreferences: Codable {
             manualAssets = Self.manualBrowseOrder(values)
             selection.formIntersection(Set(values.map(\.id))); scanning = false
         case .properties(let values, let writable, let shutter, let canCancelTouchFocus):
-            let hadCancel = self.canCancelTouchFocus
             properties = values; self.writable = writable; shutterReady = shutter; self.canCancelTouchFocus = canCancelTouchFocus
-            if SonyCameraSession.isFocusFailed(values) || (hadCancel && !canCancelTouchFocus) {
-                tapFocusLocked = false
-            }
+            focusController.onProperties(
+                canCancelTouchFocus: canCancelTouchFocus,
+                focusLocked: SonyCameraSession.isFocusLocked(values),
+                focusFailed: SonyCameraSession.isFocusFailed(values)
+            )
         case .manifest(let value):
             let wasComplete = incrementalJobID.flatMap { id in manifest.jobs.first { $0.id == id }?.complete } == true
             manifest = value
@@ -269,30 +296,27 @@ struct IOSCameraImportPreferences: Codable {
             parameterBusy = false
             if !confirmed { notice = L10n.text("设置结果未确认，请重新连接后检查。") }
         case .focusFinished(let error, let focusLocked):
-            focusBusy = false
             if let error {
-                tapFocusLocked = false
-                tapFocusPoint = nil
+                focusController.onFocusFinished(succeeded: false, focusLocked: false)
                 notice = message(error)
             } else {
-                tapFocusLocked = focusLocked
+                focusController.onFocusFinished(succeeded: true, focusLocked: focusLocked)
             }
         case .frame(let bytes, let overlays, let date, let token):
             guard let run, run.isLiveCurrent(token), let decoded = Self.decode(bytes, edge: 2048) else { return }
             frame = decoded; frameAt = date; run.markFrame(date)
-            if focusBusy {
-                liveViewFrames = []
-            } else {
-                liveViewFrames = overlays
-                if !overlays.isEmpty { tapFocusPoint = nil }
-            }
+            focusController.onLiveFrame(
+                overlays,
+                imageWidth: Double(decoded.cgImage?.width ?? 0),
+                imageHeight: Double(decoded.cgImage?.height ?? 0)
+            )
         case .saved(let original):
             latestOriginal = original; savedCount += 1; progress = nil
             if mode == .importing && !importPreferences.incremental { receivingOriginals.append(original) }
             if original.photoLibraryAssetID != nil { receivingSavedToPhotoLibraryCount += 1 }
         case .failure(let error):
             accessAuthPrompt = nil; accessAuthSubmitting = false
-            parameterBusy = false; focusBusy = false; tapFocusLocked = false; tapFocusPoint = nil
+            parameterBusy = false
             previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
             else { manualImportRequired = false }
@@ -306,9 +330,10 @@ struct IOSCameraImportPreferences: Codable {
                 showingListingLimitNotice = true
                 notice = message(error)
                 updatingListingLimitNotice = false
+                focusController.onFailure(keepLiveFrames: true)
             } else {
                 canCancelTouchFocus = false
-                liveViewFrames = []
+                focusController.onFailure(keepLiveFrames: false)
                 notice = message(error)
             }
         case .listingLimitCleared:
@@ -336,8 +361,9 @@ struct IOSCameraImportPreferences: Codable {
     }
     func stop(completion: @escaping () -> Void = {}) {
         let previous = run
-        callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false; focusBusy = false
-        canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil; shutterReady = false
+        callbackOwner = UUID(); run = nil; phase = .paused; parameterBusy = false
+        canCancelTouchFocus = false; shutterReady = false
+        focusController.reset(preserveLastRatio: false)
         previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
         localNetworkDenied = false; photoLibraryPermissionDenied = false
         accessAuthPrompt = nil; accessAuthSubmitting = false
@@ -561,25 +587,27 @@ struct IOSCameraImportPreferences: Codable {
     }
     func setParameter(_ descriptor: CameraProperty, value: Int64) {
         guard let run, phase == .ready, writable, !parameterBusy, !focusBusy, descriptor.accepts(value) else { return }
-        parameterBusy = true; tapFocusLocked = false; notice = nil; backend.setParameter(descriptor.code, value: value, run: run)
+        parameterBusy = true; notice = nil
+        focusController.onCaptureOrParameterStart()
+        backend.setParameter(descriptor.code, value: value, run: run)
     }
     func setFocusPoint(u: Double, v: Double, x: Int, y: Int) {
         guard let run, connected, phase == .ready, !busy else { return }
-        let tapID = UUID()
-        focusBusy = true; tapFocusLocked = false; notice = nil; liveViewFrames = []; tapFocusPoint = (id: tapID, u: u, v: v)
+        notice = nil
+        focusController.beginTapFocus(u: u, v: v, x: x, y: y)
         backend.setFocusPoint(x: x, y: y, run: run)
     }
     func cancelTouchFocus() {
         guard let run, connected, phase == .ready, !busy, canCancelTouchFocus else { return }
-        focusBusy = true; tapFocusLocked = false; notice = nil; liveViewFrames = []; tapFocusPoint = nil
+        notice = nil
+        focusController.beginCancelTouchFocus()
         backend.cancelTouchFocus(run)
-    }
-    func clearTapFocusPoint(id: UUID) {
-        if tapFocusPoint?.id == id { tapFocusPoint = nil }
     }
     func capture() {
         guard let run, canCapture else { return }
-        phase = .capturing; tapFocusLocked = false; notice = nil; photoLibraryPermissionDenied = false; backend.capture(run)
+        phase = .capturing; notice = nil; photoLibraryPermissionDenied = false
+        focusController.onCaptureOrParameterStart()
+        backend.capture(run)
     }
     func openOriginal(_ original: CameraStoredOriginal, completion: @escaping (URL) -> Void) {
         stop { [weak self] in

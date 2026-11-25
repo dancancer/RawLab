@@ -2,7 +2,6 @@ package com.rawlab.android.camera
 
 import com.rawlab.android.camera.protocol.SonyTetherSession
 import java.util.Locale
-import kotlin.math.roundToInt
 
 internal enum class CameraShootingParameter(val code: Int) {
     SHUTTER(0xd20d), APERTURE(0x5007), ISO(0xd21e), EV(0x5010),
@@ -19,6 +18,12 @@ internal data class CameraOverlayBox(
     val normalizedSquare: Boolean,
 )
 
+private fun frameKindCode(kind: SonyTetherSession.LiveViewFrameKind): Int = when (kind) {
+    SonyTetherSession.LiveViewFrameKind.FOCUS -> 0
+    SonyTetherSession.LiveViewFrameKind.FACE -> 1
+    SonyTetherSession.LiveViewFrameKind.TRACKING -> 2
+}
+
 internal fun computeFocusOverlayBox(
     frame: SonyTetherSession.LiveViewFocusFrame,
     left: Float,
@@ -26,29 +31,24 @@ internal fun computeFocusOverlayBox(
     fittedWidth: Float,
     fittedHeight: Float,
 ): CameraOverlayBox {
-    val rawW = frame.width * fittedWidth
-    val rawH = frame.height * fittedHeight
-    val cx = left + frame.cx * fittedWidth
-    val cy = top + frame.cy * fittedHeight
-    if (frame.kind != SonyTetherSession.LiveViewFrameKind.FACE && rawW > 0f && rawH > 0f) {
-        val aspect = maxOf(rawW, rawH) / minOf(rawW, rawH)
-        if (aspect <= 1.35f) {
-            val side = (rawW + rawH) / 2f
-            return CameraOverlayBox(
-                x = cx - side / 2f,
-                y = cy - side / 2f,
-                width = side,
-                height = side,
-                normalizedSquare = true,
-            )
-        }
-    }
+    val box = SonyCameraNative.nativeFocusOverlayBox(
+        frameKindCode(frame.kind),
+        frame.focused,
+        frame.cx.toDouble(),
+        frame.cy.toDouble(),
+        frame.width.toDouble(),
+        frame.height.toDouble(),
+        left.toDouble(),
+        top.toDouble(),
+        fittedWidth.toDouble(),
+        fittedHeight.toDouble(),
+    )
     return CameraOverlayBox(
-        x = cx - rawW / 2f,
-        y = cy - rawH / 2f,
-        width = rawW,
-        height = rawH,
-        normalizedSquare = false,
+        x = box[0].toFloat(),
+        y = box[1].toFloat(),
+        width = box[2].toFloat(),
+        height = box[3].toFloat(),
+        normalizedSquare = box[4] != 0.0,
     )
 }
 
@@ -57,18 +57,15 @@ internal fun normalizedFocusSquareRatio(
     imageWidth: Int,
     imageHeight: Int,
 ): Float? {
-    if (frame.kind == SonyTetherSession.LiveViewFrameKind.FACE || imageWidth <= 0 || imageHeight <= 0) {
-        return null
-    }
-    val iw = imageWidth.toFloat()
-    val ih = imageHeight.toFloat()
-    val shortEdge = minOf(iw, ih)
-    val w = frame.width * (iw / shortEdge)
-    val h = frame.height * (ih / shortEdge)
-    if (w <= 0f || h <= 0f || maxOf(w, h) / minOf(w, h) > 1.35f) {
-        return null
-    }
-    return (w + h) / 2f
+    if (imageWidth <= 0 || imageHeight <= 0) return null
+    val ratio = SonyCameraNative.nativeNormalizedFocusSquareRatio(
+        frameKindCode(frame.kind),
+        frame.width.toDouble(),
+        frame.height.toDouble(),
+        imageWidth.toDouble(),
+        imageHeight.toDouble(),
+    )
+    return if (ratio.isNaN()) null else ratio.toFloat()
 }
 
 internal fun computeTapFocusSide(
@@ -78,14 +75,15 @@ internal fun computeTapFocusSide(
     maxDefaultPx: Float,
     minLearnedPx: Float,
     lastSquareRatio: Float? = null,
-): Float {
-    val shortEdge = minOf(fittedWidth, fittedHeight)
-    if (!shortEdge.isFinite() || shortEdge <= 0f) return minDefaultPx
-    if (lastSquareRatio != null && lastSquareRatio.isFinite() && lastSquareRatio > 0f) {
-        return (shortEdge * lastSquareRatio).coerceIn(minLearnedPx, maxOf(minLearnedPx, shortEdge * 0.5f))
-    }
-    return (shortEdge * 0.138f).coerceIn(minDefaultPx, maxOf(minDefaultPx, maxDefaultPx))
-}
+): Float = SonyCameraNative.nativeTapFocusSide(
+    fittedWidth.toDouble(),
+    fittedHeight.toDouble(),
+    minDefaultPx.toDouble(),
+    maxDefaultPx.toDouble(),
+    minLearnedPx.toDouble(),
+    lastSquareRatio != null && lastSquareRatio.isFinite() && lastSquareRatio > 0f,
+    lastSquareRatio?.toDouble() ?: 0.0,
+).toFloat()
 
 internal fun mapViewfinderTapToCameraGrid(
     tapX: Float,
@@ -95,26 +93,20 @@ internal fun mapViewfinderTapToCameraGrid(
     imageWidth: Int,
     imageHeight: Int,
 ): CameraFocusTap? {
-    if (!tapX.isFinite() || !tapY.isFinite() || !containerWidth.isFinite() || !containerHeight.isFinite() ||
-        containerWidth <= 0f || containerHeight <= 0f || imageWidth <= 0 || imageHeight <= 0
-    ) {
-        return null
-    }
-    val iw = imageWidth.toFloat()
-    val ih = imageHeight.toFloat()
-    val scale = minOf(containerWidth / iw, containerHeight / ih)
-    val fittedWidth = iw * scale
-    val fittedHeight = ih * scale
-    val left = (containerWidth - fittedWidth) / 2f
-    val top = (containerHeight - fittedHeight) / 2f
-    if (tapX < left || tapX > left + fittedWidth || tapY < top || tapY > top + fittedHeight) {
-        return null
-    }
-    val u = ((tapX - left) / fittedWidth).coerceIn(0f, 1f)
-    val v = ((tapY - top) / fittedHeight).coerceIn(0f, 1f)
-    val x = (u * 640f).roundToInt().coerceIn(0, 639)
-    val y = (v * 480f).roundToInt().coerceIn(0, 479)
-    return CameraFocusTap(u = u, v = v, x = x, y = y)
+    val tap = SonyCameraNative.nativeFocusPointFromTap(
+        tapX.toDouble(),
+        tapY.toDouble(),
+        containerWidth.toDouble(),
+        containerHeight.toDouble(),
+        imageWidth.toDouble(),
+        imageHeight.toDouble(),
+    ) ?: return null
+    return CameraFocusTap(
+        u = tap[0].toFloat(),
+        v = tap[1].toFloat(),
+        x = tap[2].toInt(),
+        y = tap[3].toInt(),
+    )
 }
 
 /** 保留相机枚举中的完整 raw 值；显示换算不参与写入。 */

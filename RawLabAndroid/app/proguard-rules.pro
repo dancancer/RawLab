@@ -13,6 +13,7 @@
 -keep class com.rawlab.android.raster.NativePng16 { *; }
 -keep class com.rawlab.android.editor.inspection.InspectionNative { *; }
 -keep class com.rawlab.android.editor.canvas.ViewportNative { *; }
+-keep class com.rawlab.android.camera.SonyCameraNative { *; }
 
 # Aliyun RUM's native libraries resolve types in these packages by JNI class name.
 -keep class com.alibabacloud.rum.capture.anr.** { *; }
