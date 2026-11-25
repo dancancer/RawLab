@@ -67,6 +67,14 @@ internal static class ToneCurveRenderChecks
                 new ToneCurveShape(ToneCurveMode.Custom, [new(0, 0), new(0.5, 0.6), new(1, 1)]),
                 new(), new()));
         settings.Curve = v2;
+        var v2CompositeSamples = ToneCurveSampling.Samples(v2, ToneCurveChannel.Rgb, count: 257);
+        var v2PointOnlySamples = ToneCurveSampling.Samples(v2, ToneCurveChannel.Rgb, includeParametric: false, count: 257);
+        var v2ParametricOnlySamples = ToneCurveSampling.Samples(
+            new ToneCurveSettings(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: v2.Parametric),
+            ToneCurveChannel.Rgb, includeParametric: true, count: 257);
+        check(Math.Abs(v2PointOnlySamples[128].Y - 0.55) < 1e-9 && Math.Abs(v2CompositeSamples[128].Y - 0.55) > 1e-3 &&
+            Math.Abs(v2ParametricOnlySamples[0].Y - 0.0) < 1e-9 && Math.Abs(v2ParametricOnlySamples[^1].Y - 1.0) < 1e-9,
+            "Windows point-curve and parametric-curve canvas samplers isolate each sub-mode cleanly");
         var v2Preview = Preview(settings);
         check(!v2Preview.SequenceEqual(baseline) && !v2Preview.SequenceEqual(changed),
             "Track A v2 curve (unpinned Y, luminosity, parametric, red channel) reaches native pixels");

@@ -5503,13 +5503,13 @@
     "ja": "端点は固定されています",
     "zh-Hans": "端点固定"
   },
-  "点击曲线区域添加控制点，拖动控制点调整。": {
-    "de": "Zum Hinzufügen in die Kurvenfläche tippen. Kontrollpunkte zum Anpassen ziehen.",
-    "en": "Tap the curve area to add a point. Drag control points to adjust.",
-    "es": "Toca el área de la curva para añadir un punto. Arrastra los puntos de control para ajustar.",
-    "fr": "Touchez la zone de courbe pour ajouter un point. Faites glisser les points de contrôle pour ajuster.",
-    "ja": "カーブ領域をタップして点を追加します。制御点をドラッグして調整します。",
-    "zh-Hans": "点击曲线区域添加控制点，拖动控制点调整。"
+  "点击添加控制点；双击控制点或拖出画布可删除。": {
+    "de": "Zum Hinzufügen tippen oder klicken; Punkt zum Löschen doppeltippen oder herausziehen.",
+    "en": "Click or tap to add a point; double-tap a point or drag it outside to delete.",
+    "es": "Haz clic o toca para añadir un punto; haz doble clic sobre él o arrástralo fuera para eliminarlo.",
+    "fr": "Cliquez ou touchez pour ajouter un point ; double-cliquez dessus ou glissez-le hors du cadre pour le supprimer.",
+    "ja": "クリック／タップで点を追加。制御点のダブルタップまたは枠外へのドラッグで削除できます。",
+    "zh-Hans": "点击添加控制点；双击控制点或拖出画布可删除。"
   },
   "曲线模式与控制点": {
     "de": "Kurvenmodus und Punkte",
@@ -8926,14 +8926,6 @@
     "es": "Puntos de división",
     "ja": "分割ポイント",
     "zh-Hans": "拆分点"
-  },
-  "重置曲线": {
-    "en": "Reset Curve",
-    "de": "Kurve zurücksetzen",
-    "fr": "Réinitialiser la courbe",
-    "es": "Restablecer curva",
-    "ja": "カーブをリセット",
-    "zh-Hans": "重置曲线"
   },
   "明亮度": {
     "en": "Luminance",

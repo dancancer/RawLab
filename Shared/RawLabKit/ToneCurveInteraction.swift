@@ -25,18 +25,43 @@ public struct ToneCurveInputConfiguration {
 }
 
 public final class ToneCurveInputSession {
+    public static let dragOutDeleteMargin = 0.12
+    public static let doubleTapDeleteInterval: TimeInterval = 0.35
+    public static let significantMoveThreshold = 0.02
+
+    public static func isOutsideDeleteBounds(x: Double, y: Double) -> Bool {
+        let m = dragOutDeleteMargin
+        return x < -m || x > 1.0 + m || y < -m || y > 1.0 + m
+    }
+
     public var configuration: ToneCurveInputConfiguration?
+    private let now: () -> TimeInterval
     private struct Drag {
         let config: ToneCurveInputConfiguration
         let initial: ToneCurveSettings
         let index: Int
         let x: Double, y: Double, scale: Double
+        let hitExistingInterior: Bool
+        let startTime: TimeInterval
+        var latestPoint: ToneCurvePoint
+        var movedSignificantly = false
+        var removedByDragOut = false
+    }
+    private struct ArmedDelete {
+        let scope: String
+        let index: Int
+        let point: ToneCurvePoint
+        let time: TimeInterval
     }
     private var active: Drag?
-    public init() {}
+    private var armedDelete: ArmedDelete?
+    public init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.now = now
+    }
     public var isActive: Bool { active != nil }
     public func configure(_ next: ToneCurveInputConfiguration) {
         if let old = configuration, old.scope != next.scope || old.fine != next.fine || !next.enabled {
+            armedDelete = nil
             cancel(deferred: true)
         }
         configuration = next
@@ -45,24 +70,75 @@ public final class ToneCurveInputSession {
         guard active == nil, let config = configuration, config.enabled, config.isCurrent(),
               x.isFinite, y.isFinite, toleranceX > 0, toleranceY > 0,
               config.prepare() else { return false }
+        let timestamp = now()
+        let armed = armedDelete
+        armedDelete = nil
         let original = config.read()
         guard original.mode == .custom else { return false }
+
+        if let armed, armed.scope == config.scope,
+           timestamp >= armed.time, timestamp - armed.time <= Self.doubleTapDeleteInterval,
+           original.points.indices.contains(armed.index),
+           original.isInterior(armed.index),
+           original.points[armed.index] == armed.point,
+           distance(armed.point, x, y, toleranceX, toleranceY) <= 1 {
+            let removed = original.removing(index: armed.index)
+            guard removed != original, config.begin() else { config.cancel(); return false }
+            config.change(removed)
+            config.select(min(armed.index, max(0, removed.points.count - 1)))
+            config.end()
+            return false
+        }
+
         let nearest = original.points.enumerated().min { a, b in
             distance(a.element, x, y, toleranceX, toleranceY) < distance(b.element, x, y, toleranceX, toleranceY)
         }
         var initial = original
         let index: Int
+        let hitExistingInterior: Bool
         if let nearest, distance(nearest.element, x, y, toleranceX, toleranceY) <= 1 {
             index = nearest.offset
+            hitExistingInterior = original.isInterior(index)
         } else {
             initial = initial.inserting(x: x, y: y)
             guard initial != original, let inserted = initial.points.firstIndex(where: { $0.x == x }) else { return false }
             index = inserted
+            hitExistingInterior = false
         }
         guard config.begin() else { config.cancel(); return false }
         config.select(index)
-        active = Drag(config: config, initial: initial, index: index, x: x, y: y, scale: fine || config.fine ? 0.25 : 1)
+        active = Drag(
+            config: config,
+            initial: initial,
+            index: index,
+            x: x,
+            y: y,
+            scale: fine || config.fine ? 0.25 : 1,
+            hitExistingInterior: hitExistingInterior,
+            startTime: timestamp,
+            latestPoint: initial.points[index]
+        )
         if initial != original { config.change(initial) }
+        return true
+    }
+    @discardableResult public func removePoint(x: Double, y: Double, toleranceX: Double, toleranceY: Double) -> Bool {
+        cancel()
+        armedDelete = nil
+        guard let config = configuration, config.enabled, config.isCurrent(),
+              x.isFinite, y.isFinite, toleranceX > 0, toleranceY > 0,
+              config.prepare() else { return false }
+        let original = config.read()
+        guard original.mode == .custom,
+              let nearest = original.points.enumerated().min(by: { a, b in
+                  distance(a.element, x, y, toleranceX, toleranceY) < distance(b.element, x, y, toleranceX, toleranceY)
+              }),
+              distance(nearest.element, x, y, toleranceX, toleranceY) <= 1,
+              original.isInterior(nearest.offset) else { return false }
+        let removed = original.removing(index: nearest.offset)
+        guard removed != original, config.begin() else { config.cancel(); return false }
+        config.change(removed)
+        config.select(min(nearest.offset, max(0, removed.points.count - 1)))
+        config.end()
         return true
     }
     private func distance(_ point: ToneCurvePoint, _ x: Double, _ y: Double, _ tx: Double, _ ty: Double) -> Double {
@@ -70,22 +146,51 @@ public final class ToneCurveInputSession {
         return dx * dx + dy * dy
     }
     public func move(x: Double, y: Double) {
-        guard let drag = active else { return }
+        guard var drag = active else { return }
         guard drag.config.isCurrent() else { cancel(); return }
+        if hypot(x - drag.x, y - drag.y) > Self.significantMoveThreshold {
+            drag.movedSignificantly = true
+        }
+        if drag.initial.isInterior(drag.index) && Self.isOutsideDeleteBounds(x: x, y: y) {
+            let removed = drag.initial.removing(index: drag.index)
+            drag.removedByDragOut = true
+            active = drag
+            drag.config.select(min(drag.index, max(0, removed.points.count - 1)))
+            drag.config.change(removed)
+            return
+        }
+        let wasRemoved = drag.removedByDragOut
+        drag.removedByDragOut = false
         let start = drag.initial.points[drag.index]
-        drag.config.change(drag.initial.moving(index: drag.index,
-            x: start.x + (x - drag.x) * drag.scale, y: start.y + (y - drag.y) * drag.scale))
+        let moved = drag.initial.moving(index: drag.index,
+            x: start.x + (x - drag.x) * drag.scale, y: start.y + (y - drag.y) * drag.scale)
+        drag.latestPoint = moved.points[drag.index]
+        active = drag
+        if wasRemoved { drag.config.select(drag.index) }
+        drag.config.change(moved)
     }
     public func end() {
         guard let drag = active else { return }; active = nil
+        if drag.hitExistingInterior && !drag.movedSignificantly && !drag.removedByDragOut {
+            armedDelete = ArmedDelete(
+                scope: drag.config.scope,
+                index: drag.index,
+                point: drag.latestPoint,
+                time: drag.startTime
+            )
+        } else {
+            armedDelete = nil
+        }
         if drag.config.isCurrent() { drag.config.end() }
     }
     public func cancel(deferred: Bool = false) {
+        armedDelete = nil
         guard let drag = active else { return }; active = nil
         if deferred { DispatchQueue.main.async { if drag.config.isCurrent() { drag.config.cancel() } } }
         else if drag.config.isCurrent() { drag.config.cancel() }
     }
     public func key(horizontal: Double = 0, vertical: Double = 0, fine: Bool = false, remove: Bool = false) {
+        armedDelete = nil
         guard active == nil, let config = configuration, config.enabled, config.isCurrent(),
               config.prepare() else { return }
         let original = config.read()

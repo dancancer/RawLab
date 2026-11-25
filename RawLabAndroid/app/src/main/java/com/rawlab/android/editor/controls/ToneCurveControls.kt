@@ -1,14 +1,19 @@
 package com.rawlab.android.editor.controls
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -32,6 +37,14 @@ import com.rawlab.android.R
 import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.engine.ToneCurveSampling
 import com.rawlab.android.settings.*
+import kotlin.math.abs
+import kotlin.math.hypot
+
+private const val CURVE_DRAG_OUT_DELETE_MARGIN = 0.12
+private const val CURVE_DOUBLE_TAP_DELETE_MS = 350L
+private const val CURVE_SIGNIFICANT_MOVE_THRESHOLD = 0.02
+
+private data class ArmedCurvePointDelete(val index: Int, val point: ToneCurvePoint, val uptimeMillis: Long)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,9 +52,16 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
     onEdit: (ToneCurveSettings, Boolean) -> Unit, onLegacyEdit: (Float, Boolean) -> Unit,
     usesExposureStops: Boolean = false, hslTarget: HslTargetActions = HslTargetActions()) {
     val scope = LocalAdjustmentSession.current
-    var channel by remember(scope) { mutableStateOf(ToneCurveChannel.RGB) }
-    var parametricMode by remember(scope) { mutableStateOf(false) }
-    var selected by remember(scope, channel) { mutableIntStateOf(0) }
+    val scopeKey = scope?.toString().orEmpty()
+    val pointCurveModified = !settings.shape(ToneCurveChannel.RGB).isIdentity ||
+        (settings.mode == ToneCurveMode.LEGACY && abs(legacy) > 1e-6f)
+    val parametricModified = !settings.parametric.isDefault
+    var channelName by rememberSaveable(scopeKey) { mutableStateOf(ToneCurveChannel.RGB.name) }
+    val channel = ToneCurveChannel.entries.firstOrNull { it.name == channelName } ?: ToneCurveChannel.RGB
+    var parametricMode by rememberSaveable(scopeKey) {
+        mutableStateOf(parametricModified && !pointCurveModified)
+    }
+    var selected by rememberSaveable(scopeKey, channelName) { mutableIntStateOf(0) }
     var editing by remember(scope, channel) { mutableStateOf(false) }
     var switching by remember(scope, channel) { mutableStateOf(false) }
     var legacyEditing by remember(scope, channel) { mutableStateOf(false) }
@@ -71,30 +91,52 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
             )
         }
     }
+    val targetEnabled = hslTarget.state.enabled && hslTarget.state.curveMode
+    LaunchedEffect(targetEnabled, channel) {
+        if (targetEnabled && channel == ToneCurveChannel.RGB && parametricMode) {
+            parametricMode = false
+        }
+    }
     val legacyActive = channel == ToneCurveChannel.RGB && shape.mode == ToneCurveMode.LEGACY && legacy != 0f
     val showParametric = channel == ToneCurveChannel.RGB && parametricMode
     val labels = listOf("RGB", stringResource(R.string.hsl_red), stringResource(R.string.hsl_green), stringResource(R.string.hsl_blue))
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Row(Modifier.fillMaxWidth()) {
             ToneCurveChannel.entries.forEachIndexed { position, item ->
+                val itemModified = if (item == ToneCurveChannel.RGB) {
+                    pointCurveModified || parametricModified
+                } else {
+                    !settings.shape(item).isIdentity
+                }
+                val itemStatus = stringResource(if (itemModified) R.string.hsl_adjusted else R.string.hsl_unadjusted)
                 TextButton(onClick = {
                     if (channel != item) {
-                        channel = item
+                        channelName = item.name
                         hslTarget.curveChannel(item)
                     }
                 }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                    .testTag("curve-channel-${item.name.lowercase()}").semantics { this.selected = item == channel }) {
+                    .testTag("curve-channel-${item.name.lowercase()}")
+                    .semantics { this.selected = item == channel; stateDescription = itemStatus }) {
                     Text(labels[position], color = if (item == channel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (itemModified) {
+                        Spacer(Modifier.width(4.dp))
+                        Box(Modifier.size(4.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                    }
                 }
             }
         }
         if (channel == ToneCurveChannel.RGB) {
+            val pointTitle = stringResource(R.string.curve_point_mode)
+            val paramTitle = stringResource(R.string.curve_parametric_mode)
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(!parametricMode, { parametricMode = false }, enabled = enabled,
-                    label = { Text(stringResource(R.string.curve_point_mode)) },
+                    label = { Text(if (pointCurveModified) "$pointTitle •" else pointTitle) },
                     modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("curve-mode-point"))
-                FilterChip(parametricMode, { parametricMode = true }, enabled = enabled,
-                    label = { Text(stringResource(R.string.curve_parametric_mode)) },
+                FilterChip(parametricMode, {
+                    parametricMode = true
+                    if (targetEnabled) hslTarget.enabled(false)
+                }, enabled = enabled,
+                    label = { Text(if (parametricModified) "$paramTitle •" else paramTitle) },
                     modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("curve-mode-parametric"))
             }
         }
@@ -105,23 +147,24 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
                 onEdit(ToneCurveSettings(root.mode, root.points, root.channels, checked, root.parametric), false)
             }, enabled = enabled, modifier = Modifier.testTag("curve-luminosity-only"))
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val targetEnabled = hslTarget.state.enabled && hslTarget.state.curveMode
-            FilterChip(targetEnabled, { hslTarget.enabled(!hslTarget.state.enabled) }, enabled = enabled,
-                label = { Text(stringResource(R.string.hsl_target)) },
-                modifier = Modifier.heightIn(min = 44.dp).testTag("curve-target"))
-            if (targetEnabled) {
-                val targetMsg = when {
-                    hslTarget.state.waiting -> stringResource(R.string.hsl_target_waiting)
-                    hslTarget.state.notice == HslTargetAvailability.OUTSIDE -> stringResource(R.string.hsl_target_outside)
-                    hslTarget.state.notice == HslTargetAvailability.STALE -> stringResource(R.string.hsl_target_stale)
-                    hslTarget.state.notice == HslTargetAvailability.NONFINITE -> stringResource(R.string.hsl_target_unavailable)
-                    hslTarget.state.notice == HslTargetAvailability.FAILED -> stringResource(R.string.hsl_target_failed)
-                    else -> stringResource(R.string.hsl_target_instructions)
+        if (!showParametric) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(targetEnabled, { hslTarget.enabled(!hslTarget.state.enabled) }, enabled = enabled,
+                    label = { Text(stringResource(R.string.hsl_target)) },
+                    modifier = Modifier.heightIn(min = 44.dp).testTag("curve-target"))
+                if (targetEnabled) {
+                    val targetMsg = when {
+                        hslTarget.state.waiting -> stringResource(R.string.hsl_target_waiting)
+                        hslTarget.state.notice == HslTargetAvailability.OUTSIDE -> stringResource(R.string.hsl_target_outside)
+                        hslTarget.state.notice == HslTargetAvailability.STALE -> stringResource(R.string.hsl_target_stale)
+                        hslTarget.state.notice == HslTargetAvailability.NONFINITE -> stringResource(R.string.hsl_target_unavailable)
+                        hslTarget.state.notice == HslTargetAvailability.FAILED -> stringResource(R.string.hsl_target_failed)
+                        else -> stringResource(R.string.hsl_target_instructions)
+                    }
+                    Text(targetMsg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f).testTag("curve-target-status"))
                 }
-                Text(targetMsg, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f).testTag("curve-target-status"))
             }
         }
         CompositionLocalProvider(LocalAdjustmentSession provides (scope to channel)) {
@@ -137,7 +180,8 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
                 CurveCanvas(
                     curve, index, { selected = it }, enabled, Modifier.size(194.dp),
                     channel = channel,
-                    showSplitMarkers = showParametric || (channel == ToneCurveChannel.RGB && !curve.parametric.isDefault),
+                    showSplitMarkers = showParametric,
+                    allowsPointEditing = !showParametric,
                     onEdit = update,
                 )
                 if (usesExposureStops) Row(Modifier.width(170.dp).testTag("curve-hdr-ev-axis"), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -206,6 +250,21 @@ internal fun ToneCurveControls(settings: ToneCurveSettings, legacy: Float, enabl
                 val point = curve.points[index]
                 Text("${stringResource(R.string.curve_input)} ${coordinate(point.x)} · ${stringResource(R.string.curve_output)} ${coordinate(point.y)}",
                     Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                IconButton(
+                    onClick = {
+                        val next = current.removing(index)
+                        selected = minOf(index, (next.points.size - 1).coerceAtLeast(0))
+                        update(next, false)
+                    },
+                    enabled = enabled && curve.isInterior(index),
+                    modifier = Modifier.testTag("curve-quick-remove"),
+                ) {
+                    Icon(
+                        Icons.Outlined.Delete,
+                        contentDescription = stringResource(R.string.curve_remove_point),
+                        tint = if (enabled && curve.isInterior(index)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                    )
+                }
                 TextButton(onClick = { editing = true }, modifier = Modifier.testTag("curve-edit-point")) { Text(stringResource(R.string.curve_edit_point)) }
             }
         }
@@ -298,7 +357,7 @@ private fun CurveCoordinate(label: Int, value: Double, enabled: Boolean, tag: St
 @Composable
 private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int) -> Unit, enabled: Boolean,
     modifier: Modifier, channel: ToneCurveChannel = ToneCurveChannel.RGB, showSplitMarkers: Boolean = false,
-    onEdit: (ToneCurveSettings, Boolean) -> Unit) {
+    allowsPointEditing: Boolean = true, onEdit: (ToneCurveSettings, Boolean) -> Unit) {
     val scope = LocalAdjustmentSession.current
     val liveScope by rememberUpdatedState(scope)
     val current by rememberUpdatedState(value)
@@ -311,14 +370,25 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
     val requester = remember { FocusRequester() }
     var active by remember { mutableStateOf(false) }
     var cancellation by remember { mutableIntStateOf(0) }
-    val samples = remember(value, channel) {
-        ToneCurveSampling.samples(
-            if (channel == ToneCurveChannel.RGB) value else ToneCurveSettings(value.mode, value.points),
-            ToneCurveChannel.RGB,
-        )
+    var armedDelete by remember(scope, channel, showSplitMarkers) { mutableStateOf<ArmedCurvePointDelete?>(null) }
+    val isParametricView = showSplitMarkers && channel == ToneCurveChannel.RGB
+    val interactive = enabled && allowsPointEditing && !isParametricView
+    val samples = remember(value, channel, isParametricView) {
+        if (isParametricView) {
+            ToneCurveSampling.samples(
+                ToneCurveSettings(ToneCurveMode.CUSTOM, ToneCurveShape.identity.points, parametric = value.parametric),
+                ToneCurveChannel.RGB,
+            )
+        } else {
+            ToneCurveSampling.samples(ToneCurveSettings(value.mode, value.points), ToneCurveChannel.RGB)
+        }
     }
-    val title = stringResource(R.string.curve_title)
-    val description = stringResource(R.string.curve_summary, value.points.size)
+    val title = stringResource(if (isParametricView) R.string.curve_parametric_mode else R.string.curve_title)
+    val description = if (isParametricView) {
+        stringResource(if (value.parametric.isDefault) R.string.hsl_unadjusted else R.string.hsl_adjusted)
+    } else {
+        stringResource(R.string.curve_summary, value.points.size)
+    }
     val foreground = MaterialTheme.colorScheme.onSurface
     val primary = MaterialTheme.colorScheme.primary
     val curveTint = when (channel) {
@@ -331,10 +401,11 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
         contentDescription = title; stateDescription = description
         if (!enabled) disabled()
     }.focusRequester(requester).onKeyEvent { event ->
-        if (!enabled || event.type != KeyEventType.KeyDown) false
-        else if (active && event.key == Key.Escape) { cancellation++; true }
+        if (!interactive || event.type != KeyEventType.KeyDown) false
+        else if (active && event.key == Key.Escape) { armedDelete = null; cancellation++; true }
         else if (active || !current.canMoveY(selected)) false
         else {
+            armedDelete = null
             val point = current.points[selected]; val step = if (event.isShiftPressed || fine) .001 else .01
             val next = when (event.key) {
                 Key.DirectionLeft -> if (current.canMoveX(selected)) current.moving(selected, point.x - step, point.y) else null
@@ -346,47 +417,92 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
             }
             if (next == null) false else { if (next != current) update(next, false); true }
         }
-    }.focusable(enabled).pointerInput(scope, fine, enabled, windowFocused, cancellation) {
-        if (!enabled || !windowFocused) return@pointerInput
+    }.focusable(interactive).pointerInput(scope, fine, interactive, windowFocused, cancellation) {
+        if (!interactive || !windowFocused) return@pointerInput
         awaitEachGesture {
             val down = awaitFirstDown()
             val padding = 12.dp.toPx(); val width = (size.width - 2 * padding).coerceAtLeast(1f); val height = (size.height - 2 * padding).coerceAtLeast(1f)
+            val hitRadiusSq = 20.dp.toPx() * 20.dp.toPx()
             fun point(position: Offset) = ToneCurvePoint(((position.x - padding) / width).toDouble(), (1 - (position.y - padding) / height).toDouble())
             fun distance(p: ToneCurvePoint): Double {
                 val dx = (p.x * width + padding - down.position.x); val dy = ((1 - p.y) * height + padding - down.position.y)
                 return dx * dx + dy * dy
             }
             val start = current; val origin = point(down.position)
+            val armed = armedDelete
+            armedDelete = null
+            if (armed != null &&
+                down.uptimeMillis >= armed.uptimeMillis &&
+                down.uptimeMillis - armed.uptimeMillis <= CURVE_DOUBLE_TAP_DELETE_MS &&
+                armed.index in start.points.indices &&
+                start.isInterior(armed.index) &&
+                start.points[armed.index] == armed.point &&
+                distance(armed.point) <= hitRadiusSq
+            ) {
+                val removed = start.removing(armed.index)
+                if (removed != start) {
+                    select(minOf(armed.index, (removed.points.size - 1).coerceAtLeast(0)))
+                    requester.requestFocus()
+                    down.consume()
+                    update(removed, false)
+                    return@awaitEachGesture
+                }
+            }
             val nearest = start.points.indices.minBy { distance(start.points[it]) }
-            val hit = distance(start.points[nearest]) <= 20.dp.toPx() * 20.dp.toPx()
+            val hit = distance(start.points[nearest]) <= hitRadiusSq
+            val hitExistingInterior = hit && start.isInterior(nearest)
             val initial = if (hit) start else start.inserting(origin.x, origin.y)
             if (!hit && initial == start) return@awaitEachGesture
             val index = if (hit) nearest else initial.points.indexOfFirst { it.x == origin.x }
             select(index); requester.requestFocus()
             val updateAtStart = update; val cancelAtStart = cancel
             val handle = initial.points[index]; val scale = if (fine) .25 else 1.0
+            fun isOutsideBounds(p: ToneCurvePoint): Boolean =
+                p.x < -CURVE_DRAG_OUT_DELETE_MARGIN || p.x > 1.0 + CURVE_DRAG_OUT_DELETE_MARGIN ||
+                    p.y < -CURVE_DRAG_OUT_DELETE_MARGIN || p.y > 1.0 + CURVE_DRAG_OUT_DELETE_MARGIN
             fun moved(position: Offset): ToneCurveSettings {
                 val p = point(position)
                 return initial.moving(index, handle.x + (p.x - origin.x) * scale, handle.y + (p.y - origin.y) * scale)
             }
             var latest = initial; var changed = initial != start; var released = false
+            var movedSignificantly = false; var removedByDragOut = false
+            fun stepPosition(position: Offset): ToneCurveSettings {
+                val raw = point(position)
+                if (hypot(raw.x - origin.x, raw.y - origin.y) > CURVE_SIGNIFICANT_MOVE_THRESHOLD) {
+                    movedSignificantly = true
+                }
+                if (initial.isInterior(index) && isOutsideBounds(raw)) {
+                    val removed = initial.removing(index)
+                    removedByDragOut = true
+                    select(minOf(index, (removed.points.size - 1).coerceAtLeast(0)))
+                    return removed
+                }
+                if (removedByDragOut) {
+                    removedByDragOut = false
+                    select(index)
+                }
+                return moved(position)
+            }
             active = true; focus(true)
             try {
                 if (changed) updateAtStart(initial, true)
                 var change = down
                 do {
-                    val next = moved(change.position)
+                    val next = stepPosition(change.position)
                     if (next != latest) { changed = true; latest = next; updateAtStart(next, true) }
                     change.consume()
                     change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
                     if (!change.pressed && !change.isConsumed) {
-                        val final = moved(change.position)
+                        val final = stepPosition(change.position)
                         if (final != latest) { changed = true; latest = final; updateAtStart(final, true) }
                         released = true; change.consume(); break
                     }
                 } while (change.pressed && !change.isConsumed)
             } finally {
                 active = false; focus(false)
+                if (released && liveScope == scope && hitExistingInterior && !movedSignificantly && !removedByDragOut && index in latest.points.indices) {
+                    armedDelete = ArmedCurvePointDelete(index, latest.points[index], down.uptimeMillis)
+                }
                 if (changed) {
                     if (released && liveScope == scope) updateAtStart(latest, false)
                     else cancelAtStart { if (liveScope == scope) updateAtStart(start, false) }
@@ -403,7 +519,7 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
         }
         drawLine(foreground.copy(alpha = .5f), point(ToneCurvePoint(0.0, 0.0)), point(ToneCurvePoint(1.0, 1.0)),
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())))
-        if (showSplitMarkers) {
+        if (isParametricView) {
             val markerEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))
             for (splitX in listOf(value.parametric.splitShadow, value.parametric.splitMidtone, value.parametric.splitHighlight)) {
                 drawLine(foreground.copy(alpha = .35f), point(ToneCurvePoint(splitX, 0.0)), point(ToneCurvePoint(splitX, 1.0)),
@@ -412,7 +528,9 @@ private fun CurveCanvas(value: ToneCurveSettings, selected: Int, onSelect: (Int)
         }
         val path = Path(); samples.forEachIndexed { index, sample -> val p = point(sample); if (index == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }
         drawPath(path, curveTint, style = Stroke(2.dp.toPx()))
-        value.points.forEachIndexed { index, p -> drawCircle(if (index == selected) primary else curveTint,
-            (if (index == selected) 6.dp else 4.dp).toPx(), point(p)) }
+        if (!isParametricView) {
+            value.points.forEachIndexed { index, p -> drawCircle(if (index == selected) primary else curveTint,
+                (if (index == selected) 6.dp else 4.dp).toPx(), point(p)) }
+        }
     }
 }
