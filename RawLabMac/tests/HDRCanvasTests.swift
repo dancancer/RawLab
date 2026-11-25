@@ -135,6 +135,9 @@ private final class SlowRGBA16FSpy: HDRDisplayImage {
     private(set) var calls: [HDRPreviewMode] = []
     let sdrEntered = DispatchSemaphore(value: 0)
     let releaseSDR = DispatchSemaphore(value: 0)
+    // Signalled when the blocked .sdr call has really returned, so tests wait on the event
+    // instead of guessing how long the released worker takes to resume.
+    let sdrExited = DispatchSemaphore(value: 0)
 
     init() {
         let rgba = [UInt8](repeating: 128, count: 4 * 4 * 4)
@@ -157,6 +160,7 @@ private final class SlowRGBA16FSpy: HDRDisplayImage {
         lock.lock()
         calls.append(parameters.mode)
         lock.unlock()
+        defer { if parameters.mode == .sdr { sdrExited.signal() } }
         if parameters.mode == .sdr {
             sdrEntered.signal()
             releaseSDR.wait()
@@ -228,6 +232,16 @@ private func halfBitsToFloat(_ bits: UInt16) -> Float {
         }
     }
 
+    // The first visible frame can be followed by layout-driven frames; idle checks must start
+    // from a quiet canvas. A canvas that never goes quiet still fails the following idle check.
+    @MainActor static func drainPendingDraws(_ mtk: HDRMTKView, quiet: TimeInterval = 0.2, attempts: Int = 15) {
+        for _ in 0..<attempts {
+            mtk.resetDrawCallCount()
+            pumpMain(seconds: quiet)
+            if mtk.drawCallCount == 0 { return }
+        }
+    }
+
     @MainActor static func waitUntil(timeout: TimeInterval = 3.0, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -287,6 +301,7 @@ private func halfBitsToFloat(_ bits: UInt16) -> Float {
         try check(linear.allPlaneAccessesOffMainThread, "HDRLinearDisplayImage plane prep runs off the main thread")
         try check(linear.rgba16FCallCount == 0, "HDRLinearDisplayImage path uses Metal compute instead of CPU rgba16F")
 
+        drainPendingDraws(mtk)
         mtk.resetDrawCallCount()
         pumpMain(seconds: 0.4)
         try check(mtk.drawCallCount == 0, "Idle HDRCanvas produces 0 draw calls over 0.4s (actual: \(mtk.drawCallCount))")
@@ -445,6 +460,7 @@ private func halfBitsToFloat(_ bits: UInt16) -> Float {
         try check(waitUntil { slowSpy.callSnapshot.count >= 1 && raceMTK.drawCallCount >= 1 },
                   "Race test initial .automatic render completes")
 
+        drainPendingDraws(raceMTK)
         raceMTK.resetDrawCallCount()
         raceState.mode = .sdr
         try check(waitUntil { slowSpy.sdrEntered.wait(timeout: .now()) == .success },
@@ -456,6 +472,9 @@ private func halfBitsToFloat(_ bits: UInt16) -> Float {
         let drawsBeforeRelease = raceMTK.drawCallCount
 
         slowSpy.releaseSDR.signal()
+        try check(waitUntil { slowSpy.sdrExited.wait(timeout: .now()) == .success },
+                  "Released stale rgba16F(.sdr) returns")
+        // The stale result now hops back to the main queue; give it the same window as before.
         pumpMain(seconds: 0.3)
         let callsAfter = slowSpy.callSnapshot.count
         let drawsAfter = raceMTK.drawCallCount

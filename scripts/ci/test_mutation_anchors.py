@@ -209,6 +209,7 @@ class MutationAnchorTests(unittest.TestCase):
     def test_anchor_7_parallel_skip_swallow_fails_test_apple_models(self) -> None:
         files = (
             "scripts/ci/apple-models.sh",
+            "scripts/ci/apple_models_scheduler.py",
             "scripts/ci/swiftpm-rawlabkit.sh",
             "scripts/ci/test_apple_models.py",
         )
@@ -221,13 +222,11 @@ class MutationAnchorTests(unittest.TestCase):
 
             runner = root / "scripts/ci/apple-models.sh"
             source = runner.read_text(encoding="utf-8")
-            old_block = (
-                '                if ! fail_on_logged_skip "$suite_log" "$suite"; then\n'
-                '                    skip_fail=1\n'
-                '                fi\n'
-            )
+            # The scheduler judges every finished suite through this hook; dropping the
+            # invariant 7 call must turn the parallel SKIP regression red.
+            old_block = '    fail_on_logged_skip "$2" "$3"\n    exit $?\n'
             self.assertEqual(source.count(old_block), 1)
-            runner.write_text(source.replace(old_block, "", 1), encoding="utf-8")
+            runner.write_text(source.replace(old_block, "    exit 0\n", 1), encoding="utf-8")
 
             mutated = _run_test_script(test_target, root)
             self.assertNotEqual(mutated.returncode, 0, "Dropping parallel SKIP check must fail test_apple_models.py")
