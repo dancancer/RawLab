@@ -108,8 +108,8 @@ jobs:
           curl -fL --retry 2 https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o "$lint_dir/actionlint.tar.gz"
           echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $lint_dir/actionlint.tar.gz" | sha256sum -c -
           tar -xf "$lint_dir/actionlint.tar.gz" -C "$lint_dir"
-          "$lint_dir/actionlint"
-          python -m pytest -v
+          # test_workflow.py runs this pinned actionlint inside pytest.
+          RAWLAB_ACTIONLINT="$lint_dir/actionlint" python -m pytest -v
           python scripts/localization/generate.py --check
           python scripts/version/generate.py --check
           python scripts/specs/generate.py --check

@@ -446,6 +446,7 @@ int runCpuTests(const std::filesystem::path& fixtureDir) {
 }
 
 int runMetalTests(const std::filesystem::path& fixtureDir) {
+// gpu-portability: metal-only metal_edit_pixel_golden is registered only for Apple GPU builds and must fail loudly elsewhere
 #ifndef SONY2FUJI_ENABLE_METAL
     std::cerr << "FAIL metal_edit_pixel_golden requires SONY2FUJI_ENABLE_METAL\n";
     return 1;

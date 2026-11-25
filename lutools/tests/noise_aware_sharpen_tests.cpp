@@ -94,6 +94,7 @@ int main(int argc, char**) {
     assert(noiseAwareSharpenAvailable());
     behavior(GpuMode::Off);
     if (argc > 1) behavior(GpuMode::Force);
+// gpu-portability: metal-only applyNoiseAwareSharpen has a GPU path only in Metal (noise_aware_sharpen.cpp); D3D11/GLES sharpen inside their photo pipelines instead
 #ifndef SONY2FUJI_ENABLE_METAL
     auto source = edge(), cpu = source, automatic = source, forced = source;
     assert(applyNoiseAwareSharpen(cpu, 2) == ErrorCode::Success);

@@ -155,6 +155,7 @@ inline Json exportBuffers(const std::filesystem::path& directory, const ImageDat
         result["display"] = {{"status", "NOT_REQUESTED"}};
         return result;
     }
+// gpu-portability: metal-only the experiment display export is a Metal-only probe and throws elsewhere
 #ifdef SONY2FUJI_ENABLE_METAL
     sony2fuji::RenderParams params;
     params.inputType = sony2fuji::RenderInputType::Buffer;
