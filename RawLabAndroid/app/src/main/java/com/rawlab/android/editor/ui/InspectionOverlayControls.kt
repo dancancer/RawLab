@@ -22,7 +22,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
@@ -30,6 +29,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -440,7 +440,6 @@ internal fun InspectionSamplingHud(
 @Composable
 internal fun EditorCanvasBottomStack(
     visible: Boolean,
-    surroundingAlpha: Float,
     showInspection: Boolean,
     inspection: InspectionSessionState,
     pair: PreviewPair?,
@@ -454,14 +453,18 @@ internal fun EditorCanvasBottomStack(
     onSelectOverlay: (InspectionOverlayMode) -> Unit,
     onToggleGray50: () -> Unit,
     onCloseMonitor: () -> Unit,
+    onHeightChanged: (Int) -> Unit = {},
     modifier: Modifier = Modifier,
     workspaceActions: @Composable () -> Unit,
 ) {
+    LaunchedEffect(visible) {
+        if (!visible) onHeightChanged(0)
+    }
     if (!visible) return
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(surroundingAlpha)
+            .onSizeChanged { onHeightChanged(it.height) }
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         horizontalAlignment = Alignment.Start,

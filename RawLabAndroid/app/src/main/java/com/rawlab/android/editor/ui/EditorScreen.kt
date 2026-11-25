@@ -529,7 +529,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     LaunchedEffect(resetPresentation?.isEnabled) { if (resetPresentation?.isEnabled != true) resetMenu = false }
     @Composable fun workspaceActions(modifier: Modifier) {
         if (state.photo != null && !view.purePreview) Row(
-            modifier.fillMaxWidth(),
+            modifier.fillMaxWidth().alpha(surroundingAlpha),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -794,11 +794,12 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             }
             val showInspectionControls = !view.purePreview && state.photo != null &&
                 state.preview != null && state.draft?.group != AdjustmentGroup.GEOMETRY
-            val overlayExtraInset = if (showInspectionControls && inspection.overlay.isActive) 56.dp else 0.dp
-            val samplingExtraInset = if (showInspectionControls && (inspection.monitorEnabled || inspection.anchors.isNotEmpty())) {
-                56.dp + (inspection.anchors.size * 44).dp
-            } else 0.dp
-            val bottomControlsInset = 64.dp + overlayExtraInset + samplingExtraInset
+            var bottomControlsHeightPx by remember { mutableIntStateOf(0) }
+            val bottomControlsInset = if (bottomControlsHeightPx > 0) {
+                with(density) { bottomControlsHeightPx.toDp() }
+            } else {
+                64.dp
+            }
             Column(Modifier.fillMaxSize()) {
                 if (!view.purePreview) Spacer(Modifier.fillMaxWidth().height(4.dp))
                 if (wide && state.photo != null) {
@@ -827,7 +828,6 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                 )
                                 EditorCanvasBottomStack(
                                     visible = !view.purePreview,
-                                    surroundingAlpha = surroundingAlpha,
                                     showInspection = showInspectionControls,
                                     inspection = inspection,
                                     pair = state.preview,
@@ -841,6 +841,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                     onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
                                     onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
                                     onCloseMonitor = { inspection = inspection.copy(monitorEnabled = false) },
+                                    onHeightChanged = { h -> if (bottomControlsHeightPx != h) bottomControlsHeightPx = h },
                                     modifier = Modifier.align(Alignment.BottomCenter),
                                 ) {
                                     workspaceActions(Modifier)
@@ -874,7 +875,6 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         )
                         EditorCanvasBottomStack(
                             visible = !view.purePreview && state.photo != null,
-                            surroundingAlpha = surroundingAlpha,
                             showInspection = showInspectionControls,
                             inspection = inspection,
                             pair = state.preview,
@@ -888,6 +888,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             onSelectOverlay = { mode -> inspection = inspection.selectOverlay(mode) },
                             onToggleGray50 = { inspection = inspection.toggleNeutralGray50() },
                             onCloseMonitor = { inspection = inspection.copy(monitorEnabled = false) },
+                            onHeightChanged = { h -> if (bottomControlsHeightPx != h) bottomControlsHeightPx = h },
                             modifier = Modifier.align(Alignment.BottomCenter),
                         ) {
                             workspaceActions(Modifier)

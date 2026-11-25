@@ -133,13 +133,15 @@ internal object InspectionBitmap {
         if (mode == InspectionOverlayMode.NONE) return source
         if (mode == InspectionOverlayMode.NEUTRAL_GRAY_50) return gray50Bitmap
         val key = cacheKey(source, mode)
-        val cached = lookupCache(source, key)
+        var localRendered by remember(source, mode) { mutableStateOf<Bitmap?>(null) }
         var lastRendered by remember(mode) { mutableStateOf<Bitmap?>(null) }
-        if (cached != null) {
-            lastRendered = cached
-            return cached
+        val hit = localRendered?.takeIf { !it.isRecycled } ?: lookupCache(source, key)
+        if (hit != null) {
+            localRendered = hit
+            lastRendered = hit
+            return hit
         }
-        val rendered by produceState<Bitmap?>(null, key) {
+        val rendered by produceState<Bitmap?>(null, source, mode) {
             value = withContext(Dispatchers.Default) {
                 coroutineContext.ensureActive()
                 val w = source.width
@@ -160,7 +162,8 @@ internal object InspectionBitmap {
                 }
             }
         }
-        if (rendered != null) {
+        if (rendered != null && !rendered!!.isRecycled) {
+            localRendered = rendered
             lastRendered = rendered
             return rendered!!
         }
