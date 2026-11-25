@@ -45,13 +45,18 @@ $ProgressPreference = 'SilentlyContinue'
 
 function Pass([string]$message) { Write-Output "PASS: $message" }
 
-# One line per entry (relative path, size, UTC write time) so a failure can name what changed.
+# One line per entry so a failure can name what changed. Enumerated directory timestamps come from
+# NTFS parent-index entries that are updated lazily and drift without any write (a false alarm seen
+# on DESKTOP-216), so directories are recorded by presence and files by their own size and write time.
 function Get-LocalStateSnapshot {
     $state = Join-Path $env:LOCALAPPDATA 'RawLab'
     if (-not (Test-Path -LiteralPath $state)) { return @('<absent>') }
     $lines = @(Get-ChildItem -LiteralPath $state -Recurse -Force -ErrorAction Stop | Sort-Object FullName | ForEach-Object {
-        $length = if ($_.PSIsContainer) { 'dir' } else { $_.Length }
-        '{0}|{1}|{2}' -f $_.FullName.Substring($state.Length), $length, $_.LastWriteTimeUtc.ToString('o')
+        $relative = $_.FullName.Substring($state.Length)
+        if ($_.PSIsContainer) { '{0}|dir' -f $relative } else {
+            $file = New-Object IO.FileInfo $_.FullName
+            '{0}|{1}|{2}' -f $relative, $file.Length, $file.LastWriteTimeUtc.ToString('o')
+        }
     })
     if ($lines.Count -eq 0) { return @('<empty>') }
     return $lines

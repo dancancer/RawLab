@@ -1,4 +1,8 @@
 import hashlib
+from unittest import mock
+import re
+import json
+import io
 import importlib.util
 from pathlib import Path
 import subprocess
@@ -116,6 +120,196 @@ class SourcePackageTest(unittest.TestCase):
                 self.assertEqual(package.read('RawLabWindows/build.ps1'), b'current dirty contents')
                 self.assertIn('lutools/tests/fixtures/bayer-demosaic.dng', package.namelist())
                 self.assertEqual(package.read('LICENSE-ALIYUN-RUM-EXCEPTION'), b'fixture')
+
+
+
+def settings_for(module, profile=None, *argv):
+    args = module.build_parser().parse_args(list(argv))
+    return module.resolve_settings(args, profile or {})
+
+
+PROFILE = {
+    'host': 'builder@windows.example', 'port': 2222, 'proxy_jump': 'jump@gateway.example',
+    'identity': '~/.ssh/example_key', 'known_hosts': '~/.ssh/example_known_hosts',
+    'pwsh': 'E:/Tools/pwsh/pwsh.exe', 'dotnet_dir': 'E:/Tools/dotnet', 'python': 'E:/Tools/python/python.exe',
+    'workspace': 'C:/RawLabBuild/verify/rawtools', 'path_prepend': ['C:/RawLabBuild/tools/cargo/bin'],
+    'env': {'RUSTUP_TOOLCHAIN': '1.99.1', 'RAWLAB_SOURCE_ARCHIVE_CACHE': 'E:/RawLabCI/cache/rawlab-deps'},
+}
+
+
+class ProfileAndConnectionTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module()
+
+    def test_profile_file_is_loaded_and_cli_options_override_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'hosts.json'
+            path.write_text(json.dumps({'fast': PROFILE}))
+            profile = self.module.load_profile(path, 'fast')
+            settings = settings_for(self.module, profile, '--port', '22', '--env', 'EXTRA=1',
+                                    '--env', 'RUSTUP_TOOLCHAIN=stable')
+            self.assertEqual(settings['port'], 22)
+            self.assertEqual(settings['proxy_jump'], 'jump@gateway.example')
+            self.assertEqual(settings['env'], {'RUSTUP_TOOLCHAIN': 'stable', 'EXTRA': '1',
+                                               'RAWLAB_SOURCE_ARCHIVE_CACHE': 'E:/RawLabCI/cache/rawlab-deps'})
+            path.write_text(json.dumps({'fast': {**PROFILE, 'password': 'x'}}))
+            with self.assertRaises(SystemExit):
+                self.module.load_profile(path, 'fast')
+            with self.assertRaises(SystemExit):
+                self.module.load_profile(path, 'missing')
+
+    def test_ssh_and_scp_use_port_jump_key_known_hosts_and_unquoted_text_mode_shell(self):
+        settings = settings_for(self.module, PROFILE)
+        command = self.module.ssh_command(settings, 'ENCODED')
+        self.assertEqual(command[0], 'ssh')
+        self.assertEqual(command[command.index('-p') + 1], '2222')
+        self.assertEqual(command[command.index('-J') + 1], 'jump@gateway.example')
+        self.assertEqual(command[command.index('-i') + 1], str(Path('~/.ssh/example_key').expanduser()))
+        self.assertIn(f"UserKnownHostsFile={Path('~/.ssh/example_known_hosts').expanduser()}", command)
+        self.assertIn('StrictHostKeyChecking=yes', command)
+        # Works whether the remote login shell is cmd.exe or PowerShell.
+        self.assertEqual(command[-1], 'E:/Tools/pwsh/pwsh.exe -NoProfile -NonInteractive -OutputFormat Text '
+                                      '-ExecutionPolicy Bypass -EncodedCommand ENCODED')
+        # Full scripts run from a copied file: cmd.exe login shells cap command lines near 8 KB.
+        long_script = self.module.verify_script(settings, 'C:/RawLabBuild/incoming/1', True, 'a', 'b', 'f.dng')
+        self.assertGreater(len(self.module.encode(long_script)), 8191)
+        by_file = self.module.ssh_command(settings, script_file='C:/RawLabBuild/incoming/1/remote.ps1')
+        self.assertTrue(by_file[-1].endswith('-File C:/RawLabBuild/incoming/1/remote.ps1'))
+        self.assertLess(len(' '.join(by_file)), 8191)
+        scp = self.module.scp_command(settings, Path('/tmp/a.zip'), 'builder@windows.example:C:/x/a.zip')
+        self.assertEqual(scp[scp.index('-P') + 1], '2222')
+        self.assertIn('-J', scp)
+
+    def test_unsafe_settings_are_rejected_before_anything_runs(self):
+        for override in ({'pwsh': 'C:/Program Files/PowerShell/7/pwsh.exe'}, {'workspace': 'C:/Users/me/work'},
+                         {'workspace': "C:/RawLabBuild/x'; Remove-Item"}, {'path_prepend': ['relative/bin']},
+                         {'env': {'A': "x'y"}}, {'dotnet_dir': 'C:/dotnet;calc'}, {'host': None}):
+            with self.subTest(override=override):
+                with self.assertRaises(SystemExit):
+                    settings_for(self.module, {**PROFILE, **override})
+        with self.assertRaises(SystemExit):
+            settings_for(self.module, PROFILE, '--env', 'NOT-VALID=1')
+
+    def test_repository_code_carries_no_host_details(self):
+        # Addresses, accounts, jump hosts and key names belong to the private profile file only.
+        text = (Path(__file__).resolve().parents[1] / 'build-remote.py').read_text(encoding='utf-8')
+        self.assertIsNone(re.search(r'\b\d{1,3}(?:\.\d{1,3}){3}\b', text))
+        self.assertNotIn('rawlab_vm100', text)
+        self.assertNotIn('id_ed25519', text)
+        self.assertNotRegex(text, r"'[a-z]+@[A-Za-z0-9.-]+'")
+
+
+class IncrementalSyncTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module()
+
+    def test_plan_uploads_only_new_or_changed_content_and_removes_stale_files(self):
+        local = {'same.cpp': 'a', 'edited.cpp': 'b2', 'new.cpp': 'c'}
+        remote = {'same.cpp': 'a', 'edited.cpp': 'b1', 'gone.cpp': 'd'}
+        self.assertEqual(self.module.sync_plan(local, remote), (['edited.cpp', 'new.cpp'], ['gone.cpp']))
+        self.assertEqual(self.module.sync_plan(local, local), ([], []))
+
+    def test_change_package_holds_changed_files_and_the_full_manifest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            for name, content in {'a.txt': 'a', 'b.txt': 'b'}.items():
+                (root / name).write_text(content)
+            local = self.module.local_manifest(root, ['a.txt', 'b.txt'])
+            self.assertEqual(local['a.txt'], hashlib.sha256(b'a').hexdigest())
+            archive = root / 'changes.zip'
+            self.module.package_changes(root, archive, local, ['b.txt'], ['old.txt'])
+            with zipfile.ZipFile(archive) as package:
+                self.assertEqual(sorted(package.namelist()), ['.rawlab-sync-plan.json', 'b.txt'])
+                plan = json.loads(package.read('.rawlab-sync-plan.json'))
+            self.assertEqual(plan, {'changed': ['b.txt'], 'removed': ['old.txt'], 'manifest': local})
+
+    def test_remote_sync_rewrites_only_changed_files_and_marks_them_new(self):
+        block = self.module.SYNC_BLOCK
+        self.assertIn('foreach ($name in @($plan.changed))', block)
+        self.assertIn('.LastWriteTime = $now', block)
+        self.assertIn('Resolve-WorkspacePath', block)
+        self.assertNotIn('Copy-Item "$staging/*"', block, 'a blanket copy would reset every mtime')
+
+
+class VerifyModeTest(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module()
+        self.settings = settings_for(self.module, PROFILE)
+
+    def script(self, **kwargs):
+        options = {'models': False, 'ctest_filter': None, 'v08_suite': None, 'raw_name': ''}
+        options.update(kwargs)
+        return self.module.verify_script(self.settings, 'C:/RawLabBuild/incoming/1', options['models'],
+                                         options['ctest_filter'], options['v08_suite'], options['raw_name'])
+
+    def test_every_verify_run_isolates_app_data_cleans_up_and_checks_local_state(self):
+        script = self.script(models=True)
+        self.assertIn("$env:RAWLAB_APPDATA_ROOT = Join-Path $incoming 'appdata'", script)
+        self.assertIn('} finally {', script)
+        self.assertIn('Remove-Item -LiteralPath $incoming -Recurse -Force', script)
+        self.assertIn('%LOCALAPPDATA%\\RawLab changed during verification', script)
+        self.assertNotIn('Compress-Archive', script)
+        self.assertLess(script.index('$stateBefore = Get-RawLabState'), script.index('try {'))
+        self.assertIn("$env:RUSTUP_TOOLCHAIN = '1.99.1'", script)
+        self.assertIn("$dotnet = 'E:/Tools/dotnet/dotnet.exe'", script)
+
+    def test_requested_phases_only(self):
+        models = self.script(models=True)
+        self.assertIn('windows-models.ps1', models)
+        self.assertNotIn('build.ps1', models)
+        ctest = self.script(ctest_filter='^windows_display_image$')
+        self.assertLess(ctest.index('build.ps1'), ctest.index('ctest.exe'))
+        self.assertIn("-R '^windows_display_image$'", ctest)
+        v08 = self.script(v08_suite='batch-selection', raw_name='fixture.dng')
+        self.assertIn('run-v08.ps1" -RawPath "$incoming/fixture.dng"', v08)
+        self.assertIn("-Only 'batch-selection'", v08)
+
+    def test_argument_combinations_are_validated(self):
+        parser = self.module.build_parser()
+        bad = (['--verify'], ['--models'], ['--verify', '--ctest-filter', "x'; calc"],
+               ['--verify', '--v08-only', 'batch-selection'], ['--verify', '--models', '--test'])
+        for argv in bad:
+            with self.subTest(argv=argv):
+                with self.assertRaises(SystemExit):
+                    self.module.validate_args(parser, parser.parse_args(argv))
+        self.module.validate_args(parser, parser.parse_args(['--verify', '--models', '--ctest-filter', 'a|b']))
+
+    def test_verify_run_leaves_nothing_in_the_repository_or_temp_dir(self):
+        calls = []
+        remote_scripts = []
+
+        def fake_run(command, *args, **kwargs):
+            if command[0] in ('ssh', 'scp'):
+                calls.append(command)
+                return subprocess.CompletedProcess(command, 0, '', '')
+            return real_run(command, *args, **kwargs)
+
+        real_run = subprocess.run
+        root = Path(__file__).resolve().parents[2]
+        before = set((root / 'build').glob('windows-remote/*')) if (root / 'build').exists() else set()
+        created = []
+        real_tempdir = tempfile.TemporaryDirectory
+
+        def tracking_tempdir(*args, **kwargs):
+            directory = real_tempdir(*args, **kwargs)
+            created.append(Path(directory.name))
+            return directory
+
+        with mock.patch.object(self.module.subprocess, 'run', side_effect=fake_run), \
+                mock.patch.object(self.module, 'run_remote',
+                                  side_effect=lambda settings, script, log, incoming: remote_scripts.append(script) or 0), \
+                mock.patch.object(self.module, 'ensure_lut_assets'), \
+                mock.patch.object(self.module.tempfile, 'TemporaryDirectory', side_effect=tracking_tempdir), \
+                mock.patch('sys.stdout', new=io.TextIOWrapper(io.BytesIO())):
+            self.module.main(['--host', 'builder@windows.example', '--workspace', 'C:/RawLabBuild/verify/x',
+                              '--verify', '--models'])
+        after = set((root / 'build').glob('windows-remote/*')) if (root / 'build').exists() else set()
+        self.assertEqual(after, before, 'verify mode must not write build/windows-remote')
+        self.assertEqual(len(created), 1)
+        self.assertFalse(created[0].exists(), 'local staging directory must be removed')
+        self.assertTrue(any(command[0] == 'scp' and command[-1].endswith('/changes.zip') for command in calls))
+        self.assertEqual(len(remote_scripts), 1)
+        self.assertIn('windows-models.ps1', remote_scripts[0])
 
 
 if __name__ == '__main__':
