@@ -104,7 +104,7 @@ UI 改动先完成本地受影响的界面回归，通过后再提交；普通 W
 
 ```bash
 git fetch origin
-git merge-tree --write-tree --name-only origin/development HEAD   # 退出码 0 无冲突；1 列出冲突文件
+git merge-tree --write-tree --name-only origin/development HEAD   # 退出码 0 无冲突；1 有冲突：首行是 tree OID，其后是冲突文件和说明
 git diff --name-only "$(git merge-base origin/development HEAD)" origin/development   # 上游新改动
 ```
 
