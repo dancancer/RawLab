@@ -132,7 +132,14 @@ def macos_matrix(checks):
     intel = {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"}
     if checks in ("contracts", "models"):
         return [arm]
-    return [arm, *[{**intel, "suite": suite} for suite in (("build",) if checks == "build" else ("core", "agent", "render"))]]
+    if checks == "build":
+        return [arm, {**intel, "suite": "build"}]
+    # full is a cold build: every shard would rebuild every dependency, lutools and the app
+    # (~40 min each), so one Intel job builds once and runs core, agent and render in turn.
+    # native restores the dependency cache, so its parallel shards stay cheaper in wall time.
+    if checks == "full":
+        return [arm, {**intel, "suite": "intel"}]
+    return [arm, *[{**intel, "suite": suite} for suite in ("core", "agent", "render")]]
 
 
 def select(event_name, event, sha, changed_files, last_success):

@@ -34,7 +34,7 @@ pins in `scripts/ci/ai-inputs.py` and `RawLabWindows/build.ps1`.
 For CI, provision the licensed complete package once at
 `$RAWLAB_AI_SHARED_CACHE/ai-models/<manifest-sha256>/complete`, or explicitly set
 `RAWLAB_DUALDN_MODEL_DIR`. Within the macOS matrix, only the Apple Silicon full job provisions AI inputs; its default cache
-root is `~/.cache/rawlab-ci`. Intel full shards still build and run their native
+root is `~/.cache/rawlab-ci`. The Intel full job still builds and runs its native
 suites without AI models or CPU neural inference. Windows uses its runner's shared cache root. Provisioning is an administrator action, not an unverified public download.
 A missing model fails AI-enabled Apple Silicon macOS and Windows full checks.
 Intel full checks do not require these models. CI never reads signing private keys.
