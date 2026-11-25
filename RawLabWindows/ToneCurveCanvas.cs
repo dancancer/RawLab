@@ -37,6 +37,10 @@ public sealed class ToneCurveCanvas : FrameworkElement
     private ToneCurveChannel channel = ToneCurveChannel.Rgb;
     private bool IsParametricView => showSplitMarkers && channel == ToneCurveChannel.Rgb;
     public Func<bool>? PrepareEditing { get; set; }
+    internal Func<ToneCurveSettings, ToneCurveChannel, bool, IReadOnlyList<ToneCurvePoint>> Sampler { get; set; } =
+        static (next, ch, includeParametric) => ToneCurveSampling.Samples(next, ch, includeParametric);
+    internal Func<bool>? CaptureMouseOverride { get; set; }
+    internal Action? ReleaseMouseCaptureOverride { get; set; }
     public event Action<ToneCurveSettings, bool>? Changed;
     public event Action<int>? SelectionChanged;
     public ToneCurveCanvas()
@@ -70,14 +74,20 @@ public sealed class ToneCurveCanvas : FrameworkElement
             value = next;
             if (IsParametricView) {
                 var parametricOnly = new ToneCurveSettings(ToneCurveMode.Custom, ToneCurveShape.Identity.Points, parametric: next.Parametric);
-                samples = ToneCurveSampling.Samples(parametricOnly, ToneCurveChannel.Rgb, includeParametric: true);
+                samples = Sampler(parametricOnly, ToneCurveChannel.Rgb, true);
             } else {
                 samples = (next.Mode == ToneCurveMode.Legacy)
                     ? []
-                    : ToneCurveSampling.Samples(next, ToneCurveChannel.Rgb, includeParametric: false);
+                    : Sampler(next, ToneCurveChannel.Rgb, false);
             }
         }
         InvalidateVisual();
+    }
+    private bool AcquirePointerCapture() => CaptureMouseOverride != null ? CaptureMouseOverride() : CaptureMouse();
+    private void ReleasePointerCapture()
+    {
+        if (ReleaseMouseCaptureOverride != null) ReleaseMouseCaptureOverride();
+        else ReleaseMouseCapture();
     }
     private static bool IsOutsideDeleteBounds(Point p) =>
         p.X < -DragOutDeleteMargin || p.X > 1.0 + DragOutDeleteMargin ||
@@ -86,9 +96,15 @@ public sealed class ToneCurveCanvas : FrameworkElement
     private Point CanvasPoint(ToneCurvePoint p) => new(12 + p.X * (ActualWidth - 24), 12 + (1 - p.Y) * (ActualHeight - 24));
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
-        if (!IsEnabled || value.Mode == ToneCurveMode.Legacy || IsParametricView || PrepareEditing?.Invoke() == false) return;
-        var location = e.GetPosition(this); var origin = Normalized(location);
-        var nowMs = Environment.TickCount64;
+        if (HandleLeftButtonDown(e.GetPosition(this), e.ClickCount, (Keyboard.Modifiers & ModifierKeys.Shift) != 0, Environment.TickCount64)) {
+            e.Handled = true;
+        }
+    }
+    internal bool HandleLeftButtonDown(Point location, int clickCount = 1, bool fine = false, long? nowMsOverride = null)
+    {
+        if (!IsEnabled || value.Mode == ToneCurveMode.Legacy || IsParametricView || PrepareEditing?.Invoke() == false) return false;
+        var origin = Normalized(location);
+        var nowMs = nowMsOverride ?? Environment.TickCount64;
         var armed = armedDelete;
         armedDelete = null;
         double Distance(int index) { var p = CanvasPoint(value.Points[index]) - location; return p.LengthSquared; }
@@ -96,7 +112,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
         if (armed is not null &&
             Equals(armed.Source, source) &&
             armed.Channel == channel &&
-            (e.ClickCount >= 2 || (nowMs >= armed.TickMs && nowMs - armed.TickMs <= DoubleClickDeleteWindowMs)) &&
+            (clickCount >= 2 || (nowMs >= armed.TickMs && nowMs - armed.TickMs <= DoubleClickDeleteWindowMs)) &&
             armed.Index >= 0 && armed.Index < value.Points.Count &&
             value.IsInterior(armed.Index) &&
             value.Points[armed.Index] == armed.Point &&
@@ -110,8 +126,7 @@ public sealed class ToneCurveCanvas : FrameworkElement
                 SetValue(removed);
                 Changed?.Invoke(removed, false);
                 RaiseEvent(new RoutedEventArgs(ParameterRow.GestureCompletedEvent));
-                e.Handled = true;
-                return;
+                return true;
             }
         }
 
@@ -120,26 +135,33 @@ public sealed class ToneCurveCanvas : FrameworkElement
         var hitExistingInterior = hitExisting && value.IsInterior(index);
         var before = value; var initial = hitExisting ? value : value.Inserting(origin.X, origin.Y);
         if (initial != value) index = initial.Points.ToList().FindIndex(p => p.X == origin.X);
-        else if (!hitExisting) return;
-        if (!CaptureMouse()) return;
+        else if (!hitExisting) return false;
+        if (!AcquirePointerCapture()) return false;
         Focus(); selected = index; SelectionChanged?.Invoke(index);
-        drag = new(before, initial, index, origin, (Keyboard.Modifiers & ModifierKeys.Shift) != 0, hitExistingInterior, nowMs);
+        drag = new(before, initial, index, origin, fine, hitExistingInterior, nowMs);
         dragMovedSignificantly = false;
         dragRemovedByDragOut = false;
         dragLatestPoint = initial.Points[index];
         changed = false;
         RaiseEvent(new RoutedEventArgs(ParameterRow.GestureStartedEvent));
-        Publish(initial, true); e.Handled = true;
+        Publish(initial, true);
+        return true;
     }
     protected override void OnMouseRightButtonDown(MouseButtonEventArgs e)
     {
-        if (!IsEnabled || value.Mode == ToneCurveMode.Legacy || IsParametricView || PrepareEditing?.Invoke() == false) {
-            base.OnMouseRightButtonDown(e);
+        if (HandleRightButtonDown(e.GetPosition(this))) {
+            e.Handled = true;
             return;
+        }
+        base.OnMouseRightButtonDown(e);
+    }
+    internal bool HandleRightButtonDown(Point location)
+    {
+        if (!IsEnabled || value.Mode == ToneCurveMode.Legacy || IsParametricView || PrepareEditing?.Invoke() == false) {
+            return false;
         }
         CancelGesture();
         armedDelete = null;
-        var location = e.GetPosition(this);
         double Distance(int index) { var p = CanvasPoint(value.Points[index]) - location; return p.LengthSquared; }
         var index = Enumerable.Range(0, value.Points.Count).MinBy(Distance);
         if (Distance(index) <= 144 && value.IsInterior(index)) {
@@ -152,11 +174,10 @@ public sealed class ToneCurveCanvas : FrameworkElement
                 SetValue(removed);
                 Changed?.Invoke(removed, false);
                 RaiseEvent(new RoutedEventArgs(ParameterRow.GestureCompletedEvent));
-                e.Handled = true;
-                return;
+                return true;
             }
         }
-        base.OnMouseRightButtonDown(e);
+        return false;
     }
     private void Move(Point p)
     {
@@ -190,28 +211,47 @@ public sealed class ToneCurveCanvas : FrameworkElement
     {
         if (drag == null) return;
         if (e.LeftButton != MouseButtonState.Pressed) { CancelGesture(); return; }
-        Move(Normalized(e.GetPosition(this))); e.Handled = true;
+        if (HandlePointerMove(e.GetPosition(this))) e.Handled = true;
+    }
+    internal bool HandlePointerMove(Point location)
+    {
+        if (drag == null) return false;
+        Move(Normalized(location));
+        return true;
     }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
-        if (drag is not {} active) return;
-        Move(Normalized(e.GetPosition(this)));
+        if (HandleLeftButtonUp(e.GetPosition(this))) e.Handled = true;
+    }
+    internal bool HandleLeftButtonUp(Point location)
+    {
+        if (drag is not {} active) return false;
+        Move(Normalized(location));
         var shouldArm = active.HitExistingInterior && !dragMovedSignificantly && !dragRemovedByDragOut;
-        armedDelete = shouldArm
-            ? new ArmedDelete(source, channel, active.Index, dragLatestPoint, active.StartTickMs)
-            : null;
-        drag = null; ReleaseMouseCapture();
+        var armedPoint = dragLatestPoint;
+        drag = null;
+        // ReleasePointerCapture synchronously raises LostMouseCapture in WPF; clear drag first and arm delete afterwards.
+        ReleasePointerCapture();
         if (changed) Changed?.Invoke(value, false);
-        changed = false; RaiseEvent(new RoutedEventArgs(ParameterRow.GestureCompletedEvent)); e.Handled = true;
+        changed = false;
+        RaiseEvent(new RoutedEventArgs(ParameterRow.GestureCompletedEvent));
+        armedDelete = shouldArm
+            ? new ArmedDelete(source, channel, active.Index, armedPoint, active.StartTickMs)
+            : null;
+        return true;
     }
     public void CancelGesture()
     {
         armedDelete = null;
         if (drag is not {} active) return;
-        drag = null; changed = false; dragRemovedByDragOut = false; ReleaseMouseCapture(); SetValue(active.Before);
+        drag = null; changed = false; dragRemovedByDragOut = false; ReleasePointerCapture(); SetValue(active.Before);
         RaiseEvent(new RoutedEventArgs(ParameterRow.GestureCancelledEvent));
     }
-    protected override void OnLostMouseCapture(MouseEventArgs e) { CancelGesture(); base.OnLostMouseCapture(e); }
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        if (drag != null) CancelGesture();
+        base.OnLostMouseCapture(e);
+    }
     protected override void OnKeyDown(KeyEventArgs e)
     {
         armedDelete = null;
