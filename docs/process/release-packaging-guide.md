@@ -67,7 +67,7 @@
    - 依次执行：`generate.py --check` 与构建号单调/血统门禁（`scripts.ci.test_versioning`）、入库文档相对链接（`scripts.ci.test_doc_links`）、RawLabMac 主工程 `swiftc -typecheck`（与 `RawLabMac/build.sh` 同一组源文件，打开 `RAWLAB_RUM`，拦截只有完整应用编译才暴露的 SwiftUI 编译错误）、`scripts/ci/apple-models.sh macos|ios`。
    - 任一步失败立即停止，并在 stderr 打印失败步骤名与退出码；apple-models 并行失败时会额外汇总每个失败套件及其退出码。
    - SwiftPM 产物缓存在 `<worktree>/.cache/tmp/release-preflight`（可用 `RAWLAB_PREFLIGHT_CACHE` 改位置），与本 worktree 源码绑定；首次约 80 秒，增量约 40 秒；发布结束后随 worktree 一起清理。
-4. **CI 手动门禁错峰派发**：`checks=full` 是发布门禁，按设计冷编原生依赖（`cold=true`，只查询不恢复缓存），并在 `macOS full (arm64, all)` 与 `(x86_64, core)` 成功后保存原生依赖缓存；`checks=build` 不是冷构建，会直接恢复同一缓存键。
+4. **CI 手动门禁错峰派发**：`checks=full` 是发布门禁，按设计冷编原生依赖（`cold=true`，只查询不恢复缓存），并在 `macOS full (arm64, all)` 与 `(x86_64, intel)` 成功后保存原生依赖缓存（full 的 Intel 部分只构建一次，在同一作业里依次跑 core、agent、render）；`checks=build` 不是冷构建，会直接恢复同一缓存键。
    - 先派发 `platform=macos checks=full`，等上述两个作业结束（`Save successful native dependencies` 完成，或因缓存键已存在而显示 skipped）后再派发 `platform=macos checks=build`；同时派发时 build 的 arm64 与 x86_64 两个作业会与 full 的四个作业一起冷编，并争用 GitHub 托管 macOS 的并发额度，整体反而更慢。
    - 不同 `(platform, checks)` 组合的派发互不取消；同一组合重复派发会取消前一次，等它结束再重派。
 

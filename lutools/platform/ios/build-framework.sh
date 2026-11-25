@@ -35,7 +35,10 @@ fetch wavelib-7f61bf5.tar.gz 62247c314bc98d395b0558882b37254b653753f0e1635cd5bd9
     https://github.com/rafat/wavelib/archive/7f61bf592f3c470b2a7d8199431fde821d7253ac.tar.gz wavelib-7f61bf592f3c470b2a7d8199431fde821d7253ac
 cmake -DLIBRAW_SOURCE_DIR="$SOURCES/$RAWLAB_LIBRAW_DIRECTORY" -P "$ROOT/cmake/patch-libraw.cmake"
 
-for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
+build_slice() {
+    local config="$1"
+    shift
+    local sdk arch sysroot rust_target core framework name
     sdk="${config%-*}"
     arch="${config##*-}"
     sysroot="$(xcrun --sdk "$sdk" --show-sdk-path)"
@@ -106,7 +109,43 @@ for config in iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64; do
     cp "$core/licenses/libtiff/LICENSE.md" "$framework/Licenses/libtiff-LICENSE.md"
     test -d "$core/licenses/dng-sdk"
     cp -R "$core/licenses/dng-sdk" "$framework/Licenses/"
-done
+}
+
+SLICES=(iphoneos-arm64 iphonesimulator-arm64 iphonesimulator-x86_64)
+# Slices share only the verified sources above; each has its own build tree and Cargo target
+# directory. CMake's Xcode configure is mostly serial try_compile latency (~8 min per slice),
+# so RAWLAB_IOS_PARALLEL_SLICES=1 overlaps the slices; each slice still uses -j "$JOBS".
+if [ "${RAWLAB_IOS_PARALLEL_SLICES:-0}" = 1 ]; then
+    logs="$ROOT/build-ios/slice-logs"
+    rm -rf "$logs"
+    mkdir -p "$logs"
+    pids=()
+    for config in "${SLICES[@]}"; do
+        build_slice "$config" "$@" > "$logs/$config.log" 2>&1 &
+        pids+=("$!")
+    done
+    failed=()
+    for i in "${!SLICES[@]}"; do
+        rc=0
+        wait "${pids[$i]}" || rc=$?
+        printf '[slice] %s (exit %s)\n' "${SLICES[$i]}" "$rc"
+        cat "$logs/${SLICES[$i]}.log"
+        if [ "$rc" -ne 0 ]; then
+            failed+=("${SLICES[$i]} (exit $rc)")
+        fi
+    done
+    rm -rf "$logs"
+    if [ "${#failed[@]}" -gt 0 ]; then
+        for slice in "${failed[@]}"; do
+            printf 'error: iOS framework slice %s failed\n' "$slice" >&2
+        done
+        exit 1
+    fi
+else
+    for config in "${SLICES[@]}"; do
+        build_slice "$config" "$@"
+    done
+fi
 
 stage="$(mktemp -d "$ROOT/build-ios/package.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT

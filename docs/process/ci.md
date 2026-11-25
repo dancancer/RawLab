@@ -142,7 +142,7 @@ protocols, resource validity, and build/test failure propagation.
 | --- | --- | --- |
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
-| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native/full` use arm64 all plus Intel core/agent/render shards |
+| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native` uses arm64 all plus Intel core/agent/render shards; the cold `full` gate uses arm64 all plus one Intel job that builds once and runs core, agent and render |
 | Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
 | Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, debug/instrumentation + unsigned minified release APK builds, both native ABIs, DEX JNI class verification and alignment/cache checks |
 | iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
@@ -442,7 +442,7 @@ required by this route. Hosted VMs do not establish physical Metal/Core ML or
 iPhone acceptance; retained hardware-dependent tests may fail without a device,
 and that is not permission to skip them or claim a hardware pass.
 
-The Intel shards and arm64 `all` coverage, cache cold/warm rules and bounded
+The arm64 `all` coverage, Intel suite coverage, cache cold/warm rules and bounded
 CTest parallelism stay unchanged. Moving hosts does not authorize model uploads;
 see the model prerequisites above.
 
@@ -453,12 +453,16 @@ checksum and installs it under `RUNNER_TEMP/rawlab-x3f-tools`, exporting the job
 Cargo/Rustup paths. It does not require an administrator or change the runner's
 login profile. Windows prepares the same pinned toolchain in its own job directory.
 
-The Intel `agent` shard isolates Agent recipe rendering from the remaining
-`render` checks. Every Intel shard still builds the complete app and executes
-its assigned suites; arm64 `all` executes every group once. Only Intel `core`
-saves their shared dependency key, while the arm64 job saves its own key. The build-only Intel row also saves its key.
-An additional shard uses another hosted macOS execution slot, so concurrent
-PRs may still queue at the account's macOS concurrency limit.
+For `native`, the Intel `agent` shard isolates Agent recipe rendering from the remaining
+`render` checks; each shard restores the warm dependency cache, builds the app and
+executes its assigned suites. The cold `full` gate cannot restore that cache, so separate
+shards would each rebuild every dependency, lutools and the app (33–44 minutes apiece);
+instead its single Intel `intel` job builds once and runs `core`, `agent` and `render` in
+turn, reusing one SwiftPM scratch directory. arm64 `all` executes every group once. Only
+Intel `core` (native) or `intel` (full) saves the shared dependency key, while the arm64
+job saves its own key. The build-only Intel row also saves its key. Each additional shard
+uses another hosted macOS execution slot, so concurrent PRs may still queue at the
+account's macOS concurrency limit.
 
 Both Mac architectures (the Intel `core` shard) run the existing CPU-safe CTest selection with at most
 two test processes. This limit is separate from build parallelism because RAW
@@ -476,7 +480,7 @@ and native groups use an exact dependency key. **Cold builds never restore nativ
 caches**: manual full runs and release/hotfix PRs build dependencies from source. They
 look up the exact key without downloading its contents and skip saving when that
 accessible cache already exists. Any miss builds from source and saves only after
-the full job succeeds; of the three Intel shards, only `core` saves their shared key.
+the full job succeeds; on Intel only the `core` shard (native) or the single `intel` job (full) saves the shared key.
 Cache lookup/restore failures leave builds enabled and suppress the cache save.
 A cache miss or cache-service outage is not permission to skip a build. Keys hash
 every dependency input and toolchain. Cold release/hotfix and explicit full runs
@@ -523,6 +527,30 @@ records the selected file count and bytes. Compare cold and warm hosted runs on
 the same source, separating queue time from job time. A successful restore alone
 does not demonstrate a speedup. Hosted Intel uses four build workers and two CTest processes; hosted Android
 and Windows jobs use the bounded worker settings documented above.
+
+### Download Caches and iOS Slices
+
+Separately from the exact native caches, every native build job keeps two download-only
+caches: the Cargo registry/git database for the pinned X3F crates (keyed by job and
+`lutools/x3f-bridge/Cargo.lock`, in the `CARGO_HOME` that `prepare-rust.sh` or the Windows
+Rust step exports, since each job fetches only its own targets' crates), and the dependency
+source archives (`RAWLAB_SOURCE_ARCHIVE_CACHE`, the Mac `.cache/shared/macos-sources`, which
+also holds the Mac Lensfun/GLib downloads, and the iOS `build-ios-libraw/*/sources/*.tar.gz`),
+keyed by the files that pin them. `rawlab_download_archive` locks each archive, so parallel
+configures sharing the directory wait for one verified download instead of truncating each
+other's partial file. Windows keeps its
+existing `native_cache.py archives` key. These caches hold only downloads that are still
+checked against their pinned SHA-256 (or `Cargo.lock`) before use, so unlike native caches
+they do use prefix restore keys, and cold gates restore them: a cold build still compiles
+every dependency from source, it just does not depend on crates.io, GitHub or Adobe being
+reachable. They are saved under the same fork-PR rule as every other cache.
+
+The iOS job builds the three framework slices concurrently
+(`RAWLAB_IOS_PARALLEL_SLICES=1` in `lutools/platform/ios/build-framework.sh`); each slice
+keeps its own build tree, Cargo target directory and `-j "$JOBS"`, the logs are replayed per
+slice after all finish, and any failed slice fails the step by name. CMake's Xcode configure
+is dominated by serial `try_compile` latency (about eight minutes per slice in the
+2026-11-25 cold run), which the slices now overlap. Local scripts keep the serial default.
 
 ### Hosted Measurement: 2026-10-18
 

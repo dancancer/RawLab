@@ -187,6 +187,37 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci/prepare-rust.sh aarch64-apple-darwin x86_64-apple-darwin
+      # Cargo registry downloads (58 crates) and verified dependency source archives are
+      # content-addressed by their pins; caching them keeps cold builds off flaky downloads.
+      - name: Restore Cargo registry and git cache
+        id: cargo-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          restore-keys: |
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Restore dependency source archives
+        id: source-archives-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-macos-${{ hashFiles('RawLabMac/build*.sh', 'lutools/cmake/**') }}
+          restore-keys: |
+            rawlab-source-archives-v1-macos-
+          path: |
+            .cache/ci/rawlab-deps
+            .cache/shared/macos-sources
       - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
         if: needs.changes.outputs.build == 'true'
@@ -198,7 +229,7 @@ jobs:
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Restore SwiftPM cache
         id: swiftpm-cache
-        if: (needs.changes.outputs.checks == 'models' && matrix.arch == 'arm64') || ((needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && (matrix.suite == 'all' || matrix.suite == 'core'))
+        if: (needs.changes.outputs.checks == 'models' && matrix.arch == 'arm64') || ((needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel'))
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -228,6 +259,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
+          RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
           RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -249,8 +281,12 @@ jobs:
           export DEVELOPER_DIR
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
           export SDKROOT
-          # "all" runs every group; Intel shards run core, agent or render. Only "all" runs model.
-          in_suite() { [[ "$RAWLAB_CI_NATIVE" == true && ( "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" ) ]]; }
+          # "all" runs every group; native Intel shards run core, agent or render, and the cold
+          # full gate's single "intel" job runs all three after one build. Only "all" runs model.
+          in_suite() {
+            [[ "$RAWLAB_CI_NATIVE" == true ]] || return 1
+            [[ "$RAWLAB_MAC_SUITE" == all || "$RAWLAB_MAC_SUITE" == "$1" || ( "$RAWLAB_MAC_SUITE" == intel && "$1" != model ) ]]
+          }
           python -m pip install -r lutools/requirements-lutprep.txt
           if in_suite core; then
             python scripts/ci/test_native_cache_xcode.py
@@ -303,8 +339,8 @@ jobs:
           exec > >(tee build/ci/macos-dualdn-api.log) 2>&1
           bash RawLabMac/tests/dualdn-api-package.sh
       - name: Save successful native dependencies
-        # Intel shards share one key; the core shard alone saves it.
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        # Intel shards share one key; the core shard (or the full gate's single Intel job) saves it.
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}
@@ -316,11 +352,31 @@ jobs:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
       - name: Save SwiftPM cache
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.checks != 'build' && needs.changes.outputs.checks != 'contracts' && (matrix.suite == 'all' || matrix.suite == 'core') && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && needs.changes.outputs.checks != 'build' && needs.changes.outputs.checks != 'contracts' && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel') && steps.swiftpm-cache.outcome == 'success' && steps.swiftpm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
           path: .cache/ci/swiftpm
+      - name: Save Cargo registry and git cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Save dependency source archives
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.source-archives-cache.outcome == 'success' && steps.source-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-macos-${{ hashFiles('RawLabMac/build*.sh', 'lutools/cmake/**') }}
+          path: |
+            .cache/ci/rawlab-deps
+            .cache/shared/macos-sources
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -427,6 +483,25 @@ jobs:
           if ($LASTEXITCODE) { throw 'Cannot prepare libclang' }
           @("CARGO_HOME=$env:CARGO_HOME", "RUSTUP_HOME=$env:RUSTUP_HOME", 'RUSTUP_TOOLCHAIN=1.99.1', "LIBCLANG_PATH=$tools/libclang/clang/native") | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
           "$env:CARGO_HOME/bin" | Out-File $env:GITHUB_PATH -Encoding utf8 -Append
+      # Cargo registry downloads (58 crates) and verified dependency source archives are
+      # content-addressed by their pins; caching them keeps cold builds off flaky downloads.
+      - name: Restore Cargo registry and git cache
+        id: cargo-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          restore-keys: |
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -564,6 +639,18 @@ jobs:
         with:
           key: rawlab-assets-v1-${{ runner.os }}-all-${{ hashFiles('Shared/assets-manifest.json') }}
           path: .cache/shared/assets
+      - name: Save Cargo registry and git cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -836,6 +923,36 @@ jobs:
           bash scripts/ci/prepare-rust.sh aarch64-linux-android x86_64-linux-android
           python -m pip install --target "$RUNNER_TEMP/rawlab-x3f-libclang" libclang==18.1.1
           echo "LIBCLANG_PATH=$RUNNER_TEMP/rawlab-x3f-libclang/clang/native" >> "$GITHUB_ENV"
+      # Cargo registry downloads (58 crates) and verified dependency source archives are
+      # content-addressed by their pins; caching them keeps cold builds off flaky downloads.
+      - name: Restore Cargo registry and git cache
+        id: cargo-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          restore-keys: |
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Restore dependency source archives
+        id: source-archives-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-android-${{ hashFiles('RawLabAndroid/app/src/main/cpp/CMakeLists.txt', 'lutools/cmake/**') }}
+          restore-keys: |
+            rawlab-source-archives-v1-android-
+          path: |
+            .cache/ci/rawlab-deps
       - name: Install toolchain and identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -870,6 +987,7 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
+          RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
           RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -918,6 +1036,25 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
+      - name: Save Cargo registry and git cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Save dependency source archives
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.source-archives-cache.outcome == 'success' && steps.source-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-android-${{ hashFiles('RawLabAndroid/app/src/main/cpp/CMakeLists.txt', 'lutools/cmake/**') }}
+          path: |
+            .cache/ci/rawlab-deps
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
@@ -969,6 +1106,37 @@ jobs:
         shell: bash
         run: |
           bash scripts/ci/prepare-rust.sh aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+      # Cargo registry downloads (58 crates) and verified dependency source archives are
+      # content-addressed by their pins; caching them keeps cold builds off flaky downloads.
+      - name: Restore Cargo registry and git cache
+        id: cargo-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          restore-keys: |
+            rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-
+            rawlab-cargo-v1-${{ runner.os }}-
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Restore dependency source archives
+        id: source-archives-cache
+        if: needs.changes.outputs.build == 'true'
+        continue-on-error: true
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-ios-${{ hashFiles('lutools/platform/ios/build-framework.sh', 'lutools/cmake/**') }}
+          restore-keys: |
+            rawlab-source-archives-v1-ios-
+          path: |
+            .cache/ci/rawlab-deps
+            lutools/build-ios-libraw/*/sources/*.tar.gz
       - name: Identify native dependency cache
         id: native-key
         if: needs.changes.outputs.build == 'true'
@@ -1011,6 +1179,9 @@ jobs:
         if: needs.changes.outputs.build == 'true'
         shell: bash
         env:
+          RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
+          # Overlap the three slices' serial Xcode configure (~8 min each); see build-framework.sh.
+          RAWLAB_IOS_PARALLEL_SLICES: '1'
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
           RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -1019,6 +1190,7 @@ jobs:
           git rev-parse HEAD
           sw_vers
           xcodebuild -version
+          sysctl hw.ncpu hw.memsize
           DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
           export DEVELOPER_DIR
           bash lutools/platform/ios/build-framework.sh
@@ -1050,6 +1222,26 @@ jobs:
         with:
           key: rawlab-swiftpm-v1-ios-xcode27-${{ hashFiles('Package.swift', 'Shared/RawLabKit/**', 'Shared/RawLabNativeTypes/**', 'Shared/RawLabNative/**', 'tests/RawLabKitTests/**', 'lutools/include/**') }}
           path: .cache/ci/swiftpm
+      - name: Save Cargo registry and git cache
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.cargo-cache.outcome == 'success' && steps.cargo-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-cargo-v1-${{ runner.os }}-${{ github.job }}-x3f-tools-${{ hashFiles('lutools/x3f-bridge/Cargo.lock') }}
+          path: |
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/index
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/registry/cache
+            ${{ runner.temp }}/rawlab-x3f-tools/cargo/git/db
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+      - name: Save dependency source archives
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && steps.source-archives-cache.outcome == 'success' && steps.source-archives-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          key: rawlab-source-archives-v1-ios-${{ hashFiles('lutools/platform/ios/build-framework.sh', 'lutools/cmake/**') }}
+          path: |
+            .cache/ci/rawlab-deps
+            lutools/build-ios-libraw/*/sources/*.tar.gz
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
