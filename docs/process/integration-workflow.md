@@ -39,7 +39,7 @@
 2. owner 解决文本冲突后，列出实际冲突文件、保留的接口和语义风险，执行最小定向回归。
    构建链接变动检查实际 link/runtime；decoder、缓存和导出变动检查对应组合路径。
 3. 在原 PR 描述（按 [PR 模板](../../.github/PULL_REQUEST_TEMPLATE.md) 写明新 head/base、验证锚点、完成结果及平台限制）和关联 GitHub Issue 中更新进度与 PR 链接。
-   仅当 PR 触及 [CODEOWNERS](../../.github/CODEOWNERS) 高风险目录（`/lutools/include/`、`/Shared/specs/`、`/Shared/fixtures/`、`/lutools/src/gpu/*shader*`）时，强制要求独立 / carbon reviewer 将结论绑定当前 head/base 复核受影响增量；未触及高风险目录的 PR 按常规自测与 CI 门禁合入。
+   仅当 PR 触及 [CODEOWNERS](../../.github/CODEOWNERS) 列出的高风险路径（以该文件为准，当前包括 `/lutools/include/`、`/Shared/specs/`、`/Shared/fixtures/`、`/Shared/version.json`、`/lutools/src/gpu/*shader*`、`/lutools/docs/edit-json-*.schema.json` 和 `/scripts/ci/`）时，强制要求独立 / carbon reviewer 将结论绑定当前 head/base 复核受影响增量；未触及高风险路径的 PR 按常规自测与 CI 门禁合入。
 4. 阶段验证和复评完成后按已授权顺序合入。下一个依赖功能接新 target，
    不等所有功能结束才做一次大合并。
 
@@ -71,6 +71,46 @@ UI 改动先完成本地受影响的界面回归，通过后再提交；普通 W
 - iOS 使用专属 simulator，记录 UDID 和构建输出目录；不重置或关闭其他任务的模拟器。
 - Windows VM 中使用每任务独立源码、构建和结果目录，明确 VM/会话及拥有的进程；
   不覆盖共享输出，不终止其他任务的构建或测试。
+
+## 6. 分层验证、升级与基线更新
+
+### 分层验证
+
+按改动风险从近到远逐层验证，前一层不过不进入下一层，也不用后一层替代前一层：
+
+1. **本机定向回归**：只跑受影响的模型测试、契约测试和撤修复变红实验；脚本与工作流改动跑
+   `python3 -m pytest scripts/ci`（本机装好 `actionlint`，工作流错误会在这里直接报出）。
+2. **Windows 远端预验**（触及 `RawLabWindows/`、Windows 原生构建或 lutools 中 Windows 路径的改动必做，
+   在推送前完成）：用 `RawLabWindows/build-remote.py --profile <主力验证机> --verify` 按需加
+   `--models`、`--ctest-filter <正则>`、`--v08-only <套件>`；涉及 DirectML、D3D11 或 GPU 行为时再在
+   物理独显机档案上跑一次。主机地址、账户、跳板机和密钥只写在本机私有档案
+   `~/.config/rawlab/windows-verify-hosts.json`，不进仓库。远端工作区按 SHA-256 增量同步，
+   未变化的文件不会被改写，增量构建状态得以保留；每次运行使用隔离的 `RAWLAB_APPDATA_ROOT`，
+   并在 `%LOCALAPPDATA%\RawLab` 发生变化时直接判失败。
+3. **PR CI**：普通 PR 只跑静态契约和受影响平台的 models；需要构建、原生或冷构建证据时按
+   [验证 SOP](ci.md) 手动派发对应检查组，并在 PR 描述中写明运行编号。
+4. **发版门禁**：`full` 冷构建与本机发版快检（`scripts/release/preflight.sh`）。
+
+### 两轮未过即升级
+
+同一问题连续两轮修复仍未通过（独立评审打回，或 CI/定向验证仍失败），第三轮前必须升级：
+改由更强的模型或独立的深度排查接手（例如更高档位模型，或由 Codex 做根因调查），并附上前两轮的
+假设、改动、失败日志和撤修复实验结果。不在同一思路上做第三次盲试。
+
+### 用 merge-tree 判断是否需要更新基线
+
+`development` 前进后，不为“保持最新”而机械 rebase 或 merge。PR CI 本身就在 PR 与目标分支的
+合并结果上运行，无效 rebase 只会重写历史、重跑 CI，并让已绑定 head 的评审结论失效。先判断：
+
+```bash
+git fetch origin
+git merge-tree --write-tree --name-only origin/development HEAD   # 退出码 0 无冲突；1 有冲突：首行是 tree OID，其后是冲突文件和说明
+git diff --name-only "$(git merge-base origin/development HEAD)" origin/development   # 上游新改动
+```
+
+仅在以下情况更新基线：merge-tree 报告冲突；上游改动与本 PR 修改的文件或验证路径重叠
+（共享接口、构建脚本、CI 选择规则、被测代码）；或本 PR 需要上游新落地的接口。更新后按第 3 节
+列出冲突文件并重跑受影响验证。已共享分支用 merge，不重写历史。
 
 ## 本轮依据：v0.7.0，2026-10-13 快照
 
