@@ -27,10 +27,13 @@ ax_honest_skip_allowed() {
     done
     return 1
 }
+# 并行回放的日志很长，失败套件名与退出码要单独汇总到 stderr，免得在 CI 日志里逐段翻找。
+failed_suites=()
 fail_on_logged_skip() {
     if grep -q -E '^[[:space:]]*SKIP([[:space:]:]|$)' "$1"; then
         ax_honest_skip_allowed "$2" "$1" && return 0
         printf 'error: %s logged SKIP (forbidden by CI invariant 7)\n' "$2" >&2
+        failed_suites+=("$2 (logged SKIP)")
         return 1
     fi
 }
@@ -218,8 +221,12 @@ reap_finished() {
                 if ! fail_on_logged_skip "$suite_log" "$suite"; then
                     skip_fail=1
                 fi
-                if [ "$rc" -ne 0 ] && [ "$fail_rc" -eq 0 ]; then
-                    fail_rc="$rc"
+                if [ "$rc" -ne 0 ]; then
+                    printf 'error: %s failed with exit code %s\n' "$suite" "$rc" >&2
+                    failed_suites+=("$suite (exit $rc)")
+                    if [ "$fail_rc" -eq 0 ]; then
+                        fail_rc="$rc"
+                    fi
                 fi
                 reaped=1
             else
@@ -254,6 +261,12 @@ while [ "${#pids[@]}" -gt 0 ]; do
     reap_finished 1
 done
 
+if [ "${#failed_suites[@]}" -gt 0 ]; then
+    printf 'error: apple models (%s): %d failure(s); suites queued after the first failure were not started\n' "$1" "${#failed_suites[@]}" >&2
+    for failed in "${failed_suites[@]}"; do
+        printf 'error:   %s\n' "$failed" >&2
+    done
+fi
 if [ "$skip_fail" -ne 0 ]; then
     exit 1
 fi

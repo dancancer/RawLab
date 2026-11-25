@@ -1085,11 +1085,6 @@ import Darwin
     }
 
     private static func samplingCandidate10kHistoryLatencyAndIndexSync() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-10k-\(UUID().uuidString)")
-        defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
-            try? FileManager.default.removeItem(at: root)
-        }
         let identity = CameraDeviceIdentity(manufacturer: "Sony", model: "ILCE-7M4", firmware: "1.0", serial: "0532", operations: [0x923c, 0x923d])
         var rawBytes = Data(repeating: 0x52, count: 200_003)
         rawBytes.replaceSubrange(0..<4, with: [0x49, 0x49, 0x2a, 0x00])
@@ -1099,65 +1094,96 @@ import Darwin
         let missSnapshot = CameraAssetSnapshot(content: 2, file: 1, storage: 0x10001, format: 0x3801,
                                                name: "DSC_MISS.ARW", size: UInt64(rawBytes.count), created: "20231114T221320", modified: "")
 
-        // Seed 1 real saved original + 200 jobs x 50 items = 10,000 historical saved items
-        var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
-        let seedJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot])
-        let savedHit = try write(rawBytes, item: seedJob.items[0], job: seedJob, store: store!)
-
-        var manifest = store!.snapshot
-        let dummySourceID = UUID()
-        let dummyOriginal = CameraStoredOriginal(
-            id: dummySourceID, name: "DSC_DUMMY.ARW", size: UInt64(rawBytes.count),
-            digest: rawDigest, savedAt: Date(), availability: .available, jpegSource: nil
-        )
-        manifest.originals.append(dummyOriginal)
-        for j in 0..<200 {
-            var items: [CameraTransferItem] = []
-            items.reserveCapacity(50)
-            for i in 0..<50 {
-                let snap = CameraAssetSnapshot(
-                    content: UInt32(j * 50 + i + 100), file: 1, storage: 0x10001, format: 0x3801,
-                    name: String(format: "DSC%03d%02d.ARW", j, i), size: UInt64(rawBytes.count),
-                    created: "20231114T221320", modified: ""
-                )
-                items.append(CameraTransferItem(id: UUID(), asset: snap, phase: .saved, sourceID: dummySourceID, digest: rawDigest, sourceDigest: rawDigest))
-            }
-            manifest.jobs.append(CameraTransferJob(
-                id: UUID(), camera: identity, connectionKey: "fixture",
-                createdAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(j)), items: items
-            ))
+        // 10,000 条历史（200 个任务 × 50 条）与 50 条历史（1 个任务）各建一个仓库，同一组 500 次查找
+        // 在两者上交替计时：索引查找应与历史规模无关，退回线性扫描时耗时随历史规模（200 倍）线性放大。
+        struct HistoryFixture {
+            let root: URL
+            let store: CameraOriginalStore
+            let savedHitID: UUID
+            let jobID: UUID
+            let hitItemID: UUID
+            let missItemID: UUID
         }
-        store = nil
-        try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
-        store = try CameraOriginalStore(directory: root)
+        func seedHistory(jobCount: Int) throws -> HistoryFixture {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-\(jobCount * 50)-\(UUID().uuidString)")
+            // 1 条真实已保存原件 + jobCount × 50 条指向占位原件的历史条目
+            var store: CameraOriginalStore? = try CameraOriginalStore(directory: root)
+            let seedJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot])
+            let savedHit = try write(rawBytes, item: seedJob.items[0], job: seedJob, store: store!)
 
-        let pendingJob = try store!.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot, missSnapshot])
-        let hitItemID = pendingJob.items[0].id
-        let missItemID = pendingJob.items[1].id
-
-        // Warm up FileDigestCache for the 1 real hit file so benchmark measures index lookup
-        let warm = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
-        try check(warm?.source.id == savedHit.id, "samplingCandidate finds hit original across 10,000-item history")
-
-        let start = DispatchTime.now().uptimeNanoseconds
-        for round in 0..<500 {
-            if round % 2 == 0 {
-                let c = store!.samplingCandidate(job: pendingJob.id, item: hitItemID)
-                guard c?.source.id == savedHit.id else {
-                    try check(false, "samplingCandidate hit failed in round \(round)")
-                    return
+            var manifest = store!.snapshot
+            let dummySourceID = UUID()
+            let dummyOriginal = CameraStoredOriginal(
+                id: dummySourceID, name: "DSC_DUMMY.ARW", size: UInt64(rawBytes.count),
+                digest: rawDigest, savedAt: Date(), availability: .available, jpegSource: nil
+            )
+            manifest.originals.append(dummyOriginal)
+            for j in 0..<jobCount {
+                var items: [CameraTransferItem] = []
+                items.reserveCapacity(50)
+                for i in 0..<50 {
+                    let snap = CameraAssetSnapshot(
+                        content: UInt32(j * 50 + i + 100), file: 1, storage: 0x10001, format: 0x3801,
+                        name: String(format: "DSC%03d%02d.ARW", j, i), size: UInt64(rawBytes.count),
+                        created: "20231114T221320", modified: ""
+                    )
+                    items.append(CameraTransferItem(id: UUID(), asset: snap, phase: .saved, sourceID: dummySourceID, digest: rawDigest, sourceDigest: rawDigest))
                 }
-            } else {
-                let c = store!.samplingCandidate(job: pendingJob.id, item: missItemID)
-                guard c == nil else {
-                    try check(false, "samplingCandidate miss unexpectedly matched in round \(round)")
-                    return
+                manifest.jobs.append(CameraTransferJob(
+                    id: UUID(), camera: identity, connectionKey: "fixture",
+                    createdAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(j)), items: items
+                ))
+            }
+            store = nil
+            try JSONEncoder().encode(manifest).write(to: root.appendingPathComponent("manifest.json"), options: .atomic)
+            let reopened = try CameraOriginalStore(directory: root)
+            let pendingJob = try reopened.enqueue(device: identity, connectionKey: "fixture", assets: [hitSnapshot, missSnapshot])
+            return HistoryFixture(root: root, store: reopened, savedHitID: savedHit.id, jobID: pendingJob.id,
+                                  hitItemID: pendingJob.items[0].id, missItemID: pendingJob.items[1].id)
+        }
+        let small = try seedHistory(jobCount: 1)
+        defer { try? FileManager.default.removeItem(at: small.root) }
+        let large = try seedHistory(jobCount: 200)
+        defer { try? FileManager.default.removeItem(at: large.root) }
+
+        // 预热 FileDigestCache，使计时只覆盖索引查找与 stat 复查
+        for (fixture, label) in [(small, "50"), (large, "10,000")] {
+            let warm = fixture.store.samplingCandidate(job: fixture.jobID, item: fixture.hitItemID)
+            try check(warm?.source.id == fixture.savedHitID, "samplingCandidate finds hit original across \(label)-item history")
+        }
+
+        // 计时用本线程 CPU 时间而非墙钟：并行套件抢占、调度等待不计入，避免高负载下的假红。
+        func lookups(_ fixture: HistoryFixture, rounds: Range<Int>) throws -> UInt64 {
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            for round in rounds {
+                if round % 2 == 0 {
+                    let c = fixture.store.samplingCandidate(job: fixture.jobID, item: fixture.hitItemID)
+                    guard c?.source.id == fixture.savedHitID else {
+                        throw CameraProtocolError.invalid("samplingCandidate hit failed in round \(round)")
+                    }
+                } else {
+                    let c = fixture.store.samplingCandidate(job: fixture.jobID, item: fixture.missItemID)
+                    guard c == nil else {
+                        throw CameraProtocolError.invalid("samplingCandidate miss unexpectedly matched in round \(round)")
+                    }
                 }
             }
+            return clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start
         }
-        let elapsedMs = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000.0
-        try check(elapsedMs < 150.0,
-                  String(format: "500 samplingCandidate lookups over 10,000 legacy items finish in O(1) < 150ms (actual: %.2f ms)", elapsedMs))
+        // 分 5 段交替测量两个仓库，让 CPU 降频、能效核切换等系统波动对两侧影响一致
+        var smallNs: UInt64 = 0, largeNs: UInt64 = 0
+        for chunk in 0..<5 {
+            let rounds = (chunk * 100)..<((chunk + 1) * 100)
+            smallNs += try lookups(small, rounds: rounds)
+            largeNs += try lookups(large, rounds: rounds)
+        }
+        let smallMs = Double(smallNs) / 1_000_000.0, largeMs = Double(largeNs) / 1_000_000.0
+        // 倍率闸：历史规模放大 200 倍，O(1) 查找的 CPU 耗时应基本持平；线性扫描会放大两个数量级。
+        // 加 5ms 底数，避免小样本耗时极短时比值被计时粒度放大。
+        try check(largeMs < smallMs * 4.0 + 5.0,
+                  String(format: "500 samplingCandidate lookups scale O(1) with history: 10,000 items %.2f ms vs 50 items %.2f ms thread CPU (limit 4x + 5ms)", largeMs, smallMs))
+        try check(largeMs < 150.0,
+                  String(format: "500 samplingCandidate lookups over 10,000 legacy items use < 150ms thread CPU (actual: %.2f ms)", largeMs))
 
         // Index synchronization across reuseSampledOriginal, prune (shared & last), rollback, and recover()
         let syncRoot = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-sampling-sync-\(UUID().uuidString)")

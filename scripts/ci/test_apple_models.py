@@ -239,6 +239,12 @@ if [[ -n "${SKIP_SUITES:-}" ]] && [[ ",${SKIP_SUITES}," == *",${suite},"* ]]; th
     printf '%s\n' "${SKIP_PAYLOAD:-SKIP: simulated concurrent skip}"
     exit 0
 fi
+for entry in ${FAIL_SUITES:-}; do
+    if [[ "${entry%%=*}" == "$suite" ]]; then
+        printf 'FAIL: %s simulated failure\n' "$suite"
+        exit "${entry##*=}"
+    fi
+done
 printf 'PASS: %s line 1\n' "$suite"
 sleep 0.02
 printf 'PASS: %s line 2\n' "$suite"
@@ -312,6 +318,58 @@ printf 'PASS: %s line 2\n' "$suite"
         )
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("error: Shared/tests/hdr-source-probe.sh logged SKIP (forbidden by CI invariant 7)", result.stderr)
+
+    def _run_parallel_probe(self, root, runner, tools, platform, tag, **extra):
+        active = root / f"active-{tag}"
+        active.mkdir()
+        env = {
+            **os.environ,
+            "PATH": f"{tools}:{os.environ['PATH']}",
+            "TMPDIR": str(root),
+            "PROBE_RECORDS": str(root / f"records-{tag}"),
+            "PROBE_COUNTS": str(root / f"counts-{tag}"),
+            "PROBE_ACTIVE": str(active),
+            **extra,
+        }
+        return subprocess.run(["/bin/bash", str(runner), platform], env=env, capture_output=True, text=True)
+
+    def test_parallel_failures_name_every_failed_suite_and_exit_code_on_stderr(self):
+        # The first four macOS suites start together, so both failures land before any reap;
+        # stderr must name each failed suite with its own exit code, not just the replayed logs.
+        root, runner, tools = self._parallel_probe_root()
+        result = self._run_parallel_probe(
+            root, runner, tools, "macos", "concurrent",
+            FAIL_SUITES="Shared/tests/hdr-native-request.sh=23 Shared/tests/hdr-source-probe.sh=5")
+        self.assertIn(result.returncode, (23, 5), result.stdout + result.stderr)
+        self.assertIn("error: Shared/tests/hdr-native-request.sh failed with exit code 23", result.stderr)
+        self.assertIn("error: Shared/tests/hdr-source-probe.sh failed with exit code 5", result.stderr)
+        self.assertIn("error: apple models (macos): 2 failure(s)", result.stderr)
+        self.assertIn("error:   Shared/tests/hdr-native-request.sh (exit 23)", result.stderr)
+        self.assertIn("error:   Shared/tests/hdr-source-probe.sh (exit 5)", result.stderr)
+        self.assertNotIn("FAIL: ", result.stderr, "suite output stays in the replayed stdout log")
+
+    def test_serial_failure_and_logged_skip_are_summarized_with_exit_codes(self):
+        root, runner, tools = self._parallel_probe_root()
+        with self.subTest(case="jobs=1 failure"):
+            result = self._run_parallel_probe(
+                root, runner, tools, "ios", "serial", RAWLAB_APPLE_MODELS_JOBS="1",
+                FAIL_SUITES="RawLab/tests/hdr-model.sh=42")
+            self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
+            self.assertIn("error: RawLab/tests/hdr-model.sh failed with exit code 42", result.stderr)
+            self.assertIn("error: apple models (ios): 1 failure(s)", result.stderr)
+            self.assertIn("error:   RawLab/tests/hdr-model.sh (exit 42)", result.stderr)
+            self.assertNotIn("[model] RawLab/tests/hdr-canvas.sh", result.stdout,
+                             "later suites must not start after a serial failure")
+        with self.subTest(case="logged skip"):
+            result = self._run_parallel_probe(
+                root, runner, tools, "ios", "skip", RAWLAB_APPLE_MODELS_JOBS="1",
+                SKIP_SUITES="RawLab/tests/hdr-model.sh")
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn("error:   RawLab/tests/hdr-model.sh (logged SKIP)", result.stderr)
+        with self.subTest(case="all green"):
+            result = self._run_parallel_probe(root, runner, tools, "ios", "green")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("failed", result.stderr)
 
     def test_parallel_ax_honest_skip_allows_only_allowlisted_suite_while_concurrent_skip_elsewhere_fails(self):
         root, runner, tools = self._parallel_probe_root()
