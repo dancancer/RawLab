@@ -312,6 +312,25 @@ void foreignTempCollisionPreservesExistingTempFile() {
 
 } // namespace
 
+#if defined(_WIN32)
+// 隔离运行（测试、远端验证）设置 RAWLAB_APPDATA_ROOT 时，着色器缓存必须跟随它，不得写入用户 LOCALAPPDATA。
+void appDataRootOverrideRedirectsShaderCache() {
+    wchar_t saved[MAX_PATH]{};
+    const DWORD savedLen = GetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", saved, MAX_PATH);
+    TempDir dir;
+    SetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", (L"  " + dir.path.wstring() + L"  ").c_str());
+    const auto overridden = defaultD3D11ShaderCacheDirectory();
+    SetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", L"   ");
+    const auto blank = defaultD3D11ShaderCacheDirectory();
+    SetEnvironmentVariableW(L"RAWLAB_APPDATA_ROOT", savedLen > 0 && savedLen < MAX_PATH ? saved : nullptr);
+    require(overridden == dir.path / L"shader-cache", "RAWLAB_APPDATA_ROOT must hold the D3D11 shader cache");
+    wchar_t local[MAX_PATH]{};
+    const DWORD localLen = GetEnvironmentVariableW(L"LOCALAPPDATA", local, MAX_PATH);
+    require(localLen == 0 || blank == std::filesystem::path(local) / L"RawLab" / L"shader-cache",
+            "a blank RAWLAB_APPDATA_ROOT keeps the LOCALAPPDATA default");
+}
+#endif
+
 int main() {
     try {
         foreignTempCollisionPreservesExistingTempFile();
@@ -320,6 +339,7 @@ int main() {
         keyAndVersionInvalidationAndCorruptionRecovery();
 #if defined(_WIN32)
         diskReadersShareAtomicReplacementHandles();
+        appDataRootOverrideRedirectsShaderCache();
 #endif
         concurrentWritersAndReadersNeverObserveBrokenBlob();
         std::cout << "PASS: d3d11_shader_cache\n";
