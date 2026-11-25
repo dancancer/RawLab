@@ -58,7 +58,18 @@
      ```
 2. **生成源码归档与发布说明**：
    - 使用 `git archive --format=tar.gz --prefix="RawLab-$VERSION/" "$COMMIT_SHA" -o "$DIST/RawLab-$VERSION-source.tar.gz"`，并用 `tar -tzf` 核对不含私钥或外部 RAW 样片。
-   - 准备 UTF-8 格式的发布说明文本（同时传给 `macos_appcast.py --notes`、Windows `update-manifest sign` 与 `gh release create --notes-file`）。
+   - 准备 UTF-8 格式的发布说明文本（同时传给 `macos_appcast.py --notes`、Windows `update-manifest sign` 与 `scripts/release/upload-draft-release.sh --notes-file`）。
+3. **本机快检（切 `release/*` 前与打包 worktree 中各跑一次）**：
+   ```bash
+   bash scripts/release/preflight.sh            # 版本/文档链接 + RawLabMac 全量类型检查 + macOS/iOS apple-models
+   bash scripts/release/preflight.sh --models none   # 只跑前三步，约 1 分钟
+   ```
+   - 依次执行：`generate.py --check` 与构建号单调/血统门禁（`scripts.ci.test_versioning`）、入库文档相对链接（`scripts.ci.test_doc_links`）、RawLabMac 主工程 `swiftc -typecheck`（与 `RawLabMac/build.sh` 同一组源文件，打开 `RAWLAB_RUM`，拦截只有完整应用编译才暴露的 SwiftUI 编译错误）、`scripts/ci/apple-models.sh macos|ios`。
+   - 任一步失败立即停止，并在 stderr 打印失败步骤名与退出码；apple-models 并行失败时会额外汇总每个失败套件及其退出码。
+   - SwiftPM 产物缓存在 `<worktree>/.cache/tmp/release-preflight`（可用 `RAWLAB_PREFLIGHT_CACHE` 改位置），与本 worktree 源码绑定；首次约 80 秒，增量约 40 秒；发布结束后随 worktree 一起清理。
+4. **CI 手动门禁错峰派发**：`checks=full` 是发布门禁，按设计冷编原生依赖（`cold=true`，只查询不恢复缓存），并在 `macOS full (arm64, all)` 与 `(x86_64, core)` 成功后保存原生依赖缓存；`checks=build` 不是冷构建，会直接恢复同一缓存键。
+   - 先派发 `platform=macos checks=full`，等上述两个作业结束（`Save successful native dependencies` 完成，或因缓存键已存在而显示 skipped）后再派发 `platform=macos checks=build`；同时派发时 build 的 arm64 与 x86_64 两个作业会与 full 的四个作业一起冷编，并争用 GitHub 托管 macOS 的并发额度，整体反而更慢。
+   - 不同 `(platform, checks)` 组合的派发互不取消；同一组合重复派发会取消前一次，等它结束再重派。
 
 ---
 
@@ -79,11 +90,26 @@
 
 ### 4.2 Windows（`x64`）与 `windows-stable.json`
 1. 将 `RawLab-$VERSION-source.tar.gz`、`UpdateTrust.release.json` 与发布说明文本传至 `release-hosts.md` 中的 Windows 发布机（`Paul-dev`），解压到干净目录。
+   - **复用 `Paul-dev` 已校验缓存**：源码归档没有 `.git`，`build.ps1` 找不到主工作区，会把 `<源码>\.cache\shared` 当共享缓存，RUM SDK、Velopack 工具等每次重新下载。构建前先建目录联接并导出缓存变量：
+     ```powershell
+     New-Item -ItemType Directory -Force "$src\.cache" | Out-Null
+     New-Item -ItemType Junction -Path "$src\.cache\shared" -Target 'E:\RawLabRelease\.cache\shared' | Out-Null
+     $env:NUGET_PACKAGES = 'E:\RawLabRelease\.cache\shared\nuget'
+     $env:RAWLAB_SOURCE_ARCHIVE_CACHE = 'E:\RawLabCI\cache\rawlab-deps'
+     $env:RAWLAB_LENS_SOURCE_CACHE = 'E:\RawLabCI\cache\lens-sources'
+     $env:RAWLAB_HDR_SOURCE_CACHE = 'E:\RawLabRelease\.cache\shared\hdr-codecs'
+     ```
+     `-OnnxRuntimeRoot` 直接传 `E:\RawLabCI\cache\onnxruntime\windows-directml-1.23.0\installed`。
+   - 清理源码树前先用 `cmd /c rmdir "$src\.cache\shared"` 只删除联接本身；**不要**对联接执行 `Remove-Item -Recurse`（Windows PowerShell 5.1 会顺着联接删掉共享缓存内容）。
 2. 调用 `RawLabWindows/build.ps1 -ReleasePackage`（传入 `-DotNet`、`-UpdateTrustFile`、`-DualDnModel`、`-DualDnManifestSha256`、`-OnnxRuntimeRoot`、`-ReleaseOutput`）。
 3. 校验 `out\publish\RawLab.exe` 的 `FileVersion` / `ProductVersion` 与 `Shared/version.json` 一致，并从构建树运行 `dualdn_probe.exe --validate out\publish\AI\DualDn`。
 4. 在 Windows 上签名并校验 `windows-stable.json`（因 `UpdatePackageVerifier` 需读取 PE `FileVersionInfo`，必须在 Windows 主机执行）：
    - 仅在签名命令的 `try { ... } finally { Remove-Item ... -Force }` 内临时传入 `$WINDOWS_PRIVATE_PEM`，有效期设 `365` 天、`MinimumVersion` 按兼容基线设置（当前 `0.9.0`）；完成后核实 `Test-Path` 为 `False`，再运行 `update-manifest verify`。
-5. 仅将 `Setup.exe`、`*-full.nupkg`、`RawLab-Windows-$VERSION-x64.zip` 与 `windows-stable.json` 传回本机 `$DIST/`；可在物理独显测试机（`DESKTOP-216`）解压临时副本执行 `dualdn_probe.exe` / DirectML C ABI 无损冒烟后立即清理，严禁触碰 `%LOCALAPPDATA%\RawLab`。
+5. 仅将 `Setup.exe`、`*-full.nupkg`、`RawLab-Windows-$VERSION-x64.zip` 与 `windows-stable.json` 传回本机 `$DIST/`，同时取回构建树的 `dualdn_probe.exe` 供下一步使用（不放进 `$DIST/`）。
+6. **物理独显冒烟（`DESKTOP-216`）**：用 `scripts/release/smoke-windows-gpu.ps1` 对正式 ZIP 做无损冒烟，脚本头部注释给出完整的上传与调用命令：
+   - 必须经原生 Windows OpenSSH 端口 `2222` 连接（`ssh -p 2222` / `scp -P 2222`）；端口 `22` 进入 WSL2，进程带 `PreferSystem32Images` 限制会加载 `System32\onnxruntime.dll`，脚本检测到即拒绝运行；
+   - 依次核对：打包 `AI\DualDn` 的 `dualdn_probe --validate`、强制 DirectML 的 `pipeline` 探针（`producer` 须含 DirectML 且无回退）、`sony2fuji.exe` CLI 出图、ExifTool 版本、子进程加载 `sony2fuji.dll` 的 `sony2fuji_ai_available=1` 与 `sony2fuji_ai_hardware_available=1`（且运行库来自安装包目录）；
+   - 调用时加 `-NonInteractive`，漏传参数直接报错而不是在 ssh 会话里等待输入；前置守卫失败同样会清理；工作目录与 `-StagingDir` 在 `finally` 中删除并核实 `Test-Path` 为 `False`；`%LOCALAPPDATA%\RawLab` 前后指纹不一致即判失败；不启动 GUI。输出的 `SUMMARY:` 行可直接写入 `BUILD-PROVENANCE.json`。
 
 ### 4.3 Android（`.apk`）
 1. 在打包 worktree 执行 `bash RawLabAndroid/scripts/fetch-rum-sdk.sh` 拉取并校验 RUM AAR。
@@ -104,7 +130,8 @@
 ### 4.4 iOS（未签名 `.ipa`）
 1. 导出 `DEVELOPER_DIR` 指向完整 Xcode（`iOS 27.1+ SDK`），运行 `bash scripts/ci/check-ios-sdk.sh` 与 `bash scripts/rum/prepare-ios.sh`。
 2. 构建并校验三切片 `sony2fuji.xcframework`：`bash lutools/platform/ios/build-framework.sh` + `bash lutools/platform/ios/verify-framework.sh`（需要时可传本地 `-DFETCHCONTENT_SOURCE_DIR_*`）。
-3. 使用 `xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Release -sdk iphoneos CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build` 构建未签名应用。
+   - `build-framework.sh` 默认 `JOBS=6`，按 CI 托管机设定；本机发布时显式传 `JOBS="$(sysctl -n hw.ncpu)"` 缩短三切片串行编译。若同时在跑 Android 或 macOS 构建、出现内存换页，退回默认值。
+3. 使用 `xcodebuild -project RawLab/RawLab.xcodeproj -scheme RawLab -configuration Release -sdk iphoneos -jobs "$(sysctl -n hw.ncpu)" CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO build` 构建未签名应用。
 4. 校验 `RawLab.app` 内 `Info.plist` 版本号、构建号、`MinimumOSVersion`、`arm64` 架构及内嵌 `Frameworks/{sony2fuji,AlibabaCloudRUMSDK}.framework`，放入 `Payload/RawLab.app` 后用 `ditto -c -k --keepParent Payload "$DIST/RawLab-iOS-$VERSION-unsigned.ipa"` 打包，并校验 `unzip -Z1` 顶层目录为 `Payload/RawLab.app/`。
 
 ---
@@ -113,13 +140,15 @@
 
 1. 生成 `$DIST/BUILD-PROVENANCE.json`（对标历史 Release 结构，如实区分本机/远端已验证项、Hosted CI 结果与未覆盖物理硬件项）。
 2. 在 `$DIST/` 下生成并校验 `$DIST/SHA256SUMS.txt`（包含其余 12 个资产的 `shasum -a 256`，不含自身；运行 `shasum -a 256 -c SHA256SUMS.txt` 须 12/12 `OK`）。
-3. **先创建 Draft Release 上传全部 13 个资产**（Draft 不会影响线上 `releases/latest` 自动更新）：
+3. **先创建空 Draft，再并发上传并核验全部 13 个资产**（Draft 不会影响线上 `releases/latest` 自动更新）：
    ```bash
-   GH_TOKEN="$(gh auth token --user dancancer)" gh release create "v$VERSION" \
-     --repo dancancer/RawLab --verify-tag --draft \
-     --title "RawLab $VERSION" --notes-file "$NOTES_FILE" "$DIST"/*
+   GH_TOKEN="$(gh auth token --user dancancer)" bash scripts/release/upload-draft-release.sh \
+     --version "$VERSION" --dist "$DIST" --notes-file "$NOTES_FILE" --jobs 4
    ```
-4. 核对 GitHub API 返回的 Draft 资产数量为 `13`，且每个资产的 `size` 与 `digest` 与本地 `SHA256SUMS.txt` 逐字节一致；**任何不一致严禁转正**。
+   - 先在本地核对 `$DIST/` 恰好是上表 13 个文件、`SHA256SUMS.txt` 12/12 校验通过，任何 GitHub 写操作都在此之后；
+   - 空 Draft 建好后 3–4 路并发上传（`--jobs`），单个资产失败按退避重试（`--attempts`，默认 4 次，`--clobber` 覆盖半截资产）；仍失败时在 stderr 列出失败资产，直接重跑同一命令即可续传，Draft 保持未发布；
+   - 同 tag 已有 Draft 时复用，已正式发布时拒绝执行；脚本从不转正。
+4. 脚本最后通过 GitHub API 核对 Draft 资产数量为 `13`、文件名集合一致，且每个资产 `state=uploaded`、`size` 与 `digest`（`sha256:`）与本地逐字节一致，打印 `remote: 13/13 assets match local size and sha256`；API 未返回 `digest` 时同样判失败。**任何不一致严禁转正**。仅需复核时加 `--verify-only`。
 5. 全部核验一致后正式发布：
    ```bash
    GH_TOKEN="$(gh auth token --user dancancer)" gh release edit "v$VERSION" \
