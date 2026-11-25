@@ -63,6 +63,11 @@ final class SonyCameraSession {
     }
 
     var stopped: Bool { stateLock.lock(); defer { stateLock.unlock() }; return stopping || client.isClosed }
+    /// 只读 GetDeviceInfo：空闲导入期间维持相机会话（含 SSH 隧道）不因无流量被相机断开。
+    func keepAlive() throws {
+        try checkRunning()
+        _ = try client.operation(0x1001, requiresData: true, limit: 1 << 20)
+    }
     func checkRunning() throws { if stopped { throw CameraProtocolError.cancelled } }
     func requestStop() {
         stateLock.lock(); stopping = true; let mayClose = !capturing; stateLock.unlock()

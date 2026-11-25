@@ -17,6 +17,8 @@ struct IOSCameraWorkspace: View {
     @State private var showHandoffPassword = false
     @State private var handoffPasswordCopied = false
     private var previousCamera: CameraDeviceIdentity? { model.device ?? model.manifest.tether?.camera ?? model.manifest.jobs.last?.camera }
+    /// iOS 进入后台即断开相机（系统也会挂起网络）；连接期间禁止自动锁屏，避免停下来挑片就被迫重连。
+    private var keepsScreenAwake: Bool { path.contains(where: [Route.importer, .tether].contains) && model.connected }
     private var cameraName: String { previousCamera?.model == "ILCE-7CM2" ? "α7C II" : previousCamera?.model ?? L10n.text("相机") }
     let onOpenOriginal: (URL) -> Void
     let onClose: () -> Void
@@ -62,6 +64,7 @@ struct IOSCameraWorkspace: View {
             if old.contains(.connect), !new.contains(.connect), !new.contains(where: active.contains) { connection.stop(); model.stop() }
             advanceConnectedRoute()
         }
+        .onChange(of: keepsScreenAwake) { _, awake in UIApplication.shared.isIdleTimerDisabled = awake }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { connection.pauseForBackground(); model.stop() }
         }
@@ -72,7 +75,7 @@ struct IOSCameraWorkspace: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataWillBecomeUnavailableNotification)) { _ in
             connection.stop(); model.stop()
         }
-        .onDisappear { connection.stop(); model.stop() }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false; connection.stop(); model.stop() }
         .confirmationDialog(L10n.text("开始新的联机"), isPresented: $newTetherConfirmation, titleVisibility: .visible) {
             Button(L10n.text("开始新的联机")) { choose(.tethering, resume: false) }
             Button(L10n.text("取消"), role: .cancel) {}

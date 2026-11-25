@@ -54,6 +54,7 @@ final class CameraImportFaultToleranceXCTests: XCTestCase {
         try await CameraSkipAndLimitTests.testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem()
         try await CameraSkipAndLimitTests.testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort()
         try await CameraSkipAndLimitTests.testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable()
+        try await CameraSkipAndLimitTests.testImportIdleHeartbeatKeepsSessionAndSurfacesDrop()
         try await CameraSkipAndLimitTests.testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload()
         try await CameraSkipAndLimitTests.testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack()
         try await CameraSkipAndLimitTests.testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy()
