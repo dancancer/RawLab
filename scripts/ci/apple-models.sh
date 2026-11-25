@@ -2,9 +2,6 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
-export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
-SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-export SDKROOT
 # 不变量 7：套件日志出现行首 SKIP 标记即视为能力未演练，即使退出码为 0 也判败。
 # 锚定行首是为了不误伤路径段、编译器诊断、标识符或 PASS 文案里的合法 "SKIP" 字样。
 # 唯一例外（docs/process/ci.md）：models 清单内的混合 AX 套件（其 Swift 二层闸与
@@ -27,16 +24,22 @@ ax_honest_skip_allowed() {
     done
     return 1
 }
-# 并行回放的日志很长，失败套件名与退出码要单独汇总到 stderr，免得在 CI 日志里逐段翻找。
-failed_suites=()
 fail_on_logged_skip() {
     if grep -q -E '^[[:space:]]*SKIP([[:space:]:]|$)' "$1"; then
         ax_honest_skip_allowed "$2" "$1" && return 0
         printf 'error: %s logged SKIP (forbidden by CI invariant 7)\n' "$2" >&2
-        failed_suites+=("$2 (logged SKIP)")
         return 1
     fi
 }
+# 供 apple_models_scheduler.py 回调：对单个已结束套件的日志执行不变量 7 判定，规则只在本文件维护。
+# 放在 xcrun 之前：判定只读日志，工具链偶发失败不应被记成 SKIP。
+if [ "${1:-}" = --check-skip ]; then
+    fail_on_logged_skip "$2" "$3"
+    exit $?
+fi
+export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
+SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+export SDKROOT
 case "${1:-}" in
     macos)
         python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet
@@ -179,100 +182,13 @@ if [ "$max_jobs" -lt 1 ]; then
     max_jobs=1
 fi
 
-mkdir -p "$MODEL_CACHE/logs" "$MODEL_CACHE/work"
-fail_rc=0
-skip_fail=0
-
-launch_suite() {
-    local idx="$1"
-    local suite="${suites[$idx]}"
-    local suite_log="$MODEL_CACHE/logs/$idx.log"
-    local suite_tmp="$MODEL_CACHE/work/$idx"
-    mkdir -p "$suite_tmp"
-    : > "$suite_log"
-    (
-        export TMPDIR="$suite_tmp"
-        export RAWLAB_TEST_TMP_DIR="$suite_tmp"
-        exec bash "$suite" > "$suite_log" 2>&1
-    ) &
-    pids+=("$!")
-    idxs+=("$idx")
-}
-
-reap_finished() {
-    local block="${1:-0}"
-    while [ "${#pids[@]}" -gt 0 ]; do
-        local reaped=0
-        local next_pids=()
-        local next_idxs=()
-        local i
-        for (( i = 0; i < ${#pids[@]}; i++ )); do
-            local pid="${pids[$i]}"
-            local idx="${idxs[$i]}"
-            if ! kill -0 "$pid" 2>/dev/null; then
-                local rc=0
-                wait "$pid" || rc=$?
-                local suite="${suites[$idx]}"
-                local suite_log="$MODEL_CACHE/logs/$idx.log"
-                printf '[model] %s\n' "$suite"
-                if [[ -f "$suite_log" ]]; then
-                    cat "$suite_log"
-                fi
-                if ! fail_on_logged_skip "$suite_log" "$suite"; then
-                    skip_fail=1
-                fi
-                if [ "$rc" -ne 0 ]; then
-                    printf 'error: %s failed with exit code %s\n' "$suite" "$rc" >&2
-                    failed_suites+=("$suite (exit $rc)")
-                    if [ "$fail_rc" -eq 0 ]; then
-                        fail_rc="$rc"
-                    fi
-                fi
-                reaped=1
-            else
-                next_pids+=("$pid")
-                next_idxs+=("$idx")
-            fi
-        done
-        pids=(${next_pids[@]+"${next_pids[@]}"})
-        idxs=(${next_idxs[@]+"${next_idxs[@]}"})
-        if [ "$block" -eq 0 ] || [ "$reaped" -eq 1 ]; then
-            break
-        fi
-        sleep 0.05
-    done
-}
-
-idx=0
-total="${#suites[@]}"
-while [ "$idx" -lt "$total" ]; do
-    while [ "${#pids[@]}" -ge "$max_jobs" ]; do
-        reap_finished 1
-    done
-    if [ "$fail_rc" -ne 0 ] || [ "$skip_fail" -ne 0 ]; then
-        break
-    fi
-    launch_suite "$idx"
-    idx=$((idx + 1))
-    reap_finished 0
-done
-
-while [ "${#pids[@]}" -gt 0 ]; do
-    reap_finished 1
-done
-
-if [ "${#failed_suites[@]}" -gt 0 ]; then
-    printf 'error: apple models (%s): %d failure(s)\n' "$1" "${#failed_suites[@]}" >&2
-    if [ "$idx" -lt "$total" ]; then
-        printf 'error:   %d queued suite(s) were not started after the first failure\n' "$((total - idx))" >&2
-    fi
-    for failed in "${failed_suites[@]}"; do
-        printf 'error:   %s\n' "$failed" >&2
-    done
-fi
-if [ "$skip_fail" -ne 0 ]; then
-    exit 1
-fi
-if [ "$fail_rc" -ne 0 ]; then
-    exit "$fail_rc"
-fi
+# 并行调度与日志回放交给 Python：bash 3.2 的内建 printf/cat 往 tee 管道写时会被子进程的
+# SIGCHLD 打断（EINTR，"write error: Interrupted system call"）而误判失败；Python 自动重试。
+# 调度器在后台运行，wait 可被 TERM/INT 打断，交由 cleanup_apple_models 清理整棵进程树。
+python3 "$ROOT/scripts/ci/apple_models_scheduler.py" --platform "$1" --jobs "$max_jobs" \
+    --cache "$MODEL_CACHE" --checker "$ROOT/scripts/ci/apple-models.sh" -- "${suites[@]}" &
+pids=("$!")
+scheduler_rc=0
+wait "${pids[0]}" || scheduler_rc=$?
+pids=()
+exit "$scheduler_rc"
