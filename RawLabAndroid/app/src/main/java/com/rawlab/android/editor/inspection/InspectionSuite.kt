@@ -74,6 +74,19 @@ data class InspectionSessionState(
             copy(lastNonGrayOverlay = overlay, overlay = InspectionOverlayMode.NEUTRAL_GRAY_50)
         }
 
+    fun dismissOverlay(): InspectionSessionState = when (overlay) {
+        InspectionOverlayMode.NONE -> this
+        InspectionOverlayMode.NEUTRAL_GRAY_50 -> {
+            val restored = if (lastNonGrayOverlay == InspectionOverlayMode.NEUTRAL_GRAY_50) {
+                InspectionOverlayMode.NONE
+            } else {
+                lastNonGrayOverlay
+            }
+            copy(overlay = restored)
+        }
+        else -> copy(overlay = InspectionOverlayMode.NONE, lastNonGrayOverlay = InspectionOverlayMode.NONE)
+    }
+
     fun pinAnchor(sourceX: Float, sourceY: Float): InspectionSessionState {
         if (!canPinMore) return this
         val anchor = InspectionAnchor(
