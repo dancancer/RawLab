@@ -131,6 +131,8 @@ struct IOSCameraImportPreferences: Codable {
     @Published private(set) var lastSavedToPhotoLibraryCount = 0
     @Published private(set) var lastManualImportOriginals: [CameraStoredOriginal] = []
     @Published private(set) var skippedAssets: [CameraAssetSnapshot] = []
+    @Published private(set) var accessAuthPrompt: IOSCameraAccessAuthPrompt?
+    @Published private(set) var accessAuthSubmitting = false
     private var receivingSavedToPhotoLibraryCount = 0
     private var receivingOriginals: [CameraStoredOriginal] = []
 
@@ -169,6 +171,7 @@ struct IOSCameraImportPreferences: Codable {
         photoLibraryPermissionDenied = false; lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
         receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         skippedCameraKey = nil; skippedAssets = []
+        accessAuthPrompt = nil; accessAuthSubmitting = false
         self.endpoint = endpoint; self.mode = mode; sessionStartedAt = Date()
         scanning = false; incrementalJobID = nil; contentsFamily = nil
         customCutoff = nil; includeUndated = false
@@ -179,7 +182,7 @@ struct IOSCameraImportPreferences: Codable {
         preview = nil; frame = nil; frameAt = nil; progress = nil; savedCount = 0; notice = nil; phase = .connecting
         let owner = UUID()
         callbackOwner = owner
-        let next = IOSCameraRun(endpoint: endpoint, mode: mode, cardConfirmed: cardConfirmed) { [weak self] event in
+        let next = IOSCameraRun(endpoint: endpoint, mode: mode, cardConfirmed: cardConfirmed, resumeTether: resume) { [weak self] event in
             Task { @MainActor in
                 guard let self, self.callbackOwner == owner else { return }
                 self.accept(event)
@@ -194,9 +197,14 @@ struct IOSCameraImportPreferences: Codable {
         case .phase(let value):
             let previousPhase = phase
             phase = value
-            if value == .browsing || value == .ready { pendingThumbnails = [] }
+            if value == .browsing || value == .ready {
+                pendingThumbnails = []
+                accessAuthPrompt = nil
+                accessAuthSubmitting = false
+            }
             if value == .paused {
                 focusBusy = false; canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil
+                accessAuthSubmitting = false
             }
             if previousPhase == .receiving && value == .browsing {
                 if mode == .importing && receivingSavedToPhotoLibraryCount > 0 {
@@ -211,7 +219,12 @@ struct IOSCameraImportPreferences: Codable {
                 receivingSavedToPhotoLibraryCount = 0
                 receivingOriginals = []
             }
+        case .accessAuthRequired(let prompt):
+            accessAuthSubmitting = false
+            accessAuthPrompt = prompt
+            notice = nil
         case .device(let value, let family):
+            accessAuthPrompt = nil; accessAuthSubmitting = false
             device = value; contentsFamily = family; originalBrowsingAvailable = family != nil
             syncSkippedAssets()
             if mode == .importing {
@@ -278,6 +291,7 @@ struct IOSCameraImportPreferences: Codable {
             if mode == .importing && !importPreferences.incremental { receivingOriginals.append(original) }
             if original.photoLibraryAssetID != nil { receivingSavedToPhotoLibraryCount += 1 }
         case .failure(let error):
+            accessAuthPrompt = nil; accessAuthSubmitting = false
             parameterBusy = false; focusBusy = false; tapFocusLocked = false; tapFocusPoint = nil
             previewLoading = false; shutterReady = false; scanning = false; progress = nil
             if case CameraProtocolError.tetherRecoveryRequired = error { manualImportRequired = true }
@@ -326,11 +340,44 @@ struct IOSCameraImportPreferences: Codable {
         canCancelTouchFocus = false; tapFocusLocked = false; liveViewFrames = []; tapFocusPoint = nil; shutterReady = false
         previewLoading = false; pendingThumbnails = []; scanning = false; progress = nil; listingLimitExceeded = false
         localNetworkDenied = false; photoLibraryPermissionDenied = false
+        accessAuthPrompt = nil; accessAuthSubmitting = false
         lastSavedToPhotoLibraryCount = 0; lastManualImportOriginals = []
         receivingSavedToPhotoLibraryCount = 0; receivingOriginals = []
         backend.stop(previous) { [weak self] in
             Task { @MainActor in self?.reloadHistory(); completion() }
         }
+    }
+
+    func submitAccessAuth(user: String, password: String) {
+        guard let run, let prompt = accessAuthPrompt, !accessAuthSubmitting else { return }
+        accessAuthSubmitting = true
+        notice = nil
+        backend.submitAccessAuth(prompt: prompt, user: user, password: password, run: run)
+    }
+
+    func forgetSavedAccessAuth() {
+        guard let prompt = accessAuthPrompt else { return }
+        backend.forgetAccessAuth(cameraID: prompt.cameraID)
+        accessAuthPrompt = IOSCameraAccessAuthPrompt(
+            cameraID: prompt.cameraID,
+            host: prompt.host,
+            port: prompt.port,
+            fingerprint: prompt.fingerprint,
+            keyType: prompt.keyType,
+            initialUser: "",
+            fingerprintChanged: prompt.fingerprintChanged,
+            hasSavedCredentials: false,
+            error: nil
+        )
+    }
+
+    func cancelAccessAuth() {
+        stop()
+        clearNotice()
+    }
+
+    func accessAuthErrorMessage(for prompt: IOSCameraAccessAuthPrompt) -> String? {
+        prompt.error.map { message($0) }
     }
     func reloadHistory() {
         backend.loadHistory { [weak self] result in
@@ -606,6 +653,9 @@ struct IOSCameraImportPreferences: Codable {
         switch error {
         case CameraProtocolError.localNetworkDenied: return L10n.text("请在系统设置中允许 RawLab 访问本地网络。")
         case CameraProtocolError.connectionRefused: return L10n.text("未在当前 Wi-Fi 发现相机。请先在系统 Wi-Fi 设置连接相机热点，再返回继续。")
+        case CameraProtocolError.sshAuthenticationFailed: return L10n.text("访问验证失败，请核对相机屏幕中的用户名与密码。")
+        case CameraProtocolError.sshFingerprintMismatch: return L10n.text("相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。")
+        case CameraProtocolError.sshUnsupportedAuthMethod: return L10n.text("当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。")
         case CameraProtocolError.captureUnknown: return L10n.text("拍摄结果尚未确认。请检查相机，重新连接只恢复原件接收。")
         case CameraProtocolError.captureNotSent: return L10n.text("请将相机设为单张拍摄，并确认照片同时保存到相机存储卡。")
         case CameraProtocolError.tetherRecoveryRequired: return L10n.text("无法确认上次联机的照片范围，已暂停自动恢复。请从相机导入，手动选择需要补传的照片。不会自动补拍。")

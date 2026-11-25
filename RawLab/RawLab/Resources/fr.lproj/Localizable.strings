@@ -311,6 +311,7 @@
 "实时取景" = "Visée en direct";
 "实时取景、调整参数并拍摄" = "Afficher la visée en direct, régler les paramètres et prendre des photos";
 "宽度" = "Largeur";
+"密码" = "Mot de passe";
 "密码已复制，仅本机可用，2 分钟后自动清除。" = "Mot de passe copié (appareil local uniquement ; effacé dans 2 minutes).";
 "对比" = "Comparaison";
 "对比度" = "Contraste";
@@ -444,6 +445,7 @@
 "当前照片或调整记录无效，无法安全重置。" = "La photo actuelle ou ses réglages enregistrés sont invalides et ne peuvent pas être réinitialisés en toute sécurité.";
 "当前照片的设置尚不可用。" = "Les paramètres de la photo actuelle ne sont pas encore disponibles.";
 "当前状态下相机未接受对焦点设置。" = "L’appareil n’a pas accepté le point de mise au point dans son état actuel.";
+"当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。" = "Cet appareil photo requiert une authentification SSH interactive (keyboard-interactive), qui n’est pas encore prise en charge sur iOS.";
 "当前相机模式不支持远程选择对焦点。" = "Ce mode d’appareil ne prend pas en charge la sélection à distance du point de mise au point.";
 "当前相机模式未提供此功能。" = "Cette fonction est indisponible dans le mode actuel de l’appareil.";
 "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "Cette signature ne permet pas de rejoindre le Wi-Fi automatiquement. Revenez à l’écran précédent et utilisez les Réglages Wi-Fi.";
@@ -452,6 +454,7 @@
 "待导入 %@ 个文件" = "%@ fichiers à importer";
 "待接收 %d 张。" = "%d photos en attente de réception.";
 "待选择的镜头配置" = "Sélection du profil d’objectif requise";
+"忘记已保存凭据" = "Oublier les identifiants enregistrés";
 "快门" = "Obturateur";
 "恢复上次联机" = "Reprendre la dernière prise de vue connectée";
 "恢复当前照片的全部调整，不改写原始照片。" = "Réinitialiser tous les réglages de la photo actuelle. La photo d’origine ne sera pas modifiée.";
@@ -712,6 +715,7 @@
 "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Enregistrement détaillé actif (désactivation automatique après 30 minutes ou après le prochain redémarrage). Reproduisez le problème puis enregistrez ou envoyez les journaux.";
 "正在读取镜头信息…" = "Lecture des informations de l’objectif…";
 "正在连接相机…" = "Connexion à l’appareil photo…";
+"正在验证访问凭据…" = "Vérification des identifiants d'accès…";
 "正常显影" = "Développement normal";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "Ce JPEG contient une carte de gain HDR. Conservez l’original pour préserver le HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "Les informations colorimétriques de cette LUT sont incomplètes. Confirmez son traitement. Elle sera marquée comme compatible, avec un rendu non vérifié.";
@@ -785,6 +789,7 @@
 "照片格式" = "Format photo";
 "照片缺少有效焦距，未应用校正" = "Distance focale invalide ; correction non appliquée";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "Les plages de paramètres disponibles ne permettent pas de préserver entièrement le rendu de la recette. Annulez ou confirmez séparément la réinitialisation de tous les réglages.";
+"用户名" = "Nom d'utilisateur";
 "用户外观" = "Mes rendus";
 "用户外观 · %@" = "Look personnel · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Texture cinématographique grand écran, lumière et ombres très contrastées, noirs profonds et lumière dorée de projecteur";
@@ -814,6 +819,8 @@
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "Le Wi-Fi de l’appareil n’a généralement pas accès à Internet. Restez connecté.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "L’appareil photo ne contient aucune photo RAW ou JPEG à importer.";
 "相机中的原照片会保留。" = "Les photos originales de l’appareil seront conservées.";
+"相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。" = "L'empreinte de clé de l'appareil photo a changé. Vérifiez l'empreinte sur l'écran de l'appareil avant de saisir à nouveau les identifiants.";
+"相机密钥指纹（请与相机屏幕核对）" = "Empreinte de clé de l'appareil photo (à vérifier sur l'écran)";
 "相机数据或原件校验未通过，已暂停。" = "La vérification des données ou des originaux a échoué. L’opération est en pause.";
 "相机时间" = "Heure de l’appareil";
 "相机未提供可调整选项" = "L’appareil photo ne fournit aucune option réglable";
@@ -823,6 +830,7 @@
 "相机白平衡（按目标照片）" = "Balance des blancs de l’appareil (pour chaque photo cible)";
 "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。" = "Les menus varient selon le modèle et le firmware. Suivez les étapes de connexion au smartphone affichées sur votre appareil.";
 "相机裁切系数" = "Facteur de recadrage du boîtier";
+"相机访问验证" = "Authentification d'accès à l'appareil photo";
 "相机连接已断开。已保存的照片仍可查看。" = "L’appareil photo est déconnecté. Les photos enregistrées restent disponibles.";
 "省略自动黑位" = "Ignorer le rendu automatique du noir";
 "确定" = "OK";
@@ -925,6 +933,7 @@
 "计算与参考的差异" = "Calculer l’écart avec la référence";
 "记录详细诊断日志" = "Enregistrer des journaux de diagnostic détaillés";
 "设置结果未确认，请重新连接后检查。" = "Le résultat du réglage n’est pas confirmé. Reconnectez-vous et vérifiez-le.";
+"访问验证失败，请核对相机屏幕中的用户名与密码。" = "Échec de l'authentification d'accès. Vérifiez le nom d'utilisateur et le mot de passe affichés sur l'appareil photo.";
 "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Les archives de diagnostic ne contiennent que la version de l’application, l’environnement système, le résumé des étapes et les codes d’erreur. Les photos, noms de fichiers et chemins personnels sont exclus.";
 "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Archive de diagnostic enregistrée. Vous pouvez l’envoyer au développeur via GitHub Issues ou votre messagerie.";
 "诊断码：%@" = "Code de diagnostic : %@";
@@ -943,6 +952,7 @@
 "请先确认上方存储卡保存选项" = "Confirmez d’abord l’enregistrement sur carte ci-dessus";
 "请先确认同源图片、处理条件和参考来源。" = "Confirmez d’abord la même image source, les conditions de traitement et la source de référence.";
 "请先选择外观或配方。" = "Sélectionnez d’abord un look ou une recette.";
+"请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。" = "Consultez le nom d'utilisateur et le mot de passe dans le menu Infos d'authentification d'accès de l'appareil photo, vérifiez l'empreinte ci-dessous, puis connectez-vous.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Autorisez RawLab à utiliser le Bluetooth dans les réglages système.";
 "请在系统设置中允许 RawLab 访问本地网络。" = "Autorisez RawLab à accéder au réseau local dans les réglages système.";
 "请在调整后的照片区域取色。" = "Prélevez une couleur dans la photo retouchée.";
@@ -1130,6 +1140,7 @@
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation : du gris à la couleur.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Nuit urbaine néon à Séoul, base cyan froide opposée aux hautes lumières rose-violet et aux reflets de rue mouillée";
+"验证并连接" = "Vérifier et connecter";
 "高" = "Élevé";
 "高光" = "Hautes lumières";
 "高光保护" = "Protection des hautes lumières";

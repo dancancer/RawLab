@@ -4785,6 +4785,50 @@
         "%@"
       ],
       "source": "诊断码：{0}"
+    },
+    "相机访问验证": {
+      "formats": [],
+      "source": "相机访问验证"
+    },
+    "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。": {
+      "formats": [],
+      "source": "请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。"
+    },
+    "相机密钥指纹（请与相机屏幕核对）": {
+      "formats": [],
+      "source": "相机密钥指纹（请与相机屏幕核对）"
+    },
+    "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。": {
+      "formats": [],
+      "source": "相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。"
+    },
+    "用户名": {
+      "formats": [],
+      "source": "用户名"
+    },
+    "密码": {
+      "formats": [],
+      "source": "密码"
+    },
+    "验证并连接": {
+      "formats": [],
+      "source": "验证并连接"
+    },
+    "正在验证访问凭据…": {
+      "formats": [],
+      "source": "正在验证访问凭据…"
+    },
+    "访问验证失败，请核对相机屏幕中的用户名与密码。": {
+      "formats": [],
+      "source": "访问验证失败，请核对相机屏幕中的用户名与密码。"
+    },
+    "忘记已保存凭据": {
+      "formats": [],
+      "source": "忘记已保存凭据"
+    },
+    "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。": {
+      "formats": [],
+      "source": "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。"
     }
   },
   "overrides": {
@@ -6160,6 +6204,14 @@
       "fr": "Diagnostic",
       "ja": "診断",
       "zh-Hans": "故障诊断"
+    },
+    "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。": {
+      "zh-Hans": "当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。",
+      "en": "This camera requires interactive SSH authentication (keyboard-interactive), which is not supported on iOS yet.",
+      "de": "Diese Kamera erfordert interaktive SSH-Authentifizierung (keyboard-interactive), die unter iOS noch nicht unterstützt wird.",
+      "fr": "Cet appareil photo requiert une authentification SSH interactive (keyboard-interactive), qui n’est pas encore prise en charge sur iOS.",
+      "ja": "このカメラは対話型 SSH 認証（keyboard-interactive）が必要なため、現在の iOS 版では未対応です。",
+      "es": "Esta cámara requiere autenticación SSH interactiva (keyboard-interactive), que aún no es compatible con iOS."
     }
   }
 }

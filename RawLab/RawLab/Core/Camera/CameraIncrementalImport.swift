@@ -215,11 +215,12 @@ extension CameraAssetSnapshot {
     }
 
     var anchorKey: String {
-        "\(storage):\(format):\(name):\(size):\(created):\(modified)"
+        let base = "\(storage):\(format):\(name):\(size):\(created):\(modified)"
+        return effectiveSlot == 1 ? base : "slot\(effectiveSlot):\(base)"
     }
 
     var withoutLocator: CameraAssetSnapshot {
         CameraAssetSnapshot(content: 0, file: 0, storage: storage, format: format, name: name,
-                            size: size, created: created, modified: modified)
+                            size: size, created: created, modified: modified, slot: slot)
     }
 }

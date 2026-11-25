@@ -8,6 +8,15 @@ rawlab_ios_host_swiftc -whole-module-optimization -module-cache-path "$OUT/modul
     "$ROOT/RawLab/RawLab/Core/Camera/CameraProtocol.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraPTPClient.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/CameraNetwork.swift" \
+    "$ROOT/RawLab/RawLab/Core/Camera/CameraAccessAuth.swift" \
     "$ROOT/RawLab/RawLab/Core/Camera/SonyCameraSession.swift" \
     "$ROOT/RawLab/tests/CameraProtocolTests.swift" -o "$OUT/tests"
 "$OUT/tests"
+
+SSH_SCRATCH="$OUT/camera-ssh"
+if [[ -n "${RAWLAB_CI_SWIFTPM_CACHE:-}" ]]; then
+    _ci_cache="$RAWLAB_CI_SWIFTPM_CACHE"
+    [[ "$_ci_cache" == /* ]] || _ci_cache="$ROOT/$_ci_cache"
+    SSH_SCRATCH="$_ci_cache/camera-ssh"
+fi
+swift test --package-path "$ROOT/RawLab/Packages/RawLabCameraSSH" --scratch-path "$SSH_SCRATCH"

@@ -12,6 +12,9 @@ struct CameraFocusPointResult {
 final class SonyCameraSession {
     static let maximumListedAssets = 10_000
     static let maximumMobilePages = 1_000
+    static let slotDatesLimit = 256 << 10
+    private static let remoteInitRetryOps: Set<UInt16> = [0x923b, 0x923c]
+    private static let remoteInitRetryCodes: Set<UInt16> = [0x2002, 0x2005, 0x201e]
 
     let id = UUID()
     let device: CameraDeviceIdentity
@@ -27,14 +30,19 @@ final class SonyCameraSession {
     private var stopping = false, capturing = false
 
     static func open(host: String, purpose: CameraSessionPurpose, clientID: UUID,
+                     openChannel: ((UInt16) throws -> CameraByteChannel)? = nil,
                      register: (CameraPTPClient) -> Void) throws -> SonyCameraSession {
-        let command = try CameraTCPChannel(host: host)
+        let openPTP: () throws -> CameraByteChannel = {
+            if let openChannel {
+                return try openChannel(15740)
+            }
+            return try CameraTCPChannel(host: host)
+        }
+        let command = try openPTP()
         let client = CameraPTPClient(command: command, event: nil)
         register(client)
         do {
-            try client.initialize(clientID: clientID, openEvent: {
-                try CameraTCPChannel(host: host)
-            })
+            try client.initialize(clientID: clientID, openEvent: openPTP)
             return try SonyCameraSession(client: client, purpose: purpose)
         } catch { client.close(); throw error }
     }
@@ -120,24 +128,77 @@ final class SonyCameraSession {
         throw CameraProtocolError.unsupported("Camera card is not available")
     }
 
+    private enum MobileSlotState {
+        case hasPhotos, empty, unknown
+    }
+
+    private func probeMobileSlot(_ slot: UInt32) throws -> MobileSlotState {
+        do {
+            let bytes = try client.operation(0x923b, parameters: [slot], requiresData: true, limit: Self.slotDatesLimit)
+            return CameraWire.slotDateCount(bytes) > 0 ? .hasPhotos : .empty
+        } catch CameraProtocolError.response(let op, let code) where op == 0x923b {
+            if code == 0x201d || code == 0x2013 { return .empty }
+            if slot == 1 && Self.remoteInitRetryCodes.contains(code) {
+                throw CameraProtocolError.response(op, code)
+            }
+            return slot == 1 ? .unknown : .empty
+        }
+    }
+
+    private func listMobileSlot(_ slot: UInt32, into assets: inout [CameraRemoteAsset], seen: inout Set<String>) throws {
+        var cursor: UInt64 = 0
+        for _ in 0..<Self.maximumMobilePages {
+            try checkRunning()
+            let bytes = try client.operation(
+                0x923c,
+                parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, slot, 0],
+                requiresData: true,
+                limit: CameraWire.dataLimit
+            )
+            let page = try CameraWire.mobilePage(bytes, owner: id, slot: slot)
+            for asset in page.assets where seen.insert(asset.snapshot.key).inserted {
+                assets.append(asset)
+            }
+            guard assets.count <= Self.maximumListedAssets else { throw CameraProtocolError.photoLimitExceeded }
+            if page.count < 100 { return }
+            guard page.cursor > cursor else { throw CameraProtocolError.invalid("Camera page cursor did not advance") }
+            cursor = page.cursor
+        }
+        throw CameraProtocolError.photoLimitExceeded
+    }
+
+    private func listMobileAssets() throws -> [CameraRemoteAsset] {
+        var assets: [CameraRemoteAsset] = [], seen: Set<String> = []
+        if device.operations.contains(0x923b) {
+            let slot1 = try probeMobileSlot(1)
+            if slot1 != .empty {
+                try listMobileSlot(1, into: &assets, seen: &seen)
+            }
+            let slot2 = try probeMobileSlot(2)
+            if slot2 == .hasPhotos {
+                try listMobileSlot(2, into: &assets, seen: &seen)
+            }
+            return assets
+        }
+        try listMobileSlot(1, into: &assets, seen: &seen)
+        return assets
+    }
+
     func listAssets() throws -> [CameraRemoteAsset] {
         try checkRunning()
         do {
             switch family {
             case .mobile:
-                var cursor: UInt64 = 0, assets: [CameraRemoteAsset] = [], seen: Set<String> = []
-                for _ in 0..<Self.maximumMobilePages {
-                    try checkRunning()
-                    let bytes = try client.operation(0x923c, parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
-                                                     requiresData: true, limit: CameraWire.dataLimit)
-                    let page = try CameraWire.mobilePage(bytes, owner: id)
-                    for asset in page.assets where seen.insert(asset.snapshot.key).inserted { assets.append(asset) }
-                    guard assets.count <= Self.maximumListedAssets else { throw CameraProtocolError.photoLimitExceeded }
-                    if page.count < 100 { return assets }
-                    guard page.cursor > cursor else { throw CameraProtocolError.invalid("Camera page cursor did not advance") }
-                    cursor = page.cursor
+                do {
+                    return try listMobileAssets()
+                } catch CameraProtocolError.response(let op, let code)
+                    where purpose == .importing && !remoteReady &&
+                        Self.remoteInitRetryOps.contains(op) &&
+                        Self.remoteInitRetryCodes.contains(code) &&
+                        device.operations.isSuperset(of: [0x9201, 0x9202, 0x9209]) {
+                    try initializeRemote()
+                    return try listMobileAssets()
                 }
-                throw CameraProtocolError.photoLimitExceeded
             case .legacy:
                 guard contentsEntered else { throw CameraProtocolError.unsupported("Open a separate card session before reading legacy contents") }
                 var handles: Set<UInt32> = [], assets: [CameraRemoteAsset] = []
@@ -171,7 +232,7 @@ final class SonyCameraSession {
         guard asset.owner == id else { throw CameraProtocolError.invalid("Camera photo belongs to another session") }
         if family == .mobile {
             guard device.operations.contains(0x923e) else { throw CameraProtocolError.unsupported("Camera previews are unavailable") }
-            return try client.operation(0x923e, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file, large ? 2 : 1],
+            return try client.operation(0x923e, parameters: [asset.snapshot.content, asset.snapshot.effectiveSlot << 24 | asset.snapshot.file, large ? 2 : 1],
                                         requiresData: true, limit: large ? 8 << 20 : 2 << 20)
         }
         guard contentsEntered, device.operations.contains(0x100a) else { throw CameraProtocolError.unsupported("Camera thumbnails are unavailable") }
@@ -195,7 +256,7 @@ final class SonyCameraSession {
             throw CameraProtocolError.unsupported("Mobile range read is unavailable")
         }
         let bytes = try client.operation(0x923d, parameters: [
-            asset.snapshot.content, 1 << 24 | asset.snapshot.file,
+            asset.snapshot.content, asset.snapshot.effectiveSlot << 24 | asset.snapshot.file,
             UInt32(truncatingIfNeeded: offset), UInt32(offset >> 32), UInt32(length)
         ], requiresData: true, limit: length)
         guard bytes.count == length else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
@@ -206,17 +267,18 @@ final class SonyCameraSession {
         guard let targetCreated = UInt64(asset.snapshot.created) else {
             return try listAssets().contains(where: { $0.snapshot == asset.snapshot })
         }
+        let slot = asset.snapshot.effectiveSlot
         var cursor: UInt64 = targetCreated > 0 ? targetCreated - 1 : 0
         do {
             for _ in 0..<Self.maximumMobilePages {
                 try checkRunning()
                 let bytes = try client.operation(
                     0x923c,
-                    parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, 1, 0],
+                    parameters: [UInt32(truncatingIfNeeded: cursor), UInt32(cursor >> 32), 100, slot, 0],
                     requiresData: true,
                     limit: CameraWire.dataLimit
                 )
-                let page = try CameraWire.mobilePage(bytes, owner: id)
+                let page = try CameraWire.mobilePage(bytes, owner: id, slot: slot)
                 if page.assets.contains(where: { $0.snapshot == asset.snapshot }) {
                     return true
                 }
@@ -249,9 +311,10 @@ final class SonyCameraSession {
             digest.update(data: data); received += UInt64(data.count); progress(received)
         }
         if family == .mobile {
+            let slot = asset.snapshot.effectiveSlot
             while received < asset.snapshot.size {
                 let count = min(UInt64(3 << 20), asset.snapshot.size - received)
-                let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, 1 << 24 | asset.snapshot.file,
+                let bytes = try client.operation(0x923d, parameters: [asset.snapshot.content, slot << 24 | asset.snapshot.file,
                     UInt32(truncatingIfNeeded: received), UInt32(received >> 32), UInt32(count)], requiresData: true, limit: Int(count))
                 guard bytes.count == count else { throw CameraProtocolError.transientTransfer("Original chunk size changed") }
                 try receive(bytes)

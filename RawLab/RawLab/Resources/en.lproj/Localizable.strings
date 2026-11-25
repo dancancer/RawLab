@@ -311,6 +311,7 @@
 "实时取景" = "Live view";
 "实时取景、调整参数并拍摄" = "Use live view, adjust settings, and shoot";
 "宽度" = "Width";
+"密码" = "Password";
 "密码已复制，仅本机可用，2 分钟后自动清除。" = "Password copied (local device only; clears in 2 minutes).";
 "对比" = "Comparison";
 "对比度" = "Contrast";
@@ -444,6 +445,7 @@
 "当前照片或调整记录无效，无法安全重置。" = "The current photo or edit record is invalid and cannot be reset safely.";
 "当前照片的设置尚不可用。" = "The settings for the current photo are not available yet.";
 "当前状态下相机未接受对焦点设置。" = "The camera did not accept the focus point in its current state.";
+"当前相机开启了交互式访问验证（keyboard-interactive），iOS 暂不支持该验证方式。" = "This camera requires interactive SSH authentication (keyboard-interactive), which is not supported on iOS yet.";
 "当前相机模式不支持远程选择对焦点。" = "This camera mode does not support remote focus point selection.";
 "当前相机模式未提供此功能。" = "This feature is unavailable in the current camera mode.";
 "当前签名未启用系统自动加入 Wi-Fi，请返回上一页使用系统 Wi-Fi 方式连接。" = "This build signing cannot auto-join Wi-Fi. Go back and connect using System Wi-Fi.";
@@ -452,6 +454,7 @@
 "待导入 %@ 个文件" = "%@ files to import";
 "待接收 %d 张。" = "%d photos waiting to be received.";
 "待选择的镜头配置" = "Lens profile selection required";
+"忘记已保存凭据" = "Forget saved credentials";
 "快门" = "Shutter";
 "恢复上次联机" = "Resume last tethering";
 "恢复当前照片的全部调整，不改写原始照片。" = "Reset all adjustments for the current photo. The original photo will not be modified.";
@@ -712,6 +715,7 @@
 "正在记录详细诊断日志（30 分钟或下次重启后自动关闭）。请复现问题后导出或上传。" = "Recording detailed diagnostic logs (turns off automatically after 30 minutes or the next restart). Reproduce the issue, then save or upload.";
 "正在读取镜头信息…" = "Reading Lens Information…";
 "正在连接相机…" = "Connecting to camera…";
+"正在验证访问凭据…" = "Verifying access credentials…";
 "正常显影" = "Normal rendering";
 "此 JPEG 含 HDR 增益图。请选择原样保存以保留 HDR。" = "This JPEG contains an HDR gain map. Keep the original to preserve HDR.";
 "此 LUT 缺少完整颜色说明。请确认处理方式；导入后会标记为兼容模式，效果尚未验证。" = "This LUT lacks complete color information. Confirm how to apply it. It will be marked as compatible, with an unverified appearance.";
@@ -785,6 +789,7 @@
 "照片格式" = "Photo format";
 "照片缺少有效焦距，未应用校正" = "No Valid Focal Length; Correction Not Applied";
 "现有参数范围无法保留配方的全部效果。你可以取消，或另行确认重置全部调整。" = "The available parameter ranges cannot preserve the recipe's full appearance. Cancel, or separately confirm resetting all adjustments.";
+"用户名" = "Username";
 "用户外观" = "My looks";
 "用户外观 · %@" = "User Look · %@";
 "电影叙事宽画幅质感，强反差光影切割，深邃暗部与聚光灯金光" = "Cinematic widescreen narrative, hard-cut light and shadow, deep blacks and spotlight gold";
@@ -814,6 +819,8 @@
 "相机 Wi-Fi 通常无法访问互联网，请保持连接。" = "The camera’s Wi-Fi usually has no internet access. Stay connected.";
 "相机中没有可导入的 RAW 或 JPEG 照片。" = "The camera has no RAW or JPEG photos to import.";
 "相机中的原照片会保留。" = "Original photos on the camera will be kept.";
+"相机密钥指纹已变化，请与相机屏幕重新核对后再输入凭据。" = "The camera's key fingerprint changed. Verify the fingerprint on the camera screen before re-entering credentials.";
+"相机密钥指纹（请与相机屏幕核对）" = "Camera key fingerprint (verify against the camera screen)";
 "相机数据或原件校验未通过，已暂停。" = "Camera data or original verification failed. The operation is paused.";
 "相机时间" = "Camera time";
 "相机未提供可调整选项" = "The camera provides no adjustable options";
@@ -823,6 +830,7 @@
 "相机白平衡（按目标照片）" = "Camera white balance (per target photo)";
 "相机菜单会随型号和固件变化，请按机身提供的手机连接方式操作。" = "Camera menus vary by model and firmware. Follow the smartphone connection steps shown on your camera.";
 "相机裁切系数" = "Camera crop factor";
+"相机访问验证" = "Camera Access Authentication";
 "相机连接已断开。已保存的照片仍可查看。" = "The camera was disconnected. Saved photos are still available.";
 "省略自动黑位" = "Omit automatic black rendering";
 "确定" = "OK";
@@ -925,6 +933,7 @@
 "计算与参考的差异" = "Calculate difference from reference";
 "记录详细诊断日志" = "Record Detailed Diagnostic Logs";
 "设置结果未确认，请重新连接后检查。" = "The setting result was not confirmed. Reconnect and check again.";
+"访问验证失败，请核对相机屏幕中的用户名与密码。" = "Access authentication failed. Check the username and password shown on the camera screen.";
 "诊断包仅包含应用版本、系统环境、操作步骤摘要与错误代码，不包含照片内容、文件名或个人路径。" = "Diagnostic packages contain only app version, system environment, step summaries, and error codes. Photo data, file names, and personal paths are excluded.";
 "诊断包已保存，可通过微信、小红书或 Issue 发送给开发者。" = "Diagnostic package saved. You can share the ZIP file with the developer via GitHub Issues or messaging apps.";
 "诊断码：%@" = "Diagnostic Code: %@";
@@ -943,6 +952,7 @@
 "请先确认上方存储卡保存选项" = "Confirm camera card saving above first";
 "请先确认同源图片、处理条件和参考来源。" = "First confirm the same source image, processing conditions, and reference source.";
 "请先选择外观或配方。" = "Select a look or recipe first.";
+"请在相机“访问验证信息”菜单中查看用户名与密码，并在核对下方指纹后输入。" = "Check the username and password in the camera's Access Authen. Info menu, verify the fingerprint below, then sign in.";
 "请在系统设置中允许 RawLab 使用蓝牙。" = "Allow RawLab to use Bluetooth in system settings.";
 "请在系统设置中允许 RawLab 访问本地网络。" = "Allow RawLab to access the local network in system settings.";
 "请在调整后的照片区域取色。" = "Sample within the edited photo.";
@@ -1130,6 +1140,7 @@
 "饱和度" = "Saturation";
 "饱和度：从灰色到彩色。" = "Saturation: from gray to color.";
 "首尔都市霓虹夜景，冷青基底与粉紫高光对撞，雨夜路面反射倒影" = "Seoul neon city nightscape, cool cyan base against pink-purple highlights and wet-road reflections";
+"验证并连接" = "Verify & Connect";
 "高" = "High";
 "高光" = "Highlights";
 "高光保护" = "Highlight protection";
