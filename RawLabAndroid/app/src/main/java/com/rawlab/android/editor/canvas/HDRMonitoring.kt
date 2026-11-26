@@ -28,8 +28,21 @@ internal fun HDRMonitoring(statistics: HDRStatistics, display: HDRDisplayState, 
             TextButton(onClick = { expanded = !expanded }, modifier = Modifier.testTag("hdr-monitoring")) {
                 Text(stringResource(if (mode == HDRPreviewMode.AUTOMATIC) R.string.hdr_preview_auto else R.string.hdr_preview_sdr))
             }
-            if (!display.available && mode == HDRPreviewMode.AUTOMATIC)
-                Text(stringResource(R.string.hdr_display_unavailable), style = MaterialTheme.typography.labelSmall)
+            if (mode == HDRPreviewMode.AUTOMATIC) {
+                if (!display.available) {
+                    Text(
+                        stringResource(R.string.hdr_display_unavailable),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.testTag("hdr-display-unavailable"),
+                    )
+                } else if (display.headroom <= 1f) {
+                    Text(
+                        stringResource(R.string.hdr_preview_sdr_active),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.testTag("hdr-sdr-fallback"),
+                    )
+                }
+            }
             if (expanded) {
                 Row {
                     FilterChip(mode == HDRPreviewMode.AUTOMATIC, { onMode(HDRPreviewMode.AUTOMATIC) },

@@ -254,6 +254,7 @@
     <string name="hdr_peak_unlimited">"Unlimited"</string>
     <string name="hdr_preview_auto">"Automatic HDR"</string>
     <string name="hdr_preview_sdr">"SDR Compatibility Preview"</string>
+    <string name="hdr_preview_sdr_active">"Showing the SDR-compatible preview."</string>
     <string name="hdr_processing_cpu">"HDR editing currently uses the CPU. Set GPU mode to Auto or Off."</string>
     <string name="hdr_processing_failed">"HDR processing failed (%1$d)."</string>
     <string name="hdr_reference_white">"Reference White"</string>
