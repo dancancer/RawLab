@@ -1,13 +1,17 @@
 #include "core/photo_pipeline_stages.h"
 
+#include "core/chroma_denoise.h"
 #include "core/lut_compatibility.h"
 #include "core/lut_interpolation.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_basic_controls_v3.h"
 #include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_defringe.h"
+#include "core/photo_effects.h"
 #include "core/photo_film_optics.h"
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
@@ -293,15 +297,6 @@ ImageData resizeBilinear(
     return output;
 }
 
-void applyToneAdjustments(
-    ImageData& image,
-    const RenderParams& params,
-    const std::array<ToneCurve, 3>& channels,
-    bool basicV3
-) {
-    applyPostLookStages(image, params, {}, {}, {}, channels, basicV3, false);
-}
-
 void applyPostLookStages(
     ImageData& image,
     const RenderParams& params,
@@ -310,7 +305,8 @@ void applyPostLookStages(
     const ColorGradingOptions& colorGrading,
     const std::array<ToneCurve, 3>& channels,
     bool basicV3,
-    bool applyHslAndGrading
+    bool applyHslAndGrading,
+    const BwMixerOptions* repeatBwAfterBlackWhite
 ) {
     const auto& customCurve = params.customCurve;
     const ToneCurveParametric parametric(params.parametricCurve);
@@ -322,12 +318,13 @@ void applyPostLookStages(
     const BasicBlackWhiteV3Prepared bwV3(basicV3 ? toneControls : ToneControlsOptions{});
     const bool bwLegacyActive = !basicV3 && (toneControls.blackPoint != 0.0f || toneControls.whitePoint != 0.0f);
     const bool bwMixerActive = params.bw.active();
+    const bool repeatBwActive = repeatBwAfterBlackWhite && repeatBwAfterBlackWhite->active();
     const bool vibranceActive = toneControls.vibrance != 0.0f;
     const bool hslActive = applyHslAndGrading && hsl.active();
     const bool pointColorActive = applyHslAndGrading && params.pointColor.active();
     const bool selectiveColorActive = applyHslAndGrading && params.selectiveColor.active();
     const bool gradingActive = applyHslAndGrading && colorGrading.active();
-    if (!bwMixerActive && !bwV3.active && !bwLegacyActive && !toneActive && !vibranceActive &&
+    if (!bwMixerActive && !bwV3.active && !bwLegacyActive && !repeatBwActive && !toneActive && !vibranceActive &&
         !hslActive && !pointColorActive && !selectiveColorActive && !gradingActive) {
         return;
     }
@@ -356,68 +353,66 @@ void applyPostLookStages(
         ? GammaConverter::removeSRGBGamma(evalMaster(0.0f))
         : 0.0f;
 
+    // 每个像素仍按同一顺序经过各阶段；分块后逐阶段遍历，内层循环保持紧凑，块内像素仍在缓存中。
+    const auto applyTone = [&](RGB& pixel) {
+        if (highlights != 0.0f || shadows != 0.0f) {
+            pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
+        }
+        if (masterActive) {
+            if (params.curveApplyToLuminosity) {
+                const RGB pL(
+                    GammaConverter::removeSRGBGamma(pixel.r),
+                    GammaConverter::removeSRGBGamma(pixel.g),
+                    GammaConverter::removeSRGBGamma(pixel.b)
+                );
+                const float Y = tcLuminosityLinearY(pL);
+                const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
+                const float uPrime = evalMaster(u);
+                pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
+            } else {
+                pixel.r = evalMaster(pixel.r);
+                pixel.g = evalMaster(pixel.g);
+                pixel.b = evalMaster(pixel.b);
+            }
+        }
+        if (channelsActive) {
+            if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
+            if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
+            if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+        }
+        if (basicV3 && contrastLut.active) {
+            pixel.r = contrastLut.apply(pixel.r);
+            pixel.g = contrastLut.apply(pixel.g);
+            pixel.b = contrastLut.apply(pixel.b);
+        }
+        if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
+            applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
+        }
+    };
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t index = first; index < last; ++index) {
-            RGB pixel = image.pixels[index];
-            if (bwMixerActive) {
-                pixel = applyBwMixerPixel(pixel, params.bw);
-            }
+        constexpr size_t kBlock = 4096;
+        for (size_t begin = first; begin < last; begin += kBlock) {
+            RGB* const block = image.pixels.data() + begin;
+            const size_t count = std::min(kBlock, last - begin);
+            const auto each = [&](auto&& stage) {
+                for (size_t i = 0; i < count; ++i) stage(block[i]);
+            };
+            if (bwMixerActive) each([&](RGB& p) { p = applyBwMixerPixel(p, params.bw); });
             if (basicV3) {
-                if (bwV3.active) pixel = bwV3.apply(pixel);
+                if (bwV3.active) each([&](RGB& p) { p = bwV3.apply(p); });
             } else if (bwLegacyActive) {
-                pixel = applyBlackWhite(pixel, toneControls);
+                each([&](RGB& p) { p = applyBlackWhite(p, toneControls); });
             }
-            if (toneActive) {
-                if (highlights != 0.0f || shadows != 0.0f) {
-                    pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
-                }
-                if (masterActive) {
-                    if (params.curveApplyToLuminosity) {
-                        const RGB pL(
-                            GammaConverter::removeSRGBGamma(pixel.r),
-                            GammaConverter::removeSRGBGamma(pixel.g),
-                            GammaConverter::removeSRGBGamma(pixel.b)
-                        );
-                        const float Y = tcLuminosityLinearY(pL);
-                        const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
-                        const float uPrime = evalMaster(u);
-                        pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
-                    } else {
-                        pixel.r = evalMaster(pixel.r);
-                        pixel.g = evalMaster(pixel.g);
-                        pixel.b = evalMaster(pixel.b);
-                    }
-                }
-                if (channelsActive) {
-                    if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
-                    if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
-                    if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
-                }
-                if (basicV3 && contrastLut.active) {
-                    pixel.r = contrastLut.apply(pixel.r);
-                    pixel.g = contrastLut.apply(pixel.g);
-                    pixel.b = contrastLut.apply(pixel.b);
-                }
-                if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
-                    applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
-                }
-            }
+            if (repeatBwActive) each([&](RGB& p) { p = applyBwMixerPixel(p, *repeatBwAfterBlackWhite); });
+            if (toneActive) each(applyTone);
             if (vibranceActive) {
-                pixel = basicV3 ? basicVibranceV3(pixel, toneControls.vibrance) : applyVibrance(pixel, toneControls);
+                if (basicV3) each([&](RGB& p) { p = basicVibranceV3(p, toneControls.vibrance); });
+                else each([&](RGB& p) { p = applyVibrance(p, toneControls); });
             }
-            if (hslActive) {
-                pixel = applyHsl(pixel, hsl);
-            }
-            if (pointColorActive) {
-                pixel = applyPointColorPixel(pixel, params.pointColor);
-            }
-            if (selectiveColorActive) {
-                pixel = applySelectiveColorPixel(pixel, params.selectiveColor);
-            }
-            if (gradingActive) {
-                pixel = applyColorGradingParameters(pixel, gradingParams);
-            }
-            image.pixels[index] = pixel;
+            if (hslActive) each([&](RGB& p) { p = applyHsl(p, hsl); });
+            if (pointColorActive) each([&](RGB& p) { p = applyPointColorPixel(p, params.pointColor); });
+            if (selectiveColorActive) each([&](RGB& p) { p = applySelectiveColorPixel(p, params.selectiveColor); });
+            if (gradingActive) each([&](RGB& p) { p = applyColorGradingParameters(p, gradingParams); });
         }
     });
 }
@@ -437,12 +432,22 @@ void applyDetailAdjustments(
     int textureSourceWidth,
     int textureSourceHeight,
     const FilmOpticsOptions& filmOptics,
-    const FilmOpticsField* filmOpticsField
+    const FilmOpticsField* filmOpticsField,
+    const DetailGuideFields* guideFields
 ) {
-    if (noiseReduction > 0.0f) {
+    // 引导图只为 ROI 瓦片构建分析场，不做降噪和锐化。
+    if (noiseReduction > 0.0f && !guideFields) {
         applyNoiseReduction(image, noiseReduction);
     }
-    if (clarityField && !clarityField->empty() && roiMap.active()) {
+    if (guideFields) {
+        if (clarity != 0.0f) {
+            *guideFields->clarity = buildClarityField(image, sourceWidth, sourceHeight, version);
+        }
+        if (!filmOptics.active()) return;
+        if (clarity != 0.0f) {
+            applyClarityWithField(image, clarity, *guideFields->clarity);
+        }
+    } else if (clarityField && !clarityField->empty() && roiMap.active()) {
         applyClarityWithField(image, clarity, *clarityField, roiMap);
     } else {
         applyClarity(image, clarity, sourceWidth, sourceHeight, version);
@@ -451,6 +456,10 @@ void applyDetailAdjustments(
         applyTexture(image, texture, textureSourceWidth, textureSourceHeight);
     }
     if (filmOptics.active()) {
+        if (guideFields) {
+            *guideFields->filmOptics = buildFilmOpticsField(image, sourceWidth, sourceHeight, filmOptics);
+            return;
+        }
         if (filmOpticsField && !filmOpticsField->empty() && roiMap.active()) {
             applyFilmOpticsWithField(image, *filmOpticsField, filmOptics, roiMap);
         } else {
@@ -464,6 +473,92 @@ void applyDetailAdjustments(
             applySharpening(image, sharpening);
         }
     }
+}
+
+RenderStatus runCpuStageChain(ImageData& image, RenderParams& params, const CpuStagePass& pass) {
+    using Kind = CpuStagePass::Kind;
+    const bool guide = pass.kind == Kind::RoiGuide;
+    const bool tile = pass.kind == Kind::RoiTile;
+    const float dehaze = params.atmosphere.dehaze;
+    const float clarity = params.atmosphere.clarity;
+    const bool filmOptics = params.filmOptics.active();
+    // 引导图依次产出 Basic、去雾、清晰度和胶片光学场；最后一个所需场之后的阶段不必运行。
+    const bool guideNeedsLook = dehaze != 0.0f || clarity != 0.0f || filmOptics;
+    const bool guideNeedsPostLook = clarity != 0.0f || filmOptics;
+
+    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            RGB p = pass.applyMatrix ? ColorConverter::applyMatrix(image.pixels[i], pass.toSrgb) : image.pixels[i];
+            p.r *= pass.exposureWB.r;
+            p.g *= pass.exposureWB.g;
+            p.b *= pass.exposureWB.b;
+            image.pixels[i] = p;
+        }
+    });
+    applyCameraCalibration(image, params.calibration);
+    if (pass.basicV3 && pass.basicTone.active()) {
+        if (guide) {
+            *pass.basicFieldOut = buildBasicToneV3Field(image, pass.analysisWidth, pass.analysisHeight);
+            if (guideNeedsLook) applyBasicToneV3WithField(image, pass.basicTone, *pass.basicFieldOut, {});
+        } else if (pass.basicField) {
+            applyBasicToneV3WithField(image, pass.basicTone, *pass.basicField, pass.roiMap);
+        } else {
+            applyBasicToneV3(image, pass.basicTone, pass.analysisWidth, pass.analysisHeight);
+        }
+        params.highlights = params.shadows = 0.0f;
+    }
+    if (guide && !guideNeedsLook) return RenderStatus::Ok;
+    if (params.defringe.active()) {
+        applyDefringe(image, params.defringe);
+    }
+
+    const RenderStatus status = applyPhotoLook(image, params.lut, params.dcp, params.lutStrength,
+        pass.displayInput, pass.lookConfig);
+    if (status != RenderStatus::Ok) return status;
+    checkProcessingCancellation();
+    if (dehaze != 0.0f) {
+        if (guide) {
+            *pass.dehaze = buildDehazeAnalysis(image, pass.analysisWidth, pass.analysisHeight, params.processingVersion);
+            if (guideNeedsPostLook) applyDehazeWithAnalysis(image, dehaze, *pass.dehaze, {});
+        } else if (tile) {
+            applyDehazeWithAnalysis(image, dehaze, *pass.dehaze, pass.roiMap);
+        } else {
+            applyDehaze(image, dehaze, pass.dehaze, pass.analysisWidth, pass.analysisHeight, params.processingVersion);
+        }
+    }
+    if (guide && !guideNeedsPostLook) return RenderStatus::Ok;
+    applyPostLookStages(image, params, params.toneControls, params.hsl, params.colorGrading,
+        params.channelCurves, pass.basicV3, !pass.stopBeforeHsl, pass.repeatBwAfterBlackWhite);
+    if (pass.stopBeforeHsl) return RenderStatus::Ok;
+
+    if (!guide) {
+        const auto chromaResult = applyChromaDenoiseWorking(image, params.chromaDenoise);
+        checkProcessingCancellation();
+        if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
+    }
+    // 纹理半径按整图对角线换算：整图用当前尺寸，瓦片按 roiMap 折算到整图，引导图用画布尺寸。
+    int textureWidth = image.width;
+    int textureHeight = image.height;
+    if (tile) {
+        textureWidth = std::max(1, static_cast<int>(std::lround(
+            pass.roiMap.fullWidth * double(image.width) / std::max(1.0, pass.roiMap.sourceSpanX))));
+        textureHeight = std::max(1, static_cast<int>(std::lround(
+            pass.roiMap.fullHeight * double(image.height) / std::max(1.0, pass.roiMap.sourceSpanY))));
+    } else if (guide) {
+        textureWidth = pass.analysisWidth;
+        textureHeight = pass.analysisHeight;
+    }
+    const DetailGuideFields guideFields{pass.clarity, pass.filmOptics};
+    applyDetailAdjustments(image, params.noiseReduction, params.sharpening, clarity,
+        pass.analysisWidth, pass.analysisHeight, params.processingVersion,
+        tile && clarity != 0.0f ? pass.clarity : nullptr, pass.roiMap,
+        params.atmosphere.texture, params.sharpenV2, textureWidth, textureHeight,
+        params.filmOptics, tile && filmOptics ? pass.filmOptics : nullptr,
+        guide ? &guideFields : nullptr);
+    if (guide) return RenderStatus::Ok;
+    checkProcessingCancellation();
+    applyPhotoEffectsROI(image, params.effects, pass.roiMap);
+    return RenderStatus::Ok;
 }
 
 void applyOutputSharpening(ImageData& image, OutputSharpening level) {
