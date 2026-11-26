@@ -52,7 +52,14 @@ extension EditorModel {
     }
 
     func flushDeferredExternalEditsCheckIfNeeded() {
-        guard deferredExternalEditsCheck, !hasPendingEditCommits else { return }
+        guard !hasPendingEditCommits else { return }
+        if deferredExternalReloadAccept {
+            deferredExternalReloadAccept = false
+            deferredExternalEditsCheck = false
+            reloadFromExternalUpdate()
+            return
+        }
+        guard deferredExternalEditsCheck else { return }
         deferredExternalEditsCheck = false
         handleExternalEditsFileChange()
     }
@@ -95,10 +102,12 @@ extension EditorModel {
             if let targetState, editState(settings: settings) == targetState {
                 if committedEdit?.state == diskRecord.state {
                     pendingExternalReload = nil
+                    deferredExternalReloadAccept = false
                     return
                 }
             }
             pendingExternalReload = nil
+            deferredExternalReloadAccept = false
             applyExternalReloadRecord(diskRecord)
             return
         }
@@ -114,6 +123,7 @@ extension EditorModel {
     }
 
     func keepCurrentManualDraftOnExternalUpdate() {
+        deferredExternalReloadAccept = false
         if let fp = pendingExternalReload?.fingerprint {
             dismissedExternalReloadFingerprints.insert(fp)
         }
@@ -122,8 +132,6 @@ extension EditorModel {
 
     func reloadFromExternalUpdate() {
         guard let pending = pendingExternalReload else { return }
-        pendingExternalReload = nil
-        dismissedExternalReloadFingerprints.removeAll()
         ParameterValueField.cancelPendingInputs()
         if geometryDraft != nil {
             cancelGeometryDraft()
@@ -133,6 +141,15 @@ extension EditorModel {
         interactionEntry = nil
         interactionWasDirty = false
         scheduler.setInteracting(false)
+        if hasPendingEditCommits {
+            deferredExternalReloadAccept = true
+            deferredExternalEditsCheck = true
+            return
+        }
+        deferredExternalReloadAccept = false
+        deferredExternalEditsCheck = false
+        pendingExternalReload = nil
+        dismissedExternalReloadFingerprints.removeAll()
         dirty = false
         applyExternalReloadRecord(pending.record)
     }

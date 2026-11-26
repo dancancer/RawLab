@@ -271,7 +271,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
         self.assertEqual(len(all_ids), len(set(all_ids)), "scenario ids must be globally unique")
 
     def test_roundtrip_records_cover_all_spec_fields_without_drift(self):
-        self.assertEqual(len(self.spec_fields), 89, "expected 89 fields in adjustment-fields-v1.json")
+        self.assertEqual(len(self.spec_fields), 118, "expected 118 fields in adjustment-fields-v1.json")
         covered_any = set()
         covered_hdr = set()
         covered_local_active = set()
@@ -298,7 +298,7 @@ class EditRecordFixtureContracts(unittest.TestCase):
                     if v is not None and v != default_val:
                         covered_local_active.add(k)
 
-        self.assertEqual(covered_any, set(self.spec_fields), "roundtrip_records must cover all 89 spec fields")
+        self.assertEqual(covered_any, set(self.spec_fields), "roundtrip_records must cover all 118 spec fields")
         hdr_only_transferable = {
             fid for fid, row in self.spec_fields.items()
             if row["protocol"]["transferable"] and row["protocol"].get("hdr_only")

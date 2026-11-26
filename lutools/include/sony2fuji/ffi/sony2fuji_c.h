@@ -2109,6 +2109,26 @@ sony2fuji_status sony2fuji_sony_focus_state_resolve_render(
     sony2fuji_sony_focus_render_decision* out_decision
 );
 
+// Wave 0 narrow v0.14.0 preview helpers: validate arguments cleanly and return
+// SONY2FUJI_STATUS_UNSUPPORTED until Wave 1 implements the CPU/GPU kernels.
+sony2fuji_status sony2fuji_render_sharpen_mask_preview(
+    const sony2fuji_buffer* source,
+    float radius,
+    float masking,
+    sony2fuji_buffer* out_mask
+);
+
+sony2fuji_status sony2fuji_point_color_preview_swatch(
+    float src_hue,
+    float src_saturation,
+    float src_luminance,
+    float hue_shift,
+    float saturation_shift,
+    float luminance_shift,
+    float* out_src_rgb,
+    float* out_shifted_rgb
+);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

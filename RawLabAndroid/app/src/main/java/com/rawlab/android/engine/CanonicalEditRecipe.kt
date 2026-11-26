@@ -120,6 +120,12 @@ private fun EditSettings.encodeSdrCore(
     if (lens.coreProfileId.isNotEmpty()) {
         lensObj.put("profile_id", lens.coreProfileId)
     }
+    if (lens.hasDefringe) {
+        lensObj.put("defringe_purple_amount", lens.defringePurpleAmount.toDouble())
+        lensObj.put("defringe_purple_hue", lens.defringePurpleHue.toDouble())
+        lensObj.put("defringe_green_amount", lens.defringeGreenAmount.toDouble())
+        lensObj.put("defringe_green_hue", lens.defringeGreenHue.toDouble())
+    }
 
     val denoiseObj = JSONObject()
         .put("raw_level", 0)
@@ -201,26 +207,97 @@ private fun EditSettings.encodeSdrCore(
             .put("black_point", renderBlackPoint.toDouble() / 100.0)
             .put("white_point", renderWhitePoint.toDouble() / 100.0)
             .put("curve", curveObject))
-        .put("color", JSONObject().put("vibrance", renderVibrance.toDouble() / 100.0))
+        .put("color", JSONObject().put("vibrance", renderVibrance.toDouble() / 100.0).apply {
+            if (!calibration.isDefault) {
+                put("calibration", with(calibration) {
+                    JSONObject().put("shadow_tint", shadowTint.toDouble())
+                        .put("red_hue", redHue.toDouble()).put("red_saturation", redSaturation.toDouble())
+                        .put("green_hue", greenHue.toDouble()).put("green_saturation", greenSaturation.toDouble())
+                        .put("blue_hue", blueHue.toDouble()).put("blue_saturation", blueSaturation.toDouble())
+                })
+            }
+            if (!pointColor.isDefault) {
+                put("point_color", JSONObject().put("swatches", JSONArray(pointColor.swatches.map { sw ->
+                    JSONObject().put("src_hue", sw.srcHue.toDouble())
+                        .put("src_saturation", sw.srcSaturation.toDouble())
+                        .put("src_luminance", sw.srcLuminance.toDouble())
+                        .put("hue_shift", sw.hueShift.toDouble())
+                        .put("saturation_shift", sw.saturationShift.toDouble())
+                        .put("luminance_shift", sw.luminanceShift.toDouble())
+                        .put("range", sw.range.toDouble()).put("hue_range", sw.hueRange.toDouble())
+                        .put("sat_range", sw.satRange.toDouble()).put("lum_range", sw.lumRange.toDouble())
+                        .put("variance", sw.variance.toDouble()).put("enabled", sw.enabled)
+                })))
+            }
+            if (!selectiveColor.isDefault) {
+                put("selective_color", JSONObject().put("method", selectiveColor.method.wireValue)
+                    .put("bands", JSONObject().apply {
+                        selectiveColor.bands.asMap().forEach { (k, b) ->
+                            put(k, JSONObject().put("cyan", b.cyan.toDouble()).put("magenta", b.magenta.toDouble())
+                                .put("yellow", b.yellow.toDouble()).put("black", b.black.toDouble()))
+                        }
+                    }))
+            }
+            if (!bwMixer.isDefault) {
+                put("bw", JSONObject().put("enabled", bwMixer.enabled).put("mixer", JSONObject().apply {
+                    bwMixer.mixer.asMap().forEach { (k, v) -> put(k, v.toDouble()) }
+                }))
+            }
+        })
         .put("color_grading", colorGradingObj)
-        .put("detail", JSONObject().put("sharpening", if (includeSessionState) sharpening.coerceIn(0f, 2f).toDouble() else 0.0))
+        .put("detail", JSONObject().put("sharpening", if (includeSessionState) sharpening.coerceIn(0f, 2f).toDouble() else 0.0).apply {
+            if (!sharpenV2.isDefault) {
+                put("luminance_v2", sharpenV2.luminanceV2)
+                put("sharpening_radius", sharpenV2.radius.toDouble())
+                put("sharpening_detail", sharpenV2.detail.toDouble())
+                put("sharpening_masking", sharpenV2.masking.toDouble())
+            }
+        })
         .put("hsl", JSONObject()
             .put("hue", hslAxisJson(0))
             .put("saturation", hslAxisJson(8))
             .put("lightness", hslAxisJson(16)))
         .put("effects", effectsJson(effects)
             .put("clarity", renderClarity.toDouble() / 100.0)
-            .put("dehaze", renderDehaze.toDouble() / 100.0))
+            .put("dehaze", renderDehaze.toDouble() / 100.0).apply {
+                if (texture != 0f) put("texture", texture.toDouble() / 100.0)
+                if (effects.grainToneCurve != com.rawlab.android.settings.GrainToneCurve.LEGACY) {
+                    put("grain_tone_curve", effects.grainToneCurve.wireValue)
+                }
+                if (effects.grainFormatPreset != com.rawlab.android.settings.GrainFormatPreset.CUSTOM) {
+                    put("grain_format_preset", effects.grainFormatPreset.wireValue)
+                }
+                val hasHalation = filmOptics.halationAmount != 0f || filmOptics.halationThreshold != 75f ||
+                    filmOptics.halationRadius != 35f || filmOptics.halationHue != 0f
+                if (hasHalation) {
+                    put("halation", JSONObject().put("amount", filmOptics.halationAmount.toDouble())
+                        .put("threshold", filmOptics.halationThreshold.toDouble())
+                        .put("radius", filmOptics.halationRadius.toDouble())
+                        .put("hue", filmOptics.halationHue.toDouble()))
+                }
+                val hasBloom = filmOptics.bloomAmount != 0f || filmOptics.bloomThreshold != 70f ||
+                    filmOptics.bloomRadius != 40f
+                if (hasBloom) {
+                    put("bloom", JSONObject().put("amount", filmOptics.bloomAmount.toDouble())
+                        .put("threshold", filmOptics.bloomThreshold.toDouble())
+                        .put("radius", filmOptics.bloomRadius.toDouble()))
+                }
+            })
         .put("denoise", denoiseObj)
         .put("lens_correction", lensObj)
     if (masterRecipeObj != null) {
         edits.put("master_recipe", masterRecipeObj)
     }
 
+    val activeV14 = !calibration.isDefault || !pointColor.isDefault || !selectiveColor.isDefault ||
+        !bwMixer.isDefault || texture != 0f || !sharpenV2.isDefault || lens.hasDefringe ||
+        !filmOptics.isDefault ||
+        effects.grainToneCurve != com.rawlab.android.settings.GrainToneCurve.LEGACY ||
+        effects.grainFormatPreset != com.rawlab.android.settings.GrainFormatPreset.CUSTOM
     val activeV012 = includeSessionState || renderCurve.hasV2Extensions || grading.hasV2Extensions ||
         rasterRelativeWb || outputSharpening != OutputSharpening.OFF
     val root = JSONObject()
-        .put("schema_version", if (renderCurve.hasFreeEndpointX) 18 else if (activeV012) 17 else if (isRaster) 5 else 7)
+        .put("schema_version", if (activeV14) 20 else if (renderCurve.hasFreeEndpointX) 18 else if (activeV012) 17 else if (isRaster) 5 else 7)
         .put("processing", JSONObject()
             .put("family", processing.family)
             .put("version", processing.version)

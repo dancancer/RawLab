@@ -1,12 +1,96 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace RawLab.Windows;
 
 public enum Parameter { Strength, Exposure, Temperature, Tint, Contrast, Highlights, Shadows, ToneCurve, Saturation, Sharpening }
-public sealed record LensSettings(bool Distortion = false, bool Tca = false, bool AutoCrop = true, bool Manual = false, string? ProfileId = null, double? FocalLength = null, double? CropFactor = null, bool Vignetting = false)
+[JsonConverter(typeof(LensSettingsJsonConverter))]
+public sealed record LensSettings(
+    bool Distortion = false,
+    bool Tca = false,
+    bool AutoCrop = true,
+    bool Manual = false,
+    string? ProfileId = null,
+    double? FocalLength = null,
+    double? CropFactor = null,
+    bool Vignetting = false,
+    double DefringePurpleAmount = 0,
+    double DefringePurpleHue = 50,
+    double DefringeGreenAmount = 0,
+    double DefringeGreenHue = 50)
 {
     public bool Enabled => Distortion || Tca || Vignetting;
+    public bool HasDefringeSettings => DefringePurpleAmount != 0 || DefringePurpleHue != 50 ||
+        DefringeGreenAmount != 0 || DefringeGreenHue != 50;
     public string CoreProfileId => Manual ? ProfileId ?? "__rawlab_manual_selection_required__" : "";
+
+    public void Validate()
+    {
+        Check(DefringePurpleAmount, AdjustmentFieldSpec.Fields.GeometryLensDefringePurpleAmount.WindowsModel, nameof(DefringePurpleAmount));
+        Check(DefringePurpleHue, AdjustmentFieldSpec.Fields.GeometryLensDefringePurpleHue.WindowsModel, nameof(DefringePurpleHue));
+        Check(DefringeGreenAmount, AdjustmentFieldSpec.Fields.GeometryLensDefringeGreenAmount.WindowsModel, nameof(DefringeGreenAmount));
+        Check(DefringeGreenHue, AdjustmentFieldSpec.Fields.GeometryLensDefringeGreenHue.WindowsModel, nameof(DefringeGreenHue));
+    }
+
+    private static void Check(double value, AdjustmentFieldModelSpec m, string name)
+    {
+        if (!double.IsFinite(value) || value < m.Min!.Value || value > m.Max!.Value)
+            throw new ArgumentOutOfRangeException(name, $"{name} out of range");
+    }
+}
+
+public sealed class LensSettingsJsonConverter : JsonConverter<LensSettings>
+{
+    public override LensSettings Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        using var doc = JsonDocument.ParseValue(ref reader);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object) throw new JsonException("Invalid LensSettings");
+        var map = new Dictionary<string, JsonElement>(options.PropertyNameCaseInsensitive ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (var p in root.EnumerateObject())
+            if (!map.TryAdd(p.Name, p.Value)) throw new JsonException("Duplicate key in LensSettings");
+        bool Bool(string k, bool def) => map.TryGetValue(k, out var e) ? (e.ValueKind switch { JsonValueKind.True => true, JsonValueKind.False => false, _ => throw new JsonException() }) : def;
+        string? Str(string k) => map.TryGetValue(k, out var e) ? (e.ValueKind == JsonValueKind.Null ? null : e.ValueKind == JsonValueKind.String ? e.GetString() : throw new JsonException()) : null;
+        double? OptNum(string k) => map.TryGetValue(k, out var e) ? (e.ValueKind == JsonValueKind.Null ? null : e.ValueKind == JsonValueKind.Number ? e.GetDouble() : throw new JsonException()) : null;
+        double Num(string k, double def) => OptNum(k) ?? def;
+        var lens = new LensSettings(
+            Distortion: Bool("Distortion", false),
+            Tca: Bool("Tca", false),
+            AutoCrop: Bool("AutoCrop", true),
+            Manual: Bool("Manual", false),
+            ProfileId: Str("ProfileId"),
+            FocalLength: OptNum("FocalLength"),
+            CropFactor: OptNum("CropFactor"),
+            Vignetting: Bool("Vignetting", false),
+            DefringePurpleAmount: Num("DefringePurpleAmount", 0),
+            DefringePurpleHue: Num("DefringePurpleHue", 50),
+            DefringeGreenAmount: Num("DefringeGreenAmount", 0),
+            DefringeGreenHue: Num("DefringeGreenHue", 50));
+        lens.Validate();
+        return lens;
+    }
+
+    public override void Write(Utf8JsonWriter writer, LensSettings value, JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WriteBoolean("Distortion", value.Distortion);
+        writer.WriteBoolean("Tca", value.Tca);
+        writer.WriteBoolean("AutoCrop", value.AutoCrop);
+        writer.WriteBoolean("Manual", value.Manual);
+        if (value.ProfileId == null) writer.WriteNull("ProfileId"); else writer.WriteString("ProfileId", value.ProfileId);
+        if (value.FocalLength is { } fl) writer.WriteNumber("FocalLength", fl); else writer.WriteNull("FocalLength");
+        if (value.CropFactor is { } cf) writer.WriteNumber("CropFactor", cf); else writer.WriteNull("CropFactor");
+        writer.WriteBoolean("Vignetting", value.Vignetting);
+        if (value.HasDefringeSettings)
+        {
+            writer.WriteNumber("DefringePurpleAmount", value.DefringePurpleAmount);
+            writer.WriteNumber("DefringePurpleHue", value.DefringePurpleHue);
+            writer.WriteNumber("DefringeGreenAmount", value.DefringeGreenAmount);
+            writer.WriteNumber("DefringeGreenHue", value.DefringeGreenHue);
+        }
+        writer.WriteEndObject();
+    }
 }
 public sealed record LensCandidate(string Id, string Maker, string Model, bool HasDistortion, bool HasTca, bool IsMatch)
 {
@@ -142,6 +226,12 @@ public sealed class Adjustments
     }
     public AtmosphereSettings Atmosphere { get; set; } = new();
     public ToneControlsSettings ToneControls { get; set; } = new();
+    public CameraCalibrationSettings Calibration { get; set; } = new();
+    public PointColorSettings PointColor { get; set; } = new();
+    public SelectiveColorSettings SelectiveColor { get; set; } = new();
+    public BwMixerSettings BwMixer { get; set; } = new();
+    public SharpenV2Settings SharpenV2 { get; set; } = new();
+    public FilmOpticsSettings FilmOptics { get; set; } = new();
     public string? MasterRecipeID { get; private set; }
     public int MasterRecipeSettingsVersion { get; private set; } = 3;
     public LensSettings Lens { get; set; } = new();
@@ -238,7 +328,13 @@ public sealed class Adjustments
         Atmosphere = Atmosphere.IsIdentity ? null : Atmosphere,
         ToneControls = ToneControls.IsIdentity ? null : ToneControls,
         ColorGrading = ColorGrading.IsDefault ? null : ColorGrading,
-        Curve = Curve.IsDefault ? null : Curve
+        Curve = Curve.IsDefault ? null : Curve,
+        CameraCalibration = Calibration.IsDefault ? null : Calibration,
+        PointColor = PointColor.IsDefault ? null : PointColor,
+        SelectiveColor = SelectiveColor.IsDefault ? null : SelectiveColor,
+        BwMixer = BwMixer.IsDefault ? null : BwMixer,
+        SharpenV2 = SharpenV2.IsDefault ? null : SharpenV2,
+        FilmOptics = FilmOptics.IsDefault ? null : FilmOptics
         };
     }
     public static Adjustments FromSnapshot(AdjustmentSnapshot snapshot)
@@ -295,6 +391,20 @@ public sealed class Adjustments
         _ = denoise.NativeConfig();
         _ = effects.NativeConfig();
         _ = geometry.NativeConfig();
+        var lens = snapshot.Lens ?? new();
+        lens.Validate();
+        var calibration = snapshot.CameraCalibration ?? new();
+        calibration.Validate();
+        var pointColor = snapshot.PointColor ?? new();
+        pointColor.Validate();
+        var selectiveColor = snapshot.SelectiveColor ?? new();
+        selectiveColor.Validate();
+        var bwMixer = snapshot.BwMixer ?? new();
+        bwMixer.Validate();
+        var sharpenV2 = snapshot.SharpenV2 ?? new();
+        sharpenV2.Validate();
+        var filmOptics = snapshot.FilmOptics ?? new();
+        filmOptics.Validate();
         if (snapshot.DisplayChromaDenoise is < 0 or > 2)
             throw new System.IO.InvalidDataException("调整记录中的显示色彩降噪模式无效，原有文件未被覆盖。");
         if (!double.IsFinite(snapshot.AIDenoiseStrength) || snapshot.AIDenoiseStrength is < 0 or > 100)
@@ -311,10 +421,16 @@ public sealed class Adjustments
             Atmosphere = atmosphere,
             ColorGrading = grading,
             Curve = snapshot.Curve ?? new(),
+            Calibration = calibration,
+            PointColor = pointColor,
+            SelectiveColor = selectiveColor,
+            BwMixer = bwMixer,
+            SharpenV2 = sharpenV2,
+            FilmOptics = filmOptics,
             Hsl = snapshot.Hsl ?? new HslSettings(),
             MasterRecipeID = snapshot.MasterRecipeID,
             MasterRecipeSettingsVersion = snapshot.MasterRecipeSettingsVersion,
-            Lens = snapshot.Lens ?? new(),
+            Lens = lens,
             DisplayChromaDenoise = snapshot.DisplayChromaDenoise,
             values = migrated, ExposureMode = snapshot.ExposureMode,
             CameraWhiteBalance = snapshot.CameraWhiteBalance,
@@ -395,7 +511,7 @@ public sealed class Adjustments
     {
         if (!double.IsFinite(value)) throw new ArgumentOutOfRangeException(nameof(value));
         var percent = Math.Clamp(value, -100, 100);
-        if (IsHDREditing && HDR is { } hdr) {
+        if (id != AtmosphereParameter.Texture && IsHDREditing && HDR is { } hdr) {
             var detail = hdr.DetailSettings;
             HDR = hdr.WithDetail(id switch {
                 AtmosphereParameter.Clarity => detail with { Clarity = percent / 100 },
@@ -404,7 +520,7 @@ public sealed class Adjustments
             });
         } else Atmosphere = Atmosphere.With(id, percent);
     }
-    internal double EditingAtmosphereValue(AtmosphereParameter id) => IsHDREditing && HDR is { } hdr ? id switch {
+    internal double EditingAtmosphereValue(AtmosphereParameter id) => id != AtmosphereParameter.Texture && IsHDREditing && HDR is { } hdr ? id switch {
         AtmosphereParameter.Clarity => hdr.DetailSettings.Clarity * 100,
         AtmosphereParameter.Dehaze => hdr.DetailSettings.Dehaze * 100,
         _ => throw new ArgumentOutOfRangeException(nameof(id))
@@ -466,16 +582,19 @@ public sealed class Adjustments
         };
     }
     public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
-    public bool IsEffectDefault(bool vignette) => PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
-        .All(spec => EditingEffects[spec.Id] == spec.DefaultValue);
+    public bool IsEffectDefault(bool vignette) =>
+        PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
+            .All(spec => EditingEffects[spec.Id] == spec.DefaultValue)
+        && (vignette || (EditingEffects.GrainToneCurve == GrainToneCurve.Legacy
+            && EditingEffects.GrainFormatPreset == GrainFormatPreset.Custom));
     public void ResetGroup(string group)
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);
         if (group == "输入") { ExposureMode = 1; ResetWhiteBalance(); }
-        if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; }
+        if (group == "色彩") { ColorGrading = new(); Hsl = new(); ToneControls = ToneControls with { Vibrance = 0 }; Calibration = new(); PointColor = new(); SelectiveColor = new(); BwMixer = new(); }
         if (group == "明暗") { Curve = new(); ToneControls = ToneControls with { BlackPoint = 0, WhitePoint = 0 }; }
-        if (group == "细节") { ActiveAIDenoise = false; AIDenoiseStrength = 100.0; Denoise = new(); DisplayChromaDenoise = 0; }
-        if (group == "效果") { Effects = new(); Atmosphere = new(); }
+        if (group == "细节") { ActiveAIDenoise = false; AIDenoiseStrength = 100.0; Denoise = new(); DisplayChromaDenoise = 0; SharpenV2 = new(); }
+        if (group == "效果") { Effects = new(); Atmosphere = new(); FilmOptics = new(); }
         if (group == "镜头") Lens = new();
         if (group == "几何") Geometry = new();
     }

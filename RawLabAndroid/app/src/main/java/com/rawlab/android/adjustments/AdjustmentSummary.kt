@@ -48,7 +48,7 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
             CONTRAST, SATURATION -> percent(number - 1, true)
             HIGHLIGHTS -> percent(-number, true)
             SHADOWS, S_CURVE -> percent(number, true)
-            BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE, HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> number(number, signed = true) + "%"
+            BLACK_POINT, WHITE_POINT, VIBRANCE, CLARITY, DEHAZE, TEXTURE, HDR_SDR_CONTRAST, HDR_SDR_SATURATION -> number(number, signed = true) + "%"
             HDR_TEMPERATURE -> number(number) + " K（" + text("相对白平衡") + "）"
             HDR_TINT -> number(number, signed = true) + "（" + text("相对白平衡") + "）"
             WHITE_BALANCE_MODE -> text(when (value.text) { "camera" -> "相机白平衡（按目标照片）"; "temperature" -> "自定义"; "relative" -> "相对白平衡"; else -> "不适用" })
@@ -56,7 +56,27 @@ class AdjustmentSummary(val payload: AdjustmentPayload, private val locale: Loca
                 text(if (payload[WHITE_BALANCE_MODE]?.text == "camera") "相机白平衡（按目标照片）" else "不适用")
             } else number(number, signed = field == TINT) + if (field == TEMPERATURE) " K" else ""
             CURVE -> curveText(value)
-            CURVE_APPLY_TO_LUMINOSITY -> text(if (value.boolean == true) "开启" else "停用")
+            CURVE_APPLY_TO_LUMINOSITY, BW_ENABLED, SHARPENING_LUMINANCE_V2 -> text(if (value.boolean == true) "开启" else "停用")
+            CALIBRATION_SHADOW_TINT, CALIBRATION_RED_HUE, CALIBRATION_RED_SATURATION,
+            CALIBRATION_GREEN_HUE, CALIBRATION_GREEN_SATURATION,
+            CALIBRATION_BLUE_HUE, CALIBRATION_BLUE_SATURATION, HALATION_HUE -> number(number, signed = true)
+            POINT_COLOR -> {
+                val count = value.pointColor()?.swatches?.size ?: 0
+                if (count == 0) text("停用") else number(count.toDouble()) + " " + text("色板")
+            }
+            SELECTIVE_COLOR -> text(if (value.selectiveColor()?.method?.wireValue == "absolute") "绝对" else "相对")
+            BW_MIXER -> {
+                val nonZero = value.bwMixerWeights()?.asMap()?.count { it.value != 0f } ?: 0
+                if (nonZero == 0) text("停用") else number(nonZero.toDouble())
+            }
+            GRAIN_TONE_CURVE -> text(if (value.text == "negative_asymmetric") "负片非对称" else "传统曲线")
+            GRAIN_FORMAT_PRESET -> text(when (value.text) { "135" -> "135 胶片"; "120" -> "120 中画幅"; else -> "自定义" })
+            SHARPENING_RADIUS -> number(number) + " px"
+            SHARPENING_DETAIL, SHARPENING_MASKING,
+            HALATION_AMOUNT, HALATION_THRESHOLD, HALATION_RADIUS,
+            BLOOM_AMOUNT, BLOOM_THRESHOLD, BLOOM_RADIUS -> number(number) + "%"
+            LENS_DEFRINGE_PURPLE_AMOUNT, LENS_DEFRINGE_PURPLE_HUE,
+            LENS_DEFRINGE_GREEN_AMOUNT, LENS_DEFRINGE_GREEN_HUE -> number(number)
             CURVE_PARAMETRIC -> {
                 val p = value.objectValue!!
                 listOf(

@@ -26,10 +26,21 @@ internal object StructuredSettingsCodec {
             .put("effects", with(s.effects) { JSONObject().put("vignetteAmount", vignetteAmount)
                 .put("vignetteMidpoint", vignetteMidpoint).put("vignetteRoundness", vignetteRoundness)
                 .put("vignetteFeather", vignetteFeather).put("vignetteHighlights", vignetteHighlights)
-                .put("grainAmount", grainAmount).put("grainSize", grainSize).put("grainRoughness", grainRoughness) })
+                .put("grainAmount", grainAmount).put("grainSize", grainSize).put("grainRoughness", grainRoughness)
+                .apply {
+                    if (grainToneCurve != GrainToneCurve.LEGACY) put("grainToneCurve", grainToneCurve.wireValue)
+                    if (grainFormatPreset != GrainFormatPreset.CUSTOM) put("grainFormatPreset", grainFormatPreset.wireValue)
+                } })
             .put("lens", with(s.lens) { JSONObject().put("distortion", distortion).put("tca", tca).put("vignetting", vignetting)
                 .put("autoCrop", autoCrop).put("manual", manual).put("profileId", profileId ?: JSONObject.NULL)
-                .apply { focalLength?.let { put("focalLength", it) }; cropFactor?.let { put("cropFactor", it) } } })
+                .apply {
+                    focalLength?.let { put("focalLength", it) }
+                    cropFactor?.let { put("cropFactor", it) }
+                    if (hasDefringe) {
+                        put("defringePurpleAmount", defringePurpleAmount).put("defringePurpleHue", defringePurpleHue)
+                        put("defringeGreenAmount", defringeGreenAmount).put("defringeGreenHue", defringeGreenHue)
+                    }
+                } })
             .put("geometry", with(s.geometry) { JSONObject().put("cropX", cropX).put("cropY", cropY)
                 .put("cropWidth", cropWidth).put("cropHeight", cropHeight).put("quarterTurns", quarterTurns)
                 .put("flipHorizontal", flipHorizontal).put("flipVertical", flipVertical)
@@ -40,8 +51,36 @@ internal object StructuredSettingsCodec {
         s.hdr?.let { value.put("hdr", hdrJSON(it)) }
         s.sdrSnapshot?.let { value.put("sdrSnapshot", it) }
         s.proRAWDecodeVersion?.let { value.put("proRAWDecodeVersion", it) }
-        if (s.clarity != 0f || s.dehaze != 0f) value.put("atmosphere",
-            JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze))
+        if (s.clarity != 0f || s.dehaze != 0f || s.texture != 0f) value.put("atmosphere",
+            JSONObject().put("clarity", s.clarity).put("dehaze", s.dehaze)
+                .apply { if (s.texture != 0f) put("texture", s.texture) })
+        if (!s.calibration.isDefault) value.put("cameraCalibration", with(s.calibration) {
+            JSONObject().put("shadowTint", shadowTint).put("redHue", redHue).put("redSaturation", redSaturation)
+                .put("greenHue", greenHue).put("greenSaturation", greenSaturation)
+                .put("blueHue", blueHue).put("blueSaturation", blueSaturation)
+        })
+        if (!s.pointColor.isDefault) value.put("pointColor", JSONObject().put("swatches", JSONArray(s.pointColor.swatches.map { sw ->
+            JSONObject().put("srcHue", sw.srcHue).put("srcSaturation", sw.srcSaturation).put("srcLuminance", sw.srcLuminance)
+                .put("hueShift", sw.hueShift).put("saturationShift", sw.saturationShift).put("luminanceShift", sw.luminanceShift)
+                .put("range", sw.range).put("hueRange", sw.hueRange).put("satRange", sw.satRange).put("lumRange", sw.lumRange)
+                .put("variance", sw.variance).put("enabled", sw.enabled)
+        })))
+        if (!s.selectiveColor.isDefault) value.put("selectiveColor", JSONObject().put("method", s.selectiveColor.method.wireValue)
+            .put("bands", JSONObject().apply {
+                s.selectiveColor.bands.asMap().forEach { (name, b) ->
+                    put(name, JSONObject().put("cyan", b.cyan).put("magenta", b.magenta).put("yellow", b.yellow).put("black", b.black))
+                }
+            }))
+        if (!s.bwMixer.isDefault) value.put("bwMixer", JSONObject().put("enabled", s.bwMixer.enabled)
+            .put("mixer", JSONObject().apply { s.bwMixer.mixer.asMap().forEach { (k, v) -> put(k, v) } }))
+        if (!s.sharpenV2.isDefault) value.put("sharpenV2", with(s.sharpenV2) {
+            JSONObject().put("luminanceV2", luminanceV2).put("radius", radius).put("detail", detail).put("masking", masking)
+        })
+        if (!s.filmOptics.isDefault) value.put("filmOptics", with(s.filmOptics) {
+            JSONObject().put("halationAmount", halationAmount).put("halationThreshold", halationThreshold)
+                .put("halationRadius", halationRadius).put("halationHue", halationHue)
+                .put("bloomAmount", bloomAmount).put("bloomThreshold", bloomThreshold).put("bloomRadius", bloomRadius)
+        })
         return "v3:" + JSONObject().put("format", format).put("version", 3).put("settings", value).toString()
     }
 
@@ -55,15 +94,22 @@ internal object StructuredSettingsCodec {
         val root = parseStrictJSONObject(json, setOf("version", "masterRecipeSettingsVersion", "exposureMode", "displayChromaDenoise", "quarterTurns", "proRAWDecodeVersion"))
             .keysExactly("format", "version", "settings")
         require(root.string("format") == format && root.integer("version") == version) { "Unsupported settings format" }
-        val s = root.getJSONObject("settings").keysWithOptional(setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode", "proRAWDecodeVersion"), "film", "strength", "exposure", "exposureMode", "highlights",
+        val s = root.getJSONObject("settings").keysWithOptional(
+            setOf("colorGrading", "curve", "atmosphere", "masterRecipeSettingsVersion", "hdr", "sdrSnapshot", "x3fMode", "proRAWDecodeVersion",
+                "cameraCalibration", "pointColor", "selectiveColor", "bwMixer", "sharpenV2", "filmOptics"),
+            "film", "strength", "exposure", "exposureMode", "highlights",
             "shadows", "contrast", "toneCurve", "saturation", "sharpening", "customWb", "temperature", "tint",
             "recipeID", "displayChromaDenoise", "hsl", "tone", "denoise", "effects", "lens", "geometry", "processing")
-        val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysExactly("clarity", "dehaze") else null
+        val atmosphere = if (s.has("atmosphere")) s.getJSONObject("atmosphere").keysWithOptional(setOf("texture"), "clarity", "dehaze") else null
         val tone = s.getJSONObject("tone").keysExactly("blackPoint", "whitePoint", "vibrance")
         val denoise = s.getJSONObject("denoise").keysExactly("enabled", "luma", "chroma", "coarse")
-        val effects = s.getJSONObject("effects").keysExactly("vignetteAmount", "vignetteMidpoint", "vignetteRoundness",
+        val effects = s.getJSONObject("effects").keysWithOptional(setOf("grainToneCurve", "grainFormatPreset"),
+            "vignetteAmount", "vignetteMidpoint", "vignetteRoundness",
             "vignetteFeather", "vignetteHighlights", "grainAmount", "grainSize", "grainRoughness")
-        val lens = s.getJSONObject("lens").keysWithOptional(setOf("focalLength", "cropFactor", "vignetting"), "distortion", "tca", "autoCrop", "manual", "profileId")
+        val lens = s.getJSONObject("lens").keysWithOptional(
+            setOf("focalLength", "cropFactor", "vignetting",
+                "defringePurpleAmount", "defringePurpleHue", "defringeGreenAmount", "defringeGreenHue"),
+            "distortion", "tca", "autoCrop", "manual", "profileId")
         val geometry = s.getJSONObject("geometry").keysExactly("cropX", "cropY", "cropWidth", "cropHeight", "quarterTurns",
             "flipHorizontal", "flipVertical", "straightenDegrees", "perspectiveHorizontal", "perspectiveVertical")
         val processing = s.getJSONObject("processing").keysExactly("family", "version", "quality")
@@ -84,18 +130,31 @@ internal object StructuredSettingsCodec {
             masterRecipeSettingsVersion = if (s.has("masterRecipeSettingsVersion")) s.integer("masterRecipeSettingsVersion") else 3,
             blackPoint = tone.number("blackPoint", -100.0..100.0), whitePoint = tone.number("whitePoint", -100.0..100.0), vibrance = tone.number("vibrance", -100.0..100.0),
             clarity = atmosphere?.number("clarity", -100.0..100.0) ?: 0f, dehaze = atmosphere?.number("dehaze", -100.0..100.0) ?: 0f,
+            texture = if (atmosphere?.has("texture") == true) atmosphere.number("texture", -100.0..100.0) else 0f,
+            calibration = decodeCalibration(s),
+            pointColor = decodePointColor(s),
+            selectiveColor = decodeSelectiveColor(s),
+            bwMixer = decodeBwMixer(s),
+            sharpenV2 = decodeSharpenV2(s),
+            filmOptics = decodeFilmOptics(s),
             colorGrading = if (s.has("colorGrading")) grading(s.getJSONObject("colorGrading")) else ColorGradingSettings(),
             curve = if (s.has("curve")) ToneCurveSettings.decode(s.getJSONObject("curve")) else ToneCurveSettings(),
             hsl = HslSettings((0 until hsl.length()).map { number(hsl.get(it), -100.0..100.0) }),
             denoise = DenoiseSettings(denoise.boolean("enabled"), denoise.number("luma", 0.0..100.0), denoise.number("chroma", 0.0..100.0), denoise.number("coarse", 0.0..100.0)),
             effects = PhotoEffectsSettings(effects.number("vignetteAmount", -100.0..100.0), effects.number("vignetteMidpoint", 0.0..100.0),
                 effects.number("vignetteRoundness", -100.0..100.0), effects.number("vignetteFeather", 0.0..100.0), effects.number("vignetteHighlights", 0.0..100.0),
-                effects.number("grainAmount", 0.0..100.0), effects.number("grainSize", 0.0..100.0), effects.number("grainRoughness", 0.0..100.0)),
+                effects.number("grainAmount", 0.0..100.0), effects.number("grainSize", 0.0..100.0), effects.number("grainRoughness", 0.0..100.0),
+                grainToneCurve = if (effects.has("grainToneCurve")) GrainToneCurve.fromWire(effects.string("grainToneCurve")) else GrainToneCurve.LEGACY,
+                grainFormatPreset = if (effects.has("grainFormatPreset")) GrainFormatPreset.fromWire(effects.string("grainFormatPreset")) else GrainFormatPreset.CUSTOM),
             lens = LensSettings(lens.boolean("distortion"), lens.boolean("tca"), lens.boolean("autoCrop"), lens.boolean("manual"),
                 lens.nullableString("profileId"),
                 if (lens.has("focalLength")) lens.number("focalLength", 0.1..10000.0) else null,
                 if (lens.has("cropFactor")) lens.number("cropFactor", 0.1..100.0) else null,
-                if (lens.has("vignetting")) lens.boolean("vignetting") else false),
+                if (lens.has("vignetting")) lens.boolean("vignetting") else false,
+                defringePurpleAmount = if (lens.has("defringePurpleAmount")) lens.number("defringePurpleAmount", 0.0..20.0) else 0f,
+                defringePurpleHue = if (lens.has("defringePurpleHue")) lens.number("defringePurpleHue", 0.0..100.0) else 50f,
+                defringeGreenAmount = if (lens.has("defringeGreenAmount")) lens.number("defringeGreenAmount", 0.0..20.0) else 0f,
+                defringeGreenHue = if (lens.has("defringeGreenHue")) lens.number("defringeGreenHue", 0.0..100.0) else 50f),
             geometry = GeometrySettings(geometry.number("cropX", 0.0..1.0), geometry.number("cropY", 0.0..1.0), geometry.number("cropWidth", 0.0..1.0),
                 geometry.number("cropHeight", 0.0..1.0), geometry.integer("quarterTurns"), geometry.boolean("flipHorizontal"),
                 geometry.boolean("flipVertical"), geometry.number("straightenDegrees", -45.0..45.0), geometry.number("perspectiveHorizontal", -1.0..1.0),
@@ -306,6 +365,121 @@ internal object StructuredSettingsCodec {
             balance = if (json.has("balance")) json.number("balance", -100.0..100.0) else 0f,
         )
     }
+    private fun decodeCalibration(s: JSONObject): CameraCalibrationSettings {
+        if (!s.has("cameraCalibration")) return CameraCalibrationSettings()
+        val o = s.getJSONObject("cameraCalibration").keysWithOptional(
+            setOf("shadowTint", "redHue", "redSaturation", "greenHue", "greenSaturation", "blueHue", "blueSaturation")
+        )
+        return CameraCalibrationSettings(
+            shadowTint = if (o.has("shadowTint")) o.number("shadowTint", -100.0..100.0) else 0f,
+            redHue = if (o.has("redHue")) o.number("redHue", -100.0..100.0) else 0f,
+            redSaturation = if (o.has("redSaturation")) o.number("redSaturation", -100.0..100.0) else 0f,
+            greenHue = if (o.has("greenHue")) o.number("greenHue", -100.0..100.0) else 0f,
+            greenSaturation = if (o.has("greenSaturation")) o.number("greenSaturation", -100.0..100.0) else 0f,
+            blueHue = if (o.has("blueHue")) o.number("blueHue", -100.0..100.0) else 0f,
+            blueSaturation = if (o.has("blueSaturation")) o.number("blueSaturation", -100.0..100.0) else 0f,
+        )
+    }
+
+    private fun decodePointColor(s: JSONObject): PointColorSettings {
+        if (!s.has("pointColor")) return PointColorSettings()
+        val o = s.getJSONObject("pointColor").keysWithOptional(setOf("swatches"))
+        if (!o.has("swatches")) return PointColorSettings()
+        val arr = o.getJSONArray("swatches")
+        val swatches = (0 until arr.length()).map { idx ->
+            val sw = arr.getJSONObject(idx).keysWithOptional(
+                setOf("srcHue", "srcSaturation", "srcLuminance", "hueShift", "saturationShift",
+                    "luminanceShift", "range", "hueRange", "satRange", "lumRange", "variance", "enabled")
+            )
+            PointColorSwatch(
+                srcHue = if (sw.has("srcHue")) number(sw.get("srcHue"), 0.0..360.0) else 0f,
+                srcSaturation = if (sw.has("srcSaturation")) sw.number("srcSaturation", 0.0..1.0) else 0.5f,
+                srcLuminance = if (sw.has("srcLuminance")) sw.number("srcLuminance", 0.0..1.0) else 0.5f,
+                hueShift = if (sw.has("hueShift")) sw.number("hueShift", -100.0..100.0) else 0f,
+                saturationShift = if (sw.has("saturationShift")) sw.number("saturationShift", -100.0..100.0) else 0f,
+                luminanceShift = if (sw.has("luminanceShift")) sw.number("luminanceShift", -100.0..100.0) else 0f,
+                range = if (sw.has("range")) sw.number("range", 0.0..100.0) else 50f,
+                hueRange = if (sw.has("hueRange")) sw.number("hueRange", 0.0..100.0) else 50f,
+                satRange = if (sw.has("satRange")) sw.number("satRange", 0.0..100.0) else 50f,
+                lumRange = if (sw.has("lumRange")) sw.number("lumRange", 0.0..100.0) else 50f,
+                variance = if (sw.has("variance")) sw.number("variance", -100.0..100.0) else 0f,
+                enabled = if (sw.has("enabled")) sw.boolean("enabled") else true,
+            )
+        }
+        return PointColorSettings(swatches)
+    }
+
+    private fun decodeSelectiveColor(s: JSONObject): SelectiveColorSettings {
+        if (!s.has("selectiveColor")) return SelectiveColorSettings()
+        val o = s.getJSONObject("selectiveColor").keysWithOptional(setOf("method", "bands"))
+        val method = if (o.has("method")) SelectiveColorMethod.fromWire(o.string("method")) else SelectiveColorMethod.RELATIVE
+        val bandsObj = if (o.has("bands")) o.getJSONObject("bands").keysWithOptional(
+            setOf("reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks")
+        ) else JSONObject()
+        fun band(name: String): SelectiveColorBand {
+            if (!bandsObj.has(name)) return SelectiveColorBand()
+            val b = bandsObj.getJSONObject(name).keysWithOptional(setOf("cyan", "magenta", "yellow", "black"))
+            return SelectiveColorBand(
+                cyan = if (b.has("cyan")) b.number("cyan", -100.0..100.0) else 0f,
+                magenta = if (b.has("magenta")) b.number("magenta", -100.0..100.0) else 0f,
+                yellow = if (b.has("yellow")) b.number("yellow", -100.0..100.0) else 0f,
+                black = if (b.has("black")) b.number("black", -100.0..100.0) else 0f,
+            )
+        }
+        return SelectiveColorSettings(method, SelectiveColorBands(
+            reds = band("reds"), yellows = band("yellows"), greens = band("greens"),
+            cyans = band("cyans"), blues = band("blues"), magentas = band("magentas"),
+            whites = band("whites"), neutrals = band("neutrals"), blacks = band("blacks"),
+        ))
+    }
+
+    private fun decodeBwMixer(s: JSONObject): BwMixerSettings {
+        if (!s.has("bwMixer")) return BwMixerSettings()
+        val o = s.getJSONObject("bwMixer").keysWithOptional(setOf("enabled", "mixer"))
+        val enabled = if (o.has("enabled")) o.boolean("enabled") else false
+        val m = if (o.has("mixer")) o.getJSONObject("mixer").keysWithOptional(
+            setOf("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta")
+        ) else JSONObject()
+        return BwMixerSettings(enabled, BwMixerWeights(
+            red = if (m.has("red")) m.number("red", -100.0..100.0) else 0f,
+            orange = if (m.has("orange")) m.number("orange", -100.0..100.0) else 0f,
+            yellow = if (m.has("yellow")) m.number("yellow", -100.0..100.0) else 0f,
+            green = if (m.has("green")) m.number("green", -100.0..100.0) else 0f,
+            aqua = if (m.has("aqua")) m.number("aqua", -100.0..100.0) else 0f,
+            blue = if (m.has("blue")) m.number("blue", -100.0..100.0) else 0f,
+            purple = if (m.has("purple")) m.number("purple", -100.0..100.0) else 0f,
+            magenta = if (m.has("magenta")) m.number("magenta", -100.0..100.0) else 0f,
+        ))
+    }
+
+    private fun decodeSharpenV2(s: JSONObject): SharpenV2Settings {
+        if (!s.has("sharpenV2")) return SharpenV2Settings()
+        val o = s.getJSONObject("sharpenV2").keysWithOptional(setOf("luminanceV2", "radius", "detail", "masking"))
+        return SharpenV2Settings(
+            luminanceV2 = if (o.has("luminanceV2")) o.boolean("luminanceV2") else false,
+            radius = if (o.has("radius")) o.number("radius", 0.5..3.0) else 1.0f,
+            detail = if (o.has("detail")) o.number("detail", 0.0..100.0) else 25f,
+            masking = if (o.has("masking")) o.number("masking", 0.0..100.0) else 0f,
+        )
+    }
+
+    private fun decodeFilmOptics(s: JSONObject): FilmOpticsSettings {
+        if (!s.has("filmOptics")) return FilmOpticsSettings()
+        val o = s.getJSONObject("filmOptics").keysWithOptional(
+            setOf("halationAmount", "halationThreshold", "halationRadius", "halationHue",
+                "bloomAmount", "bloomThreshold", "bloomRadius")
+        )
+        return FilmOpticsSettings(
+            halationAmount = if (o.has("halationAmount")) o.number("halationAmount", 0.0..100.0) else 0f,
+            halationThreshold = if (o.has("halationThreshold")) o.number("halationThreshold", 0.0..100.0) else 75f,
+            halationRadius = if (o.has("halationRadius")) o.number("halationRadius", 0.0..100.0) else 35f,
+            halationHue = if (o.has("halationHue")) o.number("halationHue", -100.0..100.0) else 0f,
+            bloomAmount = if (o.has("bloomAmount")) o.number("bloomAmount", 0.0..100.0) else 0f,
+            bloomThreshold = if (o.has("bloomThreshold")) o.number("bloomThreshold", 0.0..100.0) else 70f,
+            bloomRadius = if (o.has("bloomRadius")) o.number("bloomRadius", 0.0..100.0) else 40f,
+        )
+    }
+
     private fun JSONObject.keysWithOptional(optional: Set<String>, vararg required: String): JSONObject = apply {
         val actual = keys().asSequence().toSet()
         require(actual.containsAll(required.toSet()) && (required.toSet() + optional).containsAll(actual)) { "Unknown or missing settings field" }

@@ -8,10 +8,17 @@
 #include "core/hsl_probe.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_defringe.h"
 #include "core/photo_effects.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_geometry.h"
+#include "core/photo_point_color.h"
+#include "core/photo_selective_color.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/photo_tone_controls.h"
 #include "core/photo_tone_curve.h"
 #include "core/pixel_buffer.h"
@@ -246,6 +253,13 @@ public:
     RenderStatus setToneControls(const ToneControlsOptions& options);
     RenderStatus setAtmosphere(const AtmosphereOptions& options);
     RenderStatus setColorGrading(const ColorGradingOptions& options);
+    RenderStatus setCameraCalibration(const CameraCalibrationOptions& options);
+    RenderStatus setPointColor(const PointColorOptions& options);
+    RenderStatus setSelectiveColor(const SelectiveColorOptions& options);
+    RenderStatus setBwMixer(const BwMixerOptions& options);
+    RenderStatus setSharpenV2(const SharpenV2Options& options);
+    RenderStatus setDefringe(const DefringeOptions& options);
+    RenderStatus setFilmOptics(const FilmOpticsOptions& options);
     RenderStatus setToneCurve(const ToneCurveConfig& config);
     RenderStatus setToneCurves(const ToneCurveConfig& master, const std::array<ToneCurveConfig, 3>& channels);
     RenderStatus setToneCurvesV2(
@@ -494,6 +508,13 @@ private:
     AtmosphereOptions atmosphere_{};
     DehazeAnalysis dehazeAnalysis_{};
     ColorGradingOptions colorGrading_{};
+    CameraCalibrationOptions cameraCalibration_{};
+    PointColorOptions pointColor_{};
+    SelectiveColorOptions selectiveColor_{};
+    BwMixerOptions bwMixer_{};
+    SharpenV2Options sharpenV2_{};
+    DefringeOptions defringe_{};
+    FilmOpticsOptions filmOptics_{};
     ToneCurve toneCurve_{};
     std::array<ToneCurve, 3> channelCurves_{};
     bool curveApplyToLuminosity_ = false;

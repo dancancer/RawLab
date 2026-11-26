@@ -6,9 +6,17 @@
 #include "sony2fuji/lut_parser.h"
 #include "core/pixel_buffer.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_atmosphere.h"
+#include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_defringe.h"
 #include "core/photo_effects.h"
+#include "core/photo_film_optics.h"
+#include "core/photo_point_color.h"
+#include "core/photo_selective_color.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/photo_tone_controls.h"
 #include "core/photo_tone_curve.h"
 
@@ -105,11 +113,19 @@ struct RenderParams {
     std::shared_ptr<const DcpLook> dcp;
 
     PhotoEffectsOptions effects{};
+    FilmOpticsOptions filmOptics{};
+    AtmosphereOptions atmosphere{};
     int chromaDenoise = 0;
     bool preserveSourceResolution = false;
     HslOptions hsl{};
     ToneControlsOptions toneControls{};
     ColorGradingOptions colorGrading{};
+    CameraCalibrationOptions calibration{};
+    PointColorOptions pointColor{};
+    SelectiveColorOptions selectiveColor{};
+    BwMixerOptions bw{};
+    SharpenV2Options sharpenV2{};
+    DefringeOptions defringe{};
     ToneCurve customCurve{};
     std::array<ToneCurve, 3> channelCurves{};
     bool curveApplyToLuminosity = false;
@@ -173,7 +189,10 @@ struct RenderParams {
                std::isfinite(toneCurve) && std::isfinite(noiseReduction) &&
                std::isfinite(sharpening) && std::isfinite(lutStrength) &&
                std::isfinite(relativeWB.r) && std::isfinite(relativeWB.g) && std::isfinite(relativeWB.b) &&
-               effects.valid() && hsl.valid() && toneControls.valid() && colorGrading.valid() &&
+               effects.valid() && filmOptics.valid() && atmosphere.valid() &&
+               hsl.valid() && toneControls.valid() && colorGrading.valid() &&
+               calibration.valid() && pointColor.valid() && selectiveColor.valid() &&
+               bw.valid() && sharpenV2.valid() && defringe.valid() &&
                customCurve.gpuSupported() && !(customCurve.custom() && toneCurve != 0.0f) &&
                channelCurves[0].gpuSupported() && channelCurves[1].gpuSupported() && channelCurves[2].gpuSupported() &&
                parametricCurve.valid() &&

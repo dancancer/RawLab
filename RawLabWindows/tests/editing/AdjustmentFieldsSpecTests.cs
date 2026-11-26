@@ -35,7 +35,7 @@ public sealed class AdjustmentFieldsSpecTests
         Assert.Equal(1, root.GetProperty("spec_version").GetInt32());
 
         var fields = root.GetProperty("fields").EnumerateArray().ToArray();
-        Assert.Equal(89, fields.Length);
+        Assert.Equal(118, fields.Length);
 
         var transferIds = new List<string>();
         var localIds = new List<string>();
@@ -73,7 +73,7 @@ public sealed class AdjustmentFieldsSpecTests
             }
         }
 
-        Assert.Equal(86, transferIds.Count);
+        Assert.Equal(115, transferIds.Count);
         Assert.Equal(3, localIds.Count);
         Assert.Equal(transferIds.ToHashSet(), Enum.GetValues<AdjustmentField>().Select(f => f.ID()).ToHashSet());
         Assert.Equal(Enum.GetValues<AdjustmentField>().Length, transferIds.Count);
@@ -216,6 +216,56 @@ public sealed class AdjustmentFieldsSpecTests
             Assert.Equal(m.GetProperty("min").GetDouble(), spec.Min);
             Assert.Equal(m.GetProperty("max").GetDouble(), spec.Max);
         }
+
+        // v0.14.0 models & SubFields
+        Assert.Equal(WinModel("effects.texture").GetProperty("default").GetDouble(), atmosphere.Texture);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new AtmosphereSettings(Texture: 101).NativeConfig());
+
+        var cal = new CameraCalibrationSettings();
+        Assert.Equal(WinModel("color.calibration.shadow_tint").GetProperty("default").GetDouble(), cal.ShadowTint);
+        Assert.Equal(WinModel("color.calibration.blue_saturation").GetProperty("default").GetDouble(), cal.BlueSaturation);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new CameraCalibrationSettings(ShadowTint: -101).Validate());
+
+        Assert.True(new PointColorSettings().IsDefault);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PointColorSwatch(SrcHue: 360).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new PointColorSwatch(SrcSaturation: 1.1).Validate());
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new PointColorSettings(Enumerable.Range(0, AdjustmentFieldSpec.SubFields.PointColor.MaxSwatches + 1).Select(_ => new PointColorSwatch()).ToArray()).Validate());
+
+        var sel = new SelectiveColorSettings();
+        Assert.Equal("relative", sel.Method.WireValue());
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SelectiveColorBand(Cyan: 101).Validate());
+
+        var bw = new BwMixerSettings();
+        Assert.Equal(WinModel("color.bw.enabled").GetProperty("default").GetBoolean(), bw.Enabled);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new BwMixerWeights(Red: -101).Validate());
+
+        var sv2 = new SharpenV2Settings();
+        Assert.Equal(WinModel("detail.sharpening.luminance_v2").GetProperty("default").GetBoolean(), sv2.LuminanceV2);
+        Assert.Equal(WinModel("detail.sharpening.radius").GetProperty("default").GetDouble(), sv2.Radius);
+        Assert.Equal(WinModel("detail.sharpening.detail").GetProperty("default").GetDouble(), sv2.Detail);
+        Assert.Equal(WinModel("detail.sharpening.masking").GetProperty("default").GetDouble(), sv2.Masking);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new SharpenV2Settings(Radius: 0.4).Validate());
+
+        var fo = new FilmOpticsSettings();
+        Assert.Equal(WinModel("effects.halation.amount").GetProperty("default").GetDouble(), fo.HalationAmount);
+        Assert.Equal(WinModel("effects.halation.threshold").GetProperty("default").GetDouble(), fo.HalationThreshold);
+        Assert.Equal(WinModel("effects.halation.radius").GetProperty("default").GetDouble(), fo.HalationRadius);
+        Assert.Equal(WinModel("effects.halation.hue").GetProperty("default").GetDouble(), fo.HalationHue);
+        Assert.Equal(WinModel("effects.bloom.amount").GetProperty("default").GetDouble(), fo.BloomAmount);
+        Assert.Equal(WinModel("effects.bloom.threshold").GetProperty("default").GetDouble(), fo.BloomThreshold);
+        Assert.Equal(WinModel("effects.bloom.radius").GetProperty("default").GetDouble(), fo.BloomRadius);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new FilmOpticsSettings(BloomRadius: 101).Validate());
+
+        Assert.Equal(WinModel("effects.grain.tone_curve").GetProperty("default").GetString(), effects.GrainToneCurve.WireValue());
+        Assert.Equal(WinModel("effects.grain.format_preset").GetProperty("default").GetString(), effects.GrainFormatPreset.WireValue());
+
+        var lens = new LensSettings();
+        Assert.Equal(WinModel("geometry.lens.defringe_purple_amount").GetProperty("default").GetDouble(), lens.DefringePurpleAmount);
+        Assert.Equal(WinModel("geometry.lens.defringe_purple_hue").GetProperty("default").GetDouble(), lens.DefringePurpleHue);
+        Assert.Equal(WinModel("geometry.lens.defringe_green_amount").GetProperty("default").GetDouble(), lens.DefringeGreenAmount);
+        Assert.Equal(WinModel("geometry.lens.defringe_green_hue").GetProperty("default").GetDouble(), lens.DefringeGreenHue);
+        Assert.Throws<ArgumentOutOfRangeException>(() => new LensSettings(DefringePurpleAmount: 21).Validate());
     }
 
     private static void AssertModelSpecMatchesJson(string fid, AdjustmentFieldModelSpec actual, JsonElement json)

@@ -92,6 +92,7 @@ extension EditorModel {
             throw failure.error ?? AdjustmentTransferError.incompatible("target")
         }
         pendingExternalReload = nil
+        deferredExternalReloadAccept = false
     }
 
     func exportAdjustmentTransferPanel() {

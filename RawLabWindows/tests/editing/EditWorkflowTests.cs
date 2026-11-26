@@ -229,6 +229,7 @@ public sealed class EditWorkflowTests
                     case EditorAdjustmentTool.Lens: expected = expected with { Lens = new() }; break;
                     case EditorAdjustmentTool.Clarity: expected = expected with { Atmosphere = expected.Atmosphere! with { Clarity = 0 } }; break;
                     case EditorAdjustmentTool.Dehaze: expected = expected with { Atmosphere = expected.Atmosphere! with { Dehaze = 0 } }; break;
+                    case EditorAdjustmentTool.Texture: expected = expected with { Atmosphere = expected.Atmosphere! with { Texture = 0 } }; break;
                     case EditorAdjustmentTool.BlackPoint: expected = expected with { ToneControls = expected.ToneControls! with { BlackPoint = 0 } }; break;
                     case EditorAdjustmentTool.WhitePoint: expected = expected with { ToneControls = expected.ToneControls! with { WhitePoint = 0 } }; break;
                     case EditorAdjustmentTool.Vibrance: expected = expected with { ToneControls = expected.ToneControls! with { Vibrance = 0 } }; break;
@@ -244,6 +245,20 @@ public sealed class EditWorkflowTests
                 Check(edit.Settings.SameAs(frozen), "Preparing/cancelling tool reset never mutates source: " + tool);
                 Check(EditorAdjustmentRules.PrepareReset(Tool(tool), prepared.Candidate!).Status == EditorResetStatus.NoChange, "Repeated tool reset is NoChange: " + tool);
             }
+            var sharpenV2Only = neutral.Clone();
+            sharpenV2Only.SharpenV2 = new SharpenV2Settings(LuminanceV2: true, Radius: 1.8, Detail: 60, Masking: 40);
+            var sharpenV2Edit = Edit(sharpenV2Only, null);
+            Check(EditorAdjustmentRules.IsModified(Tool(EditorAdjustmentTool.Sharpening), sharpenV2Edit),
+                "Sharpening tool modified check detects SharpenV2-only changes");
+            var sharpenV2Reset = EditorAdjustmentRules.PrepareReset(Tool(EditorAdjustmentTool.Sharpening), sharpenV2Edit);
+            Check(sharpenV2Reset.Status == EditorResetStatus.Ready &&
+                sharpenV2Reset.Candidate!.Settings.SharpenV2 == null &&
+                !EditorAdjustmentRules.IsModified(Tool(EditorAdjustmentTool.Sharpening), sharpenV2Reset.Candidate),
+                "Sharpening tool reset clears SharpenV2 back to default");
+            var grainCurveAdjustments = new Adjustments { Effects = new PhotoEffectsSettings(GrainToneCurve: GrainToneCurve.NegativeAsymmetric) };
+            var grainPresetAdjustments = new Adjustments { Effects = new PhotoEffectsSettings(GrainFormatPreset: GrainFormatPreset.Film135) };
+            Check(!grainCurveAdjustments.IsEffectDefault(false) && !grainPresetAdjustments.IsEffectDefault(false) && new Adjustments().IsEffectDefault(false),
+                "IsEffectDefault(false) tracks v0.14.0 grain tone curve and format preset");
             var resetContext = new EditorResetContext("resolved-film.cube", 10);
             var resetToken = EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Light), resetIdentity.Path, 2, 3, mixedEdit, resetContext);
             var exposedCandidate = resetToken.Candidate!;
@@ -424,6 +439,21 @@ public sealed class EditWorkflowTests
             var rasterDefault = EditorAdjustmentRules.PrepareReset(new(EditorResetKind.All), rasterEdit).Candidate!.Settings.Restore();
             Check(rasterDefault.ExposureMode == 2 && rasterDefault.Lens == new LensSettings(false, false, false) && rasterDefault.AsShot == null,
                 "raster reset uses sensor exposure and unavailable camera-only defaults");
+            var rasterDefringe = new Adjustments
+            {
+                Lens = new LensSettings(
+                    Distortion: true, Tca: true, AutoCrop: true, Manual: true,
+                    ProfileId: "lens-win", FocalLength: 35, CropFactor: 1.5, Vignetting: true,
+                    DefringePurpleAmount: 8, DefringePurpleHue: 35, DefringeGreenAmount: 4, DefringeGreenHue: 65)
+            };
+            var preparedRasterDefringe = PhotoInput.PrepareInputSettings("fixture.jpg", rasterDefringe);
+            Check(!preparedRasterDefringe.Lens.Distortion && !preparedRasterDefringe.Lens.Tca &&
+                !preparedRasterDefringe.Lens.Vignetting && !preparedRasterDefringe.Lens.AutoCrop &&
+                !preparedRasterDefringe.Lens.Manual && preparedRasterDefringe.Lens.ProfileId == null &&
+                preparedRasterDefringe.Lens.FocalLength == null && preparedRasterDefringe.Lens.CropFactor == null &&
+                preparedRasterDefringe.Lens.DefringePurpleAmount == 8 && preparedRasterDefringe.Lens.DefringePurpleHue == 35 &&
+                preparedRasterDefringe.Lens.DefringeGreenAmount == 4 && preparedRasterDefringe.Lens.DefringeGreenHue == 65,
+                "raster input preparation strips camera lens flags/profile while preserving defringe");
             var rasterNeutralSnapshot = PhotoInput.PrepareInputSettings("fixture.jpg", new Adjustments()).Capture();
             var rasterMetadataOnly = rasterNeutralSnapshot.Copy() with
             {

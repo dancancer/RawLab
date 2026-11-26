@@ -98,6 +98,13 @@ internal val summaryStringResources: Map<String, Int> = mapOf(
     "亮度降噪" to R.string.denoise_luma,
     "色彩降噪" to R.string.denoise_chroma,
     "粗色斑抑制" to R.string.denoise_coarse,
+    "色板" to R.string.point_color_swatch,
+    "相对" to R.string.selective_color_relative,
+    "绝对" to R.string.selective_color_absolute,
+    "传统曲线" to R.string.grain_curve_legacy,
+    "负片非对称" to R.string.grain_curve_negative_asymmetric,
+    "135 胶片" to R.string.grain_format_135,
+    "120 中画幅" to R.string.grain_format_120,
 )
 
 private fun summaryText(key: String) = AppStrings.text(

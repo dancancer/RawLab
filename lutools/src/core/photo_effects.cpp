@@ -13,6 +13,11 @@ bool PhotoEffectsOptions::valid() const {
     for (float value : {vignetteMidpoint, vignetteFeather, vignetteHighlights,
                        grainAmount, grainSize, grainRoughness})
         if (!std::isfinite(value) || value < 0 || value > 100) return false;
+    if (grainToneCurve != GrainToneCurve::Legacy &&
+        grainToneCurve != GrainToneCurve::NegativeAsymmetric) return false;
+    if (grainFormatPreset != GrainFormatPreset::Custom &&
+        grainFormatPreset != GrainFormatPreset::Film135 &&
+        grainFormatPreset != GrainFormatPreset::Film120) return false;
     return true;
 }
 

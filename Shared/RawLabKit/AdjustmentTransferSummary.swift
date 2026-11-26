@@ -70,7 +70,7 @@ public struct AdjustmentTransferSummary {
         case .contrast: return percent((value.number ?? 1) - 1, signed: true)
         case .highlights: return percent(-(value.number ?? 0), signed: true)
         case .shadows, .sCurve: return percent(value.number ?? 0, signed: true)
-        case .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .hdrSDRContrast, .hdrSDRSaturation:
+        case .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .texture, .hdrSDRContrast, .hdrSDRSaturation:
             return number(value.number ?? 0, signed: true) + "%"
         case .saturation: return percent((value.number ?? 1) - 1, signed: true)
         case .hdrTemperature:
@@ -81,18 +81,46 @@ public struct AdjustmentTransferSummary {
         case .temperature: return whiteBalanceValue(value, unit: " K")
         case .tint: return whiteBalanceValue(value, unit: "", signed: true)
         case .curve: return curveText(value)
-        case .curveApplyToLuminosity: return text((value.boolean ?? false) ? "开启" : "停用")
+        case .curveApplyToLuminosity, .bwEnabled, .sharpeningLuminanceV2: return text((value.boolean ?? false) ? "开启" : "停用")
         case .curveParametric: return parametricCurveText(value)
         case .gradingShadows, .gradingMidtones, .gradingHighlights, .gradingGlobal: return gradingText(value)
         case .gradingBlending: return number(value.number ?? 50) + "%"
         case .gradingBalance: return number(value.number ?? 0, signed: true)
+        case .calibrationShadowTint, .calibrationRedHue, .calibrationRedSaturation,
+             .calibrationGreenHue, .calibrationGreenSaturation,
+             .calibrationBlueHue, .calibrationBlueSaturation, .halationHue:
+            return number(value.number ?? 0, signed: true)
+        case .pointColor:
+            let count = value.pointColorSettings?.swatches.count ?? 0
+            return count == 0 ? text("停用") : number(Double(count)) + " " + text("色板")
+        case .selectiveColor:
+            let method = value.selectiveColorSettings?.method == .absolute ? "绝对" : "相对"
+            return text(method)
+        case .bwMixer:
+            let nonZero = value.bwMixerWeights?.allChannels.filter { $0.1 != 0 }.count ?? 0
+            return nonZero == 0 ? text("停用") : number(Double(nonZero))
         case .vignetteAmount, .vignetteRoundness:
             return number(value.number ?? 0, signed: true)
         case .perspectiveHorizontal, .perspectiveVertical:
             return number((value.number ?? 0) * 100, signed: true)
         case .vignetteMidpoint, .vignetteFeather, .vignetteHighlights,
-             .grainAmount, .grainSize, .grainRoughness, .rawDenoise, .postRGBDenoise:
+             .grainAmount, .grainSize, .grainRoughness, .rawDenoise, .postRGBDenoise,
+             .lensDefringePurpleAmount, .lensDefringePurpleHue,
+             .lensDefringeGreenAmount, .lensDefringeGreenHue:
             return number(value.number ?? 0)
+        case .sharpeningRadius: return number(value.number ?? 1.0) + " px"
+        case .sharpeningDetail, .sharpeningMasking,
+             .halationAmount, .halationThreshold, .halationRadius,
+             .bloomAmount, .bloomThreshold, .bloomRadius:
+            return number(value.number ?? 0) + "%"
+        case .grainToneCurve:
+            return text(value.string == "negative_asymmetric" ? "负片非对称" : "传统曲线")
+        case .grainFormatPreset:
+            switch value.string {
+            case "135": return text("135 胶片")
+            case "120": return text("120 中画幅")
+            default: return text("自定义")
+            }
         case .chromaDenoise: return chromaDenoiseText(value)
         case .waveletDenoise: return waveletText(value)
         case .sharpening: return percent(value.number ?? 0, signed: false)

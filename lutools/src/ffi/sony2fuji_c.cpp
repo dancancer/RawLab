@@ -1521,3 +1521,46 @@ sony2fuji_status sony2fuji_session_supports_fast_full_res_gpu(
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
+
+sony2fuji_status sony2fuji_render_sharpen_mask_preview(
+    const sony2fuji_buffer* source,
+    float radius,
+    float masking,
+    sony2fuji_buffer* out_mask
+) {
+    if (out_mask) {
+        *out_mask = sony2fuji_buffer{};
+    }
+    if (!source || !source->data || source->width == 0 || source->height == 0 || !out_mask) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (!std::isfinite(radius) || radius < 0.5f || radius > 3.0f ||
+        !std::isfinite(masking) || masking < 0.0f || masking > 100.0f) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    return SONY2FUJI_STATUS_UNSUPPORTED;
+}
+
+sony2fuji_status sony2fuji_point_color_preview_swatch(
+    float src_hue,
+    float src_saturation,
+    float src_luminance,
+    float hue_shift,
+    float saturation_shift,
+    float luminance_shift,
+    float* out_src_rgb,
+    float* out_shifted_rgb
+) {
+    if (!out_src_rgb || !out_shifted_rgb) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    if (!std::isfinite(src_hue) || src_hue < 0.0f || src_hue >= 360.0f ||
+        !std::isfinite(src_saturation) || src_saturation < 0.0f || src_saturation > 1.0f ||
+        !std::isfinite(src_luminance) || src_luminance < 0.0f || src_luminance > 1.0f ||
+        !std::isfinite(hue_shift) || hue_shift < -100.0f || hue_shift > 100.0f ||
+        !std::isfinite(saturation_shift) || saturation_shift < -100.0f || saturation_shift > 100.0f ||
+        !std::isfinite(luminance_shift) || luminance_shift < -100.0f || luminance_shift > 100.0f) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    return SONY2FUJI_STATUS_UNSUPPORTED;
+}

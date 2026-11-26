@@ -1064,6 +1064,296 @@
       "hdr_only": false,
       "sub_fields": null
     },
+    "color.calibration.shadow_tint": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.red_hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.red_saturation": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.green_hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.green_saturation": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.blue_hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.calibration.blue_saturation": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.point_color": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "swatches"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "max_swatches": 8,
+        "src_hue": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 360.0,
+          "exclusive_max": true
+        },
+        "src_saturation": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 1.0
+        },
+        "src_luminance": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 1.0
+        },
+        "hue_shift": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "saturation_shift": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "luminance_shift": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "variance": {
+          "value_type": "number",
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        },
+        "range": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0
+        },
+        "hue_range": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0
+        },
+        "sat_range": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0
+        },
+        "lum_range": {
+          "value_type": "number",
+          "min": 0.0,
+          "max": 100.0,
+          "default": 50.0
+        },
+        "enabled": {
+          "value_type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "color.selective_color": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "method",
+        "bands"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "method": {
+          "value_type": "string",
+          "allowed_values": [
+            "relative",
+            "absolute"
+          ],
+          "default": "relative"
+        },
+        "bands": {
+          "value_type": "object",
+          "allowed_keys": [
+            "reds",
+            "yellows",
+            "greens",
+            "cyans",
+            "blues",
+            "magentas",
+            "whites",
+            "neutrals",
+            "blacks"
+          ]
+        },
+        "components": {
+          "value_type": "object",
+          "allowed_keys": [
+            "cyan",
+            "magenta",
+            "yellow",
+            "black"
+          ],
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        }
+      }
+    },
+    "color.bw.enabled": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "color.bw.mixer": {
+      "value_type": "object",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": [
+        "red",
+        "orange",
+        "yellow",
+        "green",
+        "aqua",
+        "blue",
+        "purple",
+        "magenta"
+      ],
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": {
+        "channels": {
+          "value_type": "object",
+          "allowed_keys": [
+            "red",
+            "orange",
+            "yellow",
+            "green",
+            "aqua",
+            "blue",
+            "purple",
+            "magenta"
+          ],
+          "min": -100.0,
+          "max": 100.0,
+          "default": 0.0
+        }
+      }
+    },
     "effects.vignette.amount": {
       "value_type": "number",
       "nullable": false,
@@ -1176,6 +1466,20 @@
       "hdr_only": false,
       "sub_fields": null
     },
+    "effects.texture": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
     "effects.grain.size": {
       "value_type": "number",
       "nullable": false,
@@ -1204,11 +1508,200 @@
       "hdr_only": false,
       "sub_fields": null
     },
+    "effects.grain.tone_curve": {
+      "value_type": "string",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        "legacy",
+        "negative_asymmetric"
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.grain.format_preset": {
+      "value_type": "string",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": [
+        "custom",
+        "135",
+        "120"
+      ],
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.halation.amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.halation.threshold": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.halation.radius": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.halation.hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": -100.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.bloom.amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.bloom.threshold": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "effects.bloom.radius": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
     "detail.sharpening": {
       "value_type": "number",
       "nullable": false,
       "min": 0.0,
       "max": 2.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.sharpening.luminance_v2": {
+      "value_type": "boolean",
+      "nullable": false,
+      "min": null,
+      "max": null,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.sharpening.radius": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.5,
+      "max": 3.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.sharpening.detail": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "detail.sharpening.masking": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
       "exclusive_min": false,
       "exclusive_max": false,
       "non_empty": false,
@@ -1519,6 +2012,62 @@
       "exclusive_min": false,
       "exclusive_max": false,
       "non_empty": true,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.defringe_purple_amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 20.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.defringe_purple_hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.defringe_green_amount": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 20.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
+      "allowed_values": null,
+      "object_keys": null,
+      "optional_keys": null,
+      "hdr_only": false,
+      "sub_fields": null
+    },
+    "geometry.lens.defringe_green_hue": {
+      "value_type": "number",
+      "nullable": false,
+      "min": 0.0,
+      "max": 100.0,
+      "exclusive_min": false,
+      "exclusive_max": false,
+      "non_empty": false,
       "allowed_values": null,
       "object_keys": null,
       "optional_keys": null,

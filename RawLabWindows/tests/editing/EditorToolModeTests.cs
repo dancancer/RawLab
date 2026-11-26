@@ -62,6 +62,20 @@ public sealed class EditorToolModeTests
         Assert.Equal(AtmosphereParameter.Clarity, state.SelectedAtmosphereParameter);
         Assert.Equal(EditorAdjustmentTool.Clarity, EditorToolModeRules.ResolveTool(state));
 
+        state = EditorToolModeRules.SelectTool(state, EditorAdjustmentTool.Texture);
+        Assert.Equal(EditorToolMode.Parameter, state.Mode);
+        Assert.Null(state.SelectedToneParameter);
+        Assert.Equal(AtmosphereParameter.Texture, state.SelectedAtmosphereParameter);
+        Assert.Equal(EditorAdjustmentTool.Texture, EditorToolModeRules.ResolveTool(state));
+
+        foreach (var spec in AtmosphereSpec.All)
+        {
+            var tool = EditorAdjustmentRules.ToolFor(spec.Id);
+            Assert.Equal(spec.Id, EditorAdjustmentRules.AtmosphereParameterFor(tool));
+            Assert.Equal(EditorAdjustmentGroup.Effects, EditorAdjustmentRules.GroupFor(tool));
+            Assert.False(string.IsNullOrWhiteSpace(Loc.Text(EditorAdjustmentRules.Title(tool))));
+        }
+
         state = EditorToolModeRules.SelectTool(state, EditorAdjustmentTool.HdrPeakLimit);
         Assert.Equal(EditorToolMode.Parameter, state.Mode);
         Assert.Null(state.SelectedAtmosphereParameter);

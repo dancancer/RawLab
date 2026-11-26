@@ -651,3 +651,26 @@ HDR v9 reject these documents by version instead of misreading the curve. Schema
 18 keeps every other v17 field; schema 19 keeps every other v16 field. HDR
 processing version 10 reuses the `sony2fuji_hdr_request_v9` layout. The CLI
 advertises 18 and, when HDR is available, 19 in `recipe_versions`.
+
+## v20: SDR color science, spatial detail, defringe, and film optics
+
+SDR [schema 20](edit-json-v20.schema.json) freezes the v0.14.0 SDR feature
+extensions while preserving full backward compatibility with historical recipes
+(`schema_version <= 18` when all v0.14.0 fields remain at their defaults):
+
+- `edits.color`: adds `calibration` (`shadow_tint`, `{red,green,blue}_{hue,saturation}`
+  in `[-100, 100]`), `point_color` (`swatches` up to 8 entries), `selective_color`
+  (`method`: `"relative"` | `"absolute"`, 9 CMYK bands in `[-100, 100]`), and
+  `bw` (`enabled` plus 8-channel `mixer` in `[-100, 100]`).
+- `edits.effects`: adds `texture` (`[-1, 1]`), `grain_tone_curve` (`"legacy"` |
+  `"negative_asymmetric"`), `grain_format_preset` (`"custom"` | `"135"` | `"120"`),
+  `halation` (`amount`, `threshold`, `radius`, `hue`), and `bloom` (`amount`,
+  `threshold`, `radius`).
+- `edits.detail`: adds `luminance_v2`, `sharpening_radius` (`[0.5, 3.0]`),
+  `sharpening_detail` (`[0, 100]`), and `sharpening_masking` (`[0, 100]`).
+- `edits.lens_correction`: adds `defringe_purple_amount` / `defringe_green_amount`
+  (`[0, 20]`) and `defringe_purple_hue` / `defringe_green_hue` (`[0, 100]`), which
+  are permitted on both RAW and raster inputs.
+
+The CLI advertises `20` in `recipe_versions`, and `serializeEditRecipe` emits
+`<= 18` when all v0.14.0 fields are default and `20` when active.

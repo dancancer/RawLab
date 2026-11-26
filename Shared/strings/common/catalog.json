@@ -5047,6 +5047,38 @@
     "ja": "カラーグレーディングの値が無効です",
     "zh-Hans": "无效的颜色分级参数"
   },
+  "无效的相机校准参数": {
+    "de": "Ungültige Kamerakalibrierungswerte",
+    "en": "Invalid camera calibration values",
+    "es": "Valores de calibración de cámara no válidos",
+    "fr": "Valeurs d’étalonnage de l’appareil non valides",
+    "ja": "カメラキャリブレーションの値が無効です",
+    "zh-Hans": "无效的相机校准参数"
+  },
+  "无效的色彩调整参数": {
+    "de": "Ungültige Farbanpassungswerte",
+    "en": "Invalid color adjustment values",
+    "es": "Valores de ajuste de color no válidos",
+    "fr": "Valeurs de réglage des couleurs non valides",
+    "ja": "カラー調整の値が無効です",
+    "zh-Hans": "无效的色彩调整参数"
+  },
+  "无效的锐化参数": {
+    "de": "Ungültige Schärfungswerte",
+    "en": "Invalid sharpening values",
+    "es": "Valores de enfoque no válidos",
+    "fr": "Valeurs de netteté non valides",
+    "ja": "シャープの値が無効です",
+    "zh-Hans": "无效的锐化参数"
+  },
+  "无效的光学效果参数": {
+    "de": "Ungültige Optik-Effektwerte",
+    "en": "Invalid film optics values",
+    "es": "Valores de óptica de película no válidos",
+    "fr": "Valeurs d’optique argentique non valides",
+    "ja": "光学効果の値が無効です",
+    "zh-Hans": "无效的光学效果参数"
+  },
   "重置当前分区": {
     "de": "Aktuellen Tonwertbereich zurücksetzen",
     "en": "Reset current range",
@@ -9686,5 +9718,581 @@
     "fr": "Oublier les identifiants enregistrés",
     "ja": "保存済みの認証情報を削除",
     "zh-Hans": "忘记已保存凭据"
+  },
+  "范围": {
+    "de": "Bereich",
+    "en": "Range",
+    "es": "Intervalo",
+    "fr": "Plage",
+    "ja": "範囲",
+    "zh-Hans": "范围"
+  },
+  "相机校准": {
+    "en": "Camera Calibration",
+    "de": "Kamerakalibrierung",
+    "fr": "Calibrage appareil",
+    "es": "Calibración de cámara",
+    "ja": "カメラキャリブレーション",
+    "zh-Hans": "相机校准"
+  },
+  "阴影色调": {
+    "en": "Shadow Tint",
+    "de": "Tiefen-Farbton",
+    "fr": "Teinte des ombres",
+    "es": "Matiz de sombras",
+    "ja": "シャドウ色かぶり",
+    "zh-Hans": "阴影色调"
+  },
+  "红原色": {
+    "en": "Red Primary",
+    "de": "Rot-Primärfarbe",
+    "fr": "Primaire rouge",
+    "es": "Primario rojo",
+    "ja": "レッド原色",
+    "zh-Hans": "红原色"
+  },
+  "绿原色": {
+    "en": "Green Primary",
+    "de": "Grün-Primärfarbe",
+    "fr": "Primaire vert",
+    "es": "Primario verde",
+    "ja": "グリーン原色",
+    "zh-Hans": "绿原色"
+  },
+  "蓝原色": {
+    "en": "Blue Primary",
+    "de": "Blau-Primärfarbe",
+    "fr": "Primaire bleu",
+    "es": "Primario azul",
+    "ja": "ブルー原色",
+    "zh-Hans": "蓝原色"
+  },
+  "红原色色相": {
+    "en": "Red Primary Hue",
+    "de": "Rot-Primärfarbton",
+    "fr": "Teinte primaire rouge",
+    "es": "Tono primario rojo",
+    "ja": "レッド原色の色相",
+    "zh-Hans": "红原色色相"
+  },
+  "红原色饱和度": {
+    "en": "Red Primary Saturation",
+    "de": "Rot-Primärsättigung",
+    "fr": "Saturation primaire rouge",
+    "es": "Saturación primaria roja",
+    "ja": "レッド原色の彩度",
+    "zh-Hans": "红原色饱和度"
+  },
+  "绿原色色相": {
+    "en": "Green Primary Hue",
+    "de": "Grün-Primärfarbton",
+    "fr": "Teinte primaire vert",
+    "es": "Tono primario verde",
+    "ja": "グリーン原色の色相",
+    "zh-Hans": "绿原色色相"
+  },
+  "绿原色饱和度": {
+    "en": "Green Primary Saturation",
+    "de": "Grün-Primärsättigung",
+    "fr": "Saturation primaire vert",
+    "es": "Saturación primaria verde",
+    "ja": "グリーン原色の彩度",
+    "zh-Hans": "绿原色饱和度"
+  },
+  "蓝原色色相": {
+    "en": "Blue Primary Hue",
+    "de": "Blau-Primärfarbton",
+    "fr": "Teinte primaire bleu",
+    "es": "Tono primario azul",
+    "ja": "ブルー原色の色相",
+    "zh-Hans": "蓝原色色相"
+  },
+  "蓝原色饱和度": {
+    "en": "Blue Primary Saturation",
+    "de": "Blau-Primärsättigung",
+    "fr": "Saturation primaire bleu",
+    "es": "Saturación primaria azul",
+    "ja": "ブルー原色の彩度",
+    "zh-Hans": "蓝原色饱和度"
+  },
+  "点颜色": {
+    "en": "Point Color",
+    "de": "Punktfarbe",
+    "fr": "Couleur par points",
+    "es": "Color por puntos",
+    "ja": "ポイントカラー",
+    "zh-Hans": "点颜色"
+  },
+  "色相偏移": {
+    "en": "Hue Shift",
+    "de": "Farbtonverschiebung",
+    "fr": "Décalage de teinte",
+    "es": "Desplazamiento de tono",
+    "ja": "色相シフト",
+    "zh-Hans": "色相偏移"
+  },
+  "饱和度偏移": {
+    "en": "Saturation Shift",
+    "de": "Sättigungsverschiebung",
+    "fr": "Décalage de saturation",
+    "es": "Desplazamiento de saturación",
+    "ja": "彩度シフト",
+    "zh-Hans": "饱和度偏移"
+  },
+  "明亮度偏移": {
+    "en": "Luminance Shift",
+    "de": "Luminanzverschiebung",
+    "fr": "Décalage de luminance",
+    "es": "Desplazamiento de luminancia",
+    "ja": "輝度シフト",
+    "zh-Hans": "明亮度偏移"
+  },
+  "方差": {
+    "en": "Variance",
+    "de": "Varianz",
+    "fr": "Variance",
+    "es": "Varianza",
+    "ja": "分散",
+    "zh-Hans": "方差"
+  },
+  "色相范围": {
+    "en": "Hue Range",
+    "de": "Farbtonbereich",
+    "fr": "Plage de teinte",
+    "es": "Intervalo de tono",
+    "ja": "色相範囲",
+    "zh-Hans": "色相范围"
+  },
+  "饱和度范围": {
+    "en": "Saturation Range",
+    "de": "Sättigungsbereich",
+    "fr": "Plage de saturation",
+    "es": "Intervalo de saturación",
+    "ja": "彩度範囲",
+    "zh-Hans": "饱和度范围"
+  },
+  "明亮度范围": {
+    "en": "Luminance Range",
+    "de": "Luminanzbereich",
+    "fr": "Plage de luminance",
+    "es": "Intervalo de luminancia",
+    "ja": "輝度範囲",
+    "zh-Hans": "明亮度范围"
+  },
+  "添加色板": {
+    "en": "Add Swatch",
+    "de": "Farbfeld hinzufügen",
+    "fr": "Ajouter un échantillon",
+    "es": "Añadir muestra",
+    "ja": "スウォッチを追加",
+    "zh-Hans": "添加色板"
+  },
+  "吸管取样": {
+    "en": "Eyedropper Sample",
+    "de": "Pipetten-Probe",
+    "fr": "Échantillon pipette",
+    "es": "Muestra cuentagotas",
+    "ja": "スポイトサンプル",
+    "zh-Hans": "吸管取样"
+  },
+  "色板": {
+    "en": "Swatch",
+    "de": "Farbfeld",
+    "fr": "Échantillon",
+    "es": "Muestra",
+    "ja": "スウォッチ",
+    "zh-Hans": "色板"
+  },
+  "可选颜色": {
+    "en": "Selective Color",
+    "de": "Selektive Farbkorrektur",
+    "fr": "Correction sélective",
+    "es": "Corrección selectiva",
+    "ja": "特定色域の選択",
+    "zh-Hans": "可选颜色"
+  },
+  "相对": {
+    "en": "Relative",
+    "de": "Relativ",
+    "fr": "Relatif",
+    "es": "Relativo",
+    "ja": "相対値",
+    "zh-Hans": "相对"
+  },
+  "绝对": {
+    "en": "Absolute",
+    "de": "Absolut",
+    "fr": "Absolu",
+    "es": "Absoluto",
+    "ja": "絶対値",
+    "zh-Hans": "绝对"
+  },
+  "红色": {
+    "en": "Reds",
+    "de": "Rottöne",
+    "fr": "Rouges",
+    "es": "Rojos",
+    "ja": "レッド系",
+    "zh-Hans": "红色"
+  },
+  "黄色": {
+    "en": "Yellows",
+    "de": "Gelbtöne",
+    "fr": "Jaunes",
+    "es": "Amarillos",
+    "ja": "イエロー系",
+    "zh-Hans": "黄色"
+  },
+  "绿色": {
+    "en": "Greens",
+    "de": "Grüntöne",
+    "fr": "Verts",
+    "es": "Verdes",
+    "ja": "グリーン系",
+    "zh-Hans": "绿色"
+  },
+  "青色": {
+    "en": "Cyans",
+    "de": "Cyantöne",
+    "fr": "Cyans",
+    "es": "Cianes",
+    "ja": "シアン系",
+    "zh-Hans": "青色"
+  },
+  "蓝色": {
+    "en": "Blues",
+    "de": "Blautöne",
+    "fr": "Bleus",
+    "es": "Azules",
+    "ja": "ブルー系",
+    "zh-Hans": "蓝色"
+  },
+  "洋红色": {
+    "en": "Magentas",
+    "de": "Magentatöne",
+    "fr": "Magentas",
+    "es": "Magentas",
+    "ja": "マゼンタ系",
+    "zh-Hans": "洋红色"
+  },
+  "白色": {
+    "en": "Whites",
+    "de": "Weißtöne",
+    "fr": "Blancs",
+    "es": "Blancos",
+    "ja": "白色系",
+    "zh-Hans": "白色"
+  },
+  "中性色": {
+    "en": "Neutrals",
+    "de": "Grautöne",
+    "fr": "Gris neutres",
+    "es": "Neutros",
+    "ja": "中間色",
+    "zh-Hans": "中性色"
+  },
+  "黑色": {
+    "en": "Blacks",
+    "de": "Schwarztöne",
+    "fr": "Noirs",
+    "es": "Negros",
+    "ja": "ブラック系",
+    "zh-Hans": "黑色"
+  },
+  "青色 (C)": {
+    "en": "Cyan (C)",
+    "de": "Cyan (C)",
+    "fr": "Cyan (C)",
+    "es": "Cian (C)",
+    "ja": "シアン (C)",
+    "zh-Hans": "青色 (C)"
+  },
+  "洋红 (M)": {
+    "en": "Magenta (M)",
+    "de": "Magenta (M)",
+    "fr": "Magenta (M)",
+    "es": "Magenta (M)",
+    "ja": "マゼンタ (M)",
+    "zh-Hans": "洋红 (M)"
+  },
+  "黄色 (Y)": {
+    "en": "Yellow (Y)",
+    "de": "Gelb (Y)",
+    "fr": "Jaune (Y)",
+    "es": "Amarillo (Y)",
+    "ja": "イエロー (Y)",
+    "zh-Hans": "黄色 (Y)"
+  },
+  "黑色 (K)": {
+    "en": "Black (K)",
+    "de": "Schwarz (K)",
+    "fr": "Noir (K)",
+    "es": "Negro (K)",
+    "ja": "ブラック (K)",
+    "zh-Hans": "黑色 (K)"
+  },
+  "黑白": {
+    "en": "B&W",
+    "de": "Schwarzweiß",
+    "fr": "Noir et blanc",
+    "es": "Blanco y negro",
+    "ja": "白黒",
+    "zh-Hans": "黑白"
+  },
+  "启用黑白": {
+    "en": "Enable B&W",
+    "de": "Schwarzweiß aktivieren",
+    "fr": "Activer N&B",
+    "es": "Activar B/N",
+    "ja": "白黒を有効化",
+    "zh-Hans": "启用黑白"
+  },
+  "黑白混合": {
+    "en": "B&W Mix",
+    "de": "Schwarzweiß-Mischung",
+    "fr": "Mélange N&B",
+    "es": "Mezcla B/N",
+    "ja": "白黒ミックス",
+    "zh-Hans": "黑白混合"
+  },
+  "纹理": {
+    "en": "Texture",
+    "de": "Struktur",
+    "fr": "Texture",
+    "es": "Textura",
+    "ja": "テクスチャ",
+    "zh-Hans": "纹理"
+  },
+  "明度锐化": {
+    "en": "Luminance Sharpening",
+    "de": "Luminanzschärfe",
+    "fr": "Netteté de luminance",
+    "es": "Enfoque de luminancia",
+    "ja": "輝度シャープ",
+    "zh-Hans": "明度锐化"
+  },
+  "半径": {
+    "en": "Radius",
+    "de": "Radius",
+    "fr": "Rayon",
+    "es": "Radio",
+    "ja": "半径",
+    "zh-Hans": "半径"
+  },
+  "蒙版": {
+    "en": "Masking",
+    "de": "Maskieren",
+    "fr": "Masquage",
+    "es": "Máscara",
+    "ja": "マスク",
+    "zh-Hans": "蒙版"
+  },
+  "锐化半径": {
+    "en": "Sharpen Radius",
+    "de": "Schärferadius",
+    "fr": "Rayon de netteté",
+    "es": "Radio de enfoque",
+    "ja": "シャープ半径",
+    "zh-Hans": "锐化半径"
+  },
+  "锐化细节": {
+    "en": "Sharpen Detail",
+    "de": "Schärfedetails",
+    "fr": "Détail de netteté",
+    "es": "Detalle de enfoque",
+    "ja": "シャープディテール",
+    "zh-Hans": "锐化细节"
+  },
+  "锐化蒙版": {
+    "en": "Sharpen Masking",
+    "de": "Schärfemaskierung",
+    "fr": "Masquage de netteté",
+    "es": "Máscara de enfoque",
+    "ja": "シャープマスク",
+    "zh-Hans": "锐化蒙版"
+  },
+  "边缘蒙版预览": {
+    "en": "Edge Mask Preview",
+    "de": "Kantenmasken-Vorschau",
+    "fr": "Aperçu du masque de contour",
+    "es": "Vista previa de máscara de borde",
+    "ja": "エッジマスクプレビュー",
+    "zh-Hans": "边缘蒙版预览"
+  },
+  "去边": {
+    "en": "Defringe",
+    "de": "Farbsaum entfernen",
+    "fr": "Suppression des franges",
+    "es": "Eliminar halos",
+    "ja": "フリンジ軽減",
+    "zh-Hans": "去边"
+  },
+  "去紫边": {
+    "en": "Purple Defringe",
+    "de": "Violetten Farbsaum entfernen",
+    "fr": "Franges violettes",
+    "es": "Halos púrpura",
+    "ja": "パープルフリンジ",
+    "zh-Hans": "去紫边"
+  },
+  "去绿边": {
+    "en": "Green Defringe",
+    "de": "Grünen Farbsaum entfernen",
+    "fr": "Franges vertes",
+    "es": "Halos verdes",
+    "ja": "グリーンフリンジ",
+    "zh-Hans": "去绿边"
+  },
+  "数量": {
+    "en": "Amount",
+    "de": "Stärke",
+    "fr": "Gain",
+    "es": "Cantidad",
+    "ja": "適用量",
+    "zh-Hans": "数量"
+  },
+  "紫边数量": {
+    "en": "Purple Defringe Amount",
+    "de": "Violetter Farbsaum",
+    "fr": "Quantité franges violettes",
+    "es": "Cantidad halo púrpura",
+    "ja": "パープルフリンジ量",
+    "zh-Hans": "紫边数量"
+  },
+  "紫边色相": {
+    "en": "Purple Defringe Hue",
+    "de": "Farbton Violettsaum",
+    "fr": "Teinte franges violettes",
+    "es": "Tono halo púrpura",
+    "ja": "パープルフリンジ色相",
+    "zh-Hans": "紫边色相"
+  },
+  "绿边数量": {
+    "en": "Green Defringe Amount",
+    "de": "Grüner Farbsaum",
+    "fr": "Quantité franges vertes",
+    "es": "Cantidad halo verde",
+    "ja": "グリーンフリンジ量",
+    "zh-Hans": "绿边数量"
+  },
+  "绿边色相": {
+    "en": "Green Defringe Hue",
+    "de": "Farbton Grünsaum",
+    "fr": "Teinte franges vertes",
+    "es": "Tono halo verde",
+    "ja": "グリーンフリンジ色相",
+    "zh-Hans": "绿边色相"
+  },
+  "光晕": {
+    "en": "Halation",
+    "de": "Lichthof",
+    "fr": "Halo",
+    "es": "Halación",
+    "ja": "ハレーション",
+    "zh-Hans": "光晕"
+  },
+  "光晕阈值": {
+    "en": "Halation Threshold",
+    "de": "Lichthof-Schwellenwert",
+    "fr": "Seuil du halo",
+    "es": "Umbral de halación",
+    "ja": "ハレーションしきい値",
+    "zh-Hans": "光晕阈值"
+  },
+  "光晕半径": {
+    "en": "Halation Radius",
+    "de": "Lichthof-Radius",
+    "fr": "Rayon du halo",
+    "es": "Radio de halación",
+    "ja": "ハレーション半径",
+    "zh-Hans": "光晕半径"
+  },
+  "光晕色相": {
+    "en": "Halation Hue",
+    "de": "Lichthof-Farbton",
+    "fr": "Teinte du halo",
+    "es": "Tono de halación",
+    "ja": "ハレーション色相",
+    "zh-Hans": "光晕色相"
+  },
+  "阈值": {
+    "en": "Threshold",
+    "de": "Schwellenwert",
+    "fr": "Seuil",
+    "es": "Umbral",
+    "ja": "しきい値",
+    "zh-Hans": "阈值"
+  },
+  "柔光": {
+    "en": "Bloom",
+    "de": "Bloom",
+    "fr": "Effet Bloom",
+    "es": "Resplandor",
+    "ja": "ブルーム",
+    "zh-Hans": "柔光"
+  },
+  "柔光阈值": {
+    "en": "Bloom Threshold",
+    "de": "Bloom-Schwellenwert",
+    "fr": "Seuil Bloom",
+    "es": "Umbral de resplandor",
+    "ja": "ブルームしきい値",
+    "zh-Hans": "柔光阈值"
+  },
+  "柔光半径": {
+    "en": "Bloom Radius",
+    "de": "Bloom-Radius",
+    "fr": "Rayon Bloom",
+    "es": "Radio de resplandor",
+    "ja": "ブルーム半径",
+    "zh-Hans": "柔光半径"
+  },
+  "颗粒曲线": {
+    "en": "Grain Curve",
+    "de": "Körnungskurve",
+    "fr": "Courbe du grain",
+    "es": "Curva de grano",
+    "ja": "粒子カーブ",
+    "zh-Hans": "颗粒曲线"
+  },
+  "颗粒画幅": {
+    "en": "Grain Format",
+    "de": "Körnungsformat",
+    "fr": "Format du grain",
+    "es": "Formato de grano",
+    "ja": "粒子フォーマット",
+    "zh-Hans": "颗粒画幅"
+  },
+  "传统曲线": {
+    "en": "Legacy Curve",
+    "de": "Klassische Kurve",
+    "fr": "Courbe classique",
+    "es": "Curva clásica",
+    "ja": "従来カーブ",
+    "zh-Hans": "传统曲线"
+  },
+  "负片非对称": {
+    "en": "Negative Asymmetric",
+    "de": "Negativ asymmetrisch",
+    "fr": "Négatif asymétrique",
+    "es": "Negativo asimétrico",
+    "ja": "ネガ非対称",
+    "zh-Hans": "负片非对称"
+  },
+  "135 胶片": {
+    "en": "135 Film",
+    "de": "135-Kleinbild",
+    "fr": "Film 135",
+    "es": "Película 135",
+    "ja": "135 フィルム",
+    "zh-Hans": "135 胶片"
+  },
+  "120 中画幅": {
+    "en": "120 Medium Format",
+    "de": "120-Mittelformat",
+    "fr": "Moyen format 120",
+    "es": "Formato medio 120",
+    "ja": "120 中判",
+    "zh-Hans": "120 中画幅"
   }
 }

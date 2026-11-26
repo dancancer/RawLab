@@ -6,7 +6,7 @@ import com.rawlab.android.settings.*
 internal object AdjustmentTransferValues {
     val scalars = setOf(AdjustmentField.STRENGTH, AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST,
         AdjustmentField.HIGHLIGHTS, AdjustmentField.SHADOWS, AdjustmentField.S_CURVE,
-        AdjustmentField.SATURATION, AdjustmentField.SHARPENING, AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE, AdjustmentField.CLARITY, AdjustmentField.DEHAZE)
+        AdjustmentField.SATURATION, AdjustmentField.SHARPENING, AdjustmentField.BLACK_POINT, AdjustmentField.WHITE_POINT, AdjustmentField.VIBRANCE, AdjustmentField.CLARITY, AdjustmentField.DEHAZE, AdjustmentField.TEXTURE)
     val effects = AdjustmentField.entries.filter { it.id.startsWith("effects.vignette.") || it.id.startsWith("effects.grain.") }.toSet()
     val scaled = setOf(AdjustmentField.EXPOSURE, AdjustmentField.CONTRAST, AdjustmentField.HIGHLIGHTS,
         AdjustmentField.SHADOWS, AdjustmentField.SATURATION)
@@ -23,6 +23,7 @@ internal object AdjustmentTransferValues {
         AdjustmentField.VIBRANCE -> settings.vibrance.toDouble()
         AdjustmentField.CLARITY -> settings.clarity.toDouble()
         AdjustmentField.DEHAZE -> settings.dehaze.toDouble()
+        AdjustmentField.TEXTURE -> settings.texture.toDouble()
         AdjustmentField.SHARPENING -> settings.sharpening.toDouble()
         else -> field.hslLocation!!.let { (axis, channel) -> settings.hsl.value(axis, channel).toDouble() }
     }
@@ -39,6 +40,7 @@ internal object AdjustmentTransferValues {
         AdjustmentField.VIBRANCE -> settings.copy(vibrance = value.toFloat())
         AdjustmentField.CLARITY -> settings.copy(clarity = value.toFloat())
         AdjustmentField.DEHAZE -> settings.copy(dehaze = value.toFloat())
+        AdjustmentField.TEXTURE -> settings.copy(texture = value.toFloat())
         AdjustmentField.SHARPENING -> settings.copy(sharpening = value.toFloat())
         else -> {
             val (axis, channel) = field.hslLocation!!
@@ -94,6 +96,30 @@ internal object AdjustmentTransferValues {
             number(AdjustmentField.VIGNETTE_ROUNDNESS, vignetteRoundness); number(AdjustmentField.VIGNETTE_FEATHER, vignetteFeather)
             number(AdjustmentField.VIGNETTE_HIGHLIGHTS, vignetteHighlights); number(AdjustmentField.GRAIN_AMOUNT, grainAmount)
             number(AdjustmentField.GRAIN_SIZE, grainSize); number(AdjustmentField.GRAIN_ROUGHNESS, grainRoughness)
+            values[AdjustmentField.GRAIN_TONE_CURVE] = AdjustmentValue.Text(grainToneCurve.wireValue)
+            values[AdjustmentField.GRAIN_FORMAT_PRESET] = AdjustmentValue.Text(grainFormatPreset.wireValue)
+        }
+        with(s.calibration) {
+            number(AdjustmentField.CALIBRATION_SHADOW_TINT, shadowTint)
+            number(AdjustmentField.CALIBRATION_RED_HUE, redHue); number(AdjustmentField.CALIBRATION_RED_SATURATION, redSaturation)
+            number(AdjustmentField.CALIBRATION_GREEN_HUE, greenHue); number(AdjustmentField.CALIBRATION_GREEN_SATURATION, greenSaturation)
+            number(AdjustmentField.CALIBRATION_BLUE_HUE, blueHue); number(AdjustmentField.CALIBRATION_BLUE_SATURATION, blueSaturation)
+        }
+        values[AdjustmentField.POINT_COLOR] = s.pointColor.toAdjustmentValue()
+        values[AdjustmentField.SELECTIVE_COLOR] = s.selectiveColor.toAdjustmentValue()
+        boolean(AdjustmentField.BW_ENABLED, s.bwMixer.enabled)
+        values[AdjustmentField.BW_MIXER] = s.bwMixer.mixer.toAdjustmentValue()
+        with(s.filmOptics) {
+            number(AdjustmentField.HALATION_AMOUNT, halationAmount); number(AdjustmentField.HALATION_THRESHOLD, halationThreshold)
+            number(AdjustmentField.HALATION_RADIUS, halationRadius); number(AdjustmentField.HALATION_HUE, halationHue)
+            number(AdjustmentField.BLOOM_AMOUNT, bloomAmount); number(AdjustmentField.BLOOM_THRESHOLD, bloomThreshold)
+            number(AdjustmentField.BLOOM_RADIUS, bloomRadius)
+        }
+        with(s.sharpenV2) {
+            boolean(AdjustmentField.SHARPENING_LUMINANCE_V2, luminanceV2)
+            number(AdjustmentField.SHARPENING_RADIUS, radius)
+            number(AdjustmentField.SHARPENING_DETAIL, detail)
+            number(AdjustmentField.SHARPENING_MASKING, masking)
         }
         number(AdjustmentField.RAW_DENOISE, 0); number(AdjustmentField.POST_RGB_DENOISE, 0)
         number(AdjustmentField.CHROMA_DENOISE, s.displayChromaDenoise)
@@ -112,6 +138,10 @@ internal object AdjustmentTransferValues {
         boolean(AdjustmentField.LENS_DISTORTION, lens.distortion); boolean(AdjustmentField.LENS_TCA, lens.tca); boolean(AdjustmentField.LENS_VIGNETTING, lens.vignetting)
         boolean(AdjustmentField.LENS_AUTO_CROP, lens.autoCrop)
         values[AdjustmentField.LENS_PROFILE] = if (!lens.manual) AdjustmentValue.Null else AdjustmentValue.Text(lens.coreProfileId)
+        number(AdjustmentField.LENS_DEFRINGE_PURPLE_AMOUNT, s.lens.defringePurpleAmount)
+        number(AdjustmentField.LENS_DEFRINGE_PURPLE_HUE, s.lens.defringePurpleHue)
+        number(AdjustmentField.LENS_DEFRINGE_GREEN_AMOUNT, s.lens.defringeGreenAmount)
+        number(AdjustmentField.LENS_DEFRINGE_GREEN_HUE, s.lens.defringeGreenHue)
         return values
     }
 
@@ -134,13 +164,90 @@ internal object AdjustmentTransferValues {
                 throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, "detail.denoise.wavelet.preset")
             result = result.copy(denoise = denoise)
         }
-        if (payload.fields.any { it in effects }) result = result.copy(effects = with(original.effects) {
-            PhotoEffectsSettings(number(AdjustmentField.VIGNETTE_AMOUNT, vignetteAmount), number(AdjustmentField.VIGNETTE_MIDPOINT, vignetteMidpoint),
-                number(AdjustmentField.VIGNETTE_ROUNDNESS, vignetteRoundness), number(AdjustmentField.VIGNETTE_FEATHER, vignetteFeather),
-                number(AdjustmentField.VIGNETTE_HIGHLIGHTS, vignetteHighlights), number(AdjustmentField.GRAIN_AMOUNT, grainAmount),
-                number(AdjustmentField.GRAIN_SIZE, grainSize), number(AdjustmentField.GRAIN_ROUGHNESS, grainRoughness))
-        })
-        if (payload.fields.any { it.group == "geometry" && it !in AdjustmentField.LENS }) result = result.copy(geometry = with(original.geometry) {
+        if (payload.fields.any { it in effects } || payload[AdjustmentField.GRAIN_TONE_CURVE] != null || payload[AdjustmentField.GRAIN_FORMAT_PRESET] != null) {
+            result = result.copy(effects = with(original.effects) {
+                PhotoEffectsSettings(number(AdjustmentField.VIGNETTE_AMOUNT, vignetteAmount), number(AdjustmentField.VIGNETTE_MIDPOINT, vignetteMidpoint),
+                    number(AdjustmentField.VIGNETTE_ROUNDNESS, vignetteRoundness), number(AdjustmentField.VIGNETTE_FEATHER, vignetteFeather),
+                    number(AdjustmentField.VIGNETTE_HIGHLIGHTS, vignetteHighlights), number(AdjustmentField.GRAIN_AMOUNT, grainAmount),
+                    number(AdjustmentField.GRAIN_SIZE, grainSize), number(AdjustmentField.GRAIN_ROUGHNESS, grainRoughness),
+                    grainToneCurve = payload[AdjustmentField.GRAIN_TONE_CURVE]?.text?.let { GrainToneCurve.fromWire(it) } ?: grainToneCurve,
+                    grainFormatPreset = payload[AdjustmentField.GRAIN_FORMAT_PRESET]?.text?.let { GrainFormatPreset.fromWire(it) } ?: grainFormatPreset)
+            })
+        }
+        val calFields = setOf(
+            AdjustmentField.CALIBRATION_SHADOW_TINT, AdjustmentField.CALIBRATION_RED_HUE,
+            AdjustmentField.CALIBRATION_RED_SATURATION, AdjustmentField.CALIBRATION_GREEN_HUE,
+            AdjustmentField.CALIBRATION_GREEN_SATURATION, AdjustmentField.CALIBRATION_BLUE_HUE,
+            AdjustmentField.CALIBRATION_BLUE_SATURATION,
+        )
+        if (payload.fields.any { it in calFields }) {
+            result = result.copy(calibration = with(result.calibration) {
+                CameraCalibrationSettings(
+                    shadowTint = number(AdjustmentField.CALIBRATION_SHADOW_TINT, shadowTint),
+                    redHue = number(AdjustmentField.CALIBRATION_RED_HUE, redHue),
+                    redSaturation = number(AdjustmentField.CALIBRATION_RED_SATURATION, redSaturation),
+                    greenHue = number(AdjustmentField.CALIBRATION_GREEN_HUE, greenHue),
+                    greenSaturation = number(AdjustmentField.CALIBRATION_GREEN_SATURATION, greenSaturation),
+                    blueHue = number(AdjustmentField.CALIBRATION_BLUE_HUE, blueHue),
+                    blueSaturation = number(AdjustmentField.CALIBRATION_BLUE_SATURATION, blueSaturation),
+                )
+            })
+        }
+        payload[AdjustmentField.POINT_COLOR]?.pointColor()?.let { result = result.copy(pointColor = it) }
+        payload[AdjustmentField.SELECTIVE_COLOR]?.selectiveColor()?.let { result = result.copy(selectiveColor = it) }
+        if (payload[AdjustmentField.BW_ENABLED] != null || payload[AdjustmentField.BW_MIXER] != null) {
+            result = result.copy(bwMixer = BwMixerSettings(
+                enabled = boolean(AdjustmentField.BW_ENABLED, result.bwMixer.enabled),
+                mixer = payload[AdjustmentField.BW_MIXER]?.bwMixerWeights() ?: result.bwMixer.mixer,
+            ))
+        }
+        val opticsFields = setOf(
+            AdjustmentField.HALATION_AMOUNT, AdjustmentField.HALATION_THRESHOLD,
+            AdjustmentField.HALATION_RADIUS, AdjustmentField.HALATION_HUE,
+            AdjustmentField.BLOOM_AMOUNT, AdjustmentField.BLOOM_THRESHOLD, AdjustmentField.BLOOM_RADIUS,
+        )
+        if (payload.fields.any { it in opticsFields }) {
+            result = result.copy(filmOptics = with(result.filmOptics) {
+                FilmOpticsSettings(
+                    halationAmount = number(AdjustmentField.HALATION_AMOUNT, halationAmount),
+                    halationThreshold = number(AdjustmentField.HALATION_THRESHOLD, halationThreshold),
+                    halationRadius = number(AdjustmentField.HALATION_RADIUS, halationRadius),
+                    halationHue = number(AdjustmentField.HALATION_HUE, halationHue),
+                    bloomAmount = number(AdjustmentField.BLOOM_AMOUNT, bloomAmount),
+                    bloomThreshold = number(AdjustmentField.BLOOM_THRESHOLD, bloomThreshold),
+                    bloomRadius = number(AdjustmentField.BLOOM_RADIUS, bloomRadius),
+                )
+            })
+        }
+        val sharpenFields = setOf(
+            AdjustmentField.SHARPENING_LUMINANCE_V2, AdjustmentField.SHARPENING_RADIUS,
+            AdjustmentField.SHARPENING_DETAIL, AdjustmentField.SHARPENING_MASKING,
+        )
+        if (payload.fields.any { it in sharpenFields }) {
+            result = result.copy(sharpenV2 = with(result.sharpenV2) {
+                SharpenV2Settings(
+                    luminanceV2 = boolean(AdjustmentField.SHARPENING_LUMINANCE_V2, luminanceV2),
+                    radius = number(AdjustmentField.SHARPENING_RADIUS, radius),
+                    detail = number(AdjustmentField.SHARPENING_DETAIL, detail),
+                    masking = number(AdjustmentField.SHARPENING_MASKING, masking),
+                )
+            })
+        }
+        val defringeFields = setOf(
+            AdjustmentField.LENS_DEFRINGE_PURPLE_AMOUNT, AdjustmentField.LENS_DEFRINGE_PURPLE_HUE,
+            AdjustmentField.LENS_DEFRINGE_GREEN_AMOUNT, AdjustmentField.LENS_DEFRINGE_GREEN_HUE,
+        )
+        if (payload.fields.any { it in defringeFields }) {
+            result = result.copy(lens = with(result.lens) {
+                copy(
+                    defringePurpleAmount = number(AdjustmentField.LENS_DEFRINGE_PURPLE_AMOUNT, defringePurpleAmount),
+                    defringePurpleHue = number(AdjustmentField.LENS_DEFRINGE_PURPLE_HUE, defringePurpleHue),
+                    defringeGreenAmount = number(AdjustmentField.LENS_DEFRINGE_GREEN_AMOUNT, defringeGreenAmount),
+                    defringeGreenHue = number(AdjustmentField.LENS_DEFRINGE_GREEN_HUE, defringeGreenHue),
+                )
+            })
+        }
+        if (payload.fields.any { it.group == "geometry" && it !in AdjustmentField.LENS && it !in defringeFields }) result = result.copy(geometry = with(original.geometry) {
             GeometrySettings(number(AdjustmentField.CROP_X, cropX), number(AdjustmentField.CROP_Y, cropY),
                 number(AdjustmentField.CROP_WIDTH, cropWidth), number(AdjustmentField.CROP_HEIGHT, cropHeight),
                 payload[AdjustmentField.QUARTER_TURNS]?.number?.toInt() ?: quarterTurns,
@@ -159,7 +266,7 @@ internal object AdjustmentTransferValues {
             val isNeutralLens = neutral.all { (field, defaultValue) -> payload[field] == null || payload[field] == defaultValue }
             if (payload.source.isRaw || !context.isRaw || !isNeutralLens) {
                 val profile = payload[AdjustmentField.LENS_PROFILE]
-                val lens = with(original.lens) { copy(distortion = boolean(AdjustmentField.LENS_DISTORTION, distortion),
+                val lens = with(result.lens) { copy(distortion = boolean(AdjustmentField.LENS_DISTORTION, distortion),
                     tca = boolean(AdjustmentField.LENS_TCA, tca), vignetting = boolean(AdjustmentField.LENS_VIGNETTING, vignetting), autoCrop = boolean(AdjustmentField.LENS_AUTO_CROP, autoCrop),
                     manual = if (profile != null) profile != AdjustmentValue.Null else manual,
                     profileId = if (profile != null) profile.text?.takeUnless { it == LensSettings(manual = true).coreProfileId } else profileId) }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace RawLab.Windows;
 
 public enum PhotoEffectParameter
@@ -56,7 +58,9 @@ public sealed record PhotoEffectsSettings(
     double VignetteHighlights = 0,
     double GrainAmount = 0,
     double GrainSize = 25,
-    double GrainRoughness = 50)
+    double GrainRoughness = 50,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] GrainToneCurve GrainToneCurve = GrainToneCurve.Legacy,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] GrainFormatPreset GrainFormatPreset = GrainFormatPreset.Custom)
 {
     public static PhotoEffectsSettings Default => new();
 
@@ -79,6 +83,10 @@ public sealed record PhotoEffectsSettings(
             var spec = PhotoEffectSpec.For(param);
             Validate(this[param], spec.Min, spec.Max, param.ToString());
         }
+        if (!Enum.IsDefined(GrainToneCurve))
+            throw new ArgumentOutOfRangeException(nameof(GrainToneCurve));
+        if (!Enum.IsDefined(GrainFormatPreset))
+            throw new ArgumentOutOfRangeException(nameof(GrainFormatPreset));
         return new() {
             Version = 1,
             StructSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<Native.PhotoEffectsConfig>(),

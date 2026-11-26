@@ -122,6 +122,10 @@ RenderStatus validateRenderParams(const RenderParams& params, bool hasOutputBuff
     if (std::abs(params.exposureEV) > 20 || params.brightness <= 0 ||
         params.aiDenoiseBlend < 0.0f || params.aiDenoiseBlend > 1.0f ||
         !params.parametricCurve.valid() ||
+        !params.effects.valid() || !params.filmOptics.valid() || !params.atmosphere.valid() ||
+        !params.calibration.valid() || !params.pointColor.valid() ||
+        !params.selectiveColor.valid() || !params.bw.valid() ||
+        !params.sharpenV2.valid() || !params.defringe.valid() ||
         params.outputSharpening < OutputSharpening::Off ||
         params.outputSharpening > OutputSharpening::High) {
         return RenderStatus::InvalidArgument;

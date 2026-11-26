@@ -13,11 +13,11 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         let root = try loadSpecJSON()
         XCTAssertEqual(root["spec_version"] as? Int, 1)
         let fields = try XCTUnwrap(root["fields"] as? [[String: Any]])
-        XCTAssertEqual(fields.count, 89)
+        XCTAssertEqual(fields.count, 118)
 
         let transferFields = fields.filter { (($0["protocol"] as? [String: Any])?["transferable"] as? Bool) == true }
         let localFields = fields.filter { (($0["protocol"] as? [String: Any])?["transferable"] as? Bool) == false }
-        XCTAssertEqual(transferFields.count, 86)
+        XCTAssertEqual(transferFields.count, 115)
         XCTAssertEqual(localFields.count, 3)
 
         // Canonical order & complete AdjustmentTransferField coverage
@@ -159,8 +159,29 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
         let atmosphere = AtmosphereSettings()
         XCTAssertEqual(atmosphere.clarity, try XCTUnwrap((try model("effects.clarity", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertEqual(atmosphere.dehaze, try XCTUnwrap((try model("effects.dehaze", platform: "macos")["default"] as? NSNumber)?.doubleValue))
+        XCTAssertEqual(atmosphere.texture, try XCTUnwrap((try model("effects.texture", platform: "macos")["default"] as? NSNumber)?.doubleValue))
         XCTAssertTrue(atmosphere.isValid)
         XCTAssertFalse(AtmosphereSettings(clarity: 101).isValid)
+        XCTAssertFalse(AtmosphereSettings(texture: -101).isValid)
+
+        XCTAssertTrue(CameraCalibrationSettings().isValid)
+        XCTAssertFalse(CameraCalibrationSettings(shadowTint: 101).isValid)
+        XCTAssertTrue(PointColorSettings().isValid)
+        XCTAssertFalse(PointColorSwatch(srcHue: 360).isValid)
+        XCTAssertTrue(PointColorSwatch(srcHue: 359.5).isValid)
+        XCTAssertEqual(AdjustmentFieldSpec.SubFields.PointColor.maxSwatches, 8)
+        XCTAssertTrue(SelectiveColorSettings().isValid)
+        XCTAssertFalse(SelectiveColorBand(cyan: 101).isValid)
+        XCTAssertEqual(AdjustmentFieldSpec.SubFields.SelectiveColor.allowedBands.count, 9)
+        XCTAssertTrue(BwMixerSettings().isValid)
+        XCTAssertFalse(BwMixerChannelWeights(red: -101).isValid)
+        XCTAssertEqual(AdjustmentFieldSpec.SubFields.BwMixer.allowedChannels.count, 8)
+        XCTAssertTrue(SharpenV2Settings().isValid)
+        XCTAssertFalse(SharpenV2Settings(radius: 0.4).isValid)
+        XCTAssertTrue(FilmOpticsSettings().isValid)
+        XCTAssertFalse(FilmOpticsSettings(halationAmount: 101).isValid)
+        XCTAssertTrue(LensCorrectionSettings().isValid)
+        XCTAssertFalse(LensCorrectionSettings(defringePurpleAmount: 21).isValid)
 
         // GeometrySettings runtime defaults & validation
         let geometry = GeometrySettings()

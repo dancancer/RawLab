@@ -209,6 +209,8 @@ final class EditorModel: ObservableObject {
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
         pendingExternalReload = nil
+        deferredExternalEditsCheck = false
+        deferredExternalReloadAccept = false
         dismissedExternalReloadFingerprints.removeAll()
         hslSourceRevision &+= 1; hslAcceptedRequest = nil; hslAcceptedSettings = nil
         inspection.resetForNewSource()
@@ -326,6 +328,9 @@ final class EditorModel: ObservableObject {
                 adjustmentSession = editStore.map(AdjustmentTransferSession.init)
                 committedEdit = nil
                 unsettledAsyncCommitTokens.removeAll()
+                pendingExternalReload = nil
+                deferredExternalEditsCheck = false
+                deferredExternalReloadAccept = false
             }
         }
     }
@@ -383,6 +388,7 @@ final class EditorModel: ObservableObject {
     @Published var presetLibraryRevision: UInt64 = 0
     var dismissedExternalReloadFingerprints: Set<FileStatFingerprint> = []
     var deferredExternalEditsCheck = false
+    var deferredExternalReloadAccept = false
     var externalStoreWatcher: ExternalStoreFileWatcher?
     var lookLibrary: LookLibrary?
     let onUsage: (UsageEvent) -> Void

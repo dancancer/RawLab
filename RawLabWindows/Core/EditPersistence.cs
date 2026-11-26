@@ -79,6 +79,18 @@ public sealed record AdjustmentSnapshot(
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ToneCurveSettings? Curve { get; init; }
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public CameraCalibrationSettings? CameraCalibration { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public PointColorSettings? PointColor { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public SelectiveColorSettings? SelectiveColor { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public BwMixerSettings? BwMixer { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public SharpenV2Settings? SharpenV2 { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public FilmOpticsSettings? FilmOptics { get; init; }
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public int? ProRAWDecodeVersion { get; init; }
     public Adjustments Restore() => Adjustments.FromSnapshot(this);
     public bool SameAs(AdjustmentSnapshot other) => SettingsVersion == other.SettingsVersion && Processing == other.Processing && X3fMode == other.X3fMode &&
@@ -90,6 +102,12 @@ public sealed record AdjustmentSnapshot(
         (Geometry ?? new()) == (other.Geometry ?? new()) && (ToneControls ?? new()) == (other.ToneControls ?? new()) &&
         (Atmosphere ?? new()) == (other.Atmosphere ?? new()) &&
         (ColorGrading ?? new()) == (other.ColorGrading ?? new()) && (Curve ?? new()) == (other.Curve ?? new()) &&
+        (CameraCalibration ?? new()) == (other.CameraCalibration ?? new()) &&
+        (PointColor ?? new()) == (other.PointColor ?? new()) &&
+        (SelectiveColor ?? new()) == (other.SelectiveColor ?? new()) &&
+        (BwMixer ?? new()) == (other.BwMixer ?? new()) &&
+        (SharpenV2 ?? new()) == (other.SharpenV2 ?? new()) &&
+        (FilmOptics ?? new()) == (other.FilmOptics ?? new()) &&
         HDR == other.HDR && HDRCameraAIEnabled == other.HDRCameraAIEnabled && ProRAWDecodeVersion == other.ProRAWDecodeVersion &&
         AIDenoiseStrength == other.AIDenoiseStrength;
     internal AdjustmentSnapshot Normalized() => SettingsVersion < CurrentSettingsVersion ? Restore().Capture() : this;

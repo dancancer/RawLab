@@ -545,6 +545,69 @@ Json recipeToTransferPayload(const EditRecipe& recipe) {
         values["color.grading.blending"] = recipe.colorGradingV2.blending;
         values["color.grading.balance"] = recipe.colorGradingV2.balance;
     }
+    if (recipe.schemaVersion >= 20) {
+        values["color.calibration.shadow_tint"] = recipe.calibration.shadowTint;
+        values["color.calibration.red_hue"] = recipe.calibration.redHue;
+        values["color.calibration.red_saturation"] = recipe.calibration.redSaturation;
+        values["color.calibration.green_hue"] = recipe.calibration.greenHue;
+        values["color.calibration.green_saturation"] = recipe.calibration.greenSaturation;
+        values["color.calibration.blue_hue"] = recipe.calibration.blueHue;
+        values["color.calibration.blue_saturation"] = recipe.calibration.blueSaturation;
+        Json swArr = Json::array();
+        for (uint32_t i = 0; i < recipe.pointColor.swatchCount && i < 8u; ++i) {
+            const auto& s = recipe.pointColor.swatches[i];
+            swArr.push_back({
+                {"src_hue", s.srcHue},
+                {"src_saturation", s.srcSaturation},
+                {"src_luminance", s.srcLuminance},
+                {"hue_shift", s.hueShift},
+                {"saturation_shift", s.saturationShift},
+                {"luminance_shift", s.luminanceShift},
+                {"variance", s.variance},
+                {"range", s.range},
+                {"hue_range", s.hueRange},
+                {"sat_range", s.satRange},
+                {"lum_range", s.lumRange},
+                {"enabled", s.enabled},
+            });
+        }
+        values["color.point_color"] = {{"swatches", std::move(swArr)}};
+        static const char* kSelBands[9] = {"reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"};
+        Json selBands = Json::object();
+        for (size_t i = 0; i < 9; ++i) {
+            const auto& b = recipe.selectiveColor.bands[i];
+            selBands[kSelBands[i]] = {{"cyan", b.cyan}, {"magenta", b.magenta}, {"yellow", b.yellow}, {"black", b.black}};
+        }
+        values["color.selective_color"] = {
+            {"method", recipe.selectiveColor.absolute ? "absolute" : "relative"},
+            {"bands", std::move(selBands)},
+        };
+        values["color.bw.enabled"] = recipe.bw.enabled;
+        Json bwMix = Json::object();
+        for (size_t i = 0; i < SONY2FUJI_HSL_CHANNELS; ++i) {
+            bwMix[kHslNames[i]] = recipe.bw.weights[i];
+        }
+        values["color.bw.mixer"] = std::move(bwMix);
+        values["effects.texture"] = static_cast<double>(recipe.texture) * 100.0;
+        values["effects.grain.tone_curve"] = recipe.grainToneCurve == sony2fuji::EditGrainToneCurve::NegativeAsymmetric ? "negative_asymmetric" : "legacy";
+        values["effects.grain.format_preset"] = recipe.grainFormatPreset == sony2fuji::EditGrainFormatPreset::Film135 ? "135"
+            : recipe.grainFormatPreset == sony2fuji::EditGrainFormatPreset::Film120 ? "120" : "custom";
+        values["effects.halation.amount"] = recipe.filmOptics.halationAmount;
+        values["effects.halation.threshold"] = recipe.filmOptics.halationThreshold;
+        values["effects.halation.radius"] = recipe.filmOptics.halationRadius;
+        values["effects.halation.hue"] = recipe.filmOptics.halationHue;
+        values["effects.bloom.amount"] = recipe.filmOptics.bloomAmount;
+        values["effects.bloom.threshold"] = recipe.filmOptics.bloomThreshold;
+        values["effects.bloom.radius"] = recipe.filmOptics.bloomRadius;
+        values["detail.sharpening.luminance_v2"] = recipe.sharpenV2.luminanceV2;
+        values["detail.sharpening.radius"] = recipe.sharpenV2.radius;
+        values["detail.sharpening.detail"] = recipe.sharpenV2.detail;
+        values["detail.sharpening.masking"] = recipe.sharpenV2.masking;
+        values["geometry.lens.defringe_purple_amount"] = recipe.defringe.purpleAmount;
+        values["geometry.lens.defringe_purple_hue"] = recipe.defringe.purpleHue;
+        values["geometry.lens.defringe_green_amount"] = recipe.defringe.greenAmount;
+        values["geometry.lens.defringe_green_hue"] = recipe.defringe.greenHue;
+    }
     const int procVer = static_cast<int>(recipe.processingVersion);
     return {
         {"payload_version", 1},
@@ -706,6 +769,7 @@ int runAgentCommands(int argc, char* argv[]) {
             versions.push_back(17);
             versions.push_back(18);
             if (hdrAvailable()) versions.push_back(19);
+            versions.push_back(20);
             std::cout << machineJson(envelope(command, {{"recipe_versions", versions},
                 {"commands", {"capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer", "save_preset", "sync_photo_edit"}},
                 {"input_types", inputs},

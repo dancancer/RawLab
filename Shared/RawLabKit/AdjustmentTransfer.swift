@@ -66,12 +66,26 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case hslLightnessYellow = "color.hsl.lightness.yellow", hslLightnessGreen = "color.hsl.lightness.green"
     case hslLightnessAqua = "color.hsl.lightness.aqua", hslLightnessBlue = "color.hsl.lightness.blue"
     case hslLightnessPurple = "color.hsl.lightness.purple", hslLightnessMagenta = "color.hsl.lightness.magenta"
+    case calibrationShadowTint = "color.calibration.shadow_tint"
+    case calibrationRedHue = "color.calibration.red_hue", calibrationRedSaturation = "color.calibration.red_saturation"
+    case calibrationGreenHue = "color.calibration.green_hue", calibrationGreenSaturation = "color.calibration.green_saturation"
+    case calibrationBlueHue = "color.calibration.blue_hue", calibrationBlueSaturation = "color.calibration.blue_saturation"
+    case pointColor = "color.point_color"
+    case selectiveColor = "color.selective_color"
+    case bwEnabled = "color.bw.enabled", bwMixer = "color.bw.mixer"
     case vignetteAmount = "effects.vignette.amount", vignetteMidpoint = "effects.vignette.midpoint"
     case vignetteRoundness = "effects.vignette.roundness", vignetteFeather = "effects.vignette.feather"
     case vignetteHighlights = "effects.vignette.highlights", grainAmount = "effects.grain.amount"
-    case clarity = "effects.clarity", dehaze = "effects.dehaze"
+    case clarity = "effects.clarity", dehaze = "effects.dehaze", texture = "effects.texture"
     case grainSize = "effects.grain.size", grainRoughness = "effects.grain.roughness"
-    case sharpening = "detail.sharpening", rawDenoise = "detail.denoise.raw_level"
+    case grainToneCurve = "effects.grain.tone_curve", grainFormatPreset = "effects.grain.format_preset"
+    case halationAmount = "effects.halation.amount", halationThreshold = "effects.halation.threshold"
+    case halationRadius = "effects.halation.radius", halationHue = "effects.halation.hue"
+    case bloomAmount = "effects.bloom.amount", bloomThreshold = "effects.bloom.threshold", bloomRadius = "effects.bloom.radius"
+    case sharpening = "detail.sharpening"
+    case sharpeningLuminanceV2 = "detail.sharpening.luminance_v2", sharpeningRadius = "detail.sharpening.radius"
+    case sharpeningDetail = "detail.sharpening.detail", sharpeningMasking = "detail.sharpening.masking"
+    case rawDenoise = "detail.denoise.raw_level"
     case postRGBDenoise = "detail.denoise.post_rgb"
     case chromaDenoise = "detail.denoise.chroma_mode", waveletDenoise = "detail.denoise.wavelet"
     case cropX = "geometry.crop.x", cropY = "geometry.crop.y"
@@ -82,6 +96,8 @@ public enum AdjustmentTransferField: String, CaseIterable, Codable, Hashable {
     case lensDistortion = "geometry.lens.distortion", lensTCA = "geometry.lens.tca"
     case lensVignetting = "geometry.lens.vignetting"
     case lensAutoCrop = "geometry.lens.auto_crop", lensProfile = "geometry.lens.profile_id"
+    case lensDefringePurpleAmount = "geometry.lens.defringe_purple_amount", lensDefringePurpleHue = "geometry.lens.defringe_purple_hue"
+    case lensDefringeGreenAmount = "geometry.lens.defringe_green_amount", lensDefringeGreenHue = "geometry.lens.defringe_green_hue"
 
     public var spec: AdjustmentFieldDefinition { AdjustmentFieldSpec.forId(rawValue)! }
     public var isHDRRelative: Bool { spec.protocolSpec.isHDRRelative }
@@ -278,6 +294,95 @@ public extension ColorGradingWheel {
         var obj: [String: AdjustmentTransferValue] = ["hue": .number(hue), "saturation": .number(saturation)]
         if luminance != 0.0 { obj["luminance"] = .number(luminance) }
         return .object(obj)
+    }
+}
+
+public extension AdjustmentTransferValue {
+    var pointColorSettings: PointColorSettings? {
+        let sf = AdjustmentFieldSpec.SubFields.PointColor.self
+        guard let object, Set(object.keys) == Set(AdjustmentFieldSpec.Fields.colorPointColor.protocolSpec.objectKeys),
+              let rawSwatches = object["swatches"]?.array, rawSwatches.count <= sf.maxSwatches else { return nil }
+        let expectedSwatchKeys = Set(["src_hue", "src_saturation", "src_luminance",
+                                      "hue_shift", "saturation_shift", "luminance_shift",
+                                      "range", "hue_range", "sat_range", "lum_range", "variance", "enabled"])
+        var parsed: [PointColorSwatch] = []
+        for item in rawSwatches {
+            guard let sw = item.object, Set(sw.keys) == expectedSwatchKeys,
+                  let srcHue = sw["src_hue"]?.number, let srcSat = sw["src_saturation"]?.number, let srcLum = sw["src_luminance"]?.number,
+                  let hueShift = sw["hue_shift"]?.number, let satShift = sw["saturation_shift"]?.number, let lumShift = sw["luminance_shift"]?.number,
+                  let range = sw["range"]?.number, let hueRange = sw["hue_range"]?.number, let satRange = sw["sat_range"]?.number,
+                  let lumRange = sw["lum_range"]?.number, let variance = sw["variance"]?.number,
+                  let enabled = sw["enabled"]?.boolean else { return nil }
+            let s = PointColorSwatch(srcHue: srcHue, srcSaturation: srcSat, srcLuminance: srcLum,
+                                     hueShift: hueShift, saturationShift: satShift, luminanceShift: lumShift,
+                                     range: range, hueRange: hueRange, satRange: satRange, lumRange: lumRange,
+                                     variance: variance, enabled: enabled)
+            guard s.isValid else { return nil }
+            parsed.append(s)
+        }
+        return PointColorSettings(swatches: parsed)
+    }
+
+    var selectiveColorSettings: SelectiveColorSettings? {
+        let sf = AdjustmentFieldSpec.SubFields.SelectiveColor.self
+        guard let object, Set(object.keys) == Set(AdjustmentFieldSpec.Fields.colorSelectiveColor.protocolSpec.objectKeys),
+              let methodStr = object["method"]?.string, sf.allowedMethods.contains(methodStr),
+              let method = SelectiveColorMethod(rawValue: methodStr),
+              let bandsObj = object["bands"]?.object, Set(bandsObj.keys) == Set(sf.allowedBands) else { return nil }
+        let compKeys = Set(sf.allowedComponents)
+        func parseBand(_ name: String) -> SelectiveColorBand? {
+            guard let b = bandsObj[name]?.object, Set(b.keys) == compKeys,
+                  let c = b["cyan"]?.number, let m = b["magenta"]?.number,
+                  let y = b["yellow"]?.number, let k = b["black"]?.number else { return nil }
+            let band = SelectiveColorBand(cyan: c, magenta: m, yellow: y, black: k)
+            return band.isValid ? band : nil
+        }
+        guard let reds = parseBand("reds"), let yellows = parseBand("yellows"), let greens = parseBand("greens"),
+              let cyans = parseBand("cyans"), let blues = parseBand("blues"), let magentas = parseBand("magentas"),
+              let whites = parseBand("whites"), let neutrals = parseBand("neutrals"), let blacks = parseBand("blacks") else { return nil }
+        return SelectiveColorSettings(method: method, bands: .init(reds: reds, yellows: yellows, greens: greens, cyans: cyans,
+                                                                   blues: blues, magentas: magentas, whites: whites, neutrals: neutrals, blacks: blacks))
+    }
+
+    var bwMixerWeights: BwMixerChannelWeights? {
+        let sf = AdjustmentFieldSpec.SubFields.BwMixer.self
+        guard let object, Set(object.keys) == Set(sf.allowedChannels),
+              let r = object["red"]?.number, let o = object["orange"]?.number, let y = object["yellow"]?.number,
+              let g = object["green"]?.number, let a = object["aqua"]?.number, let b = object["blue"]?.number,
+              let p = object["purple"]?.number, let m = object["magenta"]?.number else { return nil }
+        let w = BwMixerChannelWeights(red: r, orange: o, yellow: y, green: g, aqua: a, blue: b, purple: p, magenta: m)
+        return w.isValid ? w : nil
+    }
+}
+
+public extension PointColorSettings {
+    var transferValue: AdjustmentTransferValue {
+        .object(["swatches": .array(swatches.map { s in
+            .object([
+                "src_hue": .number(s.srcHue), "src_saturation": .number(s.srcSaturation), "src_luminance": .number(s.srcLuminance),
+                "hue_shift": .number(s.hueShift), "saturation_shift": .number(s.saturationShift), "luminance_shift": .number(s.luminanceShift),
+                "range": .number(s.range), "hue_range": .number(s.hueRange), "sat_range": .number(s.satRange),
+                "lum_range": .number(s.lumRange), "variance": .number(s.variance), "enabled": .boolean(s.enabled)
+            ])
+        })])
+    }
+}
+
+public extension SelectiveColorSettings {
+    var transferValue: AdjustmentTransferValue {
+        .object([
+            "method": .string(method.rawValue),
+            "bands": .object(Dictionary(uniqueKeysWithValues: bands.allBands.map { name, band in
+                (name, .object(["cyan": .number(band.cyan), "magenta": .number(band.magenta),
+                                "yellow": .number(band.yellow), "black": .number(band.black)]))
+            }))
+        ])
+    }
+}
+
+public extension BwMixerChannelWeights {
+    var transferValue: AdjustmentTransferValue {
+        .object(Dictionary(uniqueKeysWithValues: allChannels.map { ($0.0, .number($0.1)) }))
     }
 }
 
@@ -488,6 +593,9 @@ public struct AdjustmentTransferPayload: Codable, Equatable {
         switch field {
         case .hdrLook: return value.hdrLookSettings != nil
         case .hdrCameraDevelopment: return value.hdrCameraDevelopment != nil
+        case .pointColor: return value.pointColorSettings != nil
+        case .selectiveColor: return value.selectiveColorSettings != nil
+        case .bwMixer: return value.bwMixerWeights != nil
         case .look:
             guard let object = value.object, Set(object.keys) == Set(proto.objectKeys),
                   let kind = object["kind"]?.string, AdjustmentFieldSpec.SubFields.LookReference.allowedKinds.contains(kind) else { return false }
@@ -796,7 +904,26 @@ public enum AdjustmentTransfer {
     public static let scalarKeys: [Field: WritableKeyPath<Adjustments, Double>] = [
         .strength: \.strength, .exposure: \.exposure, .contrast: \.contrast, .highlights: \.highlights,
         .shadows: \.shadows, .sCurve: \.toneCurve, .saturation: \.saturation, .sharpening: \.sharpening,
-        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance, .clarity: \.clarity, .dehaze: \.dehaze
+        .blackPoint: \.blackPoint, .whitePoint: \.whitePoint, .vibrance: \.vibrance,
+        .clarity: \.clarity, .dehaze: \.dehaze, .texture: \.texture
+    ]
+    public static let calibrationKeys: [Field: WritableKeyPath<CameraCalibrationSettings, Double>] = [
+        .calibrationShadowTint: \.shadowTint,
+        .calibrationRedHue: \.redHue, .calibrationRedSaturation: \.redSaturation,
+        .calibrationGreenHue: \.greenHue, .calibrationGreenSaturation: \.greenSaturation,
+        .calibrationBlueHue: \.blueHue, .calibrationBlueSaturation: \.blueSaturation
+    ]
+    public static let filmOpticsKeys: [Field: WritableKeyPath<FilmOpticsSettings, Double>] = [
+        .halationAmount: \.halationAmount, .halationThreshold: \.halationThreshold,
+        .halationRadius: \.halationRadius, .halationHue: \.halationHue,
+        .bloomAmount: \.bloomAmount, .bloomThreshold: \.bloomThreshold, .bloomRadius: \.bloomRadius
+    ]
+    public static let sharpenV2Keys: [Field: WritableKeyPath<SharpenV2Settings, Double>] = [
+        .sharpeningRadius: \.radius, .sharpeningDetail: \.detail, .sharpeningMasking: \.masking
+    ]
+    public static let defringeKeys: [Field: WritableKeyPath<LensCorrectionSettings, Double>] = [
+        .lensDefringePurpleAmount: \.defringePurpleAmount, .lensDefringePurpleHue: \.defringePurpleHue,
+        .lensDefringeGreenAmount: \.defringeGreenAmount, .lensDefringeGreenHue: \.defringeGreenHue
     ]
     public static let effectKeys: [Field: WritableKeyPath<PhotoEffectsSettings, Double>] = [
         .vignetteAmount: \.vignetteAmount, .vignetteMidpoint: \.vignetteMidpoint, .vignetteRoundness: \.vignetteRoundness,
@@ -822,7 +949,10 @@ public enum AdjustmentTransfer {
             .sCurve: Double(Float(min(1, max(-1, settings.toneCurve * settings.refinementScale)))),
             .saturation: Double(r.saturation), .sharpening: Double(r.sharpening),
             .blackPoint: settings.renderToneSettings.blackPoint, .whitePoint: settings.renderToneSettings.whitePoint,
-            .vibrance: settings.renderToneSettings.vibrance, .clarity: settings.renderAtmosphereSettings.clarity, .dehaze: settings.renderAtmosphereSettings.dehaze
+            .vibrance: settings.renderToneSettings.vibrance,
+            .clarity: settings.renderAtmosphereSettings.clarity,
+            .dehaze: settings.renderAtmosphereSettings.dehaze,
+            .texture: settings.renderAtmosphereSettings.texture
         ]
         for f in Field.allCases { if let loc = f.hslLocation { result[f] = settings.renderHSLSettings.value(HSLAxis(rawValue: loc.axis)!, channel: loc.channel) } }
         return result
@@ -865,7 +995,17 @@ public enum AdjustmentTransfer {
         result[Field.gradingGlobal.rawValue] = s.gradingSettings.global.transferValue
         result[Field.gradingBlending.rawValue] = .number(s.gradingSettings.blending)
         result[Field.gradingBalance.rawValue] = .number(s.gradingSettings.balance)
+        for (field, key) in calibrationKeys { result[field.rawValue] = .number(s.calibrationSettings[keyPath: key]) }
+        result[Field.pointColor.rawValue] = s.pointColorSettings.transferValue
+        result[Field.selectiveColor.rawValue] = s.selectiveColorSettings.transferValue
+        result[Field.bwEnabled.rawValue] = .boolean(s.bwMixerSettings.enabled)
+        result[Field.bwMixer.rawValue] = s.bwMixerSettings.mixer.transferValue
         for (field, key) in effectKeys { result[field.rawValue] = .number(s.effectSettings[keyPath: key]) }
+        result[Field.grainToneCurve.rawValue] = .string(s.effectSettings.grainToneCurve.rawValue)
+        result[Field.grainFormatPreset.rawValue] = .string(s.effectSettings.grainFormatPreset.rawValue)
+        for (field, key) in filmOpticsKeys { result[field.rawValue] = .number(s.filmOpticsSettings[keyPath: key]) }
+        for (field, key) in sharpenV2Keys { result[field.rawValue] = .number(s.sharpenV2Settings[keyPath: key]) }
+        result[Field.sharpeningLuminanceV2.rawValue] = .boolean(s.sharpenV2Settings.luminanceV2)
         let w = s.waveletNoiseReduction
         result[Field.rawDenoise.rawValue] = .number(context.supportsRawDenoise && isRaw ? s.rawNoiseReduction : 0)
         result[Field.postRGBDenoise.rawValue] = .number(0)
@@ -879,10 +1019,43 @@ public enum AdjustmentTransfer {
         result[Field.lensDistortion.rawValue] = .boolean(lens.distortion); result[Field.lensTCA.rawValue] = .boolean(lens.tca)
         result[Field.lensVignetting.rawValue] = .boolean(lens.vignetting); result[Field.lensAutoCrop.rawValue] = .boolean(lens.autoCrop)
         result[Field.lensProfile.rawValue] = lens.mode == .automatic ? .null : .string(lens.coreProfileID)
+        for (field, key) in defringeKeys { result[field.rawValue] = .number(s.lensSettings[keyPath: key]) }
         return result
     }
 
     public static func applyObjects(_ payload: AdjustmentTransferPayload, to settings: inout Adjustments, context: AdjustmentTransferContext) throws {
+        if !payload.fields.isDisjoint(with: Set(calibrationKeys.keys)) {
+            var cal = settings.calibrationSettings
+            for (field, key) in calibrationKeys { if let v = payload[field]?.number { cal[keyPath: key] = v } }
+            settings.calibrationSettings = cal
+        }
+        if let pc = payload[.pointColor]?.pointColorSettings { settings.pointColorSettings = pc }
+        if let sc = payload[.selectiveColor]?.selectiveColorSettings { settings.selectiveColorSettings = sc }
+        if payload[.bwEnabled] != nil || payload[.bwMixer] != nil {
+            var bw = settings.bwMixerSettings
+            if let b = payload[.bwEnabled]?.boolean { bw.enabled = b }
+            if let m = payload[.bwMixer]?.bwMixerWeights { bw.mixer = m }
+            settings.bwMixerSettings = bw
+        }
+        if let rawCurve = payload[.grainToneCurve]?.string, let curve = GrainToneCurve(rawValue: rawCurve) {
+            var effects = settings.effectSettings; effects.grainToneCurve = curve
+            settings.photoEffects = effects.isDefault ? nil : effects
+        }
+        if let rawPreset = payload[.grainFormatPreset]?.string, let preset = GrainFormatPreset(rawValue: rawPreset) {
+            var effects = settings.effectSettings; effects.grainFormatPreset = preset
+            settings.photoEffects = effects.isDefault ? nil : effects
+        }
+        if !payload.fields.isDisjoint(with: Set(filmOpticsKeys.keys)) {
+            var optics = settings.filmOpticsSettings
+            for (field, key) in filmOpticsKeys { if let v = payload[field]?.number { optics[keyPath: key] = v } }
+            settings.filmOpticsSettings = optics
+        }
+        if payload[.sharpeningLuminanceV2] != nil || !payload.fields.isDisjoint(with: Set(sharpenV2Keys.keys)) {
+            var sh = settings.sharpenV2Settings
+            if let b = payload[.sharpeningLuminanceV2]?.boolean { sh.luminanceV2 = b }
+            for (field, key) in sharpenV2Keys { if let v = payload[field]?.number { sh[keyPath: key] = v } }
+            settings.sharpenV2Settings = sh
+        }
         if !context.supportsRawDenoise {
             if (payload[.rawDenoise]?.number ?? 0) != 0 { context.transferNotices?(.ignoredRawDenoise) }
         } else if let raw = payload[.rawDenoise]?.number, payload.source.isRaw || !context.isRaw {
@@ -949,6 +1122,11 @@ public enum AdjustmentTransfer {
                     settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
                 }
             }
+        }
+        if !payload.fields.isDisjoint(with: Set(defringeKeys.keys)) {
+            var lens = settings.lensSettings
+            for (field, key) in defringeKeys { if let v = payload[field]?.number { lens[keyPath: key] = v } }
+            settings.lensCorrection = lens == LensCorrectionSettings() ? nil : lens
         }
     }
 

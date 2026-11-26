@@ -360,6 +360,8 @@ class EditRecordFixtureTest {
             grainAmount = (num(sdrValues.opt("effects.grain.amount")) ?: 0.0).toFloat(),
             grainSize = (num(sdrValues.opt("effects.grain.size")) ?: 25.0).toFloat(),
             grainRoughness = (num(sdrValues.opt("effects.grain.roughness")) ?: 50.0).toFloat(),
+            grainToneCurve = GrainToneCurve.fromWire(sdrValues.optString("effects.grain.tone_curve", "").ifEmpty { null }),
+            grainFormatPreset = GrainFormatPreset.fromWire(sdrValues.optString("effects.grain.format_preset", "").ifEmpty { null }),
         )
 
         val lensExtra = metadata.optJSONObject("lens_extra")
@@ -376,6 +378,10 @@ class EditRecordFixtureTest {
                 focalLength = lensExtra?.let { num(it.opt("focal_length"))?.toFloat() },
                 cropFactor = lensExtra?.let { num(it.opt("crop_factor"))?.toFloat() },
                 vignetting = sdrValues.optBoolean("geometry.lens.vignetting", false),
+                defringePurpleAmount = (num(sdrValues.opt("geometry.lens.defringe_purple_amount")) ?: 0.0).toFloat(),
+                defringePurpleHue = (num(sdrValues.opt("geometry.lens.defringe_purple_hue")) ?: 50.0).toFloat(),
+                defringeGreenAmount = (num(sdrValues.opt("geometry.lens.defringe_green_amount")) ?: 0.0).toFloat(),
+                defringeGreenHue = (num(sdrValues.opt("geometry.lens.defringe_green_hue")) ?: 50.0).toFloat(),
             )
         } else LensSettings()
 
@@ -397,6 +403,89 @@ class EditRecordFixtureTest {
             dormantHdr != null -> buildHDR(dormantHdr, metadata, activeMode = false)
             else -> null
         }
+
+        val calibration = CameraCalibrationSettings(
+            shadowTint = (num(sdrValues.opt("color.calibration.shadow_tint")) ?: 0.0).toFloat(),
+            redHue = (num(sdrValues.opt("color.calibration.red_hue")) ?: 0.0).toFloat(),
+            redSaturation = (num(sdrValues.opt("color.calibration.red_saturation")) ?: 0.0).toFloat(),
+            greenHue = (num(sdrValues.opt("color.calibration.green_hue")) ?: 0.0).toFloat(),
+            greenSaturation = (num(sdrValues.opt("color.calibration.green_saturation")) ?: 0.0).toFloat(),
+            blueHue = (num(sdrValues.opt("color.calibration.blue_hue")) ?: 0.0).toFloat(),
+            blueSaturation = (num(sdrValues.opt("color.calibration.blue_saturation")) ?: 0.0).toFloat(),
+        )
+        val pointColor = sdrValues.optJSONObject("color.point_color")?.optJSONArray("swatches")?.let { arr ->
+            PointColorSettings((0 until arr.length()).map { idx ->
+                val sw = arr.getJSONObject(idx)
+                PointColorSwatch(
+                    srcHue = sw.getDouble("src_hue").toFloat(),
+                    srcSaturation = sw.getDouble("src_saturation").toFloat(),
+                    srcLuminance = sw.getDouble("src_luminance").toFloat(),
+                    hueShift = sw.optDouble("hue_shift", 0.0).toFloat(),
+                    saturationShift = sw.optDouble("saturation_shift", 0.0).toFloat(),
+                    luminanceShift = sw.optDouble("luminance_shift", 0.0).toFloat(),
+                    range = sw.optDouble("range", 50.0).toFloat(),
+                    hueRange = sw.optDouble("hue_range", 50.0).toFloat(),
+                    satRange = sw.optDouble("sat_range", 50.0).toFloat(),
+                    lumRange = sw.optDouble("lum_range", 50.0).toFloat(),
+                    variance = sw.optDouble("variance", 0.0).toFloat(),
+                    enabled = sw.optBoolean("enabled", true),
+                )
+            })
+        } ?: PointColorSettings()
+        val selectiveColor = sdrValues.optJSONObject("color.selective_color")?.let { sc ->
+            fun band(o: JSONObject?): SelectiveColorBand = if (o == null) SelectiveColorBand() else SelectiveColorBand(
+                cyan = o.optDouble("cyan", 0.0).toFloat(),
+                magenta = o.optDouble("magenta", 0.0).toFloat(),
+                yellow = o.optDouble("yellow", 0.0).toFloat(),
+                black = o.optDouble("black", 0.0).toFloat(),
+            )
+            val bObj = sc.optJSONObject("bands")
+            SelectiveColorSettings(
+                method = SelectiveColorMethod.fromWire(sc.optString("method", "relative")),
+                bands = SelectiveColorBands(
+                    reds = band(bObj?.optJSONObject("reds")),
+                    yellows = band(bObj?.optJSONObject("yellows")),
+                    greens = band(bObj?.optJSONObject("greens")),
+                    cyans = band(bObj?.optJSONObject("cyans")),
+                    blues = band(bObj?.optJSONObject("blues")),
+                    magentas = band(bObj?.optJSONObject("magentas")),
+                    whites = band(bObj?.optJSONObject("whites")),
+                    neutrals = band(bObj?.optJSONObject("neutrals")),
+                    blacks = band(bObj?.optJSONObject("blacks")),
+                ),
+            )
+        } ?: SelectiveColorSettings()
+        val bwMixerWeights = sdrValues.optJSONObject("color.bw.mixer")?.let { m ->
+            BwMixerWeights(
+                red = m.optDouble("red", 0.0).toFloat(),
+                orange = m.optDouble("orange", 0.0).toFloat(),
+                yellow = m.optDouble("yellow", 0.0).toFloat(),
+                green = m.optDouble("green", 0.0).toFloat(),
+                aqua = m.optDouble("aqua", 0.0).toFloat(),
+                blue = m.optDouble("blue", 0.0).toFloat(),
+                purple = m.optDouble("purple", 0.0).toFloat(),
+                magenta = m.optDouble("magenta", 0.0).toFloat(),
+            )
+        } ?: BwMixerWeights()
+        val bwMixer = BwMixerSettings(
+            enabled = sdrValues.optBoolean("color.bw.enabled", false),
+            mixer = bwMixerWeights,
+        )
+        val sharpenV2 = SharpenV2Settings(
+            luminanceV2 = sdrValues.optBoolean("detail.sharpening.luminance_v2", false),
+            radius = (num(sdrValues.opt("detail.sharpening.radius")) ?: 1.0).toFloat(),
+            detail = (num(sdrValues.opt("detail.sharpening.detail")) ?: 25.0).toFloat(),
+            masking = (num(sdrValues.opt("detail.sharpening.masking")) ?: 0.0).toFloat(),
+        )
+        val filmOptics = FilmOpticsSettings(
+            halationAmount = (num(sdrValues.opt("effects.halation.amount")) ?: 0.0).toFloat(),
+            halationThreshold = (num(sdrValues.opt("effects.halation.threshold")) ?: 75.0).toFloat(),
+            halationRadius = (num(sdrValues.opt("effects.halation.radius")) ?: 35.0).toFloat(),
+            halationHue = (num(sdrValues.opt("effects.halation.hue")) ?: 0.0).toFloat(),
+            bloomAmount = (num(sdrValues.opt("effects.bloom.amount")) ?: 0.0).toFloat(),
+            bloomThreshold = (num(sdrValues.opt("effects.bloom.threshold")) ?: 70.0).toFloat(),
+            bloomRadius = (num(sdrValues.opt("effects.bloom.radius")) ?: 40.0).toFloat(),
+        )
 
         return EditSettings(
             film = film,
@@ -426,6 +515,13 @@ class EditRecordFixtureTest {
             vibrance = (num(sdrValues.opt("color.vibrance")) ?: 0.0).toFloat(),
             clarity = (num(sdrValues.opt("effects.clarity")) ?: 0.0).toFloat(),
             dehaze = (num(sdrValues.opt("effects.dehaze")) ?: 0.0).toFloat(),
+            texture = (num(sdrValues.opt("effects.texture")) ?: 0.0).toFloat(),
+            calibration = calibration,
+            pointColor = pointColor,
+            selectiveColor = selectiveColor,
+            bwMixer = bwMixer,
+            sharpenV2 = sharpenV2,
+            filmOptics = filmOptics,
             colorGrading = parseGrading(sdrValues),
             curve = parseCurve(sdrValues),
             masterRecipeSettingsVersion = mVer,
@@ -520,6 +616,12 @@ class EditRecordFixtureTest {
             num(values.opt("effects.grain.amount"))?.let { verify(approx(actual.grainAmount.toDouble(), it), "$label.effects.grain.amount") }
             num(values.opt("effects.grain.size"))?.let { verify(approx(actual.grainSize.toDouble(), it), "$label.effects.grain.size") }
             num(values.opt("effects.grain.roughness"))?.let { verify(approx(actual.grainRoughness.toDouble(), it), "$label.effects.grain.roughness") }
+            values.optString("effects.grain.tone_curve", "").takeIf { it.isNotEmpty() }?.let {
+                verify(actual.grainToneCurve.wireValue == it, "$label.effects.grain.tone_curve")
+            }
+            values.optString("effects.grain.format_preset", "").takeIf { it.isNotEmpty() }?.let {
+                verify(actual.grainFormatPreset.wireValue == it, "$label.effects.grain.format_preset")
+            }
         }
         fun verifyGeomInto(values: JSONObject, actual: GeometrySettings, label: String) {
             num(values.opt("geometry.crop.x"))?.let { verify(approx(actual.cropX.toDouble(), it), "$label.cropX") }
@@ -594,7 +696,70 @@ class EditRecordFixtureTest {
         verifyEffectsInto(sdrValues, s.effects, "sdr")
         num(sdrValues.opt("effects.clarity"))?.let { verify(approx(s.clarity.toDouble(), it), "effects.clarity") }
         num(sdrValues.opt("effects.dehaze"))?.let { verify(approx(s.dehaze.toDouble(), it), "effects.dehaze") }
+        num(sdrValues.opt("effects.texture"))?.let { verify(approx(s.texture.toDouble(), it), "effects.texture") }
+        num(sdrValues.opt("effects.halation.amount"))?.let { verify(approx(s.filmOptics.halationAmount.toDouble(), it), "effects.halation.amount") }
+        num(sdrValues.opt("effects.halation.threshold"))?.let { verify(approx(s.filmOptics.halationThreshold.toDouble(), it), "effects.halation.threshold") }
+        num(sdrValues.opt("effects.halation.radius"))?.let { verify(approx(s.filmOptics.halationRadius.toDouble(), it), "effects.halation.radius") }
+        num(sdrValues.opt("effects.halation.hue"))?.let { verify(approx(s.filmOptics.halationHue.toDouble(), it), "effects.halation.hue") }
+        num(sdrValues.opt("effects.bloom.amount"))?.let { verify(approx(s.filmOptics.bloomAmount.toDouble(), it), "effects.bloom.amount") }
+        num(sdrValues.opt("effects.bloom.threshold"))?.let { verify(approx(s.filmOptics.bloomThreshold.toDouble(), it), "effects.bloom.threshold") }
+        num(sdrValues.opt("effects.bloom.radius"))?.let { verify(approx(s.filmOptics.bloomRadius.toDouble(), it), "effects.bloom.radius") }
+        num(sdrValues.opt("color.calibration.shadow_tint"))?.let { verify(approx(s.calibration.shadowTint.toDouble(), it), "calibration.shadow_tint") }
+        num(sdrValues.opt("color.calibration.red_hue"))?.let { verify(approx(s.calibration.redHue.toDouble(), it), "calibration.red_hue") }
+        num(sdrValues.opt("color.calibration.red_saturation"))?.let { verify(approx(s.calibration.redSaturation.toDouble(), it), "calibration.red_saturation") }
+        num(sdrValues.opt("color.calibration.green_hue"))?.let { verify(approx(s.calibration.greenHue.toDouble(), it), "calibration.green_hue") }
+        num(sdrValues.opt("color.calibration.green_saturation"))?.let { verify(approx(s.calibration.greenSaturation.toDouble(), it), "calibration.green_saturation") }
+        num(sdrValues.opt("color.calibration.blue_hue"))?.let { verify(approx(s.calibration.blueHue.toDouble(), it), "calibration.blue_hue") }
+        num(sdrValues.opt("color.calibration.blue_saturation"))?.let { verify(approx(s.calibration.blueSaturation.toDouble(), it), "calibration.blue_saturation") }
+        sdrValues.optJSONObject("color.point_color")?.optJSONArray("swatches")?.let { expSw ->
+            verify(s.pointColor.swatches.size == expSw.length(), "point_color.swatches.size")
+            if (s.pointColor.swatches.size == expSw.length()) {
+                for (i in 0 until expSw.length()) {
+                    val exp = expSw.getJSONObject(i)
+                    val got = s.pointColor.swatches[i]
+                    verify(approx(got.srcHue.toDouble(), exp.getDouble("src_hue")) &&
+                        approx(got.srcSaturation.toDouble(), exp.getDouble("src_saturation")) &&
+                        approx(got.srcLuminance.toDouble(), exp.getDouble("src_luminance")) &&
+                        approx(got.hueShift.toDouble(), exp.optDouble("hue_shift", 0.0)) &&
+                        approx(got.saturationShift.toDouble(), exp.optDouble("saturation_shift", 0.0)) &&
+                        approx(got.luminanceShift.toDouble(), exp.optDouble("luminance_shift", 0.0)) &&
+                        approx(got.range.toDouble(), exp.optDouble("range", 50.0)) &&
+                        approx(got.hueRange.toDouble(), exp.optDouble("hue_range", 50.0)) &&
+                        approx(got.satRange.toDouble(), exp.optDouble("sat_range", 50.0)) &&
+                        approx(got.lumRange.toDouble(), exp.optDouble("lum_range", 50.0)) &&
+                        approx(got.variance.toDouble(), exp.optDouble("variance", 0.0)) &&
+                        got.enabled == exp.optBoolean("enabled", true), "point_color[$i]")
+                }
+            }
+        }
+        sdrValues.optJSONObject("color.selective_color")?.let { expSc ->
+            verify(s.selectiveColor.method.wireValue == expSc.optString("method", "relative"), "selective_color.method")
+            expSc.optJSONObject("bands")?.let { expBands ->
+                s.selectiveColor.bands.asMap().forEach { (bName, bGot) ->
+                    expBands.optJSONObject(bName)?.let { bExp ->
+                        verify(approx(bGot.cyan.toDouble(), bExp.optDouble("cyan", 0.0)) &&
+                            approx(bGot.magenta.toDouble(), bExp.optDouble("magenta", 0.0)) &&
+                            approx(bGot.yellow.toDouble(), bExp.optDouble("yellow", 0.0)) &&
+                            approx(bGot.black.toDouble(), bExp.optDouble("black", 0.0)), "selective_color.$bName")
+                    }
+                }
+            }
+        }
+        if (sdrValues.has("color.bw.enabled")) {
+            verify(s.bwMixer.enabled == sdrValues.getBoolean("color.bw.enabled"), "bw.enabled")
+        }
+        sdrValues.optJSONObject("color.bw.mixer")?.let { expMx ->
+            s.bwMixer.mixer.asMap().forEach { (ch, vGot) ->
+                if (expMx.has(ch)) verify(approx(vGot.toDouble(), expMx.getDouble(ch)), "bw.mixer.$ch")
+            }
+        }
         num(sdrValues.opt("detail.sharpening"))?.let { verify(approx(s.sharpening.toDouble(), it), "detail.sharpening") }
+        if (sdrValues.has("detail.sharpening.luminance_v2")) {
+            verify(s.sharpenV2.luminanceV2 == sdrValues.getBoolean("detail.sharpening.luminance_v2"), "sharpening.luminance_v2")
+        }
+        num(sdrValues.opt("detail.sharpening.radius"))?.let { verify(approx(s.sharpenV2.radius.toDouble(), it), "sharpening.radius") }
+        num(sdrValues.opt("detail.sharpening.detail"))?.let { verify(approx(s.sharpenV2.detail.toDouble(), it), "sharpening.detail") }
+        num(sdrValues.opt("detail.sharpening.masking"))?.let { verify(approx(s.sharpenV2.masking.toDouble(), it), "sharpening.masking") }
         intVal(sdrValues.opt("detail.denoise.chroma_mode"))?.let { verify(s.displayChromaDenoise == it, "detail.denoise.chroma_mode") }
         sdrValues.optJSONObject("detail.denoise.wavelet")?.let { w ->
             verify(s.denoise.enabled == w.getBoolean("enabled"), "wavelet.enabled")
@@ -616,6 +781,10 @@ class EditRecordFixtureTest {
                 num(extra.opt("crop_factor"))?.let { verify(approx(s.lens.cropFactor?.toDouble() ?: -1.0, it), "lens.cropFactor") }
             }
         }
+        num(sdrValues.opt("geometry.lens.defringe_purple_amount"))?.let { verify(approx(s.lens.defringePurpleAmount.toDouble(), it), "lens.defringe_purple_amount") }
+        num(sdrValues.opt("geometry.lens.defringe_purple_hue"))?.let { verify(approx(s.lens.defringePurpleHue.toDouble(), it), "lens.defringe_purple_hue") }
+        num(sdrValues.opt("geometry.lens.defringe_green_amount"))?.let { verify(approx(s.lens.defringeGreenAmount.toDouble(), it), "lens.defringe_green_amount") }
+        num(sdrValues.opt("geometry.lens.defringe_green_hue"))?.let { verify(approx(s.lens.defringeGreenHue.toDouble(), it), "lens.defringe_green_hue") }
 
         val hdrCheck = if (hdrEditing) hdrValues else dormantHdr
         if (hdrCheck != null && hdrCheck.length() > 0) {
@@ -926,7 +1095,8 @@ class EditRecordFixtureTest {
                 EditStore(dir).save(pid, built)
                 mutateV2Record(File(dir, "edits.properties"), pid) { _, s ->
                     listOf("x3fMode", "masterRecipeSettingsVersion", "atmosphere", "colorGrading",
-                        "curve", "hdr", "sdrSnapshot", "proRAWDecodeVersion").forEach { key ->
+                        "curve", "cameraCalibration", "pointColor", "selectiveColor", "bwMixer",
+                        "sharpenV2", "filmOptics", "hdr", "sdrSnapshot", "proRAWDecodeVersion").forEach { key ->
                         checkSetup(s.has(key) && !s.isNull(key), "$id: optional key $key must exist before removal")
                         s.remove(key)
                     }
@@ -939,6 +1109,13 @@ class EditRecordFixtureTest {
                         masterRecipeSettingsVersion = 3,
                         clarity = 0f,
                         dehaze = 0f,
+                        texture = 0f,
+                        calibration = CameraCalibrationSettings(),
+                        pointColor = PointColorSettings(),
+                        selectiveColor = SelectiveColorSettings(),
+                        bwMixer = BwMixerSettings(),
+                        sharpenV2 = SharpenV2Settings(),
+                        filmOptics = FilmOpticsSettings(),
                         colorGrading = ColorGradingSettings(),
                         curve = ToneCurveSettings(),
                         hdr = null,
@@ -1105,6 +1282,8 @@ class EditRecordFixtureTest {
                             "effects.vignette.amount" -> s.getJSONObject("effects").put("vignetteAmount", mut.getDouble("value"))
                             "color.hsl.hue.red" -> s.getJSONArray("hsl").put(0, mut.getDouble("value"))
                             "color.grading.shadows.hue" -> s.getJSONObject("colorGrading").getJSONObject("shadows").put("hue", mut.getDouble("value"))
+                            "color.calibration.shadow_tint" -> s.getJSONObject("cameraCalibration").put("shadowTint", mut.getDouble("value"))
+                            "detail.sharpening.radius" -> s.getJSONObject("sharpenV2").put("radius", mut.getDouble("value"))
                             "hdr.peak_limit_ev" -> s.getJSONObject("hdr").getJSONObject("rendition").put("peak_limit_ev", mut.getDouble("value"))
                             else -> throw HarnessSetupException("Unhandled field: $field")
                         }

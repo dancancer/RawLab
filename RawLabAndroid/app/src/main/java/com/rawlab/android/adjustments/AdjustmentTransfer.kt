@@ -156,6 +156,7 @@ object AdjustmentTransfer {
         put(AdjustmentField.VIBRANCE, s.renderVibrance)
         put(AdjustmentField.CLARITY, s.renderClarity)
         put(AdjustmentField.DEHAZE, s.renderDehaze)
+        put(AdjustmentField.TEXTURE, s.texture)
         for (field in AdjustmentField.entries) field.hslLocation?.let { (axis, channel) -> put(field, s.renderHsl.value(axis, channel)) }
     }.mapValues { it.value.canonicalZero() }
     internal fun sourceEffective(value: Double, field: AdjustmentField, recipe: AdjustmentRecipeContext?): Double {

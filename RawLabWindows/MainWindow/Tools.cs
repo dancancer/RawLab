@@ -481,10 +481,10 @@ public partial class MainWindow
         controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
         controls.Ring.Progress=settings.EditingToneValue(id)/100;controls.Ring.InvalidateVisual();
     }
-    private void UpdateAtmosphereToolRing(AtmosphereParameter id, (Button Button, AdjustmentRing Ring) controls)
+    private void UpdateAtmosphereToolRing(AtmosphereParameter id, (Button Button, AdjustmentRing Ring) controls, bool hdrEditing)
     {
         var selected=CurrentTool==EditorAdjustmentRules.ToolFor(id);
-        controls.Button.IsEnabled=file!=null && !exporting;
+        controls.Button.IsEnabled=file!=null && !exporting && (!hdrEditing || id!=AtmosphereParameter.Texture);
         controls.Button.Tag=selected ? "selected" : null;controls.Ring.Selected=selected;
         controls.Ring.Progress=settings.EditingAtmosphereValue(id)/100;controls.Ring.InvalidateVisual();
     }
@@ -538,7 +538,7 @@ public partial class MainWindow
             var toneSpec=selectedToneParameter is {} toneParameter ? ToneControlSpec.For(toneParameter) : null;
             var atmosphereSpec=selectedAtmosphereParameter is {} atmosphereParameter ? AtmosphereSpec.For(atmosphereParameter) : null;
             var extensionControl=toneSpec!=null || atmosphereSpec!=null;
-            var hdrParameter=hdrRenditionSpec!=null || atmosphereSpec!=null || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
+            var hdrParameter=hdrRenditionSpec!=null || atmosphereSpec is { Id: not AtmosphereParameter.Texture } || (toneSpec!=null ? HDRSettings.Supports(toneSpec.Id) : HDRSettings.Supports(selectedParameter));
             var title=atmosphereSpec?.Title ?? toneSpec?.Title ?? spec.Title;var unit=extensionControl ? "%" : spec.Unit;
             var value=atmosphereSpec!=null ? settings.EditingAtmosphereValue(atmosphereSpec.Id) : toneSpec!=null ? settings.EditingToneValue(toneSpec.Id) : spec.ToDisplay(settings[selectedParameter]);
             var inputRange=extensionControl ? new NumericRange(-100,100) : NumericRange.For(spec);
@@ -706,7 +706,7 @@ public partial class MainWindow
                 }
                 foreach(var (id,controls) in toolButtons) UpdateParameterToolRing(id,controls,hdrEditing);
                 foreach(var (id,controls) in toneToolButtons) UpdateToneToolRing(id,controls,hdrEditing);
-                foreach(var (id,controls) in atmosphereToolButtons) UpdateAtmosphereToolRing(id,controls);
+                foreach(var (id,controls) in atmosphereToolButtons) UpdateAtmosphereToolRing(id,controls,hdrEditing);
                 foreach(var (id,controls) in hdrRenditionToolButtons) UpdateHdrRenditionToolRing(id,controls,hdrEditing);
                 foreach(var pair in filmButtons) {
                     var selected=pair.Key==(lut ?? "");pair.Value.Tag=selected ? "selected" : null;
@@ -730,7 +730,7 @@ public partial class MainWindow
                 else if (selectedHdrRenditionParameter is {} hdrId && hdrRenditionToolButtons.TryGetValue(hdrId, out var hdrControls))
                     UpdateHdrRenditionToolRing(hdrId, hdrControls, hdrEditing);
                 else if (selectedAtmosphereParameter is {} atmoId && atmosphereToolButtons.TryGetValue(atmoId, out var atmoControls))
-                    UpdateAtmosphereToolRing(atmoId, atmoControls);
+                    UpdateAtmosphereToolRing(atmoId, atmoControls, hdrEditing);
                 else if (selectedToneParameter is {} toneId && toneToolButtons.TryGetValue(toneId, out var toneControls))
                     UpdateToneToolRing(toneId, toneControls, hdrEditing);
                 else if (toolButtons.TryGetValue(selectedParameter, out var toolControls))

@@ -169,7 +169,16 @@ object EditorAdjustmentRules {
         is EditorResetScope.HslChannel -> s.withEditingHsl(HslSettings(s.editingHsl.packed().mapIndexed { index, value ->
             if (index % 8 == scope.channel) d.editingHsl.value(index / 8, scope.channel) else value
         }))
-        is EditorResetScope.Group -> tools(scope.group).fold(s) { state, id -> resetTool(id, state, d) }
+        is EditorResetScope.Group -> {
+            val base = tools(scope.group).fold(s) { state, id -> resetTool(id, state, d) }
+            if (s.isHDREditing) base else when (scope.group) {
+                EditorAdjustmentGroup.COLOR -> base.copy(calibration = d.calibration, pointColor = d.pointColor,
+                    selectiveColor = d.selectiveColor, bwMixer = d.bwMixer)
+                EditorAdjustmentGroup.EFFECTS -> base.copy(texture = d.texture, filmOptics = d.filmOptics)
+                EditorAdjustmentGroup.DETAIL -> base.copy(sharpenV2 = d.sharpenV2)
+                else -> base
+            }
+        }
         is EditorResetScope.Tool -> resetTool(scope.id, s, d)
     }
 
@@ -184,7 +193,8 @@ object EditorAdjustmentRules {
         6 -> s.withEditingCurveStrength(d.editingCurveStrength).withEditingCurve(d.editingCurve)
         7 -> s.copy(saturation = d.saturation)
         8, 9 -> s.copy(customWb = d.customWb, temperature = d.temperature, tint = d.tint)
-        10 -> s.withEditingSharpening(d.editingSharpening)
+        10 -> if (s.isHDREditing) s.withEditingSharpening(d.editingSharpening)
+            else s.withEditingSharpening(d.editingSharpening).copy(sharpenV2 = d.sharpenV2)
         11 -> if (s.isHDREditing) s.withHDRDenoise(0f)
             else s.copy(denoise = d.denoise, displayChromaDenoise = d.displayChromaDenoise)
         12 -> s.withEditingEffects(s.editingEffects.resetEffects(vignette = true))

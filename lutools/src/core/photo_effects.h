@@ -1,10 +1,22 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <cstdint>
 
 namespace sony2fuji {
 
 struct SubRectMap;
+
+enum class GrainToneCurve : uint32_t {
+    Legacy = 0,
+    NegativeAsymmetric = 1
+};
+
+enum class GrainFormatPreset : uint32_t {
+    Custom = 0,
+    Film135 = 1,
+    Film120 = 2
+};
 
 struct PhotoEffectsOptions {
     float vignetteAmount = 0;
@@ -15,8 +27,13 @@ struct PhotoEffectsOptions {
     float grainAmount = 0;
     float grainSize = 25;
     float grainRoughness = 50;
+    GrainToneCurve grainToneCurve = GrainToneCurve::Legacy;
+    GrainFormatPreset grainFormatPreset = GrainFormatPreset::Custom;
 
     bool active() const { return vignetteAmount != 0 || grainAmount != 0; }
+    bool isDefaultGrainCurveOrPreset() const {
+        return grainToneCurve == GrainToneCurve::Legacy && grainFormatPreset == GrainFormatPreset::Custom;
+    }
     bool valid() const;
 };
 

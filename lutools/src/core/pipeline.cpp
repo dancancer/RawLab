@@ -61,6 +61,13 @@ void Pipeline::copyConfigurationFrom(const Pipeline& source) {
     toneControls_ = source.toneControls_;
     atmosphere_ = source.atmosphere_;
     colorGrading_ = source.colorGrading_;
+    cameraCalibration_ = source.cameraCalibration_;
+    pointColor_ = source.pointColor_;
+    selectiveColor_ = source.selectiveColor_;
+    bwMixer_ = source.bwMixer_;
+    sharpenV2_ = source.sharpenV2_;
+    defringe_ = source.defringe_;
+    filmOptics_ = source.filmOptics_;
     toneCurve_ = source.toneCurve_;
     channelCurves_ = source.channelCurves_;
     curveApplyToLuminosity_ = source.curveApplyToLuminosity_;
@@ -422,6 +429,48 @@ RenderStatus Pipeline::setColorGrading(const ColorGradingOptions& options) {
     return RenderStatus::Ok;
 }
 
+RenderStatus Pipeline::setCameraCalibration(const CameraCalibrationOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    cameraCalibration_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setPointColor(const PointColorOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    pointColor_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setSelectiveColor(const SelectiveColorOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    selectiveColor_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setBwMixer(const BwMixerOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    bwMixer_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setSharpenV2(const SharpenV2Options& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    sharpenV2_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setDefringe(const DefringeOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    defringe_ = options;
+    return RenderStatus::Ok;
+}
+
+RenderStatus Pipeline::setFilmOptics(const FilmOpticsOptions& options) {
+    if (!options.valid()) return RenderStatus::InvalidArgument;
+    filmOptics_ = options;
+    return RenderStatus::Ok;
+}
+
 RenderStatus Pipeline::setToneCurve(const ToneCurveConfig& config) {
     if (!validToneCurve(config)) return RenderStatus::InvalidArgument;
     try {
@@ -549,17 +598,24 @@ RenderStatus Pipeline::applyParams(const CanonicalSdrRecipe& recipe) {
     state.toneControls = recipe.toneControls;
     state.atmosphere = recipe.atmosphere;
     state.colorGrading = recipe.colorGrading;
+    state.calibration = recipe.calibration;
+    state.pointColor = recipe.pointColor;
+    state.selectiveColor = recipe.selectiveColor;
+    state.bw = recipe.bw;
     state.sharpening = recipe.sharpening;
+    state.sharpenV2 = recipe.sharpenV2;
     state.rawNoiseReduction = recipe.rawNoiseReduction;
     state.chromaDenoise = recipe.chromaDenoise;
     state.wavelet = recipe.wavelet;
     state.hsl = recipe.hsl;
     state.effects = recipe.effects;
+    state.filmOptics = recipe.filmOptics;
     state.lensDistortion = recipe.lensDistortion;
     state.lensTca = recipe.lensTca;
     state.lensVignetting = recipe.lensVignetting;
     state.lensAutoCrop = recipe.lensAutoCrop;
     state.lensProfileId = recipe.lensProfileId;
+    state.defringe = recipe.defringe;
     state.hasAiDenoiseBlend = recipe.hasAiDenoiseBlend;
     state.aiDenoiseBlend = recipe.aiDenoiseBlend;
     state.masterRecipe = recipe.masterRecipe;
@@ -621,6 +677,9 @@ RenderStatus Pipeline::applyEditState(const CanonicalEditState& state, bool pres
             : state.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
         if (!state.effects.valid() || !state.hsl.valid() || !state.toneControls.valid() ||
             !state.atmosphere.valid() || !state.colorGrading.valid() || !state.parametricCurve.valid() ||
+            !state.calibration.valid() || !state.pointColor.valid() || !state.selectiveColor.valid() ||
+            !state.bw.valid() || !state.sharpenV2.valid() || !state.defringe.valid() ||
+            !state.filmOptics.valid() ||
             state.outputSharpening < OutputSharpening::Off || state.outputSharpening > OutputSharpening::High) {
             return RenderStatus::InvalidArgument;
         }
@@ -674,6 +733,13 @@ RenderStatus Pipeline::applyEditState(const CanonicalEditState& state, bool pres
         toneControls_ = state.toneControls;
         atmosphere_ = state.atmosphere;
         colorGrading_ = state.colorGrading;
+        cameraCalibration_ = state.calibration;
+        pointColor_ = state.pointColor;
+        selectiveColor_ = state.selectiveColor;
+        bwMixer_ = state.bw;
+        sharpenV2_ = state.sharpenV2;
+        defringe_ = state.defringe;
+        filmOptics_ = state.filmOptics;
         toneCurve_ = std::move(masterCurve);
         channelCurves_ = std::move(channelCurves);
         curveApplyToLuminosity_ = state.curveApplyToLuminosity;
@@ -2699,6 +2765,9 @@ RenderStatus Pipeline::supportsFastFullResGpu(
                 : parsed.schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
             if (!parsed.effects.valid() || !parsed.hsl.valid() || !parsed.toneControls.valid() ||
                 !parsed.atmosphere.valid() || !parsed.colorGrading.valid() || !parsed.parametricCurve.valid() ||
+                !parsed.calibration.valid() || !parsed.pointColor.valid() || !parsed.selectiveColor.valid() ||
+                !parsed.bw.valid() || !parsed.sharpenV2.valid() || !parsed.defringe.valid() ||
+                !parsed.filmOptics.valid() ||
                 parsed.outputSharpening < OutputSharpening::Off || parsed.outputSharpening > OutputSharpening::High ||
                 !validToneCurve(parsed.toneCurve, freeCurveEndpoints) ||
                 !std::all_of(parsed.channelCurves.begin(), parsed.channelCurves.end(),

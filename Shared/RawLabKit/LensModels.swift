@@ -6,6 +6,11 @@ public enum LensProfileMode: String, Codable, CaseIterable, Sendable {
 }
 
 public struct LensCorrectionSettings: Codable, Equatable, Sendable {
+    public static let defringeAmountRange: ClosedRange<Double> =
+        AdjustmentFieldSpec.Fields.geometryLensDefringePurpleAmount.macosModel.closedRange!
+    public static let defringeHueRange: ClosedRange<Double> =
+        AdjustmentFieldSpec.Fields.geometryLensDefringePurpleHue.macosModel.closedRange!
+
     public var distortion = false
     public var tca = false
     public var vignetting = false
@@ -14,14 +19,39 @@ public struct LensCorrectionSettings: Codable, Equatable, Sendable {
     public var profileID: String?
     public var focalLength: Double?
     public var cropFactor: Double?
+    public var defringePurpleAmount = 0.0
+    public var defringePurpleHue = 50.0
+    public var defringeGreenAmount = 0.0
+    public var defringeGreenHue = 50.0
 
     public var isEnabled: Bool { distortion || tca || vignetting }
+    public var hasDefringeSettings: Bool {
+        defringePurpleAmount != 0.0 || defringePurpleHue != 50.0
+            || defringeGreenAmount != 0.0 || defringeGreenHue != 50.0
+    }
+    public var defringeOnly: LensCorrectionSettings? {
+        guard hasDefringeSettings else { return nil }
+        return LensCorrectionSettings(
+            defringePurpleAmount: defringePurpleAmount,
+            defringePurpleHue: defringePurpleHue,
+            defringeGreenAmount: defringeGreenAmount,
+            defringeGreenHue: defringeGreenHue
+        )
+    }
+    public var isValid: Bool {
+        defringePurpleAmount.isFinite && Self.defringeAmountRange.contains(defringePurpleAmount)
+            && defringePurpleHue.isFinite && Self.defringeHueRange.contains(defringePurpleHue)
+            && defringeGreenAmount.isFinite && Self.defringeAmountRange.contains(defringeGreenAmount)
+            && defringeGreenHue.isFinite && Self.defringeHueRange.contains(defringeGreenHue)
+    }
     public var coreProfileID: String {
         mode == .automatic ? "" : (profileID ?? "__rawlab_manual_selection_required__")
     }
 
     public init(distortion: Bool = false, tca: Bool = false, autoCrop: Bool = true, mode: LensProfileMode = .automatic,
-                profileID: String? = nil, focalLength: Double? = nil, cropFactor: Double? = nil, vignetting: Bool = false) {
+                profileID: String? = nil, focalLength: Double? = nil, cropFactor: Double? = nil, vignetting: Bool = false,
+                defringePurpleAmount: Double = 0.0, defringePurpleHue: Double = 50.0,
+                defringeGreenAmount: Double = 0.0, defringeGreenHue: Double = 50.0) {
         self.distortion = distortion
         self.tca = tca
         self.autoCrop = autoCrop
@@ -30,22 +60,54 @@ public struct LensCorrectionSettings: Codable, Equatable, Sendable {
         self.focalLength = focalLength
         self.cropFactor = cropFactor
         self.vignetting = vignetting
+        self.defringePurpleAmount = defringePurpleAmount == 0 ? 0 : defringePurpleAmount
+        self.defringePurpleHue = defringePurpleHue == 0 ? 0 : defringePurpleHue
+        self.defringeGreenAmount = defringeGreenAmount == 0 ? 0 : defringeGreenAmount
+        self.defringeGreenHue = defringeGreenHue == 0 ? 0 : defringeGreenHue
     }
 
     private enum CodingKeys: String, CodingKey {
         case distortion, tca, vignetting, autoCrop, mode, profileID, focalLength, cropFactor
+        case defringePurpleAmount, defringePurpleHue, defringeGreenAmount, defringeGreenHue
     }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        distortion = try values.decode(Bool.self, forKey: .distortion)
-        tca = try values.decode(Bool.self, forKey: .tca)
+        func decodeChecked(_ key: CodingKeys, default fallback: Double, range: ClosedRange<Double>) throws -> Double {
+            guard let raw = try values.decodeIfPresent(Double.self, forKey: key) else { return fallback }
+            guard raw.isFinite, range.contains(raw) else {
+                throw DecodingError.dataCorruptedError(forKey: key, in: values, debugDescription: "Out of range defringe parameter")
+            }
+            return raw == 0 ? 0 : raw
+        }
+        distortion = try values.decodeIfPresent(Bool.self, forKey: .distortion) ?? false
+        tca = try values.decodeIfPresent(Bool.self, forKey: .tca) ?? false
         vignetting = values.contains(.vignetting) ? try values.decode(Bool.self, forKey: .vignetting) : false
-        autoCrop = try values.decode(Bool.self, forKey: .autoCrop)
-        mode = try values.decode(LensProfileMode.self, forKey: .mode)
+        autoCrop = try values.decodeIfPresent(Bool.self, forKey: .autoCrop) ?? true
+        mode = try values.decodeIfPresent(LensProfileMode.self, forKey: .mode) ?? .automatic
         profileID = try values.decodeIfPresent(String.self, forKey: .profileID)
         focalLength = try values.decodeIfPresent(Double.self, forKey: .focalLength)
         cropFactor = try values.decodeIfPresent(Double.self, forKey: .cropFactor)
+        defringePurpleAmount = try decodeChecked(.defringePurpleAmount, default: 0.0, range: Self.defringeAmountRange)
+        defringePurpleHue = try decodeChecked(.defringePurpleHue, default: 50.0, range: Self.defringeHueRange)
+        defringeGreenAmount = try decodeChecked(.defringeGreenAmount, default: 0.0, range: Self.defringeAmountRange)
+        defringeGreenHue = try decodeChecked(.defringeGreenHue, default: 50.0, range: Self.defringeHueRange)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(distortion, forKey: .distortion)
+        try values.encode(tca, forKey: .tca)
+        try values.encode(vignetting, forKey: .vignetting)
+        try values.encode(autoCrop, forKey: .autoCrop)
+        try values.encode(mode, forKey: .mode)
+        try values.encodeIfPresent(profileID, forKey: .profileID)
+        try values.encodeIfPresent(focalLength, forKey: .focalLength)
+        try values.encodeIfPresent(cropFactor, forKey: .cropFactor)
+        if defringePurpleAmount != 0.0 { try values.encode(defringePurpleAmount, forKey: .defringePurpleAmount) }
+        if defringePurpleHue != 50.0 { try values.encode(defringePurpleHue, forKey: .defringePurpleHue) }
+        if defringeGreenAmount != 0.0 { try values.encode(defringeGreenAmount, forKey: .defringeGreenAmount) }
+        if defringeGreenHue != 50.0 { try values.encode(defringeGreenHue, forKey: .defringeGreenHue) }
     }
 }
 

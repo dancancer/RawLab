@@ -105,7 +105,7 @@ struct PhotoEffectsParams {
     sony2fuji::PhotoEffectsOptions effects;
     uint32_t rowOffset, rows;
 };
-static_assert(sizeof(PhotoEffectsParams) == 48, "Photo effects Metal parameter layout");
+static_assert(sizeof(PhotoEffectsParams) == 56, "Photo effects Metal parameter layout");
 static_assert(offsetof(PhotoEffectsParams, effects) == 8, "Photo effects Metal options offset");
 
 struct MetalContext {

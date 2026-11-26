@@ -289,4 +289,49 @@ final class CanonicalEditRecipeTests: XCTestCase {
         XCTAssertEqual(output["output_sharpening"] as? String, "high")
         XCTAssertNil(output["path"])
     }
+
+    func testEncodeV20SdrExtensionsAndDefaultEmitBelow20() throws {
+        let base = Adjustments()
+        let baseRoot = try XCTUnwrap(try JSONSerialization.jsonObject(
+            with: XCTUnwrap(base.canonicalParamsJSON(isRaster: false).data(using: .utf8))
+        ) as? [String: Any])
+        XCTAssertLessThanOrEqual(baseRoot["schema_version"] as? Int ?? 99, 18)
+
+        var active = Adjustments()
+        active.calibrationSettings = CameraCalibrationSettings(shadowTint: -10, redHue: 15, blueSaturation: -20)
+        active.pointColorSettings = PointColorSettings(swatches: [PointColorSwatch(srcHue: 200, hueShift: 12, range: 60)])
+        active.selectiveColorSettings = SelectiveColorSettings(method: .absolute, bands: .init(reds: .init(cyan: -15, magenta: 20)))
+        active.bwMixerSettings = BwMixerSettings(enabled: true, mixer: .init(red: 30, blue: -40))
+        active.texture = 25
+        active.sharpenV2Settings = SharpenV2Settings(luminanceV2: true, radius: 1.5, detail: 40, masking: 30)
+        active.filmOpticsSettings = FilmOpticsSettings(halationAmount: 20, bloomAmount: 15)
+        active.effectSettings.grainToneCurve = .negativeAsymmetric
+        active.effectSettings.grainFormatPreset = .film135
+        active.lensCorrection = LensCorrectionSettings(defringePurpleAmount: 6, defringePurpleHue: 38)
+
+        for isRaster in [false, true] {
+            let v20JSON = try active.canonicalParamsJSON(isRaster: isRaster)
+            let root = try XCTUnwrap(try JSONSerialization.jsonObject(
+                with: XCTUnwrap(v20JSON.data(using: .utf8))
+            ) as? [String: Any])
+            XCTAssertEqual(root["schema_version"] as? Int, 20)
+            let edits = try XCTUnwrap(root["edits"] as? [String: Any])
+            let color = try XCTUnwrap(edits["color"] as? [String: Any])
+            XCTAssertNotNil(color["calibration"])
+            XCTAssertNotNil(color["point_color"])
+            XCTAssertNotNil(color["selective_color"])
+            XCTAssertNotNil(color["bw"])
+            let detail = try XCTUnwrap(edits["detail"] as? [String: Any])
+            XCTAssertEqual(detail["luminance_v2"] as? Bool, true)
+            XCTAssertEqual(detail["sharpening_radius"] as? Double ?? 0, 1.5, accuracy: 1e-6)
+            let effects = try XCTUnwrap(edits["effects"] as? [String: Any])
+            XCTAssertEqual(effects["texture"] as? Double ?? 0, 0.25, accuracy: 1e-6)
+            XCTAssertEqual(effects["grain_tone_curve"] as? String, "negative_asymmetric")
+            XCTAssertEqual(effects["grain_format_preset"] as? String, "135")
+            XCTAssertNotNil(effects["halation"])
+            XCTAssertNotNil(effects["bloom"])
+            let lens = try XCTUnwrap(edits["lens_correction"] as? [String: Any])
+            XCTAssertEqual(lens["defringe_purple_amount"] as? Double ?? 0, 6, accuracy: 1e-6)
+        }
+    }
 }

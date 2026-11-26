@@ -29,7 +29,12 @@ add_library(d3d11_test_backend STATIC
     "${core}/src/core/chroma_denoise.cpp" "${core}/src/core/color_converter.cpp"
     "${core}/src/core/lut_parser.cpp" "${core}/src/core/lut_compatibility.cpp" "${core}/src/core/photo_color.cpp"
     "${core}/src/core/photo_effects.cpp" "${core}/src/core/photo_tone_controls.cpp"
-    "${core}/src/core/photo_color_grading.cpp" "${core}/src/core/photo_tone_curve.cpp")
+    "${core}/src/core/photo_basic_controls_v3.cpp" "${core}/src/core/photo_atmosphere.cpp"
+    "${core}/src/core/photo_color_grading.cpp" "${core}/src/core/photo_tone_curve.cpp"
+    "${core}/src/core/photo_calibration.cpp" "${core}/src/core/photo_point_color.cpp"
+    "${core}/src/core/photo_selective_color.cpp" "${core}/src/core/photo_bw_mixer.cpp"
+    "${core}/src/core/photo_sharpen_v2.cpp" "${core}/src/core/photo_defringe.cpp"
+    "${core}/src/core/photo_film_optics.cpp")
 target_compile_features(d3d11_test_backend PUBLIC cxx_std_17)
 target_include_directories(d3d11_test_backend PUBLIC "${core}/src" "${core}/src/gpu" "${core}/include" "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_definitions(d3d11_test_backend PUBLIC NOMINMAX SONY2FUJI_ENABLE_D3D11 RAWLAB_D3D11_TESTING)

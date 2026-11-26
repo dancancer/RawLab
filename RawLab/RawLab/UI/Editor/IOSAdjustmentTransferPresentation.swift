@@ -25,22 +25,32 @@ extension AdjustmentTransferField {
         }
         let labels: [Self: String] = [
             .look: "外观", .hdrLook: "外观", .strength: "强度", .exposure: "曝光", .exposureMode: "曝光模式",
-            .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧",
+            .blackPoint: "黑场", .whitePoint: "白场", .vibrance: "鲜艳度", .clarity: "清晰度", .dehaze: "去朦胧", .texture: "纹理",
             .contrast: "对比度", .highlights: "高光", .shadows: "阴影", .sCurve: "S 曲线", .curve: "曲线模式与控制点",
             .curveApplyToLuminosity: "仅作用于明度", .curveParametric: "参数曲线",
             .gradingBlending: "融合", .gradingBalance: "平衡",
+            .calibrationShadowTint: "阴影色调", .calibrationRedHue: "红原色色相", .calibrationRedSaturation: "红原色饱和度",
+            .calibrationGreenHue: "绿原色色相", .calibrationGreenSaturation: "绿原色饱和度",
+            .calibrationBlueHue: "蓝原色色相", .calibrationBlueSaturation: "蓝原色饱和度",
+            .pointColor: "点颜色", .selectiveColor: "可选颜色", .bwEnabled: "启用黑白", .bwMixer: "黑白混合",
             .whiteBalanceMode: "白平衡模式", .temperature: "色温", .tint: "色调", .saturation: "饱和度",
             .hdrTemperature: "色温", .hdrTint: "色调",
             .hdrPeakLimit: "HDR 亮度上限", .hdrSDRExposure: "SDR 底图曝光",
             .hdrSDRContrast: "SDR 底图对比度", .hdrSDRSaturation: "SDR 底图饱和度",
             .vignetteAmount: "暗角", .vignetteMidpoint: "中点", .vignetteRoundness: "圆度",
             .vignetteFeather: "羽化", .vignetteHighlights: "高光保护", .grainAmount: "颗粒",
-            .grainSize: "大小", .grainRoughness: "粗糙度", .sharpening: "锐化",
+            .grainSize: "大小", .grainRoughness: "粗糙度", .grainToneCurve: "颗粒曲线", .grainFormatPreset: "颗粒画幅",
+            .halationAmount: "光晕", .halationThreshold: "光晕阈值", .halationRadius: "光晕半径", .halationHue: "光晕色相",
+            .bloomAmount: "柔光", .bloomThreshold: "柔光阈值", .bloomRadius: "柔光半径",
+            .sharpening: "锐化", .sharpeningLuminanceV2: "明度锐化", .sharpeningRadius: "锐化半径",
+            .sharpeningDetail: "锐化细节", .sharpeningMasking: "锐化蒙版",
             .rawDenoise: "RAW 降噪", .postRGBDenoise: "旧版降噪", .chromaDenoise: "色度降噪", .waveletDenoise: "降噪参数",
             .cropX: "水平位置", .cropY: "垂直位置", .cropWidth: "宽度", .cropHeight: "高度",
             .quarterTurns: "旋转", .flipHorizontal: "水平翻转", .flipVertical: "垂直翻转",
             .straighten: "拉直", .perspectiveHorizontal: "水平透视", .perspectiveVertical: "垂直透视",
-            .lensDistortion: "畸变校正", .lensTCA: "横向色差", .lensVignetting: "暗角校正", .lensAutoCrop: "自动裁切", .lensProfile: "镜头配置"
+            .lensDistortion: "畸变校正", .lensTCA: "横向色差", .lensVignetting: "暗角校正", .lensAutoCrop: "自动裁切", .lensProfile: "镜头配置",
+            .lensDefringePurpleAmount: "紫边数量", .lensDefringePurpleHue: "紫边色相",
+            .lensDefringeGreenAmount: "绿边数量", .lensDefringeGreenHue: "绿边色相"
         ]
         return L10n.text(labels[self] ?? rawValue)
     }

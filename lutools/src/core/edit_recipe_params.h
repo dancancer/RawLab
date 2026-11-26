@@ -4,10 +4,17 @@
 #include "core/hdr_rendering.h"
 #include "core/hdr_types.h"
 #include "core/photo_atmosphere.h"
+#include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_defringe.h"
 #include "core/photo_effects.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_geometry.h"
+#include "core/photo_point_color.h"
+#include "core/photo_selective_color.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/photo_tone_controls.h"
 #include "core/photo_tone_curve.h"
 #include "core/render_params.h"
@@ -125,17 +132,24 @@ struct CanonicalSdrRecipe {
     ToneControlsOptions toneControls{};
     AtmosphereOptions atmosphere{};
     ColorGradingOptions colorGrading{};
+    CameraCalibrationOptions calibration{};
+    PointColorOptions pointColor{};
+    SelectiveColorOptions selectiveColor{};
+    BwMixerOptions bw{};
     float sharpening = 0.0f;
+    SharpenV2Options sharpenV2{};
     int32_t rawNoiseReduction = 0;
     int32_t chromaDenoise = 0;
     WaveletDenoiseOptions wavelet{false, 0.0f, 46.0f, 50.0f, ProcessingVersion::Legacy};
     HslOptions hsl{};
     PhotoEffectsOptions effects{};
+    FilmOpticsOptions filmOptics{};
     bool lensDistortion = false;
     bool lensTca = false;
     bool lensVignetting = false;
     bool lensAutoCrop = true;
     std::string lensProfileId;
+    DefringeOptions defringe{};
     bool hasAiDenoiseBlend = false;
     float aiDenoiseBlend = 1.0f;
     MasterRecipeWbConfig masterRecipe{};
@@ -176,17 +190,24 @@ struct CanonicalEditState {
     ToneControlsOptions toneControls{};
     AtmosphereOptions atmosphere{};
     ColorGradingOptions colorGrading{};
+    CameraCalibrationOptions calibration{};
+    PointColorOptions pointColor{};
+    SelectiveColorOptions selectiveColor{};
+    BwMixerOptions bw{};
     float sharpening = 0.0f;
+    SharpenV2Options sharpenV2{};
     int32_t rawNoiseReduction = 0;
     int32_t chromaDenoise = 0;
     WaveletDenoiseOptions wavelet{false, 0.0f, 46.0f, 50.0f, ProcessingVersion::Legacy};
     HslOptions hsl{};
     PhotoEffectsOptions effects{};
+    FilmOpticsOptions filmOptics{};
     bool lensDistortion = false;
     bool lensTca = false;
     bool lensVignetting = false;
     bool lensAutoCrop = true;
     std::string lensProfileId;
+    DefringeOptions defringe{};
     bool hasAiDenoiseBlend = false;
     float aiDenoiseBlend = 1.0f;
     MasterRecipeWbConfig masterRecipe{};

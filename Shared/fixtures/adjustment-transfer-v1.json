@@ -1936,9 +1936,18 @@
           "light.curve": {
             "mode": "custom",
             "points": [
-              [0, 0.125],
-              [0.5, 0.55],
-              [1, 0.875]
+              [
+                0,
+                0.125
+              ],
+              [
+                0.5,
+                0.55
+              ],
+              [
+                1,
+                0.875
+              ]
             ]
           },
           "light.curve.apply_to_luminosity": true,
@@ -1969,8 +1978,14 @@
           "light.curve": {
             "mode": "custom",
             "points": [
-              [0.15, 0],
-              [0.85, 1]
+              [
+                0.15,
+                0
+              ],
+              [
+                0.85,
+                1
+              ]
             ]
           }
         }
@@ -2044,6 +2059,477 @@
             "saturation": 10,
             "luminance": 150
           }
+        }
+      }
+    },
+    {
+      "id": "v014-sdr-scalars-and-enums-valid",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.calibration.shadow_tint": -12.5,
+          "color.calibration.red_hue": 18.25,
+          "color.calibration.red_saturation": -22.5,
+          "color.calibration.green_hue": -14.5,
+          "color.calibration.green_saturation": 31.25,
+          "color.calibration.blue_hue": 9.5,
+          "color.calibration.blue_saturation": -16.25,
+          "color.bw.enabled": true,
+          "effects.texture": 32.5,
+          "detail.sharpening.luminance_v2": true,
+          "detail.sharpening.radius": 1.4,
+          "detail.sharpening.detail": 42.5,
+          "detail.sharpening.masking": 35.0,
+          "geometry.lens.defringe_purple_amount": 6.5,
+          "geometry.lens.defringe_purple_hue": 35.0,
+          "geometry.lens.defringe_green_amount": 4.25,
+          "geometry.lens.defringe_green_hue": 65.0,
+          "effects.halation.amount": 28.5,
+          "effects.halation.threshold": 82.0,
+          "effects.halation.radius": 45.5,
+          "effects.halation.hue": -14.0,
+          "effects.bloom.amount": 22.25,
+          "effects.bloom.threshold": 68.0,
+          "effects.bloom.radius": 52.5,
+          "effects.grain.tone_curve": "negative_asymmetric",
+          "effects.grain.format_preset": "135"
+        }
+      },
+      "neutral_effective": {
+        "effects.texture": 32.5
+      }
+    },
+    {
+      "id": "v014-point-color-and-selective-valid",
+      "valid": true,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.point_color": {
+            "swatches": [
+              {
+                "src_hue": 210.5,
+                "src_saturation": 0.625,
+                "src_luminance": 0.5,
+                "hue_shift": -15.5,
+                "saturation_shift": 22.25,
+                "luminance_shift": -8.5,
+                "range": 65.0,
+                "hue_range": 45.0,
+                "sat_range": 55.0,
+                "lum_range": 40.0,
+                "variance": 12.5,
+                "enabled": true
+              }
+            ]
+          },
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": {
+                "cyan": -12.5,
+                "magenta": 18.0,
+                "yellow": 6.5,
+                "black": -4.0
+              },
+              "yellows": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "greens": {
+                "cyan": 14.0,
+                "magenta": -9.5,
+                "yellow": 0.0,
+                "black": 2.5
+              },
+              "cyans": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "blues": {
+                "cyan": 25.0,
+                "magenta": -5.0,
+                "yellow": -15.0,
+                "black": 10.0
+              },
+              "magentas": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "whites": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": -6.0
+              },
+              "neutrals": {
+                "cyan": 2.5,
+                "magenta": -1.5,
+                "yellow": 3.5,
+                "black": 0.0
+              },
+              "blacks": {
+                "cyan": -3.0,
+                "magenta": 1.0,
+                "yellow": 2.0,
+                "black": 8.0
+              }
+            }
+          },
+          "color.bw.mixer": {
+            "red": 25.5,
+            "orange": 18.25,
+            "yellow": 12.0,
+            "green": -15.5,
+            "aqua": -28.0,
+            "blue": -35.25,
+            "purple": 10.5,
+            "magenta": 6.25
+          }
+        }
+      }
+    },
+    {
+      "id": "v014-point-color-hue360-invalid",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.point_color": {
+            "swatches": [
+              {
+                "src_hue": 360.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "v014-point-color-too-many-swatches-invalid",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.point_color": {
+            "swatches": [
+              {
+                "src_hue": 0.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 30.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 60.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 90.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 120.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 150.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 180.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 210.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              },
+              {
+                "src_hue": 240.0,
+                "src_saturation": 0.5,
+                "src_luminance": 0.5,
+                "hue_shift": 0.0,
+                "saturation_shift": 0.0,
+                "luminance_shift": 0.0,
+                "range": 50.0,
+                "hue_range": 50.0,
+                "sat_range": 50.0,
+                "lum_range": 50.0,
+                "variance": 0.0,
+                "enabled": true
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "v014-selective-color-invalid-method",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.selective_color": {
+            "method": "linear",
+            "bands": {
+              "reds": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "yellows": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "greens": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "cyans": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "blues": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "magentas": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "whites": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "neutrals": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "blacks": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "v014-bw-mixer-out-of-range",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.bw.mixer": {
+            "red": 150.0,
+            "orange": 0.0,
+            "yellow": 0.0,
+            "green": 0.0,
+            "aqua": 0.0,
+            "blue": 0.0,
+            "purple": 0.0,
+            "magenta": 0.0
+          }
+        }
+      }
+    },
+    {
+      "id": "v014-sharpening-radius-out-of-range",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "detail.sharpening.radius": 5.0
+        }
+      }
+    },
+    {
+      "id": "v014-grain-tone-curve-invalid-enum",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "effects.grain.tone_curve": "future_curve"
+        }
+      }
+    },
+    {
+      "id": "v014-defringe-amount-out-of-range",
+      "valid": false,
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "fixture-v014",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.defringe_purple_amount": 25.0
         }
       }
     }

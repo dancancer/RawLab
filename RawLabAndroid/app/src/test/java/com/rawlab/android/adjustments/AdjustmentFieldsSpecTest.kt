@@ -18,7 +18,7 @@ class AdjustmentFieldsSpecTest {
         val root = loadSpecJSON()
         assertEquals(1, root.getInt("spec_version"))
         val fields = root.getJSONArray("fields")
-        assertEquals(89, fields.length())
+        assertEquals(118, fields.length())
 
         val transferIds = mutableListOf<String>()
         val localIds = mutableListOf<String>()
@@ -56,7 +56,7 @@ class AdjustmentFieldsSpecTest {
             }
         }
 
-        assertEquals(86, transferIds.size)
+        assertEquals(115, transferIds.size)
         assertEquals(3, localIds.size)
         assertEquals(transferIds.toSet(), AdjustmentField.entries.map { it.id }.toSet())
         assertEquals(AdjustmentField.entries.size, transferIds.size)
@@ -159,6 +159,56 @@ class AdjustmentFieldsSpecTest {
         assertEquals(androidModel("hdr.sdr_contrast").getDouble("default").toFloat(), hdr.renditionSettings.sdrContrast, 0f)
         assertEquals(androidModel("hdr.sdr_saturation").getDouble("default").toFloat(), hdr.renditionSettings.sdrSaturation, 0f)
         assertThrows(IllegalArgumentException::class.java) { HDRRenditionSettings(peakLimitEV = 6.1f) }
+
+        // v0.14.0 models & SubFields
+        assertEquals(androidModel("effects.texture").getDouble("default").toFloat(), settings.texture, 0f)
+        assertThrows(IllegalArgumentException::class.java) { EditSettings(texture = 101f) }
+        val cal = CameraCalibrationSettings()
+        assertEquals(androidModel("color.calibration.shadow_tint").getDouble("default").toFloat(), cal.shadowTint, 0f)
+        assertEquals(androidModel("color.calibration.blue_saturation").getDouble("default").toFloat(), cal.blueSaturation, 0f)
+        assertThrows(IllegalArgumentException::class.java) { CameraCalibrationSettings(shadowTint = -101f) }
+
+        assertTrue(PointColorSettings().isDefault)
+        assertThrows(IllegalArgumentException::class.java) { PointColorSwatch(srcHue = 360f) }
+        assertThrows(IllegalArgumentException::class.java) { PointColorSwatch(srcSaturation = 1.1f) }
+        assertThrows(IllegalArgumentException::class.java) {
+            PointColorSettings(List(AdjustmentFieldSpec.SubFields.PointColor.maxSwatches + 1) { PointColorSwatch() })
+        }
+
+        val sc = SelectiveColorSettings()
+        assertEquals("relative", sc.method.wireValue)
+        assertThrows(IllegalArgumentException::class.java) { SelectiveColorBand(cyan = 101f) }
+
+        val bw = BwMixerSettings()
+        assertEquals(androidModel("color.bw.enabled").getBoolean("default"), bw.enabled)
+        assertThrows(IllegalArgumentException::class.java) { BwMixerWeights(red = -101f) }
+
+        val sv2 = SharpenV2Settings()
+        assertEquals(androidModel("detail.sharpening.luminance_v2").getBoolean("default"), sv2.luminanceV2)
+        assertEquals(androidModel("detail.sharpening.radius").getDouble("default").toFloat(), sv2.radius, 0f)
+        assertEquals(androidModel("detail.sharpening.detail").getDouble("default").toFloat(), sv2.detail, 0f)
+        assertEquals(androidModel("detail.sharpening.masking").getDouble("default").toFloat(), sv2.masking, 0f)
+        assertThrows(IllegalArgumentException::class.java) { SharpenV2Settings(radius = 0.4f) }
+
+        val fo = FilmOpticsSettings()
+        assertEquals(androidModel("effects.halation.amount").getDouble("default").toFloat(), fo.halationAmount, 0f)
+        assertEquals(androidModel("effects.halation.threshold").getDouble("default").toFloat(), fo.halationThreshold, 0f)
+        assertEquals(androidModel("effects.halation.radius").getDouble("default").toFloat(), fo.halationRadius, 0f)
+        assertEquals(androidModel("effects.halation.hue").getDouble("default").toFloat(), fo.halationHue, 0f)
+        assertEquals(androidModel("effects.bloom.amount").getDouble("default").toFloat(), fo.bloomAmount, 0f)
+        assertEquals(androidModel("effects.bloom.threshold").getDouble("default").toFloat(), fo.bloomThreshold, 0f)
+        assertEquals(androidModel("effects.bloom.radius").getDouble("default").toFloat(), fo.bloomRadius, 0f)
+        assertThrows(IllegalArgumentException::class.java) { FilmOpticsSettings(bloomRadius = 101f) }
+
+        assertEquals(androidModel("effects.grain.tone_curve").getString("default"), effects.grainToneCurve.wireValue)
+        assertEquals(androidModel("effects.grain.format_preset").getString("default"), effects.grainFormatPreset.wireValue)
+
+        val lens = LensSettings()
+        assertEquals(androidModel("geometry.lens.defringe_purple_amount").getDouble("default").toFloat(), lens.defringePurpleAmount, 0f)
+        assertEquals(androidModel("geometry.lens.defringe_purple_hue").getDouble("default").toFloat(), lens.defringePurpleHue, 0f)
+        assertEquals(androidModel("geometry.lens.defringe_green_amount").getDouble("default").toFloat(), lens.defringeGreenAmount, 0f)
+        assertEquals(androidModel("geometry.lens.defringe_green_hue").getDouble("default").toFloat(), lens.defringeGreenHue, 0f)
+        assertThrows(IllegalArgumentException::class.java) { LensSettings(defringePurpleAmount = 21f) }
     }
 
     private fun assertModelSpecMatchesJSON(fid: String, actual: AdjustmentFieldModelSpec, json: JSONObject) {

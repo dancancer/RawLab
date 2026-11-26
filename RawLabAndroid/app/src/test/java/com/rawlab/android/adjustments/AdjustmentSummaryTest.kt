@@ -144,6 +144,62 @@ class AdjustmentSummaryTest {
                     AdjustmentField.HDR_PEAK_LIMIT to AdjustmentValue.Number(2.0),
                 ),
             ),
+            AdjustmentPayload(
+                AdjustmentSource("raw", true, 3),
+                mapOf(
+                    AdjustmentField.POINT_COLOR to AdjustmentValue.Object(mapOf(
+                        "swatches" to AdjustmentValue.Array(listOf(
+                            AdjustmentValue.Object(mapOf(
+                                "src_hue" to AdjustmentValue.Number(120.0),
+                                "src_saturation" to AdjustmentValue.Number(0.5),
+                                "src_luminance" to AdjustmentValue.Number(0.5),
+                                "hue_shift" to AdjustmentValue.Number(5.0),
+                                "saturation_shift" to AdjustmentValue.Number(0.0),
+                                "luminance_shift" to AdjustmentValue.Number(0.0),
+                                "range" to AdjustmentValue.Number(50.0),
+                                "hue_range" to AdjustmentValue.Number(50.0),
+                                "sat_range" to AdjustmentValue.Number(50.0),
+                                "lum_range" to AdjustmentValue.Number(50.0),
+                                "variance" to AdjustmentValue.Number(0.0),
+                                "enabled" to AdjustmentValue.Boolean(true),
+                            )),
+                        )),
+                    )),
+                    AdjustmentField.SELECTIVE_COLOR to AdjustmentValue.Object(mapOf(
+                        "method" to AdjustmentValue.Text("relative"),
+                        "bands" to AdjustmentValue.Object(
+                            AdjustmentFieldSpec.SubFields.SelectiveColor.allowedBands.associateWith {
+                                AdjustmentValue.Object(
+                                    AdjustmentFieldSpec.SubFields.SelectiveColor.allowedComponents.associateWith {
+                                        AdjustmentValue.Number(0.0)
+                                    },
+                                )
+                            },
+                        ),
+                    )),
+                    AdjustmentField.GRAIN_TONE_CURVE to AdjustmentValue.Text("legacy"),
+                    AdjustmentField.GRAIN_FORMAT_PRESET to AdjustmentValue.Text("135"),
+                ),
+            ),
+            AdjustmentPayload(
+                AdjustmentSource("raw", true, 3),
+                mapOf(
+                    AdjustmentField.SELECTIVE_COLOR to AdjustmentValue.Object(mapOf(
+                        "method" to AdjustmentValue.Text("absolute"),
+                        "bands" to AdjustmentValue.Object(
+                            AdjustmentFieldSpec.SubFields.SelectiveColor.allowedBands.associateWith {
+                                AdjustmentValue.Object(
+                                    AdjustmentFieldSpec.SubFields.SelectiveColor.allowedComponents.associateWith {
+                                        AdjustmentValue.Number(0.0)
+                                    },
+                                )
+                            },
+                        ),
+                    )),
+                    AdjustmentField.GRAIN_TONE_CURVE to AdjustmentValue.Text("negative_asymmetric"),
+                    AdjustmentField.GRAIN_FORMAT_PRESET to AdjustmentValue.Text("120"),
+                ),
+            ),
         )
 
         for (payload in payloads) {

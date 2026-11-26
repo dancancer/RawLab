@@ -45,6 +45,24 @@
           "processing_version": 3
         },
         "values": {
+          "color.bw.enabled": false,
+          "color.bw.mixer": {
+            "red": 0,
+            "orange": 0,
+            "yellow": 0,
+            "green": 0,
+            "aqua": 0,
+            "blue": 0,
+            "purple": 0,
+            "magenta": 0
+          },
+          "color.calibration.blue_hue": 0,
+          "color.calibration.blue_saturation": 0,
+          "color.calibration.green_hue": 0,
+          "color.calibration.green_saturation": 0,
+          "color.calibration.red_hue": 0,
+          "color.calibration.red_saturation": 0,
+          "color.calibration.shadow_tint": 0,
           "color.grading.balance": 0,
           "color.grading.blending": 50,
           "color.grading.global": {
@@ -87,7 +105,24 @@
           "color.hsl.saturation.purple": 0,
           "color.hsl.saturation.red": 0,
           "color.hsl.saturation.yellow": 0,
+          "color.point_color": {
+            "swatches": []
+          },
           "color.saturation": 1,
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "yellows": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "greens": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "cyans": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blues": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "magentas": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "whites": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "neutrals": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blacks": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 }
+            }
+          },
           "color.vibrance": 0,
           "color.white_balance.mode": "none",
           "color.white_balance.temperature_kelvin": null,
@@ -97,11 +132,25 @@
           "detail.denoise.raw_level": 0,
           "detail.denoise.wavelet": null,
           "detail.sharpening": 0,
+          "detail.sharpening.detail": 25,
+          "detail.sharpening.luminance_v2": false,
+          "detail.sharpening.masking": 0,
+          "detail.sharpening.radius": 1.0,
+          "effects.bloom.amount": 0,
+          "effects.bloom.radius": 40,
+          "effects.bloom.threshold": 70,
           "effects.clarity": 0,
           "effects.dehaze": 0,
           "effects.grain.amount": 0,
+          "effects.grain.format_preset": "custom",
           "effects.grain.roughness": 50,
           "effects.grain.size": 25,
+          "effects.grain.tone_curve": "legacy",
+          "effects.halation.amount": 0,
+          "effects.halation.hue": 0,
+          "effects.halation.radius": 35,
+          "effects.halation.threshold": 75,
+          "effects.texture": 0,
           "effects.vignette.amount": 0,
           "effects.vignette.feather": 50,
           "effects.vignette.highlights": 0,
@@ -114,6 +163,10 @@
           "geometry.flip_horizontal": false,
           "geometry.flip_vertical": false,
           "geometry.lens.auto_crop": true,
+          "geometry.lens.defringe_green_amount": 0,
+          "geometry.lens.defringe_green_hue": 50,
+          "geometry.lens.defringe_purple_amount": 0,
+          "geometry.lens.defringe_purple_hue": 50,
           "geometry.lens.distortion": false,
           "geometry.lens.profile_id": null,
           "geometry.lens.tca": false,
@@ -389,6 +442,24 @@
           "processing_version": 3
         },
         "values": {
+          "color.bw.enabled": false,
+          "color.bw.mixer": {
+            "red": 0,
+            "orange": 0,
+            "yellow": 0,
+            "green": 0,
+            "aqua": 0,
+            "blue": 0,
+            "purple": 0,
+            "magenta": 0
+          },
+          "color.calibration.blue_hue": 0,
+          "color.calibration.blue_saturation": 0,
+          "color.calibration.green_hue": 0,
+          "color.calibration.green_saturation": 0,
+          "color.calibration.red_hue": 0,
+          "color.calibration.red_saturation": 0,
+          "color.calibration.shadow_tint": 0,
           "color.grading.balance": 0,
           "color.grading.blending": 50,
           "color.grading.global": {
@@ -431,7 +502,24 @@
           "color.hsl.saturation.purple": 0,
           "color.hsl.saturation.red": 0,
           "color.hsl.saturation.yellow": 0,
+          "color.point_color": {
+            "swatches": []
+          },
           "color.saturation": 1,
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "yellows": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "greens": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "cyans": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blues": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "magentas": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "whites": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "neutrals": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blacks": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 }
+            }
+          },
           "color.vibrance": 0,
           "color.white_balance.mode": "none",
           "color.white_balance.temperature_kelvin": null,
@@ -441,11 +529,25 @@
           "detail.denoise.raw_level": 0,
           "detail.denoise.wavelet": null,
           "detail.sharpening": 0,
+          "detail.sharpening.detail": 25,
+          "detail.sharpening.luminance_v2": false,
+          "detail.sharpening.masking": 0,
+          "detail.sharpening.radius": 1.0,
+          "effects.bloom.amount": 0,
+          "effects.bloom.radius": 40,
+          "effects.bloom.threshold": 70,
           "effects.clarity": 0,
           "effects.dehaze": 0,
           "effects.grain.amount": 0,
+          "effects.grain.format_preset": "custom",
           "effects.grain.roughness": 50,
           "effects.grain.size": 25,
+          "effects.grain.tone_curve": "legacy",
+          "effects.halation.amount": 0,
+          "effects.halation.hue": 0,
+          "effects.halation.radius": 35,
+          "effects.halation.threshold": 75,
+          "effects.texture": 0,
           "effects.vignette.amount": 0,
           "effects.vignette.feather": 50,
           "effects.vignette.highlights": 0,
@@ -458,6 +560,10 @@
           "geometry.flip_horizontal": false,
           "geometry.flip_vertical": false,
           "geometry.lens.auto_crop": true,
+          "geometry.lens.defringe_green_amount": 0,
+          "geometry.lens.defringe_green_hue": 50,
+          "geometry.lens.defringe_purple_amount": 0,
+          "geometry.lens.defringe_purple_hue": 50,
           "geometry.lens.distortion": false,
           "geometry.lens.profile_id": null,
           "geometry.lens.tca": false,
@@ -557,6 +663,24 @@
           "processing_version": 3
         },
         "values": {
+          "color.bw.enabled": false,
+          "color.bw.mixer": {
+            "red": 0,
+            "orange": 0,
+            "yellow": 0,
+            "green": 0,
+            "aqua": 0,
+            "blue": 0,
+            "purple": 0,
+            "magenta": 0
+          },
+          "color.calibration.blue_hue": 0,
+          "color.calibration.blue_saturation": 0,
+          "color.calibration.green_hue": 0,
+          "color.calibration.green_saturation": 0,
+          "color.calibration.red_hue": 0,
+          "color.calibration.red_saturation": 0,
+          "color.calibration.shadow_tint": 0,
           "color.grading.balance": 0,
           "color.grading.blending": 50,
           "color.grading.global": {
@@ -599,7 +723,24 @@
           "color.hsl.saturation.purple": 0,
           "color.hsl.saturation.red": 0,
           "color.hsl.saturation.yellow": 0,
+          "color.point_color": {
+            "swatches": []
+          },
           "color.saturation": 1,
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "yellows": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "greens": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "cyans": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blues": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "magentas": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "whites": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "neutrals": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 },
+              "blacks": { "cyan": 0, "magenta": 0, "yellow": 0, "black": 0 }
+            }
+          },
           "color.vibrance": 0,
           "color.white_balance.mode": "none",
           "color.white_balance.temperature_kelvin": null,
@@ -609,11 +750,25 @@
           "detail.denoise.raw_level": 0,
           "detail.denoise.wavelet": null,
           "detail.sharpening": 0,
+          "detail.sharpening.detail": 25,
+          "detail.sharpening.luminance_v2": false,
+          "detail.sharpening.masking": 0,
+          "detail.sharpening.radius": 1.0,
+          "effects.bloom.amount": 0,
+          "effects.bloom.radius": 40,
+          "effects.bloom.threshold": 70,
           "effects.clarity": 0,
           "effects.dehaze": 0,
           "effects.grain.amount": 0,
+          "effects.grain.format_preset": "custom",
           "effects.grain.roughness": 50,
           "effects.grain.size": 25,
+          "effects.grain.tone_curve": "legacy",
+          "effects.halation.amount": 0,
+          "effects.halation.hue": 0,
+          "effects.halation.radius": 35,
+          "effects.halation.threshold": 75,
+          "effects.texture": 0,
           "effects.vignette.amount": 0,
           "effects.vignette.feather": 50,
           "effects.vignette.highlights": 0,
@@ -626,6 +781,10 @@
           "geometry.flip_horizontal": false,
           "geometry.flip_vertical": false,
           "geometry.lens.auto_crop": true,
+          "geometry.lens.defringe_green_amount": 0,
+          "geometry.lens.defringe_green_hue": 50,
+          "geometry.lens.defringe_purple_amount": 0,
+          "geometry.lens.defringe_purple_hue": 50,
           "geometry.lens.distortion": false,
           "geometry.lens.profile_id": null,
           "geometry.lens.tca": false,
@@ -2346,6 +2505,296 @@
             "detail.denoise.raw_level": 2,
             "detail.denoise.post_rgb": 0
           }
+        }
+      }
+    },
+    {
+      "id": "v014-sdr-full-fields-transfer-on-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": true,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source-v014.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.calibration.shadow_tint": -12.5,
+          "color.calibration.red_hue": 18.25,
+          "color.calibration.red_saturation": -22.5,
+          "color.calibration.green_hue": -14.5,
+          "color.calibration.green_saturation": 31.25,
+          "color.calibration.blue_hue": 9.5,
+          "color.calibration.blue_saturation": -16.25,
+          "color.point_color": {
+            "swatches": [
+              {
+                "src_hue": 210.5,
+                "src_saturation": 0.625,
+                "src_luminance": 0.5,
+                "hue_shift": -15.5,
+                "saturation_shift": 22.25,
+                "luminance_shift": -8.5,
+                "range": 65.0,
+                "hue_range": 45.0,
+                "sat_range": 55.0,
+                "lum_range": 40.0,
+                "variance": 12.5,
+                "enabled": true
+              }
+            ]
+          },
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": {
+                "cyan": -12.5,
+                "magenta": 18.0,
+                "yellow": 6.5,
+                "black": -4.0
+              },
+              "yellows": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "greens": {
+                "cyan": 14.0,
+                "magenta": -9.5,
+                "yellow": 0.0,
+                "black": 2.5
+              },
+              "cyans": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "blues": {
+                "cyan": 25.0,
+                "magenta": -5.0,
+                "yellow": -15.0,
+                "black": 10.0
+              },
+              "magentas": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "whites": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": -6.0
+              },
+              "neutrals": {
+                "cyan": 2.5,
+                "magenta": -1.5,
+                "yellow": 3.5,
+                "black": 0.0
+              },
+              "blacks": {
+                "cyan": -3.0,
+                "magenta": 1.0,
+                "yellow": 2.0,
+                "black": 8.0
+              }
+            }
+          },
+          "color.bw.enabled": true,
+          "color.bw.mixer": {
+            "red": 25.5,
+            "orange": 18.25,
+            "yellow": 12.0,
+            "green": -15.5,
+            "aqua": -28.0,
+            "blue": -35.25,
+            "purple": 10.5,
+            "magenta": 6.25
+          },
+          "effects.texture": 32.5,
+          "detail.sharpening.luminance_v2": true,
+          "detail.sharpening.radius": 1.4,
+          "detail.sharpening.detail": 42.5,
+          "detail.sharpening.masking": 35.0,
+          "geometry.lens.defringe_purple_amount": 6.5,
+          "geometry.lens.defringe_purple_hue": 35.0,
+          "geometry.lens.defringe_green_amount": 4.25,
+          "geometry.lens.defringe_green_hue": 65.0,
+          "effects.halation.amount": 28.5,
+          "effects.halation.threshold": 82.0,
+          "effects.halation.radius": 45.5,
+          "effects.halation.hue": -14.0,
+          "effects.bloom.amount": 22.25,
+          "effects.bloom.threshold": 68.0,
+          "effects.bloom.radius": 52.5,
+          "effects.grain.tone_curve": "negative_asymmetric",
+          "effects.grain.format_preset": "135"
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "color.calibration.shadow_tint": -12.5,
+          "color.calibration.red_hue": 18.25,
+          "color.calibration.red_saturation": -22.5,
+          "color.calibration.green_hue": -14.5,
+          "color.calibration.green_saturation": 31.25,
+          "color.calibration.blue_hue": 9.5,
+          "color.calibration.blue_saturation": -16.25,
+          "color.point_color": {
+            "swatches": [
+              {
+                "src_hue": 210.5,
+                "src_saturation": 0.625,
+                "src_luminance": 0.5,
+                "hue_shift": -15.5,
+                "saturation_shift": 22.25,
+                "luminance_shift": -8.5,
+                "range": 65.0,
+                "hue_range": 45.0,
+                "sat_range": 55.0,
+                "lum_range": 40.0,
+                "variance": 12.5,
+                "enabled": true
+              }
+            ]
+          },
+          "color.selective_color": {
+            "method": "relative",
+            "bands": {
+              "reds": {
+                "cyan": -12.5,
+                "magenta": 18.0,
+                "yellow": 6.5,
+                "black": -4.0
+              },
+              "yellows": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "greens": {
+                "cyan": 14.0,
+                "magenta": -9.5,
+                "yellow": 0.0,
+                "black": 2.5
+              },
+              "cyans": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "blues": {
+                "cyan": 25.0,
+                "magenta": -5.0,
+                "yellow": -15.0,
+                "black": 10.0
+              },
+              "magentas": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": 0.0
+              },
+              "whites": {
+                "cyan": 0.0,
+                "magenta": 0.0,
+                "yellow": 0.0,
+                "black": -6.0
+              },
+              "neutrals": {
+                "cyan": 2.5,
+                "magenta": -1.5,
+                "yellow": 3.5,
+                "black": 0.0
+              },
+              "blacks": {
+                "cyan": -3.0,
+                "magenta": 1.0,
+                "yellow": 2.0,
+                "black": 8.0
+              }
+            }
+          },
+          "color.bw.enabled": true,
+          "color.bw.mixer": {
+            "red": 25.5,
+            "orange": 18.25,
+            "yellow": 12.0,
+            "green": -15.5,
+            "aqua": -28.0,
+            "blue": -35.25,
+            "purple": 10.5,
+            "magenta": 6.25
+          },
+          "effects.texture": 32.5,
+          "detail.sharpening.luminance_v2": true,
+          "detail.sharpening.radius": 1.4,
+          "detail.sharpening.detail": 42.5,
+          "detail.sharpening.masking": 35.0,
+          "geometry.lens.defringe_purple_amount": 6.5,
+          "geometry.lens.defringe_purple_hue": 35.0,
+          "geometry.lens.defringe_green_amount": 4.25,
+          "geometry.lens.defringe_green_hue": 65.0,
+          "effects.halation.amount": 28.5,
+          "effects.halation.threshold": 82.0,
+          "effects.halation.radius": 45.5,
+          "effects.halation.hue": -14.0,
+          "effects.bloom.amount": 22.25,
+          "effects.bloom.threshold": 68.0,
+          "effects.bloom.radius": 52.5,
+          "effects.grain.tone_curve": "negative_asymmetric",
+          "effects.grain.format_preset": "135"
+        }
+      }
+    },
+    {
+      "id": "defringe-applies-on-raster-target-without-lens-profile",
+      "target": {
+        "kind": "sdr_raster",
+        "lens_valid": false,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "source.jpg",
+          "is_raw": false,
+          "processing_version": 3
+        },
+        "values": {
+          "geometry.lens.defringe_purple_amount": 8.5,
+          "geometry.lens.defringe_purple_hue": 40.0,
+          "geometry.lens.defringe_green_amount": 5.5,
+          "geometry.lens.defringe_green_hue": 62.0
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "geometry.lens.defringe_purple_amount": 8.5,
+          "geometry.lens.defringe_purple_hue": 40.0,
+          "geometry.lens.defringe_green_amount": 5.5,
+          "geometry.lens.defringe_green_hue": 62.0
         }
       }
     }

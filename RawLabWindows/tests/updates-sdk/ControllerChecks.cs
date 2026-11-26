@@ -177,6 +177,7 @@ internal static class ControllerChecks
                 "Recovery requires reopening and never reports the failed update complete");
             var reopenedAfterRecovery = new DesktopUpdateController(adapter, new(), store, "0.8.2", "14");
             check(!reopenedAfterRecovery.RequiresRecovery && !reopenedAfterRecovery.CanRestorePreviousData, "Persisted recovery permits a fresh editor on the next launch");
+            GC.KeepAlive(session);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
@@ -415,6 +416,7 @@ internal static class ControllerChecks
             adapter.RejectSignature = true; await reopened.DownloadAsync(); now = now.AddDays(1).AddSeconds(1);
             await reopened.CheckAsync(false);
             check(adapter.Checks == 9 && reopened.State.Failure?.Stage == UpdatePhase.Verifying, "Verification failure still waits for an explicit retry after a day");
+            GC.KeepAlive(gateOwner);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
@@ -452,6 +454,7 @@ internal static class ControllerChecks
             adapter.TrustError=null;await reopened.FinishStartupHealthCheckAsync(true);
             check(reopened.State.Phase==UpdatePhase.Complete && reopened.State.BackupPath==null && !Directory.Exists(path),
                 "Successful health retry clears persisted backup reference before removing the backup");
+            GC.KeepAlive(owner);
         } finally { if(Directory.Exists(root))Directory.Delete(root,true); }
     }
 
@@ -531,6 +534,7 @@ internal static class ControllerChecks
             await reopened.RefreshGateAsync();
             check(reopened.State.Phase == UpdatePhase.Available && !reopened.BlocksEditing,
                 "Temporary revocation failure remains eligible for automatic background recheck");
+            GC.KeepAlive(session);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
