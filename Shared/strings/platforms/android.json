@@ -3126,6 +3126,12 @@
       "source": "SDR 兼容预览",
       "types": []
     },
+    "hdr_preview_sdr_active": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "当前显示 SDR 兼容预览。",
+      "types": []
+    },
     "hdr_processing_cpu": {
       "file": "editor_strings.xml",
       "formats": [],
