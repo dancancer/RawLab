@@ -34,15 +34,16 @@ struct alignas(16) SpatialGpuParams {
     uint32_t radius = 0;
     uint32_t stage = 0;
 
+    // 锐化 v2 各 pass 中 strength 装的是 detailGain；其余由宿主派生，着色器不再做“先缩放再夹紧”。
     float strength = 0.0f;
-    float sharpenDetail = 25.0f;
-    float sharpenMasking = 0.0f;
-    float sharpenRadius = 1.0f;
+    float sharpenCoring = 0.0f;
+    float sharpenMaskLow = 0.0f;
+    float sharpenMaskSpan = 0.0f;
 
-    float defringePurpleAmount = 0.0f;
-    float defringePurpleHue = 50.0f;
-    float defringeGreenAmount = 0.0f;
-    float defringeGreenHue = 50.0f;
+    float defringePurpleNorm = 0.0f;
+    float defringePurpleCenter = 290.0f;
+    float defringeGreenNorm = 0.0f;
+    float defringeGreenCenter = 120.0f;
 
     float airlight[4]{};       // r, g, b, minTransmission
     uint32_t flags[4]{};       // [basicV3, fieldWidth, fieldHeight, fieldOffset]
@@ -50,6 +51,23 @@ struct alignas(16) SpatialGpuParams {
     float weights[7][4]{};     // up to 25 Gaussian weights (max radius 12)
 };
 static_assert(sizeof(SpatialGpuParams) == 224, "Spatial GPU parameter layout");
+
+// 派生量只由 core 的 defringeWeights / sharpenV2Coefficients 计算一次，CPU 参考路径用的是同一函数。
+inline void fillSpatialDefringeParams(const DefringeOptions& options, SpatialGpuParams& out) {
+    const DefringeWeights weights = defringeWeights(options);
+    out.defringePurpleNorm = weights.purpleNorm;
+    out.defringePurpleCenter = weights.purpleCenter;
+    out.defringeGreenNorm = weights.greenNorm;
+    out.defringeGreenCenter = weights.greenCenter;
+}
+
+inline void fillSpatialSharpenV2Params(float amount, const SharpenV2Options& options, SpatialGpuParams& out) {
+    const SharpenV2Coefficients coefficients = sharpenV2Coefficients(amount, options);
+    out.strength = coefficients.detailGain;
+    out.sharpenCoring = coefficients.coring;
+    out.sharpenMaskLow = coefficients.maskLow;
+    out.sharpenMaskSpan = coefficients.maskSpan;
+}
 
 inline void fillSpatialGaussianWeights(float sigma, int maxRadius, SpatialGpuParams& out) {
     const int r = std::clamp(static_cast<int>(std::ceil(3.0f * sigma)), 1, maxRadius);
@@ -110,8 +128,8 @@ inline void packClarityFieldBuffer(
 // Callers define dialect macros right before embedding photoSpatialShaderBody():
 //   SP_FN, SP_V3, SP_V3C(x,y,z), SP_CTX_DECL, SP_CTX_ARG,
 //   SP_SRC(ix, iy), SP_AUX(ix, iy), SP_FIELD(idx), SP_FINITE(v), SP_WEIGHT(idx),
-//   SP_WIDTH, SP_HEIGHT, SP_RADIUS, SP_STRENGTH, SP_SHARPEN_DETAIL, SP_SHARPEN_MASKING,
-//   SP_PURPLE_AMT, SP_PURPLE_HUE, SP_GREEN_AMT, SP_GREEN_HUE,
+//   SP_WIDTH, SP_HEIGHT, SP_RADIUS, SP_STRENGTH, SP_SHARPEN_CORING, SP_SHARPEN_MASK_LOW,
+//   SP_SHARPEN_MASK_SPAN, SP_PURPLE_NORM, SP_PURPLE_CENTER, SP_GREEN_NORM, SP_GREEN_CENTER,
 //   SP_AIRLIGHT, SP_FLAGS
 inline std::string photoSpatialShaderBody() {
     return R"shader(
@@ -213,10 +231,10 @@ SP_FN SP_V3 spDefringePixel(int x, int y SP_CTX_DECL) {
     float sat = delta / hi;
     float satWeight = spSmooth((sat - 0.05) / 0.15);
     if (satWeight <= 0.0) return col;
-    float pNorm = clamp(SP_PURPLE_AMT / 20.0, 0.0, 1.0);
-    float gNorm = clamp(SP_GREEN_AMT / 20.0, 0.0, 1.0);
-    float pCenter = 270.0 + (clamp(SP_PURPLE_HUE, 0.0, 100.0) / 100.0) * 40.0;
-    float gCenter = 95.0 + (clamp(SP_GREEN_HUE, 0.0, 100.0) / 100.0) * 50.0;
+    float pNorm = SP_PURPLE_NORM;
+    float gNorm = SP_GREEN_NORM;
+    float pCenter = SP_PURPLE_CENTER;
+    float gCenter = SP_GREEN_CENTER;
     float wPurple = pNorm > 0.0 ? pNorm * (1.0 - spSmooth(spHueDist(hue, pCenter) / 45.0)) : 0.0;
     float wGreen = gNorm > 0.0 ? gNorm * (1.0 - spSmooth(spHueDist(hue, gCenter) / 45.0)) : 0.0;
     float suppress = clamp(edgeWeight * satWeight * max(wPurple, wGreen), 0.0, 1.0);
@@ -391,21 +409,19 @@ SP_FN SP_V3 spSharpenApplyPixel(int x, int y SP_CTX_DECL) {
     if (!SP_FINITE(col) || SP_STRENGTH <= 0.0) return col;
     SP_V3 auxData = SP_AUX(x, y);
     float maskVal = 1.0;
-    if (SP_SHARPEN_MASKING > 0.0) {
+    if (SP_SHARPEN_MASK_SPAN > 0.0) {
         int r = int(SP_RADIUS);
         float gField = 0.0;
         for (int k = -r; k <= r; ++k) {
             gField += SP_AUX(x, y + k).z * SP_WEIGHT(uint(k + r));
         }
-        float m = clamp(SP_SHARPEN_MASKING / 100.0, 0.0, 1.0);
-        maskVal = spSmooth((gField - 0.06 * m) / (0.05 * m));
+        maskVal = spSmooth((gField - SP_SHARPEN_MASK_LOW) / SP_SHARPEN_MASK_SPAN);
     }
     if (maskVal <= 0.0) return col;
     float diff = auxData.x - auxData.y;
-    float detailNorm = clamp(SP_SHARPEN_DETAIL / 100.0, 0.0, 1.0);
-    float coring = 0.012 * (1.0 - detailNorm);
+    float coring = SP_SHARPEN_CORING;
     float detailWeight = coring <= 1e-4 ? 1.0 : spSmooth(abs(diff) / coring);
-    float detailGain = SP_STRENGTH * (0.7 + 1.2 * detailNorm);
+    float detailGain = SP_STRENGTH;
     float delta = clamp(maskVal * detailWeight * detailGain * diff, -0.35, 0.35);
     if (delta == 0.0) return col;
     float minC = min(col.x, min(col.y, col.z));
