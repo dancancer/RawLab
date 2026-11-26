@@ -9,8 +9,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import com.rawlab.android.editor.render.HDRBitmapAdapter
 import com.rawlab.android.editor.render.HDRPreviewFrame
 import com.rawlab.android.engine.HDRDisplayParameters
@@ -78,6 +81,37 @@ class HDRMonitoringUiTest {
         }
         compose.onNodeWithTag("hdr-display-unavailable").assertDoesNotExist()
         compose.onNodeWithTag("hdr-sdr-fallback").assertDoesNotExist()
+    }
+
+    @Test
+    fun previewModeAndFalseColorSurviveActivityRecreation() {
+        val restoration = StateRestorationTester(compose)
+        var preview: PhotoHDRPreview? = null
+        restoration.setContent {
+            val current = rememberPhotoHDRPreview(null)
+            SideEffect { preview = current }
+            MaterialTheme {
+                HDRMonitoring(sampleStatistics(), current.display, current.parameters.mode, current.parameters.falseColor,
+                    current.onModeChange, current.onFalseColorChange)
+            }
+        }
+        compose.onNodeWithTag("hdr-monitoring").performClick()
+        compose.onNodeWithTag("hdr-preview-sdr").performClick()
+        compose.onNodeWithTag("hdr-false-color").performClick()
+        compose.runOnIdle {
+            assertEquals(HDRPreviewMode.SDR, preview!!.parameters.mode)
+            assertTrue(preview!!.parameters.falseColor)
+        }
+
+        restoration.emulateSavedInstanceStateRestore()
+
+        compose.runOnIdle {
+            assertEquals(HDRPreviewMode.SDR, preview!!.parameters.mode)
+            assertTrue(preview!!.parameters.falseColor)
+        }
+        // 面板展开只是查看状态；重新展开后勾选仍是用户刚才的选择。
+        compose.onNodeWithTag("hdr-monitoring").performClick()
+        compose.onNodeWithTag("hdr-false-color").assertIsOn()
     }
 
     @Test

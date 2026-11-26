@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -53,7 +54,7 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     var unreadable by remember { mutableStateOf(emptyList<UnreadablePreset>()) }
     var loaded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var creating by remember { mutableStateOf(saving) }
+    var creating by rememberSaveable { mutableStateOf(saving) }
     var captureGeneration by remember { mutableIntStateOf(0) }
     fun close() { captureGeneration++; onClose() }
     DisposableEffect(model) { onDispose { captureGeneration++ } }
@@ -61,7 +62,8 @@ internal fun AdjustmentPresetSheet(model: EditorViewModel, saving: Boolean = fal
     var deleting by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var deletingUnreadable by remember { mutableStateOf<UnreadablePreset?>(null) }
     var overwrite by remember { mutableStateOf<Pair<AdjustmentPreset, AdjustmentPayload>?>(null) }
-    var name by remember { mutableStateOf(if (saving) AppStrings.text(R.string.preset_new_name) else "") }
+    // 重命名目标是内存中的预设对象，重建后不恢复，界面退回预设列表；新建预设的名称与范围选择会保留。
+    var name by rememberSaveable { mutableStateOf(if (saving) AppStrings.text(R.string.preset_new_name) else "") }
     fun reload() {
         try { presets = model.presetStore.list(); unreadable = model.presetStore.listUnreadable(); loaded = true; error = null }
         catch (failure: Exception) { loaded = false; unreadable = emptyList(); error = presetErrorMessage(failure) }

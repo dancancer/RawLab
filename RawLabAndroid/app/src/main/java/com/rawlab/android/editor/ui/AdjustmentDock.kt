@@ -178,9 +178,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     val neutralTemperature = if (edits.isHDREditing || !rawInput) 6500f else state.preview?.temperature?.takeIf { it.isFinite() } ?: 6500f
     val neutralTint = if (edits.isHDREditing || !rawInput) 0f else state.preview?.tint?.takeIf { it.isFinite() } ?: 0f
     var menuLookId by remember { mutableStateOf<String?>(null) }
-    var renameLookId by remember { mutableStateOf<String?>(null) }
+    var renameLookId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleteLookId by remember { mutableStateOf<String?>(null) }
-    var renameText by remember { mutableStateOf("") }
+    var renameText by rememberSaveable { mutableStateOf("") }
     var confirmProcessingRollback by remember { mutableStateOf(false) }
     var perspective by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }
     var rotation by rememberSaveable(state.photo?.identity) { mutableStateOf(false) }

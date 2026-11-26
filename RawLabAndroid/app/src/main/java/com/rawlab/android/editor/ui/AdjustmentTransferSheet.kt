@@ -14,6 +14,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -30,6 +32,13 @@ import com.rawlab.android.editor.adjustmentTransferFields
 import com.rawlab.android.ui.EditorSheetSystemBars
 
 internal enum class AdjustmentSheet { COPY, PASTE, HISTORY }
+
+// 粘贴面板的载荷可能是内存中的预设或集合同步快照，预检与结果也随面板销毁而作废，重建后无从还原；
+// 只恢复复制与历史面板，粘贴面板随重建关闭，避免已应用后重新预检又露出“应用”。
+internal val AdjustmentSheetSaver = Saver<AdjustmentSheet?, String>(
+    save = { sheet -> sheet?.takeIf { it != AdjustmentSheet.PASTE }?.name },
+    restore = { AdjustmentSheet.valueOf(it) },
+)
 private val unfinished = setOf(AdjustmentStatus.BLOCKED, AdjustmentStatus.FAILED, AdjustmentStatus.CONFLICT)
 
 // Q3/Q4 粘贴提示的文案资源（登记于 Shared/strings 的 android 目录）。
@@ -205,8 +214,8 @@ internal fun AdjustmentScopeEditor(confirmTitle: String, confirmTag: String, ena
     allowed: Set<AdjustmentField> = AdjustmentField.entries.filterNot { it.isHDROnly }.toSet(),
     previewCapture: (AdjustmentScope) -> Result<AdjustmentPayload>, lookName: (String, String) -> String?,
     onConfirm: (AdjustmentScope) -> Unit) {
-    var scope by remember(allowed) { mutableIntStateOf(2) }
-    var fields by remember(allowed) { mutableStateOf(
+    var scope by rememberSaveable(allowed) { mutableIntStateOf(2) }
+    var fields by rememberSaveable(allowed) { mutableStateOf(
         (if (allowed.any { it.isHDRRelative }) AdjustmentField.HDR_COMMON else AdjustmentField.COMMON).intersect(allowed)) }
     val selectedScope = when (scope) { 0 -> AdjustmentScope.All; 1 -> AdjustmentScope.Modified; else -> AdjustmentScope.Custom(fields) }
     val preview = previewCapture(selectedScope)

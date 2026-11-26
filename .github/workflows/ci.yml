@@ -113,6 +113,7 @@ jobs:
           python scripts/localization/generate.py --check
           python scripts/version/generate.py --check
           python scripts/specs/generate.py --check
+          python scripts/catalog/generate.py --check
           python -m pip install uv==0.9.5
           uv run --project tools/mcp --frozen python -m unittest discover -s tools/mcp/tests -v
           git diff --check

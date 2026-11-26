@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,21 +44,21 @@ internal fun BatchSelectionScreen(model: EditorViewModel, onBack: () -> Unit, on
     val collection by model.collection.collectAsStateWithLifecycle()
     val editor by model.state.collectAsStateWithLifecycle()
     val pending by model.pendingBatch.collectAsStateWithLifecycle()
-    var album by remember { mutableStateOf(false) }
-    var scope by remember { mutableStateOf(false) }
+    var album by rememberSaveable { mutableStateOf(false) }
+    var scope by rememberSaveable { mutableStateOf(false) }
     var captureGeneration by remember { mutableIntStateOf(0) }
     fun closeScope() { captureGeneration++; scope = false }
     DisposableEffect(model) { onDispose { captureGeneration++ } }
     var synchronization by remember { mutableStateOf<CollectionSynchronization?>(null) }
     var history by remember { mutableStateOf(false) }
-    var export by remember { mutableStateOf(false) }
+    var export by rememberSaveable { mutableStateOf(false) }
     var pendingEdit by remember { mutableStateOf<String?>(null) }
     val list = rememberLazyListState(initialFirstVisibleItemIndex = collection.returnPosition.coerceAtMost((collection.photos.size - 1).coerceAtLeast(0)))
     val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { model.addCollectionPhotos(it) }
     LaunchedEffect(Unit) { model.refreshCollection() }
     BackHandler(enabled = !collection.busy) { onBack() }
     if (album) {
-        var selected by remember { mutableStateOf(emptySet<String>()) }
+        var selected by rememberSaveable { mutableStateOf(emptySet<String>()) }
         AlbumScreen(model.storage, onBack = { album = false }, onFile = { album = false; files.launch(arrayOf("*/*")) },
             onPhoto = { uri -> selected = if (uri.toString() in selected) selected - uri.toString() else selected + uri.toString() },
             selectedPhotos = selected, onDone = { model.addCollectionPhotos(selected.map(Uri::parse)); album = false })
@@ -163,12 +164,13 @@ private fun CollectionExportSheet(model: EditorViewModel, onClose: () -> Unit) {
     val editor by model.state.collectAsStateWithLifecycle()
     val flow by model.collectionExport.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    var skipped by remember { mutableStateOf(emptySet<String>()) }
-    var format by remember { mutableStateOf(ExportFormat.JPEG) }
-    var size by remember { mutableStateOf(ExportSizeChoice.ORIGINAL) }
-    var custom by remember { mutableStateOf("") }
-    var outputSharpening by remember { mutableStateOf(OutputSharpening.OFF) }
-    var destination by remember { mutableStateOf<Uri?>(null) }
+    var skipped by rememberSaveable { mutableStateOf(emptySet<String>()) }
+    var format by rememberSaveable { mutableStateOf(ExportFormat.JPEG) }
+    var size by rememberSaveable { mutableStateOf(ExportSizeChoice.ORIGINAL) }
+    var custom by rememberSaveable { mutableStateOf("") }
+    var outputSharpening by rememberSaveable { mutableStateOf(OutputSharpening.OFF) }
+    // 目录选择时已取得持久授权，进程重建后仍可写入，故与其他导出选项一起恢复。
+    var destination by rememberSaveable { mutableStateOf<Uri?>(null) }
     val review = flow.review
     val busy = collection.busy || flow.preparing || flow.freezing
     var supportsHDR by remember { mutableStateOf(false) }
