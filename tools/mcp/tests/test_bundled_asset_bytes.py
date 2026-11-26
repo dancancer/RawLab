@@ -87,6 +87,40 @@ class BundledAssetBytesTests(unittest.TestCase):
         self.assertEqual(listed["counts"]["fuji_flog2"], 16)
         self.assertEqual(listed["counts"]["hdr"], 1)
 
+    def test_catalog_snapshot_generator_check_fails_on_drift(self):
+        generator = "scripts/catalog/generate.py"
+        snapshot = "tools/mcp/src/rawlab_mcp/catalog_data.json"
+        sources = [
+            generator,
+            "tools/mcp/src/rawlab_mcp/__init__.py",
+            "tools/mcp/src/rawlab_mcp/catalog.py",
+            snapshot,
+            "Shared/master-recipes.json",
+            "Shared/BundledLooks/catalog.json",
+            "Shared/assets-manifest.json",
+            *(p.relative_to(ROOT).as_posix() for p in (ROOT / "Shared/BundledLooks/HDR").glob("* Master.json")),
+        ]
+        with tempfile.TemporaryDirectory(prefix="rawlab-catalog-gen-") as tmp:
+            root = Path(tmp)
+            for rel in sources:
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(ROOT / rel, root / rel)
+            cmd = [sys.executable, str(root / generator), "--check", "--root", str(root)]
+            baseline = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            recipes_path = root / "Shared/master-recipes.json"
+            original_recipes = recipes_path.read_text(encoding="utf-8")
+            recipes = json.loads(original_recipes)
+            recipes[0]["name"] += " drift"
+            recipes_path.write_text(json.dumps(recipes, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.assertNotEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)
+            recipes_path.write_text(original_recipes, encoding="utf-8")
+
+            snapshot_path = root / snapshot
+            snapshot_path.write_bytes(snapshot_path.read_bytes() + b"\n")
+            self.assertNotEqual(subprocess.run(cmd, capture_output=True, text=True).returncode, 0)
+
     def test_mcp_bundled_transfer_spec_and_catalog_bypass_repo_shadowing(self):
         pkg_dir = ROOT / "tools/mcp/src/rawlab_mcp"
         repo_spec = json.loads((ROOT / "Shared/specs/adjustment-fields-v1.json").read_text(encoding="utf-8"))

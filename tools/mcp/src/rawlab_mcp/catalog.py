@@ -60,35 +60,39 @@ def _derive_fuji_looks(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return fuji_looks
 
 
+def build_catalog(shared: Path) -> dict[str, Any]:
+    """Derive the catalog from a repo `Shared/` dir; scripts/catalog/generate.py writes catalog_data.json from it."""
+    master_recipes = json.loads((shared / "master-recipes.json").read_text(encoding="utf-8"))
+    bundled_looks = json.loads((shared / "BundledLooks" / "catalog.json").read_text(encoding="utf-8"))
+    manifest = json.loads((shared / "assets-manifest.json").read_text(encoding="utf-8"))
+    hdr_dir = shared / "BundledLooks" / "HDR"
+    hdr_looks: list[dict[str, Any]] = []
+    for master_json in sorted(hdr_dir.glob("* Master.json")):
+        payload = json.loads(master_json.read_text(encoding="utf-8"))
+        look_val = payload.get("values", {}).get("hdr.look", {})
+        look_name = look_val.get("name") or master_json.stem.removesuffix(" Master")
+        cube_name = f"{look_name}.cube"
+        hdr_looks.append({
+            "id": f"hdr:{look_name}",
+            "name": look_name,
+            "fileName": cube_name,
+            "path": f"Shared/BundledLooks/HDR/{cube_name}",
+            "masterRecipePath": f"Shared/BundledLooks/HDR/{master_json.name}",
+            "sha256": look_val.get("sha256"),
+            "transferPreset": payload,
+        })
+    return {
+        "master_recipes": master_recipes,
+        "bundled_looks": bundled_looks,
+        "fuji_flog2_looks": _derive_fuji_looks(manifest),
+        "hdr_looks": hdr_looks,
+    }
+
+
 def load_catalog() -> dict[str, Any]:
     shared = _discover_repo_shared()
     if shared is not None:
-        master_recipes = json.loads((shared / "master-recipes.json").read_text(encoding="utf-8"))
-        bundled_looks = json.loads((shared / "BundledLooks" / "catalog.json").read_text(encoding="utf-8"))
-        manifest = json.loads((shared / "assets-manifest.json").read_text(encoding="utf-8"))
-        hdr_dir = shared / "BundledLooks" / "HDR"
-        hdr_looks: list[dict[str, Any]] = []
-        for master_json in sorted(hdr_dir.glob("* Master.json")):
-            payload = json.loads(master_json.read_text(encoding="utf-8"))
-            look_val = payload.get("values", {}).get("hdr.look", {})
-            look_name = look_val.get("name") or master_json.stem.removesuffix(" Master")
-            cube_name = f"{look_name}.cube"
-            hdr_looks.append({
-                "id": f"hdr:{look_name}",
-                "name": look_name,
-                "fileName": cube_name,
-                "path": f"Shared/BundledLooks/HDR/{cube_name}",
-                "masterRecipePath": f"Shared/BundledLooks/HDR/{master_json.name}",
-                "sha256": look_val.get("sha256"),
-                "transferPreset": payload,
-            })
-        return {
-            "source": "repo",
-            "master_recipes": master_recipes,
-            "bundled_looks": bundled_looks,
-            "fuji_flog2_looks": _derive_fuji_looks(manifest),
-            "hdr_looks": hdr_looks,
-        }
+        return {"source": "repo", **build_catalog(shared)}
 
     data = json.loads(BUNDLED_SNAPSHOT_PATH.read_text(encoding="utf-8"))
     return {"source": "bundled", **data}
