@@ -75,5 +75,7 @@ internal static class InstallStateChecks
         succeeds = true; check(gate.Prepare().Length == 0 && calls == 2, "Explicit admission saves and rechecks committed edits");
         succeeds = false; status = new(JournalFailed: true); check(gate.Prepare().Contains("journal"), "Unsaved journal remains a blocker");
         gate.Unregister(other); check(gate.Blockers().Length == 0, "Closed sessions leave the gate");
+        GC.KeepAlive(front);
+        GC.KeepAlive(other);
     }
 }

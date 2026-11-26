@@ -538,6 +538,9 @@ internal static class StateMatrixChecks
 
             // Scenario B: Reopened session with Available + OnQuit returns via blocked PrepareForQuitAsync back to
             // Available + OnQuit: must perform 1 initial revalidation and stay Available + OnQuit across 60x1s ticks.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
             var reopenAdapter = new MatrixAdapter();
             var reopened = new DesktopUpdateController(reopenAdapter, sameGate, sameSessionStore, "0.8.2", "14", true, () => now);
             now = now.AddSeconds(1);
@@ -610,6 +613,7 @@ internal static class StateMatrixChecks
             }
             check(recoverAdapter.Checks == 1,
                 $"P1-07 Scenario C: post-recovery ticks stay throttled (Checks={recoverAdapter.Checks})");
+            GC.KeepAlive(owner);
         }
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
