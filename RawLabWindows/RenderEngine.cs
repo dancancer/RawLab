@@ -314,6 +314,51 @@ internal sealed partial class RenderEngine : IDisposable
         mask.Freeze();
         return mask;
     }
+
+    internal static (byte[] Bgra8, int Width, int Height, int Stride) ExtractBGRA8Preview(BitmapSource image)
+    {
+        var bgra = image.Format == PixelFormats.Bgra32 || image.Format == PixelFormats.Pbgra32
+            ? image
+            : new FormatConvertedBitmap(image, PixelFormats.Bgra32, null, 0);
+        var width = bgra.PixelWidth;
+        var height = bgra.PixelHeight;
+        var stride = checked(width * 4);
+        var pixels = new byte[checked(stride * height)];
+        bgra.CopyPixels(pixels, stride, 0);
+        return (pixels, width, height, stride);
+    }
+
+    internal static unsafe BitmapSource? RenderSharpenMaskPreview(
+        byte[] bgra8, int width, int height, int stride, double radius, double masking)
+    {
+        if (width <= 0 || height <= 0 || stride < width * 4 || bgra8.Length < checked(stride * height))
+            return null;
+        Native.Buffer outMask = default;
+        try
+        {
+            fixed (byte* ptr = bgra8)
+            {
+                var src = new Native.Buffer
+                {
+                    Data = (IntPtr)ptr,
+                    Size = (nuint)bgra8.Length,
+                    Width = (uint)width,
+                    Height = (uint)height,
+                    Stride = (uint)stride,
+                    PixelFormat = 3 // SONY2FUJI_PIXEL_BGRA8
+                };
+                Native.CheckWithoutSession(Native.sony2fuji_render_sharpen_mask_preview(
+                    ref src, (float)radius, (float)masking, out outMask));
+            }
+            if (outMask.Data == IntPtr.Zero || outMask.Width == 0 || outMask.Height == 0)
+                return null;
+            return Bitmap(outMask);
+        }
+        finally
+        {
+            Native.sony2fuji_release_buffer(ref outMask);
+        }
+    }
     public RenderedImage? Render(string path, Adjustments settings, string? lut, int edge, bool interactive = false, string? output = null, bool statistics = true, bool clipping = true, int? longEdge = null, bool viewportPreview = false, ExportFormat? formatOverride = null, OutputSharpening outputSharpening = OutputSharpening.Off)
     {
         BeginAIOperation(output==null ? "preview" : "export",path);

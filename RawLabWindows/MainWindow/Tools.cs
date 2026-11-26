@@ -481,7 +481,7 @@ public partial class MainWindow
         controls.Button.Tag=selected ? "selected" : null;
         controls.Ring.Selected=selected;
         var p=ParameterSpec.All[(int)id]; var range=NumericRange.For(p); var origin=range.Position(p.ToDisplay(settings.Default(id))); var offset=range.Position(p.ToDisplay(settings[id]))-origin;
-        controls.Ring.Progress=id==Parameter.ToneCurve && !settings.EditingCurve.IsDefault ? settings.EditingCurve.Progress : offset==0 ? 0 : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
+        controls.Ring.Progress=id==Parameter.ToneCurve && !settings.EditingCurve.IsDefault ? settings.EditingCurve.Progress : offset==0 ? (id==Parameter.Sharpening && !hdrEditing && !settings.SharpenV2.IsDefault ? 1 : 0) : offset/(offset<0 ? origin : 1-origin); controls.Ring.InvalidateVisual();
     }
     private void UpdateToneToolRing(ToneControlParameter id, (Button Button, AdjustmentRing Ring) controls, bool hdrEditing)
     {
@@ -569,6 +569,36 @@ public partial class MainWindow
             var canAdjust=file!=null && !exporting && toolMode is not (EditorToolMode.Film or EditorToolMode.PhotoEffects) && (!hdrEditing || hdrParameter) &&
                 (hdrRenditionSpec!=null || extensionControl || (selectedParameter!=Parameter.Strength || lut!=null) && (selectedParameter is not(Parameter.Temperature or Parameter.Tint) || settings.AsShot!=null));
             ValueSlider.IsEnabled=ValueText.IsEnabled=canAdjust;
+            var showSharpenV2=CurrentTool is not (EditorAdjustmentTool.Strength or EditorAdjustmentTool.ToneCurve) &&
+                toolMode==EditorToolMode.Parameter && selectedHdrRenditionParameter==null &&
+                selectedToneParameter==null && selectedAtmosphereParameter==null &&
+                selectedParameter==Parameter.Sharpening && !hdrEditing;
+            if (!dragFastPath)
+            {
+                SharpenV2Panel.Visibility=showSharpenV2 ? Visibility.Visible : Visibility.Collapsed;
+                if(!showSharpenV2)ClearSharpenMaskPreview(refresh:true);
+            }
+            if (showSharpenV2 && (!dragFastPath || SharpenV2Panel.Visibility==Visibility.Visible))
+            {
+                var v2=settings.SharpenV2;
+                SharpenLuminanceV2Check.IsChecked=v2.LuminanceV2;
+                SharpenV2Panel.IsEnabled=file!=null && !exporting;
+                SharpenRadiusRow.Refresh(Loc.Text("锐化半径"), new NumericRange(
+                    AdjustmentFieldSpec.Fields.DetailSharpeningRadius.WindowsModel.Min!.Value,
+                    AdjustmentFieldSpec.Fields.DetailSharpeningRadius.WindowsModel.Max!.Value,
+                    Grid: 0.01, Wheel: 0.1, FineWheel: 0.01, FixedDecimals: 2), v2.Radius, 1.0,
+                    enabled: file!=null && !exporting, inputScope: "sharpening.radius");
+                SharpenDetailRow.Refresh(Loc.Text("锐化细节"), new NumericRange(
+                    AdjustmentFieldSpec.Fields.DetailSharpeningDetail.WindowsModel.Min!.Value,
+                    AdjustmentFieldSpec.Fields.DetailSharpeningDetail.WindowsModel.Max!.Value,
+                    Grid: 1, Wheel: 1, FineWheel: 1, FixedDecimals: 0), v2.Detail, 25.0,
+                    enabled: file!=null && !exporting, inputScope: "sharpening.detail");
+                SharpenMaskingRow.Refresh(Loc.Text("锐化蒙版"), new NumericRange(
+                    AdjustmentFieldSpec.Fields.DetailSharpeningMasking.WindowsModel.Min!.Value,
+                    AdjustmentFieldSpec.Fields.DetailSharpeningMasking.WindowsModel.Max!.Value,
+                    Grid: 1, Wheel: 1, FineWheel: 1, FixedDecimals: 0), v2.Masking, 0.0,
+                    enabled: file!=null && !exporting, inputScope: "sharpening.masking");
+            }
             if (!dragFastPath)
             {
                 FilmPanel.Visibility=toolMode==EditorToolMode.Film ? Visibility.Visible : Visibility.Collapsed;
@@ -579,12 +609,13 @@ public partial class MainWindow
                     AutomationProperties.SetItemStatus(pair.Value,selected ? Loc.Text("已应用") : "");
                 }
                 ParameterPanel.Visibility=CurrentTool is EditorAdjustmentTool.Strength or EditorAdjustmentTool.ToneCurve || toolMode!=EditorToolMode.Parameter ? Visibility.Collapsed : Visibility.Visible;
+                var canUseLensPanel=file!=null && !hdrEditing && !exporting && !PhotoInput.IsNormalX3f(file,settings);
                 LensEditor.Visibility=toolMode==EditorToolMode.Lens ? Visibility.Visible : Visibility.Collapsed;
                 LensSurface.Visibility=LensEditor.Visibility;
-                LensEditor.IsEnabled=file!=null && !raster && !hdrEditing && !exporting && !PhotoInput.IsNormalX3f(file,settings);
-                LensCategory.IsEnabled=LensEditor.IsEnabled;
+                LensEditor.IsEnabled=canUseLensPanel;
+                LensCategory.IsEnabled=canUseLensPanel;
                 LensCategory.Tag=toolMode==EditorToolMode.Lens ? "selected" : null;
-                LensCategoryRing.Selected=toolMode==EditorToolMode.Lens;LensCategoryRing.Progress=settings.Lens.Enabled ? 1 : 0;LensCategoryRing.InvalidateVisual();
+                LensCategoryRing.Selected=toolMode==EditorToolMode.Lens;LensCategoryRing.Progress=(settings.Lens.Enabled || settings.Lens.HasDefringeSettings) ? 1 : 0;LensCategoryRing.InvalidateVisual();
                 GeometrySurface.Visibility=toolMode==EditorToolMode.Geometry ? Visibility.Visible : Visibility.Collapsed;
                 GeometryEditor.IsEnabled=file!=null && !exporting;
                 GeometryCategory.IsEnabled=PerspectiveCategory.IsEnabled=file!=null && !exporting;
@@ -718,7 +749,7 @@ public partial class MainWindow
                 }
             }
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Lens))
-                LensEditor.Refresh(PreviewLens,result?.Lens);
+                LensEditor.Refresh(PreviewLens,result?.Lens,!raster);
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.Geometry))
                 GeometryEditor.Refresh(transform.Active ? transform.Geometry : settings.Geometry);
             if (InspectorModificationCache.ShouldRefreshSubEditor(CurrentTool==EditorAdjustmentTool.ToneCurve))

@@ -76,8 +76,8 @@ object EditorAdjustmentRules {
     private val toolGroups = mapOf(
         EditorAdjustmentGroup.LOOKS to listOf(0, 15, 1),
         EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 18, 19, 5, 6),
-        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 28, 29, 30, 21, 31),
-        EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 12, 13),
+        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 29, 30, 31, 21, 32),
+        EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 28, 12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
         EditorAdjustmentGroup.HDR_RENDITION to listOf(24, 25, 26, 27),
@@ -208,14 +208,15 @@ object EditorAdjustmentRules {
         21 -> s.withEditingGrading(d.editingGrading)
         22 -> s.withEditingClarity(d.editingClarity)
         23 -> s.withEditingDehaze(d.editingDehaze)
+        28 -> if (s.isHDREditing) s else s.copy(texture = d.texture)
         24 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(peakLimitEV = 0f))) else s
         25 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrExposureEV = 0f))) else s
         26 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrContrast = 0f))) else s
         27 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrSaturation = 0f))) else s
-        28 -> s.copy(pointColor = d.pointColor)
-        29 -> s.copy(selectiveColor = d.selectiveColor)
-        30 -> s.copy(bwMixer = d.bwMixer)
-        31 -> s.copy(calibration = d.calibration)
+        29 -> s.copy(pointColor = d.pointColor)
+        30 -> s.copy(selectiveColor = d.selectiveColor)
+        31 -> s.copy(bwMixer = d.bwMixer)
+        32 -> s.copy(calibration = d.calibration)
         else -> s
     }
 

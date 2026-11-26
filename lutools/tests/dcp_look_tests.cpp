@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "native_gpu_test_support.h"
 #include "sony2fuji/dcp_look.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include <algorithm>
@@ -252,14 +253,13 @@ void photoTests(const fs::path& root) {
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
     sony2fuji_buffer output{};
     const auto forced = sony2fuji_process(session, &request, &output);
-// gpu-portability: metal-only the DCP look GPU stage exists only in Metal (metal_dcp_shader.h); D3D11/GLES Force returns UNSUPPORTED
-#ifdef SONY2FUJI_ENABLE_METAL
-    checkPass(forced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
-          (forced == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL),
-          "PHOTO Force either uses Metal or fails explicitly");
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+    checkPass(forced == SONY2FUJI_STATUS_PROCESSING_ERROR || forced == SONY2FUJI_STATUS_UNSUPPORTED ||
+          (forced == SONY2FUJI_STATUS_OK && sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend),
+          "PHOTO Force uses native GPU DCP or fails explicitly");
 #else
     checkPass(forced == SONY2FUJI_STATUS_UNSUPPORTED,
-          "PHOTO Force returns UNSUPPORTED without a Metal DCP backend");
+          "PHOTO Force returns UNSUPPORTED without a GPU DCP backend");
 #endif
     sony2fuji_release_buffer(&output);
     config.mode = SONY2FUJI_GPU_OFF; sony2fuji_session_set_gpu_config(session, &config);
@@ -288,21 +288,23 @@ void photoTests(const fs::path& root) {
     request.lut_path = extremePath.c_str();
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);
     render("PHOTO Auto handles FP32 overflow via precise CPU", automatic);
-    checkPass(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite Metal stage cannot report success");
+    checkPass(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU, "nonfinite GPU stage cannot report success");
     config.mode = SONY2FUJI_GPU_FORCE; sony2fuji_session_set_gpu_config(session, &config);
-// gpu-portability: metal-only the DCP look GPU stage exists only in Metal; D3D11/GLES Force returns UNSUPPORTED
-#ifdef SONY2FUJI_ENABLE_METAL
-    checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_PROCESSING_ERROR, "Force rejects nonfinite Metal stage");
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+    const auto nonfiniteForced = sony2fuji_process(session, &request, &output);
+    checkPass(nonfiniteForced == SONY2FUJI_STATUS_PROCESSING_ERROR ||
+          (!rawlabtest::nativeGpuAvailable() && nonfiniteForced == SONY2FUJI_STATUS_UNSUPPORTED),
+          "Force rejects nonfinite GPU stage");
 #else
-    checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED, "Force returns UNSUPPORTED for rlook without Metal");
+    checkPass(sony2fuji_process(session, &request, &output) == SONY2FUJI_STATUS_UNSUPPORTED, "Force returns UNSUPPORTED for rlook without GPU");
 #endif
     sony2fuji_release_buffer(&output);
     request.lut_path = path.c_str();
     config.mode = SONY2FUJI_GPU_AUTO; sony2fuji_session_set_gpu_config(session, &config);
     render("valid profile recovers after nonfinite GPU stage", automatic);
     checkPass(std::equal(automatic.begin(), automatic.end(), std::begin(pixels)), "failed GPU output does not leak into next render");
-    checkPass(forced != SONY2FUJI_STATUS_OK || sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_METAL,
-          "valid native profile can use Metal again after fallback");
+    checkPass(forced != SONY2FUJI_STATUS_OK || sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend,
+          "valid native profile can use GPU again after fallback");
     sony2fuji_session_destroy(session);
 }
 

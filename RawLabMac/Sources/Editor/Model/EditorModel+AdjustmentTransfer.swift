@@ -198,6 +198,7 @@ extension EditorModel {
                 }
                 // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
                 context.validateLensRequest = { lens in
+                    guard lens.distortion || lens.tca || lens.vignetting else { return }
                     var request = try store?.state(for: url)?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get())
                     request.lensCorrection = lens
                     let frame = try RenderEngine().render(url, settings: request, lut: nil, edge: 256)

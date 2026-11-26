@@ -25,9 +25,10 @@ class EditorToolGroupingTest {
     }
 
     @Test fun toolsFollowTheSevenWorkspaceGroupsWithStableIds() {
-        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 28, 29, 30, 21, 31, 22, 23, 12, 13, 11, 10, 17, 16, 24, 25, 26, 27), editorToolOrder)
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 29, 30, 31, 21, 32, 22, 23, 28, 12, 13, 11, 10, 17, 16, 24, 25, 26, 27), editorToolOrder)
         assertEquals(listOf(24, 25, 26, 27), EditorAdjustmentRules.tools(EditorAdjustmentGroup.HDR_RENDITION))
         assertTrue((24..27).all(EditorAdjustmentRules::supportsHDR))
+        assertTrue((28..32).none(EditorAdjustmentRules::supportsHDR))
     }
 
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {
@@ -60,5 +61,19 @@ class EditorToolGroupingTest {
     @Test fun everyVisibleToolHasItsOwnIcon() {
         val icons = editorToolOrder.map { editorToolIcons[it] }
         assertEquals(editorToolOrder.filterIndexed { i, _ -> icons.indexOf(icons[i]) != i }.toString(), icons.size, icons.toSet().size)
+    }
+
+    @Test fun sharpenV2AutoEnablesOnNewEditsWhilePreservingLegacy() {
+        val untouchedLegacy = EditSettings(sharpening = 0.5f)
+        val adjustedLegacy = untouchedLegacy.applySharpenV2Edit(amount = 0.7f)
+        assertEquals(0.7f, adjustedLegacy.sharpening)
+        assertFalse(adjustedLegacy.sharpenV2.luminanceV2)
+
+        val freshV2 = EditSettings().applySharpenV2Edit(amount = 0.5f)
+        assertTrue(freshV2.sharpenV2.luminanceV2)
+
+        val v2Radius = untouchedLegacy.applySharpenV2Edit(radius = 1.8f)
+        assertTrue(v2Radius.sharpenV2.luminanceV2)
+        assertEquals(1.8f, v2Radius.sharpenV2.radius)
     }
 }

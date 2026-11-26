@@ -26,7 +26,7 @@ public sealed class ParameterRow : Grid
     private NumericRange range=new(0,100);
     private object? source,scope;
     private double value,defaultValue;
-    private bool syncing,dragging,dragChanged;
+    private bool syncing,dragging,dragChanged,altDragging;
     private bool preserveNextBlur;
     private object? dragSource,dragScope;
     private double dragValue;
@@ -43,7 +43,15 @@ public sealed class ParameterRow : Grid
     public void PreserveInputForUpdateNavigation() { if(input.Dirty)preserveNextBlur=true; }
     public object? SourceIdentity { get=>source; set {if(Equals(source,value))return;CancelDrag();source=value;input.Bind(source,scope,range,this.value);RestoreText();} }
     public event Action<double,bool>? Changed;
+    public event Action<bool>? AltDraggingChanged;
     public event Action? InvalidInput;
+
+    private void SetAltDragging(bool active)
+    {
+        if (altDragging == active) return;
+        altDragging = active;
+        AltDraggingChanged?.Invoke(active);
+    }
 
     public ParameterRow()
     {
@@ -56,10 +64,15 @@ public sealed class ParameterRow : Grid
         Slider.ValueChanged+=(_,e)=>{if(!syncing)Publish(range.Value(e.NewValue),dragging);};
         Slider.AddHandler(Thumb.DragStartedEvent,new DragStartedEventHandler((_,_)=>{
             dragging=true;dragChanged=false;dragValue=value;dragSource=source;dragScope=scope;RaiseEvent(new(GestureStartedEvent));
+            SetAltDragging((Keyboard.Modifiers & ModifierKeys.Alt) != 0);
         }));
+        Slider.PreviewMouseMove+=(_,_)=>{if(dragging)SetAltDragging((Keyboard.Modifiers & ModifierKeys.Alt) != 0);};
+        Slider.PreviewKeyDown+=(_,_)=>{if(dragging)SetAltDragging((Keyboard.Modifiers & ModifierKeys.Alt) != 0);};
+        Slider.PreviewKeyUp+=(_,_)=>{if(dragging)SetAltDragging((Keyboard.Modifiers & ModifierKeys.Alt) != 0);};
         Slider.AddHandler(Thumb.DragCompletedEvent,new DragCompletedEventHandler((_,e)=>{
             if(!dragging)return;
             if(e.Canceled || !Equals(dragSource,source) || !Equals(dragScope,scope)){CancelDrag();return;}
+            SetAltDragging(false);
             dragging=false;var changed=dragChanged;dragChanged=false;if(changed)Changed?.Invoke(value,false);RaiseEvent(new(GestureCompletedEvent));
         }));
         Number.TextChanged+=(_,_)=>{if(!syncing)input.Edit(Number.Text);};
@@ -169,6 +182,7 @@ public sealed class ParameterRow : Grid
     private void CancelDrag()
     {
         if(!dragging)return;
+        SetAltDragging(false);
         dragging=false;dragChanged=false;value=dragValue;input.Bind(source,scope,range,value);
         syncing=true;Slider.Value=range.Position(value);syncing=false;
         RaiseEvent(new(GestureCancelledEvent));

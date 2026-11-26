@@ -495,6 +495,13 @@
             <Grid x:Name="ToolBody" Margin="3,3,3,7">
             <StackPanel x:Name="ParameterPanel" Margin="0,5">
               <local:ParameterRow x:Name="OrdinaryParameter"/>
+              <StackPanel x:Name="SharpenV2Panel" Visibility="Collapsed" Margin="0,4,0,2">
+                <CheckBox x:Name="SharpenLuminanceV2Check" Content="{DynamicResource '明度锐化'}" AutomationProperties.Name="{DynamicResource '明度锐化'}" AutomationProperties.AutomationId="sharpening.luminanceV2" Margin="0,2,0,4" Checked="SharpenLuminanceV2Changed" Unchecked="SharpenLuminanceV2Changed"/>
+                <local:ParameterRow x:Name="SharpenRadiusRow" AutomationProperties.AutomationId="value.sharpeningRadius"/>
+                <local:ParameterRow x:Name="SharpenDetailRow" AutomationProperties.AutomationId="value.sharpeningDetail"/>
+                <local:ParameterRow x:Name="SharpenMaskingRow" AutomationProperties.AutomationId="value.sharpeningMasking"/>
+                <Button x:Name="SharpenMaskPreviewButton" Content="{DynamicResource '边缘蒙版预览'}" AutomationProperties.Name="{DynamicResource '边缘蒙版预览'}" AutomationProperties.AutomationId="sharpening.maskPreview" HorizontalAlignment="Left" Style="{StaticResource ToolButton}" PreviewMouseLeftButtonDown="SharpenMaskPreviewDown" PreviewMouseLeftButtonUp="SharpenMaskPreviewUp" LostMouseCapture="SharpenMaskPreviewLost" Margin="0,4,0,2"/>
+              </StackPanel>
               <WrapPanel HorizontalAlignment="Center">
               <Button x:Name="AutoExposureButton" Click="AutoExposureClicked" ToolTip="{DynamicResource '自动调整曝光'}" AutomationProperties.Name="{DynamicResource '自动调整曝光'}" Padding="8,3" Style="{StaticResource QuietButton}"><StackPanel Orientation="Horizontal"><local:EditorIcon Kind="Auto" Width="18" Height="18"/><TextBlock Text="{DynamicResource '自动'}" Margin="5,0,0,0"/></StackPanel></Button>
               <Button x:Name="ResetGroupButton" Content="{DynamicResource '重置分组'}" Click="ResetGroupClicked" Padding="8,3" Style="{StaticResource QuietButton}"/>

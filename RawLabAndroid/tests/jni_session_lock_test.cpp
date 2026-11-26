@@ -92,6 +92,8 @@ jboolean JNICALL Java_com_rawlab_android_editor_canvas_ViewportNative_nativeDeta
     JNIEnv*, jclass, jint, jint, jint, jint, jint,
     jdouble, jdouble, jdouble, jdouble,
     jdouble, jdouble, jdouble, jdouble, jdouble);
+jobject JNICALL Java_com_rawlab_android_engine_NativeProcessor_nativeRenderSharpenMaskPreview(
+    JNIEnv*, jclass, jobject, jfloat, jfloat, jobject);
 }
 
 namespace {
@@ -1700,6 +1702,50 @@ sony2fuji_status sony2fuji_point_color_preview_swatch(
     }
     return SONY2FUJI_STATUS_OK;
 }
+sony2fuji_status sony2fuji_render_sharpen_mask_preview(
+    const sony2fuji_buffer* source,
+    float radius,
+    float masking,
+    sony2fuji_buffer* out_mask
+) {
+    if (!source || !source->data || !out_mask || source->width == 0 || source->height == 0 ||
+        !std::isfinite(radius) || !std::isfinite(masking)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const size_t minStride = static_cast<size_t>(source->width) * 4u;
+    const size_t srcStride = source->stride_bytes == 0 ? minStride : static_cast<size_t>(source->stride_bytes);
+    if (srcStride < minStride ||
+        static_cast<size_t>(source->height) > SIZE_MAX / srcStride ||
+        source->size_bytes < srcStride * static_cast<size_t>(source->height)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    std::memset(out_mask, 0, sizeof(*out_mask));
+    const size_t outSize = minStride * static_cast<size_t>(source->height);
+    auto* dst = static_cast<uint8_t*>(std::malloc(outSize));
+    if (!dst) return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    const auto* srcBytes = static_cast<const uint8_t*>(source->data);
+    const float clamped = masking < 0.0f ? 255.0f : (masking > 100.0f ? 55.0f : 255.0f - masking * 2.0f);
+    const uint8_t fill = static_cast<uint8_t>(clamped);
+    for (uint32_t y = 0; y < source->height; ++y) {
+        const uint8_t* rowSrc = srcBytes + static_cast<size_t>(y) * srcStride;
+        uint8_t* rowDst = dst + static_cast<size_t>(y) * minStride;
+        for (uint32_t x = 0; x < source->width; ++x) {
+            const uint8_t lum = rowSrc[x * 4u];
+            const uint8_t v = (lum > 200 || masking <= 0.0f) ? fill : 0;
+            rowDst[x * 4u + 0] = v;
+            rowDst[x * 4u + 1] = v;
+            rowDst[x * 4u + 2] = v;
+            rowDst[x * 4u + 3] = 255;
+        }
+    }
+    out_mask->data = dst;
+    out_mask->size_bytes = outSize;
+    out_mask->width = source->width;
+    out_mask->height = source->height;
+    out_mask->stride_bytes = static_cast<uint32_t>(minStride);
+    out_mask->pixel_format = SONY2FUJI_PIXEL_RGBA8;
+    return SONY2FUJI_STATUS_OK;
+}
 
 } // extern "C"
 
@@ -3018,6 +3064,48 @@ void testViewportJniRoundTripAndSessionGuard() {
     std::cout << "PASS: testViewportJniRoundTripAndSessionGuard" << std::endl;
 }
 
+void testSharpenMaskPreviewJniRoundTrip() {
+    resetMocks();
+    LocalEnv env;
+
+    jobject badResult = Java_com_rawlab_android_engine_NativeProcessor_nativeRenderSharpenMaskPreview(
+        env.ptr(), nullptr, nullptr, 1.0f, 50.0f, nullptr);
+    auto ex = consumeException();
+    require(badResult == nullptr && ex.active,
+        "nativeRenderSharpenMaskPreview throws exception for null bitmap");
+
+    const int w = 4;
+    const int h = 4;
+    const int pad = 8;
+    const int stride = w * 4 + pad;
+    jobject srcBmp = makeFakeBitmap(w, h, pad);
+    jobject dstBmp = makeFakeBitmap(w, h, pad);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const size_t off = static_cast<size_t>(y) * stride + x * 4;
+            const uint8_t v = x < 2 ? 50 : 240;
+            asFake(srcBmp)->bitmapPixels[off + 0] = v;
+            asFake(srcBmp)->bitmapPixels[off + 1] = v;
+            asFake(srcBmp)->bitmapPixels[off + 2] = v;
+            asFake(srcBmp)->bitmapPixels[off + 3] = 255;
+        }
+    }
+
+    jobject outBmp = Java_com_rawlab_android_engine_NativeProcessor_nativeRenderSharpenMaskPreview(
+        env.ptr(), nullptr, srcBmp, 1.2f, 50.0f, dstBmp);
+    ex = consumeException();
+    require(outBmp == dstBmp && !ex.active,
+        "nativeRenderSharpenMaskPreview populates reusable bitmap cleanly");
+    require(asFake(srcBmp)->bitmapLockCount == 1 && asFake(srcBmp)->bitmapUnlockCount == 1 &&
+            asFake(dstBmp)->bitmapLockCount == 1 && asFake(dstBmp)->bitmapUnlockCount == 1,
+        "nativeRenderSharpenMaskPreview unlocks source and destination bitmaps symmetrically");
+    require(asFake(dstBmp)->bitmapPixels[0] == 0 && asFake(dstBmp)->bitmapPixels[2 * 4] == 155 &&
+            asFake(dstBmp)->bitmapPixels[2 * 4 + 3] == 255,
+        "nativeRenderSharpenMaskPreview writes RGBA8 mask output matching stride");
+
+    std::cout << "PASS: testSharpenMaskPreviewJniRoundTrip" << std::endl;
+}
+
 } // namespace
 
 int main() {
@@ -3048,6 +3136,7 @@ int main() {
         {"testNativeProcessRoiClearsViewportRoiForSubsequentProcess", testNativeProcessRoiClearsViewportRoiForSubsequentProcess},
         {"testInspectionJniRoundTripAndPaddedBitmapHooks", testInspectionJniRoundTripAndPaddedBitmapHooks},
         {"testViewportJniRoundTripAndSessionGuard", testViewportJniRoundTripAndSessionGuard},
+        {"testSharpenMaskPreviewJniRoundTrip", testSharpenMaskPreviewJniRoundTrip},
     };
     int failures = 0;
     for (const auto& c : cases) {

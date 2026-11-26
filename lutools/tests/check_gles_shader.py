@@ -18,8 +18,9 @@ with tempfile.TemporaryDirectory(prefix='rawlab-gles-shader-') as directory:
     exporter = output / ('shader-source.exe' if os.name == 'nt' else 'shader-source')
     subprocess.run([os.environ.get('CXX', 'c++'), '-std=c++17', '-I', str(root/'src'), '-I', str(root/'include'),
                     str(root/'tests/gles_shader_source.cpp'), '-o', str(exporter)], check=True)
-    shader = output/'photo.comp'
-    with shader.open('wb') as stream:
-        subprocess.run([str(exporter)], stdout=stream, check=True)
-    subprocess.run([args.validator, '-S', 'comp', str(shader)], check=True)
-print('PASS GLES photo shader and shared tone, grading and curve functions compile')
+    for flag, name in (([], 'photo.comp'), (['--spatial'], 'spatial.comp')):
+        shader = output / name
+        with shader.open('wb') as stream:
+            subprocess.run([str(exporter), *flag], stdout=stream, check=True)
+        subprocess.run([args.validator, '-S', 'comp', str(shader)], check=True)
+print('PASS GLES photo, DCP, spatial, tone, grading and curve shaders compile')

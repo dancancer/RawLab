@@ -391,7 +391,8 @@ extension ContentView {
                 photo.mask { Path(layout.cropBounds) }.clipped()
             }
         } else {
-            ZoomablePhoto(image: image, referenceImage: viewModel.basePreviewImage,
+            let maskOverlay = geometrySelected ? nil : viewModel.sharpenMaskOverlay
+            ZoomablePhoto(image: maskOverlay ?? image, referenceImage: viewModel.basePreviewImage,
                           label: L10n.text("调整后"), viewing: $coordinator.photoViewing, viewport: $coordinator.photoViewport,
                           isDraft: geometrySelected,
                           interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !coordinator.showingDocumentImporter,
@@ -401,11 +402,11 @@ extension ContentView {
                           hslTargetPoint: hslTargetActive ? coordinator.hslTargetPoint : (curveTargetActive ? coordinator.curveTargetPoint : nil),
                           nativePixelSize: viewModel.viewportNativeSize, previewSourceSize: viewModel.viewportPreviewSourceSize,
                           previewLongEdgeLimit: viewModel.viewportPreviewLimit,
-                          detailOverlay: geometrySelected ? nil : viewModel.detailOverlay,
-                          detailTiles: geometrySelected ? [] : viewModel.detailTiles,
-                          detailBacking: geometrySelected ? nil : viewModel.detailBacking,
+                          detailOverlay: (geometrySelected || maskOverlay != nil) ? nil : viewModel.detailOverlay,
+                          detailTiles: (geometrySelected || maskOverlay != nil) ? [] : viewModel.detailTiles,
+                          detailBacking: (geometrySelected || maskOverlay != nil) ? nil : viewModel.detailBacking,
                           onDetailRequest: geometrySelected ? nil : { viewModel.updateDetailRequest($0) },
-                          hdr: viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay,
+                          hdr: maskOverlay != nil ? nil : viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay,
                           inspectionOverlay: geometrySelected ? .none : coordinator.inspection.overlay,
                           inspectionProbeEnabled: !geometrySelected && !hslTargetActive && !curveTargetActive && !wbProbeActive && !pointColorEyedropperActive && coordinator.inspection.monitorEnabled,
                           inspectionPoint: coordinator.inspection.liveOutputPoint,

@@ -108,7 +108,7 @@ inline std::string colorScienceShader(ShaderDialect dialect) {
     std::string macros;
     if (dialect == ShaderDialect::Glsl) {
         header = R"glsl(
-layout(std140, binding = 1) uniform ColorScienceParams {
+layout(std140, binding = 2) uniform ColorScienceParams {
     uvec4 csFlags;
     vec4 csCalRow0;
     vec4 csCalRow1;
@@ -132,7 +132,7 @@ layout(std140, binding = 1) uniform ColorScienceParams {
 )glsl";
     } else if (dialect == ShaderDialect::Hlsl) {
         header = R"hlsl(
-cbuffer ColorScienceParams : register(b1) {
+cbuffer ColorScienceParams : register(b2) {
     uint4 csFlags;
     float4 csCalRow0;
     float4 csCalRow1;

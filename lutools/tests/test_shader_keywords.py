@@ -42,6 +42,12 @@ SHARED_SHADER_BODIES = {
     "photo_color_science_shader.h": [
         r'R"shader\((.*?)\)shader"',
     ],
+    "dcp_look_shader.h": [
+        r'R"shader\((.*?)\)shader"',
+    ],
+    "photo_spatial_shader.h": [
+        r'R"shader\((.*?)\)shader"',
+    ],
 }
 
 

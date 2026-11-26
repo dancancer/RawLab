@@ -143,8 +143,8 @@ class EditorAdjustmentRulesTest {
         assertEquals(listOf("looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"),
             EditorAdjustmentGroup.entries.map { it.id })
         assertEquals(EditorAdjustmentGroup.entries, rules.visibleGroups(isHDREditing = true))
-        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 18, 19, 5, 6), listOf(8, 7, 20, 14, 28, 29, 30, 21, 31),
-            listOf(22, 23, 12, 13), listOf(11, 10), listOf(17, 16), listOf(24, 25, 26, 27))
+        val expected = listOf(listOf(0, 15, 1), listOf(2, 3, 4, 18, 19, 5, 6), listOf(8, 7, 20, 14, 29, 30, 31, 21, 32),
+            listOf(22, 23, 28, 12, 13), listOf(11, 10), listOf(17, 16), listOf(24, 25, 26, 27))
         EditorAdjustmentGroup.entries.zip(expected).forEach { (group, tools) ->
             assertEquals(tools, rules.tools(group)); tools.forEach { assertEquals(group, rules.groupFor(it)) }
         }
@@ -188,15 +188,15 @@ class EditorAdjustmentRulesTest {
             ),
             bwMixer = BwMixerSettings(enabled = true, mixer = BwMixerWeights(red = 40f, blue = -30f)),
         )
-        for (tool in listOf(28, 29, 30, 31)) {
+        for (tool in listOf(29, 30, 31, 32)) {
             assertTrue(rules.isModified(EditorResetScope.Tool(tool), source, context()))
             val reset = candidate(EditorResetScope.Tool(tool), source)
             assertFalse(rules.isModified(EditorResetScope.Tool(tool), reset, context()))
         }
-        assertEquals(source.copy(pointColor = PointColorSettings()), candidate(EditorResetScope.Tool(28), source))
-        assertEquals(source.copy(selectiveColor = SelectiveColorSettings()), candidate(EditorResetScope.Tool(29), source))
-        assertEquals(source.copy(bwMixer = BwMixerSettings()), candidate(EditorResetScope.Tool(30), source))
-        assertEquals(source.copy(calibration = CameraCalibrationSettings()), candidate(EditorResetScope.Tool(31), source))
+        assertEquals(source.copy(pointColor = PointColorSettings()), candidate(EditorResetScope.Tool(29), source))
+        assertEquals(source.copy(selectiveColor = SelectiveColorSettings()), candidate(EditorResetScope.Tool(30), source))
+        assertEquals(source.copy(bwMixer = BwMixerSettings()), candidate(EditorResetScope.Tool(31), source))
+        assertEquals(source.copy(calibration = CameraCalibrationSettings()), candidate(EditorResetScope.Tool(32), source))
         val colorReset = candidate(EditorResetScope.Group(EditorAdjustmentGroup.COLOR), source)
         assertEquals(EditSettings(), colorReset)
     }
