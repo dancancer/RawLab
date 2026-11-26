@@ -71,6 +71,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private(set) var legacyFullReads: [String: Int] = [:]
     private(set) var bytesReadByName: [String: Int] = [:]
     private(set) var objectInfoCalls = 0
+    private(set) var deviceInfoCalls = 0
     private(set) var shutterCommands = 0
     private(set) var recorded9207: [(UInt32, UInt32)] = []
     var tetherControls: [UInt16] = [0xd2c1, 0xd2c2]
@@ -303,6 +304,7 @@ final class FakeSonyCameraChannel: CameraByteChannel {
     private func respond(op: UInt16, tid: UInt32, params: [UInt32]) throws -> (() -> Void)? {
         switch op {
         case 0x1001:
+            deviceInfoCalls += 1
             appendResponse(tid, data: deviceDataset())
         case 0x1002, 0x9201, 0x9212:
             appendResponse(tid)
@@ -559,6 +561,7 @@ struct CameraSkipAndLimitTests {
             ("testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem", testI13BadHeaderContinuesAndSkipsWithoutAdvancingCheckpointPastBadItem),
             ("testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort", testI13PerObjectPTPErrorContinuesWhileConnectionErrorsAbort),
             ("testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable", testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable),
+            ("testImportIdleHeartbeatKeepsSessionAndSurfacesDrop", testImportIdleHeartbeatKeepsSessionAndSurfacesDrop),
             ("testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload", testI14ReconnectDefaultCutoffAndOneTapSamplingSkipsFullDownload),
             ("testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack", testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack),
             ("testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy", testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy),
@@ -764,6 +767,30 @@ struct CameraSkipAndLimitTests {
                       "I13 control: SessionNotOpen (0x2003) aborts transfer and pauses session")
             controller.stop()
         }
+    }
+
+    @MainActor static func testImportIdleHeartbeatKeepsSessionAndSurfacesDrop() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-heartbeat-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = try CameraOriginalStore(directory: root)
+        let channel = FakeSonyCameraChannel(mode: .mobile, entries: [
+            FakeSonyCameraEntry(content: 1, name: "DSC00001.ARW", createdMillis: 1_700_000_000_000, bytes: validRAWBytes(7))
+        ])
+        let backend = CameraWorkspaceBackend(storage: store, clientID: UUID(), openSession: { _, purpose, _ in
+            try SonyCameraSession(client: CameraPTPClient(command: channel, event: nil), purpose: purpose)
+        }, importHeartbeatInterval: 0.1)
+        let controller = IOSCameraController(backend: backend)
+        controller.connect(endpoint: IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:FAKE", label: "Fake"),
+                           mode: .importing, cardConfirmed: false, resume: false)
+        try await waitUntil { controller.phase == .browsing }
+        let afterConnect = channel.deviceInfoCalls
+        try await waitUntil { channel.deviceInfoCalls >= afterConnect + 3 }
+        try check(controller.connected && controller.phase == .browsing && !channel.closed,
+                  "Idle import session sends read-only GetDeviceInfo heartbeats and stays connected")
+        channel.close()
+        try await waitUntil { controller.phase == .paused }
+        try check(!controller.connected, "A dropped idle import session is surfaced without waiting for the next user action")
+        controller.stop()
     }
 
     @MainActor static func testI15PhotoLimitExceededOnMobileAndLegacyKeepsConnectionUsable() async throws {

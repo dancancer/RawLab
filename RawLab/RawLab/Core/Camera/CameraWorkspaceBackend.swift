@@ -236,6 +236,7 @@ final class CameraWorkspaceBackend {
     private var active: IOSCameraRun?
     private let clientID: UUID
     private let shutterTimeout: TimeInterval
+    private let importHeartbeatInterval: TimeInterval
     private let photoLibrarySaver: CameraPhotoLibrarySaving?
     private let directChannelOpener: CameraDirectChannelOpener?
     private let sessionOpener: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)?
@@ -255,9 +256,11 @@ final class CameraWorkspaceBackend {
          openSession: ((IOSCameraRun, CameraSessionPurpose, UUID) throws -> SonyCameraSession)? = nil,
          sshTransport: CameraSSHTransporting? = CameraWorkspaceBackend.defaultSSHTransport(),
          authStore: CameraAccessAuthStoring = KeychainCameraAccessAuthStore(),
-         directChannelOpener: CameraDirectChannelOpener? = nil) {
+         directChannelOpener: CameraDirectChannelOpener? = nil,
+         importHeartbeatInterval: TimeInterval = 10) {
         self.storage = storage
         self.shutterTimeout = shutterTimeout
+        self.importHeartbeatInterval = importHeartbeatInterval
         self.photoLibrarySaver = photoLibrarySaver
         self.directChannelOpener = directChannelOpener
         self.sessionOpener = openSession
@@ -543,6 +546,7 @@ final class CameraWorkspaceBackend {
         if run.mode == .importing {
             let assets = try session.listAssets()
             run.knownAssets = assets; run.emit(.assets(assets)); run.emit(.phase(.browsing))
+            scheduleImportHeartbeat(run)
             return
         }
         guard !resumeTether || session.family != nil else { throw CameraProtocolError.tetherRecoveryRequired }
@@ -662,6 +666,17 @@ final class CameraWorkspaceBackend {
                 }
             }
             stream?.close()
+        }
+    }
+
+    /// 联机拍摄靠 1.5 s 轮询保活；导入挑片时会话完全空闲，相机会按空闲断开，用户一停下来就得重连。
+    /// 心跳排在同一串行 owner 队列上，天然与导入、缩略图读取互斥；完整错误响应仍说明会话在线。
+    private func scheduleImportHeartbeat(_ run: IOSCameraRun) {
+        queue.asyncAfter(deadline: .now() + importHeartbeatInterval) { [weak self] in
+            guard let self, self.owns(run) else { return }
+            do { try run.currentSession().keepAlive(); self.scheduleImportHeartbeat(run) }
+            catch CameraProtocolError.response { self.scheduleImportHeartbeat(run) }
+            catch { self.failure(error, run: run) }
         }
     }
 
