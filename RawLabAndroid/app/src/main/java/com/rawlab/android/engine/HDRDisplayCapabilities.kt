@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.os.Build
 import android.view.Display
-import android.view.SurfaceView
 import android.view.Window
 import java.util.concurrent.Executor
 import java.util.function.Consumer
@@ -80,14 +79,17 @@ internal class HDRDisplayController internal constructor(private val host: HDRWi
     private var registeredDisplay: HDRDisplayHost? = null
     private var ratioRegistration: AutoCloseable? = null
     private var lastSurfaceReady = false
-    private var lastSurface: SurfaceView? = null
-    private var lastContentHeadroom = 1f
     private var appliedColorMode: Int? = null
     private var appliedDesiredHeadroom: Float? = null
     private var closed = false
 
-    fun refresh(surfaceReady: Boolean, surface: SurfaceView? = null, contentHeadroom: Float = 1f): HDRDisplayState {
-        lastSurfaceReady = surfaceReady; lastSurface = surface; lastContentHeadroom = contentHeadroom
+    fun invalidateWindowMode() {
+        appliedColorMode = null
+        appliedDesiredHeadroom = null
+    }
+
+    fun refresh(surfaceReady: Boolean): HDRDisplayState {
+        lastSurfaceReady = surfaceReady
         if (closed) return HDRDisplayState(false, 1f, "Controller is closed")
         if (host.sdkInt < 34) return fallback("HDR UI requires API 34")
         val target = host.currentDisplay() ?: return fallback("No presentation display")
@@ -96,25 +98,14 @@ internal class HDRDisplayController internal constructor(private val host: HDRWi
         if (!surfaceReady) return fallback("FP16/scRGB surface is unavailable")
         if (!target.isHdrSdrRatioAvailable) return fallback("Display HDR/SDR ratio unavailable")
 
-        // Configure HDR mode and unconstrained headroom BEFORE reading hdrSdrRatio so a transient 1.0 ratio
-        // never ratchets or locks the window out of HDR recovery.
-        applyWindowMode(ActivityInfo.COLOR_MODE_HDR, 0f)
+        // Request unconstrained system HDR headroom (0f on API 35+) BEFORE reading hdrSdrRatio:
+        // an HDR editor can boost underexposed RAWs (sourceHeadroom == 1f) or push highlights above
+        // sourceHeadroom, and keeping the cap fixed avoids brightness pumping during edits while
+        // matching iOS/macOS and Android 14 behavior.
+        applyWindowMode(ActivityInfo.COLOR_MODE_HDR)
         ensureRatioListenerRegistered(target)
 
         val ratio = quantizedHdrHeadroom(target.hdrSdrRatio)
-        if (surface != null) {
-            runCatching {
-                if (host.sdkInt >= 35 && Build.VERSION.SDK_INT >= 35) {
-                    surface.setDesiredHdrHeadroom(0f)
-                } else if (Build.VERSION.SDK_INT >= 34) {
-                    surface.surfaceControl.let { control ->
-                        val desired = contentHeadroom.takeIf { it.isFinite() && it > 1f } ?: maxOf(2f, ratio)
-                        val current = ratio.coerceIn(1f, desired)
-                        android.view.SurfaceControl.Transaction().setExtendedRangeBrightness(control, current, desired).apply()
-                    }
-                }
-            }.onFailure { return fallback("Surface HDR headroom unavailable") }
-        }
         return HDRDisplayState(
             available = true,
             headroom = ratio,
@@ -137,26 +128,26 @@ internal class HDRDisplayController internal constructor(private val host: HDRWi
         unregisterRatioRegistration()
         val registration = target.registerRatioListener(executor) {
             if (!closed) {
-                ratioChanged?.invoke(refresh(lastSurfaceReady, lastSurface, lastContentHeadroom))
+                ratioChanged?.invoke(refresh(lastSurfaceReady))
             }
         } ?: return
         ratioRegistration = registration
         registeredDisplay = target
     }
 
-    private fun applyWindowMode(colorMode: Int, desiredHeadroom: Float) {
-        if (appliedColorMode != colorMode) {
+    private fun applyWindowMode(colorMode: Int, force: Boolean = false) {
+        if (force || appliedColorMode != colorMode) {
             host.setColorMode(colorMode)
             appliedColorMode = colorMode
         }
-        if (host.sdkInt >= 35 && appliedDesiredHeadroom != desiredHeadroom) {
-            host.setDesiredHdrHeadroom(desiredHeadroom)
-            appliedDesiredHeadroom = desiredHeadroom
+        if (host.sdkInt >= 35 && (force || appliedDesiredHeadroom != 0f)) {
+            host.setDesiredHdrHeadroom(0f)
+            appliedDesiredHeadroom = 0f
         }
     }
 
     private fun fallback(reason: String): HDRDisplayState {
-        applyWindowMode(ActivityInfo.COLOR_MODE_DEFAULT, 0f)
+        applyWindowMode(ActivityInfo.COLOR_MODE_DEFAULT)
         return HDRDisplayState(false, 1f, reason)
     }
 
@@ -175,7 +166,7 @@ internal class HDRDisplayController internal constructor(private val host: HDRWi
     override fun close() {
         closed = true
         unregisterRatioChanges()
-        applyWindowMode(ActivityInfo.COLOR_MODE_DEFAULT, 0f)
+        applyWindowMode(ActivityInfo.COLOR_MODE_DEFAULT, force = true)
     }
 }
 

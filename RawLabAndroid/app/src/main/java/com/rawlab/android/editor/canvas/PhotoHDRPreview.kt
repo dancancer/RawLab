@@ -48,9 +48,12 @@ internal fun rememberPhotoHDRPreview(frame: HDRPreviewFrame?, resetKey: Any? = n
     var falseColor by remember { mutableStateOf(false) }
     var resumeTick by remember { mutableIntStateOf(0) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle) {
+    DisposableEffect(lifecycle, controller) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+            if (event == Lifecycle.Event.ON_RESUME) {
+                controller?.invalidateWindowMode()
+                resumeTick++
+            }
         }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
@@ -58,7 +61,6 @@ internal fun rememberPhotoHDRPreview(frame: HDRPreviewFrame?, resetKey: Any? = n
     LaunchedEffect(frame, controller, mode, hardwareCanvas, resumeTick) {
         display = controller?.refresh(
             surfaceReady = frame != null && hardwareCanvas && mode == HDRPreviewMode.AUTOMATIC,
-            contentHeadroom = frame?.contentHeadroom ?: 1f,
         ) ?: HDRDisplayState(false, 1f, "No activity window")
     }
     DisposableEffect(controller) {

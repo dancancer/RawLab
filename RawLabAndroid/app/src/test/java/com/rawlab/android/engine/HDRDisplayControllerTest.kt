@@ -34,10 +34,6 @@ private class FakeDisplayHost(
         hdrSdrRatio = newRatio
         activeListener?.invoke()
     }
-
-    fun emitStaleCallback(callback: () -> Unit) {
-        callback()
-    }
 }
 
 private class FakeWindowHost(
@@ -62,16 +58,16 @@ class HDRDisplayControllerTest {
     private val immediateExecutor = Executor { it.run() }
 
     @Test
-    fun api35RequestsUnconstrainedDesiredHeadroomEvenWhenContentDropsToSdr() {
+    fun api35RequestsUnconstrainedDesiredHeadroomRegardlessOfRefreshCalls() {
         val display = FakeDisplayHost(hdrSdrRatio = 4.0f)
         val window = FakeWindowHost(sdkInt = 35, displayHost = display)
         val controller = HDRDisplayController(window)
 
-        val high = controller.refresh(surfaceReady = true, contentHeadroom = 4.0f)
-        val dimmed = controller.refresh(surfaceReady = true, contentHeadroom = 1.0f)
+        val first = controller.refresh(surfaceReady = true)
+        val second = controller.refresh(surfaceReady = true)
 
-        assertTrue(high.available)
-        assertTrue(dimmed.available)
+        assertTrue(first.available)
+        assertTrue(second.available)
         assertEquals(listOf(ActivityInfo.COLOR_MODE_HDR), window.colorModes)
         assertEquals(listOf(0f), window.desiredHeadrooms)
     }
@@ -84,7 +80,7 @@ class HDRDisplayControllerTest {
         val updates = mutableListOf<HDRDisplayState>()
 
         controller.registerRatioChanges(immediateExecutor) { updates += it }
-        val initial = controller.refresh(surfaceReady = true, contentHeadroom = 4.0f)
+        val initial = controller.refresh(surfaceReady = true)
         assertTrue(initial.available)
         assertEquals(3.0f, initial.headroom, 1e-4f)
         assertNull(initial.reason)
@@ -112,9 +108,9 @@ class HDRDisplayControllerTest {
         val updates = mutableListOf<HDRDisplayState>()
 
         controller.registerRatioChanges(immediateExecutor) { updates += it }
-        assertFalse(controller.refresh(surfaceReady = false, contentHeadroom = 4.0f).available)
+        assertFalse(controller.refresh(surfaceReady = false).available)
 
-        val entered = controller.refresh(surfaceReady = true, contentHeadroom = 4.0f)
+        val entered = controller.refresh(surfaceReady = true)
         assertTrue(entered.available)
         assertEquals(1.0f, entered.headroom, 1e-4f)
         assertEquals(ActivityInfo.COLOR_MODE_HDR, window.colorModes.last())
@@ -146,7 +142,7 @@ class HDRDisplayControllerTest {
         )
         for (window in cases) {
             val controller = HDRDisplayController(window)
-            val state = controller.refresh(surfaceReady = true, contentHeadroom = 4.0f)
+            val state = controller.refresh(surfaceReady = true)
             assertFalse(state.available)
             assertEquals(1.0f, state.headroom, 1e-6f)
             assertEquals(ActivityInfo.COLOR_MODE_DEFAULT, window.colorModes.last())
@@ -157,7 +153,7 @@ class HDRDisplayControllerTest {
     }
 
     @Test
-    fun closeAndFallbackResetDesiredHeadroomAndUnregisterListener() {
+    fun closeExplicitlyResetsWindowModeAndDesiredHeadroomAndUnregistersListener() {
         var capturedCallback: (() -> Unit)? = null
         val display = object : HDRDisplayHost {
             override val hasHdrTypes = true
@@ -174,15 +170,34 @@ class HDRDisplayControllerTest {
         val updates = mutableListOf<HDRDisplayState>()
 
         controller.registerRatioChanges(immediateExecutor) { updates += it }
-        assertTrue(controller.refresh(surfaceReady = true, contentHeadroom = 4.0f).available)
+        assertTrue(controller.refresh(surfaceReady = true).available)
+        window.colorModes.clear()
+        window.desiredHeadrooms.clear()
 
         controller.close()
         assertTrue(display.unregistered)
-        assertEquals(ActivityInfo.COLOR_MODE_DEFAULT, window.colorModes.last())
-        assertEquals(0f, window.desiredHeadrooms.last(), 1e-6f)
+        assertEquals(listOf(ActivityInfo.COLOR_MODE_DEFAULT), window.colorModes)
+        assertEquals(listOf(0f), window.desiredHeadrooms)
 
         capturedCallback?.invoke()
         assertTrue(updates.isEmpty())
+    }
+
+    @Test
+    fun invalidateWindowModeForcesReapplyOnNextRefresh() {
+        val display = FakeDisplayHost(hdrSdrRatio = 3.0f)
+        val window = FakeWindowHost(sdkInt = 35, displayHost = display)
+        val controller = HDRDisplayController(window)
+
+        controller.refresh(surfaceReady = true)
+        controller.refresh(surfaceReady = true)
+        assertEquals(1, window.colorModes.size)
+        assertEquals(1, window.desiredHeadrooms.size)
+
+        controller.invalidateWindowMode()
+        controller.refresh(surfaceReady = true)
+        assertEquals(listOf(ActivityInfo.COLOR_MODE_HDR, ActivityInfo.COLOR_MODE_HDR), window.colorModes)
+        assertEquals(listOf(0f, 0f), window.desiredHeadrooms)
     }
 
     @Test
@@ -196,25 +211,11 @@ class HDRDisplayControllerTest {
         assertEquals(0, display.registerCalls)
 
         window.displayHost = display
-        assertTrue(controller.refresh(surfaceReady = true, contentHeadroom = 2.0f).available)
+        assertTrue(controller.refresh(surfaceReady = true).available)
         assertEquals(1, display.registerCalls)
 
         display.emitRatioChange(3.5f)
         assertEquals(3.5f, updates.single().headroom, 1e-4f)
-    }
-
-    @Test
-    fun repeatedRefreshDoesNotSpamWindowAttributes() {
-        val display = FakeDisplayHost(hdrSdrRatio = 3.0f)
-        val window = FakeWindowHost(sdkInt = 35, displayHost = display)
-        val controller = HDRDisplayController(window)
-
-        controller.refresh(surfaceReady = true, contentHeadroom = 2.0f)
-        controller.refresh(surfaceReady = true, contentHeadroom = 4.0f)
-        controller.refresh(surfaceReady = true, contentHeadroom = 1.2f)
-
-        assertEquals(1, window.colorModes.size)
-        assertEquals(1, window.desiredHeadrooms.size)
     }
 
     @Test
