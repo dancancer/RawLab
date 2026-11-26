@@ -99,10 +99,10 @@ public partial class MainWindow
         pointColorProbeEnabled = false;
         pointColorProbeNotice = null;
         settings.PointColor = new PointColorSettings(updated);
-        PointColorEditor.SelectSwatch(updated.Count - 1);
         interacting = false;
         MarkEdited();
         RefreshControls();
+        PointColorEditor.SelectSwatch(updated.Count - 1);
         Schedule();
     }
 }

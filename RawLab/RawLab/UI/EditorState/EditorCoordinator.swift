@@ -762,7 +762,16 @@ final class EditorCoordinator: ObservableObject {
     }
 
     func normalizeHDRNavigation(isHDREditing: Bool) {
-        guard !isHDREditing else { return }
+        if isHDREditing {
+            if selectedColorScienceTool != nil {
+                selectedColorScienceTool = nil
+                selectedAdjustment = .exposure
+                selectedGroup = .light
+                selectedHDRRenditionTool = nil
+                pointColorEyedropperEnabled = false
+            }
+            return
+        }
         if selectedGroup == .hdrRendition || selectedHDRRenditionTool != nil {
             selectedGroup = .light
             selectedHDRRenditionTool = nil

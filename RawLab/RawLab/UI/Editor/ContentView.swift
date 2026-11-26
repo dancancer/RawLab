@@ -237,6 +237,8 @@ struct ContentView: View {
                             coordinator.selectedGroup = .light
                             coordinator.selectedAdjustment = .exposure
                             coordinator.selectedHDRRenditionTool = nil
+                            coordinator.selectedColorScienceTool = nil
+                            coordinator.pointColorEyedropperEnabled = false
                         }
                     }
                 }
@@ -275,6 +277,8 @@ struct ContentView: View {
                 coordinator.selectedGroup = .light
                 coordinator.selectedAdjustment = .exposure
                 coordinator.selectedHDRRenditionTool = nil
+                coordinator.selectedColorScienceTool = nil
+                coordinator.pointColorEyedropperEnabled = false
             } else {
                 coordinator.normalizeHDRNavigation(isHDREditing: restored.isHDREditing)
             }

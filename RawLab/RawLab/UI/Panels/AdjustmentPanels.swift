@@ -66,7 +66,7 @@ extension ContentView {
             ), onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
-        } else if coordinator.selectedColorScienceTool == .pointColor {
+        } else if coordinator.selectedColorScienceTool == .pointColor && !workingSettings.isHDREditing {
             IOSPointColorControls(
                 settings: Binding(get: { workingSettings.pointColorSettings }, set: { workingSettings.pointColorSettings = $0 }),
                 selectedIndex: $coordinator.selectedPointColorSwatchIndex,
@@ -75,20 +75,20 @@ extension ContentView {
                 onEditingChanged: setSliderEditing
             )
             .disabled(!viewModel.hasImage || editingLocked)
-        } else if coordinator.selectedColorScienceTool == .selectiveColor {
+        } else if coordinator.selectedColorScienceTool == .selectiveColor && !workingSettings.isHDREditing {
             IOSSelectiveColorControls(
                 settings: Binding(get: { workingSettings.selectiveColorSettings }, set: { workingSettings.selectiveColorSettings = $0 }),
                 selectedBandIndex: $coordinator.selectedSelectiveColorBandIndex,
                 onEditingChanged: setSliderEditing
             )
             .disabled(!viewModel.hasImage || editingLocked)
-        } else if coordinator.selectedColorScienceTool == .bwMixer {
+        } else if coordinator.selectedColorScienceTool == .bwMixer && !workingSettings.isHDREditing {
             IOSBwMixerControls(
                 settings: Binding(get: { workingSettings.bwMixerSettings }, set: { workingSettings.bwMixerSettings = $0 }),
                 onEditingChanged: setSliderEditing
             )
             .disabled(!viewModel.hasImage || editingLocked)
-        } else if coordinator.selectedColorScienceTool == .cameraCalibration {
+        } else if coordinator.selectedColorScienceTool == .cameraCalibration && !workingSettings.isHDREditing {
             IOSCameraCalibrationControls(
                 settings: Binding(get: { workingSettings.calibrationSettings }, set: { workingSettings.calibrationSettings = $0 }),
                 onEditingChanged: setSliderEditing

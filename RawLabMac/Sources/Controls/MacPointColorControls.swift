@@ -205,40 +205,42 @@ private struct MacPointColorSwatchDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             previewHeader
-            ParameterRow(title: L10n.text("色相偏移"), value: shiftBinding(\.hueShift),
-                         range: Self.spec.shiftRange, defaultValue: 0,
-                         identifier: "pointColor.value.hueShift", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).hueShift.\(resetVersion)")
-            ParameterRow(title: L10n.text("饱和度偏移"), value: shiftBinding(\.saturationShift),
-                         range: Self.spec.shiftRange, defaultValue: 0,
-                         identifier: "pointColor.value.saturationShift", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).satShift.\(resetVersion)")
-            ParameterRow(title: L10n.text("明亮度偏移"), value: shiftBinding(\.luminanceShift),
-                         range: Self.spec.shiftRange, defaultValue: 0,
-                         identifier: "pointColor.value.luminanceShift", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).lumShift.\(resetVersion)")
-            ParameterRow(title: L10n.text("方差"), value: shiftBinding(\.variance),
-                         range: Self.spec.shiftRange, defaultValue: 0,
-                         identifier: "pointColor.value.variance", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).variance.\(resetVersion)")
-            ParameterRow(title: L10n.text("范围"), value: rangeBinding(\.range),
-                         range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
-                         identifier: "pointColor.value.range", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).range.\(resetVersion)")
-            ParameterRow(title: L10n.text("色相范围"), value: rangeBinding(\.hueRange),
-                         range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
-                         identifier: "pointColor.value.hueRange", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).hueRange.\(resetVersion)")
-            ParameterRow(title: L10n.text("饱和度范围"), value: rangeBinding(\.satRange),
-                         range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
-                         identifier: "pointColor.value.satRange", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).satRange.\(resetVersion)")
-            ParameterRow(title: L10n.text("明亮度范围"), value: rangeBinding(\.lumRange),
-                         range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
-                         identifier: "pointColor.value.lumRange", onEditingChanged: onEditingChanged)
-                .id("pointColor.\(swatchIndex).lumRange.\(resetVersion)")
+            VStack(alignment: .leading, spacing: 6) {
+                ParameterRow(title: L10n.text("色相偏移"), value: shiftBinding(\.hueShift),
+                             range: Self.spec.shiftRange, defaultValue: 0,
+                             identifier: "pointColor.value.hueShift", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).hueShift.\(resetVersion)")
+                ParameterRow(title: L10n.text("饱和度偏移"), value: shiftBinding(\.saturationShift),
+                             range: Self.spec.shiftRange, defaultValue: 0,
+                             identifier: "pointColor.value.saturationShift", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).satShift.\(resetVersion)")
+                ParameterRow(title: L10n.text("明亮度偏移"), value: shiftBinding(\.luminanceShift),
+                             range: Self.spec.shiftRange, defaultValue: 0,
+                             identifier: "pointColor.value.luminanceShift", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).lumShift.\(resetVersion)")
+                ParameterRow(title: L10n.text("方差"), value: shiftBinding(\.variance),
+                             range: Self.spec.shiftRange, defaultValue: 0,
+                             identifier: "pointColor.value.variance", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).variance.\(resetVersion)")
+                ParameterRow(title: L10n.text("范围"), value: rangeBinding(\.range),
+                             range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
+                             identifier: "pointColor.value.range", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).range.\(resetVersion)")
+                ParameterRow(title: L10n.text("色相范围"), value: rangeBinding(\.hueRange),
+                             range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
+                             identifier: "pointColor.value.hueRange", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).hueRange.\(resetVersion)")
+                ParameterRow(title: L10n.text("饱和度范围"), value: rangeBinding(\.satRange),
+                             range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
+                             identifier: "pointColor.value.satRange", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).satRange.\(resetVersion)")
+                ParameterRow(title: L10n.text("明亮度范围"), value: rangeBinding(\.lumRange),
+                             range: Self.spec.rangeControlRange, defaultValue: Self.spec.rangeControlDefault,
+                             identifier: "pointColor.value.lumRange", onEditingChanged: onEditingChanged)
+                    .id("pointColor.\(swatchIndex).lumRange.\(resetVersion)")
+            }
+            .disabled(!swatch.enabled)
         }
-        .disabled(!swatch.enabled)
     }
 
     private var previewHeader: some View {

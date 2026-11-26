@@ -163,40 +163,42 @@ private struct IOSPointColorSwatchDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             previewHeader
-            AdjustmentControl(title: L10n.text("色相偏移"), value: shiftBinding(\.hueShift),
-                              range: Self.spec.shiftRange, step: 1, defaultValue: 0,
-                              formatter: Self.formatValue, identifier: "pointColor.hueShift",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("饱和度偏移"), value: shiftBinding(\.saturationShift),
-                              range: Self.spec.shiftRange, step: 1, defaultValue: 0,
-                              formatter: Self.formatValue, identifier: "pointColor.saturationShift",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("明亮度偏移"), value: shiftBinding(\.luminanceShift),
-                              range: Self.spec.shiftRange, step: 1, defaultValue: 0,
-                              formatter: Self.formatValue, identifier: "pointColor.luminanceShift",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("方差"), value: shiftBinding(\.variance),
-                              range: Self.spec.shiftRange, step: 1, defaultValue: 0,
-                              formatter: Self.formatValue, identifier: "pointColor.variance",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("范围"), value: rangeBinding(\.range),
-                              range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
-                              formatter: Self.formatValue, identifier: "pointColor.range",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("色相范围"), value: rangeBinding(\.hueRange),
-                              range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
-                              formatter: Self.formatValue, identifier: "pointColor.hueRange",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("饱和度范围"), value: rangeBinding(\.satRange),
-                              range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
-                              formatter: Self.formatValue, identifier: "pointColor.satRange",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
-            AdjustmentControl(title: L10n.text("明亮度范围"), value: rangeBinding(\.lumRange),
-                              range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
-                              formatter: Self.formatValue, identifier: "pointColor.lumRange",
-                              compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+            VStack(alignment: .leading, spacing: 6) {
+                AdjustmentControl(title: L10n.text("色相偏移"), value: shiftBinding(\.hueShift),
+                                  range: Self.spec.shiftRange, step: 1, defaultValue: 0,
+                                  formatter: Self.formatValue, identifier: "pointColor.hueShift",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("饱和度偏移"), value: shiftBinding(\.saturationShift),
+                                  range: Self.spec.shiftRange, step: 1, defaultValue: 0,
+                                  formatter: Self.formatValue, identifier: "pointColor.saturationShift",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("明亮度偏移"), value: shiftBinding(\.luminanceShift),
+                                  range: Self.spec.shiftRange, step: 1, defaultValue: 0,
+                                  formatter: Self.formatValue, identifier: "pointColor.luminanceShift",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("方差"), value: shiftBinding(\.variance),
+                                  range: Self.spec.shiftRange, step: 1, defaultValue: 0,
+                                  formatter: Self.formatValue, identifier: "pointColor.variance",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("范围"), value: rangeBinding(\.range),
+                                  range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
+                                  formatter: Self.formatValue, identifier: "pointColor.range",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("色相范围"), value: rangeBinding(\.hueRange),
+                                  range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
+                                  formatter: Self.formatValue, identifier: "pointColor.hueRange",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("饱和度范围"), value: rangeBinding(\.satRange),
+                                  range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
+                                  formatter: Self.formatValue, identifier: "pointColor.satRange",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+                AdjustmentControl(title: L10n.text("明亮度范围"), value: rangeBinding(\.lumRange),
+                                  range: Self.spec.rangeControlRange, step: 1, defaultValue: Self.spec.rangeControlDefault,
+                                  formatter: Self.formatValue, identifier: "pointColor.lumRange",
+                                  compactNumber: false, compactDecimals: nil, onEditingChanged: onEditingChanged)
+            }
+            .disabled(!swatch.enabled)
         }
-        .disabled(!swatch.enabled)
     }
 
     private var previewHeader: some View {
