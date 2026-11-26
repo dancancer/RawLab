@@ -58,7 +58,8 @@
    平台覆盖（区分本机实跑、Hosted CI 与待真机/硬件项）及风险清单。
 5. **门禁与合入**：合入前核实源提交、目标分支、冲突状态及 CI 结果；不得把本地通过称作
    CI 通过，不绕过保护规则。**独立 / carbon 评审仅对触及 [CODEOWNERS](.github/CODEOWNERS)
-   高风险目录（`/lutools/include/`、`/Shared/specs/`、`/Shared/fixtures/`、`/lutools/src/gpu/*shader*`）的 PR 强制执行**；
+   高风险路径的 PR 强制执行**（以该文件为准，当前包括 `/lutools/include/`、`/Shared/specs/`、`/Shared/fixtures/`、
+   `/Shared/version.json`、`/lutools/src/gpu/*shader*`、`/lutools/docs/edit-json-*.schema.json` 和 `/scripts/ci/`）；
    其他 PR 按常规自测、验证锚点与 CI 门禁合入。目标分支变化影响本次代码时，先更新分支并重验受影响流程。
    仅在用户明确授权合入后执行合并，完成后核实远端目标已包含提交；清理 worktree 或分支前
    确认不含未保存工作和必要产物。
@@ -70,7 +71,7 @@
 
 多功能迭代通过 [集成协作规范](docs/process/integration-workflow.md) 统一规划依赖、共享文件 owner、
 阶段合入、复评和验证资源。执行状态、任务表、看板与逐 PR 流水账统一维护在 GitHub Issues / Projects，
-不在仓库内维护跟踪台账文件；涉及 [CODEOWNERS](.github/CODEOWNERS) 高风险目录的改动须完成独立 / carbon 复核。
+不在仓库内维护跟踪台账文件；涉及 [CODEOWNERS](.github/CODEOWNERS) 高风险路径的改动须完成独立 / carbon 复核。
 协作细则只在该文档维护；本文件的全局原则、Gitflow 和授权规则继续适用。
 
 ## 版本发布
