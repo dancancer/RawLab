@@ -322,10 +322,80 @@ struct Harness {
         if let v = num(sdrValues["effects.grain.amount"]) { effects.grainAmount = v }
         if let v = num(sdrValues["effects.grain.size"]) { effects.grainSize = v }
         if let v = num(sdrValues["effects.grain.roughness"]) { effects.grainRoughness = v }
+        if let rawCurve = sdrValues["effects.grain.tone_curve"] as? String, let tc = GrainToneCurve(rawValue: rawCurve) {
+            effects.grainToneCurve = tc
+        }
+        if let rawPreset = sdrValues["effects.grain.format_preset"] as? String, let fp = GrainFormatPreset(rawValue: rawPreset) {
+            effects.grainFormatPreset = fp
+        }
         settings.effectSettings = effects
 
         if let v = num(sdrValues["effects.clarity"]) { settings.clarity = v }
         if let v = num(sdrValues["effects.dehaze"]) { settings.dehaze = v }
+        if let v = num(sdrValues["effects.texture"]) { settings.texture = v }
+        var cal = CameraCalibrationSettings()
+        if let v = num(sdrValues["color.calibration.shadow_tint"]) { cal.shadowTint = v }
+        if let v = num(sdrValues["color.calibration.red_hue"]) { cal.redHue = v }
+        if let v = num(sdrValues["color.calibration.red_saturation"]) { cal.redSaturation = v }
+        if let v = num(sdrValues["color.calibration.green_hue"]) { cal.greenHue = v }
+        if let v = num(sdrValues["color.calibration.green_saturation"]) { cal.greenSaturation = v }
+        if let v = num(sdrValues["color.calibration.blue_hue"]) { cal.blueHue = v }
+        if let v = num(sdrValues["color.calibration.blue_saturation"]) { cal.blueSaturation = v }
+        settings.calibrationSettings = cal
+        if let pcObj = sdrValues["color.point_color"] as? [String: Any],
+           let rawSwatches = pcObj["swatches"] as? [[String: Any]] {
+            let swatches = rawSwatches.map { sw in
+                PointColorSwatch(
+                    srcHue: num(sw["src_hue"]) ?? 0, srcSaturation: num(sw["src_saturation"]) ?? 0.5,
+                    srcLuminance: num(sw["src_luminance"]) ?? 0.5, hueShift: num(sw["hue_shift"]) ?? 0,
+                    saturationShift: num(sw["saturation_shift"]) ?? 0, luminanceShift: num(sw["luminance_shift"]) ?? 0,
+                    range: num(sw["range"]) ?? 50, hueRange: num(sw["hue_range"]) ?? 50,
+                    satRange: num(sw["sat_range"]) ?? 50, lumRange: num(sw["lum_range"]) ?? 50,
+                    variance: num(sw["variance"]) ?? 0, enabled: sw["enabled"] as? Bool ?? true
+                )
+            }
+            settings.pointColorSettings = PointColorSettings(swatches: swatches)
+        }
+        if let scObj = sdrValues["color.selective_color"] as? [String: Any] {
+            let method = SelectiveColorMethod(rawValue: scObj["method"] as? String ?? "relative") ?? .relative
+            let bandsObj = scObj["bands"] as? [String: [String: Any]] ?? [:]
+            func band(_ name: String) -> SelectiveColorBand {
+                let b = bandsObj[name] ?? [:]
+                return SelectiveColorBand(cyan: num(b["cyan"]) ?? 0, magenta: num(b["magenta"]) ?? 0,
+                                          yellow: num(b["yellow"]) ?? 0, black: num(b["black"]) ?? 0)
+            }
+            settings.selectiveColorSettings = SelectiveColorSettings(
+                method: method,
+                bands: .init(reds: band("reds"), yellows: band("yellows"), greens: band("greens"),
+                             cyans: band("cyans"), blues: band("blues"), magentas: band("magentas"),
+                             whites: band("whites"), neutrals: band("neutrals"), blacks: band("blacks"))
+            )
+        }
+        if sdrValues["color.bw.enabled"] != nil || sdrValues["color.bw.mixer"] != nil {
+            let bwEnabled = sdrValues["color.bw.enabled"] as? Bool ?? false
+            let mObj = sdrValues["color.bw.mixer"] as? [String: Any] ?? [:]
+            let mixer = BwMixerChannelWeights(
+                red: num(mObj["red"]) ?? 0, orange: num(mObj["orange"]) ?? 0, yellow: num(mObj["yellow"]) ?? 0,
+                green: num(mObj["green"]) ?? 0, aqua: num(mObj["aqua"]) ?? 0, blue: num(mObj["blue"]) ?? 0,
+                purple: num(mObj["purple"]) ?? 0, magenta: num(mObj["magenta"]) ?? 0
+            )
+            settings.bwMixerSettings = BwMixerSettings(enabled: bwEnabled, mixer: mixer)
+        }
+        var sh = SharpenV2Settings()
+        if let b = sdrValues["detail.sharpening.luminance_v2"] as? Bool { sh.luminanceV2 = b }
+        if let v = num(sdrValues["detail.sharpening.radius"]) { sh.radius = v }
+        if let v = num(sdrValues["detail.sharpening.detail"]) { sh.detail = v }
+        if let v = num(sdrValues["detail.sharpening.masking"]) { sh.masking = v }
+        settings.sharpenV2Settings = sh
+        var fo = FilmOpticsSettings()
+        if let v = num(sdrValues["effects.halation.amount"]) { fo.halationAmount = v }
+        if let v = num(sdrValues["effects.halation.threshold"]) { fo.halationThreshold = v }
+        if let v = num(sdrValues["effects.halation.radius"]) { fo.halationRadius = v }
+        if let v = num(sdrValues["effects.halation.hue"]) { fo.halationHue = v }
+        if let v = num(sdrValues["effects.bloom.amount"]) { fo.bloomAmount = v }
+        if let v = num(sdrValues["effects.bloom.threshold"]) { fo.bloomThreshold = v }
+        if let v = num(sdrValues["effects.bloom.radius"]) { fo.bloomRadius = v }
+        settings.filmOpticsSettings = fo
         if let v = num(sdrValues["detail.sharpening"]) { settings.sharpening = v }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { settings.displayChromaDenoise = v }
         if let wObj = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
@@ -364,6 +434,10 @@ struct Harness {
                 if let fl = num(extra["focal_length"]) { lens.focalLength = fl }
                 if let cf = num(extra["crop_factor"]) { lens.cropFactor = cf }
             }
+            if let v = num(sdrValues["geometry.lens.defringe_purple_amount"]) { lens.defringePurpleAmount = v }
+            if let v = num(sdrValues["geometry.lens.defringe_purple_hue"]) { lens.defringePurpleHue = v }
+            if let v = num(sdrValues["geometry.lens.defringe_green_amount"]) { lens.defringeGreenAmount = v }
+            if let v = num(sdrValues["geometry.lens.defringe_green_hue"]) { lens.defringeGreenHue = v }
             settings.lensCorrection = lens
         }
 
@@ -527,6 +601,51 @@ struct Harness {
         if let v = num(sdrValues["effects.grain.roughness"]) { verify(approx(s.effectSettings.grainRoughness, v), "effects.grain.roughness(exp=\(v),got=\(s.effectSettings.grainRoughness))") }
         if let v = num(sdrValues["effects.clarity"]) { verify(approx(s.clarity, v), "effects.clarity") }
         if let v = num(sdrValues["effects.dehaze"]) { verify(approx(s.dehaze, v), "effects.dehaze") }
+        if let v = num(sdrValues["effects.texture"]) { verify(approx(s.texture, v), "effects.texture") }
+        if let rawCurve = sdrValues["effects.grain.tone_curve"] as? String {
+            verify(s.effectSettings.grainToneCurve.rawValue == rawCurve, "effects.grain.tone_curve")
+        }
+        if let rawPreset = sdrValues["effects.grain.format_preset"] as? String {
+            verify(s.effectSettings.grainFormatPreset.rawValue == rawPreset, "effects.grain.format_preset")
+        }
+        if let v = num(sdrValues["color.calibration.shadow_tint"]) { verify(approx(s.calibrationSettings.shadowTint, v), "calibration.shadow_tint") }
+        if let v = num(sdrValues["color.calibration.red_hue"]) { verify(approx(s.calibrationSettings.redHue, v), "calibration.red_hue") }
+        if let v = num(sdrValues["color.calibration.red_saturation"]) { verify(approx(s.calibrationSettings.redSaturation, v), "calibration.red_saturation") }
+        if let v = num(sdrValues["color.calibration.green_hue"]) { verify(approx(s.calibrationSettings.greenHue, v), "calibration.green_hue") }
+        if let v = num(sdrValues["color.calibration.green_saturation"]) { verify(approx(s.calibrationSettings.greenSaturation, v), "calibration.green_saturation") }
+        if let v = num(sdrValues["color.calibration.blue_hue"]) { verify(approx(s.calibrationSettings.blueHue, v), "calibration.blue_hue") }
+        if let v = num(sdrValues["color.calibration.blue_saturation"]) { verify(approx(s.calibrationSettings.blueSaturation, v), "calibration.blue_saturation") }
+        if let pcObj = sdrValues["color.point_color"] as? [String: Any],
+           let expSwatches = pcObj["swatches"] as? [[String: Any]] {
+            verify(s.pointColorSettings.swatches.count == expSwatches.count, "point_color.swatches.count")
+            if let first = expSwatches.first, let got = s.pointColorSettings.swatches.first {
+                verify(approx(got.srcHue, num(first["src_hue"]) ?? -1) &&
+                       approx(got.hueShift, num(first["hue_shift"]) ?? -999) &&
+                       got.enabled == (first["enabled"] as? Bool ?? true), "point_color.first")
+            }
+        }
+        if let scObj = sdrValues["color.selective_color"] as? [String: Any] {
+            verify(s.selectiveColorSettings.method.rawValue == (scObj["method"] as? String ?? ""), "selective_color.method")
+            if let bands = scObj["bands"] as? [String: [String: Any]], let reds = bands["reds"] {
+                verify(approx(s.selectiveColorSettings.bands.reds.cyan, num(reds["cyan"]) ?? -999), "selective_color.reds.cyan")
+            }
+        }
+        if let b = sdrValues["color.bw.enabled"] as? Bool { verify(s.bwMixerSettings.enabled == b, "bw.enabled") }
+        if let mObj = sdrValues["color.bw.mixer"] as? [String: Any] {
+            if let r = num(mObj["red"]) { verify(approx(s.bwMixerSettings.mixer.red, r), "bw.mixer.red") }
+            if let bl = num(mObj["blue"]) { verify(approx(s.bwMixerSettings.mixer.blue, bl), "bw.mixer.blue") }
+        }
+        if let b = sdrValues["detail.sharpening.luminance_v2"] as? Bool { verify(s.sharpenV2Settings.luminanceV2 == b, "sharpen.luminance_v2") }
+        if let v = num(sdrValues["detail.sharpening.radius"]) { verify(approx(s.sharpenV2Settings.radius, v), "sharpen.radius") }
+        if let v = num(sdrValues["detail.sharpening.detail"]) { verify(approx(s.sharpenV2Settings.detail, v), "sharpen.detail") }
+        if let v = num(sdrValues["detail.sharpening.masking"]) { verify(approx(s.sharpenV2Settings.masking, v), "sharpen.masking") }
+        if let v = num(sdrValues["effects.halation.amount"]) { verify(approx(s.filmOpticsSettings.halationAmount, v), "halation.amount") }
+        if let v = num(sdrValues["effects.halation.threshold"]) { verify(approx(s.filmOpticsSettings.halationThreshold, v), "halation.threshold") }
+        if let v = num(sdrValues["effects.halation.radius"]) { verify(approx(s.filmOpticsSettings.halationRadius, v), "halation.radius") }
+        if let v = num(sdrValues["effects.halation.hue"]) { verify(approx(s.filmOpticsSettings.halationHue, v), "halation.hue") }
+        if let v = num(sdrValues["effects.bloom.amount"]) { verify(approx(s.filmOpticsSettings.bloomAmount, v), "bloom.amount") }
+        if let v = num(sdrValues["effects.bloom.threshold"]) { verify(approx(s.filmOpticsSettings.bloomThreshold, v), "bloom.threshold") }
+        if let v = num(sdrValues["effects.bloom.radius"]) { verify(approx(s.filmOpticsSettings.bloomRadius, v), "bloom.radius") }
         if let v = num(sdrValues["detail.sharpening"]) { verify(approx(s.sharpening, v), "detail.sharpening") }
         if let v = intVal(sdrValues["detail.denoise.chroma_mode"]) { verify(s.displayChromaDenoise == v, "detail.denoise.chroma_mode") }
         if let w = sdrValues["detail.denoise.wavelet"] as? [String: Any] {
@@ -548,6 +667,10 @@ struct Harness {
             verify(l.vignetting == (sdrValues["geometry.lens.vignetting"] as? Bool ?? false), "lens.vig")
             verify(l.autoCrop == (sdrValues["geometry.lens.auto_crop"] as? Bool ?? true), "lens.autoCrop")
             verify(l.profileID == (sdrValues["geometry.lens.profile_id"] as? String), "lens.profileID")
+            if let v = num(sdrValues["geometry.lens.defringe_purple_amount"]) { verify(approx(l.defringePurpleAmount, v), "lens.defringe_purple_amount") }
+            if let v = num(sdrValues["geometry.lens.defringe_purple_hue"]) { verify(approx(l.defringePurpleHue, v), "lens.defringe_purple_hue") }
+            if let v = num(sdrValues["geometry.lens.defringe_green_amount"]) { verify(approx(l.defringeGreenAmount, v), "lens.defringe_green_amount") }
+            if let v = num(sdrValues["geometry.lens.defringe_green_hue"]) { verify(approx(l.defringeGreenHue, v), "lens.defringe_green_hue") }
         }
 
         if let hdrCheck = hdrEditing ? hdrValues : dormantHDR {
@@ -1086,6 +1209,10 @@ struct Harness {
                     case "hdr.peak_limit_ev":
                         var hdr = settings["hdr"] as! [String: Any]
                         var r = hdr["rendition"] as! [String: Any]; r["peak_limit_ev"] = val; hdr["rendition"] = r; settings["hdr"] = hdr
+                    case "color.calibration.shadow_tint":
+                        var cal = settings["cameraCalibration"] as! [String: Any]; cal["shadowTint"] = val; settings["cameraCalibration"] = cal
+                    case "detail.sharpening.radius":
+                        var sh = settings["sharpenV2"] as! [String: Any]; sh["radius"] = val; settings["sharpenV2"] = sh
                     default: throw HarnessError.setup("Unhandled out_of_range field: \(field)")
                     }
                 case "crop_overflow":

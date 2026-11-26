@@ -41,7 +41,7 @@ internal sealed class AdjustmentSummary
             F.Contrast or F.Saturation => Percent(number - 1, true),
             F.Highlights => Percent(-number, true),
             F.Shadows or F.SCurve => Percent(number, true),
-            F.BlackPoint or F.WhitePoint or F.Vibrance or F.Clarity or F.Dehaze => NumberText(number, signed: true) + "%",
+            F.BlackPoint or F.WhitePoint or F.Vibrance or F.Clarity or F.Dehaze or F.Texture => NumberText(number, signed: true) + "%",
             F.HdrTemperature => NumberText(number) + " K（" + text("相对白平衡") + "）",
             F.HdrPeakLimit => number == 0 ? text("不限") : NumberText(number, signed: true) + " EV",
             F.HdrSDRExposure => NumberText(number, signed: true, minimum: 2) + " EV",
@@ -52,7 +52,23 @@ internal sealed class AdjustmentSummary
                 ? text(Text(payload[F.WhiteBalanceMode]) == "camera" ? "相机白平衡（按目标照片）" : "不适用")
                 : NumberText(number, signed: field == F.Tint) + (field == F.Temperature ? " K" : ""),
             F.Curve => CurveText(value),
-            F.CurveApplyToLuminosity => text(Boolean(value) == true ? "开启" : "停用"),
+            F.CurveApplyToLuminosity or F.BwEnabled or F.SharpeningLuminanceV2 => text(Boolean(value) == true ? "开启" : "停用"),
+            F.CalibrationShadowTint or F.CalibrationRedHue or F.CalibrationRedSaturation or
+            F.CalibrationGreenHue or F.CalibrationGreenSaturation or
+            F.CalibrationBlueHue or F.CalibrationBlueSaturation or F.HalationHue => NumberText(number, signed: true),
+            F.PointColor => PointColorValue(value) is { Swatches.Count: > 0 } pcVal
+                ? NumberText(pcVal.Swatches.Count) + " " + text("色板") : text("停用"),
+            F.SelectiveColor => text(SelectiveColorValue(value)?.Method == SelectiveColorMethod.Absolute ? "绝对" : "相对"),
+            F.BwMixer => BwMixerValue(value) is { } mx && mx.AsMap().Values.Count(v => v != 0) > 0
+                ? NumberText(mx.AsMap().Values.Count(v => v != 0)) : text("停用"),
+            F.GrainToneCurve => text(Text(value) == "negative_asymmetric" ? "负片非对称" : "传统曲线"),
+            F.GrainFormatPreset => text(Text(value) switch { "135" => "135 胶片", "120" => "120 中画幅", _ => "自定义" }),
+            F.SharpeningRadius => NumberText(number) + " px",
+            F.SharpeningDetail or F.SharpeningMasking or
+            F.HalationAmount or F.HalationThreshold or F.HalationRadius or
+            F.BloomAmount or F.BloomThreshold or F.BloomRadius => NumberText(number) + "%",
+            F.LensDefringePurpleAmount or F.LensDefringePurpleHue or
+            F.LensDefringeGreenAmount or F.LensDefringeGreenHue => NumberText(number),
             F.CurveParametric => ParametricText(value),
             F.GradingShadows or F.GradingMidtones or F.GradingHighlights or F.GradingGlobal => GradingText(value),
             F.GradingBlending => NumberText(number) + "%",
@@ -151,9 +167,18 @@ internal sealed class AdjustmentSummary
             fields.InsertRange(fields.IndexOf(anchor) + 1, moved);
         }
         MoveAfter(F.SCurve, F.Curve, F.CurveApplyToLuminosity, F.CurveParametric, F.BlackPoint, F.WhitePoint, F.Vibrance,
-            F.GradingShadows, F.GradingMidtones, F.GradingHighlights, F.GradingGlobal, F.GradingBlending, F.GradingBalance);
+            F.GradingShadows, F.GradingMidtones, F.GradingHighlights, F.GradingGlobal, F.GradingBlending, F.GradingBalance,
+            F.CalibrationShadowTint, F.CalibrationRedHue, F.CalibrationRedSaturation,
+            F.CalibrationGreenHue, F.CalibrationGreenSaturation,
+            F.CalibrationBlueHue, F.CalibrationBlueSaturation,
+            F.PointColor, F.SelectiveColor, F.BwEnabled, F.BwMixer);
         MoveAfter(F.Saturation, F.HdrTemperature, F.HdrTint);
-        MoveAfter(F.GrainAmount, F.Clarity, F.Dehaze);
+        MoveAfter(F.GrainAmount, F.Clarity, F.Dehaze, F.Texture);
+        MoveAfter(F.GrainRoughness, F.GrainToneCurve, F.GrainFormatPreset,
+            F.HalationAmount, F.HalationThreshold, F.HalationRadius, F.HalationHue,
+            F.BloomAmount, F.BloomThreshold, F.BloomRadius);
+        MoveAfter(F.Sharpening, F.SharpeningLuminanceV2, F.SharpeningRadius, F.SharpeningDetail, F.SharpeningMasking);
+        MoveAfter(F.LensProfile, F.LensDefringePurpleAmount, F.LensDefringePurpleHue, F.LensDefringeGreenAmount, F.LensDefringeGreenHue);
         return fields;
     }
 }

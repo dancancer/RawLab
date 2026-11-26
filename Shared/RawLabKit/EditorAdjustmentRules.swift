@@ -147,7 +147,13 @@ public enum EditorAdjustmentRules {
             case .colorGrading: return !settings.gradingSettings.isDefault
             case .hsl: return !settings.hslSettings.isIdentity
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
-            case .grain: return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
+            case .grain:
+                return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains {
+                    settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue
+                } || settings.effectSettings.grainToneCurve != .legacy
+                    || settings.effectSettings.grainFormatPreset != .custom
+            case .sharpening:
+                return settings.sharpening != 0 || !settings.sharpenV2Settings.isDefault
             case .denoise:
                 return settings.aiDenoiseEnabled || settings.aiDenoiseStrength != 100 || settings.rawNoiseReduction != 0 ||
                     settings.chromaNoiseReduction != 0 || settings.waveletNoiseReduction != WaveletDenoiseSettings()
@@ -166,6 +172,10 @@ public enum EditorAdjustmentRules {
             return HSLAxis.allCases.contains { settings.hslSettings.value($0, channel: channel) != 0 }
         case .group(let group):
             if group == .hdrRendition { return false }
+            if group == .color && (!settings.calibrationSettings.isDefault || !settings.pointColorSettings.isDefault
+                || !settings.selectiveColorSettings.isDefault || !settings.bwMixerSettings.isDefault) { return true }
+            if group == .effects && !settings.filmOpticsSettings.isDefault { return true }
+            if group == .detail && !settings.sharpenV2Settings.isDefault { return true }
             return group.tools.contains { isModified(scope: .tool($0), snapshot: snapshot, context: context) }
         }
     }
@@ -334,6 +344,9 @@ public enum EditorAdjustmentRules {
             case .hsl: result.hsl = nil
             case .vignette: result.resetEffect(.vignetteAmount)
             case .grain: result.resetEffect(.grainAmount)
+            case .sharpening:
+                result.sharpening = defaults.sharpening
+                result.sharpenV2 = nil
             case .denoise:
                 result.aiDenoiseEnabled = false; result.aiDenoiseStrength = 100
                 result.rawNoiseReduction = 0; result.chromaNoiseReduction = 0; result.waveletNoiseReduction = WaveletDenoiseSettings()
@@ -352,6 +365,13 @@ public enum EditorAdjustmentRules {
             result.lutID = nil; result.masterRecipeID = nil; result.strength = 1
         case .group(let group):
             for tool in group.tools { result = resetting(.tool(tool), settings: result, context: context) }
+            if group == .color {
+                result.cameraCalibration = nil; result.pointColor = nil; result.selectiveColor = nil; result.bwMixer = nil
+            } else if group == .effects {
+                result.atmosphere = nil; result.filmOptics = nil
+            } else if group == .detail {
+                result.sharpenV2 = nil
+            }
         }
         return result
     }

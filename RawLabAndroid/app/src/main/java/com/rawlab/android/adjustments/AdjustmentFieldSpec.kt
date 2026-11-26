@@ -140,6 +140,38 @@ object AdjustmentFieldSpec {
             const val coarseMin = 0.0
             const val coarseMax = 100.0
         }
+        object PointColor {
+            const val maxSwatches = 8
+            const val srcHueMin = 0.0
+            const val srcHueMax = 360.0
+            const val srcHueExclusiveMax = true
+            const val srcSaturationMin = 0.0
+            const val srcSaturationMax = 1.0
+            const val srcLuminanceMin = 0.0
+            const val srcLuminanceMax = 1.0
+            const val shiftMin = -100.0
+            const val shiftMax = 100.0
+            const val shiftDefault = 0.0
+            const val rangeControlMin = 0.0
+            const val rangeControlMax = 100.0
+            const val rangeControlDefault = 50.0
+            const val enabledDefault = true
+        }
+        object SelectiveColor {
+            val allowedMethods = listOf("relative", "absolute")
+            const val defaultMethod = "relative"
+            val allowedBands = listOf("reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks")
+            val allowedComponents = listOf("cyan", "magenta", "yellow", "black")
+            const val componentMin = -100.0
+            const val componentMax = 100.0
+            const val componentDefault = 0.0
+        }
+        object BwMixer {
+            val allowedChannels = listOf("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta")
+            const val channelMin = -100.0
+            const val channelMax = 100.0
+            const val channelDefault = 0.0
+        }
     }
 
     object Fields {
@@ -479,6 +511,72 @@ object AdjustmentFieldSpec {
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
             androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
         )
+        val COLOR_CALIBRATION_SHADOW_TINT = AdjustmentFieldDefinition(
+            id = "color.calibration.shadow_tint",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_RED_HUE = AdjustmentFieldDefinition(
+            id = "color.calibration.red_hue",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_RED_SATURATION = AdjustmentFieldDefinition(
+            id = "color.calibration.red_saturation",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_GREEN_HUE = AdjustmentFieldDefinition(
+            id = "color.calibration.green_hue",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_GREEN_SATURATION = AdjustmentFieldDefinition(
+            id = "color.calibration.green_saturation",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_BLUE_HUE = AdjustmentFieldDefinition(
+            id = "color.calibration.blue_hue",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_CALIBRATION_BLUE_SATURATION = AdjustmentFieldDefinition(
+            id = "color.calibration.blue_saturation",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_POINT_COLOR = AdjustmentFieldDefinition(
+            id = "color.point_color",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.OBJECT, wirePrecision = AdjustmentWirePrecision.OBJECT, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = listOf("swatches"), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "object", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Object, scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_SELECTIVE_COLOR = AdjustmentFieldDefinition(
+            id = "color.selective_color",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.OBJECT, wirePrecision = AdjustmentWirePrecision.OBJECT, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = listOf("method", "bands"), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "object", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Object, scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_BW_ENABLED = AdjustmentFieldDefinition(
+            id = "color.bw.enabled",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.BOOLEAN, wirePrecision = AdjustmentWirePrecision.BOOLEAN, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "bool", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Boolean(false), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.DISCRETE, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val COLOR_BW_MIXER = AdjustmentFieldDefinition(
+            id = "color.bw.mixer",
+            group = "color",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.OBJECT, wirePrecision = AdjustmentWirePrecision.OBJECT, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = listOf("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "object", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Object, scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
         val EFFECTS_VIGNETTE_AMOUNT = AdjustmentFieldDefinition(
             id = "effects.vignette.amount",
             group = "effects",
@@ -527,6 +625,12 @@ object AdjustmentFieldSpec {
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
             androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = -1.0, hdrMax = 1.0, hdrDefaultNumber = 0.0, hdrScaleFromProtocol = "p / 100"),
         )
+        val EFFECTS_TEXTURE = AdjustmentFieldDefinition(
+            id = "effects.texture",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
         val EFFECTS_GRAIN_SIZE = AdjustmentFieldDefinition(
             id = "effects.grain.size",
             group = "effects",
@@ -539,11 +643,89 @@ object AdjustmentFieldSpec {
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
             androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(50.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
         )
+        val EFFECTS_GRAIN_TONE_CURVE = AdjustmentFieldDefinition(
+            id = "effects.grain.tone_curve",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.STRING, wirePrecision = AdjustmentWirePrecision.ENUM_STRING, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = listOf("legacy", "negative_asymmetric"), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "enum", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Text("legacy"), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.DISCRETE, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_GRAIN_FORMAT_PRESET = AdjustmentFieldDefinition(
+            id = "effects.grain.format_preset",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.STRING, wirePrecision = AdjustmentWirePrecision.ENUM_STRING, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = listOf("custom", "135", "120"), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "enum", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Text("custom"), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.DISCRETE, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_HALATION_AMOUNT = AdjustmentFieldDefinition(
+            id = "effects.halation.amount",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_HALATION_THRESHOLD = AdjustmentFieldDefinition(
+            id = "effects.halation.threshold",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(75.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_HALATION_RADIUS = AdjustmentFieldDefinition(
+            id = "effects.halation.radius",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(35.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_HALATION_HUE = AdjustmentFieldDefinition(
+            id = "effects.halation.hue",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = -100.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = -100.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_BLOOM_AMOUNT = AdjustmentFieldDefinition(
+            id = "effects.bloom.amount",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_BLOOM_THRESHOLD = AdjustmentFieldDefinition(
+            id = "effects.bloom.threshold",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(70.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val EFFECTS_BLOOM_RADIUS = AdjustmentFieldDefinition(
+            id = "effects.bloom.radius",
+            group = "effects",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(40.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
         val DETAIL_SHARPENING = AdjustmentFieldDefinition(
             id = "detail.sharpening",
             group = "detail",
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 2.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
             androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr", "hdr"), storageType = "float", nullable = false, min = 0.0, max = 2.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val DETAIL_SHARPENING_LUMINANCE_V2 = AdjustmentFieldDefinition(
+            id = "detail.sharpening.luminance_v2",
+            group = "detail",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.BOOLEAN, wirePrecision = AdjustmentWirePrecision.BOOLEAN, nullable = false, min = null, max = null, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "bool", nullable = false, min = null, max = null, defaultValue = AdjustmentModelDefault.Boolean(false), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.DISCRETE, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val DETAIL_SHARPENING_RADIUS = AdjustmentFieldDefinition(
+            id = "detail.sharpening.radius",
+            group = "detail",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.5, max = 3.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.5, max = 3.0, defaultValue = AdjustmentModelDefault.Number(1.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val DETAIL_SHARPENING_DETAIL = AdjustmentFieldDefinition(
+            id = "detail.sharpening.detail",
+            group = "detail",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(25.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val DETAIL_SHARPENING_MASKING = AdjustmentFieldDefinition(
+            id = "detail.sharpening.masking",
+            group = "detail",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
         )
         val DETAIL_DENOISE_RAW_LEVEL = AdjustmentFieldDefinition(
             id = "detail.denoise.raw_level",
@@ -659,6 +841,30 @@ object AdjustmentFieldSpec {
             protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.STRING, wirePrecision = AdjustmentWirePrecision.STRING, nullable = true, min = null, max = null, exclusiveMin = false, nonEmpty = true, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
             androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "string", nullable = true, min = null, max = null, defaultValue = AdjustmentModelDefault.None, scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.DISCRETE, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
         )
+        val GEOMETRY_LENS_DEFRINGE_PURPLE_AMOUNT = AdjustmentFieldDefinition(
+            id = "geometry.lens.defringe_purple_amount",
+            group = "geometry",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 20.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 20.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val GEOMETRY_LENS_DEFRINGE_PURPLE_HUE = AdjustmentFieldDefinition(
+            id = "geometry.lens.defringe_purple_hue",
+            group = "geometry",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(50.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val GEOMETRY_LENS_DEFRINGE_GREEN_AMOUNT = AdjustmentFieldDefinition(
+            id = "geometry.lens.defringe_green_amount",
+            group = "geometry",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 20.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 20.0, defaultValue = AdjustmentModelDefault.Number(0.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
+        val GEOMETRY_LENS_DEFRINGE_GREEN_HUE = AdjustmentFieldDefinition(
+            id = "geometry.lens.defringe_green_hue",
+            group = "geometry",
+            protocol = AdjustmentProtocolSpec(transferable = true, valueType = AdjustmentProtocolValueType.NUMBER, wirePrecision = AdjustmentWirePrecision.CONTINUOUS_DOUBLE, nullable = false, min = 0.0, max = 100.0, exclusiveMin = false, nonEmpty = false, allowedStringValues = emptyList(), allowedIntValues = emptyList(), objectKeys = emptyList(), optionalKeys = emptyList(), isHDROnly = false, isHDRRelative = false, isHDRRendition = false),
+            androidModel = AdjustmentFieldModelSpec(supported = true, modes = listOf("sdr"), storageType = "float", nullable = false, min = 0.0, max = 100.0, defaultValue = AdjustmentModelDefault.Number(50.0), scaleFromProtocol = "p", quantization = AdjustmentModelQuantization.CONTINUOUS, hdrMin = null, hdrMax = null, hdrDefaultNumber = null, hdrScaleFromProtocol = null),
+        )
         val LOCAL_AI_DENOISE_ENABLED = AdjustmentFieldDefinition(
             id = "local.ai_denoise_enabled",
             group = "detail",
@@ -680,9 +886,9 @@ object AdjustmentFieldSpec {
     }
 
     val allFields: List<AdjustmentFieldDefinition> = listOf(
-        Fields.LOOKS_REFERENCE, Fields.LOOKS_STRENGTH, Fields.LIGHT_EXPOSURE, Fields.LIGHT_EXPOSURE_MODE, Fields.LIGHT_CONTRAST, Fields.LIGHT_HIGHLIGHTS, Fields.LIGHT_SHADOWS, Fields.LIGHT_S_CURVE, Fields.LIGHT_CURVE, Fields.LIGHT_CURVE_APPLY_TO_LUMINOSITY, Fields.LIGHT_CURVE_PARAMETRIC, Fields.TONE_BLACK_POINT, Fields.TONE_WHITE_POINT, Fields.COLOR_VIBRANCE, Fields.COLOR_GRADING_SHADOWS, Fields.COLOR_GRADING_MIDTONES, Fields.COLOR_GRADING_HIGHLIGHTS, Fields.COLOR_GRADING_GLOBAL, Fields.COLOR_GRADING_BLENDING, Fields.COLOR_GRADING_BALANCE, Fields.COLOR_WHITE_BALANCE_MODE, Fields.COLOR_WHITE_BALANCE_TEMPERATURE_KELVIN, Fields.COLOR_WHITE_BALANCE_TINT, Fields.COLOR_SATURATION, Fields.HDR_RELATIVE_TEMPERATURE, Fields.HDR_RELATIVE_TINT, Fields.HDR_PEAK_LIMIT_EV, Fields.HDR_SDR_EXPOSURE_EV, Fields.HDR_SDR_CONTRAST, Fields.HDR_SDR_SATURATION, Fields.HDR_LOOK, Fields.HDR_CAMERA_DEVELOPMENT, Fields.COLOR_HSL_HUE_RED, Fields.COLOR_HSL_HUE_ORANGE, Fields.COLOR_HSL_HUE_YELLOW, Fields.COLOR_HSL_HUE_GREEN, Fields.COLOR_HSL_HUE_AQUA, Fields.COLOR_HSL_HUE_BLUE, Fields.COLOR_HSL_HUE_PURPLE, Fields.COLOR_HSL_HUE_MAGENTA, Fields.COLOR_HSL_SATURATION_RED, Fields.COLOR_HSL_SATURATION_ORANGE, Fields.COLOR_HSL_SATURATION_YELLOW, Fields.COLOR_HSL_SATURATION_GREEN, Fields.COLOR_HSL_SATURATION_AQUA, Fields.COLOR_HSL_SATURATION_BLUE, Fields.COLOR_HSL_SATURATION_PURPLE, Fields.COLOR_HSL_SATURATION_MAGENTA, Fields.COLOR_HSL_LIGHTNESS_RED, Fields.COLOR_HSL_LIGHTNESS_ORANGE, Fields.COLOR_HSL_LIGHTNESS_YELLOW, Fields.COLOR_HSL_LIGHTNESS_GREEN, Fields.COLOR_HSL_LIGHTNESS_AQUA, Fields.COLOR_HSL_LIGHTNESS_BLUE, Fields.COLOR_HSL_LIGHTNESS_PURPLE, Fields.COLOR_HSL_LIGHTNESS_MAGENTA, Fields.EFFECTS_VIGNETTE_AMOUNT, Fields.EFFECTS_VIGNETTE_MIDPOINT, Fields.EFFECTS_VIGNETTE_ROUNDNESS, Fields.EFFECTS_VIGNETTE_FEATHER, Fields.EFFECTS_VIGNETTE_HIGHLIGHTS, Fields.EFFECTS_GRAIN_AMOUNT, Fields.EFFECTS_CLARITY, Fields.EFFECTS_DEHAZE, Fields.EFFECTS_GRAIN_SIZE, Fields.EFFECTS_GRAIN_ROUGHNESS, Fields.DETAIL_SHARPENING, Fields.DETAIL_DENOISE_RAW_LEVEL, Fields.DETAIL_DENOISE_POST_RGB, Fields.DETAIL_DENOISE_CHROMA_MODE, Fields.DETAIL_DENOISE_WAVELET, Fields.GEOMETRY_CROP_X, Fields.GEOMETRY_CROP_Y, Fields.GEOMETRY_CROP_WIDTH, Fields.GEOMETRY_CROP_HEIGHT, Fields.GEOMETRY_QUARTER_TURNS, Fields.GEOMETRY_FLIP_HORIZONTAL, Fields.GEOMETRY_FLIP_VERTICAL, Fields.GEOMETRY_STRAIGHTEN_DEGREES, Fields.GEOMETRY_PERSPECTIVE_HORIZONTAL, Fields.GEOMETRY_PERSPECTIVE_VERTICAL, Fields.GEOMETRY_LENS_DISTORTION, Fields.GEOMETRY_LENS_TCA, Fields.GEOMETRY_LENS_VIGNETTING, Fields.GEOMETRY_LENS_AUTO_CROP, Fields.GEOMETRY_LENS_PROFILE_ID, Fields.LOCAL_AI_DENOISE_ENABLED, Fields.LOCAL_AI_DENOISE_STRENGTH, Fields.LOCAL_HDR_CAMERA_AI_ENABLED,
+        Fields.LOOKS_REFERENCE, Fields.LOOKS_STRENGTH, Fields.LIGHT_EXPOSURE, Fields.LIGHT_EXPOSURE_MODE, Fields.LIGHT_CONTRAST, Fields.LIGHT_HIGHLIGHTS, Fields.LIGHT_SHADOWS, Fields.LIGHT_S_CURVE, Fields.LIGHT_CURVE, Fields.LIGHT_CURVE_APPLY_TO_LUMINOSITY, Fields.LIGHT_CURVE_PARAMETRIC, Fields.TONE_BLACK_POINT, Fields.TONE_WHITE_POINT, Fields.COLOR_VIBRANCE, Fields.COLOR_GRADING_SHADOWS, Fields.COLOR_GRADING_MIDTONES, Fields.COLOR_GRADING_HIGHLIGHTS, Fields.COLOR_GRADING_GLOBAL, Fields.COLOR_GRADING_BLENDING, Fields.COLOR_GRADING_BALANCE, Fields.COLOR_WHITE_BALANCE_MODE, Fields.COLOR_WHITE_BALANCE_TEMPERATURE_KELVIN, Fields.COLOR_WHITE_BALANCE_TINT, Fields.COLOR_SATURATION, Fields.HDR_RELATIVE_TEMPERATURE, Fields.HDR_RELATIVE_TINT, Fields.HDR_PEAK_LIMIT_EV, Fields.HDR_SDR_EXPOSURE_EV, Fields.HDR_SDR_CONTRAST, Fields.HDR_SDR_SATURATION, Fields.HDR_LOOK, Fields.HDR_CAMERA_DEVELOPMENT, Fields.COLOR_HSL_HUE_RED, Fields.COLOR_HSL_HUE_ORANGE, Fields.COLOR_HSL_HUE_YELLOW, Fields.COLOR_HSL_HUE_GREEN, Fields.COLOR_HSL_HUE_AQUA, Fields.COLOR_HSL_HUE_BLUE, Fields.COLOR_HSL_HUE_PURPLE, Fields.COLOR_HSL_HUE_MAGENTA, Fields.COLOR_HSL_SATURATION_RED, Fields.COLOR_HSL_SATURATION_ORANGE, Fields.COLOR_HSL_SATURATION_YELLOW, Fields.COLOR_HSL_SATURATION_GREEN, Fields.COLOR_HSL_SATURATION_AQUA, Fields.COLOR_HSL_SATURATION_BLUE, Fields.COLOR_HSL_SATURATION_PURPLE, Fields.COLOR_HSL_SATURATION_MAGENTA, Fields.COLOR_HSL_LIGHTNESS_RED, Fields.COLOR_HSL_LIGHTNESS_ORANGE, Fields.COLOR_HSL_LIGHTNESS_YELLOW, Fields.COLOR_HSL_LIGHTNESS_GREEN, Fields.COLOR_HSL_LIGHTNESS_AQUA, Fields.COLOR_HSL_LIGHTNESS_BLUE, Fields.COLOR_HSL_LIGHTNESS_PURPLE, Fields.COLOR_HSL_LIGHTNESS_MAGENTA, Fields.COLOR_CALIBRATION_SHADOW_TINT, Fields.COLOR_CALIBRATION_RED_HUE, Fields.COLOR_CALIBRATION_RED_SATURATION, Fields.COLOR_CALIBRATION_GREEN_HUE, Fields.COLOR_CALIBRATION_GREEN_SATURATION, Fields.COLOR_CALIBRATION_BLUE_HUE, Fields.COLOR_CALIBRATION_BLUE_SATURATION, Fields.COLOR_POINT_COLOR, Fields.COLOR_SELECTIVE_COLOR, Fields.COLOR_BW_ENABLED, Fields.COLOR_BW_MIXER, Fields.EFFECTS_VIGNETTE_AMOUNT, Fields.EFFECTS_VIGNETTE_MIDPOINT, Fields.EFFECTS_VIGNETTE_ROUNDNESS, Fields.EFFECTS_VIGNETTE_FEATHER, Fields.EFFECTS_VIGNETTE_HIGHLIGHTS, Fields.EFFECTS_GRAIN_AMOUNT, Fields.EFFECTS_CLARITY, Fields.EFFECTS_DEHAZE, Fields.EFFECTS_TEXTURE, Fields.EFFECTS_GRAIN_SIZE, Fields.EFFECTS_GRAIN_ROUGHNESS, Fields.EFFECTS_GRAIN_TONE_CURVE, Fields.EFFECTS_GRAIN_FORMAT_PRESET, Fields.EFFECTS_HALATION_AMOUNT, Fields.EFFECTS_HALATION_THRESHOLD, Fields.EFFECTS_HALATION_RADIUS, Fields.EFFECTS_HALATION_HUE, Fields.EFFECTS_BLOOM_AMOUNT, Fields.EFFECTS_BLOOM_THRESHOLD, Fields.EFFECTS_BLOOM_RADIUS, Fields.DETAIL_SHARPENING, Fields.DETAIL_SHARPENING_LUMINANCE_V2, Fields.DETAIL_SHARPENING_RADIUS, Fields.DETAIL_SHARPENING_DETAIL, Fields.DETAIL_SHARPENING_MASKING, Fields.DETAIL_DENOISE_RAW_LEVEL, Fields.DETAIL_DENOISE_POST_RGB, Fields.DETAIL_DENOISE_CHROMA_MODE, Fields.DETAIL_DENOISE_WAVELET, Fields.GEOMETRY_CROP_X, Fields.GEOMETRY_CROP_Y, Fields.GEOMETRY_CROP_WIDTH, Fields.GEOMETRY_CROP_HEIGHT, Fields.GEOMETRY_QUARTER_TURNS, Fields.GEOMETRY_FLIP_HORIZONTAL, Fields.GEOMETRY_FLIP_VERTICAL, Fields.GEOMETRY_STRAIGHTEN_DEGREES, Fields.GEOMETRY_PERSPECTIVE_HORIZONTAL, Fields.GEOMETRY_PERSPECTIVE_VERTICAL, Fields.GEOMETRY_LENS_DISTORTION, Fields.GEOMETRY_LENS_TCA, Fields.GEOMETRY_LENS_VIGNETTING, Fields.GEOMETRY_LENS_AUTO_CROP, Fields.GEOMETRY_LENS_PROFILE_ID, Fields.GEOMETRY_LENS_DEFRINGE_PURPLE_AMOUNT, Fields.GEOMETRY_LENS_DEFRINGE_PURPLE_HUE, Fields.GEOMETRY_LENS_DEFRINGE_GREEN_AMOUNT, Fields.GEOMETRY_LENS_DEFRINGE_GREEN_HUE, Fields.LOCAL_AI_DENOISE_ENABLED, Fields.LOCAL_AI_DENOISE_STRENGTH, Fields.LOCAL_HDR_CAMERA_AI_ENABLED,
     )
-    val transferFieldIds: List<String> = listOf("looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "light.curve.apply_to_luminosity", "light.curve.parametric", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.grading.global", "color.grading.blending", "color.grading.balance", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.grain.size", "effects.grain.roughness", "detail.sharpening", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id")
+    val transferFieldIds: List<String> = listOf("looks.reference", "looks.strength", "light.exposure", "light.exposure_mode", "light.contrast", "light.highlights", "light.shadows", "light.s_curve", "light.curve", "light.curve.apply_to_luminosity", "light.curve.parametric", "tone.black_point", "tone.white_point", "color.vibrance", "color.grading.shadows", "color.grading.midtones", "color.grading.highlights", "color.grading.global", "color.grading.blending", "color.grading.balance", "color.white_balance.mode", "color.white_balance.temperature_kelvin", "color.white_balance.tint", "color.saturation", "hdr.relative_temperature", "hdr.relative_tint", "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development", "color.hsl.hue.red", "color.hsl.hue.orange", "color.hsl.hue.yellow", "color.hsl.hue.green", "color.hsl.hue.aqua", "color.hsl.hue.blue", "color.hsl.hue.purple", "color.hsl.hue.magenta", "color.hsl.saturation.red", "color.hsl.saturation.orange", "color.hsl.saturation.yellow", "color.hsl.saturation.green", "color.hsl.saturation.aqua", "color.hsl.saturation.blue", "color.hsl.saturation.purple", "color.hsl.saturation.magenta", "color.hsl.lightness.red", "color.hsl.lightness.orange", "color.hsl.lightness.yellow", "color.hsl.lightness.green", "color.hsl.lightness.aqua", "color.hsl.lightness.blue", "color.hsl.lightness.purple", "color.hsl.lightness.magenta", "color.calibration.shadow_tint", "color.calibration.red_hue", "color.calibration.red_saturation", "color.calibration.green_hue", "color.calibration.green_saturation", "color.calibration.blue_hue", "color.calibration.blue_saturation", "color.point_color", "color.selective_color", "color.bw.enabled", "color.bw.mixer", "effects.vignette.amount", "effects.vignette.midpoint", "effects.vignette.roundness", "effects.vignette.feather", "effects.vignette.highlights", "effects.grain.amount", "effects.clarity", "effects.dehaze", "effects.texture", "effects.grain.size", "effects.grain.roughness", "effects.grain.tone_curve", "effects.grain.format_preset", "effects.halation.amount", "effects.halation.threshold", "effects.halation.radius", "effects.halation.hue", "effects.bloom.amount", "effects.bloom.threshold", "effects.bloom.radius", "detail.sharpening", "detail.sharpening.luminance_v2", "detail.sharpening.radius", "detail.sharpening.detail", "detail.sharpening.masking", "detail.denoise.raw_level", "detail.denoise.post_rgb", "detail.denoise.chroma_mode", "detail.denoise.wavelet", "geometry.crop.x", "geometry.crop.y", "geometry.crop.width", "geometry.crop.height", "geometry.quarter_turns", "geometry.flip_horizontal", "geometry.flip_vertical", "geometry.straighten_degrees", "geometry.perspective.horizontal", "geometry.perspective.vertical", "geometry.lens.distortion", "geometry.lens.tca", "geometry.lens.vignetting", "geometry.lens.auto_crop", "geometry.lens.profile_id", "geometry.lens.defringe_purple_amount", "geometry.lens.defringe_purple_hue", "geometry.lens.defringe_green_amount", "geometry.lens.defringe_green_hue")
     val localOnlyFieldIds: List<String> = listOf("local.ai_denoise_enabled", "local.ai_denoise_strength", "local.hdr_camera_ai_enabled")
     val byId: Map<String, AdjustmentFieldDefinition> = allFields.associateBy { it.id }
 

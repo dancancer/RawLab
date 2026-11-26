@@ -496,6 +496,109 @@ void v16AndV17Contracts() {
     reject(replaceOnce(hdr16Doc, "\"schema_version\": 16", "\"schema_version\": 15"), "v15 rejects processing.version 9 / v16 fields");
 }
 
+void v20SdrContractsAndStubs() {
+    const std::string sdr20Doc = R"({
+        "schema_version": 20,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "photo.png", "type": "raster"},
+        "edits": {
+            "exposure": {"mode": "sensor"},
+            "white_balance": {"mode": "none"},
+            "color": {
+                "vibrance": 0.15,
+                "calibration": {"shadow_tint": -12, "red_hue": 8, "red_saturation": 14, "green_hue": -5, "green_saturation": 6, "blue_hue": -10, "blue_saturation": 18},
+                "point_color": {"swatches": [{"src_hue": 210, "src_saturation": 0.65, "src_luminance": 0.45, "hue_shift": 12, "saturation_shift": -8, "luminance_shift": 5, "variance": -10, "range": 60, "hue_range": 45, "sat_range": 55, "lum_range": 50, "enabled": true}]},
+                "selective_color": {"method": "absolute", "bands": {"reds": {"cyan": -15, "magenta": 10, "yellow": 5, "black": -5}}},
+                "bw": {"enabled": true, "mixer": {"red": 20, "yellow": 15, "blue": -25}}
+            },
+            "detail": {
+                "sharpening": 0.5,
+                "luminance_v2": true,
+                "sharpening_radius": 1.4,
+                "sharpening_detail": 40,
+                "sharpening_masking": 35
+            },
+            "effects": {
+                "texture": 0.35,
+                "grain_amount": 20,
+                "grain_tone_curve": "negative_asymmetric",
+                "grain_format_preset": "135",
+                "halation": {"amount": 25, "threshold": 80, "radius": 45, "hue": -15},
+                "bloom": {"amount": 18, "threshold": 72, "radius": 50}
+            },
+            "lens_correction": {
+                "distortion": false,
+                "tca": false,
+                "vignetting": false,
+                "auto_crop": true,
+                "profile_id": null,
+                "defringe_purple_amount": 6,
+                "defringe_purple_hue": 45,
+                "defringe_green_amount": 4,
+                "defringe_green_hue": 55
+            }
+        },
+        "output": {"path": "out.jpg", "format": "jpeg"}
+    })";
+    const auto sdr20 = parse(sdr20Doc);
+    check(sdr20.schemaVersion == 20 && sdr20.rasterInput, "v20 raster defringe parses with allowRasterLensCorrection=false");
+    check(sdr20.calibration.shadowTint == -12.0f && sdr20.calibration.blueSaturation == 18.0f, "v20 calibration parses");
+    check(sdr20.pointColor.swatchCount == 1 && sdr20.pointColor.swatches[0].srcHue == 210.0f, "v20 point_color parses");
+    check(sdr20.selectiveColor.absolute && sdr20.selectiveColor.bands[0].cyan == -15.0f, "v20 selective_color parses");
+    check(sdr20.bw.enabled && sdr20.bw.weights[0] == 20.0f && sdr20.bw.weights[5] == -25.0f, "v20 bw mixer parses");
+    check(sdr20.texture == 0.35f, "v20 texture parses");
+    check(sdr20.sharpenV2.luminanceV2 && sdr20.sharpenV2.radius == 1.4f && sdr20.sharpenV2.masking == 35.0f, "v20 sharpen v2 parses");
+    check(sdr20.grainToneCurve == sony2fuji::EditGrainToneCurve::NegativeAsymmetric &&
+          sdr20.grainFormatPreset == sony2fuji::EditGrainFormatPreset::Film135, "v20 grain curve/preset parse");
+    check(sdr20.filmOptics.halationAmount == 25.0f && sdr20.filmOptics.bloomAmount == 18.0f, "v20 halation/bloom parse");
+    check(sdr20.defringe.purpleAmount == 6.0f && sdr20.defringe.greenAmount == 4.0f, "v20 defringe parses");
+    const auto saved20 = sony2fuji::serializeEditRecipe(sdr20);
+    check(saved20.find("\"schema_version\": 20") != std::string::npos, "active v20 emits schema_version 20");
+    check(sameRecipe(parse(saved20), sdr20), "v20 round trip is idempotent");
+
+    // Default v20 drops back to <= 18 and omits all v0.14.0 keys.
+    const std::string v20Defaults = R"({
+        "schema_version": 20,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "photo.ARW", "type": "raw"},
+        "edits": {"exposure": {"mode": "preview"}},
+        "output": {"path": "out.jpg", "format": "jpeg"}
+    })";
+    const auto parsedDefault20 = parse(v20Defaults);
+    const auto serializedDefault20 = sony2fuji::serializeEditRecipe(parsedDefault20);
+    check(serializedDefault20.find("\"schema_version\": 17") != std::string::npos &&
+          serializedDefault20.find("calibration") == std::string::npos &&
+          serializedDefault20.find("point_color") == std::string::npos &&
+          serializedDefault20.find("luminance_v2") == std::string::npos &&
+          serializedDefault20.find("halation") == std::string::npos,
+          "default v20 emits schema_version <= 18 and omits v0.14.0 keys");
+
+    // Legacy v18 rejects v20 fields and serializing v20 features as v18 throws.
+    reject(replaceOnce(sdr20Doc, "\"schema_version\": 20", "\"schema_version\": 18"), "v18 rejects v20 fields");
+    auto badDowngrade = sdr20;
+    badDowngrade.schemaVersion = 18;
+    bool rejectedSerialize = false;
+    try { (void)sony2fuji::serializeEditRecipe(badDowngrade); } catch (const std::invalid_argument&) { rejectedSerialize = true; }
+    check(rejectedSerialize, "serializeEditRecipe rejects schemaVersion < 20 when v0.14.0 features are active");
+
+    // Narrow Wave 0 C ABI helpers validate arguments and return UNSUPPORTED.
+    uint8_t dummyPixel[3] = {128, 128, 128};
+    sony2fuji_buffer srcBuf{};
+    srcBuf.data = dummyPixel;
+    srcBuf.width = 1;
+    srcBuf.height = 1;
+    sony2fuji_buffer outMask{};
+    check(sony2fuji_render_sharpen_mask_preview(nullptr, 1.0f, 50.0f, &outMask) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "sharpen mask preview rejects null source");
+    check(sony2fuji_render_sharpen_mask_preview(&srcBuf, 1.0f, 50.0f, &outMask) == SONY2FUJI_STATUS_UNSUPPORTED,
+          "sharpen mask preview returns clean UNSUPPORTED stub in Wave 0");
+    float srcRgb[3]{}, dstRgb[3]{};
+    check(sony2fuji_point_color_preview_swatch(360.0f, 0.5f, 0.5f, 0.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "point color swatch preview rejects src_hue >= 360");
+    check(sony2fuji_point_color_preview_swatch(120.0f, 0.5f, 0.5f, 10.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_UNSUPPORTED,
+          "point color swatch preview returns clean UNSUPPORTED stub in Wave 0");
+}
+
 } // namespace
 
 TEST_MAIN(
@@ -526,6 +629,7 @@ TEST_MAIN(
     malformedAndUnicode();
     atmosphereCompatibility();
     v16AndV17Contracts();
+    v20SdrContractsAndStubs();
     if (rawlab::test::failureCount() != 0) {
         std::cerr << rawlab::test::failureCount() << " of " << rawlab::test::checkCount() << " rawlab::test::checkCount() failed\n";
     } else {

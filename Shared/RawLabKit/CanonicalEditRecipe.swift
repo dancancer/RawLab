@@ -12,6 +12,13 @@ public enum CanonicalEditRecipeError: Error, Equatable {
     case invalidChromaDenoise
     case invalidRawNoiseReduction
     case invalidWhiteBalance
+    case invalidCameraCalibration
+    case invalidPointColor
+    case invalidSelectiveColor
+    case invalidBwMixer
+    case invalidSharpenV2
+    case invalidFilmOptics
+    case invalidLensCorrection
 }
 
 public enum CanonicalEditRecipe {
@@ -34,6 +41,12 @@ public enum CanonicalEditRecipe {
         public var chromaDenoise: Int
         public var rawNoiseReduction: Int
         public var outputSharpening: OutputSharpening
+        public var cameraCalibration: CameraCalibrationSettings
+        public var pointColor: PointColorSettings
+        public var selectiveColor: SelectiveColorSettings
+        public var bwMixer: BwMixerSettings
+        public var sharpenV2: SharpenV2Settings
+        public var filmOptics: FilmOpticsSettings
 
         public init(
             processing: ProcessingIdentity = .current,
@@ -53,7 +66,13 @@ public enum CanonicalEditRecipe {
             waveletDenoise: WaveletDenoiseSettings? = nil,
             chromaDenoise: Int = 0,
             rawNoiseReduction: Int = 0,
-            outputSharpening: OutputSharpening = .off
+            outputSharpening: OutputSharpening = .off,
+            cameraCalibration: CameraCalibrationSettings = .init(),
+            pointColor: PointColorSettings = .init(),
+            selectiveColor: SelectiveColorSettings = .init(),
+            bwMixer: BwMixerSettings = .init(),
+            sharpenV2: SharpenV2Settings = .init(),
+            filmOptics: FilmOpticsSettings = .init()
         ) {
             self.processing = processing
             self.x3fMode = x3fMode
@@ -73,6 +92,19 @@ public enum CanonicalEditRecipe {
             self.chromaDenoise = chromaDenoise
             self.rawNoiseReduction = rawNoiseReduction
             self.outputSharpening = outputSharpening
+            self.cameraCalibration = cameraCalibration
+            self.pointColor = pointColor
+            self.selectiveColor = selectiveColor
+            self.bwMixer = bwMixer
+            self.sharpenV2 = sharpenV2
+            self.filmOptics = filmOptics
+        }
+
+        public var hasV14Features: Bool {
+            !cameraCalibration.isDefault || !pointColor.isDefault || !selectiveColor.isDefault
+                || !bwMixer.isDefault || atmosphere.texture != 0 || !sharpenV2.isDefault
+                || lensCorrection.hasDefringeSettings || !filmOptics.isDefault
+                || photoEffects.grainToneCurve != .legacy || photoEffects.grainFormatPreset != .custom
         }
     }
 
@@ -92,7 +124,14 @@ public enum CanonicalEditRecipe {
         guard state.colorGrading.isValid else { throw CanonicalEditRecipeError.invalidColorGrading }
         guard state.hsl.isValid else { throw CanonicalEditRecipeError.invalidHSL }
         guard state.geometry.isValid else { throw CanonicalEditRecipeError.invalidGeometry }
+        guard state.lensCorrection.isValid else { throw CanonicalEditRecipeError.invalidLensCorrection }
         guard state.photoEffects.isValid else { throw CanonicalEditRecipeError.invalidPhotoEffects }
+        guard state.cameraCalibration.isValid else { throw CanonicalEditRecipeError.invalidCameraCalibration }
+        guard state.pointColor.isValid else { throw CanonicalEditRecipeError.invalidPointColor }
+        guard state.selectiveColor.isValid else { throw CanonicalEditRecipeError.invalidSelectiveColor }
+        guard state.bwMixer.isValid else { throw CanonicalEditRecipeError.invalidBwMixer }
+        guard state.sharpenV2.isValid else { throw CanonicalEditRecipeError.invalidSharpenV2 }
+        guard state.filmOptics.isValid else { throw CanonicalEditRecipeError.invalidFilmOptics }
         if let wavelet = state.waveletDenoise {
             let valid = [wavelet.luma, wavelet.chroma, wavelet.coarse].allSatisfy {
                 $0.isFinite && (0...100).contains($0)
@@ -120,9 +159,10 @@ public enum CanonicalEditRecipe {
         }
         let hasV12Features = state.toneCurve.hasV2Extensions || state.colorGrading.hasV2Extensions ||
             state.outputSharpening != .off || rasterRelativeActive
+        let schemaVersion = state.hasV14Features ? 20 : (state.toneCurve.hasFreeEndpointX ? 18 : hasV12Features ? 17 : (state.isRaster ? 5 : 7))
 
         let payload = Payload(
-            schemaVersion: state.toneCurve.hasFreeEndpointX ? 18 : hasV12Features ? 17 : (state.isRaster ? 5 : 7),
+            schemaVersion: schemaVersion,
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
@@ -164,7 +204,7 @@ public enum CanonicalEditRecipe {
                         parametric: state.toneCurve.parametric.isDefault ? nil : CurveParametricPayload(state.toneCurve.parametric)
                     )
                 ),
-                color: .init(vibrance: state.toneControls.vibrance / 100.0),
+                color: .init(state: state, vibrance: state.toneControls.vibrance / 100.0),
                 colorGrading: .init(
                     shadows: WheelPayload(state.colorGrading.shadows),
                     midtones: WheelPayload(state.colorGrading.midtones),
@@ -173,24 +213,13 @@ public enum CanonicalEditRecipe {
                     blending: state.colorGrading.blending == 50.0 ? nil : state.colorGrading.blending,
                     balance: state.colorGrading.balance == 0.0 ? nil : state.colorGrading.balance
                 ),
-                detail: .init(sharpening: 0),
+                detail: .init(sharpening: 0, sharpenV2: state.sharpenV2),
                 hsl: .init(
                     hue: state.hsl.hue,
                     saturation: state.hsl.saturation,
                     lightness: state.hsl.lightness
                 ),
-                effects: .init(
-                    vignetteAmount: state.photoEffects.vignetteAmount,
-                    vignetteMidpoint: state.photoEffects.vignetteMidpoint,
-                    vignetteRoundness: state.photoEffects.vignetteRoundness,
-                    vignetteFeather: state.photoEffects.vignetteFeather,
-                    vignetteHighlights: state.photoEffects.vignetteHighlights,
-                    grainAmount: state.photoEffects.grainAmount,
-                    grainSize: state.photoEffects.grainSize,
-                    grainRoughness: state.photoEffects.grainRoughness,
-                    clarity: state.atmosphere.clarity / 100.0,
-                    dehaze: state.atmosphere.dehaze / 100.0
-                ),
+                effects: .init(state: state),
                 denoise: .init(
                     rawLevel: effectiveRawNR,
                     chromaMode: state.chromaDenoise,
@@ -199,13 +228,7 @@ public enum CanonicalEditRecipe {
                     },
                     aiDenoiseBlend: nil
                 ),
-                lensCorrection: .init(
-                    distortion: state.lensCorrection.distortion,
-                    tca: state.lensCorrection.tca,
-                    vignetting: state.lensCorrection.vignetting,
-                    autoCrop: state.lensCorrection.autoCrop,
-                    profileId: profileID
-                ),
+                lensCorrection: .init(state.lensCorrection, profileId: profileID),
                 masterRecipe: nil
             ),
             output: state.outputSharpening == .off ? nil : .init(
@@ -464,6 +487,97 @@ public enum CanonicalEditRecipe {
 
     private struct ColorPayload: Encodable {
         let vibrance: Double
+        let calibration: CalibrationPayload?
+        let pointColor: PointColorPayload?
+        let selectiveColor: SelectiveColorPayload?
+        let bw: BwPayload?
+
+        init(state: State, vibrance: Double) {
+            self.vibrance = vibrance
+            self.calibration = state.cameraCalibration.isDefault ? nil : CalibrationPayload(state.cameraCalibration)
+            self.pointColor = state.pointColor.isDefault ? nil : PointColorPayload(state.pointColor)
+            self.selectiveColor = state.selectiveColor.isDefault ? nil : SelectiveColorPayload(state.selectiveColor)
+            self.bw = state.bwMixer.isDefault ? nil : BwPayload(state.bwMixer)
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case vibrance, calibration
+            case pointColor = "point_color"
+            case selectiveColor = "selective_color"
+            case bw
+        }
+    }
+
+    private struct CalibrationPayload: Encodable {
+        let shadowTint: Double
+        let redHue: Double
+        let redSaturation: Double
+        let greenHue: Double
+        let greenSaturation: Double
+        let blueHue: Double
+        let blueSaturation: Double
+
+        init(_ c: CameraCalibrationSettings) {
+            shadowTint = c.shadowTint; redHue = c.redHue; redSaturation = c.redSaturation
+            greenHue = c.greenHue; greenSaturation = c.greenSaturation
+            blueHue = c.blueHue; blueSaturation = c.blueSaturation
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case shadowTint = "shadow_tint"
+            case redHue = "red_hue"
+            case redSaturation = "red_saturation"
+            case greenHue = "green_hue"
+            case greenSaturation = "green_saturation"
+            case blueHue = "blue_hue"
+            case blueSaturation = "blue_saturation"
+        }
+    }
+
+    private struct PointColorSwatchPayload: Encodable {
+        let srcHue, srcSaturation, srcLuminance: Double
+        let hueShift, saturationShift, luminanceShift: Double
+        let range, hueRange, satRange, lumRange, variance: Double
+        let enabled: Bool
+
+        init(_ s: PointColorSwatch) {
+            srcHue = s.srcHue; srcSaturation = s.srcSaturation; srcLuminance = s.srcLuminance
+            hueShift = s.hueShift; saturationShift = s.saturationShift; luminanceShift = s.luminanceShift
+            range = s.range; hueRange = s.hueRange; satRange = s.satRange; lumRange = s.lumRange
+            variance = s.variance; enabled = s.enabled
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case srcHue = "src_hue", srcSaturation = "src_saturation", srcLuminance = "src_luminance"
+            case hueShift = "hue_shift", saturationShift = "saturation_shift", luminanceShift = "luminance_shift"
+            case range, hueRange = "hue_range", satRange = "sat_range", lumRange = "lum_range"
+            case variance, enabled
+        }
+    }
+
+    private struct PointColorPayload: Encodable {
+        let swatches: [PointColorSwatchPayload]
+        init(_ p: PointColorSettings) { swatches = p.swatches.map(PointColorSwatchPayload.init) }
+    }
+
+    private struct SelectiveColorBandPayload: Encodable {
+        let cyan, magenta, yellow, black: Double
+        init(_ b: SelectiveColorBand) { cyan = b.cyan; magenta = b.magenta; yellow = b.yellow; black = b.black }
+    }
+
+    private struct SelectiveColorPayload: Encodable {
+        let method: String
+        let bands: [String: SelectiveColorBandPayload]
+        init(_ s: SelectiveColorSettings) {
+            method = s.method.rawValue
+            bands = Dictionary(uniqueKeysWithValues: s.bands.allBands.map { ($0.0, SelectiveColorBandPayload($0.1)) })
+        }
+    }
+
+    private struct BwPayload: Encodable {
+        let enabled: Bool
+        let mixer: BwMixerChannelWeights
+        init(_ b: BwMixerSettings) { enabled = b.enabled; mixer = b.mixer }
     }
 
     private struct WheelPayload: Encodable {
@@ -489,12 +603,44 @@ public enum CanonicalEditRecipe {
 
     private struct DetailPayload: Encodable {
         let sharpening: Double
+        let luminanceV2: Bool?
+        let sharpeningRadius: Double?
+        let sharpeningDetail: Double?
+        let sharpeningMasking: Double?
+
+        init(sharpening: Double, sharpenV2: SharpenV2Settings) {
+            self.sharpening = sharpening
+            if sharpenV2.isDefault {
+                luminanceV2 = nil; sharpeningRadius = nil; sharpeningDetail = nil; sharpeningMasking = nil
+            } else {
+                luminanceV2 = sharpenV2.luminanceV2
+                sharpeningRadius = sharpenV2.radius
+                sharpeningDetail = sharpenV2.detail
+                sharpeningMasking = sharpenV2.masking
+            }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case sharpening
+            case luminanceV2 = "luminance_v2"
+            case sharpeningRadius = "sharpening_radius"
+            case sharpeningDetail = "sharpening_detail"
+            case sharpeningMasking = "sharpening_masking"
+        }
     }
 
     private struct HSLPayload: Encodable {
         let hue: [Double]
         let saturation: [Double]
         let lightness: [Double]
+    }
+
+    private struct HalationPayload: Encodable {
+        let amount, threshold, radius, hue: Double
+    }
+
+    private struct BloomPayload: Encodable {
+        let amount, threshold, radius: Double
     }
 
     private struct EffectsPayload: Encodable {
@@ -508,6 +654,32 @@ public enum CanonicalEditRecipe {
         let grainRoughness: Double
         let clarity: Double
         let dehaze: Double
+        let texture: Double?
+        let grainToneCurve: String?
+        let grainFormatPreset: String?
+        let halation: HalationPayload?
+        let bloom: BloomPayload?
+
+        init(state: State) {
+            vignetteAmount = state.photoEffects.vignetteAmount
+            vignetteMidpoint = state.photoEffects.vignetteMidpoint
+            vignetteRoundness = state.photoEffects.vignetteRoundness
+            vignetteFeather = state.photoEffects.vignetteFeather
+            vignetteHighlights = state.photoEffects.vignetteHighlights
+            grainAmount = state.photoEffects.grainAmount
+            grainSize = state.photoEffects.grainSize
+            grainRoughness = state.photoEffects.grainRoughness
+            clarity = state.atmosphere.clarity / 100.0
+            dehaze = state.atmosphere.dehaze / 100.0
+            texture = state.atmosphere.texture == 0 ? nil : state.atmosphere.texture / 100.0
+            grainToneCurve = state.photoEffects.grainToneCurve == .legacy ? nil : state.photoEffects.grainToneCurve.rawValue
+            grainFormatPreset = state.photoEffects.grainFormatPreset == .custom ? nil : state.photoEffects.grainFormatPreset.rawValue
+            let o = state.filmOptics
+            let hasHalation = o.halationAmount != 0 || o.halationThreshold != 75 || o.halationRadius != 35 || o.halationHue != 0
+            halation = hasHalation ? HalationPayload(amount: o.halationAmount, threshold: o.halationThreshold, radius: o.halationRadius, hue: o.halationHue) : nil
+            let hasBloom = o.bloomAmount != 0 || o.bloomThreshold != 70 || o.bloomRadius != 40
+            bloom = hasBloom ? BloomPayload(amount: o.bloomAmount, threshold: o.bloomThreshold, radius: o.bloomRadius) : nil
+        }
 
         enum CodingKeys: String, CodingKey {
             case vignetteAmount = "vignette_amount"
@@ -518,7 +690,10 @@ public enum CanonicalEditRecipe {
             case grainAmount = "grain_amount"
             case grainSize = "grain_size"
             case grainRoughness = "grain_roughness"
-            case clarity, dehaze
+            case clarity, dehaze, texture
+            case grainToneCurve = "grain_tone_curve"
+            case grainFormatPreset = "grain_format_preset"
+            case halation, bloom
         }
     }
 
@@ -549,11 +724,36 @@ public enum CanonicalEditRecipe {
         let vignetting: Bool
         let autoCrop: Bool
         let profileId: String?
+        let defringePurpleAmount: Double?
+        let defringePurpleHue: Double?
+        let defringeGreenAmount: Double?
+        let defringeGreenHue: Double?
+
+        init(_ lens: LensCorrectionSettings, profileId: String?) {
+            distortion = lens.distortion
+            tca = lens.tca
+            vignetting = lens.vignetting
+            autoCrop = lens.autoCrop
+            self.profileId = profileId
+            if lens.hasDefringeSettings {
+                defringePurpleAmount = lens.defringePurpleAmount
+                defringePurpleHue = lens.defringePurpleHue
+                defringeGreenAmount = lens.defringeGreenAmount
+                defringeGreenHue = lens.defringeGreenHue
+            } else {
+                defringePurpleAmount = nil; defringePurpleHue = nil
+                defringeGreenAmount = nil; defringeGreenHue = nil
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case distortion, tca, vignetting
             case autoCrop = "auto_crop"
             case profileId = "profile_id"
+            case defringePurpleAmount = "defringe_purple_amount"
+            case defringePurpleHue = "defringe_purple_hue"
+            case defringeGreenAmount = "defringe_green_amount"
+            case defringeGreenHue = "defringe_green_hue"
         }
     }
 
@@ -571,7 +771,14 @@ public enum CanonicalEditRecipe {
         guard state.colorGrading.isValid else { throw CanonicalEditRecipeError.invalidColorGrading }
         guard state.hsl.isValid else { throw CanonicalEditRecipeError.invalidHSL }
         guard state.geometry.isValid else { throw CanonicalEditRecipeError.invalidGeometry }
+        guard state.lensCorrection.isValid else { throw CanonicalEditRecipeError.invalidLensCorrection }
         guard state.photoEffects.isValid else { throw CanonicalEditRecipeError.invalidPhotoEffects }
+        guard state.cameraCalibration.isValid else { throw CanonicalEditRecipeError.invalidCameraCalibration }
+        guard state.pointColor.isValid else { throw CanonicalEditRecipeError.invalidPointColor }
+        guard state.selectiveColor.isValid else { throw CanonicalEditRecipeError.invalidSelectiveColor }
+        guard state.bwMixer.isValid else { throw CanonicalEditRecipeError.invalidBwMixer }
+        guard state.sharpenV2.isValid else { throw CanonicalEditRecipeError.invalidSharpenV2 }
+        guard state.filmOptics.isValid else { throw CanonicalEditRecipeError.invalidFilmOptics }
         if let wavelet = state.waveletDenoise {
             let valid = [wavelet.luma, wavelet.chroma, wavelet.coarse].allSatisfy {
                 $0.isFinite && (0...100).contains($0)
@@ -641,9 +848,9 @@ public enum CanonicalEditRecipe {
             }
         }
 
-        // 会话状态同样按 schema 校验曲线端点：端点 x 内移只在 v18 合法。
+        // 会话状态同样按 schema 校验曲线端点：端点 x 内移只在 v18 合法，v0.14.0 扩展只在 v20 合法。
         let payload = Payload(
-            schemaVersion: state.toneCurve.hasFreeEndpointX ? 18 : 17,
+            schemaVersion: state.hasV14Features ? 20 : (state.toneCurve.hasFreeEndpointX ? 18 : 17),
             x3fMode: state.isRaster ? nil : state.x3fMode.rawValue,
             processing: .init(family: "rawlab", version: state.processing.version, quality: state.processing.quality),
             input: .init(path: nil, type: state.isRaster ? "raster" : "raw"),
@@ -687,7 +894,7 @@ public enum CanonicalEditRecipe {
                         parametric: state.toneCurve.parametric.isDefault ? nil : CurveParametricPayload(state.toneCurve.parametric)
                     )
                 ),
-                color: .init(vibrance: state.toneControls.vibrance / 100.0),
+                color: .init(state: state, vibrance: state.toneControls.vibrance / 100.0),
                 colorGrading: .init(
                     shadows: WheelPayload(state.colorGrading.shadows),
                     midtones: WheelPayload(state.colorGrading.midtones),
@@ -696,24 +903,13 @@ public enum CanonicalEditRecipe {
                     blending: state.colorGrading.blending == 50.0 ? nil : state.colorGrading.blending,
                     balance: state.colorGrading.balance == 0.0 ? nil : state.colorGrading.balance
                 ),
-                detail: .init(sharpening: min(2, max(0, Double(resolved.sharpening)))),
+                detail: .init(sharpening: min(2, max(0, Double(resolved.sharpening))), sharpenV2: state.sharpenV2),
                 hsl: .init(
                     hue: state.hsl.hue,
                     saturation: state.hsl.saturation,
                     lightness: state.hsl.lightness
                 ),
-                effects: .init(
-                    vignetteAmount: state.photoEffects.vignetteAmount,
-                    vignetteMidpoint: state.photoEffects.vignetteMidpoint,
-                    vignetteRoundness: state.photoEffects.vignetteRoundness,
-                    vignetteFeather: state.photoEffects.vignetteFeather,
-                    vignetteHighlights: state.photoEffects.vignetteHighlights,
-                    grainAmount: state.photoEffects.grainAmount,
-                    grainSize: state.photoEffects.grainSize,
-                    grainRoughness: state.photoEffects.grainRoughness,
-                    clarity: state.atmosphere.clarity / 100.0,
-                    dehaze: state.atmosphere.dehaze / 100.0
-                ),
+                effects: .init(state: state),
                 denoise: .init(
                     rawLevel: effectiveRawNR,
                     chromaMode: state.chromaDenoise,
@@ -722,13 +918,7 @@ public enum CanonicalEditRecipe {
                     },
                     aiDenoiseBlend: aiDenoiseBlend.map { min(1.0, max(0.0, $0)) }
                 ),
-                lensCorrection: .init(
-                    distortion: state.lensCorrection.distortion,
-                    tca: state.lensCorrection.tca,
-                    vignetting: state.lensCorrection.vignetting,
-                    autoCrop: state.lensCorrection.autoCrop,
-                    profileId: profileID
-                ),
+                lensCorrection: .init(state.lensCorrection, profileId: profileID),
                 masterRecipe: masterRecipePayload
             ),
             output: state.outputSharpening == .off ? nil : .init(
@@ -951,7 +1141,13 @@ public extension Adjustments {
             waveletDenoise: wavelet,
             chromaDenoise: chromaMode,
             rawNoiseReduction: legacyLevel,
-            outputSharpening: outputSharpening
+            outputSharpening: outputSharpening,
+            cameraCalibration: calibrationSettings,
+            pointColor: pointColorSettings,
+            selectiveColor: selectiveColorSettings,
+            bwMixer: bwMixerSettings,
+            sharpenV2: sharpenV2Settings,
+            filmOptics: filmOpticsSettings
         )
     }
 

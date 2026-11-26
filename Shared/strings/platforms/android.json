@@ -7315,6 +7315,438 @@
       "formats": [],
       "source": "已清除本地诊断日志。",
       "types": []
+    },
+    "point_color_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "范围",
+      "types": []
+    },
+    "camera_calibration": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相机校准",
+      "types": []
+    },
+    "calibration_shadow_tint": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "阴影色调",
+      "types": []
+    },
+    "calibration_red_primary": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红原色",
+      "types": []
+    },
+    "calibration_green_primary": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿原色",
+      "types": []
+    },
+    "calibration_blue_primary": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝原色",
+      "types": []
+    },
+    "calibration_red_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红原色色相",
+      "types": []
+    },
+    "calibration_red_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红原色饱和度",
+      "types": []
+    },
+    "calibration_green_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿原色色相",
+      "types": []
+    },
+    "calibration_green_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿原色饱和度",
+      "types": []
+    },
+    "calibration_blue_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝原色色相",
+      "types": []
+    },
+    "calibration_blue_saturation": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝原色饱和度",
+      "types": []
+    },
+    "point_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "点颜色",
+      "types": []
+    },
+    "point_color_hue_shift": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相偏移",
+      "types": []
+    },
+    "point_color_saturation_shift": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度偏移",
+      "types": []
+    },
+    "point_color_luminance_shift": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明亮度偏移",
+      "types": []
+    },
+    "point_color_variance": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "方差",
+      "types": []
+    },
+    "point_color_hue_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色相范围",
+      "types": []
+    },
+    "point_color_sat_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "饱和度范围",
+      "types": []
+    },
+    "point_color_lum_range": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明亮度范围",
+      "types": []
+    },
+    "point_color_add_swatch": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "添加色板",
+      "types": []
+    },
+    "point_color_eyedropper": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "吸管取样",
+      "types": []
+    },
+    "point_color_swatch": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "色板",
+      "types": []
+    },
+    "selective_color": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "可选颜色",
+      "types": []
+    },
+    "selective_color_relative": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "相对",
+      "types": []
+    },
+    "selective_color_absolute": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绝对",
+      "types": []
+    },
+    "selective_band_reds": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "红色",
+      "types": []
+    },
+    "selective_band_yellows": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黄色",
+      "types": []
+    },
+    "selective_band_greens": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿色",
+      "types": []
+    },
+    "selective_band_cyans": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "青色",
+      "types": []
+    },
+    "selective_band_blues": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蓝色",
+      "types": []
+    },
+    "selective_band_magentas": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "洋红色",
+      "types": []
+    },
+    "selective_band_whites": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "白色",
+      "types": []
+    },
+    "selective_band_neutrals": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "中性色",
+      "types": []
+    },
+    "selective_band_blacks": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黑色",
+      "types": []
+    },
+    "selective_cyan": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "青色 (C)",
+      "types": []
+    },
+    "selective_magenta": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "洋红 (M)",
+      "types": []
+    },
+    "selective_yellow": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黄色 (Y)",
+      "types": []
+    },
+    "selective_black": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黑色 (K)",
+      "types": []
+    },
+    "bw_enabled": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黑白",
+      "types": []
+    },
+    "bw_enable_toggle": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "启用黑白",
+      "types": []
+    },
+    "bw_mixer": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "黑白混合",
+      "types": []
+    },
+    "texture": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "纹理",
+      "types": []
+    },
+    "sharpening_luminance_v2": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "明度锐化",
+      "types": []
+    },
+    "sharpening_radius_short": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "半径",
+      "types": []
+    },
+    "sharpening_masking_short": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "蒙版",
+      "types": []
+    },
+    "sharpening_radius": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锐化半径",
+      "types": []
+    },
+    "sharpening_detail": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锐化细节",
+      "types": []
+    },
+    "sharpening_masking": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "锐化蒙版",
+      "types": []
+    },
+    "sharpening_edge_mask_preview": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "边缘蒙版预览",
+      "types": []
+    },
+    "lens_defringe": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "去边",
+      "types": []
+    },
+    "lens_defringe_purple": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "去紫边",
+      "types": []
+    },
+    "lens_defringe_green": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "去绿边",
+      "types": []
+    },
+    "amount_short": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "数量",
+      "types": []
+    },
+    "lens_defringe_purple_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "紫边数量",
+      "types": []
+    },
+    "lens_defringe_purple_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "紫边色相",
+      "types": []
+    },
+    "lens_defringe_green_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿边数量",
+      "types": []
+    },
+    "lens_defringe_green_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "绿边色相",
+      "types": []
+    },
+    "halation_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光晕",
+      "types": []
+    },
+    "halation_threshold": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光晕阈值",
+      "types": []
+    },
+    "halation_radius": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光晕半径",
+      "types": []
+    },
+    "halation_hue": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "光晕色相",
+      "types": []
+    },
+    "threshold_short": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "阈值",
+      "types": []
+    },
+    "bloom_amount": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "柔光",
+      "types": []
+    },
+    "bloom_threshold": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "柔光阈值",
+      "types": []
+    },
+    "bloom_radius": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "柔光半径",
+      "types": []
+    },
+    "grain_tone_curve": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颗粒曲线",
+      "types": []
+    },
+    "grain_format_preset": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "颗粒画幅",
+      "types": []
+    },
+    "grain_curve_legacy": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "传统曲线",
+      "types": []
+    },
+    "grain_curve_negative_asymmetric": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "负片非对称",
+      "types": []
+    },
+    "grain_format_135": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "135 胶片",
+      "types": []
+    },
+    "grain_format_120": {
+      "file": "editor_strings.xml",
+      "formats": [],
+      "source": "120 中画幅",
+      "types": []
     }
   },
   "overrides": {

@@ -186,7 +186,9 @@ RGB softBoundedMove(const RGB& p,const RGB& delta) {
 } // namespace
 
 bool AtmosphereOptions::valid() const {
-    return std::isfinite(clarity) && std::abs(clarity)<=1 && std::isfinite(dehaze) && std::abs(dehaze)<=1;
+    return std::isfinite(clarity) && std::abs(clarity)<=1 &&
+           std::isfinite(dehaze) && std::abs(dehaze)<=1 &&
+           std::isfinite(texture) && std::abs(texture)<=1;
 }
 ClarityField buildClarityField(const ImageData& image, int sourceWidth, int sourceHeight, ProcessingVersion version) {
     ClarityField field;

@@ -76,7 +76,14 @@ public enum AdjustmentField
     GradingShadows, GradingMidtones, GradingHighlights,
     Curve, Clarity, Dehaze, HdrTemperature, HdrTint,
     HdrPeakLimit, HdrSDRExposure, HdrSDRContrast, HdrSDRSaturation, HdrLook, HdrCameraDevelopment,
-    CurveApplyToLuminosity, CurveParametric, GradingGlobal, GradingBlending, GradingBalance
+    CurveApplyToLuminosity, CurveParametric, GradingGlobal, GradingBlending, GradingBalance,
+    CalibrationShadowTint, CalibrationRedHue, CalibrationRedSaturation,
+    CalibrationGreenHue, CalibrationGreenSaturation, CalibrationBlueHue, CalibrationBlueSaturation,
+    PointColor, SelectiveColor, BwEnabled, BwMixer, Texture,
+    SharpeningLuminanceV2, SharpeningRadius, SharpeningDetail, SharpeningMasking,
+    LensDefringePurpleAmount, LensDefringePurpleHue, LensDefringeGreenAmount, LensDefringeGreenHue,
+    HalationAmount, HalationThreshold, HalationRadius, HalationHue,
+    BloomAmount, BloomThreshold, BloomRadius, GrainToneCurve, GrainFormatPreset
 }
 
 public static class AdjustmentFields
@@ -153,7 +160,17 @@ public static class AdjustmentFields
         "light.curve", "effects.clarity", "effects.dehaze", "hdr.relative_temperature", "hdr.relative_tint",
         "hdr.peak_limit_ev", "hdr.sdr_exposure_ev", "hdr.sdr_contrast", "hdr.sdr_saturation", "hdr.look", "hdr.camera_development",
         "light.curve.apply_to_luminosity", "light.curve.parametric",
-        "color.grading.global", "color.grading.blending", "color.grading.balance"
+        "color.grading.global", "color.grading.blending", "color.grading.balance",
+        "color.calibration.shadow_tint", "color.calibration.red_hue", "color.calibration.red_saturation",
+        "color.calibration.green_hue", "color.calibration.green_saturation",
+        "color.calibration.blue_hue", "color.calibration.blue_saturation",
+        "color.point_color", "color.selective_color", "color.bw.enabled", "color.bw.mixer", "effects.texture",
+        "detail.sharpening.luminance_v2", "detail.sharpening.radius", "detail.sharpening.detail", "detail.sharpening.masking",
+        "geometry.lens.defringe_purple_amount", "geometry.lens.defringe_purple_hue",
+        "geometry.lens.defringe_green_amount", "geometry.lens.defringe_green_hue",
+        "effects.halation.amount", "effects.halation.threshold", "effects.halation.radius", "effects.halation.hue",
+        "effects.bloom.amount", "effects.bloom.threshold", "effects.bloom.radius",
+        "effects.grain.tone_curve", "effects.grain.format_preset"
     ];
     // Keep the legacy catalog/index contract stable; HDR-only fields are
     // addressable through HDRSupported but are not legacy "common" fields.
@@ -219,6 +236,10 @@ public static class AdjustmentFields
     };
     public static readonly IReadOnlySet<AdjustmentField> WhiteBalance = new HashSet<AdjustmentField> { AdjustmentField.WhiteBalanceMode, AdjustmentField.Temperature, AdjustmentField.Tint };
     public static readonly IReadOnlySet<AdjustmentField> Lens = new HashSet<AdjustmentField> { AdjustmentField.LensDistortion, AdjustmentField.LensTCA, AdjustmentField.LensVignetting, AdjustmentField.LensAutoCrop, AdjustmentField.LensProfile };
+    public static readonly IReadOnlySet<AdjustmentField> Defringe = new HashSet<AdjustmentField> {
+        AdjustmentField.LensDefringePurpleAmount, AdjustmentField.LensDefringePurpleHue,
+        AdjustmentField.LensDefringeGreenAmount, AdjustmentField.LensDefringeGreenHue
+    };
     public static readonly IReadOnlySet<AdjustmentField> Denoise = new HashSet<AdjustmentField> { AdjustmentField.RawDenoise, AdjustmentField.PostRGBDenoise, AdjustmentField.ChromaDenoise, AdjustmentField.WaveletDenoise };
     public static readonly IReadOnlySet<AdjustmentField> RecipeDependencies = new[] { AdjustmentField.Look, AdjustmentField.Strength, AdjustmentField.Exposure,
         AdjustmentField.Contrast, AdjustmentField.Highlights, AdjustmentField.Shadows, AdjustmentField.Saturation }
@@ -300,6 +321,92 @@ public sealed class AdjustmentPayload
             !AdjustmentFieldSpec.SubFields.HDRCameraDevelopment.AllowedFbddLevels.Contains((int)fbdd)) return null;
         var camera = new HDRCameraDevelopmentSettings(mode == "temperature",temperature,tint,exposure == "sensor",(int)fbdd);
         return camera.IsValid ? camera : null;
+    }
+    internal static PointColorSettings? PointColorValue(JsonElement? value)
+    {
+        if (value is not { ValueKind: JsonValueKind.Object } obj) return null;
+        if (!ObjectKeys(obj, AdjustmentFieldSpec.Fields.ColorPointColor.Protocol.ObjectKeys.ToArray())) return null;
+        if (!obj.TryGetProperty("swatches", out var swatchesElem) || swatchesElem.ValueKind != JsonValueKind.Array ||
+            swatchesElem.GetArrayLength() > AdjustmentFieldSpec.SubFields.PointColor.MaxSwatches)
+            return null;
+        var swatches = new List<PointColorSwatch>();
+        string[] swatchKeys = [
+            "src_hue", "src_saturation", "src_luminance", "hue_shift", "saturation_shift", "luminance_shift",
+            "range", "hue_range", "sat_range", "lum_range", "variance", "enabled"
+        ];
+        foreach (var item in swatchesElem.EnumerateArray())
+        {
+            if (!ObjectKeys(item, swatchKeys)) return null;
+            if (Number(item.GetProperty("src_hue")) is not { } sh ||
+                Number(item.GetProperty("src_saturation")) is not { } ss ||
+                Number(item.GetProperty("src_luminance")) is not { } sl ||
+                Number(item.GetProperty("hue_shift")) is not { } hs ||
+                Number(item.GetProperty("saturation_shift")) is not { } ssf ||
+                Number(item.GetProperty("luminance_shift")) is not { } ls ||
+                Number(item.GetProperty("range")) is not { } rng ||
+                Number(item.GetProperty("hue_range")) is not { } hr ||
+                Number(item.GetProperty("sat_range")) is not { } sr ||
+                Number(item.GetProperty("lum_range")) is not { } lr ||
+                Number(item.GetProperty("variance")) is not { } vr ||
+                Boolean(item.GetProperty("enabled")) is not { } en)
+                return null;
+            var sw = new PointColorSwatch(sh, ss, sl, hs, ssf, ls, rng, hr, sr, lr, vr, en);
+            try { sw.Validate(); } catch (ArgumentOutOfRangeException) { return null; }
+            swatches.Add(sw);
+        }
+        return new PointColorSettings(swatches);
+    }
+
+    internal static SelectiveColorSettings? SelectiveColorValue(JsonElement? value)
+    {
+        if (value is not { ValueKind: JsonValueKind.Object } obj) return null;
+        if (!ObjectKeys(obj, AdjustmentFieldSpec.Fields.ColorSelectiveColor.Protocol.ObjectKeys.ToArray())) return null;
+        if (Text(obj.GetProperty("method")) is not { } methodStr ||
+            !AdjustmentFieldSpec.SubFields.SelectiveColor.AllowedMethods.Contains(methodStr))
+            return null;
+        var bandsElem = obj.GetProperty("bands");
+        var bandNames = AdjustmentFieldSpec.SubFields.SelectiveColor.AllowedBands.ToArray();
+        if (!ObjectKeys(bandsElem, bandNames)) return null;
+        var compNames = AdjustmentFieldSpec.SubFields.SelectiveColor.AllowedComponents.ToArray();
+        var map = new Dictionary<string, SelectiveColorBand>();
+        foreach (var bName in bandNames)
+        {
+            var bElem = bandsElem.GetProperty(bName);
+            if (!ObjectKeys(bElem, compNames)) return null;
+            if (Number(bElem.GetProperty("cyan")) is not { } c ||
+                Number(bElem.GetProperty("magenta")) is not { } m ||
+                Number(bElem.GetProperty("yellow")) is not { } y ||
+                Number(bElem.GetProperty("black")) is not { } k)
+                return null;
+            var band = new SelectiveColorBand(c, m, y, k);
+            try { band.Validate(); } catch (ArgumentOutOfRangeException) { return null; }
+            map[bName] = band;
+        }
+        return new SelectiveColorSettings(
+            SelectiveColorMethodExtensions.ParseSelectiveColorMethod(methodStr),
+            new SelectiveColorBands {
+                Reds = map["reds"], Yellows = map["yellows"], Greens = map["greens"],
+                Cyans = map["cyans"], Blues = map["blues"], Magentas = map["magentas"],
+                Whites = map["whites"], Neutrals = map["neutrals"], Blacks = map["blacks"]
+            });
+    }
+
+    internal static BwMixerWeights? BwMixerValue(JsonElement? value)
+    {
+        if (value is not { ValueKind: JsonValueKind.Object } obj) return null;
+        var channels = AdjustmentFieldSpec.SubFields.BwMixer.AllowedChannels.ToArray();
+        if (!ObjectKeys(obj, channels)) return null;
+        var map = new Dictionary<string, double>();
+        foreach (var ch in channels)
+        {
+            if (Number(obj.GetProperty(ch)) is not { } v) return null;
+            map[ch] = v;
+        }
+        var weights = new BwMixerWeights(
+            map["red"], map["orange"], map["yellow"], map["green"],
+            map["aqua"], map["blue"], map["purple"], map["magenta"]);
+        try { weights.Validate(); } catch (ArgumentOutOfRangeException) { return null; }
+        return weights;
     }
     public static bool Same(JsonElement? a, JsonElement? b) => a == null || b == null ? a == null && b == null : SameValue(a.Value,b.Value);
     private static bool SameValue(JsonElement a, JsonElement b)
@@ -396,6 +503,9 @@ public sealed class AdjustmentPayload
         if (Null(value)) return proto.Nullable;
         if (field == AdjustmentField.HdrLook) return HDRLookValue(value) != null;
         if (field == AdjustmentField.HdrCameraDevelopment) return HDRCameraValue(value) != null;
+        if (field == AdjustmentField.PointColor) return PointColorValue(value) != null;
+        if (field == AdjustmentField.SelectiveColor) return SelectiveColorValue(value) != null;
+        if (field == AdjustmentField.BwMixer) return BwMixerValue(value) != null;
         if (field == AdjustmentField.Curve) {
             try { _ = ToneCurveSettings.Parse(value, allowV2Fields: false); return true; } catch (JsonException) { return false; }
         }

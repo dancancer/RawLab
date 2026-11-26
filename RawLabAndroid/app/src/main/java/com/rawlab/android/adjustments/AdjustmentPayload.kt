@@ -2,9 +2,16 @@ package com.rawlab.android.adjustments
 
 import org.json.JSONObject
 import org.json.JSONArray
+import com.rawlab.android.settings.BwMixerWeights
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.HDRLookSettings
+import com.rawlab.android.settings.PointColorSettings
+import com.rawlab.android.settings.PointColorSwatch
+import com.rawlab.android.settings.SelectiveColorBand
+import com.rawlab.android.settings.SelectiveColorBands
+import com.rawlab.android.settings.SelectiveColorMethod
+import com.rawlab.android.settings.SelectiveColorSettings
 import com.rawlab.android.settings.ToneCurveParametric
 import com.rawlab.android.settings.ToneCurveSettings
 import com.rawlab.android.settings.canonicalZero
@@ -161,6 +168,9 @@ data class AdjustmentPayload private constructor(val source: AdjustmentSource,
             if (field == AdjustmentField.CURVE_PARAMETRIC) return runCatching { parametricCurve(value) }.isSuccess
             if (field == AdjustmentField.HDR_LOOK) return value.hdrLook() != null
             if (field == AdjustmentField.HDR_CAMERA_DEVELOPMENT) return value.hdrCameraDevelopment() != null
+            if (field == AdjustmentField.POINT_COLOR) return value.pointColor() != null
+            if (field == AdjustmentField.SELECTIVE_COLOR) return value.selectiveColor() != null
+            if (field == AdjustmentField.BW_MIXER) return value.bwMixerWeights() != null
             if (field.gradingZone != null || field == AdjustmentField.GRADING_GLOBAL) {
                 val wheel = value.objectValue ?: return false
                 val allowed = setOf("hue", "saturation", "luminance")
@@ -258,3 +268,125 @@ internal fun AdjustmentValue.hdrLook(): HDRLookSettings? {
     val strength = look["strength"]?.number?.takeIf { it in sub.strengthMin..sub.strengthMax } ?: return null
     return runCatching { HDRLookSettings(sha256, name, strength.toFloat()) }.getOrNull()
 }
+
+private val POINT_COLOR_SWATCH_KEYS = setOf(
+    "src_hue", "src_saturation", "src_luminance",
+    "hue_shift", "saturation_shift", "luminance_shift",
+    "range", "hue_range", "sat_range", "lum_range", "variance", "enabled",
+)
+
+internal fun AdjustmentValue.pointColor(): PointColorSettings? {
+    val obj = objectValue ?: return null
+    val sf = AdjustmentFieldSpec.SubFields.PointColor
+    if (obj.keys != AdjustmentFieldSpec.Fields.COLOR_POINT_COLOR.protocol.objectKeys.toSet()) return null
+    val rawList = (obj["swatches"] as? AdjustmentValue.Array)?.value ?: return null
+    if (rawList.size > sf.maxSwatches) return null
+    val parsed = rawList.map { item ->
+        val sw = item.objectValue ?: return null
+        if (sw.keys != POINT_COLOR_SWATCH_KEYS) return null
+        val srcHue = sw["src_hue"]?.number ?: return null
+        val srcSat = sw["src_saturation"]?.number ?: return null
+        val srcLum = sw["src_luminance"]?.number ?: return null
+        val hueShift = sw["hue_shift"]?.number ?: return null
+        val satShift = sw["saturation_shift"]?.number ?: return null
+        val lumShift = sw["luminance_shift"]?.number ?: return null
+        val range = sw["range"]?.number ?: return null
+        val hueRange = sw["hue_range"]?.number ?: return null
+        val satRange = sw["sat_range"]?.number ?: return null
+        val lumRange = sw["lum_range"]?.number ?: return null
+        val variance = sw["variance"]?.number ?: return null
+        val enabled = sw["enabled"]?.boolean ?: return null
+        runCatching {
+            PointColorSwatch(
+                srcHue.toFloat(), srcSat.toFloat(), srcLum.toFloat(),
+                hueShift.toFloat(), satShift.toFloat(), lumShift.toFloat(),
+                range.toFloat(), hueRange.toFloat(), satRange.toFloat(), lumRange.toFloat(),
+                variance.toFloat(), enabled,
+            )
+        }.getOrNull() ?: return null
+    }
+    return runCatching { PointColorSettings(parsed) }.getOrNull()
+}
+
+internal fun PointColorSettings.toAdjustmentValue(): AdjustmentValue = AdjustmentValue.Object(
+    mapOf("swatches" to AdjustmentValue.Array(swatches.map { s ->
+        AdjustmentValue.Object(mapOf(
+            "src_hue" to AdjustmentValue.Number(s.srcHue.toDouble()),
+            "src_saturation" to AdjustmentValue.Number(s.srcSaturation.toDouble()),
+            "src_luminance" to AdjustmentValue.Number(s.srcLuminance.toDouble()),
+            "hue_shift" to AdjustmentValue.Number(s.hueShift.toDouble()),
+            "saturation_shift" to AdjustmentValue.Number(s.saturationShift.toDouble()),
+            "luminance_shift" to AdjustmentValue.Number(s.luminanceShift.toDouble()),
+            "range" to AdjustmentValue.Number(s.range.toDouble()),
+            "hue_range" to AdjustmentValue.Number(s.hueRange.toDouble()),
+            "sat_range" to AdjustmentValue.Number(s.satRange.toDouble()),
+            "lum_range" to AdjustmentValue.Number(s.lumRange.toDouble()),
+            "variance" to AdjustmentValue.Number(s.variance.toDouble()),
+            "enabled" to AdjustmentValue.Boolean(s.enabled),
+        ))
+    }))
+)
+
+internal fun AdjustmentValue.selectiveColor(): SelectiveColorSettings? {
+    val obj = objectValue ?: return null
+    val sf = AdjustmentFieldSpec.SubFields.SelectiveColor
+    if (obj.keys != AdjustmentFieldSpec.Fields.COLOR_SELECTIVE_COLOR.protocol.objectKeys.toSet()) return null
+    val methodStr = obj["method"]?.text ?: return null
+    if (methodStr !in sf.allowedMethods) return null
+    val method = runCatching { SelectiveColorMethod.fromWire(methodStr) }.getOrNull() ?: return null
+    val bandsObj = obj["bands"]?.objectValue ?: return null
+    if (bandsObj.keys != sf.allowedBands.toSet()) return null
+    val compKeys = sf.allowedComponents.toSet()
+    fun band(name: String): SelectiveColorBand? {
+        val b = bandsObj[name]?.objectValue ?: return null
+        if (b.keys != compKeys) return null
+        val c = b["cyan"]?.number ?: return null
+        val m = b["magenta"]?.number ?: return null
+        val y = b["yellow"]?.number ?: return null
+        val k = b["black"]?.number ?: return null
+        return runCatching { SelectiveColorBand(c.toFloat(), m.toFloat(), y.toFloat(), k.toFloat()) }.getOrNull()
+    }
+    val bands = SelectiveColorBands(
+        reds = band("reds") ?: return null, yellows = band("yellows") ?: return null,
+        greens = band("greens") ?: return null, cyans = band("cyans") ?: return null,
+        blues = band("blues") ?: return null, magentas = band("magentas") ?: return null,
+        whites = band("whites") ?: return null, neutrals = band("neutrals") ?: return null,
+        blacks = band("blacks") ?: return null,
+    )
+    return SelectiveColorSettings(method, bands)
+}
+
+internal fun SelectiveColorSettings.toAdjustmentValue(): AdjustmentValue = AdjustmentValue.Object(
+    mapOf(
+        "method" to AdjustmentValue.Text(method.wireValue),
+        "bands" to AdjustmentValue.Object(bands.asMap().mapValues { (_, b) ->
+            AdjustmentValue.Object(mapOf(
+                "cyan" to AdjustmentValue.Number(b.cyan.toDouble()),
+                "magenta" to AdjustmentValue.Number(b.magenta.toDouble()),
+                "yellow" to AdjustmentValue.Number(b.yellow.toDouble()),
+                "black" to AdjustmentValue.Number(b.black.toDouble()),
+            ))
+        }),
+    )
+)
+
+internal fun AdjustmentValue.bwMixerWeights(): BwMixerWeights? {
+    val obj = objectValue ?: return null
+    val sf = AdjustmentFieldSpec.SubFields.BwMixer
+    if (obj.keys != sf.allowedChannels.toSet()) return null
+    val r = obj["red"]?.number ?: return null
+    val o = obj["orange"]?.number ?: return null
+    val y = obj["yellow"]?.number ?: return null
+    val g = obj["green"]?.number ?: return null
+    val a = obj["aqua"]?.number ?: return null
+    val b = obj["blue"]?.number ?: return null
+    val p = obj["purple"]?.number ?: return null
+    val m = obj["magenta"]?.number ?: return null
+    return runCatching {
+        BwMixerWeights(r.toFloat(), o.toFloat(), y.toFloat(), g.toFloat(), a.toFloat(), b.toFloat(), p.toFloat(), m.toFloat())
+    }.getOrNull()
+}
+
+internal fun BwMixerWeights.toAdjustmentValue(): AdjustmentValue = AdjustmentValue.Object(
+    asMap().mapValues { (_, v) -> AdjustmentValue.Number(v.toDouble()) }
+)

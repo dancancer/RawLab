@@ -101,6 +101,16 @@ extension Sony2FujiProcessor {
             return L10n.text("无效或不可用的降噪参数")
         case .invalidWhiteBalance:
             return L10n.text("无效的白平衡参数")
+        case .invalidCameraCalibration:
+            return L10n.text("无效的相机校准参数")
+        case .invalidPointColor, .invalidSelectiveColor, .invalidBwMixer:
+            return L10n.text("无效的色彩调整参数")
+        case .invalidSharpenV2:
+            return L10n.text("无效的锐化参数")
+        case .invalidFilmOptics:
+            return L10n.text("无效的光学效果参数")
+        case .invalidLensCorrection:
+            return L10n.text("无效或不可用的镜头校正设置")
         }
     }
 

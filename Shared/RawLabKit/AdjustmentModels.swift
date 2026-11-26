@@ -82,6 +82,8 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
     public var grainRoughness: Double {
         didSet { grainRoughness = Self.clamped(grainRoughness, to: Self.grainRoughnessRange) }
     }
+    public var grainToneCurve: GrainToneCurve = .legacy
+    public var grainFormatPreset: GrainFormatPreset = .custom
 
     public init(vignetteAmount: Double = AdjustmentFieldSpec.Fields.effectsVignetteAmount.macosModel.defaultValue.numberValue!,
                 vignetteMidpoint: Double = AdjustmentFieldSpec.Fields.effectsVignetteMidpoint.macosModel.defaultValue.numberValue!,
@@ -90,7 +92,9 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
                 vignetteHighlights: Double = AdjustmentFieldSpec.Fields.effectsVignetteHighlights.macosModel.defaultValue.numberValue!,
                 grainAmount: Double = AdjustmentFieldSpec.Fields.effectsGrainAmount.macosModel.defaultValue.numberValue!,
                 grainSize: Double = AdjustmentFieldSpec.Fields.effectsGrainSize.macosModel.defaultValue.numberValue!,
-                grainRoughness: Double = AdjustmentFieldSpec.Fields.effectsGrainRoughness.macosModel.defaultValue.numberValue!) {
+                grainRoughness: Double = AdjustmentFieldSpec.Fields.effectsGrainRoughness.macosModel.defaultValue.numberValue!,
+                grainToneCurve: GrainToneCurve = .legacy,
+                grainFormatPreset: GrainFormatPreset = .custom) {
         self.vignetteAmount = Self.clamped(vignetteAmount, to: Self.vignetteAmountRange)
         self.vignetteMidpoint = Self.clamped(vignetteMidpoint, to: Self.vignetteMidpointRange)
         self.vignetteRoundness = Self.clamped(vignetteRoundness, to: Self.vignetteRoundnessRange)
@@ -99,6 +103,8 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
         self.grainAmount = Self.clamped(grainAmount, to: Self.grainAmountRange)
         self.grainSize = Self.clamped(grainSize, to: Self.grainSizeRange)
         self.grainRoughness = Self.clamped(grainRoughness, to: Self.grainRoughnessRange)
+        self.grainToneCurve = grainToneCurve
+        self.grainFormatPreset = grainFormatPreset
     }
 
     public var isValid: Bool {
@@ -111,14 +117,15 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
     public mutating func resetVignette() {
         self = Self(vignetteAmount: 0, vignetteMidpoint: 50, vignetteRoundness: 0,
                     vignetteFeather: 50, vignetteHighlights: 0,
-                    grainAmount: grainAmount, grainSize: grainSize, grainRoughness: grainRoughness)
+                    grainAmount: grainAmount, grainSize: grainSize, grainRoughness: grainRoughness,
+                    grainToneCurve: grainToneCurve, grainFormatPreset: grainFormatPreset)
     }
 
     public mutating func resetGrain() {
         self = Self(vignetteAmount: vignetteAmount, vignetteMidpoint: vignetteMidpoint,
                     vignetteRoundness: vignetteRoundness, vignetteFeather: vignetteFeather,
                     vignetteHighlights: vignetteHighlights, grainAmount: 0, grainSize: 25,
-                    grainRoughness: 50)
+                    grainRoughness: 50, grainToneCurve: .legacy, grainFormatPreset: .custom)
     }
 
     private static func clamped(_ value: Double, to range: ClosedRange<Double>) -> Double {
@@ -128,7 +135,7 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights
-        case grainAmount, grainSize, grainRoughness
+        case grainAmount, grainSize, grainRoughness, grainToneCurve, grainFormatPreset
     }
 
     public init(from decoder: Decoder) throws {
@@ -148,8 +155,24 @@ public struct PhotoEffectsSettings: Codable, Equatable, Sendable {
             vignetteHighlights: try decodeChecked(.vignetteHighlights, default: 0, range: Self.vignetteHighlightsRange),
             grainAmount: try decodeChecked(.grainAmount, default: 0, range: Self.grainAmountRange),
             grainSize: try decodeChecked(.grainSize, default: 25, range: Self.grainSizeRange),
-            grainRoughness: try decodeChecked(.grainRoughness, default: 50, range: Self.grainRoughnessRange)
+            grainRoughness: try decodeChecked(.grainRoughness, default: 50, range: Self.grainRoughnessRange),
+            grainToneCurve: try values.decodeIfPresent(GrainToneCurve.self, forKey: .grainToneCurve) ?? .legacy,
+            grainFormatPreset: try values.decodeIfPresent(GrainFormatPreset.self, forKey: .grainFormatPreset) ?? .custom
         )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(vignetteAmount, forKey: .vignetteAmount)
+        try values.encode(vignetteMidpoint, forKey: .vignetteMidpoint)
+        try values.encode(vignetteRoundness, forKey: .vignetteRoundness)
+        try values.encode(vignetteFeather, forKey: .vignetteFeather)
+        try values.encode(vignetteHighlights, forKey: .vignetteHighlights)
+        try values.encode(grainAmount, forKey: .grainAmount)
+        try values.encode(grainSize, forKey: .grainSize)
+        try values.encode(grainRoughness, forKey: .grainRoughness)
+        if grainToneCurve != .legacy { try values.encode(grainToneCurve, forKey: .grainToneCurve) }
+        if grainFormatPreset != .custom { try values.encode(grainFormatPreset, forKey: .grainFormatPreset) }
     }
 }
 

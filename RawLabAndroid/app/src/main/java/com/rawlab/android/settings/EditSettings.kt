@@ -58,6 +58,13 @@ data class EditSettings(
     val vibrance: Float = 0f,
     val clarity: Float = 0f,
     val dehaze: Float = 0f,
+    val texture: Float = 0f,
+    val calibration: CameraCalibrationSettings = CameraCalibrationSettings(),
+    val pointColor: PointColorSettings = PointColorSettings(),
+    val selectiveColor: SelectiveColorSettings = SelectiveColorSettings(),
+    val bwMixer: BwMixerSettings = BwMixerSettings(),
+    val sharpenV2: SharpenV2Settings = SharpenV2Settings(),
+    val filmOptics: FilmOpticsSettings = FilmOpticsSettings(),
     val colorGrading: ColorGradingSettings = ColorGradingSettings(),
     val curve: ToneCurveSettings = ToneCurveSettings(),
     val masterRecipeSettingsVersion: Int = 3,
@@ -74,6 +81,7 @@ data class EditSettings(
         require(vibrance.isFinite() && vibrance in f.COLOR_VIBRANCE.androidModel.floatRange!!)
         require(clarity.isFinite() && clarity in f.EFFECTS_CLARITY.androidModel.floatRange!!)
         require(dehaze.isFinite() && dehaze in f.EFFECTS_DEHAZE.androidModel.floatRange!!)
+        require(texture.isFinite() && texture in f.EFFECTS_TEXTURE.androidModel.floatRange!!)
         require(exposureMode in f.LIGHT_EXPOSURE_MODE.androidModel.min!!.toInt()..f.LIGHT_EXPOSURE_MODE.androidModel.max!!.toInt())
         require(strength.isFinite() && strength in f.LOOKS_STRENGTH.androidModel.floatRange!!)
         require(exposure.isFinite() && exposure in f.LIGHT_EXPOSURE.androidModel.floatRange!!)
@@ -139,28 +147,45 @@ data class EditSettings(
 
 data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
     val autoCrop: Boolean = true, val manual: Boolean = false, val profileId: String? = null,
-    val focalLength: Float? = null, val cropFactor: Float? = null, val vignetting: Boolean = false) {
+    val focalLength: Float? = null, val cropFactor: Float? = null, val vignetting: Boolean = false,
+    val defringePurpleAmount: Float = 0f, val defringePurpleHue: Float = 50f,
+    val defringeGreenAmount: Float = 0f, val defringeGreenHue: Float = 50f) {
     init {
+        val f = AdjustmentFieldSpec.Fields
         require(focalLength == null || focalLength.isFinite() && focalLength in 0.1f..10000f)
         require(cropFactor == null || cropFactor.isFinite() && cropFactor in 0.1f..100f)
+        require(defringePurpleAmount.isFinite() && defringePurpleAmount in f.GEOMETRY_LENS_DEFRINGE_PURPLE_AMOUNT.androidModel.floatRange!!)
+        require(defringePurpleHue.isFinite() && defringePurpleHue in f.GEOMETRY_LENS_DEFRINGE_PURPLE_HUE.androidModel.floatRange!!)
+        require(defringeGreenAmount.isFinite() && defringeGreenAmount in f.GEOMETRY_LENS_DEFRINGE_GREEN_AMOUNT.androidModel.floatRange!!)
+        require(defringeGreenHue.isFinite() && defringeGreenHue in f.GEOMETRY_LENS_DEFRINGE_GREEN_HUE.androidModel.floatRange!!)
     }
     val enabled: Boolean get() = distortion || tca || vignetting
+    val hasDefringe: Boolean get() = defringePurpleAmount != 0f || defringePurpleHue != 50f ||
+        defringeGreenAmount != 0f || defringeGreenHue != 50f
     val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
-    fun encode(): String = listOf(if (distortion) 1 else 0, if (tca) 1 else 0,
-        if (autoCrop) 1 else 0, if (manual) 1 else 0,
-        profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "",
-        focalLength?.toString() ?: "", cropFactor?.toString() ?: "", if (vignetting) "1" else "0")
-        .joinToString("|")
+    fun encode(): String {
+        val base = mutableListOf(if (distortion) "1" else "0", if (tca) "1" else "0",
+            if (autoCrop) "1" else "0", if (manual) "1" else "0",
+            profileId?.let { java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(it.toByteArray(Charsets.UTF_8)) } ?: "",
+            focalLength?.toString() ?: "", cropFactor?.toString() ?: "", if (vignetting) "1" else "0")
+        if (hasDefringe) {
+            base += listOf(defringePurpleAmount.toString(), defringePurpleHue.toString(),
+                defringeGreenAmount.toString(), defringeGreenHue.toString())
+        }
+        return base.joinToString("|")
+    }
     companion object {
         fun decode(value: String?): LensSettings {
             if (value == null) return LensSettings()
             val fields = value.split('|')
-            require(fields.size in setOf(5, 7, 8) && fields.take(4).all { it == "0" || it == "1" })
+            require(fields.size in setOf(5, 7, 8, 12) && fields.take(4).all { it == "0" || it == "1" })
             require(fields.size < 8 || fields[7] in setOf("0", "1"))
             return LensSettings(fields[0] == "1", fields[1] == "1", fields[2] == "1", fields[3] == "1",
                 fields[4].takeIf { it.isNotEmpty() }?.let { String(java.util.Base64.getUrlDecoder().decode(it), Charsets.UTF_8) },
                 fields.getOrNull(5)?.takeIf { it.isNotEmpty() }?.toFloat(),
-                fields.getOrNull(6)?.takeIf { it.isNotEmpty() }?.toFloat(), fields.getOrNull(7) == "1")
+                fields.getOrNull(6)?.takeIf { it.isNotEmpty() }?.toFloat(), fields.getOrNull(7) == "1",
+                fields.getOrNull(8)?.toFloat() ?: 0f, fields.getOrNull(9)?.toFloat() ?: 50f,
+                fields.getOrNull(10)?.toFloat() ?: 0f, fields.getOrNull(11)?.toFloat() ?: 50f)
         }
     }
 }
@@ -222,6 +247,8 @@ data class PhotoEffectsSettings(
     val grainAmount: Float = PhotoEffectParameter.GRAIN_AMOUNT.defaultValue,
     val grainSize: Float = PhotoEffectParameter.GRAIN_SIZE.defaultValue,
     val grainRoughness: Float = PhotoEffectParameter.GRAIN_ROUGHNESS.defaultValue,
+    val grainToneCurve: GrainToneCurve = GrainToneCurve.LEGACY,
+    val grainFormatPreset: GrainFormatPreset = GrainFormatPreset.CUSTOM,
 ) {
     init {
         require(vignetteAmount.isFinite() && vignetteAmount in PhotoEffectParameter.VIGNETTE_AMOUNT.range)
@@ -265,10 +292,12 @@ data class PhotoEffectsSettings(
     fun resetEffects(vignette: Boolean): PhotoEffectsSettings =
         PhotoEffectParameter.entries.filter { it.isVignette == vignette }
             .fold(this) { state, parameter -> state.withEffect(parameter, parameter.defaultValue) }
+            .let { if (vignette) it else it.copy(grainToneCurve = GrainToneCurve.LEGACY, grainFormatPreset = GrainFormatPreset.CUSTOM) }
 
     fun isEffectDefault(vignette: Boolean): Boolean =
         PhotoEffectParameter.entries.filter { it.isVignette == vignette }
-            .all { value(it) == it.defaultValue }
+            .all { value(it) == it.defaultValue } &&
+            (vignette || (grainToneCurve == GrainToneCurve.LEGACY && grainFormatPreset == GrainFormatPreset.CUSTOM))
 }
 
 data class Film(val id: String, val name: String, val file: String?, val artworkName: String = id) {

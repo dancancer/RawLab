@@ -239,6 +239,98 @@ Json writeGrading(const sony2fuji_color_grading_v2_config& grading, bool allowV1
     return out;
 }
 
+bool hasFreeEndpointX(const sony2fuji_tone_curve_config& c) {
+    return c.mode == SONY2FUJI_CURVE_CUSTOM && c.count >= 2 &&
+           (c.points[0].x != 0.0 || c.points[c.count - 1].x != 1.0);
+}
+
+bool anyFreeEndpointX(const EditRecipe& recipe) {
+    if (hasFreeEndpointX(recipe.toneCurve)) return true;
+    for (const auto& ch : recipe.channelCurves) {
+        if (hasFreeEndpointX(ch)) return true;
+    }
+    return false;
+}
+
+bool isDefaultCalibration(const CameraCalibrationConfig& c) {
+    return c.shadowTint == 0.0f && c.redHue == 0.0f && c.redSaturation == 0.0f &&
+           c.greenHue == 0.0f && c.greenSaturation == 0.0f &&
+           c.blueHue == 0.0f && c.blueSaturation == 0.0f;
+}
+
+bool isDefaultSelectiveColor(const SelectiveColorConfig& sc) {
+    if (sc.absolute) return false;
+    for (const auto& b : sc.bands) {
+        if (b.cyan != 0.0f || b.magenta != 0.0f || b.yellow != 0.0f || b.black != 0.0f) return false;
+    }
+    return true;
+}
+
+bool isDefaultBwMixer(const BwMixerConfig& bw) {
+    if (bw.enabled) return false;
+    for (float w : bw.weights) {
+        if (w != 0.0f) return false;
+    }
+    return true;
+}
+
+bool isDefaultSharpenV2(const SharpenV2Config& s) {
+    return !s.luminanceV2 && s.radius == 1.0f && s.detail == 25.0f && s.masking == 0.0f;
+}
+
+bool isDefaultDefringe(const DefringeConfig& d) {
+    return d.purpleAmount == 0.0f && d.purpleHue == 50.0f &&
+           d.greenAmount == 0.0f && d.greenHue == 50.0f;
+}
+
+bool isDefaultHalation(const FilmOpticsConfig& fo) {
+    return fo.halationAmount == 0.0f && fo.halationThreshold == 75.0f &&
+           fo.halationRadius == 35.0f && fo.halationHue == 0.0f;
+}
+
+bool isDefaultBloom(const FilmOpticsConfig& fo) {
+    return fo.bloomAmount == 0.0f && fo.bloomThreshold == 70.0f && fo.bloomRadius == 40.0f;
+}
+
+bool hasV14Features(const EditRecipe& recipe) {
+    return !isDefaultCalibration(recipe.calibration) ||
+           recipe.pointColor.swatchCount > 0 ||
+           !isDefaultSelectiveColor(recipe.selectiveColor) ||
+           !isDefaultBwMixer(recipe.bw) ||
+           recipe.texture != 0.0f ||
+           !isDefaultSharpenV2(recipe.sharpenV2) ||
+           !isDefaultDefringe(recipe.defringe) ||
+           !isDefaultHalation(recipe.filmOptics) ||
+           !isDefaultBloom(recipe.filmOptics) ||
+           recipe.grainToneCurve != EditGrainToneCurve::Legacy ||
+           recipe.grainFormatPreset != EditGrainFormatPreset::Custom;
+}
+
+constexpr std::array<const char*, 9> kSelectiveBandKeys = {
+    "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
+};
+
+constexpr std::array<const char*, 8> kBwChannelKeys = {
+    "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
+};
+
+const char* grainToneCurveName(EditGrainToneCurve c) {
+    switch (c) {
+        case EditGrainToneCurve::Legacy: return "legacy";
+        case EditGrainToneCurve::NegativeAsymmetric: return "negative_asymmetric";
+        default: throw std::invalid_argument("Invalid grain_tone_curve");
+    }
+}
+
+const char* grainFormatPresetName(EditGrainFormatPreset p) {
+    switch (p) {
+        case EditGrainFormatPreset::Custom: return "custom";
+        case EditGrainFormatPreset::Film135: return "135";
+        case EditGrainFormatPreset::Film120: return "120";
+        default: throw std::invalid_argument("Invalid grain_format_preset");
+    }
+}
+
 Json writeEffects(const sony2fuji_photo_effects_config& fx) {
     return {{"vignette_amount", fx.vignette_amount}, {"vignette_midpoint", fx.vignette_midpoint},
         {"vignette_roundness", fx.vignette_roundness}, {"vignette_feather", fx.vignette_feather},
@@ -381,7 +473,34 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.curveApplyToLuminosity = recipe.curveApplyToLuminosity;
     core.parametricCurve = toCoreParametricCurve(recipe.parametricCurve);
     core.toneControls = {recipe.toneControls.black_point, recipe.toneControls.white_point, recipe.toneControls.vibrance};
-    core.atmosphere = {recipe.atmosphere.clarity, recipe.atmosphere.dehaze};
+    core.atmosphere = {recipe.atmosphere.clarity, recipe.atmosphere.dehaze, recipe.texture};
+    core.calibration = {
+        recipe.calibration.shadowTint, recipe.calibration.redHue, recipe.calibration.redSaturation,
+        recipe.calibration.greenHue, recipe.calibration.greenSaturation,
+        recipe.calibration.blueHue, recipe.calibration.blueSaturation
+    };
+    core.pointColor.swatchCount = recipe.pointColor.swatchCount;
+    for (uint32_t i = 0; i < recipe.pointColor.swatchCount && i < kPointColorMaxSwatches; ++i) {
+        const auto& src = recipe.pointColor.swatches[i];
+        core.pointColor.swatches[i] = {
+            src.srcHue, src.srcSaturation, src.srcLuminance,
+            src.hueShift, src.saturationShift, src.luminanceShift, src.variance,
+            src.range, src.hueRange, src.satRange, src.lumRange, src.enabled
+        };
+    }
+    core.selectiveColor.method = recipe.selectiveColor.absolute
+        ? SelectiveColorMethod::Absolute
+        : SelectiveColorMethod::Relative;
+    for (size_t i = 0; i < kSelectiveColorBandCount; ++i) {
+        core.selectiveColor.bands[i] = {
+            recipe.selectiveColor.bands[i].cyan,
+            recipe.selectiveColor.bands[i].magenta,
+            recipe.selectiveColor.bands[i].yellow,
+            recipe.selectiveColor.bands[i].black
+        };
+    }
+    core.bw.enabled = recipe.bw.enabled;
+    core.bw.weights = recipe.bw.weights;
     const auto gradingV2 = effectiveGradingV2(recipe);
     core.colorGrading.wheels = {
         ColorGradingWheel{gradingV2.shadows_hue, gradingV2.shadows_saturation, gradingV2.shadows_luminance},
@@ -392,6 +511,10 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.colorGrading.blending = gradingV2.blending;
     core.colorGrading.balance = gradingV2.balance;
     core.sharpening = recipe.sharpening;
+    core.sharpenV2 = {
+        recipe.sharpenV2.luminanceV2, recipe.sharpenV2.radius,
+        recipe.sharpenV2.detail, recipe.sharpenV2.masking
+    };
     core.rawNoiseReduction = recipe.rawNoiseReduction;
     core.chromaDenoise = recipe.chromaDenoise;
     core.wavelet = {recipe.wavelet.enabled != 0, recipe.wavelet.luma, recipe.wavelet.chroma, recipe.wavelet.coarse, core.processingVersion};
@@ -401,13 +524,25 @@ CanonicalSdrRecipe toCoreSdrRecipe(const EditRecipe& recipe) {
     core.effects = {
         recipe.effects.vignette_amount, recipe.effects.vignette_midpoint, recipe.effects.vignette_roundness,
         recipe.effects.vignette_feather, recipe.effects.vignette_highlights,
-        recipe.effects.grain_amount, recipe.effects.grain_size, recipe.effects.grain_roughness
+        recipe.effects.grain_amount, recipe.effects.grain_size, recipe.effects.grain_roughness,
+        static_cast<GrainToneCurve>(recipe.grainToneCurve),
+        static_cast<GrainFormatPreset>(recipe.grainFormatPreset)
+    };
+    core.filmOptics = {
+        recipe.filmOptics.halationAmount, recipe.filmOptics.halationThreshold,
+        recipe.filmOptics.halationRadius, recipe.filmOptics.halationHue,
+        recipe.filmOptics.bloomAmount, recipe.filmOptics.bloomThreshold,
+        recipe.filmOptics.bloomRadius
     };
     core.lensDistortion = recipe.lensDistortion;
     core.lensTca = recipe.lensTca;
     core.lensVignetting = recipe.lensVignetting;
     core.lensAutoCrop = recipe.lensAutoCrop;
     core.lensProfileId = recipe.lensProfileId;
+    core.defringe = {
+        recipe.defringe.purpleAmount, recipe.defringe.purpleHue,
+        recipe.defringe.greenAmount, recipe.defringe.greenHue
+    };
     core.outputFormat = static_cast<RenderOutputFormat>(recipe.outputFormat);
     core.jpegQuality = recipe.jpegQuality;
     core.outputLongEdge = recipe.outputLongEdge;
@@ -450,6 +585,32 @@ EditRecipe fromCoreEditState(const CanonicalEditState& core) {
         core.toneControls.blackPoint, core.toneControls.whitePoint, core.toneControls.vibrance};
     parsed.atmosphere = {SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(sony2fuji_atmosphere_config),
         core.atmosphere.clarity, core.atmosphere.dehaze};
+    parsed.texture = core.atmosphere.texture;
+    parsed.calibration = {
+        core.calibration.shadowTint, core.calibration.redHue, core.calibration.redSaturation,
+        core.calibration.greenHue, core.calibration.greenSaturation,
+        core.calibration.blueHue, core.calibration.blueSaturation
+    };
+    parsed.pointColor.swatchCount = core.pointColor.swatchCount;
+    for (uint32_t i = 0; i < core.pointColor.swatchCount && i < kPointColorMaxSwatches; ++i) {
+        const auto& src = core.pointColor.swatches[i];
+        parsed.pointColor.swatches[i] = {
+            src.srcHue, src.srcSaturation, src.srcLuminance,
+            src.hueShift, src.saturationShift, src.luminanceShift, src.variance,
+            src.range, src.hueRange, src.satRange, src.lumRange, src.enabled
+        };
+    }
+    parsed.selectiveColor.absolute = core.selectiveColor.method == SelectiveColorMethod::Absolute;
+    for (size_t i = 0; i < kSelectiveColorBandCount; ++i) {
+        parsed.selectiveColor.bands[i] = {
+            core.selectiveColor.bands[i].cyan,
+            core.selectiveColor.bands[i].magenta,
+            core.selectiveColor.bands[i].yellow,
+            core.selectiveColor.bands[i].black
+        };
+    }
+    parsed.bw.enabled = core.bw.enabled;
+    parsed.bw.weights = core.bw.weights;
     parsed.colorGrading = {SONY2FUJI_COLOR_GRADING_CONFIG_VERSION, sizeof(sony2fuji_color_grading_config),
         core.colorGrading.wheels[0].hue, core.colorGrading.wheels[0].saturation,
         core.colorGrading.wheels[1].hue, core.colorGrading.wheels[1].saturation,
@@ -461,6 +622,10 @@ EditRecipe fromCoreEditState(const CanonicalEditState& core) {
         core.colorGrading.global.hue, core.colorGrading.global.saturation, core.colorGrading.global.luminance,
         core.colorGrading.blending, core.colorGrading.balance};
     parsed.sharpening = core.sharpening;
+    parsed.sharpenV2 = {
+        core.sharpenV2.luminanceV2, core.sharpenV2.radius,
+        core.sharpenV2.detail, core.sharpenV2.masking
+    };
     parsed.rawNoiseReduction = core.rawNoiseReduction;
     parsed.chromaDenoise = core.chromaDenoise;
     parsed.wavelet = {SONY2FUJI_WAVELET_DENOISE_CONFIG_VERSION, sizeof(sony2fuji_wavelet_denoise_config),
@@ -472,11 +637,23 @@ EditRecipe fromCoreEditState(const CanonicalEditState& core) {
         core.effects.vignetteAmount, core.effects.vignetteMidpoint, core.effects.vignetteRoundness,
         core.effects.vignetteFeather, core.effects.vignetteHighlights,
         core.effects.grainAmount, core.effects.grainSize, core.effects.grainRoughness};
+    parsed.grainToneCurve = static_cast<EditGrainToneCurve>(core.effects.grainToneCurve);
+    parsed.grainFormatPreset = static_cast<EditGrainFormatPreset>(core.effects.grainFormatPreset);
+    parsed.filmOptics = {
+        core.filmOptics.halationAmount, core.filmOptics.halationThreshold,
+        core.filmOptics.halationRadius, core.filmOptics.halationHue,
+        core.filmOptics.bloomAmount, core.filmOptics.bloomThreshold,
+        core.filmOptics.bloomRadius
+    };
     parsed.lensDistortion = core.lensDistortion;
     parsed.lensTca = core.lensTca;
     parsed.lensVignetting = core.lensVignetting;
     parsed.lensAutoCrop = core.lensAutoCrop;
     parsed.lensProfileId = core.lensProfileId;
+    parsed.defringe = {
+        core.defringe.purpleAmount, core.defringe.purpleHue,
+        core.defringe.greenAmount, core.defringe.greenHue
+    };
     parsed.outputFormat = static_cast<sony2fuji_output_format>(core.outputFormat);
     parsed.jpegQuality = core.jpegQuality;
     parsed.outputLongEdge = core.outputLongEdge;
@@ -562,8 +739,23 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
         throw std::invalid_argument("Custom tone curve requires schema_version 5 and zero s_curve");
     if (hasChannelCurves(recipe) && recipe.schemaVersion < 5)
         throw std::invalid_argument("Channel curves require schema_version 5");
-    if (recipe.schemaVersion != 17 && recipe.schemaVersion != 18 && (recipe.schemaVersion < 1 || recipe.schemaVersion > 7))
+    if (recipe.schemaVersion != 17 && recipe.schemaVersion != 18 && recipe.schemaVersion != 20 &&
+        (recipe.schemaVersion < 1 || recipe.schemaVersion > 7))
         throw std::invalid_argument("Unsupported schema_version");
+    const auto v14Check = toCoreSdrRecipe(recipe);
+    if (!v14Check.calibration.valid() || !v14Check.pointColor.valid() ||
+        !v14Check.selectiveColor.valid() || !v14Check.bw.valid() ||
+        !v14Check.atmosphere.valid() || !v14Check.sharpenV2.valid() ||
+        !v14Check.defringe.valid() || !v14Check.filmOptics.valid() ||
+        !v14Check.effects.valid()) {
+        throw std::invalid_argument("Invalid SDR v0.14 configuration");
+    }
+    const bool activeV14 = hasV14Features(recipe);
+    if (recipe.schemaVersion < 20 && activeV14)
+        throw std::invalid_argument("SDR v0.14 fields require schema_version 20");
+    const uint32_t emittedSchema = activeV14
+        ? 20u
+        : (recipe.schemaVersion == 20 ? (anyFreeEndpointX(recipe) ? 18u : 17u) : recipe.schemaVersion);
     if (recipe.x3fMode != SONY2FUJI_X3F_LEGACY && recipe.x3fMode != SONY2FUJI_X3F_NORMAL)
         throw std::invalid_argument("Unsupported x3f_mode");
     if (recipe.schemaVersion < 7 && recipe.x3fMode != SONY2FUJI_X3F_LEGACY)
@@ -643,7 +835,7 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     Json size = {{"mode", "native"}};
     if (recipe.outputLongEdge) size = {{"mode", "limit_long_edge"}, {"long_edge", recipe.outputLongEdge}};
     Json document = {
-        {"schema_version", recipe.schemaVersion},
+        {"schema_version", emittedSchema},
         {"input", {{"path", recipe.inputPath}}},
         {"edits", {
             {"exposure", {{"mode", exposureName(recipe.exposureMode)}, {"ev", recipe.exposureEv},
@@ -662,12 +854,12 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
     if (allowV12 && recipe.outputSharpening != SONY2FUJI_OUTPUT_SHARPENING_OFF) {
         document["output"]["output_sharpening"] = outputSharpeningName(recipe.outputSharpening);
     }
-    if (recipe.schemaVersion >= 5)
+    if (emittedSchema >= 5)
         document["processing"] = {{"family", "rawlab"}, {"version", static_cast<int>(recipe.processingVersion)},
             {"quality", "standard"}};
-    if (recipe.schemaVersion == 7 || (recipe.schemaVersion >= 17 && !recipe.rasterInput && recipe.x3fMode == SONY2FUJI_X3F_NORMAL))
+    if (emittedSchema == 7 || (emittedSchema >= 17 && !recipe.rasterInput && recipe.x3fMode == SONY2FUJI_X3F_NORMAL))
         document["x3f_mode"] = recipe.x3fMode == SONY2FUJI_X3F_NORMAL ? "normal-v1" : "legacy";
-    if (recipe.schemaVersion >= 2) {
+    if (emittedSchema >= 2) {
         const auto& geo = recipe.geometry;
         document["edits"]["geometry"] = {
             {"crop", {{"x", geo.crop_x}, {"y", geo.crop_y}, {"width", geo.crop_width}, {"height", geo.crop_height}}},
@@ -676,13 +868,13 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"flip_vertical", geo.flip_vertical != 0},
             {"straighten_degrees", geo.straighten_degrees}
         };
-        if (recipe.schemaVersion >= 3)
+        if (emittedSchema >= 3)
             document["edits"]["geometry"]["perspective"] = {
                 {"horizontal", recipe.perspective.horizontal},
                 {"vertical", recipe.perspective.vertical}
             };
     }
-    if (recipe.schemaVersion >= 4) {
+    if (emittedSchema >= 4) {
         document["input"]["type"] = recipe.rasterInput ? "raster" : "raw";
         auto& edits = document["edits"];
         edits["tone"] = {
@@ -692,19 +884,105 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"shadows", recipe.shadows},
             {"s_curve", recipe.sCurve}
         };
-        if (recipe.schemaVersion >= 5) {
+        if (emittedSchema >= 5) {
             edits["tone"]["curve"] = writeToneCurves(recipe, allowV12);
         }
         // Identity omits additive keys so existing normalized recipes stay byte-identical.
         if (controls.black_point != 0) edits["tone"]["black_point"] = controls.black_point;
         if (controls.white_point != 0) edits["tone"]["white_point"] = controls.white_point;
         if (controls.vibrance != 0) edits["color"]["vibrance"] = controls.vibrance;
+        if (emittedSchema >= 20) {
+            if (!isDefaultCalibration(recipe.calibration)) {
+                const auto& c = recipe.calibration;
+                edits["color"]["calibration"] = {
+                    {"shadow_tint", c.shadowTint},
+                    {"red_hue", c.redHue}, {"red_saturation", c.redSaturation},
+                    {"green_hue", c.greenHue}, {"green_saturation", c.greenSaturation},
+                    {"blue_hue", c.blueHue}, {"blue_saturation", c.blueSaturation}
+                };
+            }
+            if (recipe.pointColor.swatchCount > 0) {
+                Json swatches = Json::array();
+                for (uint32_t i = 0; i < recipe.pointColor.swatchCount; ++i) {
+                    const auto& s = recipe.pointColor.swatches[i];
+                    swatches.push_back({
+                        {"src_hue", s.srcHue},
+                        {"src_saturation", s.srcSaturation},
+                        {"src_luminance", s.srcLuminance},
+                        {"hue_shift", s.hueShift},
+                        {"saturation_shift", s.saturationShift},
+                        {"luminance_shift", s.luminanceShift},
+                        {"variance", s.variance},
+                        {"range", s.range},
+                        {"hue_range", s.hueRange},
+                        {"sat_range", s.satRange},
+                        {"lum_range", s.lumRange},
+                        {"enabled", s.enabled}
+                    });
+                }
+                edits["color"]["point_color"] = {{"swatches", std::move(swatches)}};
+            }
+            if (!isDefaultSelectiveColor(recipe.selectiveColor)) {
+                Json bands = Json::object();
+                for (size_t i = 0; i < kSelectiveBandKeys.size(); ++i) {
+                    const auto& b = recipe.selectiveColor.bands[i];
+                    if (b.cyan != 0.0f || b.magenta != 0.0f || b.yellow != 0.0f || b.black != 0.0f) {
+                        bands[kSelectiveBandKeys[i]] = {
+                            {"cyan", b.cyan}, {"magenta", b.magenta},
+                            {"yellow", b.yellow}, {"black", b.black}
+                        };
+                    }
+                }
+                edits["color"]["selective_color"] = {
+                    {"method", recipe.selectiveColor.absolute ? "absolute" : "relative"},
+                    {"bands", std::move(bands)}
+                };
+            }
+            if (!isDefaultBwMixer(recipe.bw)) {
+                Json mixer = Json::object();
+                for (size_t i = 0; i < kBwChannelKeys.size(); ++i) {
+                    mixer[kBwChannelKeys[i]] = recipe.bw.weights[i];
+                }
+                edits["color"]["bw"] = {
+                    {"enabled", recipe.bw.enabled},
+                    {"mixer", std::move(mixer)}
+                };
+            }
+        }
         if (storedGrading) edits["color_grading"] = writeGrading(gradingV2, allowV12);
         edits["detail"] = {{"sharpening", recipe.sharpening}};
+        if (emittedSchema >= 20 && !isDefaultSharpenV2(recipe.sharpenV2)) {
+            if (recipe.sharpenV2.luminanceV2) edits["detail"]["luminance_v2"] = true;
+            if (recipe.sharpenV2.radius != 1.0f) edits["detail"]["sharpening_radius"] = recipe.sharpenV2.radius;
+            if (recipe.sharpenV2.detail != 25.0f) edits["detail"]["sharpening_detail"] = recipe.sharpenV2.detail;
+            if (recipe.sharpenV2.masking != 0.0f) edits["detail"]["sharpening_masking"] = recipe.sharpenV2.masking;
+        }
         edits["hsl"] = {{"hue", recipe.hsl.hue}, {"saturation", recipe.hsl.saturation}, {"lightness", recipe.hsl.lightness}};
         edits["effects"] = writeEffects(recipe.effects);
         if (atmosphere.clarity != 0) edits["effects"]["clarity"] = atmosphere.clarity;
         if (atmosphere.dehaze != 0) edits["effects"]["dehaze"] = atmosphere.dehaze;
+        if (emittedSchema >= 20) {
+            if (recipe.texture != 0) edits["effects"]["texture"] = recipe.texture;
+            if (recipe.grainToneCurve != EditGrainToneCurve::Legacy)
+                edits["effects"]["grain_tone_curve"] = grainToneCurveName(recipe.grainToneCurve);
+            if (recipe.grainFormatPreset != EditGrainFormatPreset::Custom)
+                edits["effects"]["grain_format_preset"] = grainFormatPresetName(recipe.grainFormatPreset);
+            if (!isDefaultHalation(recipe.filmOptics)) {
+                edits["effects"]["halation"] = {
+                    {"amount", recipe.filmOptics.halationAmount},
+                    {"threshold", recipe.filmOptics.halationThreshold},
+                    {"radius", recipe.filmOptics.halationRadius},
+                    {"hue", recipe.filmOptics.halationHue}
+                };
+            }
+            if (!isDefaultBloom(recipe.filmOptics)) {
+                edits["effects"]["bloom"] = {
+                    {"amount", recipe.filmOptics.bloomAmount},
+                    {"threshold", recipe.filmOptics.bloomThreshold},
+                    {"radius", recipe.filmOptics.bloomRadius}
+                };
+            }
+        }
         edits["denoise"] = {
             {"raw_level", recipe.rawNoiseReduction},
             {"chroma_mode", recipe.chromaDenoise},
@@ -722,6 +1000,16 @@ std::string serializeEditRecipe(const EditRecipe& recipe) {
             {"profile_id", recipe.lensProfileId.empty() ? Json(nullptr) : Json(recipe.lensProfileId)}
         };
         if (recipe.lensVignetting) edits["lens_correction"]["vignetting"] = true;
+        if (emittedSchema >= 20 && !isDefaultDefringe(recipe.defringe)) {
+            if (recipe.defringe.purpleAmount != 0.0f)
+                edits["lens_correction"]["defringe_purple_amount"] = recipe.defringe.purpleAmount;
+            if (recipe.defringe.purpleHue != 50.0f)
+                edits["lens_correction"]["defringe_purple_hue"] = recipe.defringe.purpleHue;
+            if (recipe.defringe.greenAmount != 0.0f)
+                edits["lens_correction"]["defringe_green_amount"] = recipe.defringe.greenAmount;
+            if (recipe.defringe.greenHue != 50.0f)
+                edits["lens_correction"]["defringe_green_hue"] = recipe.defringe.greenHue;
+        }
     }
     return document.dump(2) + "\n";
 }

@@ -8,6 +8,7 @@ struct EffectsParams {
     uint width, height;
     float vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights;
     float grainAmount, grainSize, grainRoughness;
+    uint grainToneCurve, grainFormatPreset;
     uint rowOffset, rows;
 };
 

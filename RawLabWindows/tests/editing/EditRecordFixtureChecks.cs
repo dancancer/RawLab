@@ -237,7 +237,8 @@ internal static class EditRecordFixtureChecks
                         var settingsObj = registry["Records"]!.AsObject()[tk]!.AsObject()["Settings"]!.AsObject();
                         foreach (var drop in new[] {
                             "Processing", "X3fMode", "MasterRecipeSettingsVersion", "ToneControls",
-                            "Atmosphere", "ColorGrading", "Curve", "HDR", "hdrCameraAI", "ProRAWDecodeVersion" })
+                            "Atmosphere", "ColorGrading", "Curve", "CameraCalibration", "PointColor",
+                            "SelectiveColor", "BwMixer", "SharpenV2", "FilmOptics", "HDR", "hdrCameraAI", "ProRAWDecodeVersion" })
                             settingsObj.Remove(drop);
                         File.WriteAllText(editsFile, registry.ToJsonString());
 
@@ -524,6 +525,12 @@ internal static class EditRecordFixtureChecks
                                 break;
                             case "color.grading.shadows.hue":
                                 settingsObj["ColorGrading"]!.AsObject()["Shadows"]!.AsObject()["Hue"] = val;
+                                break;
+                            case "color.calibration.shadow_tint":
+                                settingsObj["CameraCalibration"]!.AsObject()["shadowTint"] = val;
+                                break;
+                            case "detail.sharpening.radius":
+                                settingsObj["SharpenV2"]!.AsObject()["radius"] = val;
                                 break;
                             case "hdr.peak_limit_ev":
                                 settingsObj["HDR"]!.AsObject()["rendition"]!.AsObject()["peak_limit_ev"] = val;
@@ -830,6 +837,12 @@ internal static class EditRecordFixtureChecks
         var denoise = new DenoiseSettings();
         var geom = new GeometrySettings();
         var lens = new LensSettings();
+        var calibration = new CameraCalibrationSettings();
+        var pointColor = new PointColorSettings();
+        var selectiveColor = new SelectiveColorSettings();
+        var bwMixer = new BwMixerSettings();
+        var sharpenV2 = new SharpenV2Settings();
+        var filmOptics = new FilmOpticsSettings();
 
         if (hasSdr)
         {
@@ -893,9 +906,48 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) fx = fx with { GrainAmount = ga.GetDouble() };
             if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) fx = fx with { GrainSize = gs.GetDouble() };
             if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) fx = fx with { GrainRoughness = gr.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.grain.tone_curve", out var gtc) && gtc.ValueKind == JsonValueKind.String)
+                fx = fx with { GrainToneCurve = GrainToneCurveExtensions.ParseGrainToneCurve(gtc.GetString()) };
+            if (sdrValues.TryGetProperty("effects.grain.format_preset", out var gfp) && gfp.ValueKind == JsonValueKind.String)
+                fx = fx with { GrainFormatPreset = GrainFormatPresetExtensions.ParseGrainFormatPreset(gfp.GetString()) };
 
             if (sdrValues.TryGetProperty("effects.clarity", out var cl)) atm = atm with { Clarity = cl.GetDouble() };
             if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) atm = atm with { Dehaze = dh.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.texture", out var tx)) atm = atm with { Texture = tx.GetDouble() };
+
+            if (sdrValues.TryGetProperty("color.calibration.shadow_tint", out var cst)) calibration = calibration with { ShadowTint = cst.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.red_hue", out var crh)) calibration = calibration with { RedHue = crh.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.red_saturation", out var crs)) calibration = calibration with { RedSaturation = crs.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.green_hue", out var cghu)) calibration = calibration with { GreenHue = cghu.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.green_saturation", out var cgsa)) calibration = calibration with { GreenSaturation = cgsa.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.blue_hue", out var cbh)) calibration = calibration with { BlueHue = cbh.GetDouble() };
+            if (sdrValues.TryGetProperty("color.calibration.blue_saturation", out var cbs)) calibration = calibration with { BlueSaturation = cbs.GetDouble() };
+
+            if (sdrValues.TryGetProperty("color.point_color", out var pcObj) && pcObj.ValueKind == JsonValueKind.Object)
+                pointColor = AdjustmentPayload.PointColorValue(pcObj) ?? new PointColorSettings();
+            if (sdrValues.TryGetProperty("color.selective_color", out var scObj) && scObj.ValueKind == JsonValueKind.Object)
+                selectiveColor = AdjustmentPayload.SelectiveColorValue(scObj) ?? new SelectiveColorSettings();
+            if (sdrValues.TryGetProperty("color.bw.enabled", out var bwe) || sdrValues.TryGetProperty("color.bw.mixer", out _))
+            {
+                var enabled = sdrValues.TryGetProperty("color.bw.enabled", out var bweVal) && bweVal.GetBoolean();
+                var weights = sdrValues.TryGetProperty("color.bw.mixer", out var bwmVal) && bwmVal.ValueKind == JsonValueKind.Object
+                    ? (AdjustmentPayload.BwMixerValue(bwmVal) ?? new BwMixerWeights())
+                    : new BwMixerWeights();
+                bwMixer = new BwMixerSettings(enabled, weights);
+            }
+
+            if (sdrValues.TryGetProperty("detail.sharpening.luminance_v2", out var slv2)) sharpenV2 = sharpenV2 with { LuminanceV2 = slv2.GetBoolean() };
+            if (sdrValues.TryGetProperty("detail.sharpening.radius", out var srd)) sharpenV2 = sharpenV2 with { Radius = srd.GetDouble() };
+            if (sdrValues.TryGetProperty("detail.sharpening.detail", out var sdt)) sharpenV2 = sharpenV2 with { Detail = sdt.GetDouble() };
+            if (sdrValues.TryGetProperty("detail.sharpening.masking", out var smk)) sharpenV2 = sharpenV2 with { Masking = smk.GetDouble() };
+
+            if (sdrValues.TryGetProperty("effects.halation.amount", out var ha)) filmOptics = filmOptics with { HalationAmount = ha.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.halation.threshold", out var ht)) filmOptics = filmOptics with { HalationThreshold = ht.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.halation.radius", out var hr)) filmOptics = filmOptics with { HalationRadius = hr.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.halation.hue", out var hh)) filmOptics = filmOptics with { HalationHue = hh.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.bloom.amount", out var ba)) filmOptics = filmOptics with { BloomAmount = ba.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.bloom.threshold", out var bt)) filmOptics = filmOptics with { BloomThreshold = bt.GetDouble() };
+            if (sdrValues.TryGetProperty("effects.bloom.radius", out var br)) filmOptics = filmOptics with { BloomRadius = br.GetDouble() };
 
             if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) chromaMode = cm.GetInt32();
             if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
@@ -924,6 +976,10 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("geometry.lens.auto_crop", out var lac)) lens = lens with { AutoCrop = lac.GetBoolean() };
             if (sdrValues.TryGetProperty("geometry.lens.profile_id", out var lpid) && lpid.ValueKind == JsonValueKind.String)
                 lens = lens with { Manual = true, ProfileId = lpid.GetString() };
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_purple_amount", out var dpa)) lens = lens with { DefringePurpleAmount = dpa.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_purple_hue", out var dph)) lens = lens with { DefringePurpleHue = dph.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_green_amount", out var dga)) lens = lens with { DefringeGreenAmount = dga.GetDouble() };
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_green_hue", out var dgh)) lens = lens with { DefringeGreenHue = dgh.GetDouble() };
         }
         else if (asShotTemp is { } t && asShotTint is { } tn)
         {
@@ -963,6 +1019,12 @@ internal static class EditRecordFixtureChecks
             Atmosphere = atm.IsIdentity ? null : atm,
             ColorGrading = grading.IsDefault ? null : grading,
             Curve = curve,
+            CameraCalibration = calibration.IsDefault ? null : calibration,
+            PointColor = pointColor.IsDefault ? null : pointColor,
+            SelectiveColor = selectiveColor.IsDefault ? null : selectiveColor,
+            BwMixer = bwMixer.IsDefault ? null : bwMixer,
+            SharpenV2 = sharpenV2.IsDefault ? null : sharpenV2,
+            FilmOptics = filmOptics.IsDefault ? null : filmOptics,
             ProRAWDecodeVersion = proRawDecodeVersion
         };
         _ = snapshot.Restore();
@@ -1156,10 +1218,49 @@ internal static class EditRecordFixtureChecks
             if (sdrValues.TryGetProperty("effects.grain.amount", out var ga)) Expect(Approx(fx.GrainAmount, ga.GetDouble()), "grain.amount");
             if (sdrValues.TryGetProperty("effects.grain.size", out var gs)) Expect(Approx(fx.GrainSize, gs.GetDouble()), "grain.size");
             if (sdrValues.TryGetProperty("effects.grain.roughness", out var gr)) Expect(Approx(fx.GrainRoughness, gr.GetDouble()), "grain.roughness");
+            if (sdrValues.TryGetProperty("effects.grain.tone_curve", out var gtc) && gtc.ValueKind == JsonValueKind.String)
+                Expect(fx.GrainToneCurve.WireValue() == gtc.GetString(), "grain.tone_curve");
+            if (sdrValues.TryGetProperty("effects.grain.format_preset", out var gfp) && gfp.ValueKind == JsonValueKind.String)
+                Expect(fx.GrainFormatPreset.WireValue() == gfp.GetString(), "grain.format_preset");
 
             var atm = s.Atmosphere ?? new AtmosphereSettings();
             if (sdrValues.TryGetProperty("effects.clarity", out var cl)) Expect(Approx(atm.Clarity, cl.GetDouble()), "clarity");
             if (sdrValues.TryGetProperty("effects.dehaze", out var dh)) Expect(Approx(atm.Dehaze, dh.GetDouble()), "dehaze");
+            if (sdrValues.TryGetProperty("effects.texture", out var tx)) Expect(Approx(atm.Texture, tx.GetDouble()), "texture");
+
+            var cal = s.CameraCalibration ?? new CameraCalibrationSettings();
+            if (sdrValues.TryGetProperty("color.calibration.shadow_tint", out var cst)) Expect(Approx(cal.ShadowTint, cst.GetDouble()), "calibration.shadow_tint");
+            if (sdrValues.TryGetProperty("color.calibration.red_hue", out var crh)) Expect(Approx(cal.RedHue, crh.GetDouble()), "calibration.red_hue");
+            if (sdrValues.TryGetProperty("color.calibration.red_saturation", out var crs)) Expect(Approx(cal.RedSaturation, crs.GetDouble()), "calibration.red_saturation");
+            if (sdrValues.TryGetProperty("color.calibration.green_hue", out var cghu)) Expect(Approx(cal.GreenHue, cghu.GetDouble()), "calibration.green_hue");
+            if (sdrValues.TryGetProperty("color.calibration.green_saturation", out var cgsa)) Expect(Approx(cal.GreenSaturation, cgsa.GetDouble()), "calibration.green_saturation");
+            if (sdrValues.TryGetProperty("color.calibration.blue_hue", out var cbh)) Expect(Approx(cal.BlueHue, cbh.GetDouble()), "calibration.blue_hue");
+            if (sdrValues.TryGetProperty("color.calibration.blue_saturation", out var cbs)) Expect(Approx(cal.BlueSaturation, cbs.GetDouble()), "calibration.blue_saturation");
+
+            if (sdrValues.TryGetProperty("color.point_color", out var pcObj) && pcObj.ValueKind == JsonValueKind.Object)
+                Expect((s.PointColor ?? new PointColorSettings()).Equals(AdjustmentPayload.PointColorValue(pcObj)), "point_color");
+            if (sdrValues.TryGetProperty("color.selective_color", out var scObj) && scObj.ValueKind == JsonValueKind.Object)
+                Expect((s.SelectiveColor ?? new SelectiveColorSettings()).Equals(AdjustmentPayload.SelectiveColorValue(scObj)), "selective_color");
+            var bw = s.BwMixer ?? new BwMixerSettings();
+            if (sdrValues.TryGetProperty("color.bw.enabled", out var bwe)) Expect(bw.Enabled == bwe.GetBoolean(), "bw.enabled");
+            if (sdrValues.TryGetProperty("color.bw.mixer", out var bwm) && bwm.ValueKind == JsonValueKind.Object)
+                Expect(bw.Mixer.Equals(AdjustmentPayload.BwMixerValue(bwm)), "bw.mixer");
+
+            var sv2 = s.SharpenV2 ?? new SharpenV2Settings();
+            if (sdrValues.TryGetProperty("detail.sharpening.luminance_v2", out var slv2)) Expect(sv2.LuminanceV2 == slv2.GetBoolean(), "sharpening.luminance_v2");
+            if (sdrValues.TryGetProperty("detail.sharpening.radius", out var srd)) Expect(Approx(sv2.Radius, srd.GetDouble()), "sharpening.radius");
+            if (sdrValues.TryGetProperty("detail.sharpening.detail", out var sdt)) Expect(Approx(sv2.Detail, sdt.GetDouble()), "sharpening.detail");
+            if (sdrValues.TryGetProperty("detail.sharpening.masking", out var smk)) Expect(Approx(sv2.Masking, smk.GetDouble()), "sharpening.masking");
+
+            var fo = s.FilmOptics ?? new FilmOpticsSettings();
+            if (sdrValues.TryGetProperty("effects.halation.amount", out var ha)) Expect(Approx(fo.HalationAmount, ha.GetDouble()), "halation.amount");
+            if (sdrValues.TryGetProperty("effects.halation.threshold", out var ht)) Expect(Approx(fo.HalationThreshold, ht.GetDouble()), "halation.threshold");
+            if (sdrValues.TryGetProperty("effects.halation.radius", out var hr)) Expect(Approx(fo.HalationRadius, hr.GetDouble()), "halation.radius");
+            if (sdrValues.TryGetProperty("effects.halation.hue", out var hh)) Expect(Approx(fo.HalationHue, hh.GetDouble()), "halation.hue");
+            if (sdrValues.TryGetProperty("effects.bloom.amount", out var ba)) Expect(Approx(fo.BloomAmount, ba.GetDouble()), "bloom.amount");
+            if (sdrValues.TryGetProperty("effects.bloom.threshold", out var bt)) Expect(Approx(fo.BloomThreshold, bt.GetDouble()), "bloom.threshold");
+            if (sdrValues.TryGetProperty("effects.bloom.radius", out var br)) Expect(Approx(fo.BloomRadius, br.GetDouble()), "bloom.radius");
+
             if (sdrValues.TryGetProperty("detail.sharpening", out var dsh)) Expect(Approx(s.Values[(int)Parameter.Sharpening], dsh.GetDouble()), "sharpening");
             if (sdrValues.TryGetProperty("detail.denoise.chroma_mode", out var cm)) Expect(s.DisplayChromaDenoise == cm.GetInt32(), "chroma_mode");
             if (sdrValues.TryGetProperty("detail.denoise.wavelet", out var wdObj) && wdObj.ValueKind == JsonValueKind.Object)
@@ -1204,6 +1305,10 @@ internal static class EditRecordFixtureChecks
                 string? expPid = lpid.ValueKind == JsonValueKind.String ? lpid.GetString() : null;
                 Expect(lens.ProfileId == expPid, "lens.profileID");
             }
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_purple_amount", out var dpa)) Expect(Approx(lens.DefringePurpleAmount, dpa.GetDouble()), "lens.defringe_purple_amount");
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_purple_hue", out var dph)) Expect(Approx(lens.DefringePurpleHue, dph.GetDouble()), "lens.defringe_purple_hue");
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_green_amount", out var dga)) Expect(Approx(lens.DefringeGreenAmount, dga.GetDouble()), "lens.defringe_green_amount");
+            if (sdrValues.TryGetProperty("geometry.lens.defringe_green_hue", out var dgh)) Expect(Approx(lens.DefringeGreenHue, dgh.GetDouble()), "lens.defringe_green_hue");
         }
 
         if (metadata.TryGetProperty("lens_extra", out var lensExtra) && lensExtra.ValueKind == JsonValueKind.Object)

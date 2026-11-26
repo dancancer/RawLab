@@ -208,6 +208,9 @@ def _render_swift(doc: dict[str, Any]) -> str:
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
     wavelet = subs["detail.denoise.wavelet"]
+    point_color = subs["color.point_color"]
+    selective_color = subs["color.selective_color"]
+    bw_mixer = subs["color.bw.mixer"]
 
     lines = [
         f"// {NOTICE}",
@@ -357,6 +360,32 @@ def _render_swift(doc: dict[str, Any]) -> str:
         f"            public static let chromaRange: ClosedRange<Double> = {_fmt_double(wavelet['chroma']['min'])}...{_fmt_double(wavelet['chroma']['max'])}",
         f"            public static let coarseRange: ClosedRange<Double> = {_fmt_double(wavelet['coarse']['min'])}...{_fmt_double(wavelet['coarse']['max'])}",
         "        }",
+        "        public enum PointColor {",
+        f"            public static let maxSwatches = {int(point_color['max_swatches'])}",
+        f"            public static let srcHueMin = {_fmt_double(point_color['src_hue']['min'])}",
+        f"            public static let srcHueMax = {_fmt_double(point_color['src_hue']['max'])}",
+        f"            public static let srcHueExclusiveMax = {'true' if point_color['src_hue'].get('exclusive_max') else 'false'}",
+        f"            public static let srcSaturationRange: ClosedRange<Double> = {_fmt_double(point_color['src_saturation']['min'])}...{_fmt_double(point_color['src_saturation']['max'])}",
+        f"            public static let srcLuminanceRange: ClosedRange<Double> = {_fmt_double(point_color['src_luminance']['min'])}...{_fmt_double(point_color['src_luminance']['max'])}",
+        f"            public static let shiftRange: ClosedRange<Double> = {_fmt_double(point_color['hue_shift']['min'])}...{_fmt_double(point_color['hue_shift']['max'])}",
+        f"            public static let shiftDefault = {_fmt_double(point_color['hue_shift']['default'])}",
+        f"            public static let rangeControlRange: ClosedRange<Double> = {_fmt_double(point_color['range']['min'])}...{_fmt_double(point_color['range']['max'])}",
+        f"            public static let rangeControlDefault = {_fmt_double(point_color['range']['default'])}",
+        f"            public static let enabledDefault = {'true' if point_color['enabled']['default'] else 'false'}",
+        "        }",
+        "        public enum SelectiveColor {",
+        f"            public static let allowedMethods: [String] = {_swift_str_list(selective_color['method']['allowed_values'])}",
+        f"            public static let defaultMethod = {_quote(selective_color['method']['default'])}",
+        f"            public static let allowedBands: [String] = {_swift_str_list(selective_color['bands']['allowed_keys'])}",
+        f"            public static let allowedComponents: [String] = {_swift_str_list(selective_color['components']['allowed_keys'])}",
+        f"            public static let componentRange: ClosedRange<Double> = {_fmt_double(selective_color['components']['min'])}...{_fmt_double(selective_color['components']['max'])}",
+        f"            public static let componentDefault = {_fmt_double(selective_color['components']['default'])}",
+        "        }",
+        "        public enum BwMixer {",
+        f"            public static let allowedChannels: [String] = {_swift_str_list(bw_mixer['channels']['allowed_keys'])}",
+        f"            public static let channelRange: ClosedRange<Double> = {_fmt_double(bw_mixer['channels']['min'])}...{_fmt_double(bw_mixer['channels']['max'])}",
+        f"            public static let channelDefault = {_fmt_double(bw_mixer['channels']['default'])}",
+        "        }",
         "    }",
         "",
         "    public enum Fields {",
@@ -460,6 +489,9 @@ def _render_kotlin(doc: dict[str, Any]) -> str:
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
     wavelet = subs["detail.denoise.wavelet"]
+    point_color = subs["color.point_color"]
+    selective_color = subs["color.selective_color"]
+    bw_mixer = subs["color.bw.mixer"]
 
     lines = [
         f"// {NOTICE}",
@@ -604,6 +636,38 @@ def _render_kotlin(doc: dict[str, Any]) -> str:
         f"            const val coarseMin = {_fmt_double(wavelet['coarse']['min'])}",
         f"            const val coarseMax = {_fmt_double(wavelet['coarse']['max'])}",
         "        }",
+        "        object PointColor {",
+        f"            const val maxSwatches = {int(point_color['max_swatches'])}",
+        f"            const val srcHueMin = {_fmt_double(point_color['src_hue']['min'])}",
+        f"            const val srcHueMax = {_fmt_double(point_color['src_hue']['max'])}",
+        f"            const val srcHueExclusiveMax = {'true' if point_color['src_hue'].get('exclusive_max') else 'false'}",
+        f"            const val srcSaturationMin = {_fmt_double(point_color['src_saturation']['min'])}",
+        f"            const val srcSaturationMax = {_fmt_double(point_color['src_saturation']['max'])}",
+        f"            const val srcLuminanceMin = {_fmt_double(point_color['src_luminance']['min'])}",
+        f"            const val srcLuminanceMax = {_fmt_double(point_color['src_luminance']['max'])}",
+        f"            const val shiftMin = {_fmt_double(point_color['hue_shift']['min'])}",
+        f"            const val shiftMax = {_fmt_double(point_color['hue_shift']['max'])}",
+        f"            const val shiftDefault = {_fmt_double(point_color['hue_shift']['default'])}",
+        f"            const val rangeControlMin = {_fmt_double(point_color['range']['min'])}",
+        f"            const val rangeControlMax = {_fmt_double(point_color['range']['max'])}",
+        f"            const val rangeControlDefault = {_fmt_double(point_color['range']['default'])}",
+        f"            const val enabledDefault = {'true' if point_color['enabled']['default'] else 'false'}",
+        "        }",
+        "        object SelectiveColor {",
+        f"            val allowedMethods = {_kotlin_str_list(selective_color['method']['allowed_values'])}",
+        f"            const val defaultMethod = {_quote(selective_color['method']['default'])}",
+        f"            val allowedBands = {_kotlin_str_list(selective_color['bands']['allowed_keys'])}",
+        f"            val allowedComponents = {_kotlin_str_list(selective_color['components']['allowed_keys'])}",
+        f"            const val componentMin = {_fmt_double(selective_color['components']['min'])}",
+        f"            const val componentMax = {_fmt_double(selective_color['components']['max'])}",
+        f"            const val componentDefault = {_fmt_double(selective_color['components']['default'])}",
+        "        }",
+        "        object BwMixer {",
+        f"            val allowedChannels = {_kotlin_str_list(bw_mixer['channels']['allowed_keys'])}",
+        f"            const val channelMin = {_fmt_double(bw_mixer['channels']['min'])}",
+        f"            const val channelMax = {_fmt_double(bw_mixer['channels']['max'])}",
+        f"            const val channelDefault = {_fmt_double(bw_mixer['channels']['default'])}",
+        "        }",
         "    }",
         "",
         "    object Fields {",
@@ -716,6 +780,9 @@ def _render_csharp(doc: dict[str, Any]) -> str:
     hdr_look = subs["hdr.look"]
     hdr_cam = subs["hdr.camera_development"]
     wavelet = subs["detail.denoise.wavelet"]
+    point_color = subs["color.point_color"]
+    selective_color = subs["color.selective_color"]
+    bw_mixer = subs["color.bw.mixer"]
 
     lines = [
         f"// {NOTICE}",
@@ -868,6 +935,41 @@ def _render_csharp(doc: dict[str, Any]) -> str:
         f"            public const double ChromaMax = {_fmt_double(wavelet['chroma']['max'])};",
         f"            public const double CoarseMin = {_fmt_double(wavelet['coarse']['min'])};",
         f"            public const double CoarseMax = {_fmt_double(wavelet['coarse']['max'])};",
+        "        }",
+        "        public static class PointColor",
+        "        {",
+        f"            public const int MaxSwatches = {int(point_color['max_swatches'])};",
+        f"            public const double SrcHueMin = {_fmt_double(point_color['src_hue']['min'])};",
+        f"            public const double SrcHueMax = {_fmt_double(point_color['src_hue']['max'])};",
+        f"            public const bool SrcHueExclusiveMax = {'true' if point_color['src_hue'].get('exclusive_max') else 'false'};",
+        f"            public const double SrcSaturationMin = {_fmt_double(point_color['src_saturation']['min'])};",
+        f"            public const double SrcSaturationMax = {_fmt_double(point_color['src_saturation']['max'])};",
+        f"            public const double SrcLuminanceMin = {_fmt_double(point_color['src_luminance']['min'])};",
+        f"            public const double SrcLuminanceMax = {_fmt_double(point_color['src_luminance']['max'])};",
+        f"            public const double ShiftMin = {_fmt_double(point_color['hue_shift']['min'])};",
+        f"            public const double ShiftMax = {_fmt_double(point_color['hue_shift']['max'])};",
+        f"            public const double ShiftDefault = {_fmt_double(point_color['hue_shift']['default'])};",
+        f"            public const double RangeControlMin = {_fmt_double(point_color['range']['min'])};",
+        f"            public const double RangeControlMax = {_fmt_double(point_color['range']['max'])};",
+        f"            public const double RangeControlDefault = {_fmt_double(point_color['range']['default'])};",
+        f"            public const bool EnabledDefault = {'true' if point_color['enabled']['default'] else 'false'};",
+        "        }",
+        "        public static class SelectiveColor",
+        "        {",
+        f"            public static readonly IReadOnlyList<string> AllowedMethods = {_csharp_str_array(selective_color['method']['allowed_values'])};",
+        f"            public const string DefaultMethod = {_quote(selective_color['method']['default'])};",
+        f"            public static readonly IReadOnlyList<string> AllowedBands = {_csharp_str_array(selective_color['bands']['allowed_keys'])};",
+        f"            public static readonly IReadOnlyList<string> AllowedComponents = {_csharp_str_array(selective_color['components']['allowed_keys'])};",
+        f"            public const double ComponentMin = {_fmt_double(selective_color['components']['min'])};",
+        f"            public const double ComponentMax = {_fmt_double(selective_color['components']['max'])};",
+        f"            public const double ComponentDefault = {_fmt_double(selective_color['components']['default'])};",
+        "        }",
+        "        public static class BwMixer",
+        "        {",
+        f"            public static readonly IReadOnlyList<string> AllowedChannels = {_csharp_str_array(bw_mixer['channels']['allowed_keys'])};",
+        f"            public const double ChannelMin = {_fmt_double(bw_mixer['channels']['min'])};",
+        f"            public const double ChannelMax = {_fmt_double(bw_mixer['channels']['max'])};",
+        f"            public const double ChannelDefault = {_fmt_double(bw_mixer['channels']['default'])};",
         "        }",
         "    }",
         "",

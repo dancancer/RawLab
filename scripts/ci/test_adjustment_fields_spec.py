@@ -100,10 +100,10 @@ LOCKED_EXEMPTED_DIVERGENT_FIELDS: dict[str, frozenset[str]] = {
 
 
 def validate_spec_document(doc: dict) -> None:
-    if doc.get("spec_version") != 1 or len(doc["fields"]) != 89:
-        raise AssertionError("Spec must be version 1 with 89 fields")
+    if doc.get("spec_version") != 1 or len(doc["fields"]) != 118:
+        raise AssertionError("Spec must be version 1 with 118 fields")
     fields = doc["fields"]
-    if len({f["field_id"] for f in fields}) != 89:
+    if len({f["field_id"] for f in fields}) != 118:
         raise AssertionError("Duplicate field_id in spec")
     summary, policy = doc["summary"], doc["divergence_policy"]
     if not policy.get("monotonic_non_increasing") or policy["max_divergent_fields"] > 60:
@@ -128,7 +128,7 @@ def validate_spec_document(doc: dict) -> None:
         )
     all_div = [f for f in fields if f["divergence"]["has_divergence"]]
     transfer = [f for f in fields if f["protocol"]["transferable"]]
-    if len(transfer) != 86 or summary["divergent_fields"] != len(all_div) or summary["identical_fields"] != 89 - len(all_div):
+    if len(transfer) != 115 or summary["divergent_fields"] != len(all_div) or summary["identical_fields"] != 118 - len(all_div):
         raise AssertionError("Summary counts mismatch")
     if summary["divergent_fields"] > policy["max_divergent_fields"]:
         raise AssertionError(f"divergent_fields={summary['divergent_fields']} exceeds max_divergent_fields={policy['max_divergent_fields']}")

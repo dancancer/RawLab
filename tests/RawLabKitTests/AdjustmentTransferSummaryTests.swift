@@ -53,9 +53,22 @@ final class AdjustmentTransferSummaryTests: XCTestCase {
                 values[field] = .object(["hue": .number(0), "saturation": .number(0)])
             case .gradingBlending: values[field] = .number(50)
             case .gradingBalance: values[field] = .number(0)
+            case .pointColor: values[field] = PointColorSettings().transferValue
+            case .selectiveColor: values[field] = SelectiveColorSettings().transferValue
+            case .bwMixer: values[field] = BwMixerChannelWeights().transferValue
             case .waveletDenoise: values[field] = .null
-            case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop:
+            case .flipHorizontal, .flipVertical, .lensDistortion, .lensTCA, .lensVignetting, .lensAutoCrop,
+                 .bwEnabled, .sharpeningLuminanceV2:
                 values[field] = .boolean(false)
+            case .grainToneCurve: values[field] = .string("legacy")
+            case .grainFormatPreset: values[field] = .string("custom")
+            case .sharpeningRadius: values[field] = .number(1.0)
+            case .sharpeningDetail: values[field] = .number(25.0)
+            case .halationThreshold: values[field] = .number(75.0)
+            case .halationRadius: values[field] = .number(35.0)
+            case .bloomThreshold: values[field] = .number(70.0)
+            case .bloomRadius: values[field] = .number(40.0)
+            case .lensDefringePurpleHue, .lensDefringeGreenHue: values[field] = .number(50.0)
             case .rawDenoise: values[field] = .number(0)
             case .postRGBDenoise, .chromaDenoise: values[field] = .number(0)
             case .cropWidth, .cropHeight: values[field] = .number(1)

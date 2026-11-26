@@ -214,8 +214,8 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
             FAKE_COMMANDS="capabilities,validate_recipe,info,preview,export,analyze,print_transfer",
         )
         capabilities = await adapter.start()
-        self.assertEqual(capabilities.recipe_versions, tuple(range(1, 20)))
-        self.assertEqual(capabilities.result["recipe_versions"], list(range(1, 20)))
+        self.assertEqual(capabilities.recipe_versions, tuple(range(1, 21)))
+        self.assertEqual(capabilities.result["recipe_versions"], list(range(1, 21)))
         self.assertEqual(capabilities.result["commands"], [
             "capabilities", "validate_recipe", "info", "preview", "export", "analyze", "print_transfer",
         ])

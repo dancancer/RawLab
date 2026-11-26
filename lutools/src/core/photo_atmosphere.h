@@ -10,8 +10,9 @@ namespace sony2fuji {
 struct AtmosphereOptions {
     float clarity = 0;
     float dehaze = 0;
+    float texture = 0;
     bool valid() const;
-    bool active() const { return clarity != 0 || dehaze != 0; }
+    bool active() const { return clarity != 0 || dehaze != 0 || texture != 0; }
 };
 
 // 完整源尺寸固定分析尺度；内容签名和工作尺寸区分视口近似与完整源分析。

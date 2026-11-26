@@ -2285,6 +2285,18 @@
       "symbol": "sony2fuji_sony_focus_state_resolve_render"
     },
     {
+      "name": "sony2fuji_render_sharpen_mask_preview",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_buffer*", "float", "float", "sony2fuji_buffer*"],
+      "symbol": "sony2fuji_render_sharpen_mask_preview"
+    },
+    {
+      "name": "sony2fuji_point_color_preview_swatch",
+      "return_type": "sony2fuji_status",
+      "params": ["float", "float", "float", "float", "float", "float", "float*", "float*"],
+      "symbol": "sony2fuji_point_color_preview_swatch"
+    },
+    {
       "name": "sony2fuji_hdr_probe",
       "return_type": "sony2fuji_status",
       "params": ["const char*", "sony2fuji_hdr_source_info_v1*", "sony2fuji_hdr_diagnostic_v1*"],

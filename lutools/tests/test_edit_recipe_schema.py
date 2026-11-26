@@ -824,6 +824,71 @@ class EditRecipeSchema(unittest.TestCase):
         bad5["edits"].pop("tone", None)
         self.reject(bad5, "white_balance")
 
+    def test_v20_sdr_schema_and_raster_defringe(self):
+        doc = copy.deepcopy(self.base())
+        doc["schema_version"] = 20
+        doc["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        doc["input"] = {"path": "photo.png", "type": "raster"}
+        doc["edits"]["exposure"] = {"mode": "sensor"}
+        doc["edits"]["white_balance"] = {"mode": "none"}
+        doc["edits"]["color"] = {
+            "vibrance": 0.2,
+            "calibration": {"shadow_tint": -10, "red_hue": 12, "blue_saturation": -8},
+            "point_color": {"swatches": [{"src_hue": 45, "src_saturation": 0.5, "src_luminance": 0.6, "hue_shift": 15, "variance": 10}]},
+            "selective_color": {"method": "relative", "bands": {"neutrals": {"cyan": 5, "black": -4}}},
+            "bw": {"enabled": True, "mixer": {"red": 30, "blue": -20}},
+        }
+        doc["edits"]["detail"] = {
+            "sharpening": 0.4,
+            "luminance_v2": True,
+            "sharpening_radius": 1.2,
+            "sharpening_detail": 35,
+            "sharpening_masking": 25,
+        }
+        doc["edits"]["effects"] = {
+            "texture": 0.25,
+            "grain_amount": 15,
+            "grain_tone_curve": "negative_asymmetric",
+            "grain_format_preset": "120",
+            "halation": {"amount": 20, "threshold": 75, "radius": 35, "hue": 5},
+            "bloom": {"amount": 12, "threshold": 70, "radius": 40},
+        }
+        doc["edits"]["lens_correction"] = {
+            "distortion": False,
+            "tca": False,
+            "vignetting": False,
+            "auto_crop": True,
+            "profile_id": None,
+            "defringe_purple_amount": 5,
+            "defringe_purple_hue": 40,
+            "defringe_green_amount": 3,
+            "defringe_green_hue": 60,
+        }
+        normalized = self.normalize(doc)
+        self.assertEqual(normalized["schema_version"], 20)
+        self.assertEqual(self.normalize(normalized), normalized)
+        if jsonschema is not None:
+            schema = json.loads((ROOT / "docs/edit-json-v20.schema.json").read_text(encoding="utf-8"))
+            jsonschema.Draft202012Validator.check_schema(schema)
+            validator = jsonschema.Draft202012Validator(schema)
+            validator.validate(doc)
+            validator.validate(normalized)
+        bad18 = copy.deepcopy(doc)
+        bad18["schema_version"] = 18
+        self.reject(bad18, "edits.color.bw")
+
+        bad18_cal = copy.deepcopy(self.base())
+        bad18_cal["schema_version"] = 18
+        bad18_cal["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        bad18_cal["edits"]["color"] = {"vibrance": 0, "calibration": {"shadow_tint": 5}}
+        self.reject(bad18_cal, "edits.color.calibration")
+
+        default20 = copy.deepcopy(self.base())
+        default20["schema_version"] = 20
+        default20["processing"] = {"family": "rawlab", "version": 3, "quality": "standard"}
+        norm_default = self.normalize(default20)
+        self.assertLessEqual(norm_default["schema_version"], 18)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

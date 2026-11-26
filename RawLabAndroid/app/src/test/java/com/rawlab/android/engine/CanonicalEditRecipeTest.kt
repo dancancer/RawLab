@@ -2,16 +2,29 @@ package com.rawlab.android.engine
 
 import com.rawlab.android.format.OutputSharpening
 import com.rawlab.android.geometry.GeometrySettings
+import com.rawlab.android.settings.BwMixerSettings
+import com.rawlab.android.settings.BwMixerWeights
+import com.rawlab.android.settings.CameraCalibrationSettings
 import com.rawlab.android.settings.ColorGradingSettings
 import com.rawlab.android.settings.ColorGradingWheel
 import com.rawlab.android.settings.DenoiseSettings
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.FilmOpticsSettings
+import com.rawlab.android.settings.GrainFormatPreset
+import com.rawlab.android.settings.GrainToneCurve
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HslSettings
 import com.rawlab.android.settings.LensSettings
 import com.rawlab.android.settings.PhotoEffectsSettings
+import com.rawlab.android.settings.PointColorSettings
+import com.rawlab.android.settings.PointColorSwatch
 import com.rawlab.android.settings.ProcessingIdentity
+import com.rawlab.android.settings.SelectiveColorBand
+import com.rawlab.android.settings.SelectiveColorBands
+import com.rawlab.android.settings.SelectiveColorMethod
+import com.rawlab.android.settings.SelectiveColorSettings
+import com.rawlab.android.settings.SharpenV2Settings
 import com.rawlab.android.settings.ToneCurveChannels
 import com.rawlab.android.settings.ToneCurveMode
 import com.rawlab.android.settings.ToneCurveParametric
@@ -220,5 +233,47 @@ class CanonicalEditRecipeTest {
             assertFalse(hdrJson.contains("session.raw"))
             assertEquals(version, JSONObject(hdrJson).getJSONObject("camera_development").getInt("processing_version"))
         }
+    }
+
+    @Test
+    fun v014FeaturesPromoteToSchemaVersion20AndDefaultsStayLegacy() {
+        val neutralRaw = JSONObject(EditSettings().toCanonicalRecipeJson(isRaster = false))
+        assertEquals(7, neutralRaw.getInt("schema_version"))
+        val neutralEdits = neutralRaw.getJSONObject("edits")
+        assertFalse(neutralEdits.getJSONObject("color").has("calibration"))
+        assertFalse(neutralEdits.getJSONObject("color").has("point_color"))
+        assertFalse(neutralEdits.getJSONObject("color").has("selective_color"))
+        assertFalse(neutralEdits.getJSONObject("color").has("bw"))
+        assertFalse(neutralEdits.getJSONObject("effects").has("texture"))
+        assertFalse(neutralEdits.getJSONObject("detail").has("luminance_v2"))
+
+        val v14 = EditSettings(
+            texture = 25f,
+            calibration = CameraCalibrationSettings(shadowTint = -10f),
+            pointColor = PointColorSettings(listOf(PointColorSwatch(srcHue = 200f, hueShift = 10f))),
+            selectiveColor = SelectiveColorSettings(
+                method = SelectiveColorMethod.ABSOLUTE,
+                bands = SelectiveColorBands(reds = SelectiveColorBand(cyan = 12f)),
+            ),
+            bwMixer = BwMixerSettings(enabled = true, mixer = BwMixerWeights(red = 30f)),
+            sharpenV2 = SharpenV2Settings(luminanceV2 = true, radius = 1.5f),
+            filmOptics = FilmOpticsSettings(halationAmount = 20f, bloomAmount = 15f),
+            effects = PhotoEffectsSettings(grainToneCurve = GrainToneCurve.NEGATIVE_ASYMMETRIC, grainFormatPreset = GrainFormatPreset.FILM_135),
+            lens = LensSettings(defringePurpleAmount = 8f),
+        )
+        val v14Root = JSONObject(v14.toCanonicalRecipeJson(isRaster = true))
+        assertEquals(20, v14Root.getInt("schema_version"))
+        val edits = v14Root.getJSONObject("edits")
+        assertEquals(-10.0, edits.getJSONObject("color").getJSONObject("calibration").getDouble("shadow_tint"), 1e-6)
+        assertEquals("absolute", edits.getJSONObject("color").getJSONObject("selective_color").getString("method"))
+        assertTrue(edits.getJSONObject("color").getJSONObject("bw").getBoolean("enabled"))
+        assertEquals(0.25, edits.getJSONObject("effects").getDouble("texture"), 1e-6)
+        assertEquals("negative_asymmetric", edits.getJSONObject("effects").getString("grain_tone_curve"))
+        assertEquals("135", edits.getJSONObject("effects").getString("grain_format_preset"))
+        assertEquals(20.0, edits.getJSONObject("effects").getJSONObject("halation").getDouble("amount"), 1e-6)
+        assertEquals(15.0, edits.getJSONObject("effects").getJSONObject("bloom").getDouble("amount"), 1e-6)
+        assertTrue(edits.getJSONObject("detail").getBoolean("luminance_v2"))
+        assertEquals(1.5, edits.getJSONObject("detail").getDouble("sharpening_radius"), 1e-6)
+        assertEquals(8.0, edits.getJSONObject("lens_correction").getDouble("defringe_purple_amount"), 1e-6)
     }
 }

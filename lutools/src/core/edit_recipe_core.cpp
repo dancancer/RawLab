@@ -100,6 +100,114 @@ ToneCurveEndpoints sdrCurveEndpoints(uint32_t schemaVersion) {
     return schemaVersion >= 17 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
 }
 
+constexpr std::array<const char*, kSelectiveColorBandCount> kSelectiveColorBandNames = {
+    "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
+};
+
+constexpr std::array<const char*, kBwMixerChannelCount> kBwMixerChannelNames = {
+    "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
+};
+
+void readCalibration(const Json& cal, CameraCalibrationOptions& out) {
+    const std::string path = "edits.color.calibration";
+    fields(cal, path, {
+        "shadow_tint", "red_hue", "red_saturation",
+        "green_hue", "green_saturation", "blue_hue", "blue_saturation"
+    });
+    out.shadowTint = number(cal, "shadow_tint", 0.0f, -100.0, 100.0, path);
+    out.redHue = number(cal, "red_hue", 0.0f, -100.0, 100.0, path);
+    out.redSaturation = number(cal, "red_saturation", 0.0f, -100.0, 100.0, path);
+    out.greenHue = number(cal, "green_hue", 0.0f, -100.0, 100.0, path);
+    out.greenSaturation = number(cal, "green_saturation", 0.0f, -100.0, 100.0, path);
+    out.blueHue = number(cal, "blue_hue", 0.0f, -100.0, 100.0, path);
+    out.blueSaturation = number(cal, "blue_saturation", 0.0f, -100.0, 100.0, path);
+}
+
+void readPointColor(const Json& pc, PointColorOptions& out) {
+    const std::string path = "edits.color.point_color";
+    fields(pc, path, {"swatches"});
+    const auto& arr = required(pc, "swatches", path);
+    if (!arr.is_array() || arr.size() > kPointColorMaxSwatches) {
+        throw std::invalid_argument(path + ".swatches must be an array of at most 8 items");
+    }
+    out = PointColorOptions{};
+    out.swatchCount = static_cast<uint32_t>(arr.size());
+    for (size_t i = 0; i < arr.size(); ++i) {
+        const auto spath = path + ".swatches[" + std::to_string(i) + "]";
+        const auto& s = arr[i];
+        fields(s, spath, {
+            "src_hue", "src_saturation", "src_luminance",
+            "hue_shift", "saturation_shift", "luminance_shift", "variance",
+            "range", "hue_range", "sat_range", "lum_range", "enabled"
+        });
+        required(s, "src_hue", spath);
+        required(s, "src_saturation", spath);
+        required(s, "src_luminance", spath);
+        auto& dst = out.swatches[i];
+        dst.srcHue = number(s, "src_hue", 0.0f, 0.0, 360.0, spath);
+        if (s.at("src_hue").get<double>() >= 360.0) {
+            throw std::invalid_argument(spath + ".src_hue is out of range");
+        }
+        if (dst.srcHue == 360.0f) dst.srcHue = 0.0f;
+        dst.srcSaturation = number(s, "src_saturation", 0.0f, 0.0, 1.0, spath);
+        dst.srcLuminance = number(s, "src_luminance", 0.0f, 0.0, 1.0, spath);
+        dst.hueShift = number(s, "hue_shift", 0.0f, -100.0, 100.0, spath);
+        dst.saturationShift = number(s, "saturation_shift", 0.0f, -100.0, 100.0, spath);
+        dst.luminanceShift = number(s, "luminance_shift", 0.0f, -100.0, 100.0, spath);
+        dst.variance = number(s, "variance", 0.0f, -100.0, 100.0, spath);
+        dst.range = number(s, "range", 50.0f, 0.0, 100.0, spath);
+        dst.hueRange = number(s, "hue_range", 50.0f, 0.0, 100.0, spath);
+        dst.satRange = number(s, "sat_range", 50.0f, 0.0, 100.0, spath);
+        dst.lumRange = number(s, "lum_range", 50.0f, 0.0, 100.0, spath);
+        dst.enabled = !s.contains("enabled") || boolean(s, "enabled", spath) != 0;
+    }
+}
+
+void readSelectiveColor(const Json& sc, SelectiveColorOptions& out) {
+    const std::string path = "edits.color.selective_color";
+    fields(sc, path, {"method", "bands"});
+    out = SelectiveColorOptions{};
+    if (sc.contains("method")) {
+        const auto m = text(sc.at("method"), path + ".method");
+        if (m == "relative") out.method = SelectiveColorMethod::Relative;
+        else if (m == "absolute") out.method = SelectiveColorMethod::Absolute;
+        else throw std::invalid_argument(path + ".method must be relative or absolute");
+    }
+    if (sc.contains("bands")) {
+        const auto& bands = sc.at("bands");
+        fields(bands, path + ".bands", {
+            "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
+        });
+        for (size_t i = 0; i < kSelectiveColorBandCount; ++i) {
+            const char* name = kSelectiveColorBandNames[i];
+            if (!bands.contains(name)) continue;
+            const auto bpath = path + ".bands." + name;
+            const auto& b = bands.at(name);
+            fields(b, bpath, {"cyan", "magenta", "yellow", "black"});
+            out.bands[i].cyan = number(b, "cyan", 0.0f, -100.0, 100.0, bpath);
+            out.bands[i].magenta = number(b, "magenta", 0.0f, -100.0, 100.0, bpath);
+            out.bands[i].yellow = number(b, "yellow", 0.0f, -100.0, 100.0, bpath);
+            out.bands[i].black = number(b, "black", 0.0f, -100.0, 100.0, bpath);
+        }
+    }
+}
+
+void readBwMixer(const Json& bw, BwMixerOptions& out) {
+    const std::string path = "edits.color.bw";
+    fields(bw, path, {"enabled", "mixer"});
+    out = BwMixerOptions{};
+    out.enabled = boolean(bw, "enabled", path) != 0;
+    if (bw.contains("mixer")) {
+        const auto& mixer = bw.at("mixer");
+        fields(mixer, path + ".mixer", {
+            "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
+        });
+        for (size_t i = 0; i < kBwMixerChannelCount; ++i) {
+            out.weights[i] = number(mixer, kBwMixerChannelNames[i], 0.0f, -100.0, 100.0, path + ".mixer");
+        }
+    }
+}
+
 ToneCurveEndpoints hdrStateCurveEndpoints(uint32_t processingVersion) {
     if (processingVersion >= kHdrProcessingFreeCurveXVersion) return ToneCurveEndpoints::Free;
     return processingVersion >= kHdrProcessingV2GradingCurveVersion ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned;
@@ -212,7 +320,7 @@ void readColorGrading(const Json& grading, CanonicalEditState& parsed, bool allo
     }
 }
 
-void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV12, ToneCurveEndpoints curveEndpoints, bool sessionMode) {
+void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV12, bool allowV14, ToneCurveEndpoints curveEndpoints, bool sessionMode) {
     if (edits.contains("color_grading")) {
         readColorGrading(edits.at("color_grading"), parsed, allowV12);
     }
@@ -256,13 +364,33 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
     }
     if (edits.contains("color")) {
         const auto& color = edits.at("color");
-        fields(color, "edits.color", {"vibrance"});
+        if (!parsed.isHdr && allowV14) {
+            fields(color, "edits.color", {"vibrance", "calibration", "point_color", "selective_color", "bw"});
+        } else {
+            fields(color, "edits.color", {"vibrance"});
+        }
         parsed.toneControls.vibrance = number(color, "vibrance", 0, -1, 1, "edits.color");
+        if (!parsed.isHdr && allowV14) {
+            if (color.contains("calibration")) readCalibration(color.at("calibration"), parsed.calibration);
+            if (color.contains("point_color")) readPointColor(color.at("point_color"), parsed.pointColor);
+            if (color.contains("selective_color")) readSelectiveColor(color.at("selective_color"), parsed.selectiveColor);
+            if (color.contains("bw")) readBwMixer(color.at("bw"), parsed.bw);
+        }
     }
     if (!parsed.isHdr && edits.contains("detail")) {
         const auto& detail = edits.at("detail");
-        fields(detail, "edits.detail", {"sharpening"});
+        if (allowV14) {
+            fields(detail, "edits.detail", {"sharpening", "luminance_v2", "sharpening_radius", "sharpening_detail", "sharpening_masking"});
+        } else {
+            fields(detail, "edits.detail", {"sharpening"});
+        }
         parsed.sharpening = number(detail, "sharpening", 0, 0, 2, "edits.detail");
+        if (allowV14) {
+            parsed.sharpenV2.luminanceV2 = boolean(detail, "luminance_v2", "edits.detail") != 0;
+            parsed.sharpenV2.radius = number(detail, "sharpening_radius", 1.0f, 0.5, 3.0, "edits.detail");
+            parsed.sharpenV2.detail = number(detail, "sharpening_detail", 25.0f, 0.0, 100.0, "edits.detail");
+            parsed.sharpenV2.masking = number(detail, "sharpening_masking", 0.0f, 0.0, 100.0, "edits.detail");
+        }
     }
     if (edits.contains("hsl")) {
         const auto& hsl = edits.at("hsl");
@@ -273,7 +401,11 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
     }
     if (edits.contains("effects")) {
         const auto& fx = edits.at("effects");
-        if (parsed.schemaVersion >= 5 && !parsed.isHdr)
+        if (!parsed.isHdr && allowV14)
+            fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
+                "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness",
+                "clarity", "dehaze", "texture", "grain_tone_curve", "grain_format_preset", "halation", "bloom"});
+        else if (parsed.schemaVersion >= 5 && !parsed.isHdr)
             fields(fx, "edits.effects", {"vignette_amount", "vignette_midpoint", "vignette_roundness",
                 "vignette_feather", "vignette_highlights", "grain_amount", "grain_size", "grain_roughness", "clarity", "dehaze"});
         else
@@ -290,6 +422,37 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
         config.grainAmount = number(fx, "grain_amount", 0, 0, 100, "edits.effects");
         config.grainSize = number(fx, "grain_size", 25, 0, 100, "edits.effects");
         config.grainRoughness = number(fx, "grain_roughness", 50, 0, 100, "edits.effects");
+        if (!parsed.isHdr && allowV14) {
+            parsed.atmosphere.texture = number(fx, "texture", 0, -1, 1, "edits.effects");
+            if (fx.contains("grain_tone_curve")) {
+                const auto tc = text(fx.at("grain_tone_curve"), "edits.effects.grain_tone_curve");
+                if (tc == "legacy") config.grainToneCurve = GrainToneCurve::Legacy;
+                else if (tc == "negative_asymmetric") config.grainToneCurve = GrainToneCurve::NegativeAsymmetric;
+                else throw std::invalid_argument("edits.effects.grain_tone_curve must be legacy or negative_asymmetric");
+            }
+            if (fx.contains("grain_format_preset")) {
+                const auto fp = text(fx.at("grain_format_preset"), "edits.effects.grain_format_preset");
+                if (fp == "custom") config.grainFormatPreset = GrainFormatPreset::Custom;
+                else if (fp == "135") config.grainFormatPreset = GrainFormatPreset::Film135;
+                else if (fp == "120") config.grainFormatPreset = GrainFormatPreset::Film120;
+                else throw std::invalid_argument("edits.effects.grain_format_preset must be custom, 135 or 120");
+            }
+            if (fx.contains("halation")) {
+                const auto& hal = fx.at("halation");
+                fields(hal, "edits.effects.halation", {"amount", "threshold", "radius", "hue"});
+                parsed.filmOptics.halationAmount = number(hal, "amount", 0.0f, 0.0, 100.0, "edits.effects.halation");
+                parsed.filmOptics.halationThreshold = number(hal, "threshold", 75.0f, 0.0, 100.0, "edits.effects.halation");
+                parsed.filmOptics.halationRadius = number(hal, "radius", 35.0f, 0.0, 100.0, "edits.effects.halation");
+                parsed.filmOptics.halationHue = number(hal, "hue", 0.0f, -100.0, 100.0, "edits.effects.halation");
+            }
+            if (fx.contains("bloom")) {
+                const auto& bl = fx.at("bloom");
+                fields(bl, "edits.effects.bloom", {"amount", "threshold", "radius"});
+                parsed.filmOptics.bloomAmount = number(bl, "amount", 0.0f, 0.0, 100.0, "edits.effects.bloom");
+                parsed.filmOptics.bloomThreshold = number(bl, "threshold", 70.0f, 0.0, 100.0, "edits.effects.bloom");
+                parsed.filmOptics.bloomRadius = number(bl, "radius", 40.0f, 0.0, 100.0, "edits.effects.bloom");
+            }
+        }
     }
     if (edits.contains("denoise")) {
         const auto& denoise = edits.at("denoise");
@@ -316,7 +479,15 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
     }
     if (edits.contains("lens_correction")) {
         const auto& lens = edits.at("lens_correction");
-        fields(lens, "edits.lens_correction", {"distortion", "tca", "vignetting", "auto_crop", "profile_id"});
+        if (!parsed.isHdr && allowV14) {
+            fields(lens, "edits.lens_correction", {
+                "distortion", "tca", "vignetting", "auto_crop", "profile_id",
+                "defringe_purple_amount", "defringe_purple_hue",
+                "defringe_green_amount", "defringe_green_hue"
+            });
+        } else {
+            fields(lens, "edits.lens_correction", {"distortion", "tca", "vignetting", "auto_crop", "profile_id"});
+        }
         parsed.lensDistortion = boolean(lens, "distortion", "edits.lens_correction") != 0;
         parsed.lensTca = boolean(lens, "tca", "edits.lens_correction") != 0;
         parsed.lensVignetting = boolean(lens, "vignetting", "edits.lens_correction") != 0;
@@ -325,6 +496,12 @@ void readCommonEdits(const Json& edits, CanonicalEditState& parsed, bool allowV1
             parsed.lensProfileId = text(lens.at("profile_id"), "edits.lens_correction.profile_id");
             if (!validProfileId(parsed.lensProfileId))
                 throw std::invalid_argument("edits.lens_correction.profile_id must be a valid id");
+        }
+        if (!parsed.isHdr && allowV14) {
+            parsed.defringe.purpleAmount = number(lens, "defringe_purple_amount", 0.0f, 0.0, 20.0, "edits.lens_correction");
+            parsed.defringe.purpleHue = number(lens, "defringe_purple_hue", 50.0f, 0.0, 100.0, "edits.lens_correction");
+            parsed.defringe.greenAmount = number(lens, "defringe_green_amount", 0.0f, 0.0, 20.0, "edits.lens_correction");
+            parsed.defringe.greenHue = number(lens, "defringe_green_hue", 50.0f, 0.0, 100.0, "edits.lens_correction");
         }
     }
 }
@@ -609,7 +786,7 @@ CanonicalEditState parseHdrState(
             fields(edits.at("tone"), "edits.tone", {"contrast", "saturation", "highlights", "shadows"});
         }
         const bool allowV12 = effectiveSchema >= 16;
-        readCommonEdits(edits, parsed, allowV12, hdrStateCurveEndpoints(processingVersion), sessionMode);
+        readCommonEdits(edits, parsed, allowV12, false, hdrStateCurveEndpoints(processingVersion), sessionMode);
         if (edits.contains("geometry")) {
             readGeometry(edits.at("geometry"), parsed, true);
         }
@@ -788,6 +965,7 @@ CanonicalEditState parseSdrState(
     }
 
     const bool allowV12 = version >= 17 || sessionMode;
+    const bool allowV14 = version >= 20 || sessionMode;
     if (!sessionMode || root.contains("edits")) {
         const auto& edits = required(root, "edits", "recipe");
         if (sessionMode) {
@@ -807,7 +985,7 @@ CanonicalEditState parseSdrState(
         }
 
         if (version >= 4 || sessionMode) {
-            readCommonEdits(edits, parsed, allowV12,
+            readCommonEdits(edits, parsed, allowV12, allowV14,
                 version >= 18 ? ToneCurveEndpoints::Free : allowV12 ? ToneCurveEndpoints::FreeY : ToneCurveEndpoints::Pinned,
                 sessionMode);
         }
@@ -1001,10 +1179,18 @@ RenderParams CanonicalSdrRecipe::toRenderParams() const {
     params.temperature = whiteBalanceMode == RenderWhiteBalanceMode::Camera ? 6500.0f : temperatureKelvin;
     params.tint = whiteBalanceMode == RenderWhiteBalanceMode::Camera ? 0.0f : tint;
     params.effects = effects;
+    params.filmOptics = filmOptics;
+    params.atmosphere = atmosphere;
     params.chromaDenoise = chromaDenoise;
     params.hsl = hsl;
     params.toneControls = toneControls;
     params.colorGrading = colorGrading;
+    params.calibration = calibration;
+    params.pointColor = pointColor;
+    params.selectiveColor = selectiveColor;
+    params.bw = bw;
+    params.sharpenV2 = sharpenV2;
+    params.defringe = defringe;
     params.customCurve = ToneCurve(toneCurve, freeEndpoints);
     for (size_t i = 0; i < 3; ++i) {
         params.channelCurves[i] = ToneCurve(channelCurves[i], freeEndpoints);
@@ -1051,17 +1237,24 @@ CanonicalSdrRecipe CanonicalEditState::toCanonicalSdrRecipe() const {
     sdr.toneControls = toneControls;
     sdr.atmosphere = atmosphere;
     sdr.colorGrading = colorGrading;
+    sdr.calibration = calibration;
+    sdr.pointColor = pointColor;
+    sdr.selectiveColor = selectiveColor;
+    sdr.bw = bw;
     sdr.sharpening = sharpening;
+    sdr.sharpenV2 = sharpenV2;
     sdr.rawNoiseReduction = rawNoiseReduction;
     sdr.chromaDenoise = chromaDenoise;
     sdr.wavelet = wavelet;
     sdr.hsl = hsl;
     sdr.effects = effects;
+    sdr.filmOptics = filmOptics;
     sdr.lensDistortion = lensDistortion;
     sdr.lensTca = lensTca;
     sdr.lensVignetting = lensVignetting;
     sdr.lensAutoCrop = lensAutoCrop;
     sdr.lensProfileId = lensProfileId;
+    sdr.defringe = defringe;
     sdr.hasAiDenoiseBlend = hasAiDenoiseBlend;
     sdr.aiDenoiseBlend = aiDenoiseBlend;
     sdr.masterRecipe = masterRecipe;
@@ -1220,7 +1413,7 @@ bool parseCanonicalEditState(
             const uint32_t hdrVer = hdrProcessingVersionForSchema(version);
             if (hdrVer != 0) {
                 isHdrFamily = true;
-            } else if (version != 17 && version != 18 && (version < 1 || version > 7)) {
+            } else if (version != 17 && version != 18 && version != 20 && (version < 1 || version > 7)) {
                 throw std::invalid_argument("Unsupported schema_version: " + std::to_string(version));
             }
         } else {

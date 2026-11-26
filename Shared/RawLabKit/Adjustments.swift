@@ -33,8 +33,40 @@ public struct Adjustments: Equatable, Codable {
     public var atmosphereSettings: AtmosphereSettings { atmosphere ?? AtmosphereSettings() }
     public var clarity: Double { get { atmosphereSettings.clarity } set { setAtmosphere(\.clarity, to: newValue) } }
     public var dehaze: Double { get { atmosphereSettings.dehaze } set { setAtmosphere(\.dehaze, to: newValue) } }
+    public var texture: Double { get { atmosphereSettings.texture } set { setAtmosphere(\.texture, to: newValue) } }
     private mutating func setAtmosphere(_ key: WritableKeyPath<AtmosphereSettings, Double>, to value: Double) {
         var state = atmosphereSettings; state[keyPath: key] = value; atmosphere = state.isIdentity ? nil : state
+    }
+
+    public var cameraCalibration: CameraCalibrationSettings?
+    public var calibrationSettings: CameraCalibrationSettings {
+        get { cameraCalibration ?? CameraCalibrationSettings() }
+        set { cameraCalibration = newValue.isDefault ? nil : newValue }
+    }
+    public var pointColor: PointColorSettings?
+    public var pointColorSettings: PointColorSettings {
+        get { pointColor ?? PointColorSettings() }
+        set { pointColor = newValue.isDefault ? nil : newValue }
+    }
+    public var selectiveColor: SelectiveColorSettings?
+    public var selectiveColorSettings: SelectiveColorSettings {
+        get { selectiveColor ?? SelectiveColorSettings() }
+        set { selectiveColor = newValue.isDefault ? nil : newValue }
+    }
+    public var bwMixer: BwMixerSettings?
+    public var bwMixerSettings: BwMixerSettings {
+        get { bwMixer ?? BwMixerSettings() }
+        set { bwMixer = newValue.isDefault ? nil : newValue }
+    }
+    public var sharpenV2: SharpenV2Settings?
+    public var sharpenV2Settings: SharpenV2Settings {
+        get { sharpenV2 ?? SharpenV2Settings() }
+        set { sharpenV2 = newValue.isDefault ? nil : newValue }
+    }
+    public var filmOptics: FilmOpticsSettings?
+    public var filmOpticsSettings: FilmOpticsSettings {
+        get { filmOptics ?? FilmOpticsSettings() }
+        set { filmOptics = newValue.isDefault ? nil : newValue }
     }
 
     public var toneControls: ToneControlsSettings?
@@ -312,10 +344,13 @@ public struct Adjustments: Equatable, Codable {
         if group == .film { guard clearMasterRecipe() else { return } }
         for p in group.parameters { set(p, to: p.spec(for: self).defaultValue) }
         if group == .input { exposureMode = .preview; resetWhiteBalance() }
-        if group == .color { hsl = nil; colorGrading = nil }
+        if group == .color {
+            hsl = nil; colorGrading = nil
+            cameraCalibration = nil; pointColor = nil; selectiveColor = nil; bwMixer = nil
+        }
         if group == .tone { toneCurveConfig = nil }
-        if group == .detail { aiDenoiseEnabled = false; aiDenoiseStrength = 100.0 }
-        if group == .effects { photoEffects = nil; atmosphere = nil }
+        if group == .detail { aiDenoiseEnabled = false; aiDenoiseStrength = 100.0; sharpenV2 = nil }
+        if group == .effects { photoEffects = nil; atmosphere = nil; filmOptics = nil }
         if group == .lens { lensCorrection = nil }
         if group == .geometry { geometry = nil }
     }
@@ -328,9 +363,11 @@ public struct Adjustments: Equatable, Codable {
         }
         return group.parameters.allSatisfy { self[keyPath: $0.spec.keyPath] == $0.spec(for: self).defaultValue }
             && (group != .input || exposureMode == .preview) && (group != .tone || curveSettings.isDefault)
-            && (group != .color || hslSettings.isIdentity && gradingSettings.isDefault)
-            && (group != .detail || (!isDenoiseEnabled && aiDenoiseStrength == 100.0))
-            && (group != .effects || effectSettings == PhotoEffectsSettings() && atmosphereSettings.isIdentity)
+            && (group != .color || (hslSettings.isIdentity && gradingSettings.isDefault
+                && calibrationSettings.isDefault && pointColorSettings.isDefault
+                && selectiveColorSettings.isDefault && bwMixerSettings.isDefault))
+            && (group != .detail || (!isDenoiseEnabled && aiDenoiseStrength == 100.0 && sharpenV2Settings.isDefault))
+            && (group != .effects || (effectSettings == PhotoEffectsSettings() && atmosphereSettings.isIdentity && filmOpticsSettings.isDefault))
             && (group != .film || masterRecipeID == nil) && (group != .lens || lensSettings == LensCorrectionSettings())
             && (group != .geometry || geometrySettings.isIdentity)
     }
@@ -374,7 +411,18 @@ public struct Adjustments: Equatable, Codable {
         if state.whiteBalanceMode != .asShot || state.asShotWhiteBalance != nil || state.masterRecipe != nil {
             state.whiteBalanceMode = .asShot; state.resolveWhiteBalance(nil); state.temperature = 6500; state.tint = 0
         }
-        state.rawNoiseReduction = 0; state.aiDenoiseEnabled = false; state.lensCorrection = nil; return state
+        state.rawNoiseReduction = 0; state.aiDenoiseEnabled = false
+        if let df = state.lensCorrection, df.hasDefringeSettings {
+            state.lensCorrection = LensCorrectionSettings(
+                defringePurpleAmount: df.defringePurpleAmount,
+                defringePurpleHue: df.defringePurpleHue,
+                defringeGreenAmount: df.defringeGreenAmount,
+                defringeGreenHue: df.defringeGreenHue
+            )
+        } else {
+            state.lensCorrection = nil
+        }
+        return state
     }
 
     public func validateResetValues() throws {
@@ -388,7 +436,9 @@ public struct Adjustments: Equatable, Codable {
             throw EditorResetBlockedReason.invalidSnapshot("denoise")
         }
         guard PhotoEffectParameter.allCases.allSatisfy({ let v = effectSettings[keyPath: $0.keyPath]; return v.isFinite && $0.range.contains(v) }),
-              hslSettings.isValid, geometrySettings.isValid, atmosphereSettings.isValid, gradingSettings.isValid, curveSettings.isValid else {
+              hslSettings.isValid, geometrySettings.isValid, atmosphereSettings.isValid, gradingSettings.isValid, curveSettings.isValid,
+              calibrationSettings.isValid, pointColorSettings.isValid, selectiveColorSettings.isValid, bwMixerSettings.isValid,
+              sharpenV2Settings.isValid, filmOpticsSettings.isValid, lensSettings.isValid else {
             throw EditorResetBlockedReason.invalidSnapshot("effects/hsl/geometry")
         }
         if let lens = lensCorrection {
@@ -458,6 +508,7 @@ public struct Adjustments: Equatable, Codable {
         case toneCurve, saturation, sharpening, rawNoiseReduction, chromaNoiseReduction, waveletNoiseReduction, aiDenoiseEnabled, aiDenoiseBlend, hdrCameraAI
         case photoEffects, hsl, lensCorrection, geometry, supportsRawNoiseReduction, masterRecipeID, masterRecipeSettingsVersion
         case lutID, lutStrength, denoise, displayChromaDenoise
+        case cameraCalibration, pointColor, selectiveColor, bwMixer, sharpenV2, filmOptics
     }
     private enum WireFormat { case canonicalV2, legacyIOSV1, legacyMacV1 }
 
@@ -491,6 +542,12 @@ public struct Adjustments: Equatable, Codable {
         try c.encodeIfPresent(hsl, forKey: .hsl); try c.encodeIfPresent(lensCorrection, forKey: .lensCorrection)
         try c.encodeIfPresent(geometry, forKey: .geometry); try c.encode(supportsRawNoiseReduction, forKey: .supportsRawNoiseReduction)
         try c.encodeIfPresent(masterRecipeID, forKey: .masterRecipeID); try c.encodeIfPresent(masterRecipeSettingsVersion, forKey: .masterRecipeSettingsVersion)
+        try c.encodeIfPresent(cameraCalibration, forKey: .cameraCalibration)
+        try c.encodeIfPresent(pointColor, forKey: .pointColor)
+        try c.encodeIfPresent(selectiveColor, forKey: .selectiveColor)
+        try c.encodeIfPresent(bwMixer, forKey: .bwMixer)
+        try c.encodeIfPresent(sharpenV2, forKey: .sharpenV2)
+        try c.encodeIfPresent(filmOptics, forKey: .filmOptics)
     }
 
     public init(from decoder: Decoder) throws { try self.init(from: decoder, defaultLegacyFlavor: nil) }
@@ -573,6 +630,18 @@ public struct Adjustments: Equatable, Codable {
         guard hslSettings.isValid else { throw DecodingError.dataCorruptedError(forKey: .hsl, in: v, debugDescription: "Invalid HSL parameters") }
         if hsl?.isIdentity == true { hsl = nil }
         lensCorrection = try v.decodeIfPresent(LensCorrectionSettings.self, forKey: .lensCorrection)
+        cameraCalibration = try v.decodeIfPresent(CameraCalibrationSettings.self, forKey: .cameraCalibration)
+        if cameraCalibration?.isDefault == true { cameraCalibration = nil }
+        pointColor = try v.decodeIfPresent(PointColorSettings.self, forKey: .pointColor)
+        if pointColor?.isDefault == true { pointColor = nil }
+        selectiveColor = try v.decodeIfPresent(SelectiveColorSettings.self, forKey: .selectiveColor)
+        if selectiveColor?.isDefault == true { selectiveColor = nil }
+        bwMixer = try v.decodeIfPresent(BwMixerSettings.self, forKey: .bwMixer)
+        if bwMixer?.isDefault == true { bwMixer = nil }
+        sharpenV2 = try v.decodeIfPresent(SharpenV2Settings.self, forKey: .sharpenV2)
+        if sharpenV2?.isDefault == true { sharpenV2 = nil }
+        filmOptics = try v.decodeIfPresent(FilmOpticsSettings.self, forKey: .filmOptics)
+        if filmOptics?.isDefault == true { filmOptics = nil }
         geometry = try v.decodeIfPresent(GeometrySettings.self, forKey: .geometry)
         guard geometrySettings.isValid else { throw DecodingError.dataCorruptedError(forKey: .geometry, in: v, debugDescription: "Invalid geometry parameters") }
         if geometry?.isIdentity == true { geometry = nil }

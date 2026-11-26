@@ -540,6 +540,9 @@ const std::unordered_map<std::string, TransferFieldSpec>& transferFieldSpecs() {
             const int hi = *std::max_element(vals.begin(), vals.end());
             m[k] = TransferFieldSpec{FieldValueType::Integer, nullable, true, static_cast<double>(lo), true, static_cast<double>(hi), false, false, false, false, {}, std::move(vals)};
         };
+        auto addStrEnum = [&](const char* k, std::vector<std::string> vals) {
+            m[k] = TransferFieldSpec{FieldValueType::String, false, false, 0, false, 0, false, false, false, false, std::move(vals), {}};
+        };
 
         m["looks.reference"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
         addNum("looks.strength", 0.0, 2.0);
@@ -580,6 +583,17 @@ const std::unordered_map<std::string, TransferFieldSpec>& transferFieldSpecs() {
                 m[key] = TransferFieldSpec{FieldValueType::Number, false, true, -100.0, true, 100.0, false, false, false, false, {}, {}};
             }
         }
+        addNum("color.calibration.shadow_tint", -100.0, 100.0);
+        addNum("color.calibration.red_hue", -100.0, 100.0);
+        addNum("color.calibration.red_saturation", -100.0, 100.0);
+        addNum("color.calibration.green_hue", -100.0, 100.0);
+        addNum("color.calibration.green_saturation", -100.0, 100.0);
+        addNum("color.calibration.blue_hue", -100.0, 100.0);
+        addNum("color.calibration.blue_saturation", -100.0, 100.0);
+        m["color.point_color"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
+        m["color.selective_color"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
+        addBool("color.bw.enabled");
+        m["color.bw.mixer"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
 
         addNum("effects.vignette.amount", -100.0, 100.0);
         addNum("effects.vignette.midpoint", 0.0, 100.0);
@@ -589,9 +603,23 @@ const std::unordered_map<std::string, TransferFieldSpec>& transferFieldSpecs() {
         addNum("effects.grain.amount", 0.0, 100.0);
         addNum("effects.clarity", -100.0, 100.0);
         addNum("effects.dehaze", -100.0, 100.0);
+        addNum("effects.texture", -100.0, 100.0);
         addNum("effects.grain.size", 0.0, 100.0);
         addNum("effects.grain.roughness", 0.0, 100.0);
+        addStrEnum("effects.grain.tone_curve", {"legacy", "negative_asymmetric"});
+        addStrEnum("effects.grain.format_preset", {"custom", "135", "120"});
+        addNum("effects.halation.amount", 0.0, 100.0);
+        addNum("effects.halation.threshold", 0.0, 100.0);
+        addNum("effects.halation.radius", 0.0, 100.0);
+        addNum("effects.halation.hue", -100.0, 100.0);
+        addNum("effects.bloom.amount", 0.0, 100.0);
+        addNum("effects.bloom.threshold", 0.0, 100.0);
+        addNum("effects.bloom.radius", 0.0, 100.0);
         addNum("detail.sharpening", 0.0, 2.0);
+        addBool("detail.sharpening.luminance_v2");
+        addNum("detail.sharpening.radius", 0.5, 3.0);
+        addNum("detail.sharpening.detail", 0.0, 100.0);
+        addNum("detail.sharpening.masking", 0.0, 100.0);
         addIntEnum("detail.denoise.raw_level", {0, 1, 2});
         addNum("detail.denoise.post_rgb", 0.0, 1.0);
         addIntEnum("detail.denoise.chroma_mode", {0, 1, 2}, true);
@@ -611,6 +639,10 @@ const std::unordered_map<std::string, TransferFieldSpec>& transferFieldSpecs() {
         addBool("geometry.lens.vignetting");
         addBool("geometry.lens.auto_crop");
         m["geometry.lens.profile_id"] = TransferFieldSpec{FieldValueType::String, true, false, 0, false, 0, false, false, true, false, {}, {}};
+        addNum("geometry.lens.defringe_purple_amount", 0.0, 20.0);
+        addNum("geometry.lens.defringe_purple_hue", 0.0, 100.0);
+        addNum("geometry.lens.defringe_green_amount", 0.0, 20.0);
+        addNum("geometry.lens.defringe_green_hue", 0.0, 100.0);
 
         return m;
     }();
@@ -992,6 +1024,85 @@ void validateTransferValues(
             }
         } else if (key == "light.curve.parametric") {
             (void)validateParametricCurve(val, "light.curve.parametric");
+        } else if (key == "color.point_color") {
+            if (!val.is_object() || val.size() != 1 || !val.contains("swatches") || !val.at("swatches").is_array()) {
+                throw StoreError(2, "invalid_argument", "color.point_color must contain only swatches array");
+            }
+            const Json& swatches = val.at("swatches");
+            if (swatches.size() > 8) {
+                throw StoreError(2, "invalid_argument", "color.point_color.swatches exceeds max 8");
+            }
+            static const std::unordered_set<std::string> kSwatchKeys = {
+                "src_hue", "src_saturation", "src_luminance",
+                "hue_shift", "saturation_shift", "luminance_shift", "variance",
+                "range", "hue_range", "sat_range", "lum_range", "enabled",
+            };
+            for (const auto& sw : swatches) {
+                if (!sw.is_object() || !sw.contains("src_hue") || !sw.contains("src_saturation") || !sw.contains("src_luminance")) {
+                    throw StoreError(2, "invalid_argument", "color.point_color swatch requires src_hue, src_saturation, src_luminance");
+                }
+                for (const auto& sk : sw.items()) {
+                    if (kSwatchKeys.find(sk.key()) == kSwatchKeys.end()) {
+                        throw StoreError(2, "invalid_argument", "color.point_color swatch has unexpected key: " + sk.key());
+                    }
+                }
+                auto checkNum = [&](const char* k, double lo, double hi, bool exHi = false) {
+                    if (!sw.contains(k)) return;
+                    if (!isFiniteNumberJson(sw.at(k))) throw StoreError(2, "invalid_argument", std::string("color.point_color.") + k + " must be finite");
+                    const double v = sw.at(k).get<double>();
+                    if (v < lo || (exHi ? v >= hi : v > hi)) throw StoreError(2, "invalid_argument", std::string("color.point_color.") + k + " out of range");
+                };
+                checkNum("src_hue", 0.0, 360.0, true);
+                checkNum("src_saturation", 0.0, 1.0);
+                checkNum("src_luminance", 0.0, 1.0);
+                for (const char* k : {"hue_shift", "saturation_shift", "luminance_shift", "variance"}) checkNum(k, -100.0, 100.0);
+                for (const char* k : {"range", "hue_range", "sat_range", "lum_range"}) checkNum(k, 0.0, 100.0);
+                if (sw.contains("enabled") && !sw.at("enabled").is_boolean()) {
+                    throw StoreError(2, "invalid_argument", "color.point_color.enabled must be boolean");
+                }
+            }
+        } else if (key == "color.selective_color") {
+            if (!val.is_object() || !val.contains("method") || !val.contains("bands") || val.size() != 2) {
+                throw StoreError(2, "invalid_argument", "color.selective_color must contain method and bands");
+            }
+            if (!val.at("method").is_string() || (val.at("method").get<std::string>() != "relative" && val.at("method").get<std::string>() != "absolute")) {
+                throw StoreError(2, "invalid_argument", "color.selective_color.method must be relative or absolute");
+            }
+            const Json& bands = val.at("bands");
+            static const std::unordered_set<std::string> kBands = {
+                "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
+            };
+            if (!bands.is_object() || bands.size() != kBands.size()) {
+                throw StoreError(2, "invalid_argument", "color.selective_color.bands must contain all 9 bands");
+            }
+            for (const auto& bItem : bands.items()) {
+                if (kBands.find(bItem.key()) == kBands.end()) {
+                    throw StoreError(2, "invalid_argument", "color.selective_color unexpected band: " + bItem.key());
+                }
+                const Json& comp = bItem.value();
+                if (!comp.is_object() || comp.size() != 4) {
+                    throw StoreError(2, "invalid_argument", "color.selective_color band must contain cyan, magenta, yellow, black");
+                }
+                for (const char* ck : {"cyan", "magenta", "yellow", "black"}) {
+                    if (!comp.contains(ck) || !isFiniteNumberJson(comp.at(ck)) ||
+                        comp.at(ck).get<double>() < -100.0 || comp.at(ck).get<double>() > 100.0) {
+                        throw StoreError(2, "invalid_argument", "color.selective_color component out of range");
+                    }
+                }
+            }
+        } else if (key == "color.bw.mixer") {
+            static const std::unordered_set<std::string> kChannels = {
+                "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
+            };
+            if (!val.is_object() || val.size() != kChannels.size()) {
+                throw StoreError(2, "invalid_argument", "color.bw.mixer must contain all 8 channel keys");
+            }
+            for (const auto& item2 : val.items()) {
+                if (kChannels.find(item2.key()) == kChannels.end() || !isFiniteNumberJson(item2.value()) ||
+                    item2.value().get<double>() < -100.0 || item2.value().get<double>() > 100.0) {
+                    throw StoreError(2, "invalid_argument", "color.bw.mixer channel out of range");
+                }
+            }
         } else if (key == "detail.denoise.wavelet") {
             if (!val.is_object() || val.size() != 5 ||
                 !val.contains("enabled") || !val.contains("preset") ||
@@ -1283,7 +1394,14 @@ struct ParsedAdjustments {
     bool hasToneControls = false;
     double clarity = 0.0;
     double dehaze = 0.0;
+    double texture = 0.0;
     bool hasAtmosphere = false;
+    std::optional<Json> calibration;
+    std::optional<Json> pointColor;
+    std::optional<Json> selectiveColor;
+    std::optional<Json> bwMixer;
+    std::optional<Json> sharpenV2;
+    std::optional<Json> filmOptics;
     std::optional<Json> toneCurveConfig;
     std::optional<Json> colorGradingCanonical; // lowercase keys
     std::optional<Json> hsl;                   // {hue:[8], saturation:[8], lightness:[8]}
@@ -1296,6 +1414,8 @@ struct ParsedAdjustments {
         double grainAmount = 0.0;
         double grainSize = 25.0;
         double grainRoughness = 50.0;
+        std::string grainToneCurve = "legacy";
+        std::string grainFormatPreset = "custom";
     };
     std::optional<Effects> effects;
     struct Lens {
@@ -1304,6 +1424,10 @@ struct ParsedAdjustments {
         bool vignetting = false;
         bool autoCrop = true;
         std::optional<std::string> profileId;
+        double defringePurpleAmount = 0.0;
+        double defringePurpleHue = 50.0;
+        double defringeGreenAmount = 0.0;
+        double defringeGreenHue = 50.0;
     };
     std::optional<Lens> lens;
     struct Geometry {
@@ -1342,10 +1466,11 @@ ParsedAdjustments parseAndValidateAdjustments(
         "processing_version", "x3f_mode", "exposure_mode",
         "exposure", "contrast", "highlights", "shadows", "s_curve",
         "saturation", "vibrance", "black_point", "white_point",
-        "clarity", "dehaze", "sharpening", "strength",
+        "clarity", "dehaze", "texture", "sharpening", "sharpen_v2", "strength",
         "white_balance_mode", "temperature", "tint",
         "raw_noise_reduction", "chroma_noise_reduction", "wavelet",
-        "hsl", "tone_curve", "color_grading", "photo_effects",
+        "hsl", "tone_curve", "color_grading", "calibration", "point_color",
+        "selective_color", "bw", "photo_effects", "film_optics",
         "geometry", "lens_correction", "master_recipe_settings_version",
         "ai_denoise_enabled", "ai_denoise_blend",
     };
@@ -1517,7 +1642,158 @@ ParsedAdjustments parseAndValidateAdjustments(
 
     out.clarity = roundDigits(numIn(adjustments, "clarity", 0.0, -100.0, 100.0), 4);
     out.dehaze = roundDigits(numIn(adjustments, "dehaze", 0.0, -100.0, 100.0), 4);
-    out.hasAtmosphere = (out.clarity != 0.0 || out.dehaze != 0.0);
+    out.texture = roundDigits(numIn(adjustments, "texture", 0.0, -100.0, 100.0), 4);
+    out.hasAtmosphere = (out.clarity != 0.0 || out.dehaze != 0.0 || out.texture != 0.0);
+
+    if (adjustments.contains("calibration") && !adjustments.at("calibration").is_null()) {
+        const Json& cal = adjustments.at("calibration");
+        if (!cal.is_object()) throw StoreError(2, "invalid_argument", "calibration must be an object");
+        static const std::unordered_set<std::string> kCalKeys = {
+            "shadow_tint", "red_hue", "red_saturation",
+            "green_hue", "green_saturation", "blue_hue", "blue_saturation"
+        };
+        for (const auto& kv : cal.items()) {
+            if (kCalKeys.find(kv.key()) == kCalKeys.end()) {
+                throw StoreError(2, "invalid_argument", "Unsupported calibration key: " + kv.key());
+            }
+        }
+        out.calibration = Json{
+            {"shadowTint", roundDigits(numIn(cal, "shadow_tint", 0.0, -100.0, 100.0), 4)},
+            {"redHue", roundDigits(numIn(cal, "red_hue", 0.0, -100.0, 100.0), 4)},
+            {"redSaturation", roundDigits(numIn(cal, "red_saturation", 0.0, -100.0, 100.0), 4)},
+            {"greenHue", roundDigits(numIn(cal, "green_hue", 0.0, -100.0, 100.0), 4)},
+            {"greenSaturation", roundDigits(numIn(cal, "green_saturation", 0.0, -100.0, 100.0), 4)},
+            {"blueHue", roundDigits(numIn(cal, "blue_hue", 0.0, -100.0, 100.0), 4)},
+            {"blueSaturation", roundDigits(numIn(cal, "blue_saturation", 0.0, -100.0, 100.0), 4)},
+        };
+    }
+
+    if (adjustments.contains("point_color") && !adjustments.at("point_color").is_null()) {
+        const Json& pc = adjustments.at("point_color");
+        if (!pc.is_object() || pc.size() != 1 || !pc.contains("swatches") || !pc.at("swatches").is_array()) {
+            throw StoreError(2, "invalid_argument", "point_color must contain swatches array");
+        }
+        if (pc.at("swatches").size() > 8) {
+            throw StoreError(2, "invalid_argument", "point_color.swatches exceeds max 8");
+        }
+        Json swOut = Json::array();
+        for (const auto& sw : pc.at("swatches")) {
+            if (!sw.is_object() || !sw.contains("src_hue") || !sw.contains("src_saturation") || !sw.contains("src_luminance")) {
+                throw StoreError(2, "invalid_argument", "point_color swatch missing required coordinates");
+            }
+            const double srcHue = numIn(sw, "src_hue", 0.0, 0.0, 360.0);
+            if (srcHue >= 360.0) throw StoreError(2, "invalid_argument", "point_color.src_hue must be < 360");
+            bool enabled = true;
+            if (sw.contains("enabled")) {
+                if (!sw.at("enabled").is_boolean()) {
+                    throw StoreError(2, "invalid_argument", "point_color.enabled must be boolean");
+                }
+                enabled = sw.at("enabled").get<bool>();
+            }
+            swOut.push_back({
+                {"srcHue", roundDigits(srcHue, 4)},
+                {"srcSaturation", roundDigits(numIn(sw, "src_saturation", 0.0, 0.0, 1.0), 6)},
+                {"srcLuminance", roundDigits(numIn(sw, "src_luminance", 0.0, 0.0, 1.0), 6)},
+                {"hueShift", roundDigits(numIn(sw, "hue_shift", 0.0, -100.0, 100.0), 4)},
+                {"saturationShift", roundDigits(numIn(sw, "saturation_shift", 0.0, -100.0, 100.0), 4)},
+                {"luminanceShift", roundDigits(numIn(sw, "luminance_shift", 0.0, -100.0, 100.0), 4)},
+                {"variance", roundDigits(numIn(sw, "variance", 0.0, -100.0, 100.0), 4)},
+                {"range", roundDigits(numIn(sw, "range", 50.0, 0.0, 100.0), 4)},
+                {"hueRange", roundDigits(numIn(sw, "hue_range", 50.0, 0.0, 100.0), 4)},
+                {"satRange", roundDigits(numIn(sw, "sat_range", 50.0, 0.0, 100.0), 4)},
+                {"lumRange", roundDigits(numIn(sw, "lum_range", 50.0, 0.0, 100.0), 4)},
+                {"enabled", enabled},
+            });
+        }
+        out.pointColor = Json{{"swatches", std::move(swOut)}};
+    }
+
+    if (adjustments.contains("selective_color") && !adjustments.at("selective_color").is_null()) {
+        const Json& sc = adjustments.at("selective_color");
+        if (!sc.is_object()) throw StoreError(2, "invalid_argument", "selective_color must be an object");
+        std::string method = "relative";
+        if (sc.contains("method")) {
+            if (!sc.at("method").is_string()) throw StoreError(2, "invalid_argument", "selective_color.method must be string");
+            method = sc.at("method").get<std::string>();
+            if (method != "relative" && method != "absolute") throw StoreError(2, "invalid_argument", "selective_color.method invalid");
+        }
+        Json bandsOut = Json::object();
+        static const std::array<const char*, 9> kBands = {
+            "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
+        };
+        if (sc.contains("bands") && sc.at("bands").is_object()) {
+            const Json& bIn = sc.at("bands");
+            for (const char* bName : kBands) {
+                if (bIn.contains(bName)) {
+                    const Json& c = bIn.at(bName);
+                    bandsOut[bName] = {
+                        {"cyan", roundDigits(numIn(c, "cyan", 0.0, -100.0, 100.0), 4)},
+                        {"magenta", roundDigits(numIn(c, "magenta", 0.0, -100.0, 100.0), 4)},
+                        {"yellow", roundDigits(numIn(c, "yellow", 0.0, -100.0, 100.0), 4)},
+                        {"black", roundDigits(numIn(c, "black", 0.0, -100.0, 100.0), 4)},
+                    };
+                } else {
+                    bandsOut[bName] = {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}};
+                }
+            }
+        }
+        out.selectiveColor = Json{{"method", method}, {"bands", std::move(bandsOut)}};
+    }
+
+    if (adjustments.contains("bw") && !adjustments.at("bw").is_null()) {
+        const Json& bw = adjustments.at("bw");
+        if (!bw.is_object()) throw StoreError(2, "invalid_argument", "bw must be an object");
+        bool enabled = false;
+        if (bw.contains("enabled")) {
+            if (!bw.at("enabled").is_boolean()) {
+                throw StoreError(2, "invalid_argument", "bw.enabled must be boolean");
+            }
+            enabled = bw.at("enabled").get<bool>();
+        }
+        Json mixerOut = Json::object();
+        static const std::array<const char*, 8> kCh = {
+            "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
+        };
+        if (bw.contains("mixer") && bw.at("mixer").is_object()) {
+            const Json& mx = bw.at("mixer");
+            for (const char* ck : kCh) mixerOut[ck] = roundDigits(numIn(mx, ck, 0.0, -100.0, 100.0), 4);
+        } else {
+            for (const char* ck : kCh) mixerOut[ck] = 0.0;
+        }
+        out.bwMixer = Json{{"enabled", enabled}, {"mixer", std::move(mixerOut)}};
+    }
+
+    if (adjustments.contains("sharpen_v2") && !adjustments.at("sharpen_v2").is_null()) {
+        const Json& sv = adjustments.at("sharpen_v2");
+        if (!sv.is_object()) throw StoreError(2, "invalid_argument", "sharpen_v2 must be an object");
+        bool lumV2 = false;
+        if (sv.contains("luminance_v2")) {
+            if (!sv.at("luminance_v2").is_boolean()) {
+                throw StoreError(2, "invalid_argument", "sharpen_v2.luminance_v2 must be boolean");
+            }
+            lumV2 = sv.at("luminance_v2").get<bool>();
+        }
+        out.sharpenV2 = Json{
+            {"luminanceV2", lumV2},
+            {"radius", roundDigits(numIn(sv, "radius", 1.0, 0.5, 3.0), 4)},
+            {"detail", roundDigits(numIn(sv, "detail", 25.0, 0.0, 100.0), 4)},
+            {"masking", roundDigits(numIn(sv, "masking", 0.0, 0.0, 100.0), 4)},
+        };
+    }
+
+    if (adjustments.contains("film_optics") && !adjustments.at("film_optics").is_null()) {
+        const Json& fo = adjustments.at("film_optics");
+        if (!fo.is_object()) throw StoreError(2, "invalid_argument", "film_optics must be an object");
+        out.filmOptics = Json{
+            {"halationAmount", roundDigits(numIn(fo, "halation_amount", 0.0, 0.0, 100.0), 4)},
+            {"halationThreshold", roundDigits(numIn(fo, "halation_threshold", 75.0, 0.0, 100.0), 4)},
+            {"halationRadius", roundDigits(numIn(fo, "halation_radius", 35.0, 0.0, 100.0), 4)},
+            {"halationHue", roundDigits(numIn(fo, "halation_hue", 0.0, -100.0, 100.0), 4)},
+            {"bloomAmount", roundDigits(numIn(fo, "bloom_amount", 0.0, 0.0, 100.0), 4)},
+            {"bloomThreshold", roundDigits(numIn(fo, "bloom_threshold", 70.0, 0.0, 100.0), 4)},
+            {"bloomRadius", roundDigits(numIn(fo, "bloom_radius", 40.0, 0.0, 100.0), 4)},
+        };
+    }
 
     if (adjustments.contains("tone_curve") && !adjustments.at("tone_curve").is_null()) {
         const Json& tcIn = adjustments.at("tone_curve");
@@ -1644,6 +1920,7 @@ ParsedAdjustments parseAndValidateAdjustments(
         static const std::unordered_set<std::string> kEffKeys = {
             "vignette_amount", "vignette_midpoint", "vignette_roundness", "vignette_feather",
             "vignette_highlights", "grain_amount", "grain_size", "grain_roughness",
+            "grain_tone_curve", "grain_format_preset",
         };
         for (const auto& kv : eff.items()) {
             if (kEffKeys.find(kv.key()) == kEffKeys.end()) {
@@ -1659,6 +1936,18 @@ ParsedAdjustments parseAndValidateAdjustments(
         e.grainAmount = roundDigits(numIn(eff, "grain_amount", 0.0, 0.0, 100.0), 2);
         e.grainSize = roundDigits(numIn(eff, "grain_size", 25.0, 0.0, 100.0), 2);
         e.grainRoughness = roundDigits(numIn(eff, "grain_roughness", 50.0, 0.0, 100.0), 2);
+        if (eff.contains("grain_tone_curve")) {
+            if (!eff.at("grain_tone_curve").is_string()) throw StoreError(2, "invalid_argument", "grain_tone_curve must be string");
+            e.grainToneCurve = eff.at("grain_tone_curve").get<std::string>();
+            if (e.grainToneCurve != "legacy" && e.grainToneCurve != "negative_asymmetric")
+                throw StoreError(2, "invalid_argument", "Unsupported grain_tone_curve");
+        }
+        if (eff.contains("grain_format_preset")) {
+            if (!eff.at("grain_format_preset").is_string()) throw StoreError(2, "invalid_argument", "grain_format_preset must be string");
+            e.grainFormatPreset = eff.at("grain_format_preset").get<std::string>();
+            if (e.grainFormatPreset != "custom" && e.grainFormatPreset != "135" && e.grainFormatPreset != "120")
+                throw StoreError(2, "invalid_argument", "Unsupported grain_format_preset");
+        }
         out.effects = e;
     }
 
@@ -1667,7 +1956,9 @@ ParsedAdjustments parseAndValidateAdjustments(
         if (!lc.is_object()) throw StoreError(2, "invalid_argument", "lens_correction must be an object");
         for (const auto& kv : lc.items()) {
             if (kv.key() != "distortion" && kv.key() != "tca" && kv.key() != "vignetting" &&
-                kv.key() != "auto_crop" && kv.key() != "profile_id") {
+                kv.key() != "auto_crop" && kv.key() != "profile_id" &&
+                kv.key() != "defringe_purple_amount" && kv.key() != "defringe_purple_hue" &&
+                kv.key() != "defringe_green_amount" && kv.key() != "defringe_green_hue") {
                 throw StoreError(2, "invalid_argument", "Unsupported lens_correction key: " + kv.key());
             }
         }
@@ -1687,6 +1978,10 @@ ParsedAdjustments parseAndValidateAdjustments(
             }
             l.profileId = lc.at("profile_id").get<std::string>();
         }
+        l.defringePurpleAmount = roundDigits(numIn(lc, "defringe_purple_amount", 0.0, 0.0, 20.0), 4);
+        l.defringePurpleHue = roundDigits(numIn(lc, "defringe_purple_hue", 50.0, 0.0, 100.0), 4);
+        l.defringeGreenAmount = roundDigits(numIn(lc, "defringe_green_amount", 0.0, 0.0, 20.0), 4);
+        l.defringeGreenHue = roundDigits(numIn(lc, "defringe_green_hue", 50.0, 0.0, 100.0), 4);
         out.lens = l;
     }
 
@@ -1794,11 +2089,19 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         };
     }
     if (adj.hasAtmosphere) {
-        settings["atmosphere"] = {
+        Json atm = {
             {"clarity", adj.clarity},
             {"dehaze", adj.dehaze},
         };
+        if (adj.texture != 0.0) atm["texture"] = adj.texture;
+        settings["atmosphere"] = std::move(atm);
     }
+    if (adj.calibration.has_value()) settings["cameraCalibration"] = *adj.calibration;
+    if (adj.pointColor.has_value()) settings["pointColor"] = *adj.pointColor;
+    if (adj.selectiveColor.has_value()) settings["selectiveColor"] = *adj.selectiveColor;
+    if (adj.bwMixer.has_value()) settings["bwMixer"] = *adj.bwMixer;
+    if (adj.sharpenV2.has_value()) settings["sharpenV2"] = *adj.sharpenV2;
+    if (adj.filmOptics.has_value()) settings["filmOptics"] = *adj.filmOptics;
     if (adj.toneCurveConfig.has_value()) {
         settings["toneCurveConfig"] = *adj.toneCurveConfig;
     }
@@ -1809,7 +2112,7 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         settings["hsl"] = *adj.hsl;
     }
     if (adj.effects.has_value()) {
-        settings["photoEffects"] = {
+        Json fx = {
             {"vignetteAmount", adj.effects->vignetteAmount},
             {"vignetteMidpoint", adj.effects->vignetteMidpoint},
             {"vignetteRoundness", adj.effects->vignetteRoundness},
@@ -1819,9 +2122,12 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
             {"grainSize", adj.effects->grainSize},
             {"grainRoughness", adj.effects->grainRoughness},
         };
+        if (adj.effects->grainToneCurve != "legacy") fx["grainToneCurve"] = adj.effects->grainToneCurve;
+        if (adj.effects->grainFormatPreset != "custom") fx["grainFormatPreset"] = adj.effects->grainFormatPreset;
+        settings["photoEffects"] = std::move(fx);
     }
     if (adj.lens.has_value()) {
-        settings["lensCorrection"] = {
+        Json lc = {
             {"distortion", adj.lens->distortion},
             {"tca", adj.lens->tca},
             {"vignetting", adj.lens->vignetting},
@@ -1829,6 +2135,14 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
             {"mode", adj.lens->profileId.has_value() ? "manual" : "automatic"},
             {"profileID", adj.lens->profileId.has_value() ? Json(*adj.lens->profileId) : Json(nullptr)},
         };
+        if (adj.lens->defringePurpleAmount != 0.0 || adj.lens->defringePurpleHue != 50.0 ||
+            adj.lens->defringeGreenAmount != 0.0 || adj.lens->defringeGreenHue != 50.0) {
+            lc["defringePurpleAmount"] = adj.lens->defringePurpleAmount;
+            lc["defringePurpleHue"] = adj.lens->defringePurpleHue;
+            lc["defringeGreenAmount"] = adj.lens->defringeGreenAmount;
+            lc["defringeGreenHue"] = adj.lens->defringeGreenHue;
+        }
+        settings["lensCorrection"] = std::move(lc);
     }
     if (adj.geometry.has_value()) {
         settings["geometry"] = {
@@ -1866,6 +2180,12 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         {"wavelet", "waveletNoiseReduction"},
         {"tone_curve", "toneCurveConfig"},
         {"color_grading", "colorGrading"},
+        {"calibration", "cameraCalibration"},
+        {"point_color", "pointColor"},
+        {"selective_color", "selectiveColor"},
+        {"bw", "bwMixer"},
+        {"sharpen_v2", "sharpenV2"},
+        {"film_optics", "filmOptics"},
         {"hsl", "hsl"},
         {"photo_effects", "photoEffects"},
         {"lens_correction", "lensCorrection"},
@@ -1888,7 +2208,7 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         settings.contains("toneControls")) {
         explicitKeys.insert("toneControls");
     }
-    if ((adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze")) &&
+    if ((adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze") || adj.explicitInputs.count("texture")) &&
         settings.contains("atmosphere")) {
         explicitKeys.insert("atmosphere");
     }
@@ -2375,7 +2695,7 @@ std::string syncWindowsEditsFile(
             };
         }
         if (adj.effects.has_value()) {
-            mergedSettings["Effects"] = {
+            Json fx = {
                 {"VignetteAmount", adj.effects->vignetteAmount},
                 {"VignetteMidpoint", adj.effects->vignetteMidpoint},
                 {"VignetteRoundness", adj.effects->vignetteRoundness},
@@ -2385,6 +2705,9 @@ std::string syncWindowsEditsFile(
                 {"GrainSize", adj.effects->grainSize},
                 {"GrainRoughness", adj.effects->grainRoughness},
             };
+            if (adj.effects->grainToneCurve != "legacy") fx["GrainToneCurve"] = adj.effects->grainToneCurve;
+            if (adj.effects->grainFormatPreset != "custom") fx["GrainFormatPreset"] = adj.effects->grainFormatPreset;
+            mergedSettings["Effects"] = std::move(fx);
         }
         if (adj.hsl.has_value()) {
             Json hslArr = Json::array();
@@ -2394,7 +2717,7 @@ std::string syncWindowsEditsFile(
             mergedSettings["Hsl"] = {{"Values", std::move(hslArr)}};
         }
         if (adj.lens.has_value()) {
-            mergedSettings["Lens"] = {
+            Json lc = {
                 {"Distortion", adj.lens->distortion},
                 {"Tca", adj.lens->tca},
                 {"AutoCrop", adj.lens->autoCrop},
@@ -2404,6 +2727,14 @@ std::string syncWindowsEditsFile(
                 {"CropFactor", nullptr},
                 {"Vignetting", adj.lens->vignetting},
             };
+            if (adj.lens->defringePurpleAmount != 0.0 || adj.lens->defringePurpleHue != 50.0 ||
+                adj.lens->defringeGreenAmount != 0.0 || adj.lens->defringeGreenHue != 50.0) {
+                lc["DefringePurpleAmount"] = adj.lens->defringePurpleAmount;
+                lc["DefringePurpleHue"] = adj.lens->defringePurpleHue;
+                lc["DefringeGreenAmount"] = adj.lens->defringeGreenAmount;
+                lc["DefringeGreenHue"] = adj.lens->defringeGreenHue;
+            }
+            mergedSettings["Lens"] = std::move(lc);
         }
         if (adj.geometry.has_value()) {
             mergedSettings["Geometry"] = {
@@ -2432,18 +2763,26 @@ std::string syncWindowsEditsFile(
                 mergedSettings["ToneControls"] = std::move(tc);
             }
         }
-        if (adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze")) {
+        if (adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze") || adj.explicitInputs.count("texture")) {
             Json atm = (mergedSettings.contains("Atmosphere") && mergedSettings.at("Atmosphere").is_object())
                 ? mergedSettings.at("Atmosphere")
                 : Json{{"Clarity", 0.0}, {"Dehaze", 0.0}};
             if (adj.explicitInputs.count("clarity")) atm["Clarity"] = adj.clarity;
             if (adj.explicitInputs.count("dehaze")) atm["Dehaze"] = adj.dehaze;
-            if (atm.value("Clarity", 0.0) == 0.0 && atm.value("Dehaze", 0.0) == 0.0) {
+            if (adj.explicitInputs.count("texture")) atm["Texture"] = adj.texture;
+            if (atm.value("Clarity", 0.0) == 0.0 && atm.value("Dehaze", 0.0) == 0.0 && atm.value("Texture", 0.0) == 0.0) {
                 mergedSettings.erase("Atmosphere");
             } else {
+                if (atm.value("Texture", 0.0) == 0.0) atm.erase("Texture");
                 mergedSettings["Atmosphere"] = std::move(atm);
             }
         }
+        if (adj.calibration.has_value()) mergedSettings["CameraCalibration"] = *adj.calibration;
+        if (adj.pointColor.has_value()) mergedSettings["PointColor"] = *adj.pointColor;
+        if (adj.selectiveColor.has_value()) mergedSettings["SelectiveColor"] = *adj.selectiveColor;
+        if (adj.bwMixer.has_value()) mergedSettings["BwMixer"] = *adj.bwMixer;
+        if (adj.sharpenV2.has_value()) mergedSettings["SharpenV2"] = *adj.sharpenV2;
+        if (adj.filmOptics.has_value()) mergedSettings["FilmOptics"] = *adj.filmOptics;
         if (adj.colorGradingCanonical.has_value()) {
             mergedSettings["ColorGrading"] = buildWindowsColorGrading(*adj.colorGradingCanonical);
         }
@@ -2555,8 +2894,16 @@ std::string syncWindowsEditsFile(
             settings["ToneControls"] = {{"BlackPoint", adj.blackPoint}, {"WhitePoint", adj.whitePoint}, {"Vibrance", adj.vibrance}};
         }
         if (adj.hasAtmosphere) {
-            settings["Atmosphere"] = {{"Clarity", adj.clarity}, {"Dehaze", adj.dehaze}};
+            Json atm = {{"Clarity", adj.clarity}, {"Dehaze", adj.dehaze}};
+            if (adj.texture != 0.0) atm["Texture"] = adj.texture;
+            settings["Atmosphere"] = std::move(atm);
         }
+        if (adj.calibration.has_value()) settings["CameraCalibration"] = *adj.calibration;
+        if (adj.pointColor.has_value()) settings["PointColor"] = *adj.pointColor;
+        if (adj.selectiveColor.has_value()) settings["SelectiveColor"] = *adj.selectiveColor;
+        if (adj.bwMixer.has_value()) settings["BwMixer"] = *adj.bwMixer;
+        if (adj.sharpenV2.has_value()) settings["SharpenV2"] = *adj.sharpenV2;
+        if (adj.filmOptics.has_value()) settings["FilmOptics"] = *adj.filmOptics;
         if (adj.colorGradingCanonical.has_value()) {
             settings["ColorGrading"] = buildWindowsColorGrading(*adj.colorGradingCanonical);
         }

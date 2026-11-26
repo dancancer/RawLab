@@ -3224,6 +3224,22 @@
       "formats": [],
       "source": "无效的颜色分级参数"
     },
+    "无效的相机校准参数": {
+      "formats": [],
+      "source": "无效的相机校准参数"
+    },
+    "无效的色彩调整参数": {
+      "formats": [],
+      "source": "无效的色彩调整参数"
+    },
+    "无效的锐化参数": {
+      "formats": [],
+      "source": "无效的锐化参数"
+    },
+    "无效的光学效果参数": {
+      "formats": [],
+      "source": "无效的光学效果参数"
+    },
     "重置当前分区": {
       "formats": [],
       "source": "重置当前分区"
@@ -4818,6 +4834,294 @@
         "%@"
       ],
       "source": "诊断码：{0}"
+    },
+    "范围": {
+      "formats": [],
+      "source": "范围"
+    },
+    "相机校准": {
+      "formats": [],
+      "source": "相机校准"
+    },
+    "阴影色调": {
+      "formats": [],
+      "source": "阴影色调"
+    },
+    "红原色": {
+      "formats": [],
+      "source": "红原色"
+    },
+    "绿原色": {
+      "formats": [],
+      "source": "绿原色"
+    },
+    "蓝原色": {
+      "formats": [],
+      "source": "蓝原色"
+    },
+    "红原色色相": {
+      "formats": [],
+      "source": "红原色色相"
+    },
+    "红原色饱和度": {
+      "formats": [],
+      "source": "红原色饱和度"
+    },
+    "绿原色色相": {
+      "formats": [],
+      "source": "绿原色色相"
+    },
+    "绿原色饱和度": {
+      "formats": [],
+      "source": "绿原色饱和度"
+    },
+    "蓝原色色相": {
+      "formats": [],
+      "source": "蓝原色色相"
+    },
+    "蓝原色饱和度": {
+      "formats": [],
+      "source": "蓝原色饱和度"
+    },
+    "点颜色": {
+      "formats": [],
+      "source": "点颜色"
+    },
+    "色相偏移": {
+      "formats": [],
+      "source": "色相偏移"
+    },
+    "饱和度偏移": {
+      "formats": [],
+      "source": "饱和度偏移"
+    },
+    "明亮度偏移": {
+      "formats": [],
+      "source": "明亮度偏移"
+    },
+    "方差": {
+      "formats": [],
+      "source": "方差"
+    },
+    "色相范围": {
+      "formats": [],
+      "source": "色相范围"
+    },
+    "饱和度范围": {
+      "formats": [],
+      "source": "饱和度范围"
+    },
+    "明亮度范围": {
+      "formats": [],
+      "source": "明亮度范围"
+    },
+    "添加色板": {
+      "formats": [],
+      "source": "添加色板"
+    },
+    "吸管取样": {
+      "formats": [],
+      "source": "吸管取样"
+    },
+    "色板": {
+      "formats": [],
+      "source": "色板"
+    },
+    "可选颜色": {
+      "formats": [],
+      "source": "可选颜色"
+    },
+    "相对": {
+      "formats": [],
+      "source": "相对"
+    },
+    "绝对": {
+      "formats": [],
+      "source": "绝对"
+    },
+    "红色": {
+      "formats": [],
+      "source": "红色"
+    },
+    "黄色": {
+      "formats": [],
+      "source": "黄色"
+    },
+    "绿色": {
+      "formats": [],
+      "source": "绿色"
+    },
+    "青色": {
+      "formats": [],
+      "source": "青色"
+    },
+    "蓝色": {
+      "formats": [],
+      "source": "蓝色"
+    },
+    "洋红色": {
+      "formats": [],
+      "source": "洋红色"
+    },
+    "白色": {
+      "formats": [],
+      "source": "白色"
+    },
+    "中性色": {
+      "formats": [],
+      "source": "中性色"
+    },
+    "黑色": {
+      "formats": [],
+      "source": "黑色"
+    },
+    "青色 (C)": {
+      "formats": [],
+      "source": "青色 (C)"
+    },
+    "洋红 (M)": {
+      "formats": [],
+      "source": "洋红 (M)"
+    },
+    "黄色 (Y)": {
+      "formats": [],
+      "source": "黄色 (Y)"
+    },
+    "黑色 (K)": {
+      "formats": [],
+      "source": "黑色 (K)"
+    },
+    "黑白": {
+      "formats": [],
+      "source": "黑白"
+    },
+    "启用黑白": {
+      "formats": [],
+      "source": "启用黑白"
+    },
+    "黑白混合": {
+      "formats": [],
+      "source": "黑白混合"
+    },
+    "纹理": {
+      "formats": [],
+      "source": "纹理"
+    },
+    "明度锐化": {
+      "formats": [],
+      "source": "明度锐化"
+    },
+    "半径": {
+      "formats": [],
+      "source": "半径"
+    },
+    "蒙版": {
+      "formats": [],
+      "source": "蒙版"
+    },
+    "锐化半径": {
+      "formats": [],
+      "source": "锐化半径"
+    },
+    "锐化细节": {
+      "formats": [],
+      "source": "锐化细节"
+    },
+    "锐化蒙版": {
+      "formats": [],
+      "source": "锐化蒙版"
+    },
+    "边缘蒙版预览": {
+      "formats": [],
+      "source": "边缘蒙版预览"
+    },
+    "去边": {
+      "formats": [],
+      "source": "去边"
+    },
+    "去紫边": {
+      "formats": [],
+      "source": "去紫边"
+    },
+    "去绿边": {
+      "formats": [],
+      "source": "去绿边"
+    },
+    "数量": {
+      "formats": [],
+      "source": "数量"
+    },
+    "紫边数量": {
+      "formats": [],
+      "source": "紫边数量"
+    },
+    "紫边色相": {
+      "formats": [],
+      "source": "紫边色相"
+    },
+    "绿边数量": {
+      "formats": [],
+      "source": "绿边数量"
+    },
+    "绿边色相": {
+      "formats": [],
+      "source": "绿边色相"
+    },
+    "光晕": {
+      "formats": [],
+      "source": "光晕"
+    },
+    "光晕阈值": {
+      "formats": [],
+      "source": "光晕阈值"
+    },
+    "光晕半径": {
+      "formats": [],
+      "source": "光晕半径"
+    },
+    "光晕色相": {
+      "formats": [],
+      "source": "光晕色相"
+    },
+    "阈值": {
+      "formats": [],
+      "source": "阈值"
+    },
+    "柔光": {
+      "formats": [],
+      "source": "柔光"
+    },
+    "柔光阈值": {
+      "formats": [],
+      "source": "柔光阈值"
+    },
+    "柔光半径": {
+      "formats": [],
+      "source": "柔光半径"
+    },
+    "颗粒曲线": {
+      "formats": [],
+      "source": "颗粒曲线"
+    },
+    "颗粒画幅": {
+      "formats": [],
+      "source": "颗粒画幅"
+    },
+    "传统曲线": {
+      "formats": [],
+      "source": "传统曲线"
+    },
+    "负片非对称": {
+      "formats": [],
+      "source": "负片非对称"
+    },
+    "135 胶片": {
+      "formats": [],
+      "source": "135 胶片"
+    },
+    "120 中画幅": {
+      "formats": [],
+      "source": "120 中画幅"
     }
   },
   "overrides": {},

@@ -106,7 +106,7 @@ class AgentCommands(unittest.TestCase):
         declared = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         proraw = "proraw" in declared["input_types"]
         expected = {
-            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15, 16] if hdr else []) + [17, 18] + ([19] if hdr else []),
+            "recipe_versions": [1, 2, 3, 4, 5] + ([6] if hdr else []) + [7] + ([8, 9, 10, 11, 12, 13, 14, 15, 16] if hdr else []) + [17, 18] + ([19] if hdr else []) + [20],
             "commands": [
                 "capabilities", "validate_recipe", "info", "preview", "export",
                 "analyze", "print_transfer", "save_preset", "sync_photo_edit",

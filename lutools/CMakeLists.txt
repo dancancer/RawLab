@@ -98,6 +98,13 @@ set(CORE_SOURCES
     src/core/processing_migration.cpp
     src/core/photo_atmosphere.cpp
     src/core/photo_color_grading.cpp
+    src/core/photo_calibration.cpp
+    src/core/photo_point_color.cpp
+    src/core/photo_selective_color.cpp
+    src/core/photo_bw_mixer.cpp
+    src/core/photo_sharpen_v2.cpp
+    src/core/photo_defringe.cpp
+    src/core/photo_film_optics.cpp
     src/core/photo_tone_curve.cpp
     src/core/white_balance.cpp
     src/core/preview_exposure.cpp
@@ -1401,7 +1408,11 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             src/gpu/denoise.cpp src/gpu/gles_lut.cpp src/gpu/lut_gpu.cpp
             src/core/chroma_denoise.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
             src/core/color_converter.cpp src/core/photo_color.cpp src/core/photo_effects.cpp
-            src/core/photo_tone_controls.cpp src/core/photo_basic_controls_v3.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp)
+            src/core/photo_tone_controls.cpp src/core/photo_basic_controls_v3.cpp
+            src/core/photo_atmosphere.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp
+            src/core/photo_calibration.cpp src/core/photo_point_color.cpp src/core/photo_selective_color.cpp
+            src/core/photo_bw_mixer.cpp src/core/photo_sharpen_v2.cpp src/core/photo_defringe.cpp
+            src/core/photo_film_optics.cpp)
         rawlab_add_test(
             NAME gpu_gles_photo_pixel
             TARGET gles_photo_pixel_tests

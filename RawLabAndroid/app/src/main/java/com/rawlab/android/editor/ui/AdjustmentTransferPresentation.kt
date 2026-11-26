@@ -35,6 +35,18 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.VIBRANCE -> R.string.vibrance
         AdjustmentField.CLARITY -> R.string.clarity
         AdjustmentField.DEHAZE -> R.string.dehaze
+        AdjustmentField.TEXTURE -> R.string.texture
+        AdjustmentField.CALIBRATION_SHADOW_TINT -> R.string.calibration_shadow_tint
+        AdjustmentField.CALIBRATION_RED_HUE -> R.string.calibration_red_hue
+        AdjustmentField.CALIBRATION_RED_SATURATION -> R.string.calibration_red_saturation
+        AdjustmentField.CALIBRATION_GREEN_HUE -> R.string.calibration_green_hue
+        AdjustmentField.CALIBRATION_GREEN_SATURATION -> R.string.calibration_green_saturation
+        AdjustmentField.CALIBRATION_BLUE_HUE -> R.string.calibration_blue_hue
+        AdjustmentField.CALIBRATION_BLUE_SATURATION -> R.string.calibration_blue_saturation
+        AdjustmentField.POINT_COLOR -> R.string.point_color
+        AdjustmentField.SELECTIVE_COLOR -> R.string.selective_color
+        AdjustmentField.BW_ENABLED -> R.string.bw_enable_toggle
+        AdjustmentField.BW_MIXER -> R.string.bw_mixer
         AdjustmentField.SATURATION -> R.string.transfer_field_saturation
         AdjustmentField.VIGNETTE_AMOUNT -> R.string.transfer_field_vignette_amount
         AdjustmentField.VIGNETTE_MIDPOINT -> R.string.transfer_field_vignette_midpoint
@@ -44,7 +56,20 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.GRAIN_AMOUNT -> R.string.transfer_field_grain_amount
         AdjustmentField.GRAIN_SIZE -> R.string.transfer_field_grain_size
         AdjustmentField.GRAIN_ROUGHNESS -> R.string.transfer_field_grain_roughness
+        AdjustmentField.GRAIN_TONE_CURVE -> R.string.grain_tone_curve
+        AdjustmentField.GRAIN_FORMAT_PRESET -> R.string.grain_format_preset
+        AdjustmentField.HALATION_AMOUNT -> R.string.halation_amount
+        AdjustmentField.HALATION_THRESHOLD -> R.string.halation_threshold
+        AdjustmentField.HALATION_RADIUS -> R.string.halation_radius
+        AdjustmentField.HALATION_HUE -> R.string.halation_hue
+        AdjustmentField.BLOOM_AMOUNT -> R.string.bloom_amount
+        AdjustmentField.BLOOM_THRESHOLD -> R.string.bloom_threshold
+        AdjustmentField.BLOOM_RADIUS -> R.string.bloom_radius
         AdjustmentField.SHARPENING -> R.string.transfer_field_sharpening
+        AdjustmentField.SHARPENING_LUMINANCE_V2 -> R.string.sharpening_luminance_v2
+        AdjustmentField.SHARPENING_RADIUS -> R.string.sharpening_radius
+        AdjustmentField.SHARPENING_DETAIL -> R.string.sharpening_detail
+        AdjustmentField.SHARPENING_MASKING -> R.string.sharpening_masking
         AdjustmentField.RAW_DENOISE -> R.string.transfer_field_raw_denoise
         AdjustmentField.POST_RGB_DENOISE -> R.string.transfer_field_post_rgb_denoise
         AdjustmentField.CHROMA_DENOISE -> R.string.transfer_field_chroma_denoise
@@ -64,6 +89,10 @@ internal val AdjustmentField.title: String get() {
         AdjustmentField.LENS_VIGNETTING -> R.string.lens_vignetting
         AdjustmentField.LENS_AUTO_CROP -> R.string.transfer_field_lens_auto_crop
         AdjustmentField.LENS_PROFILE -> R.string.transfer_field_lens_profile
+        AdjustmentField.LENS_DEFRINGE_PURPLE_AMOUNT -> R.string.lens_defringe_purple_amount
+        AdjustmentField.LENS_DEFRINGE_PURPLE_HUE -> R.string.lens_defringe_purple_hue
+        AdjustmentField.LENS_DEFRINGE_GREEN_AMOUNT -> R.string.lens_defringe_green_amount
+        AdjustmentField.LENS_DEFRINGE_GREEN_HUE -> R.string.lens_defringe_green_hue
         else -> error("HSL field must have a channel")
     })
 }

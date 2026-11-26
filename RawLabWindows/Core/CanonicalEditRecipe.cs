@@ -57,6 +57,12 @@ internal static class CanonicalEditRecipe
         var geometry = settings.Geometry;
         var effects = settings.Effects;
         var denoise = settings.Denoise;
+        var calibration = settings.Calibration;
+        var pointColor = settings.PointColor;
+        var selectiveColor = settings.SelectiveColor;
+        var bwMixer = settings.BwMixer;
+        var sharpenV2 = settings.SharpenV2;
+        var filmOptics = settings.FilmOptics;
 
         _ = tone.NativeConfig();
         _ = atmosphere.NativeConfig();
@@ -69,6 +75,13 @@ internal static class CanonicalEditRecipe
         _ = geometry.NativeConfig();
         _ = effects.NativeConfig();
         _ = denoise.NativeConfig();
+        settings.Lens.Validate();
+        calibration.Validate();
+        pointColor.Validate();
+        selectiveColor.Validate();
+        bwMixer.Validate();
+        sharpenV2.Validate();
+        filmOptics.Validate();
 
         var hslValues = hsl.Values;
         var exposureMode = isRaster ? "sensor" : settings.ExposureMode switch
@@ -92,6 +105,13 @@ internal static class CanonicalEditRecipe
              !double.IsFinite(settings[Parameter.Tint]) || settings[Parameter.Tint] is < -150 or > 150))
             throw new ArgumentOutOfRangeException(nameof(settings), "Invalid raster relative white balance");
         var hasV12Features = curve.HasV2Extensions || grading.HasV2Extensions || rasterRelativeActive || outputSharpening != OutputSharpening.Off;
+        var hasHalation = filmOptics.HalationAmount != 0 || filmOptics.HalationThreshold != 75 ||
+            filmOptics.HalationRadius != 35 || filmOptics.HalationHue != 0;
+        var hasBloom = filmOptics.BloomAmount != 0 || filmOptics.BloomThreshold != 70 || filmOptics.BloomRadius != 40;
+        var hasV14Features = !calibration.IsDefault || !pointColor.IsDefault || !selectiveColor.IsDefault ||
+            !bwMixer.IsDefault || !sharpenV2.IsDefault || !filmOptics.IsDefault ||
+            atmosphere.Texture != 0 || effects.GrainToneCurve != GrainToneCurve.Legacy ||
+            effects.GrainFormatPreset != GrainFormatPreset.Custom || settings.Lens.HasDefringeSettings;
         var profileId = string.IsNullOrEmpty(settings.Lens.CoreProfileId) ? null : settings.Lens.CoreProfileId;
         var scale = settings.MasterRecipeID == null ? 1.0 : settings[Parameter.Strength];
 
@@ -131,7 +151,7 @@ internal static class CanonicalEditRecipe
             : null;
 
         var payload = new Payload(
-            SchemaVersion: curve.HasFreeEndpointX ? 18 : hasV12Features ? 17 : (isRaster ? 5 : 7),
+            SchemaVersion: hasV14Features ? 20 : curve.HasFreeEndpointX ? 18 : hasV12Features ? 17 : (isRaster ? 5 : 7),
             X3fMode: isRaster ? null : (settings.X3fMode == X3fMode.Normal ? "normal-v1" : "legacy"),
             Processing: new ProcessingPayload("rawlab", processingVersion, "standard"),
             Input: new InputPayload(null, isRaster ? "raster" : "raw"),
@@ -167,7 +187,34 @@ internal static class CanonicalEditRecipe
                         Channels: channels,
                         ApplyToLuminosity: curve.ApplyToLuminosity ? true : null,
                         Parametric: curve.Parametric.IsDefault ? null : ToParametricPayload(curve.Parametric))),
-                Color: new ColorPayload(tone.Vibrance / 100.0),
+                Color: new ColorPayload(
+                    Vibrance: tone.Vibrance / 100.0,
+                    Calibration: calibration.IsDefault ? null : new CalibrationPayload(
+                        calibration.ShadowTint, calibration.RedHue, calibration.RedSaturation,
+                        calibration.GreenHue, calibration.GreenSaturation, calibration.BlueHue, calibration.BlueSaturation),
+                    PointColor: pointColor.IsDefault ? null : new PointColorRecipePayload(
+                        pointColor.Swatches.Select(sw => new PointColorSwatchRecipePayload(
+                            sw.SrcHue, sw.SrcSaturation, sw.SrcLuminance,
+                            sw.HueShift, sw.SaturationShift, sw.LuminanceShift,
+                            sw.Range, sw.HueRange, sw.SatRange, sw.LumRange,
+                            sw.Variance, sw.Enabled)).ToArray()),
+                    SelectiveColor: selectiveColor.IsDefault ? null : new SelectiveColorRecipePayload(
+                        selectiveColor.Method.WireValue(),
+                        new SelectiveColorBandsRecipePayload(
+                            ToBandPayload(selectiveColor.Bands.Reds),
+                            ToBandPayload(selectiveColor.Bands.Yellows),
+                            ToBandPayload(selectiveColor.Bands.Greens),
+                            ToBandPayload(selectiveColor.Bands.Cyans),
+                            ToBandPayload(selectiveColor.Bands.Blues),
+                            ToBandPayload(selectiveColor.Bands.Magentas),
+                            ToBandPayload(selectiveColor.Bands.Whites),
+                            ToBandPayload(selectiveColor.Bands.Neutrals),
+                            ToBandPayload(selectiveColor.Bands.Blacks))),
+                    Bw: bwMixer.IsDefault ? null : new BwRecipePayload(
+                        bwMixer.Enabled,
+                        new BwMixerRecipePayload(
+                            bwMixer.Mixer.Red, bwMixer.Mixer.Orange, bwMixer.Mixer.Yellow, bwMixer.Mixer.Green,
+                            bwMixer.Mixer.Aqua, bwMixer.Mixer.Blue, bwMixer.Mixer.Purple, bwMixer.Mixer.Magenta))),
                 ColorGrading: new ColorGradingPayload(
                     Shadows: ToWheelPayload(grading.Shadows),
                     Midtones: ToWheelPayload(grading.Midtones),
@@ -175,7 +222,12 @@ internal static class CanonicalEditRecipe
                     Global: grading.Global.IsDefault ? null : ToWheelPayload(grading.Global),
                     Blending: grading.Blending == 50.0 ? null : grading.Blending,
                     Balance: grading.Balance == 0.0 ? null : grading.Balance),
-                Detail: new DetailPayload(includeSessionState ? Math.Clamp(settings[Parameter.Sharpening], 0.0, 2.0) : 0),
+                Detail: new DetailPayload(
+                    Sharpening: includeSessionState ? Math.Clamp(settings[Parameter.Sharpening], 0.0, 2.0) : 0,
+                    LuminanceV2: sharpenV2.IsDefault ? null : sharpenV2.LuminanceV2,
+                    SharpeningRadius: sharpenV2.IsDefault ? null : sharpenV2.Radius,
+                    SharpeningDetail: sharpenV2.IsDefault ? null : sharpenV2.Detail,
+                    SharpeningMasking: sharpenV2.IsDefault ? null : sharpenV2.Masking),
                 Hsl: new HslPayload(
                     Hue: hslValues.Take(8).ToArray(),
                     Saturation: hslValues.Skip(8).Take(8).ToArray(),
@@ -190,7 +242,14 @@ internal static class CanonicalEditRecipe
                     GrainSize: effects.GrainSize,
                     GrainRoughness: effects.GrainRoughness,
                     Clarity: atmosphere.Clarity / 100.0,
-                    Dehaze: atmosphere.Dehaze / 100.0),
+                    Dehaze: atmosphere.Dehaze / 100.0,
+                    Texture: atmosphere.Texture != 0 ? atmosphere.Texture / 100.0 : null,
+                    GrainToneCurve: effects.GrainToneCurve != GrainToneCurve.Legacy ? effects.GrainToneCurve.WireValue() : null,
+                    GrainFormatPreset: effects.GrainFormatPreset != GrainFormatPreset.Custom ? effects.GrainFormatPreset.WireValue() : null,
+                    Halation: hasHalation ? new HalationRecipePayload(
+                        filmOptics.HalationAmount, filmOptics.HalationThreshold, filmOptics.HalationRadius, filmOptics.HalationHue) : null,
+                    Bloom: hasBloom ? new BloomRecipePayload(
+                        filmOptics.BloomAmount, filmOptics.BloomThreshold, filmOptics.BloomRadius) : null),
                 Denoise: new DenoisePayload(
                     RawLevel: 0,
                     ChromaMode: includeDenoise ? settings.DisplayChromaDenoise : 0,
@@ -202,7 +261,11 @@ internal static class CanonicalEditRecipe
                     Tca: settings.Lens.Tca,
                     Vignetting: settings.Lens.Vignetting,
                     AutoCrop: settings.Lens.AutoCrop,
-                    ProfileId: profileId),
+                    ProfileId: profileId,
+                    DefringePurpleAmount: settings.Lens.HasDefringeSettings ? settings.Lens.DefringePurpleAmount : null,
+                    DefringePurpleHue: settings.Lens.HasDefringeSettings ? settings.Lens.DefringePurpleHue : null,
+                    DefringeGreenAmount: settings.Lens.HasDefringeSettings ? settings.Lens.DefringeGreenAmount : null,
+                    DefringeGreenHue: settings.Lens.HasDefringeSettings ? settings.Lens.DefringeGreenHue : null),
                 MasterRecipe: masterRecipe,
                 AiDenoiseBlend: aiDenoiseBlend),
             Output: outputSharpening == OutputSharpening.Off
@@ -217,6 +280,9 @@ internal static class CanonicalEditRecipe
 
     private static CurveParametricPayload ToParametricPayload(ToneCurveParametric p) =>
         new(p.Highlights, p.Lights, p.Darks, p.Shadows, p.SplitShadow, p.SplitMidtone, p.SplitHighlight);
+
+    private static SelectiveColorBandRecipePayload ToBandPayload(SelectiveColorBand b) =>
+        new(b.Cyan, b.Magenta, b.Yellow, b.Black);
 
     private static CurveShapePayload ToCurveShapePayload(ToneCurveShape shape) =>
         new(shape.Mode == ToneCurveMode.Custom ? "custom" : "legacy",
@@ -342,7 +408,72 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("parametric")] CurveParametricPayload? Parametric);
 
     private sealed record ColorPayload(
-        [property: JsonPropertyName("vibrance")] double Vibrance);
+        [property: JsonPropertyName("vibrance")] double Vibrance,
+        [property: JsonPropertyName("calibration")] CalibrationPayload? Calibration = null,
+        [property: JsonPropertyName("point_color")] PointColorRecipePayload? PointColor = null,
+        [property: JsonPropertyName("selective_color")] SelectiveColorRecipePayload? SelectiveColor = null,
+        [property: JsonPropertyName("bw")] BwRecipePayload? Bw = null);
+
+    private sealed record CalibrationPayload(
+        [property: JsonPropertyName("shadow_tint")] double ShadowTint,
+        [property: JsonPropertyName("red_hue")] double RedHue,
+        [property: JsonPropertyName("red_saturation")] double RedSaturation,
+        [property: JsonPropertyName("green_hue")] double GreenHue,
+        [property: JsonPropertyName("green_saturation")] double GreenSaturation,
+        [property: JsonPropertyName("blue_hue")] double BlueHue,
+        [property: JsonPropertyName("blue_saturation")] double BlueSaturation);
+
+    private sealed record PointColorRecipePayload(
+        [property: JsonPropertyName("swatches")] PointColorSwatchRecipePayload[] Swatches);
+
+    private sealed record PointColorSwatchRecipePayload(
+        [property: JsonPropertyName("src_hue")] double SrcHue,
+        [property: JsonPropertyName("src_saturation")] double SrcSaturation,
+        [property: JsonPropertyName("src_luminance")] double SrcLuminance,
+        [property: JsonPropertyName("hue_shift")] double HueShift,
+        [property: JsonPropertyName("saturation_shift")] double SaturationShift,
+        [property: JsonPropertyName("luminance_shift")] double LuminanceShift,
+        [property: JsonPropertyName("range")] double Range,
+        [property: JsonPropertyName("hue_range")] double HueRange,
+        [property: JsonPropertyName("sat_range")] double SatRange,
+        [property: JsonPropertyName("lum_range")] double LumRange,
+        [property: JsonPropertyName("variance")] double Variance,
+        [property: JsonPropertyName("enabled")] bool Enabled);
+
+    private sealed record SelectiveColorRecipePayload(
+        [property: JsonPropertyName("method")] string Method,
+        [property: JsonPropertyName("bands")] SelectiveColorBandsRecipePayload Bands);
+
+    private sealed record SelectiveColorBandsRecipePayload(
+        [property: JsonPropertyName("reds")] SelectiveColorBandRecipePayload Reds,
+        [property: JsonPropertyName("yellows")] SelectiveColorBandRecipePayload Yellows,
+        [property: JsonPropertyName("greens")] SelectiveColorBandRecipePayload Greens,
+        [property: JsonPropertyName("cyans")] SelectiveColorBandRecipePayload Cyans,
+        [property: JsonPropertyName("blues")] SelectiveColorBandRecipePayload Blues,
+        [property: JsonPropertyName("magentas")] SelectiveColorBandRecipePayload Magentas,
+        [property: JsonPropertyName("whites")] SelectiveColorBandRecipePayload Whites,
+        [property: JsonPropertyName("neutrals")] SelectiveColorBandRecipePayload Neutrals,
+        [property: JsonPropertyName("blacks")] SelectiveColorBandRecipePayload Blacks);
+
+    private sealed record SelectiveColorBandRecipePayload(
+        [property: JsonPropertyName("cyan")] double Cyan,
+        [property: JsonPropertyName("magenta")] double Magenta,
+        [property: JsonPropertyName("yellow")] double Yellow,
+        [property: JsonPropertyName("black")] double Black);
+
+    private sealed record BwRecipePayload(
+        [property: JsonPropertyName("enabled")] bool Enabled,
+        [property: JsonPropertyName("mixer")] BwMixerRecipePayload Mixer);
+
+    private sealed record BwMixerRecipePayload(
+        [property: JsonPropertyName("red")] double Red,
+        [property: JsonPropertyName("orange")] double Orange,
+        [property: JsonPropertyName("yellow")] double Yellow,
+        [property: JsonPropertyName("green")] double Green,
+        [property: JsonPropertyName("aqua")] double Aqua,
+        [property: JsonPropertyName("blue")] double Blue,
+        [property: JsonPropertyName("purple")] double Purple,
+        [property: JsonPropertyName("magenta")] double Magenta);
 
     private sealed record WheelPayload(
         [property: JsonPropertyName("hue")] double Hue,
@@ -358,12 +489,27 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("balance")] double? Balance);
 
     private sealed record DetailPayload(
-        [property: JsonPropertyName("sharpening")] double Sharpening);
+        [property: JsonPropertyName("sharpening")] double Sharpening,
+        [property: JsonPropertyName("luminance_v2")] bool? LuminanceV2 = null,
+        [property: JsonPropertyName("sharpening_radius")] double? SharpeningRadius = null,
+        [property: JsonPropertyName("sharpening_detail")] double? SharpeningDetail = null,
+        [property: JsonPropertyName("sharpening_masking")] double? SharpeningMasking = null);
 
     private sealed record HslPayload(
         [property: JsonPropertyName("hue")] double[] Hue,
         [property: JsonPropertyName("saturation")] double[] Saturation,
         [property: JsonPropertyName("lightness")] double[] Lightness);
+
+    private sealed record HalationRecipePayload(
+        [property: JsonPropertyName("amount")] double Amount,
+        [property: JsonPropertyName("threshold")] double Threshold,
+        [property: JsonPropertyName("radius")] double Radius,
+        [property: JsonPropertyName("hue")] double Hue);
+
+    private sealed record BloomRecipePayload(
+        [property: JsonPropertyName("amount")] double Amount,
+        [property: JsonPropertyName("threshold")] double Threshold,
+        [property: JsonPropertyName("radius")] double Radius);
 
     private sealed record EffectsPayload(
         [property: JsonPropertyName("vignette_amount")] double VignetteAmount,
@@ -375,7 +521,12 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("grain_size")] double GrainSize,
         [property: JsonPropertyName("grain_roughness")] double GrainRoughness,
         [property: JsonPropertyName("clarity")] double Clarity,
-        [property: JsonPropertyName("dehaze")] double Dehaze);
+        [property: JsonPropertyName("dehaze")] double Dehaze,
+        [property: JsonPropertyName("texture")] double? Texture = null,
+        [property: JsonPropertyName("grain_tone_curve")] string? GrainToneCurve = null,
+        [property: JsonPropertyName("grain_format_preset")] string? GrainFormatPreset = null,
+        [property: JsonPropertyName("halation")] HalationRecipePayload? Halation = null,
+        [property: JsonPropertyName("bloom")] BloomRecipePayload? Bloom = null);
 
     private sealed record WaveletPayload(
         [property: JsonPropertyName("enabled")] bool Enabled,
@@ -393,5 +544,9 @@ internal static class CanonicalEditRecipe
         [property: JsonPropertyName("tca")] bool Tca,
         [property: JsonPropertyName("vignetting")] bool Vignetting,
         [property: JsonPropertyName("auto_crop")] bool AutoCrop,
-        [property: JsonPropertyName("profile_id")] string? ProfileId);
+        [property: JsonPropertyName("profile_id")] string? ProfileId,
+        [property: JsonPropertyName("defringe_purple_amount")] double? DefringePurpleAmount = null,
+        [property: JsonPropertyName("defringe_purple_hue")] double? DefringePurpleHue = null,
+        [property: JsonPropertyName("defringe_green_amount")] double? DefringeGreenAmount = null,
+        [property: JsonPropertyName("defringe_green_hue")] double? DefringeGreenHue = null);
 }

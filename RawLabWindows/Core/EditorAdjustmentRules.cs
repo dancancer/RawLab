@@ -214,9 +214,10 @@ public static class EditorAdjustmentRules
                 ToneControls = (value.ToneControls ?? new()) with { BlackPoint = 0, WhitePoint = 0 } },
             EditorAdjustmentGroup.Color => value with { CameraWhiteBalance = true, Hsl = new(), ColorGrading = null,
                 ToneControls = (value.ToneControls ?? new()) with { Vibrance = 0 },
+                CameraCalibration = null, PointColor = null, SelectiveColor = null, BwMixer = null,
                 AsShotTemperature = defaults.AsShotTemperature, AsShotTint = defaults.AsShotTint },
-            EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects, Atmosphere = null },
-            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null },
+            EditorAdjustmentGroup.Effects => value with { Effects = defaults.Effects, Atmosphere = null, FilmOptics = null },
+            EditorAdjustmentGroup.Detail => value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null, SharpenV2 = null },
             EditorAdjustmentGroup.Geometry => value with { Geometry = defaults.Geometry, Lens = defaults.Lens },
             _ => value
         };
@@ -243,6 +244,8 @@ public static class EditorAdjustmentRules
                 var effects = value.Effects ?? new();
                 foreach (var spec in PhotoEffectSpec.All.Where(spec => spec.IsVignette == (tool == EditorAdjustmentTool.Vignette)))
                     effects = SetEffectDefault(effects, spec.Id);
+                if (tool == EditorAdjustmentTool.Grain)
+                    effects = effects with { GrainToneCurve = GrainToneCurve.Legacy, GrainFormatPreset = GrainFormatPreset.Custom };
                 return value with { Effects = effects };
             case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null };
             case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
@@ -398,6 +401,7 @@ public static class EditorAdjustmentRules
             x.Shadows == y.Shadows && x.Saturation == y.Saturation && x.ToneCurve == y.ToneCurve && x.Sharpening == y.Sharpening &&
             x.WbMode == y.WbMode && x.Temperature == y.Temperature && x.Tint == y.Tint && a.ExposureMode == b.ExposureMode &&
             a.RenderHsl.Values.Select(v => (float)v).SequenceEqual(b.RenderHsl.Values.Select(v => (float)v)) &&
-            a.RenderToneControls == b.RenderToneControls && a.RenderAtmosphere == b.RenderAtmosphere && a.RenderGrading == b.RenderGrading && a.RenderCurve == b.RenderCurve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.AIDenoiseStrength == b.AIDenoiseStrength && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens;
+            a.RenderToneControls == b.RenderToneControls && a.RenderAtmosphere == b.RenderAtmosphere && a.RenderGrading == b.RenderGrading && a.RenderCurve == b.RenderCurve && a.AIDenoiseEnabled == b.AIDenoiseEnabled && a.AIDenoiseStrength == b.AIDenoiseStrength && a.Effects == b.Effects && a.Denoise == b.Denoise && a.DisplayChromaDenoise == b.DisplayChromaDenoise && a.Geometry == b.Geometry && a.Lens == b.Lens &&
+            a.Calibration == b.Calibration && a.PointColor == b.PointColor && a.SelectiveColor == b.SelectiveColor && a.BwMixer == b.BwMixer && a.SharpenV2 == b.SharpenV2 && a.FilmOptics == b.FilmOptics;
     }
 }

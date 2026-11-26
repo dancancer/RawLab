@@ -46,34 +46,73 @@
         "light.curve": {
           "mode": "custom",
           "points": [
-            [0.0, 0.0],
-            [0.25, 0.3],
-            [0.75, 0.8],
-            [1.0, 1.0]
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.25,
+              0.3
+            ],
+            [
+              0.75,
+              0.8
+            ],
+            [
+              1.0,
+              1.0
+            ]
           ],
           "channels": {
             "red": {
               "mode": "custom",
               "points": [
-                [0.0, 0.0],
-                [0.5, 0.625],
-                [1.0, 1.0]
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.5,
+                  0.625
+                ],
+                [
+                  1.0,
+                  1.0
+                ]
               ]
             },
             "green": {
               "mode": "custom",
               "points": [
-                [0.0, 0.0],
-                [0.5, 0.525],
-                [1.0, 1.0]
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.5,
+                  0.525
+                ],
+                [
+                  1.0,
+                  1.0
+                ]
               ]
             },
             "blue": {
               "mode": "custom",
               "points": [
-                [0.0, 0.0],
-                [0.5, 0.375],
-                [1.0, 1.0]
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.5,
+                  0.375
+                ],
+                [
+                  1.0,
+                  1.0
+                ]
               ]
             }
           }
@@ -175,7 +214,120 @@
         "geometry.lens.tca": true,
         "geometry.lens.vignetting": true,
         "geometry.lens.auto_crop": false,
-        "geometry.lens.profile_id": "Fujinon XF35mmF1.4 R"
+        "geometry.lens.profile_id": "Fujinon XF35mmF1.4 R",
+        "color.calibration.shadow_tint": -12.5,
+        "color.calibration.red_hue": 18.25,
+        "color.calibration.red_saturation": -22.5,
+        "color.calibration.green_hue": -14.5,
+        "color.calibration.green_saturation": 31.25,
+        "color.calibration.blue_hue": 9.5,
+        "color.calibration.blue_saturation": -16.25,
+        "color.point_color": {
+          "swatches": [
+            {
+              "src_hue": 210.5,
+              "src_saturation": 0.625,
+              "src_luminance": 0.5,
+              "hue_shift": -15.5,
+              "saturation_shift": 22.25,
+              "luminance_shift": -8.5,
+              "range": 65.0,
+              "hue_range": 45.0,
+              "sat_range": 55.0,
+              "lum_range": 40.0,
+              "variance": 12.5,
+              "enabled": true
+            }
+          ]
+        },
+        "color.selective_color": {
+          "method": "relative",
+          "bands": {
+            "reds": {
+              "cyan": -12.5,
+              "magenta": 18.0,
+              "yellow": 6.5,
+              "black": -4.0
+            },
+            "yellows": {
+              "cyan": 0.0,
+              "magenta": 0.0,
+              "yellow": 0.0,
+              "black": 0.0
+            },
+            "greens": {
+              "cyan": 14.0,
+              "magenta": -9.5,
+              "yellow": 0.0,
+              "black": 2.5
+            },
+            "cyans": {
+              "cyan": 0.0,
+              "magenta": 0.0,
+              "yellow": 0.0,
+              "black": 0.0
+            },
+            "blues": {
+              "cyan": 25.0,
+              "magenta": -5.0,
+              "yellow": -15.0,
+              "black": 10.0
+            },
+            "magentas": {
+              "cyan": 0.0,
+              "magenta": 0.0,
+              "yellow": 0.0,
+              "black": 0.0
+            },
+            "whites": {
+              "cyan": 0.0,
+              "magenta": 0.0,
+              "yellow": 0.0,
+              "black": -6.0
+            },
+            "neutrals": {
+              "cyan": 2.5,
+              "magenta": -1.5,
+              "yellow": 3.5,
+              "black": 0.0
+            },
+            "blacks": {
+              "cyan": -3.0,
+              "magenta": 1.0,
+              "yellow": 2.0,
+              "black": 8.0
+            }
+          }
+        },
+        "color.bw.enabled": true,
+        "color.bw.mixer": {
+          "red": 25.5,
+          "orange": 18.25,
+          "yellow": 12.0,
+          "green": -15.5,
+          "aqua": -28.0,
+          "blue": -35.25,
+          "purple": 10.5,
+          "magenta": 6.25
+        },
+        "effects.texture": 32.5,
+        "detail.sharpening.luminance_v2": true,
+        "detail.sharpening.radius": 1.4,
+        "detail.sharpening.detail": 42.5,
+        "detail.sharpening.masking": 35.0,
+        "geometry.lens.defringe_purple_amount": 6.5,
+        "geometry.lens.defringe_purple_hue": 35.0,
+        "geometry.lens.defringe_green_amount": 4.25,
+        "geometry.lens.defringe_green_hue": 65.0,
+        "effects.halation.amount": 28.5,
+        "effects.halation.threshold": 82.0,
+        "effects.halation.radius": 45.5,
+        "effects.halation.hue": -14.0,
+        "effects.bloom.amount": 22.25,
+        "effects.bloom.threshold": 68.0,
+        "effects.bloom.radius": 52.5,
+        "effects.grain.tone_curve": "negative_asymmetric",
+        "effects.grain.format_preset": "135"
       },
       "dormant_hdr_values": {
         "light.exposure": -0.5,
@@ -237,17 +389,35 @@
         "light.curve": {
           "mode": "custom",
           "points": [
-            [0.0, 0.0],
-            [0.375, 0.425],
-            [1.0, 1.0]
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.375,
+              0.425
+            ],
+            [
+              1.0,
+              1.0
+            ]
           ],
           "channels": {
             "red": {
               "mode": "custom",
               "points": [
-                [0.0, 0.0],
-                [0.5, 0.5625],
-                [1.0, 1.0]
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  0.5,
+                  0.5625
+                ],
+                [
+                  1.0,
+                  1.0
+                ]
               ]
             },
             "green": {
@@ -676,7 +846,120 @@
         "geometry.lens.tca": false,
         "geometry.lens.vignetting": false,
         "geometry.lens.auto_crop": false,
-        "geometry.lens.profile_id": null
+        "geometry.lens.profile_id": null,
+        "color.calibration.shadow_tint": -100.0,
+        "color.calibration.red_hue": -100.0,
+        "color.calibration.red_saturation": -100.0,
+        "color.calibration.green_hue": -100.0,
+        "color.calibration.green_saturation": -100.0,
+        "color.calibration.blue_hue": -100.0,
+        "color.calibration.blue_saturation": -100.0,
+        "color.point_color": {
+          "swatches": [
+            {
+              "src_hue": 0.0,
+              "src_saturation": 0.0,
+              "src_luminance": 0.0,
+              "hue_shift": -100.0,
+              "saturation_shift": -100.0,
+              "luminance_shift": -100.0,
+              "range": 0.0,
+              "hue_range": 0.0,
+              "sat_range": 0.0,
+              "lum_range": 0.0,
+              "variance": -100.0,
+              "enabled": false
+            }
+          ]
+        },
+        "color.selective_color": {
+          "method": "relative",
+          "bands": {
+            "reds": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "yellows": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "greens": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "cyans": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "blues": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "magentas": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "whites": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "neutrals": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            },
+            "blacks": {
+              "cyan": -100.0,
+              "magenta": -100.0,
+              "yellow": -100.0,
+              "black": -100.0
+            }
+          }
+        },
+        "color.bw.enabled": false,
+        "color.bw.mixer": {
+          "red": -100.0,
+          "orange": -100.0,
+          "yellow": -100.0,
+          "green": -100.0,
+          "aqua": -100.0,
+          "blue": -100.0,
+          "purple": -100.0,
+          "magenta": -100.0
+        },
+        "effects.texture": -100.0,
+        "detail.sharpening.luminance_v2": false,
+        "detail.sharpening.radius": 0.5,
+        "detail.sharpening.detail": 0.0,
+        "detail.sharpening.masking": 0.0,
+        "geometry.lens.defringe_purple_amount": 0.0,
+        "geometry.lens.defringe_purple_hue": 0.0,
+        "geometry.lens.defringe_green_amount": 0.0,
+        "geometry.lens.defringe_green_hue": 0.0,
+        "effects.halation.amount": 0.0,
+        "effects.halation.threshold": 0.0,
+        "effects.halation.radius": 0.0,
+        "effects.halation.hue": -100.0,
+        "effects.bloom.amount": 0.0,
+        "effects.bloom.threshold": 0.0,
+        "effects.bloom.radius": 0.0,
+        "effects.grain.tone_curve": "legacy",
+        "effects.grain.format_preset": "custom"
       },
       "dormant_hdr_values": {
         "light.exposure": -4.0,
@@ -727,8 +1010,14 @@
         "light.curve": {
           "mode": "custom",
           "points": [
-            [0.0, 0.0],
-            [1.0, 1.0]
+            [
+              0.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0
+            ]
           ]
         },
         "tone.black_point": 100.0,
@@ -808,7 +1097,120 @@
         "geometry.lens.tca": true,
         "geometry.lens.vignetting": true,
         "geometry.lens.auto_crop": true,
-        "geometry.lens.profile_id": "Sigma 35mm F1.4 DG DN Art"
+        "geometry.lens.profile_id": "Sigma 35mm F1.4 DG DN Art",
+        "color.calibration.shadow_tint": 100.0,
+        "color.calibration.red_hue": 100.0,
+        "color.calibration.red_saturation": 100.0,
+        "color.calibration.green_hue": 100.0,
+        "color.calibration.green_saturation": 100.0,
+        "color.calibration.blue_hue": 100.0,
+        "color.calibration.blue_saturation": 100.0,
+        "color.point_color": {
+          "swatches": [
+            {
+              "src_hue": 359.9375,
+              "src_saturation": 1.0,
+              "src_luminance": 1.0,
+              "hue_shift": 100.0,
+              "saturation_shift": 100.0,
+              "luminance_shift": 100.0,
+              "range": 100.0,
+              "hue_range": 100.0,
+              "sat_range": 100.0,
+              "lum_range": 100.0,
+              "variance": 100.0,
+              "enabled": true
+            }
+          ]
+        },
+        "color.selective_color": {
+          "method": "absolute",
+          "bands": {
+            "reds": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "yellows": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "greens": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "cyans": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "blues": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "magentas": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "whites": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "neutrals": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            },
+            "blacks": {
+              "cyan": 100.0,
+              "magenta": 100.0,
+              "yellow": 100.0,
+              "black": 100.0
+            }
+          }
+        },
+        "color.bw.enabled": true,
+        "color.bw.mixer": {
+          "red": 100.0,
+          "orange": 100.0,
+          "yellow": 100.0,
+          "green": 100.0,
+          "aqua": 100.0,
+          "blue": 100.0,
+          "purple": 100.0,
+          "magenta": 100.0
+        },
+        "effects.texture": 100.0,
+        "detail.sharpening.luminance_v2": true,
+        "detail.sharpening.radius": 3.0,
+        "detail.sharpening.detail": 100.0,
+        "detail.sharpening.masking": 100.0,
+        "geometry.lens.defringe_purple_amount": 20.0,
+        "geometry.lens.defringe_purple_hue": 100.0,
+        "geometry.lens.defringe_green_amount": 20.0,
+        "geometry.lens.defringe_green_hue": 100.0,
+        "effects.halation.amount": 100.0,
+        "effects.halation.threshold": 100.0,
+        "effects.halation.radius": 100.0,
+        "effects.halation.hue": 100.0,
+        "effects.bloom.amount": 100.0,
+        "effects.bloom.threshold": 100.0,
+        "effects.bloom.radius": 100.0,
+        "effects.grain.tone_curve": "negative_asymmetric",
+        "effects.grain.format_preset": "120"
       },
       "dormant_hdr_values": {
         "light.exposure": 4.0,
@@ -907,7 +1309,10 @@
       "target_scope": "store_root",
       "policy_tier": "outer_container_or_extension",
       "inject_key": "future_store_metadata",
-      "inject_value": { "schema_revision": 2, "tag": "future-client" },
+      "inject_value": {
+        "schema_revision": 2,
+        "tag": "future-client"
+      },
       "expect": "load_preserving_values"
     },
     {
@@ -1012,7 +1417,10 @@
       "target_scope": "tone_curve_channels",
       "policy_tier": "version_bound_render_block",
       "inject_key": "luma",
-      "inject_value": { "mode": "legacy", "points": [] },
+      "inject_value": {
+        "mode": "legacy",
+        "points": []
+      },
       "preserve_raw_disk_entry": true,
       "expect": "reject_isolating_record"
     },
@@ -1162,7 +1570,18 @@
       "description": "Frozen historical persisted SDR wire payloads (macOS JSON, iOS content JSON, Android legacy CSV .properties, Windows JSON) omitting processing, x3fMode, and optional extension sub-objects must decode cleanly with legacy v1 defaults straight from disk without store.save.",
       "base_record_id": "raster-sdr-neutral",
       "kind": "legacy_omitted_extensions",
-      "omit_scopes": ["processing", "x3f_mode", "master_recipe_settings_version", "tone_controls", "atmosphere", "color_grading", "tone_curve", "hdr", "hdr_camera_ai", "pro_raw_decode_version"],
+      "omit_scopes": [
+        "processing",
+        "x3f_mode",
+        "master_recipe_settings_version",
+        "tone_controls",
+        "atmosphere",
+        "color_grading",
+        "tone_curve",
+        "hdr",
+        "hdr_camera_ai",
+        "pro_raw_decode_version"
+      ],
       "legacy_wire_samples": {
         "macos_json": {
           "photo_name": "legacy-mac.JPG",
@@ -1300,7 +1719,11 @@
       "description": "SDR exposure 99.0 (outside model [-5, 5] and spec [-20, 20]) must be rejected on record read without corrupting healthy sibling.",
       "base_record_id": "raster-sdr-neutral",
       "sibling_record_id": "full-sdr-raw-dormant-hdr",
-      "mutation": { "kind": "out_of_range", "field": "light.exposure", "value": 99.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "light.exposure",
+        "value": 99.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1308,7 +1731,11 @@
       "description": "White balance temperature 90000.0 (outside [2000, 50000]) must be rejected on record read.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "out_of_range", "field": "color.white_balance.temperature_kelvin", "value": 90000.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "color.white_balance.temperature_kelvin",
+        "value": 90000.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1316,7 +1743,11 @@
       "description": "Effects vignetteAmount 150.0 (outside [-100, 100]) must be rejected on record read rather than silently clamped or accepted.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "out_of_range", "field": "effects.vignette.amount", "value": 150.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "effects.vignette.amount",
+        "value": 150.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1324,7 +1755,11 @@
       "description": "HSL channel value 150.0 (outside [-100, 100]) must be rejected on record read.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "out_of_range", "field": "color.hsl.hue.red", "value": 150.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "color.hsl.hue.red",
+        "value": 150.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1332,7 +1767,11 @@
       "description": "Color grading shadows wheel hue 360.0 (half-open upper bound < 360) must be rejected on record read.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "out_of_range", "field": "color.grading.shadows.hue", "value": 360.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "color.grading.shadows.hue",
+        "value": 360.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1340,7 +1779,11 @@
       "description": "Geometry cropX=0.6 with cropWidth=0.6 (sum > 1.0) must be rejected on record read.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "crop_overflow", "cropX": 0.6, "cropWidth": 0.6 },
+      "mutation": {
+        "kind": "crop_overflow",
+        "cropX": 0.6,
+        "cropWidth": 0.6
+      },
       "expect": "reject_record"
     },
     {
@@ -1348,7 +1791,11 @@
       "description": "HDR peak_limit_ev 10.0 (outside [0, 6]) must be rejected on record read.",
       "base_record_id": "full-hdr-camera-raw",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "out_of_range", "field": "hdr.peak_limit_ev", "value": 10.0 },
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "hdr.peak_limit_ev",
+        "value": 10.0
+      },
       "expect": "reject_record"
     },
     {
@@ -1356,7 +1803,9 @@
       "description": "Unknown/invalid exposureMode enum value must be rejected on record read.",
       "base_record_id": "raster-sdr-neutral",
       "sibling_record_id": "full-sdr-raw-dormant-hdr",
-      "mutation": { "kind": "invalid_exposure_mode" },
+      "mutation": {
+        "kind": "invalid_exposure_mode"
+      },
       "expect": "reject_record"
     },
     {
@@ -1364,7 +1813,33 @@
       "description": "Non-monotonic custom tone curve points must be rejected on record read.",
       "base_record_id": "full-sdr-raw-dormant-hdr",
       "sibling_record_id": "raster-sdr-neutral",
-      "mutation": { "kind": "non_monotonic_curve" },
+      "mutation": {
+        "kind": "non_monotonic_curve"
+      },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-calibration-out-of-range",
+      "description": "Camera calibration shadow_tint 150.0 (outside [-100, 100]) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "color.calibration.shadow_tint",
+        "value": 150.0
+      },
+      "expect": "reject_record"
+    },
+    {
+      "id": "boundary-reject-sharpen-radius-out-of-range",
+      "description": "Sharpening radius 5.0 (outside [0.5, 3.0]) must be rejected on record read.",
+      "base_record_id": "full-sdr-raw-dormant-hdr",
+      "sibling_record_id": "raster-sdr-neutral",
+      "mutation": {
+        "kind": "out_of_range",
+        "field": "detail.sharpening.radius",
+        "value": 5.0
+      },
       "expect": "reject_record"
     }
   ]

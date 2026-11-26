@@ -58,6 +58,15 @@ struct PhotoGpuCapabilities {
 
 PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t width, uint32_t height) noexcept;
 
+// Wave 1 GPU parameter architecture contract:
+// Existing `PhotoParams` (3544 bytes) remains byte-frozen and untouched so historical
+// GPU kernels and static_asserts keep zero regression. v0.14.0 GPU stages bind
+// separate secondary parameter buffers via dedicated shared shader headers:
+//   - `photo_color_science_shader.h` (Camera Calibration, B&W mixer, Point Color 3D/swatches, Selective Color)
+//   - `photo_spatial_shader.h`       (Texture pyramid, Luminance USM v2 & edge masking, Defringe)
+//   - `dcp_look_shader.h`            (DCP look curve / neutral-preserving calibration compatibility)
+//   - `photo_film_optics_shader.h`   (Halation, Bloom, asymmetric negative grain curves)
+
 GpuRenderOutcome renderPhotoMetalWithOutcome(
     const ImageData& input,
     ColorSpace inputSpace,

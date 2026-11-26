@@ -266,5 +266,43 @@ internal static class CanonicalEditRecipeChecks
               Math.Abs(parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["split_midtone"]!.GetValue<double>() - 0.50) < 1e-6 &&
               Math.Abs(parametricHdrV9["edits"]!["tone"]!["curve"]!["parametric"]!["split_highlight"]!.GetValue<double>() - 0.75) < 1e-6,
             "HDR v9 canonical JSON omits default parametric object and populates parametric splits when active");
+        var neutralJson = JsonNode.Parse(CanonicalEditRecipe.Encode(new Adjustments(), isRaster: false))!.AsObject();
+        Check(neutralJson["schema_version"]!.GetValue<int>() == 7 &&
+              !neutralJson["edits"]!["color"]!.AsObject().ContainsKey("calibration") &&
+              !neutralJson["edits"]!["color"]!.AsObject().ContainsKey("point_color") &&
+              !neutralJson["edits"]!["color"]!.AsObject().ContainsKey("selective_color") &&
+              !neutralJson["edits"]!["color"]!.AsObject().ContainsKey("bw") &&
+              !neutralJson["edits"]!["detail"]!.AsObject().ContainsKey("luminance_v2") &&
+              !neutralJson["edits"]!["effects"]!.AsObject().ContainsKey("texture"),
+            "Neutral adjustments omit v0.14.0 canonical recipe extensions and keep legacy schema_version");
+
+        var v14Settings = new Adjustments
+        {
+            Atmosphere = new AtmosphereSettings(Texture: 25),
+            Calibration = new CameraCalibrationSettings(ShadowTint: -10),
+            PointColor = new PointColorSettings([new PointColorSwatch(SrcHue: 200, HueShift: 10)]),
+            SelectiveColor = new SelectiveColorSettings(
+                SelectiveColorMethod.Absolute,
+                new SelectiveColorBands { Reds = new SelectiveColorBand(Cyan: 12) }),
+            BwMixer = new BwMixerSettings(true, new BwMixerWeights(Red: 30)),
+            SharpenV2 = new SharpenV2Settings(LuminanceV2: true, Radius: 1.5),
+            FilmOptics = new FilmOpticsSettings(HalationAmount: 20, BloomAmount: 15),
+            Effects = new PhotoEffectsSettings(GrainToneCurve: GrainToneCurve.NegativeAsymmetric, GrainFormatPreset: GrainFormatPreset.Film135),
+            Lens = new LensSettings(DefringePurpleAmount: 8)
+        };
+        var v14Json = JsonNode.Parse(CanonicalEditRecipe.Encode(v14Settings, isRaster: true))!.AsObject();
+        Check(v14Json["schema_version"]!.GetValue<int>() == 20 &&
+              v14Json["edits"]!["color"]!["calibration"]!["shadow_tint"]!.GetValue<double>() == -10 &&
+              v14Json["edits"]!["color"]!["selective_color"]!["method"]!.GetValue<string>() == "absolute" &&
+              v14Json["edits"]!["color"]!["bw"]!["enabled"]!.GetValue<bool>() &&
+              Math.Abs(v14Json["edits"]!["effects"]!["texture"]!.GetValue<double>() - 0.25) < 1e-6 &&
+              v14Json["edits"]!["effects"]!["grain_tone_curve"]!.GetValue<string>() == "negative_asymmetric" &&
+              v14Json["edits"]!["effects"]!["grain_format_preset"]!.GetValue<string>() == "135" &&
+              v14Json["edits"]!["effects"]!["halation"]!["amount"]!.GetValue<double>() == 20 &&
+              v14Json["edits"]!["effects"]!["bloom"]!["amount"]!.GetValue<double>() == 15 &&
+              v14Json["edits"]!["detail"]!["luminance_v2"]!.GetValue<bool>() &&
+              v14Json["edits"]!["detail"]!["sharpening_radius"]!.GetValue<double>() == 1.5 &&
+              v14Json["edits"]!["lens_correction"]!["defringe_purple_amount"]!.GetValue<double>() == 8,
+            "v0.14.0 extensions promote canonical recipe to schema_version 20");
     }
 }

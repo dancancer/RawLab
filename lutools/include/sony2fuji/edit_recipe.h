@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cstdint>
 
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
@@ -7,6 +8,90 @@
 #include <string>
 
 namespace sony2fuji {
+
+struct CameraCalibrationConfig {
+    float shadowTint = 0.0f;
+    float redHue = 0.0f;
+    float redSaturation = 0.0f;
+    float greenHue = 0.0f;
+    float greenSaturation = 0.0f;
+    float blueHue = 0.0f;
+    float blueSaturation = 0.0f;
+};
+
+struct PointColorSwatchConfig {
+    float srcHue = 0.0f;
+    float srcSaturation = 0.0f;
+    float srcLuminance = 0.0f;
+    float hueShift = 0.0f;
+    float saturationShift = 0.0f;
+    float luminanceShift = 0.0f;
+    float variance = 0.0f;
+    float range = 50.0f;
+    float hueRange = 50.0f;
+    float satRange = 50.0f;
+    float lumRange = 50.0f;
+    bool enabled = true;
+};
+
+struct PointColorConfig {
+    std::array<PointColorSwatchConfig, 8> swatches{};
+    uint32_t swatchCount = 0;
+};
+
+struct SelectiveColorBandConfig {
+    float cyan = 0.0f;
+    float magenta = 0.0f;
+    float yellow = 0.0f;
+    float black = 0.0f;
+};
+
+struct SelectiveColorConfig {
+    bool absolute = false;
+    // Order: reds, yellows, greens, cyans, blues, magentas, whites, neutrals, blacks.
+    std::array<SelectiveColorBandConfig, 9> bands{};
+};
+
+struct BwMixerConfig {
+    bool enabled = false;
+    // Order: red, orange, yellow, green, aqua, blue, purple, magenta.
+    std::array<float, 8> weights{};
+};
+
+struct SharpenV2Config {
+    bool luminanceV2 = false;
+    float radius = 1.0f;
+    float detail = 25.0f;
+    float masking = 0.0f;
+};
+
+struct DefringeConfig {
+    float purpleAmount = 0.0f;
+    float purpleHue = 50.0f;
+    float greenAmount = 0.0f;
+    float greenHue = 50.0f;
+};
+
+struct FilmOpticsConfig {
+    float halationAmount = 0.0f;
+    float halationThreshold = 75.0f;
+    float halationRadius = 35.0f;
+    float halationHue = 0.0f;
+    float bloomAmount = 0.0f;
+    float bloomThreshold = 70.0f;
+    float bloomRadius = 40.0f;
+};
+
+enum class EditGrainToneCurve : uint32_t {
+    Legacy = 0,
+    NegativeAsymmetric = 1
+};
+
+enum class EditGrainFormatPreset : uint32_t {
+    Custom = 0,
+    Film135 = 1,
+    Film120 = 2
+};
 
 struct HDRRecipeSettings {
     std::string inputType = "hdr_raster";
@@ -103,6 +188,17 @@ struct EditRecipe {
     // v3: unitless centered projective coefficients, each -1..1.
     sony2fuji_perspective_config perspective{SONY2FUJI_PERSPECTIVE_CONFIG_VERSION,
         sizeof(sony2fuji_perspective_config), 0, 0};
+    // v20: v0.14.0 SDR color science, spatial detail, defringe & film optics.
+    CameraCalibrationConfig calibration{};
+    PointColorConfig pointColor{};
+    SelectiveColorConfig selectiveColor{};
+    BwMixerConfig bw{};
+    float texture = 0.0f;
+    SharpenV2Config sharpenV2{};
+    DefringeConfig defringe{};
+    FilmOpticsConfig filmOptics{};
+    EditGrainToneCurve grainToneCurve = EditGrainToneCurve::Legacy;
+    EditGrainFormatPreset grainFormatPreset = EditGrainFormatPreset::Custom;
 
     // String pointers borrow this recipe; keep it alive and unchanged while used.
     sony2fuji_request toRequest() const;
