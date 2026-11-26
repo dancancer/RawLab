@@ -6,6 +6,7 @@
 #include "sony2fuji/dcp_look.h"
 #include "core/chroma_denoise.h"
 #include "core/display_lens_correction.h"
+#include "core/gpu_admission.h"
 #include "core/hdr_rendering.h"
 #include "core/image_header_probe.h"
 #include "core/lut_compatibility.h"
@@ -28,6 +29,12 @@
 
 namespace sony2fuji {
 namespace {
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+constexpr bool kGpuBackendCompiled = true;
+#else
+constexpr bool kGpuBackendCompiled = false;
+#endif
+
 GpuFallbackReason fallbackReasonFromFault(GpuBackendFault fault) noexcept {
     switch (fault) {
     case GpuBackendFault::GpuDisabled: return GpuFallbackReason::GpuDisabled;
@@ -2022,100 +2029,75 @@ RenderStatus Pipeline::processImpl(
     }
     const bool unsupportedDisplayLens = lensCorrection_.active() &&
         (normalX3f || !hasDisplayLensMetadata_);
-    if (displayInput && (rawNoiseReduction_ != 0 || unsupportedDisplayLens ||
-        effectiveGpuMode == GpuMode::Force)) {
-        if (normalX3f) {
-            x3fError_ = rawNoiseReduction_ != 0
-                ? "Normal X3F rendering does not support FBDD RAW denoise"
-                : lensCorrection_.active() ? "Normal X3F rendering does not support additional lens correction"
-                : "Normal X3F rendering uses CPU filtering; GPU Force is not supported";
-        }
-        if (rawNoiseReduction_ == 0 && !unsupportedDisplayLens && effectiveGpuMode == GpuMode::Force) {
-            unsupportedReason_ = UnsupportedReason::ForceGpu;
-            gpuFallbackReason_ = GpuFallbackReason::DisplayInput;
-        }
-        return RenderStatus::Unsupported;
-    }
-    if (displayInput && !cpuAnalysis && gpuConfig_.mode != GpuMode::Off) {
-        gpuFallbackReason_ = GpuFallbackReason::DisplayInput;
-    }
-    local.lutStrength = clampFloat(local.lutStrength, 0.0f, 2.0f);
-    lastBackend_ = RenderBackend::Cpu;
-    const bool waveletActive = !useAI && waveletDenoise_.active();
     const int chromaMode = useAI ? 0 : chromaDenoise_;
-    const bool effectsActive = photoEffects_.active();
     const FilmOpticsOptions effectiveFilmOptics =
         (hasCommittedEditState_ || !filmOptics_.isDefault() || local.filmOptics.isDefault())
             ? filmOptics_ : local.filmOptics;
-    const bool filmOpticsActive = effectiveFilmOptics.active();
-    const bool hslActive = hsl_.active();
-    const bool toneControlsActive = toneControls_.active();
-    const bool atmosphereActive = atmosphere_.active();
     const bool basicV3 = processingVersion_ == ProcessingVersion::BasicV3;
     const BasicToneV3 basicTone{-local.highlights, local.shadows};
-    const bool basicToneActive = basicV3 && basicTone.active();
-    const bool basicControlsActive = basicV3 && (basicTone.active() || local.contrast != 1.0f || toneControlsActive);
-    const bool neighborhoodActive = atmosphereActive || basicToneActive;
-    const bool colorGradingActive = colorGrading_.active();
-    const bool calibrationActive = cameraCalibration_.active();
-    const bool bwMixerActive = bwMixer_.active();
-    const bool pointColorActive = pointColor_.active();
-    const bool selectiveColorActive = selectiveColor_.active();
-    const bool geometryActive = geometry_.active();
-    if (geometryActive && effectiveGpuMode == GpuMode::Force) {
-        unsupportedReason_ = UnsupportedReason::ForceGpu;
-        gpuFallbackReason_ = GpuFallbackReason::Geometry;
-        return RenderStatus::Unsupported;
-    }
+    ActiveFeatures features;
+    features.wavelet = !useAI && waveletDenoise_.active();
+    features.chromaDenoise = chromaMode != 0;
+    features.effects = photoEffects_.active();
+    features.filmOptics = effectiveFilmOptics.active();
+    features.hsl = hsl_.active();
+    features.toneControls = toneControls_.active();
+    features.atmosphere = atmosphere_.active();
+    features.basicTone = basicV3 && basicTone.active();
+    features.basicControls = basicV3 && (basicTone.active() || local.contrast != 1.0f || features.toneControls);
+    features.colorGrading = colorGrading_.active();
+    features.calibration = cameraCalibration_.active();
+    features.bwMixer = bwMixer_.active();
+    features.pointColor = pointColor_.active();
+    features.selectiveColor = selectiveColor_.active();
+    features.geometry = geometry_.active();
+    features.masterCurve = toneCurve_.active();
+    features.channelCurves = std::any_of(channelCurves_.begin(), channelCurves_.end(),
+        [](const auto& curve) { return curve.active(); });
+    features.defringe = defringe_.active();
+    features.sharpenV2Luminance = sharpenV2_.luminanceV2 && local.sharpening > 0.0f;
+    const bool waveletActive = features.wavelet;
+    const bool effectsActive = features.effects;
+    const bool filmOpticsActive = features.filmOptics;
+    const bool atmosphereActive = features.atmosphere;
+    const bool basicToneActive = features.basicTone;
+    const bool neighborhoodActive = features.neighborhood();
+    const bool geometryActive = features.geometry;
     // 预览到缓冲（含未开启视口标志的预览）必须保留大图 RAW 缓存供下一次渲染复用；
     // 只有导出才把工作图移走缓存来省一次整幅拷贝。
     const bool previewToBuffer = local.intent == RenderIntent::Preview &&
         local.outputTarget == RenderOutputTarget::Buffer;
     const bool roiActive = viewportRoi_.enabled && previewToBuffer && !preHsl && !migrationFrame;
-    if (roiActive && effectiveGpuMode == GpuMode::Force) {
-        unsupportedReason_ = UnsupportedReason::ForceGpu;
-        if (gpuFallbackReason_ == GpuFallbackReason::None) {
-            gpuFallbackReason_ = GpuFallbackReason::UnsupportedCapability;
-        }
+    const bool c5Wavelet = waveletActive && usesC5Denoise(waveletDenoise_.processingVersion);
+
+    GpuAdmissionFacts admissionFacts;
+    admissionFacts.gpuMode = gpuConfig_.mode;
+    admissionFacts.cpuAnalysis = cpuAnalysis;
+    admissionFacts.gpuBackendCompiled = kGpuBackendCompiled;
+    admissionFacts.displayInput = displayInput;
+    admissionFacts.normalX3f = normalX3f;
+    admissionFacts.rawNoiseReduction = rawNoiseReduction_ != 0;
+    admissionFacts.unsupportedDisplayLens = unsupportedDisplayLens;
+    admissionFacts.features = features;
+    admissionFacts.masterCurveGpuSupported = toneCurve_.gpuSupported();
+    admissionFacts.channelCurvesGpuSupported = std::all_of(channelCurves_.begin(), channelCurves_.end(),
+        [](const auto& curve) { return curve.gpuSupported(); });
+    admissionFacts.c5Wavelet = c5Wavelet;
+    admissionFacts.roiActive = roiActive;
+    GpuAdmission admission = admitGpuBeforeLook(admissionFacts);
+    gpuFallbackReason_ = admission.fallbackReason;
+    if (admission.unsupported) {
+        unsupportedReason_ = admission.unsupportedReason;
+        if (admission.x3fError != X3fAdmissionError::None) x3fError_ = x3fAdmissionErrorText(admission.x3fError);
+        if (!admission.rejectedAtInput) lastBackend_ = RenderBackend::Cpu;
         return RenderStatus::Unsupported;
     }
+    local.lutStrength = clampFloat(local.lutStrength, 0.0f, 2.0f);
+    lastBackend_ = RenderBackend::Cpu;
     bool viewportPreview = viewportPreview_ && previewToBuffer && !roiActive;
-    const bool channelCurvesUnsupported = std::any_of(channelCurves_.begin(), channelCurves_.end(),
-        [](const auto& curve) { return !curve.gpuSupported(); });
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    const bool curvesGpuUnsupported = !toneCurve_.gpuSupported() || channelCurvesUnsupported;
-    const bool cpuOnlyStages = curvesGpuUnsupported;
-#else
-    const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
-        [](const auto& curve) { return curve.active(); });
-    const bool curvesGpuUnsupported = channelCurvesActive || !toneCurve_.gpuSupported();
-    const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || curvesGpuUnsupported ||
-        toneCurve_.active() || colorGradingActive || toneControlsActive || hslActive ||
-        calibrationActive || bwMixerActive || pointColorActive || selectiveColorActive ||
-        effectsActive || filmOpticsActive || waveletActive || chromaMode != 0;
-#endif
-    const bool c5Wavelet = waveletActive && usesC5Denoise(waveletDenoise_.processingVersion);
     const bool fastWavelet = !neighborhoodActive && !geometryActive && waveletActive && !effectsActive &&
         !filmOpticsActive && chromaMode == 0 && interactivePreview_ &&
         local.intent == RenderIntent::Preview && local.outputTarget == RenderOutputTarget::Buffer;
-    auto cpuStageFallbackReason = [&]() {
-#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
-        if (atmosphereActive) return GpuFallbackReason::Atmosphere;
-        if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
-#endif
-        if (curvesGpuUnsupported) return GpuFallbackReason::Curves;
-        if (c5Wavelet) return GpuFallbackReason::C5Wavelet;
-        return GpuFallbackReason::GpuDisabled;
-    };
-    if ((cpuOnlyStages || c5Wavelet) && effectiveGpuMode == GpuMode::Force) {
-        unsupportedReason_ = UnsupportedReason::ForceGpu;
-        gpuFallbackReason_ = cpuStageFallbackReason();
-        return RenderStatus::Unsupported;
-    }
-    if (cpuOnlyStages && !cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
-        gpuFallbackReason_ == GpuFallbackReason::None) {
-        gpuFallbackReason_ = cpuStageFallbackReason();
-    }
     if (needsSourceSizePreflight(local)) {
         uint32_t sourceWidth = local.inputWidth;
         uint32_t sourceHeight = local.inputHeight;
@@ -2166,17 +2148,6 @@ RenderStatus Pipeline::processImpl(
         } else if (LUTParser::detectFormat(local.lutPath) == "rlook") {
             dcp = DcpLook::loadCached(local.lutPath);
             if (!dcp) return RenderStatus::Unsupported;
-#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
-            if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
-                gpuFallbackReason_ == GpuFallbackReason::None) {
-                gpuFallbackReason_ = GpuFallbackReason::DcpLook;
-            }
-            if (effectiveGpuMode == GpuMode::Force) {
-                unsupportedReason_ = UnsupportedReason::ForceGpu;
-                gpuFallbackReason_ = GpuFallbackReason::DcpLook;
-                return RenderStatus::Unsupported;
-            }
-#endif
         } else {
             status = loadLUT(local.lutPath.c_str(), &lut);
             if (status != RenderStatus::Ok) return status;
@@ -2184,39 +2155,18 @@ RenderStatus Pipeline::processImpl(
         }
     }
 
-#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    bool sessionGpuPipeline = !cpuOnlyStages && gpuConfig_.mode != GpuMode::Off;
-#else
-    bool sessionGpuPipeline = false;
-    if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
-        gpuFallbackReason_ == GpuFallbackReason::None) {
-        gpuFallbackReason_ = GpuFallbackReason::GpuDisabled;
-    }
-    if (effectiveGpuMode == GpuMode::Force) {
-        unsupportedReason_ = UnsupportedReason::ForceGpu;
-        if (gpuFallbackReason_ == GpuFallbackReason::None) {
-            gpuFallbackReason_ = GpuFallbackReason::GpuDisabled;
-        }
+    const bool contractCPU = lut && lut->requiresCPU();
+    GpuLookTraits lookTraits;
+    lookTraits.dcpLook = dcp != nullptr;
+    lookTraits.lutRequiresCpu = contractCPU;
+    admission = admitGpuAfterLook(admissionFacts, admission, lookTraits);
+    gpuFallbackReason_ = admission.fallbackReason;
+    if (admission.unsupported) {
+        unsupportedReason_ = admission.unsupportedReason;
         return RenderStatus::Unsupported;
     }
-#endif
-    // Reuse the reference stages; scene-view GPU shaders retain their existing
-    // contract. Auto explicitly falls back for display-referred input.
-    if (displayInput) sessionGpuPipeline = false;
-    const bool contractCPU = lut && lut->requiresCPU();
-    if (contractCPU) {
-        if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
-            gpuFallbackReason_ == GpuFallbackReason::None) {
-            gpuFallbackReason_ = GpuFallbackReason::LutContract;
-        }
-        if (effectiveGpuMode == GpuMode::Force) {
-            unsupportedReason_ = UnsupportedReason::ForceGpu;
-            gpuFallbackReason_ = GpuFallbackReason::LutContract;
-            return RenderStatus::Unsupported;
-        }
-        sessionGpuPipeline = false;
-    }
-    bool gpuPipeline = !cpuAnalysis && sessionGpuPipeline && !roiActive;
+    const bool sessionGpuPipeline = admission.sessionGpuPipeline;
+    bool gpuPipeline = admission.gpuPipeline;
     checkProcessingCancellation();
 
     RGB wb(1.0f, 1.0f, 1.0f);
@@ -2734,11 +2684,8 @@ RenderStatus Pipeline::processImpl(
     }
 
     auto lookConfig = gpuConfig_;
-    if (cpuAnalysis || contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive ||
-        hslActive || toneControlsActive || colorGradingActive || calibrationActive ||
-        bwMixerActive || pointColorActive || selectiveColorActive ||
-        chromaMode != 0 || waveletActive || effectsActive || filmOpticsActive ||
-        defringe_.active() || (sharpenV2_.luminanceV2 && local.sharpening > 0.0f)) {
+    if (cpuAnalysis || contractCPU || gpuPipeline || features.stagedOperatorActive() ||
+        features.defringe || features.sharpenV2Luminance) {
         lookConfig.mode = GpuMode::Off;
     }
     status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);
