@@ -295,6 +295,85 @@ private func rendered(_ model: EditorModel) throws {
                   abs((decodedCanonical.state?.settings.contrast ?? 0) - 1.25) < 1e-6 &&
                   decodedCanonical.state?.filmID == "builtin:astia",
                   "MacEditPersistence decodes CanonicalV2+lutID record after CLI --sync-photo-edit")
+
+        // 9. Overlapping in-flight async save defers reloadFromExternalUpdate until save drains
+        let overlapPhoto = root.appendingPathComponent("overlap-photo.png")
+        let overlapDest = CGImageDestinationCreateWithURL(overlapPhoto as CFURL, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(overlapDest, image, nil)
+        guard CGImageDestinationFinalize(overlapDest) else { fatalError("overlap fixture write failed") }
+
+        let writeEntered = DispatchSemaphore(value: 0)
+        let allowWrite = DispatchSemaphore(value: 0)
+        let blockLock = NSLock()
+        var blockNextWrite = false
+        model.editStore = try MacEditPersistence(directory: editDir, writeData: { data, url in
+            let shouldBlock: Bool = {
+                blockLock.lock(); defer { blockLock.unlock() }
+                if blockNextWrite { blockNextWrite = false; return true }
+                return false
+            }()
+            if shouldBlock {
+                writeEntered.signal()
+                _ = allowWrite.wait(timeout: .now() + 5.0)
+            }
+            try data.write(to: url, options: .atomic)
+        })
+        model.open(overlapPhoto)
+        try rendered(model)
+
+        model.settings.exposure = 0.25
+        try check(model.saveEdits(), "overlap baseline saves")
+        try check(!model.hasPendingEditCommits, "overlap baseline has no pending commits")
+
+        model.setInteracting(true)
+        model.settings.exposure = -0.45
+        model.edited()
+        try check(model.hasUnsavedManualDraft, "overlap manual draft is active")
+
+        let overlapIdentity = try OriginalFileIdentity(overlapPhoto)
+        var extOverlap = Adjustments()
+        extOverlap.exposureMode = .sensor
+        extOverlap.exposure = 1.75
+        _ = try externalStore.saveState(identity: overlapIdentity, state: MacPhotoEditState(settings: extOverlap, filmID: ""))
+        try check(waitUntil(3.0) { model.hasActiveExternalReloadBanner },
+                  "external edit during draft surfaces reload banner before in-flight save")
+
+        blockLock.lock()
+        blockNextWrite = true
+        blockLock.unlock()
+        model.setInteracting(false) // triggers saveEditsAsync()
+        try check(writeEntered.wait(timeout: .now() + 3.0) == .success,
+                  "in-flight async save entered writeData")
+        try check(model.hasPendingEditCommits,
+                  "hasPendingEditCommits is true while async save is in flight")
+        try check(model.hasActiveExternalReloadBanner,
+                  "reload banner remains active while in-flight save is blocked")
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.25) {
+            allowWrite.signal()
+        }
+        let beforeAccept = Date()
+        model.reloadFromExternalUpdate()
+        let acceptElapsed = Date().timeIntervalSince(beforeAccept)
+        try check(acceptElapsed < 0.15,
+                  "reloadFromExternalUpdate returns immediately without blocking main thread on in-flight commit")
+        try check(model.hasPendingEditCommits,
+                  "in-flight commit stays pending until background write completes")
+        try check(model.hasActiveExternalReloadBanner && model.deferredExternalReloadAccept && model.deferredExternalEditsCheck,
+                  "reload banner and deferred accept flags stay active until deferred reload accept flushes")
+        try check(abs(model.settings.exposure - (-0.45)) < 1e-6,
+                  "deferred reload accept does not overwrite sliders before in-flight commit drains")
+
+        try check(waitUntil(3.0) { !model.hasPendingEditCommits && !model.hasActiveExternalReloadBanner },
+                  "deferred reload accept applies automatically after in-flight commit drains")
+        try check(!model.deferredExternalReloadAccept && !model.deferredExternalEditsCheck,
+                  "deferred reload accept flags clear once external reload is applied")
+        try check(!model.dirty && abs(model.settings.exposure - 1.75) < 1e-6,
+                  "deferred reload accept adopts external state 1.75 after commit drain")
+        model.undoAdjustment()
+        try check(abs(model.settings.exposure - (-0.45)) < 1e-6,
+                  "deferred reload accept remains 1-step undoable to the drained in-flight edit")
+
         print("ALL AgentTransferHotReloadTests PASSED")
     }
 }
