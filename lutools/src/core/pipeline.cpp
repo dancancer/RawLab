@@ -1774,6 +1774,48 @@ RenderStatus Pipeline::processPreviewRoi(
     DehazeAnalysis dehazeState;
     ClarityField clarityField;
     FilmOpticsField opticsField;
+    local.lut = lut;
+    local.dcp = dcp;
+    local.relativeWB = wb;
+    local.effects = photoEffects_;
+    local.filmOptics = filmOptics_;
+    local.atmosphere = atmosphere_;
+    local.chromaDenoise = chromaMode;
+    local.preserveSourceResolution = waveletActive || geometry_.active();
+    local.hsl = hsl_;
+    local.toneControls = toneControls_;
+    local.colorGrading = colorGrading_;
+    local.calibration = cameraCalibration_;
+    local.pointColor = pointColor_;
+    local.selectiveColor = selectiveColor_;
+    local.bw = bwMixer_;
+    local.sharpenV2 = sharpenV2_;
+    local.defringe = defringe_;
+    local.atmosphereSourceWidth = canvasW;
+    local.atmosphereSourceHeight = canvasH;
+    local.processingVersion = processingVersion_;
+    local.customCurve = toneCurve_;
+    local.channelCurves = channelCurves_;
+    local.curveApplyToLuminosity = curveApplyToLuminosity_;
+    local.parametricCurve = parametricCurve_;
+    local.aiDenoiseBlend = aiDenoiseBlend_;
+    local.outputSharpening = outputSharpening_;
+
+    CpuStagePass roiPass;
+    roiPass.kind = CpuStagePass::Kind::RoiTile;
+    roiPass.basicV3 = basicV3;
+    roiPass.basicTone = basicTone;
+    roiPass.exposureWB = RGB(exposure * wb.r, exposure * wb.g, exposure * wb.b);
+    roiPass.displayInput = displayInput;
+    roiPass.lookConfig = gpuConfig_;
+    roiPass.lookConfig.mode = GpuMode::Off;
+    roiPass.analysisWidth = canvasW;
+    roiPass.analysisHeight = canvasH;
+    roiPass.repeatBwAfterBlackWhite = &local.bw;
+    roiPass.basicField = &basicField;
+    roiPass.dehaze = &dehazeState;
+    roiPass.clarity = &clarityField;
+    roiPass.filmOptics = &opticsField;
     if (needGuides) {
         ImageData guideImage;
         if (local.inputType == RenderInputType::Raw) {
@@ -1811,60 +1853,19 @@ RenderStatus Pipeline::processPreviewRoi(
             ColorConverter().convertImage(guideImage, gSpace, ColorSpace::sRGB);
         }
 
-        parallelPixelRanges(guideImage.pixels.size(), [&](size_t first, size_t last) {
-            for (size_t i = first; i < last; ++i) {
-                applyExposureAndWhiteBalance(guideImage.pixels[i], exposure, wb);
-            }
-        });
-        applyCameraCalibration(guideImage, cameraCalibration_);
+        // 现状：引导图的主曲线、参数曲线、明度模式与第二次黑白混合取自调用方参数而非会话状态，
+        // 两者只在旧版 sony2fuji_process 入口下不同；保持 ROI 输出逐字节不变，是否统一待单独决定。
         RenderParams guideParams = local;
-        if (basicToneActive) {
-            basicField = buildBasicToneV3Field(guideImage, canvasW, canvasH);
-            if (atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f || filmOptics_.active()) {
-                applyBasicToneV3WithField(guideImage, basicTone, basicField);
-            }
-            guideParams.highlights = guideParams.shadows = 0.0f;
-        }
-        if (atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f || filmOptics_.active()) {
-            if (defringe_.active()) {
-                applyDefringe(guideImage, defringe_);
-            }
-            GpuConfig cpuLook = gpuConfig_;
-            cpuLook.mode = GpuMode::Off;
-            status = applyPhotoLook(guideImage, lut, dcp, guideParams.lutStrength, displayInput, cpuLook);
-            if (status != RenderStatus::Ok) return status;
-            checkProcessingCancellation();
-            if (atmosphere_.dehaze != 0.0f) {
-                dehazeState = buildDehazeAnalysis(guideImage, canvasW, canvasH, processingVersion_);
-                if (atmosphere_.clarity != 0.0f || filmOptics_.active()) {
-                    applyDehazeWithAnalysis(guideImage, atmosphere_.dehaze, dehazeState);
-                }
-            }
-            if (atmosphere_.clarity != 0.0f || filmOptics_.active()) {
-                applyBwMixer(guideImage, bwMixer_);
-                if (basicV3) applyBasicBlackWhiteV3(guideImage, toneControls_);
-                else applyBlackWhite(guideImage, toneControls_);
-                applyToneAdjustments(guideImage, guideParams, channelCurves_, basicV3);
-                if (basicV3) applyBasicVibranceV3(guideImage, toneControls_.vibrance);
-                else applyVibrance(guideImage, toneControls_);
-                applyHsl(guideImage, hsl_);
-                applyPointColor(guideImage, pointColor_);
-                applySelectiveColor(guideImage, selectiveColor_);
-                applyColorGrading(guideImage, colorGrading_);
-                if (atmosphere_.clarity != 0.0f) {
-                    clarityField = buildClarityField(guideImage, canvasW, canvasH, processingVersion_);
-                }
-                if (filmOptics_.active()) {
-                    if (atmosphere_.clarity != 0.0f) {
-                        applyClarityWithField(guideImage, atmosphere_.clarity, clarityField);
-                    }
-                    if (atmosphere_.texture != 0.0f) {
-                        applyTexture(guideImage, atmosphere_.texture, canvasW, canvasH);
-                    }
-                    opticsField = buildFilmOpticsField(guideImage, canvasW, canvasH, filmOptics_);
-                }
-            }
-        }
+        guideParams.customCurve = params.customCurve;
+        guideParams.parametricCurve = params.parametricCurve;
+        guideParams.curveApplyToLuminosity = params.curveApplyToLuminosity;
+        CpuStagePass guidePass = roiPass;
+        guidePass.kind = CpuStagePass::Kind::RoiGuide;
+        guidePass.repeatBwAfterBlackWhite = &params.bw;
+        guidePass.basicField = nullptr;
+        guidePass.basicFieldOut = &basicField;
+        status = runCpuStageChain(guideImage, guideParams, guidePass);
+        if (status != RenderStatus::Ok) return status;
     }
 
     const SubRectMap roiMap{
@@ -1887,80 +1888,12 @@ RenderStatus Pipeline::processPreviewRoi(
         colorSpace = ColorSpace::sRGB;
     }
 
-    local.lut = lut;
-    local.dcp = dcp;
-    local.relativeWB = wb;
-    local.effects = photoEffects_;
-    local.filmOptics = filmOptics_;
-    local.atmosphere = atmosphere_;
-    local.chromaDenoise = chromaMode;
-    local.preserveSourceResolution = waveletActive || geometry_.active();
-    local.hsl = hsl_;
-    local.toneControls = toneControls_;
-    local.colorGrading = colorGrading_;
-    local.calibration = cameraCalibration_;
-    local.pointColor = pointColor_;
-    local.selectiveColor = selectiveColor_;
-    local.bw = bwMixer_;
-    local.sharpenV2 = sharpenV2_;
-    local.defringe = defringe_;
-    local.atmosphereSourceWidth = canvasW;
-    local.atmosphereSourceHeight = canvasH;
-    local.processingVersion = processingVersion_;
-    local.customCurve = toneCurve_;
-    local.channelCurves = channelCurves_;
-    local.curveApplyToLuminosity = curveApplyToLuminosity_;
-    local.parametricCurve = parametricCurve_;
-    local.aiDenoiseBlend = aiDenoiseBlend_;
-    local.outputSharpening = outputSharpening_;
-
-    ColorConverter converter;
-    converter.convertImage(image, colorSpace, ColorSpace::sRGB);
+    roiPass.roiMap = roiMap;
+    roiPass.applyMatrix = colorSpace != ColorSpace::sRGB;
+    roiPass.toSrgb = ColorConverter::getConversionMatrix(colorSpace, ColorSpace::sRGB);
     colorSpace = ColorSpace::sRGB;
-    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) applyExposureAndWhiteBalance(image.pixels[i], exposure, wb);
-    });
-    applyCameraCalibration(image, cameraCalibration_);
-    if (basicToneActive) {
-        applyBasicToneV3WithField(image, basicTone, basicField, roiMap);
-        local.highlights = local.shadows = 0.0f;
-    }
-    if (defringe_.active()) {
-        applyDefringe(image, defringe_);
-    }
-
-    GpuConfig lookConfig = gpuConfig_;
-    lookConfig.mode = GpuMode::Off;
-    status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);
+    status = runCpuStageChain(image, local, roiPass);
     if (status != RenderStatus::Ok) return status;
-    checkProcessingCancellation();
-    if (atmosphere_.dehaze != 0.0f) {
-        applyDehazeWithAnalysis(image, atmosphere_.dehaze, dehazeState, roiMap);
-    }
-    applyBwMixer(image, bwMixer_);
-    if (basicV3) applyBasicBlackWhiteV3(image, toneControls_);
-    else applyBlackWhite(image, toneControls_);
-    applyToneAdjustments(image, local, channelCurves_, basicV3);
-    if (basicV3) applyBasicVibranceV3(image, toneControls_.vibrance);
-    else applyVibrance(image, toneControls_);
-    applyHsl(image, hsl_);
-    applyPointColor(image, pointColor_);
-    applySelectiveColor(image, selectiveColor_);
-    applyColorGrading(image, colorGrading_);
-    const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
-    checkProcessingCancellation();
-    if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
-    const int texDiagW = std::max(1, static_cast<int>(std::lround(
-        roiMap.fullWidth * double(image.width) / std::max(1.0, roiMap.sourceSpanX))));
-    const int texDiagH = std::max(1, static_cast<int>(std::lround(
-        roiMap.fullHeight * double(image.height) / std::max(1.0, roiMap.sourceSpanY))));
-    applyDetailAdjustments(image, local.noiseReduction, local.sharpening, atmosphere_.clarity,
-        canvasW, canvasH, processingVersion_,
-        atmosphere_.clarity != 0.0f ? &clarityField : nullptr, roiMap,
-        atmosphere_.texture, sharpenV2_, texDiagW, texDiagH,
-        filmOptics_, filmOptics_.active() ? &opticsField : nullptr);
-    checkProcessingCancellation();
-    applyPhotoEffectsROI(image, photoEffects_, roiMap);
 
     image = applyGeometryROI(image, srcRect, canvasW, canvasH, geometry_, plan);
     if (image.width <= 0 || image.height <= 0) return RenderStatus::ProcessingError;
@@ -2628,57 +2561,35 @@ RenderStatus Pipeline::processImpl(
         ? local.customToSrgb
         : ColorConverter::getConversionMatrix(colorSpace, ColorSpace::sRGB);
     const bool applyMatrix = local.hasCustomToSrgb || colorSpace != ColorSpace::sRGB;
-    const RGB exposureWB(exposure * wb.r, exposure * wb.g, exposure * wb.b);
-    parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t i = first; i < last; ++i) {
-            RGB p = applyMatrix ? ColorConverter::applyMatrix(image.pixels[i], cpuToSrgb) : image.pixels[i];
-            p.r *= exposureWB.r;
-            p.g *= exposureWB.g;
-            p.b *= exposureWB.b;
-            image.pixels[i] = p;
-        }
-    });
-    colorSpace = ColorSpace::sRGB;
-    applyCameraCalibration(image, cameraCalibration_);
-    if (basicToneActive) {
-        if (local.basicToneField && !local.basicToneField->empty() &&
-            image.width == basicFieldSourceWidth && image.height == basicFieldSourceHeight) {
-            applyBasicToneV3WithField(image, basicTone, *local.basicToneField, {});
-        } else {
-            applyBasicToneV3(image, basicTone, atmosphereSourceWidth, atmosphereSourceHeight);
-        }
-        local.highlights = local.shadows = 0.0f;
-    }
-    if (defringe_.active()) {
-        applyDefringe(image, defringe_);
-    }
-
     auto lookConfig = gpuConfig_;
     if (cpuAnalysis || contractCPU || gpuPipeline || features.stagedOperatorActive() ||
         features.defringe || features.sharpenV2Luminance) {
         lookConfig.mode = GpuMode::Off;
     }
-    status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);
+    CpuStagePass pass;
+    pass.basicV3 = basicV3;
+    pass.basicTone = basicTone;
+    pass.applyMatrix = applyMatrix;
+    pass.toSrgb = cpuToSrgb;
+    pass.exposureWB = RGB(exposure * wb.r, exposure * wb.g, exposure * wb.b);
+    pass.displayInput = displayInput;
+    pass.lookConfig = lookConfig;
+    pass.analysisWidth = atmosphereSourceWidth;
+    pass.analysisHeight = atmosphereSourceHeight;
+    pass.stopBeforeHsl = preHsl != nullptr;
+    pass.dehaze = &dehazeAnalysis_;
+    if (local.basicToneField && !local.basicToneField->empty() &&
+        image.width == basicFieldSourceWidth && image.height == basicFieldSourceHeight) {
+        pass.basicField = local.basicToneField.get();
+    }
+    colorSpace = ColorSpace::sRGB;
+    status = runCpuStageChain(image, local, pass);
     if (status != RenderStatus::Ok) return status;
-    checkProcessingCancellation();
-    applyDehaze(image, atmosphere_.dehaze, &dehazeAnalysis_,
-        atmosphereSourceWidth, atmosphereSourceHeight, processingVersion_);
-    applyPostLookStages(image, local, toneControls_, hsl_, colorGrading_,
-        channelCurves_, basicV3, !preHsl);
     if (preHsl) {
         status = finishGeometry(local, image, nativeWidth, nativeHeight);
         if (status == RenderStatus::Ok) *preHsl = std::move(image);
         return status;
     }
-    const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
-    checkProcessingCancellation();
-    if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
-    applyDetailAdjustments(image, local.noiseReduction, local.sharpening, atmosphere_.clarity,
-        atmosphereSourceWidth, atmosphereSourceHeight, processingVersion_,
-        nullptr, {}, atmosphere_.texture, sharpenV2_, image.width, image.height,
-        effectiveFilmOptics, nullptr);
-    checkProcessingCancellation();
-    applyPhotoEffects(image, photoEffects_);
 
     return finishOutput(local, image, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
 }
