@@ -25,10 +25,10 @@ class EditorToolGroupingTest {
     }
 
     @Test fun toolsFollowTheSevenWorkspaceGroupsWithStableIds() {
-        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 21, 22, 23, 28, 12, 13, 11, 10, 17, 16, 24, 25, 26, 27), editorToolOrder)
+        assertEquals(listOf(0, 15, 1, 2, 3, 4, 18, 19, 5, 6, 8, 7, 20, 14, 29, 30, 31, 21, 32, 22, 23, 28, 12, 13, 11, 10, 17, 16, 24, 25, 26, 27), editorToolOrder)
         assertEquals(listOf(24, 25, 26, 27), EditorAdjustmentRules.tools(EditorAdjustmentGroup.HDR_RENDITION))
         assertTrue((24..27).all(EditorAdjustmentRules::supportsHDR))
-        assertFalse(EditorAdjustmentRules.supportsHDR(28))
+        assertTrue((28..32).none(EditorAdjustmentRules::supportsHDR))
     }
 
     @Test fun whiteBalanceUsesOneToolEntryWithTheCombinedTitle() {

@@ -1731,6 +1731,24 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS core external_raw ci_macos_arm64 ci_macos_x86_64
     )
     rawlab_add_test(
+        NAME photo_color_science
+        SOURCES tests/photo_color_science_tests.cpp
+        INCLUDES third_party
+        LIBRARIES sony2fuji_core
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    if(APPLE AND SONY2FUJI_ENABLE_GPU)
+        rawlab_add_test(
+            NAME metal_color_science
+            COMMAND photo_color_science_tests --metal
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            LABELS gpu metal metal_arm64 ci_macos_arm64
+        )
+    endif()
+    rawlab_add_test(
         NAME photo_color
         SOURCES tests/photo_color_tests.cpp
         LIBRARIES sony2fuji_core

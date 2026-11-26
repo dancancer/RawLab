@@ -351,7 +351,8 @@ extension EditMemoryTests {
             (.looks, [.film, .recipe, .adjustment(.strength)]),
             (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
                       .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
-            (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
+            (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl),
+                      .pointColor, .selectiveColor, .bwMixer, .adjustment(.colorGrading), .cameraCalibration]),
             (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.texture), .adjustment(.vignette), .adjustment(.grain)]),
             (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
             (.geometry, [.geometry, .lens]),
@@ -371,7 +372,9 @@ extension EditMemoryTests {
             visibleTools += tools
         }
         let expectedVisible = Set(AdjustmentKind.toolCases.map(EditorToolSelection.adjustment) + [
-            EditorToolSelection.film, .recipe, .geometry, .lens, .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation
+            EditorToolSelection.film, .recipe, .geometry, .lens,
+            .pointColor, .selectiveColor, .bwMixer, .cameraCalibration,
+            .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation
         ])
         check(visibleTools.count == Set(visibleTools).count && Set(visibleTools) == expectedVisible,
               "all visible tools appear exactly once across the seven groups")
@@ -454,6 +457,13 @@ extension EditMemoryTests {
         settings.saturation = 1.2; settings.whiteBalanceMode = .custom
         settings.temperature = 4250; settings.tint = 12
         settings.hslSettings = try JSONDecoder().decode(HSLSettings.self, from: Data("{\"hue\":[0.5,1.5,0,0,0,0,0,0],\"saturation\":[2.5,3.5,0,0,0,0,0,0],\"lightness\":[4.5,5.5,0,0,0,0,0,0]}".utf8))
+        settings.cameraCalibration = CameraCalibrationSettings(shadowTint: 15, redHue: -20)
+        settings.pointColor = PointColorSettings(swatches: [PointColorSwatch(srcHue: 25, srcSaturation: 0.4, srcLuminance: 0.6, variance: -50)])
+        settings.selectiveColor = SelectiveColorSettings(
+            method: .absolute,
+            bands: SelectiveColorBands(reds: SelectiveColorBand(cyan: 20))
+        )
+        settings.bwMixer = BwMixerSettings(enabled: true, mixer: BwMixerChannelWeights(red: 30))
         settings.effectSettings.vignetteMidpoint = 63; settings.effectSettings.grainSize = 61
         settings.denoise = RawDenoiseSettings(enabled: false, luma: 10, chroma: 72, coarse: 100)
         settings.sharpening = 0.4; settings.displayChromaDenoise = 2
@@ -475,6 +485,10 @@ extension EditMemoryTests {
             (.adjustment(.tint), { $0.whiteBalanceMode = .camera; $0.temperature = 5200; $0.tint = 8 }),
             (.adjustment(.saturation), { $0.saturation = 1 }),
             (.adjustment(.hsl), { $0.hslSettings = HSLSettings() }),
+            (.pointColor, { $0.pointColor = nil }),
+            (.selectiveColor, { $0.selectiveColor = nil }),
+            (.bwMixer, { $0.bwMixer = nil }),
+            (.cameraCalibration, { $0.cameraCalibration = nil }),
             (.adjustment(.vignette), { $0.effectSettings.resetVignette() }),
             (.adjustment(.grain), { $0.effectSettings.resetGrain() }),
             (.adjustment(.noiseReduction), { $0.denoise = RawDenoiseSettings(); $0.displayChromaDenoise = 0 }),
@@ -517,7 +531,7 @@ extension EditMemoryTests {
         expected.shadows = 0; expected.contrast = 1; expected.toneCurve = 0
         check(light.settings == expected && light.filmID == "external", "light reset preserves all unselected values and identity")
         let color = candidate(.group(.color), original)
-        check(color.settings.whiteBalanceMode == .camera && color.settings.temperature == 5200 && color.settings.tint == 8 && color.settings.saturation == 1 && color.settings.hslSettings.isIdentity, "color reset uses actual camera WB and clears HSL")
+        check(color.settings.whiteBalanceMode == .camera && color.settings.temperature == 5200 && color.settings.tint == 8 && color.settings.saturation == 1 && color.settings.hslSettings.isIdentity && color.settings.cameraCalibration == nil && color.settings.pointColor == nil && color.settings.selectiveColor == nil && color.settings.bwMixer == nil, "color reset uses actual camera WB and clears HSL and v0.14 color tools")
         check(color.settings.effectSettings == settings.effectSettings && color.settings.exposureMode == .scene, "color reset preserves effects and legacy exposure mode")
         let effects = candidate(.group(.effects), original)
         check(effects.settings.effectSettings == PhotoEffectsSettings() && effects.settings.denoise == settings.denoise, "effects reset includes disabled auxiliary values")

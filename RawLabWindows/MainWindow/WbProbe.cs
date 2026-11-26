@@ -27,7 +27,7 @@ public partial class MainWindow
 
     private void SetWbProbeMode(bool enabled)
     {
-        if (enabled) { CancelHslTarget(); CancelCurveTarget(); }
+        if (enabled) { CancelHslTarget(); CancelCurveTarget(); CancelPointColorProbe(); }
         wbProbeEnabled = enabled && CanUseWbProbe;
         if (!wbProbeEnabled) { wbProbeSampling = false; wbProbeNotice = null; ++wbProbeToken; }
         else { EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }

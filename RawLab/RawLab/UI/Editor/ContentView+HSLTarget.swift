@@ -204,4 +204,43 @@ extension ContentView {
         coordinator.wbProbeSampling = false
         coordinator.wbProbeNotice = nil
     }
+
+    var pointColorEyedropperActive: Bool { coordinator.pointColorEyedropperActive }
+
+    var pointColorEyedropperInput: HSLTargetCanvasInput {
+        let source = viewModel.sourceRevision, draftID = workspaceDraftID, hdr = workingSettings.isHDREditing
+        func current() -> Bool {
+            viewModel.sourceRevision == source && workspaceDraftID == draftID && workingSettings.isHDREditing == hdr
+        }
+        return HSLTargetCanvasInput(scope: "pointColor-\(source)-\(draftID)-\(hdr)",
+            begin: { if current() { samplePointColor(atOutputPoint: $0) } }, change: { _ in },
+            end: {}, cancel: { if current() { coordinator.pointColorEyedropperEnabled = false } },
+            key: { _ in }, reject: { if current() { coordinator.pointColorEyedropperEnabled = false } })
+    }
+
+    func samplePointColor(atOutputPoint point: CGPoint) {
+        guard pointColorEyedropperActive else { return }
+        guard point.x.isFinite, point.y.isFinite, (0...1).contains(point.x), (0...1).contains(point.y),
+              let sample = sampleInspectionAfter(atOutputPoint: point) else {
+            coordinator.pointColorEyedropperEnabled = false
+            return
+        }
+        let swatch = PointColorSwatch.fromSample(sample)
+        var updated = workingSettings
+        var pc = updated.pointColorSettings
+        let maxSwatches = AdjustmentFieldSpec.SubFields.PointColor.maxSwatches
+        if pc.swatches.count < maxSwatches {
+            pc.swatches.append(swatch)
+            coordinator.selectedPointColorSwatchIndex = pc.swatches.count - 1
+        } else {
+            let targetIndex = min(max(coordinator.selectedPointColorSwatchIndex, 0), maxSwatches - 1)
+            pc.swatches[targetIndex] = swatch
+            coordinator.selectedPointColorSwatchIndex = targetIndex
+        }
+        updated.pointColorSettings = pc
+        setSliderEditing(true)
+        applySettingsChange(updated)
+        setSliderEditing(false)
+        coordinator.pointColorEyedropperEnabled = false
+    }
 }

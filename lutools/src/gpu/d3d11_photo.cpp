@@ -1,5 +1,6 @@
 #include "gpu/d3d11_photo.h"
 #include "gpu/d3d11_photo_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_defringe.h"
 #include "core/photo_lut.h"
@@ -79,7 +80,7 @@ struct D3D11PhotoRenderer::Impl {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11ComputeShader> shader, spatialShader;
-    ComPtr<ID3D11Buffer> constants, dcpConstants, spatialConstants, staging;
+    ComPtr<ID3D11Buffer> constants, dcpConstants, colorScienceConstants, spatialConstants, staging;
     Buffer source, processing[2], resized, film, basicField;
     Buffer dcpData, dcpInvalid, spAux1, spAux2, spField;
     uint64_t revision = 0;
@@ -130,6 +131,7 @@ struct D3D11PhotoRenderer::Impl {
         };
         createCb(sizeof(Parameters), constants);
         createCb(sizeof(DcpGpuUniforms), dcpConstants);
+        createCb(sizeof(ColorScienceGpuParams), colorScienceConstants);
         createCb(sizeof(SpatialGpuParams), spatialConstants);
     }
     void allocateTyped(Buffer& buffer, size_t count, size_t stride, bool writable) {
@@ -258,8 +260,8 @@ struct D3D11PhotoRenderer::Impl {
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
         context->UpdateSubresource(dcpConstants.Get(),0,nullptr,&currentDcpUniforms,0,0);
         context->CSSetShader(shader.Get(),nullptr,0);
-        ID3D11Buffer* cbs[2] = {constants.Get(), dcpConstants.Get()};
-        context->CSSetConstantBuffers(0, 2, cbs);
+        ID3D11Buffer* cbs[3] = {constants.Get(), dcpConstants.Get(), colorScienceConstants.Get()};
+        context->CSSetConstantBuffers(0, 3, cbs);
         ID3D11ShaderResourceView* views[] = {
             input.srv.Get(),
             params.control[2] == 1u ? film.srv.Get() : nullptr,
@@ -608,6 +610,8 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         p.basicTone[0] = bt ? std::clamp(params.basicTone.highlights, -1.0f, 1.0f) : 0.0f;
         p.basicTone[1] = bt ? std::clamp(params.basicTone.shadows, -1.0f, 1.0f) : 0.0f;
         c.setBasicToneField(params);
+        const ColorScienceGpuParams csParams = colorScienceGpuParameters(params);
+        c.context->UpdateSubresource(c.colorScienceConstants.Get(), 0, nullptr, &csParams, 0, 0);
         const auto grading=colorGradingParameters(params.colorGrading);
         for (size_t zone=0;zone<3;++zone) {
             p.colorGrading[zone][0]=grading.coefficients[zone].r;

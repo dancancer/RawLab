@@ -1686,6 +1686,22 @@ void sony2fuji_hdr_release_pair(sony2fuji_hdr_image_pair_v1* image) {
     image->owner_token = 0;
     gCoreCv.notify_all();
 }
+sony2fuji_status sony2fuji_point_color_preview_swatch(
+    float /*src_hue*/,
+    float /*src_saturation*/,
+    float /*src_luminance*/,
+    float /*hue_shift*/,
+    float /*saturation_shift*/,
+    float /*luminance_shift*/,
+    float* out_src_rgb,
+    float* out_shifted_rgb) {
+    if (!out_src_rgb || !out_shifted_rgb) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    for (int i = 0; i < 3; ++i) {
+        out_src_rgb[i] = 0.5f;
+        out_shifted_rgb[i] = 0.5f;
+    }
+    return SONY2FUJI_STATUS_OK;
+}
 sony2fuji_status sony2fuji_render_sharpen_mask_preview(
     const sony2fuji_buffer* source,
     float radius,

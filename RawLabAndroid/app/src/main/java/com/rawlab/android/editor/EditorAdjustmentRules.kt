@@ -76,7 +76,7 @@ object EditorAdjustmentRules {
     private val toolGroups = mapOf(
         EditorAdjustmentGroup.LOOKS to listOf(0, 15, 1),
         EditorAdjustmentGroup.LIGHT to listOf(2, 3, 4, 18, 19, 5, 6),
-        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 21),
+        EditorAdjustmentGroup.COLOR to listOf(8, 7, 20, 14, 29, 30, 31, 21, 32),
         EditorAdjustmentGroup.EFFECTS to listOf(22, 23, 28, 12, 13),
         EditorAdjustmentGroup.DETAIL to listOf(11, 10),
         EditorAdjustmentGroup.GEOMETRY to listOf(17, 16),
@@ -213,6 +213,10 @@ object EditorAdjustmentRules {
         25 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrExposureEV = 0f))) else s
         26 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrContrast = 0f))) else s
         27 -> if (s.isHDREditing) s.copy(hdr = s.hdr!!.withRendition(s.hdr.renditionSettings.copy(sdrSaturation = 0f))) else s
+        29 -> s.copy(pointColor = d.pointColor)
+        30 -> s.copy(selectiveColor = d.selectiveColor)
+        31 -> s.copy(bwMixer = d.bwMixer)
+        32 -> s.copy(calibration = d.calibration)
         else -> s
     }
 

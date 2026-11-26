@@ -135,7 +135,7 @@ public partial class MainWindow : Window
         void RefreshLanguage()
         {
             RecipeStrip.Children.Clear(); recipeButtons.Clear();
-            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();PhotoEffectsEditor.RefreshLanguage();
+            RefreshLookCategories();BuildTools(); BuildFilms(); BuildMasterRecipes(); BuildResetMenu(); HslEditor.RefreshLanguage();GradingEditor.RefreshLanguage();PointColorEditor.RefreshLanguage();SelectiveColorEditor.RefreshLanguage();BwMixerEditor.RefreshLanguage();CalibrationEditor.RefreshLanguage();CurveEditor.RefreshLanguage();GeometryEditor.RefreshLanguage();PhotoEffectsEditor.RefreshLanguage();
             RefreshControls(); RefreshPhotoInfo(); RefreshExportSizeMenu(); RefreshCopyLabels();
             RefreshRenderLabels();
             RefreshSaveNotice();
@@ -161,7 +161,7 @@ public partial class MainWindow : Window
         PreviewKeyUp+=ViewKeyReleased;
         Activated+=(_,_)=>SyncBeforeKeyState();
         AddHandler(Keyboard.GotKeyboardFocusEvent,new KeyboardFocusChangedEventHandler((_,_)=>SyncBeforeKeyState()),true);
-        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();CancelHslTarget();CancelCurveTarget();GradingEditor.CancelInputs();CurveEditor.CancelInputs();}};
+        Deactivated+=(_,_)=>{if(!preservingUpdateNavigation){CancelViewingInput();CancelHslTarget();CancelCurveTarget();CancelPointColorProbe();GradingEditor.CancelInputs();PointColorEditor.CancelInputs();SelectiveColorEditor.CancelInputs();BwMixerEditor.CancelInputs();CalibrationEditor.CancelInputs();CurveEditor.CancelInputs();}};
         MainMenu.AddHandler(MenuItem.SubmenuOpenedEvent,new RoutedEventHandler((_,_)=>CancelViewingInput()));
         CompareButton.ContextMenuOpening+=(_,_)=>CancelViewingInput();
         viewport.ResolutionChanged+=()=>{if(!syncing)UpdatePreviewSize(viewport.ActualPixels ? 0 : ResultCanvas.PreviewLongEdge);};
@@ -223,7 +223,28 @@ public partial class MainWindow : Window
         InitializeHslTarget();
         InitializeInspection();
         InitializeWbProbe();
+        InitializePointColorProbe();
         HslEditor.ResetRequested+=RequestReset;
+        PointColorEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.PointColor=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        PointColorEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.PointColor));
+        SelectiveColorEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.SelectiveColor=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        SelectiveColorEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.SelectiveColor));
+        BwMixerEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.BwMixer=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        BwMixerEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.BwMixer));
+        CalibrationEditor.Changed+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active)return;
+            settings.Calibration=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
+        CalibrationEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:EditorAdjustmentTool.CameraCalibration));
         PhotoEffectsEditor.ResetRequested+=()=>RequestReset(new(EditorResetKind.Tool,Tool:CurrentTool));
         HslEditor.Changed+=(value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;

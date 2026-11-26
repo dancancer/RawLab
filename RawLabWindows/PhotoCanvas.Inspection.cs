@@ -60,7 +60,7 @@ public sealed partial class PhotoCanvas
     private void UpdateInspectionCursor()
     {
         if (!GeometryEditing)
-            Cursor = WbProbeEnabled || HslTargetEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand;
+            Cursor = WbProbeEnabled || PointColorProbeEnabled || HslTargetEnabled || inspectionPinMode ? Cursors.Cross : Cursors.Hand;
     }
 
     private bool HandleInspectionMove(Point point)
@@ -80,7 +80,7 @@ public sealed partial class PhotoCanvas
     }
 
     private bool CanPinAt(Point point) =>
-        !HslTargetEnabled && !GeometryEditing && !draggingDivider && image != null &&
+        !HslTargetEnabled && !WbProbeEnabled && !PointColorProbeEnabled && !GeometryEditing && !draggingDivider && image != null &&
         ImageBounds.Width > 0 && ImageBounds.Height > 0 &&
         (inspectionPinMode || Keyboard.Modifiers == ModifierKeys.Alt) &&
         VisibleImageBounds.Contains(point) &&

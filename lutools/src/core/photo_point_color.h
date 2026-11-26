@@ -56,6 +56,19 @@ struct PointColorOptions {
     }
 };
 
+void pointColorHsbToRgb(float hueDeg, float saturation, float brightness, float outRgb[3]);
+void pointColorRgbToHsb(float r, float g, float b, float& outHueDeg, float& outSat, float& outBright);
+bool pointColorPreviewSwatch(
+    float srcHue,
+    float srcSaturation,
+    float srcLuminance,
+    float hueShift,
+    float saturationShift,
+    float luminanceShift,
+    float outSrcRgb[3],
+    float outShiftedRgb[3]
+);
+RGB applyPointColorPixel(const RGB& pixel, const PointColorOptions& options);
 void applyPointColor(ImageData& image, const PointColorOptions& options);
 
 } // namespace sony2fuji

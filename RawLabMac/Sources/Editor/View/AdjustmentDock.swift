@@ -158,6 +158,7 @@ struct AdjustmentDock: View {
                 if tool == .hsl { model.cancelHSLTarget(); model.hslTargetEnabled = false }
                 if tool == .toneCurve { model.cancelCurveTarget(); model.curveTargetEnabled = false }
                 if tool == .whiteBalance { model.cancelWBProbe(); model.wbEyedropperEnabled = false }
+                if tool == .pointColor { model.cancelPointColorEyedropper() }
                 ParameterValueField.cancelPendingInputs()
                 collapsedTool = tool
             } else {
@@ -248,6 +249,43 @@ struct AdjustmentDock: View {
                         model.setInteracting(editing)
                     }, onCancelTarget: model.cancelHSLTarget)
             }
+        } else if tool == .pointColor {
+            MacPointColorControls(
+                settings: Binding(get: { model.settings.pointColorSettings }, set: { model.settings.pointColorSettings = $0 }),
+                selectedIndex: $model.selectedPointColorSwatchIndex,
+                eyedropperEnabled: $model.pointColorEyedropperEnabled,
+                resetVersion: resetVersion,
+                canSample: model.result != nil,
+                onEditingChanged: model.setInteracting,
+                onCancelEyedropper: model.cancelPointColorEyedropper,
+                onReset: { model.requestAdjustmentReset(.tool(.pointColor)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .selectiveColor {
+            MacSelectiveColorControls(
+                settings: Binding(get: { model.settings.selectiveColorSettings }, set: { model.settings.selectiveColorSettings = $0 }),
+                selectedBandIndex: $model.selectedSelectiveColorBandIndex,
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.selectiveColor)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .bwMixer {
+            MacBwMixerControls(
+                settings: Binding(get: { model.settings.bwMixerSettings }, set: { model.settings.bwMixerSettings = $0 }),
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.bwMixer)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .cameraCalibration {
+            MacCameraCalibrationControls(
+                settings: Binding(get: { model.settings.calibrationSettings }, set: { model.settings.calibrationSettings = $0 }),
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.cameraCalibration)) }
+            )
+            .disabled(model.result == nil)
         } else if tool == .denoise {
             if model.settings.isHDREditing {
                 VStack(spacing: 8) {

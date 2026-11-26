@@ -8,7 +8,8 @@ enum class AdjustmentGroup(val tool: Int) {
     SATURATION(7), WHITE_BALANCE(8), SHARPENING(10), DENOISE(11), VIGNETTE(12), GRAIN(13),
     HSL(14), RECIPE(15), LENS(16), GEOMETRY(17), BLACK_POINT(18), WHITE_POINT(19),
     VIBRANCE(20), GRADING(21), CLARITY(22), DEHAZE(23),
-    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27), TEXTURE(28);
+    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27), TEXTURE(28),
+    POINT_COLOR(29), SELECTIVE_COLOR(30), BW_MIXER(31), CAMERA_CALIBRATION(32);
 
     companion object {
         fun forTool(tool: Int): AdjustmentGroup = entries.first { it.tool == if (tool == 9) 8 else tool }
@@ -50,6 +51,10 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.HDR_SDR_EXPOSURE -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrExposureEV = value.hdr!!.renditionSettings.sdrExposureEV))) else current
         AdjustmentGroup.HDR_SDR_CONTRAST -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrContrast = value.hdr!!.renditionSettings.sdrContrast))) else current
         AdjustmentGroup.HDR_SDR_SATURATION -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrSaturation = value.hdr!!.renditionSettings.sdrSaturation))) else current
+        AdjustmentGroup.POINT_COLOR -> current.copy(pointColor = value.pointColor)
+        AdjustmentGroup.SELECTIVE_COLOR -> current.copy(selectiveColor = value.selectiveColor)
+        AdjustmentGroup.BW_MIXER -> current.copy(bwMixer = value.bwMixer)
+        AdjustmentGroup.CAMERA_CALIBRATION -> current.copy(calibration = value.calibration)
     }
     return result.canonicalZeros().synchronizeHDR()
 }

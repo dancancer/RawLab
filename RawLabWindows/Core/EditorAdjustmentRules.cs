@@ -1,7 +1,7 @@
 namespace RawLab.Windows;
 
 public enum EditorAdjustmentGroup { Looks, Light, Color, Effects, Detail, Geometry, HdrRendition }
-public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze, Texture, HdrPeakLimit, HdrSdrExposure, HdrSdrContrast, HdrSdrSaturation }
+public enum EditorAdjustmentTool { Film, MasterRecipe, Strength, Exposure, Highlights, Shadows, Contrast, ToneCurve, WhiteBalance, Saturation, Hsl, Vignette, Grain, Denoise, Sharpening, Geometry, Lens, BlackPoint, WhitePoint, Vibrance, ColorGrading, Clarity, Dehaze, Texture, HdrPeakLimit, HdrSdrExposure, HdrSdrContrast, HdrSdrSaturation, PointColor, SelectiveColor, BwMixer, CameraCalibration }
 public enum EditorResetKind { Group, HslChannel, AllHsl, All, Tool, GradingZone, GradingGlobal, AllGrading }
 public sealed record EditorResetScope(EditorResetKind Kind, EditorAdjustmentGroup Group = EditorAdjustmentGroup.Looks, int Channel = 0, EditorAdjustmentTool Tool = EditorAdjustmentTool.Film, ColorGradingZone Zone = ColorGradingZone.Shadows);
 public enum EditorResetStatus { Ready, NoChange, Invalid, Blocked }
@@ -14,7 +14,7 @@ public static class EditorAdjustmentRules
     private static readonly IReadOnlyList<EditorAdjustmentTool>[] GroupTools = [
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Film, EditorAdjustmentTool.MasterRecipe, EditorAdjustmentTool.Strength }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Exposure, EditorAdjustmentTool.Highlights, EditorAdjustmentTool.Shadows, EditorAdjustmentTool.BlackPoint, EditorAdjustmentTool.WhitePoint, EditorAdjustmentTool.Contrast, EditorAdjustmentTool.ToneCurve }),
-        Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl, EditorAdjustmentTool.ColorGrading }),
+        Array.AsReadOnly(new[] { EditorAdjustmentTool.WhiteBalance, EditorAdjustmentTool.Saturation, EditorAdjustmentTool.Vibrance, EditorAdjustmentTool.Hsl, EditorAdjustmentTool.PointColor, EditorAdjustmentTool.SelectiveColor, EditorAdjustmentTool.BwMixer, EditorAdjustmentTool.ColorGrading, EditorAdjustmentTool.CameraCalibration }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Clarity, EditorAdjustmentTool.Dehaze, EditorAdjustmentTool.Texture, EditorAdjustmentTool.Vignette, EditorAdjustmentTool.Grain }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Denoise, EditorAdjustmentTool.Sharpening }),
         Array.AsReadOnly(new[] { EditorAdjustmentTool.Geometry, EditorAdjustmentTool.Lens }),
@@ -55,6 +55,8 @@ public static class EditorAdjustmentRules
         EditorAdjustmentTool.Clarity => "清晰度", EditorAdjustmentTool.Dehaze => "去朦胧", EditorAdjustmentTool.Texture => "纹理",
         EditorAdjustmentTool.ToneCurve => "曲线",
         EditorAdjustmentTool.WhiteBalance => "白平衡", EditorAdjustmentTool.Hsl => "HSL",
+        EditorAdjustmentTool.PointColor => "点颜色", EditorAdjustmentTool.SelectiveColor => "可选颜色",
+        EditorAdjustmentTool.BwMixer => "黑白", EditorAdjustmentTool.CameraCalibration => "相机校准",
         EditorAdjustmentTool.Vignette => "暗角", EditorAdjustmentTool.Grain => "颗粒",
         EditorAdjustmentTool.Denoise => "降噪", EditorAdjustmentTool.Geometry => "几何",
         EditorAdjustmentTool.BlackPoint => "黑场", EditorAdjustmentTool.WhitePoint => "白场", EditorAdjustmentTool.Vibrance => "鲜艳度",
@@ -240,6 +242,10 @@ public static class EditorAdjustmentRules
                 return value with { CameraWhiteBalance = defaults.CameraWhiteBalance };
             case EditorAdjustmentTool.ColorGrading: return value with { ColorGrading = null };
             case EditorAdjustmentTool.Hsl: return value with { Hsl = new() };
+            case EditorAdjustmentTool.PointColor: return value with { PointColor = null };
+            case EditorAdjustmentTool.SelectiveColor: return value with { SelectiveColor = null };
+            case EditorAdjustmentTool.BwMixer: return value with { BwMixer = null };
+            case EditorAdjustmentTool.CameraCalibration: return value with { CameraCalibration = null };
             case EditorAdjustmentTool.Vignette:
             case EditorAdjustmentTool.Grain:
                 var effects = value.Effects ?? new();

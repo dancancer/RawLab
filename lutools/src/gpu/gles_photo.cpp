@@ -3,6 +3,7 @@
 #include "gpu/gles_recovery.h"
 #include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "gpu/lut_gpu_internal.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_defringe.h"
@@ -110,7 +111,7 @@ struct GlesPhotoRenderer::Impl {
     EGLSurface surface = EGL_NO_SURFACE;
     GLuint program = 0, spatialProgram = 0;
     GLuint buffers[7]{}; // 0:src, 1:cache, 2:dst, 3:auxField, 4:dcpInvalid, 5:spAux1, 6:spAux2
-    GLuint curveUbo = 0, dcpUbo = 0, spatialUbo = 0, texture = 0;
+    GLuint curveUbo = 0, dcpUbo = 0, colorScienceUbo = 0, spatialUbo = 0, texture = 0;
     size_t capacities[7]{}, blockLimit = 0, dispatchLimit = 0;
     GLint textureLimit = 0;
     uint64_t cachedRevision = 0;
@@ -125,6 +126,7 @@ struct GlesPhotoRenderer::Impl {
                     glDeleteBuffers(7, buffers);
                     if (curveUbo) glDeleteBuffers(1, &curveUbo);
                     if (dcpUbo) glDeleteBuffers(1, &dcpUbo);
+                    if (colorScienceUbo) glDeleteBuffers(1, &colorScienceUbo);
                     if (spatialUbo) glDeleteBuffers(1, &spatialUbo);
                     if (texture) glDeleteTextures(1, &texture);
                     if (program) glDeleteProgram(program);
@@ -174,6 +176,9 @@ struct GlesPhotoRenderer::Impl {
         glGenBuffers(1, &curveUbo);
         glBindBuffer(GL_UNIFORM_BUFFER, curveUbo);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(CurveUbo), nullptr, GL_DYNAMIC_DRAW);
+        glGenBuffers(1, &colorScienceUbo);
+        glBindBuffer(GL_UNIFORM_BUFFER, colorScienceUbo);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(ColorScienceGpuParams), nullptr, GL_DYNAMIC_DRAW);
         glGenBuffers(1, &dcpUbo);
         glBindBuffer(GL_UNIFORM_BUFFER, dcpUbo);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(DcpGpuUniforms), nullptr, GL_DYNAMIC_DRAW);
@@ -373,6 +378,7 @@ struct GlesPhotoRenderer::Impl {
         glUseProgram(program);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, curveUbo);
         glBindBufferBase(GL_UNIFORM_BUFFER, 1, dcpUbo);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 2, colorScienceUbo);
         const PhotoBands plan(input.width, input.height, width, height, std::min(kPhotoTileBytes, blockLimit), dispatchLimit);
         const size_t sourceRowBytes = static_cast<size_t>(input.width) * sizeof(RGB);
         const size_t outputRowBytes = static_cast<size_t>(width) * sizeof(RGB);
@@ -610,6 +616,10 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         const bool anyCurve = ubo.curveCounts[0] || ubo.curveCounts[1] || ubo.curveCounts[2] || ubo.curveCounts[3];
         glBufferSubData(GL_UNIFORM_BUFFER, 0, anyCurve ? sizeof(CurveUbo) : 64, &ubo);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, context.curveUbo);
+        const ColorScienceGpuParams csUbo = colorScienceGpuParameters(params);
+        glBindBuffer(GL_UNIFORM_BUFFER, context.colorScienceUbo);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ColorScienceGpuParams), &csUbo);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 2, context.colorScienceUbo);
         glUniform1i(context.uniform("hslActive"), params.hsl.active());
         glUniform3f(context.uniform("toneControls"),
             params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);

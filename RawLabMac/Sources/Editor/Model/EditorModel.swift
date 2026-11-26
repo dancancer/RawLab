@@ -191,6 +191,7 @@ final class EditorModel: ObservableObject {
             cancelHSLTarget(); hslTargetEnabled = false
             cancelCurveTarget(); curveTargetEnabled = false
             cancelWBProbe(); wbEyedropperEnabled = false
+            cancelPointColorEyedropper()
         }
     } }
     var sourceNativeSize: CGSize?
@@ -200,6 +201,11 @@ final class EditorModel: ObservableObject {
     } }
     @Published var wbProbeSampling = false
     @Published var wbProbeNotice: WBProbeNotice?
+    @Published var pointColorEyedropperEnabled = false { didSet {
+        if pointColorEyedropperEnabled { inspection.pinModeEnabled = false }
+    } }
+    @Published var selectedPointColorSwatchIndex = 0
+    @Published var selectedSelectiveColorBandIndex = 0
     var hslTargetHistoryActive = false
     var hslPendingKeyDelta: Double = 0
     @Published var curveTargetEnabled = false { didSet {
@@ -229,6 +235,7 @@ final class EditorModel: ObservableObject {
         InspectionOverlayRenderer.shared.clear()
         sourceNativeSize = nil
         wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
+        pointColorEyedropperEnabled = false; selectedPointColorSwatchIndex = 0
         closeQuickPresets()
         cancelCollectionExportPreparation()
         clearSharpenMaskPreviewCache()

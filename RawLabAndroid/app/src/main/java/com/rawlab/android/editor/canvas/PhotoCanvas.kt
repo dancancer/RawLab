@@ -17,6 +17,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.drawscope.Stroke
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.PointColorProbeActions
 import com.rawlab.android.editor.controls.WbProbeActions
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.background
@@ -180,6 +181,7 @@ internal fun PhotoCanvas(
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null,
+    pointColorProbe: PointColorProbeActions? = null,
     sharpenMaskBitmap: android.graphics.Bitmap? = null,
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
@@ -194,6 +196,7 @@ internal fun PhotoCanvas(
     val hold by rememberUpdatedState(onHoldBefore)
     val target by rememberUpdatedState(hslTarget)
     val probe by rememberUpdatedState(wbProbe)
+    val pointProbe by rememberUpdatedState(pointColorProbe)
     val latestOnDetailRequest by rememberUpdatedState(onDetailRequest)
     val latestInspection by rememberUpdatedState(inspection)
     val latestOnInspectionMove by rememberUpdatedState(onInspectionMove)
@@ -206,7 +209,7 @@ internal fun PhotoCanvas(
     var inspectionTouch by remember { mutableStateOf<Offset?>(null) }
     var inspectionAnchorPt by remember { mutableStateOf<Offset?>(null) }
     val hdrParameters = hdrPreview.parameters
-    DisposableEffect(Unit) { onDispose { hold(false); target?.cancel(); probe?.cancel() } }
+    DisposableEffect(Unit) { onDispose { hold(false); target?.cancel(); probe?.cancel(); pointProbe?.cancel() } }
     BoxWithConstraints(Modifier.fillMaxSize().padding(if (margins) photoViewMargin else 0.dp).clipToBounds()) {
         if (constraints.maxWidth == 0 || constraints.maxHeight == 0) return@BoxWithConstraints
         val canvasWidth = constraints.maxWidth.toFloat(); val canvasHeight = constraints.maxHeight.toFloat()
@@ -246,7 +249,7 @@ internal fun PhotoCanvas(
         LaunchedEffect(previewEdge) { onPreviewSizeChange(previewEdge) }
         LaunchedEffect(detailRequest, pair.nativeWidth, pair.nativeHeight) { latestOnDetailRequest(detailRequest) }
         val percent = "${(projectedZoom.scale * 100).roundToInt()}%"
-        val before = holdingBefore && !compare && hslTarget == null && wbProbe == null
+        val before = holdingBefore && !compare && hslTarget == null && wbProbe == null && pointColorProbe == null
         val resultOrigin = Offset(if (sideBySide && horizontal) primary.width + gapPx else 0f,
             if (sideBySide && !horizontal) primary.height + gapPx else 0f)
         val touchImage by rememberUpdatedState(pair.result)
@@ -279,8 +282,8 @@ internal fun PhotoCanvas(
                 val shownBitmap = activeMaskBitmap ?: InspectionBitmap.rememberBitmap(rawShownBitmap, inspection.overlay)
                 val activeTiles = if (activeMaskBitmap != null) emptyList() else if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
-                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null, wbProbe != null, inspection.monitorEnabled) {
-                        if (hslTarget == null && wbProbe == null && !inspection.monitorEnabled) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
+                    .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null, wbProbe != null, pointColorProbe != null, inspection.monitorEnabled) {
+                        if (hslTarget == null && wbProbe == null && pointColorProbe == null && !inspection.monitorEnabled) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },
                             onLongPress = { if (!compare && viewingEnabled) hold(true) },
                             onPress = { try { tryAwaitRelease() } finally { hold(false) } }, onTap = { if (viewingEnabled || !showOverlays) tap() })
                     }) {
@@ -363,8 +366,8 @@ internal fun PhotoCanvas(
             customActions = buildList {
                 add(CustomAccessibilityAction("100%") { state.zoom = PhotoZoom(1f); true })
                 add(CustomAccessibilityAction(fitDescription) { state.view = PhotoViewTransform(); true })
-                if (hslTarget == null && wbProbe == null && (viewingEnabled || !showOverlays)) add(CustomAccessibilityAction(pureAction) { tap(); true })
-                if (hslTarget == null && wbProbe == null && viewingEnabled && !compare) add(CustomAccessibilityAction(holdAction) { hold(!holdingBefore); true })
+                if (hslTarget == null && wbProbe == null && pointColorProbe == null && (viewingEnabled || !showOverlays)) add(CustomAccessibilityAction(pureAction) { tap(); true })
+                if (hslTarget == null && wbProbe == null && pointColorProbe == null && viewingEnabled && !compare) add(CustomAccessibilityAction(holdAction) { hold(!holdingBefore); true })
             }
         }) {
             // 手势接收层只包住照片，保证跨 pane 的两指仍在同一命中链；控件叠层保持优先。
@@ -373,15 +376,15 @@ internal fun PhotoCanvas(
                 hslTargetCoordinates(primary, state.view.project(primary), local.x, local.y, null, 0f)
                     ?.let { Offset(it.first.coerceIn(0f, 1f), it.second.coerceIn(0f, 1f)) }
             }
-            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, hslTarget?.state?.curveMode, hslTarget?.state?.curveChannel, wbProbe != null, inspection.monitorEnabled) {
+            Box(Modifier.fillMaxSize().pointerInput(state, primary, compare, mode, horizontal, hslTarget != null, hslTarget?.state?.axis, hslTarget?.state?.curveMode, hslTarget?.state?.curveChannel, wbProbe != null, pointColorProbe != null, inspection.monitorEnabled) {
                 photoGestures(state, primary, compare && mode == ComparisonMode.WIPE, { hold(false) },
-                    target = { target }, wbProbe = { probe }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
+                    target = { target }, wbProbe = { probe }, pointColorProbe = { pointProbe }, targetHit = targetHit, targetFocus = { focusRequester.requestFocus() },
                     targetPointer = { position, anchor ->
                         targetTouch = position
                         if (anchor != null) { targetAnchor = anchor; targetImage = touchImage }
                         if (position == null) targetImage = null
                     },
-                    inspectionProbe = { target == null && probe == null && latestInspection.monitorEnabled },
+                    inspectionProbe = { target == null && probe == null && pointProbe == null && latestInspection.monitorEnabled },
                     inspectionHit = inspectionHit,
                     inspectionMove = { x, y -> latestOnInspectionMove(x, y) },
                     inspectionPointer = { pos, anchor ->
@@ -407,7 +410,7 @@ internal fun PhotoCanvas(
                         Modifier.align(Alignment.TopEnd)
                             .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
-                if (hslTarget == null && wbProbe == null) {
+                if (hslTarget == null && wbProbe == null && pointColorProbe == null) {
                     BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (workspaceControls) 48.dp else 0.dp)) {
                         PhotoInfoOverlay(info, infoMode, onInfoClick, maxHeight, if (compare) 112.dp else 64.dp, !workspaceControls)
                     }
@@ -628,6 +631,7 @@ private fun InfoLine(title: String, value: String?) {
 
 private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, area: PhotoViewport, wipe: Boolean,
     cancelHold: () -> Unit, target: () -> HslTargetActions? = { null }, wbProbe: () -> WbProbeActions? = { null },
+    pointColorProbe: () -> PointColorProbeActions? = { null },
     targetHit: (Offset) -> Offset? = { null }, targetPointer: (Offset?, Offset?) -> Unit = { _, _ -> }, targetFocus: () -> Unit = {},
     inspectionProbe: () -> Boolean = { false }, inspectionHit: (Offset) -> Offset? = { null },
     inspectionMove: (Float, Float) -> Unit = { _, _ -> }, inspectionPointer: (Offset?, Offset?) -> Unit = { _, _ -> },
@@ -644,9 +648,11 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
         val wipeHit = wipe && abs(downPosition.x - handleX) <= 24.dp.toPx() && downPosition.x in image.left..image.right && downPosition.y in image.top..image.bottom
         var targeting = target()
         var activeProbe = if (targeting == null) wbProbe() else null
+        var activePointProbe = if (targeting == null && activeProbe == null) pointColorProbe() else null
         if (wipeHit) {
             targeting?.cancel(); targeting = null
             activeProbe?.cancel(); activeProbe = null
+            activePointProbe?.cancel(); activePointProbe = null
         }
         var targetStarted = false; var targetEnded = false
         var inspectionStarted = false
@@ -657,7 +663,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                 targetStarted = true; targeting.begin(point.x, point.y); targetPointer(down.position, point)
                 targetFocus(); down.consume()
             } else targeting.reject()
-        } else if (activeProbe != null) {
+        } else if (activeProbe != null || activePointProbe != null) {
             probeDownPoint = targetHit(down.position)
         } else if (!wipeHit && inspectionProbe()) {
             val point = inspectionHit(down.position)
@@ -679,7 +685,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                 if (fingers >= 2) {
                     if (targetStarted) { targeting?.cancel(); targetStarted = false; targetPointer(null, null) }
                     if (inspectionStarted) { inspectionStarted = false; inspectionPointer(null, null) }
-                    activeProbe = null; probeDownPoint = null
+                    activeProbe = null; activePointProbe = null; probeDownPoint = null
                     cancelHold(); transformed = true
                     val zoom = state.view.project(area)
                     val pointers = event.changes.filter { it.pressed && it.previousPressed }
@@ -706,7 +712,7 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                         }
                         change.consume()
                     } else if (dragging) {
-                        activeProbe = null; probeDownPoint = null
+                        activeProbe = null; activePointProbe = null; probeDownPoint = null
                         cancelHold()
                         if (wipeHit) state.split = (initialSplit + (change.position.x - down.position.x) / image.width).coerceIn(0f, 1f)
                         else state.transform(1f, event.calculatePan(), change.previousPosition - origin, area)
@@ -717,11 +723,17 @@ private suspend fun PointerInputScope.photoGestures(state: PhotoCanvasState, are
                     event.changes.firstOrNull { it.id == down.id }?.let { targeting?.move((down.position.y-it.position.y)*targetScale) }
                     targeting?.end(); targetEnded = true
                 }
-                if (fingers == 0 && activeProbe != null && !transformed && !dragging) {
+                if (fingers == 0 && (activeProbe != null || activePointProbe != null) && !transformed && !dragging) {
                     val sampled = probeDownPoint
-                    if (sampled != null) activeProbe.sample(sampled.x, sampled.y)
-                    else activeProbe.reject()
+                    if (activeProbe != null) {
+                        if (sampled != null) activeProbe.sample(sampled.x, sampled.y)
+                        else activeProbe.reject()
+                    } else if (activePointProbe != null) {
+                        if (sampled != null) activePointProbe.sample(sampled.x, sampled.y)
+                        else activePointProbe.reject()
+                    }
                     activeProbe = null
+                    activePointProbe = null
                 }
             } while (event.changes.any { it.pressed })
         } finally {

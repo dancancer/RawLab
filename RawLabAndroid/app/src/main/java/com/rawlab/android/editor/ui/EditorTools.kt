@@ -57,14 +57,16 @@ internal val editorToolTitles = listOf(R.string.film, R.string.strength, R.strin
     R.string.shadows, R.string.contrast, R.string.curve_title, R.string.saturation, R.string.white_balance,
     R.string.tint, R.string.sharpening, R.string.denoise, R.string.vignette, R.string.grain, R.string.hsl,
     R.string.master_recipes, R.string.info_lens, R.string.geometry, R.string.black_point, R.string.white_point, R.string.vibrance, R.string.color_grading, R.string.clarity, R.string.dehaze,
-    R.string.hdr_peak_limit, R.string.hdr_sdr_exposure, R.string.hdr_sdr_contrast, R.string.hdr_sdr_saturation, R.string.texture)
+    R.string.hdr_peak_limit, R.string.hdr_sdr_exposure, R.string.hdr_sdr_contrast, R.string.hdr_sdr_saturation, R.string.texture,
+    R.string.point_color, R.string.selective_color, R.string.bw_enabled, R.string.camera_calibration)
 
 internal val editorToolIcons: List<ImageVector> get() = listOf(AppIcons.Outlined.PhotoFilter, AppIcons.Outlined.Tune,
     AppIcons.Outlined.Exposure, AppIcons.Outlined.WbSunny, AppIcons.Outlined.DarkMode, AppIcons.Outlined.Contrast,
     AppIcons.Outlined.SsidChart, AppIcons.Outlined.WaterDrop, AppIcons.Outlined.Thermostat, AppIcons.Outlined.Palette,
     AppIcons.Outlined.Deblur, AppIcons.Outlined.BlurOff, AppIcons.Outlined.Circle, AppIcons.Outlined.Grain,
     AppIcons.Outlined.ColorLens, AppIcons.Outlined.Layers, AppIcons.Outlined.CenterFocusStrong, AppIcons.Outlined.CropRotate, AppIcons.Filled.Circle, AppIcons.Outlined.RadioButtonUnchecked, AppIcons.Filled.WaterDrop, AppIcons.Outlined.Palette, AppIcons.Outlined.Tonality, AppIcons.Outlined.Cloud,
-    AppIcons.Outlined.BrightnessHigh, AppIcons.Outlined.BrightnessMedium, AppIcons.Outlined.Brightness6, AppIcons.Outlined.Opacity, AppIcons.Outlined.GridView)
+    AppIcons.Outlined.BrightnessHigh, AppIcons.Outlined.BrightnessMedium, AppIcons.Outlined.Brightness6, AppIcons.Outlined.Opacity, AppIcons.Outlined.GridView,
+    AppIcons.Outlined.AutoFixHigh, AppIcons.Outlined.FilterList, AppIcons.Outlined.Compare, AppIcons.Outlined.PhotoCamera)
 
 internal fun whiteBalanceChanged(edits: EditSettings, shotTemperature: Float?, shotTint: Float?): Boolean {
     val temperature = shotTemperature ?: edits.temperature
@@ -78,7 +80,7 @@ internal fun mobileEditorGroups(isHDREditing: Boolean) = listOf(EditorAdjustment
 internal fun mobileEditorTools(group: EditorAdjustmentGroup): List<Int> = when (group) {
     EditorAdjustmentGroup.LOOKS -> listOf(0, 15)
     EditorAdjustmentGroup.LIGHT -> listOf(2, 5, 3, 4, 19, 18, 6)
-    EditorAdjustmentGroup.COLOR -> listOf(8, 20, 7, 14, 21)
+    EditorAdjustmentGroup.COLOR -> listOf(8, 20, 7, 14, 29, 30, 31, 21, 32)
     EditorAdjustmentGroup.DETAIL -> listOf(10, 11)
     else -> EditorAdjustmentRules.tools(group)
 }

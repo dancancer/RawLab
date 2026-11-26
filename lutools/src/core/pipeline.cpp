@@ -1807,6 +1807,7 @@ RenderStatus Pipeline::processPreviewRoi(
                 applyExposureAndWhiteBalance(guideImage.pixels[i], exposure, wb);
             }
         });
+        applyCameraCalibration(guideImage, cameraCalibration_);
         RenderParams guideParams = local;
         if (basicToneActive) {
             basicField = buildBasicToneV3Field(guideImage, canvasW, canvasH);
@@ -1831,12 +1832,15 @@ RenderStatus Pipeline::processPreviewRoi(
                 }
             }
             if (atmosphere_.clarity != 0.0f) {
+                applyBwMixer(guideImage, bwMixer_);
                 if (basicV3) applyBasicBlackWhiteV3(guideImage, toneControls_);
                 else applyBlackWhite(guideImage, toneControls_);
                 applyToneAdjustments(guideImage, guideParams, channelCurves_, basicV3);
                 if (basicV3) applyBasicVibranceV3(guideImage, toneControls_.vibrance);
                 else applyVibrance(guideImage, toneControls_);
                 applyHsl(guideImage, hsl_);
+                applyPointColor(guideImage, pointColor_);
+                applySelectiveColor(guideImage, selectiveColor_);
                 applyColorGrading(guideImage, colorGrading_);
                 clarityField = buildClarityField(guideImage, canvasW, canvasH, processingVersion_);
             }
@@ -1873,6 +1877,10 @@ RenderStatus Pipeline::processPreviewRoi(
     local.hsl = hsl_;
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
+    local.calibration = cameraCalibration_;
+    local.pointColor = pointColor_;
+    local.selectiveColor = selectiveColor_;
+    local.bw = bwMixer_;
     local.sharpenV2 = sharpenV2_;
     local.defringe = defringe_;
     local.atmosphereSourceWidth = canvasW;
@@ -1891,6 +1899,7 @@ RenderStatus Pipeline::processPreviewRoi(
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) applyExposureAndWhiteBalance(image.pixels[i], exposure, wb);
     });
+    applyCameraCalibration(image, cameraCalibration_);
     if (basicToneActive) {
         applyBasicToneV3WithField(image, basicTone, basicField, roiMap);
         local.highlights = local.shadows = 0.0f;
@@ -1907,12 +1916,15 @@ RenderStatus Pipeline::processPreviewRoi(
     if (atmosphere_.dehaze != 0.0f) {
         applyDehazeWithAnalysis(image, atmosphere_.dehaze, dehazeState, roiMap);
     }
+    applyBwMixer(image, bwMixer_);
     if (basicV3) applyBasicBlackWhiteV3(image, toneControls_);
     else applyBlackWhite(image, toneControls_);
     applyToneAdjustments(image, local, channelCurves_, basicV3);
     if (basicV3) applyBasicVibranceV3(image, toneControls_.vibrance);
     else applyVibrance(image, toneControls_);
     applyHsl(image, hsl_);
+    applyPointColor(image, pointColor_);
+    applySelectiveColor(image, selectiveColor_);
     applyColorGrading(image, colorGrading_);
     const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
     checkProcessingCancellation();
@@ -2027,6 +2039,10 @@ RenderStatus Pipeline::processImpl(
     const bool basicControlsActive = basicV3 && (basicTone.active() || local.contrast != 1.0f || toneControlsActive);
     const bool neighborhoodActive = atmosphereActive || basicToneActive;
     const bool colorGradingActive = colorGrading_.active();
+    const bool calibrationActive = cameraCalibration_.active();
+    const bool bwMixerActive = bwMixer_.active();
+    const bool pointColorActive = pointColor_.active();
+    const bool selectiveColorActive = selectiveColor_.active();
     const bool geometryActive = geometry_.active();
     if (geometryActive && effectiveGpuMode == GpuMode::Force) {
         unsupportedReason_ = UnsupportedReason::ForceGpu;
@@ -2057,6 +2073,7 @@ RenderStatus Pipeline::processImpl(
     const bool curvesGpuUnsupported = channelCurvesActive || !toneCurve_.gpuSupported();
     const bool cpuOnlyStages = neighborhoodActive || basicControlsActive || curvesGpuUnsupported ||
         toneCurve_.active() || colorGradingActive || toneControlsActive || hslActive ||
+        calibrationActive || bwMixerActive || pointColorActive || selectiveColorActive ||
         effectsActive || waveletActive || chromaMode != 0;
 #endif
     const bool c5Wavelet = waveletActive && usesC5Denoise(waveletDenoise_.processingVersion);
@@ -2492,6 +2509,10 @@ RenderStatus Pipeline::processImpl(
     local.hsl = hsl_;
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
+    local.calibration = cameraCalibration_;
+    local.pointColor = pointColor_;
+    local.selectiveColor = selectiveColor_;
+    local.bw = bwMixer_;
     local.sharpenV2 = sharpenV2_;
     local.defringe = defringe_;
     local.atmosphereSourceWidth = atmosphereSourceWidth;
@@ -2679,6 +2700,7 @@ RenderStatus Pipeline::processImpl(
         }
     });
     colorSpace = ColorSpace::sRGB;
+    applyCameraCalibration(image, cameraCalibration_);
     if (basicToneActive) {
         if (local.basicToneField && !local.basicToneField->empty() &&
             image.width == basicFieldSourceWidth && image.height == basicFieldSourceHeight) {
@@ -2694,8 +2716,10 @@ RenderStatus Pipeline::processImpl(
 
     auto lookConfig = gpuConfig_;
     if (cpuAnalysis || contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive ||
-        hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive ||
-        effectsActive || defringe_.active() || (sharpenV2_.luminanceV2 && local.sharpening > 0.0f)) {
+        hslActive || toneControlsActive || colorGradingActive || calibrationActive ||
+        bwMixerActive || pointColorActive || selectiveColorActive ||
+        chromaMode != 0 || waveletActive || effectsActive ||
+        defringe_.active() || (sharpenV2_.luminanceV2 && local.sharpening > 0.0f)) {
         lookConfig.mode = GpuMode::Off;
     }
     status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);

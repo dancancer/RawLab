@@ -66,6 +66,34 @@ extension ContentView {
             ), onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .pointColor && !workingSettings.isHDREditing {
+            IOSPointColorControls(
+                settings: Binding(get: { workingSettings.pointColorSettings }, set: { workingSettings.pointColorSettings = $0 }),
+                selectedIndex: $coordinator.selectedPointColorSwatchIndex,
+                eyedropperEnabled: $coordinator.pointColorEyedropperEnabled,
+                canSample: viewModel.hasImage && !editingLocked,
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .selectiveColor && !workingSettings.isHDREditing {
+            IOSSelectiveColorControls(
+                settings: Binding(get: { workingSettings.selectiveColorSettings }, set: { workingSettings.selectiveColorSettings = $0 }),
+                selectedBandIndex: $coordinator.selectedSelectiveColorBandIndex,
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .bwMixer && !workingSettings.isHDREditing {
+            IOSBwMixerControls(
+                settings: Binding(get: { workingSettings.bwMixerSettings }, set: { workingSettings.bwMixerSettings = $0 }),
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .cameraCalibration && !workingSettings.isHDREditing {
+            IOSCameraCalibrationControls(
+                settings: Binding(get: { workingSettings.calibrationSettings }, set: { workingSettings.calibrationSettings = $0 }),
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
         } else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {
             hdrRenditionPanel(hdrTool, keyPath: keyPath)
         } else if let adjustment = selectedAdjustment {

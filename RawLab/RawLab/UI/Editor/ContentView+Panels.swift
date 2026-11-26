@@ -398,7 +398,7 @@ extension ContentView {
                           interactionEnabled: !editorBusy && !draftExitPresented && !resetConfirmationPresented && !coordinator.showingDocumentImporter,
                           overlayAvoidanceRect: photoComparisonControlBounds,
                           onPreviewSizeChange: geometrySelected ? nil : onPreviewSizeChange,
-                          hslTarget: wbProbeActive ? wbProbeInput : (hslTargetActive ? hslTargetInput : (curveTargetActive ? curveTargetInput : nil)),
+                          hslTarget: pointColorEyedropperActive ? pointColorEyedropperInput : (wbProbeActive ? wbProbeInput : (hslTargetActive ? hslTargetInput : (curveTargetActive ? curveTargetInput : nil))),
                           hslTargetPoint: hslTargetActive ? coordinator.hslTargetPoint : (curveTargetActive ? coordinator.curveTargetPoint : nil),
                           nativePixelSize: viewModel.viewportNativeSize, previewSourceSize: viewModel.viewportPreviewSourceSize,
                           previewLongEdgeLimit: viewModel.viewportPreviewLimit,
@@ -408,7 +408,7 @@ extension ContentView {
                           onDetailRequest: geometrySelected ? nil : { viewModel.updateDetailRequest($0) },
                           hdr: maskOverlay != nil ? nil : viewModel.hdrPresentation, referenceHDR: viewModel.hdrReference, hdrDisplay: hdrDisplay,
                           inspectionOverlay: geometrySelected ? .none : coordinator.inspection.overlay,
-                          inspectionProbeEnabled: !geometrySelected && !hslTargetActive && !curveTargetActive && !wbProbeActive && coordinator.inspection.monitorEnabled,
+                          inspectionProbeEnabled: !geometrySelected && !hslTargetActive && !curveTargetActive && !wbProbeActive && !pointColorEyedropperActive && coordinator.inspection.monitorEnabled,
                           inspectionPoint: coordinator.inspection.liveOutputPoint,
                           inspectionAnchors: inspectionMarkerPoints,
                           onInspectionPointChange: { pt in
@@ -778,6 +778,10 @@ extension EditorToolSelection {
         case .lens: return "lens"
         case .geometry: return "geometry"
         case .adjustment(let kind): return kind.rawValue
+        case .pointColor: return "pointColor"
+        case .selectiveColor: return "selectiveColor"
+        case .bwMixer: return "bwMixer"
+        case .cameraCalibration: return "cameraCalibration"
         case .hdrPeakLimit: return "hdrPeakLimit"
         case .hdrSDRExposure: return "hdrSDRExposure"
         case .hdrSDRContrast: return "hdrSDRContrast"
@@ -791,6 +795,10 @@ extension EditorToolSelection {
         case .lens: return L10n.text("镜头")
         case .geometry: return L10n.text("几何")
         case .adjustment(let kind): return kind.title
+        case .pointColor: return L10n.text("点颜色")
+        case .selectiveColor: return L10n.text("可选颜色")
+        case .bwMixer: return L10n.text("黑白")
+        case .cameraCalibration: return L10n.text("相机校准")
         case .hdrPeakLimit: return L10n.text("HDR 亮度上限")
         case .hdrSDRExposure: return L10n.text("SDR 底图曝光")
         case .hdrSDRContrast: return L10n.text("SDR 底图对比度")
@@ -804,6 +812,10 @@ extension EditorToolSelection {
         case .lens: return "viewfinder"
         case .geometry: return "crop.rotate"
         case .adjustment(let kind): return kind.iconName
+        case .pointColor: return "eyedropper"
+        case .selectiveColor: return "circle.hexagongrid"
+        case .bwMixer: return "circle.lefthalf.filled"
+        case .cameraCalibration: return "camera.aperture"
         case .hdrPeakLimit: return "sun.max"
         case .hdrSDRExposure: return "plusminus.circle"
         case .hdrSDRContrast: return "circle.lefthalf.filled"

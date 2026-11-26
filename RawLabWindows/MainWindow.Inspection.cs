@@ -367,6 +367,7 @@ public partial class MainWindow
         if (inspection.PinModeEnabled)
         {
             CancelWbProbe();
+            CancelPointColorProbe();
             SetCurveTargetMode(false, curveTargetChannel);
             SetHslTargetMode(false, hslTargetAxis);
         }
