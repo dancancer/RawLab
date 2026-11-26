@@ -606,6 +606,8 @@ struct StageCase {
     // 逐像素算子只容许 ROI 重采样的 ±1 DN 级舍入；空间算子另有引导图分析场的近似。
     int maxDiff;
     double meanDiff;
+    // 旧版 sony2fuji_process 入口：参数来自请求，会话状态由 sony2fuji_apply_params 写入。
+    bool legacyEntry = false;
 };
 
 // 1:1 视口 ROI 与导出整图必须走同一条阶段链：任一算子在某条路径缺失或顺序错位，
@@ -700,6 +702,19 @@ void testStageOrderRoiMatchesFullRender() {
         {"film_optics", [](sony2fuji::EditRecipe& r) { r.filmOptics = {45, 65, 40, 10, 35, 60, 45}; }, 4, 0.5},
         {"effects", [](sony2fuji::EditRecipe& r) {
             r.effects.vignette_amount = -45; r.effects.grain_amount = 30; r.effects.grain_size = 30; }, 2, 0.35},
+        // Basic v3 黑白点把数值推出 [0,1] 后再经几何重采样：ROI 不得比导出多截断一次。
+        {"bw_mixer_black_white_points_perspective", [=](sony2fuji::EditRecipe& r) {
+            bwMixer(r); bwPoints(r);
+            r.perspective.horizontal = 0.15f; r.perspective.vertical = -0.10f; r.geometry.quarter_turns = 2; }, 2, 0.35},
+        {"bw_mixer_black_white_points_crop_rotate", [=](sony2fuji::EditRecipe& r) {
+            bwMixer(r); bwPoints(r);
+            r.geometry.crop_x = 0.06f; r.geometry.crop_y = 0.08f; r.geometry.crop_width = 0.86f; r.geometry.crop_height = 0.82f;
+            r.geometry.quarter_turns = 1; r.geometry.flip_horizontal = 1; r.geometry.straighten_degrees = 3.5f; }, 2, 0.35},
+        // 引导图的分析场必须与瓦片用同一套会话曲线，旧版入口也一样。
+        {"film_optics_luminosity_curve", [=](sony2fuji::EditRecipe& r) {
+            curves(r); r.curveApplyToLuminosity = true; r.filmOptics = {45, 65, 40, 10, 35, 60, 45}; }, 4, 0.5, true},
+        {"clarity_curves", [=](sony2fuji::EditRecipe& r) {
+            curves(r); r.curveApplyToLuminosity = true; r.atmosphere.clarity = 0.6f; }, 4, 0.5, true},
     };
 
     sony2fuji_render_options_v1 options{};
@@ -730,27 +745,59 @@ void testStageOrderRoiMatchesFullRender() {
             stage.apply(recipe);
             const std::string json = sony2fuji::serializeEditRecipe(recipe);
             const std::string label = std::string(stage.name) +
-                (version == SONY2FUJI_PROCESSING_BASIC_V3 ? " [basic v3]" : " [legacy]");
+                (version == SONY2FUJI_PROCESSING_BASIC_V3 ? " [basic v3]" : " [legacy]") +
+                (stage.legacyEntry ? " [sony2fuji_process]" : "");
 
-            auto full = options;
-            full.intent = SONY2FUJI_INTENT_FINAL;
-            full.size_mode = SONY2FUJI_SIZE_NATIVE;
             BufferGuard fullOut;
-            require(sony2fuji_session_render(session.get(), &full, json.c_str(), &fullOut.buf, nullptr) ==
-                SONY2FUJI_STATUS_OK, label + " full render failed");
-
-            sony2fuji_viewport_roi roi{sizeof(roi), 1, 0.30, 0.20, 0.70, 0.75, 0};
-            auto preview = options;
-            preview.intent = SONY2FUJI_INTENT_PREVIEW;
-            preview.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
-            preview.preview_long_edge = 1024;
-            preview.interactive_preview = 1;
-            preview.viewport_roi = &roi;
             BufferGuard roiOut;
+            sony2fuji_viewport_roi roi{sizeof(roi), 1, 0.30, 0.20, 0.70, 0.75, 0};
             sony2fuji_viewport_roi_result meta{};
             meta.struct_size = sizeof(meta);
-            require(sony2fuji_session_render(session.get(), &preview, json.c_str(), &roiOut.buf, &meta) ==
-                SONY2FUJI_STATUS_OK, label + " ROI render failed");
+            if (stage.legacyEntry) {
+                require(sony2fuji_apply_params(session.get(), json.c_str()) == SONY2FUJI_STATUS_OK,
+                    label + " apply_params failed");
+                auto request = recipe.toRequest();
+                request.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+                request.input_path = nullptr;
+                request.input_pixels = src.data();
+                request.input_width = width;
+                request.input_height = height;
+                request.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+                request.input_color_space = SONY2FUJI_COLOR_SRGB;
+                request.input_is_linear = 0;
+                request.output_target = SONY2FUJI_TARGET_BUFFER;
+                request.output_format = SONY2FUJI_OUTPUT_RGB8;
+                request.output_path = nullptr;
+                request.intent = SONY2FUJI_INTENT_FINAL;
+                request.size_mode = SONY2FUJI_SIZE_NATIVE;
+                sony2fuji_viewport_roi off{sizeof(off), 0, 0, 0, 1, 1, 0};
+                require(sony2fuji_session_set_viewport_roi(session.get(), &off) == SONY2FUJI_STATUS_OK, label + " roi off failed");
+                require(sony2fuji_process(session.get(), &request, &fullOut.buf) == SONY2FUJI_STATUS_OK,
+                    label + " full render failed");
+                require(sony2fuji_session_set_viewport_roi(session.get(), &roi) == SONY2FUJI_STATUS_OK, label + " set roi failed");
+                request.intent = SONY2FUJI_INTENT_PREVIEW;
+                request.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+                request.preview_long_edge = 1024;
+                require(sony2fuji_process(session.get(), &request, &roiOut.buf) == SONY2FUJI_STATUS_OK,
+                    label + " ROI render failed");
+                require(sony2fuji_session_get_viewport_roi_result(session.get(), &meta) == SONY2FUJI_STATUS_OK,
+                    label + " ROI result failed");
+                require(sony2fuji_session_set_viewport_roi(session.get(), &off) == SONY2FUJI_STATUS_OK, label + " roi off failed");
+            } else {
+                auto full = options;
+                full.intent = SONY2FUJI_INTENT_FINAL;
+                full.size_mode = SONY2FUJI_SIZE_NATIVE;
+                require(sony2fuji_session_render(session.get(), &full, json.c_str(), &fullOut.buf, nullptr) ==
+                    SONY2FUJI_STATUS_OK, label + " full render failed");
+                auto preview = options;
+                preview.intent = SONY2FUJI_INTENT_PREVIEW;
+                preview.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+                preview.preview_long_edge = 1024;
+                preview.interactive_preview = 1;
+                preview.viewport_roi = &roi;
+                require(sony2fuji_session_render(session.get(), &preview, json.c_str(), &roiOut.buf, &meta) ==
+                    SONY2FUJI_STATUS_OK, label + " ROI render failed");
+            }
             require(meta.active == 1 && roiOut.buf.width == meta.native_x1 - meta.native_x0 &&
                     roiOut.buf.height == meta.native_y1 - meta.native_y0 &&
                     meta.full_native_width == fullOut.buf.width && meta.full_native_height == fullOut.buf.height,

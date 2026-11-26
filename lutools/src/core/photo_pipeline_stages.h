@@ -47,9 +47,6 @@ struct CpuStagePass {
     SubRectMap roiMap{};
     // HSL 取样只需要 HSL 之前的像素。
     bool stopBeforeHsl = false;
-    // 现状：ROI 引导图和瓦片在黑白点之后会再执行一次黑白混合，整图只执行一次。
-    // 这里保留该行为以保证 ROI 输出逐字节不变，是否改为与整图一致待单独决定。
-    const BwMixerOptions* repeatBwAfterBlackWhite = nullptr;
     // 分析场：Full 可带入尺寸匹配的 Basic 场并以 dehaze 作去雾缓存；RoiGuide 写出、RoiTile 读入同一组场。
     const BasicToneV3Field* basicField = nullptr;
     BasicToneV3Field* basicFieldOut = nullptr;
@@ -92,8 +89,7 @@ void applyPostLookStages(
     const ColorGradingOptions& colorGrading,
     const std::array<ToneCurve, 3>& channels,
     bool basicV3,
-    bool applyHslAndGrading,
-    const BwMixerOptions* repeatBwAfterBlackWhite = nullptr
+    bool applyHslAndGrading
 );
 
 void applyDetailAdjustments(
