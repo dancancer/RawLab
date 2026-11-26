@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #include "gpu/image_stats.h"
 #include "gpu/photo_gpu.h"
+#include "metal_validation_support.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/gpu/lut_gpu.h"
 #include <algorithm>
@@ -69,7 +70,8 @@ bool sameImage(const sony2fuji::ImageData& actual, const sony2fuji::ImageData& e
 }
 }
 
-int main() {
+int main(int, char** argv) {
+    rawlabtest::waiveShaderValidationOnParavirtualDevice(argv);
     @autoreleasepool {
         using namespace sony2fuji;
         RenderParams params;
