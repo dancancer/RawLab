@@ -38,7 +38,7 @@ public partial class MainWindow
     private void SetHslTargetMode(bool enabled,int axis)
     {
         CancelHslTarget();hslTargetEnabled=enabled;hslTargetAxis=axis;
-        if(enabled){CancelWbProbe();SetCurveTargetMode(false,curveTargetChannel);EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
+        if(enabled){CancelWbProbe();CancelPointColorProbe();SetCurveTargetMode(false,curveTargetChannel);EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
         RefreshHslTarget();
     }
     private void RefreshHslTarget()
@@ -132,7 +132,7 @@ public partial class MainWindow
     private void SetCurveTargetMode(bool enabled, ToneCurveChannel channel)
     {
         CancelCurveTarget(); curveTargetEnabled = enabled; curveTargetChannel = channel;
-        if (enabled) { CancelWbProbe(); SetHslTargetMode(false, hslTargetAxis); EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
+        if (enabled) { CancelWbProbe(); CancelPointColorProbe(); SetHslTargetMode(false, hslTargetAxis); EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
         RefreshCurveTarget();
     }
     private void RefreshCurveTarget()

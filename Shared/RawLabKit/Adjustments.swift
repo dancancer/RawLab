@@ -63,6 +63,36 @@ public struct Adjustments: Equatable, Codable {
         get { sharpenV2 ?? SharpenV2Settings() }
         set { sharpenV2 = newValue.isDefault ? nil : newValue }
     }
+    public mutating func applySharpenV2Edit(amount: Double? = nil, radius: Double? = nil, detail: Double? = nil,
+                                            masking: Double? = nil, luminanceV2: Bool? = nil) {
+        var v2 = sharpenV2Settings
+        if let amount, amount.isFinite {
+            let clamped = min(max(amount, 0), 2)
+            let preserveLegacy = sharpening > 0 && !v2.luminanceV2 && v2.isDefault
+            sharpening = clamped
+            if !preserveLegacy && clamped > 0 && !v2.luminanceV2 {
+                v2.luminanceV2 = true
+            }
+        }
+        if let luminanceV2 {
+            v2.luminanceV2 = luminanceV2
+        }
+        if let radius, radius.isFinite {
+            v2.radius = min(max(radius, SharpenV2Settings.radiusRange.lowerBound), SharpenV2Settings.radiusRange.upperBound)
+            v2.luminanceV2 = true
+        }
+        if let detail, detail.isFinite {
+            let clean = min(max(detail, SharpenV2Settings.detailRange.lowerBound), SharpenV2Settings.detailRange.upperBound)
+            v2.detail = clean == 0 ? 0 : clean
+            v2.luminanceV2 = true
+        }
+        if let masking, masking.isFinite {
+            let clean = min(max(masking, SharpenV2Settings.maskingRange.lowerBound), SharpenV2Settings.maskingRange.upperBound)
+            v2.masking = clean == 0 ? 0 : clean
+            v2.luminanceV2 = true
+        }
+        sharpenV2Settings = v2
+    }
     public var filmOptics: FilmOpticsSettings?
     public var filmOpticsSettings: FilmOpticsSettings {
         get { filmOptics ?? FilmOpticsSettings() }

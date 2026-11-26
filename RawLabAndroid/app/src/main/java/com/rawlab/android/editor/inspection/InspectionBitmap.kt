@@ -1,6 +1,7 @@
 package com.rawlab.android.editor.inspection
 
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,6 +93,24 @@ internal object InspectionBitmap {
         } finally {
             if (!isRgba8) rgba.recycle()
         }
+    }
+
+    data class PointColorSwatchPreview(val srcColor: Color, val shiftedColor: Color)
+
+    fun pointColorPreviewSwatch(swatch: com.rawlab.android.settings.PointColorSwatch): PointColorSwatchPreview? {
+        val values = try {
+            InspectionNative.nativePointColorPreviewSwatch(
+                swatch.srcHue, swatch.srcSaturation, swatch.srcLuminance,
+                swatch.hueShift, swatch.saturationShift, swatch.luminanceShift,
+            )
+        } catch (_: UnsatisfiedLinkError) {
+            null
+        } ?: return null
+        if (values.size < 6) return null
+        return PointColorSwatchPreview(
+            srcColor = Color(values[0].coerceIn(0f, 1f), values[1].coerceIn(0f, 1f), values[2].coerceIn(0f, 1f)),
+            shiftedColor = Color(values[3].coerceIn(0f, 1f), values[4].coerceIn(0f, 1f), values[5].coerceIn(0f, 1f)),
+        )
     }
 
     fun samplePreview(

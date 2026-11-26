@@ -249,6 +249,7 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
             case .vibrance: return "color.vibrance"
             case .clarity: return "effects.clarity"
             case .dehaze: return "effects.dehaze"
+            case .texture: return "effects.texture"
             case .contrast: return "light.contrast"
             case .highlights: return "light.highlights"
             case .shadows: return "light.shadows"
@@ -268,7 +269,7 @@ final class AdjustmentFieldsSpecTests: XCTestCase {
             return 0
         }
 
-        XCTAssertEqual(AdjustmentParameter.allCases.count, 19)
+        XCTAssertEqual(AdjustmentParameter.allCases.count, 20)
         for parameter in AdjustmentParameter.allCases {
             let fid = fieldId(for: parameter)
             let entry = try XCTUnwrap(entryById[fid], fid)

@@ -45,6 +45,7 @@ struct SelectiveColorOptions {
     }
 };
 
+RGB applySelectiveColorPixel(const RGB& pixel, const SelectiveColorOptions& options);
 void applySelectiveColor(ImageData& image, const SelectiveColorOptions& options);
 
 } // namespace sony2fuji

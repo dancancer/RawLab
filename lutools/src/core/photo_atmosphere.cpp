@@ -334,4 +334,101 @@ void applyDehaze(ImageData& image, float amount, DehazeAnalysis* cache, int sour
     }
     applyDehazeWithAnalysis(image, amount, state, {});
 }
+
+float textureBlurSigma(int width, int height) {
+    const float diag = std::hypot(float(std::max(1, width)), float(std::max(1, height)));
+    return std::clamp(0.0012f * diag, 0.75f, 4.0f);
+}
+
+void applyTexture(ImageData& image, float amount, int sourceWidth, int sourceHeight) {
+    if (!std::isfinite(amount) || amount == 0.0f || image.width <= 0 || image.height <= 0 || image.pixels.empty()) return;
+    amount = std::clamp(amount, -1.0f, 1.0f);
+    const int w = image.width;
+    const int h = image.height;
+    const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
+    if (image.pixels.size() != count) return;
+
+    const int diagW = sourceWidth > 0 ? sourceWidth : w;
+    const int diagH = sourceHeight > 0 ? sourceHeight : h;
+    const float sigma = textureBlurSigma(diagW, diagH);
+    const int radius = std::clamp(static_cast<int>(std::ceil(3.0f * sigma)), 2, 12);
+
+    std::vector<float> weights(static_cast<size_t>(2 * radius + 1));
+    float weightSum = 0.0f;
+    const float invTwoSigmaSq = 0.5f / (sigma * sigma);
+    for (int k = -radius; k <= radius; ++k) {
+        const float wt = std::exp(-float(k * k) * invTwoSigmaSq);
+        weights[static_cast<size_t>(k + radius)] = wt;
+        weightSum += wt;
+    }
+    for (float& wt : weights) wt /= weightSum;
+
+    std::vector<float> rootPlane(count, 0.0f);
+    std::vector<float> lumaPlane(count, 0.0f);
+    std::vector<uint8_t> validFlag(count, 0);
+    parallelPixelRanges(count, [&](size_t first, size_t last) {
+        for (size_t i = first; i < last; ++i) {
+            const auto& enc = image.pixels[i];
+            if (!finite(enc)) continue;
+            validFlag[i] = 1;
+            const auto p = linear(enc);
+            const float lum = std::max(0.0f, luminance(p));
+            lumaPlane[i] = lum;
+            rootPlane[i] = std::sqrt(lum);
+        }
+    });
+
+    std::vector<float> horiz(count, 0.0f);
+    parallelRowRanges(h, w, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(w);
+            for (int x = 0; x < w; ++x) {
+                float sum = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    const int sx = std::clamp(x + k, 0, w - 1);
+                    sum += rootPlane[rowBase + static_cast<size_t>(sx)] * weights[static_cast<size_t>(k + radius)];
+                }
+                horiz[rowBase + static_cast<size_t>(x)] = sum;
+            }
+        }
+    });
+
+    parallelRowRanges(h, w, [&](int firstRow, int lastRow) {
+        for (int y = firstRow; y < lastRow; ++y) {
+            const size_t rowBase = static_cast<size_t>(y) * static_cast<size_t>(w);
+            for (int x = 0; x < w; ++x) {
+                const size_t idx = rowBase + static_cast<size_t>(x);
+                if (!validFlag[idx]) continue;
+                const float luma = lumaPlane[idx];
+                if (luma <= 0.0f) continue;
+
+                float blur = 0.0f;
+                for (int k = -radius; k <= radius; ++k) {
+                    const int sy = std::clamp(y + k, 0, h - 1);
+                    blur += horiz[static_cast<size_t>(sy) * static_cast<size_t>(w) + static_cast<size_t>(x)] *
+                            weights[static_cast<size_t>(k + radius)];
+                }
+
+                const float root = rootPlane[idx];
+                const float detail = root - blur;
+                const float weight = smooth(root / 0.08f) * (1.0f - 0.45f * smooth((root - 0.85f) / 0.15f));
+                const float delta = amount > 0.0f
+                    ? 0.85f * amount * weight * (detail / (1.0f + (detail * detail) / 0.015f))
+                    : 0.75f * amount * weight * detail;
+                if (std::abs(delta) < 1e-8f) continue;
+
+                const float adjusted = std::max(0.0f, root + delta);
+                const float gain = adjusted * adjusted / luma - 1.0f;
+                auto& encodedPixel = image.pixels[idx];
+                const bool bounded = inGamut(encodedPixel);
+                const auto p = linear(encodedPixel);
+                if (bounded) {
+                    encodedPixel = encoded(boundedMove(p, RGB(p.r * gain, p.g * gain, p.b * gain)));
+                } else if (gain < 0.0f) {
+                    encodedPixel = encodedExtended(RGB(p.r * (1.0f + gain), p.g * (1.0f + gain), p.b * (1.0f + gain)));
+                }
+            }
+        }
+    });
+}
 } // namespace sony2fuji

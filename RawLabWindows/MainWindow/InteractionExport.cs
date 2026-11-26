@@ -93,6 +93,7 @@ public partial class MainWindow
             if(hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
             if(curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
             if(wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
+            if(pointColorProbeEnabled){CancelPointColorProbe();e.Handled=true;return;}
             if(editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
             if(transform.Active){_=ResolveTransformDraft();e.Handled=true;return;}
             if(inspection.HandleEscape()){RefreshInspection();RefreshViewingFrames();e.Handled=true;return;}
@@ -233,6 +234,7 @@ public partial class MainWindow
         if(!updateQuitApproved){e.Cancel=true;Dispatcher.BeginInvoke(new Action(()=>_=PrepareUpdateQuitAsync()));return;}
         updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
+        ClearSharpenMaskPreview();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         Volatile.Write(ref closing, true);

@@ -143,6 +143,47 @@ data class EditSettings(
         }
         return independent.copy(film = id, strength = strength)
     }
+
+    fun applySharpenV2Edit(
+        amount: Float? = null,
+        radius: Float? = null,
+        detail: Float? = null,
+        masking: Float? = null,
+        luminanceV2: Boolean? = null,
+    ): EditSettings {
+        if (isHDREditing) {
+            return if (amount != null && amount.isFinite()) {
+                withEditingSharpening(amount.coerceIn(0f, 2f))
+            } else this
+        }
+        var nextAmount = sharpening
+        var v2 = sharpenV2
+        if (amount != null && amount.isFinite()) {
+            val clamped = amount.coerceIn(0f, 2f).canonicalZero()
+            val preserveLegacy = sharpening > 0f && !v2.luminanceV2 && v2.isDefault
+            nextAmount = clamped
+            if (!preserveLegacy && clamped > 0f && !v2.luminanceV2) {
+                v2 = v2.copy(luminanceV2 = true)
+            }
+        }
+        if (luminanceV2 != null) {
+            v2 = v2.copy(luminanceV2 = luminanceV2)
+        }
+        val f = AdjustmentFieldSpec.Fields
+        if (radius != null && radius.isFinite()) {
+            val r = f.DETAIL_SHARPENING_RADIUS.androidModel.floatRange!!
+            v2 = v2.copy(radius = radius.coerceIn(r.start, r.endInclusive), luminanceV2 = true)
+        }
+        if (detail != null && detail.isFinite()) {
+            val r = f.DETAIL_SHARPENING_DETAIL.androidModel.floatRange!!
+            v2 = v2.copy(detail = detail.coerceIn(r.start, r.endInclusive).canonicalZero(), luminanceV2 = true)
+        }
+        if (masking != null && masking.isFinite()) {
+            val r = f.DETAIL_SHARPENING_MASKING.androidModel.floatRange!!
+            v2 = v2.copy(masking = masking.coerceIn(r.start, r.endInclusive).canonicalZero(), luminanceV2 = true)
+        }
+        return copy(sharpening = nextAmount, sharpenV2 = v2)
+    }
 }
 
 data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
@@ -162,6 +203,12 @@ data class LensSettings(val distortion: Boolean = false, val tca: Boolean = fals
     val enabled: Boolean get() = distortion || tca || vignetting
     val hasDefringe: Boolean get() = defringePurpleAmount != 0f || defringePurpleHue != 50f ||
         defringeGreenAmount != 0f || defringeGreenHue != 50f
+    fun defringeOnly(): LensSettings = if (hasDefringe) LensSettings(
+        defringePurpleAmount = defringePurpleAmount,
+        defringePurpleHue = defringePurpleHue,
+        defringeGreenAmount = defringeGreenAmount,
+        defringeGreenHue = defringeGreenHue,
+    ) else LensSettings()
     val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
     fun encode(): String {
         val base = mutableListOf(if (distortion) "1" else "0", if (tca) "1" else "0",

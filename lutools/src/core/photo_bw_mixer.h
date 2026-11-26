@@ -22,6 +22,7 @@ struct BwMixerOptions {
     }
 };
 
+RGB applyBwMixerPixel(const RGB& pixel, const BwMixerOptions& options);
 void applyBwMixer(ImageData& image, const BwMixerOptions& options);
 
 } // namespace sony2fuji

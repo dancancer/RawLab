@@ -98,6 +98,8 @@ struct IOSLensControls: View {
                 Text(L10n.format("裁边 %@%%", String(format: "%.1f", locale: L10n.locale, Double((1 - 1 / scale) * 100))))
                     .font(.caption).monospacedDigit()
             }
+            Divider()
+            defringeControls
         }
         .sheet(isPresented: $editingMetadata) {
             IOSLensMetadataEditor(value: lens) { value in
@@ -111,6 +113,52 @@ struct IOSLensControls: View {
                 choosingProfile = false
             }
         }
+    }
+
+    private var defringeControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            AdjustmentControl(
+                title: L10n.text("紫边数量"),
+                value: defringeBinding(\.defringePurpleAmount),
+                range: LensCorrectionSettings.defringeAmountRange,
+                step: 1,
+                defaultValue: 0,
+                formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                identifier: "lens.defringePurpleAmount"
+            )
+            AdjustmentControl(
+                title: L10n.text("紫边色相"),
+                value: defringeBinding(\.defringePurpleHue),
+                range: LensCorrectionSettings.defringeHueRange,
+                step: 1,
+                defaultValue: 50,
+                formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                identifier: "lens.defringePurpleHue"
+            )
+            AdjustmentControl(
+                title: L10n.text("绿边数量"),
+                value: defringeBinding(\.defringeGreenAmount),
+                range: LensCorrectionSettings.defringeAmountRange,
+                step: 1,
+                defaultValue: 0,
+                formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                identifier: "lens.defringeGreenAmount"
+            )
+            AdjustmentControl(
+                title: L10n.text("绿边色相"),
+                value: defringeBinding(\.defringeGreenHue),
+                range: LensCorrectionSettings.defringeHueRange,
+                step: 1,
+                defaultValue: 50,
+                formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                identifier: "lens.defringeGreenHue"
+            )
+        }
+        .environment(\.compactAdjustmentRows, true)
+    }
+
+    private func defringeBinding(_ keyPath: WritableKeyPath<LensCorrectionSettings, Double>) -> Binding<Double> {
+        Binding(get: { lens[keyPath: keyPath] }, set: { newValue in update { $0[keyPath: keyPath] = newValue } })
     }
     private func value(_ key: WritableKeyPath<LensCorrectionSettings, Bool>) -> Binding<Bool> {
         Binding(get: { lens[keyPath: key] }, set: { value in update { $0[keyPath: key] = value } })

@@ -918,6 +918,59 @@ final class RenderEngine {
             appliedDistortion: report.applied_distortion != 0, appliedTCA: report.applied_tca != 0,
             cropScale: report.crop_scale, candidates: lensCandidates, appliedVignetting: extended.applied_vignetting != 0)
     }
+
+    static func extractRGBA8Preview(from image: CGImage, maxEdge: Int = 1024) -> (width: Int, height: Int, data: Data)? {
+        let srcW = image.width, srcH = image.height
+        guard srcW > 0, srcH > 0 else { return nil }
+        let longest = max(srcW, srcH)
+        let scale = longest > maxEdge ? Double(maxEdge) / Double(longest) : 1.0
+        let dstW = max(1, Int((Double(srcW) * scale).rounded()))
+        let dstH = max(1, Int((Double(srcH) * scale).rounded()))
+        let stride = dstW * 4
+        var data = Data(count: stride * dstH)
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        let drawn = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(data: base, width: dstW, height: dstH, bitsPerComponent: 8,
+                                      bytesPerRow: stride, space: colorSpace, bitmapInfo: bitmapInfo.rawValue) else {
+                return false
+            }
+            ctx.interpolationQuality = .medium
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: dstW, height: dstH))
+            return true
+        }
+        return drawn ? (dstW, dstH, data) : nil
+    }
+
+    static func renderSharpenMaskPreview(fromRGBA8 data: Data, width: Int, height: Int,
+                                         radius: Double, masking: Double) -> CGImage? {
+        guard width > 0, height > 0, data.count >= width * height * 4 else { return nil }
+        var outBuffer = sony2fuji_buffer()
+        let status: sony2fuji_status = data.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress else { return SONY2FUJI_STATUS_INVALID_ARGUMENT }
+            var src = sony2fuji_buffer()
+            src.data = UnsafeMutableRawPointer(mutating: ptr)
+            src.size_bytes = data.count
+            src.width = UInt32(width)
+            src.height = UInt32(height)
+            src.stride_bytes = UInt32(width * 4)
+            src.pixel_format = SONY2FUJI_PIXEL_RGBA8
+            return sony2fuji_render_sharpen_mask_preview(&src, Float(radius), Float(masking), &outBuffer)
+        }
+        defer { sony2fuji_release_buffer(&outBuffer) }
+        guard status == SONY2FUJI_STATUS_OK,
+              let outPtr = outBuffer.data,
+              outBuffer.width > 0, outBuffer.height > 0, outBuffer.size_bytes > 0 else { return nil }
+        let outData = Data(bytes: outPtr, count: outBuffer.size_bytes)
+        let space = CGColorSpace(name: CGColorSpace.sRGB)!
+        let bitmap = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue)
+        guard let provider = CGDataProvider(data: outData as CFData) else { return nil }
+        return CGImage(width: Int(outBuffer.width), height: Int(outBuffer.height),
+                       bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: Int(outBuffer.stride_bytes),
+                       space: space, bitmapInfo: bitmap, provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+    }
 }
 
 private func nativeText<T>(_ value: T) -> String {

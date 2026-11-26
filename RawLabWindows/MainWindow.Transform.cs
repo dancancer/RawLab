@@ -20,6 +20,7 @@ public partial class MainWindow
     {
         if(file==null || exporting || (transform.Active && transform.Tool==tool))return;
         CancelViewingInput();
+        ClearSharpenMaskPreview();
         if(!ResolveTransformDraft() || !SaveEdits())return;
         try { transformSource=new(file,openRevision,editRevision,CaptureCurrentEdit(),lut); }
         catch(Exception error) when(error is System.IO.IOException or UnauthorizedAccessException)
@@ -45,6 +46,8 @@ public partial class MainWindow
     private void UpdateLensDraft(LensSettings value)
     {
         if(!ready || syncing || exporting || !transform.Active || transform.Tool!=TransformTool.Lens)return;
+        if (file != null && LibraryEntry.IsRaster(file))
+            value = value with { Distortion = false, Tca = false, Vignetting = false, AutoCrop = false, Manual = false, ProfileId = null, FocalLength = null, CropFactor = null };
         transform.Update(value);++transformGeneration;transformPreviewReady=false;ClearTransferNoticesOnUserEdit();interacting=false;RefreshControls();Schedule();
     }
     private void RefreshCropDraft()=>ResultCanvas.SetCropDraft(transform.Active && transform.Tool==TransformTool.Geometry && transformPreviewReady ? transform.Geometry : null,
@@ -85,6 +88,7 @@ public partial class MainWindow
     private void EndTransform()
     {
         ++transformGeneration;transformPreviewReady=false;exactReady=false;interacting=false;
+        ClearSharpenMaskPreview();
         transformSource=null;transformSaveFailed=false;
         var ended=EditorToolModeRules.EndTransform(new(toolMode,selectedParameter,selectedToneParameter,selectedAtmosphereParameter,selectedHdrRenditionParameter,selectedEffect==PhotoEffectTool.Vignette ? EditorAdjustmentTool.Vignette : EditorAdjustmentTool.Grain));
         toolMode=ended.Mode;selectedParameter=ended.SelectedParameter;selectedToneParameter=ended.SelectedToneParameter;selectedAtmosphereParameter=ended.SelectedAtmosphereParameter;selectedHdrRenditionParameter=ended.SelectedHdrRenditionParameter;expandedGroup=quickPresetsVisible ? EditorAdjustmentGroup.Looks : EditorAdjustmentGroup.Light;ResultCanvas.GeometryEditing=false;ResultCanvas.SetCropDraft(null,null,false);

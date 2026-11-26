@@ -12,7 +12,15 @@
 #include "core/photo_rendering.h"
 #include "core/photo_tone_controls.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
+#include "core/photo_point_color.h"
+#include "core/photo_selective_color.h"
 #include "core/photo_tone_curve.h"
+#include "core/photo_atmosphere.h"
+#include "core/photo_defringe.h"
+#include "core/photo_sharpen_v2.h"
+#include "sony2fuji/dcp_look.h"
 #include "gpu/gles_photo.h"
 #include "gpu/photo_tone_curve_shader.h"
 #include "sony2fuji/color_converter.h"
@@ -21,8 +29,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <random>
@@ -1037,6 +1048,304 @@ void testFilmOpticsAndNegativeGrainParity() {
     checkPass(ok && diff <= 5e-4f, "GLES FilmOptics + NegativeAsymmetric + 135 grain parity maxDiff=" + std::to_string(diff));
 }
 
+void testColorScienceGlesParity() {
+    rawlabtest::resetGlesVmState();
+    sony2fuji::GlesPhotoRenderer renderer;
+    const auto input = makeColorfulTestImage(8, 6);
+    const auto toSrgb = sony2fuji::ColorConverter::getConversionMatrix(
+        sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::sRGB);
+    const auto req = makeBaseRequest(8, 6);
+
+    auto runCase = [&](const std::string& label, const sony2fuji::RenderParams& params) {
+        sony2fuji::ImageData gpuOut;
+        const bool ok = renderer.render(input, sony2fuji::ColorSpace::sRGB, params, 8, 6, 0, gpuOut);
+
+        sony2fuji::ImageData cpuRef = input;
+        const auto prepCal = sony2fuji::prepareCameraCalibration(params.calibration);
+        for (auto& px : cpuRef.pixels) {
+            px = sony2fuji::ColorConverter::applyMatrix(px, toSrgb);
+            px = sony2fuji::applyCameraCalibrationPixel(px, prepCal);
+            px = {sony2fuji::neutralDisplay(px.r), sony2fuji::neutralDisplay(px.g), sony2fuji::neutralDisplay(px.b)};
+            px = sony2fuji::applyBwMixerPixel(px, params.bw);
+            px = sony2fuji::applyHsl(px, params.hsl);
+            px = sony2fuji::applyPointColorPixel(px, params.pointColor);
+            px = sony2fuji::applySelectiveColorPixel(px, params.selectiveColor);
+            px = sony2fuji::applyColorGrading(px, params.colorGrading);
+        }
+        const float diff = ok ? maxPixelDiff(gpuOut, cpuRef) : std::numeric_limits<float>::infinity();
+        checkPass(ok && diff <= 2e-4f,
+            "GLES Track A parity [" + label + "] maxDiff=" + std::to_string(diff));
+    };
+
+    sony2fuji::RenderParams p1 = toParams(req);
+    p1.calibration = {-30.f, 40.f, 25.f, -25.f, 15.f, 35.f, -20.f};
+    p1.pointColor.swatchCount = 1;
+    p1.pointColor.swatches[0] = {20.f, 0.55f, 0.55f, 18.f, -22.f, 12.f, -45.f, 65.f, 55.f, 50.f, 50.f, true};
+    p1.selectiveColor.method = sony2fuji::SelectiveColorMethod::Relative;
+    p1.selectiveColor.bands[0] = {-20.f, 15.f, 10.f, -10.f};
+    p1.selectiveColor.bands[4] = {25.f, -15.f, -10.f, 15.f};
+    p1.colorGrading.wheels[0] = {220.f, 30.f, -10.f};
+    p1.colorGrading.wheels[2] = {42.f, 25.f, 10.f};
+    runCase("Calibration+PointColor+SelectiveColor+Grading", p1);
+
+    sony2fuji::RenderParams p2 = toParams(req);
+    p2.calibration = {25.f, -30.f, 0.f, 0.f, 0.f, 0.f, 40.f};
+    p2.bw.enabled = true;
+    p2.bw.weights = {45.f, 15.f, 20.f, 0.f, -10.f, -55.f, -20.f, 10.f};
+    p2.selectiveColor.method = sony2fuji::SelectiveColorMethod::Absolute;
+    p2.selectiveColor.bands[7] = {10.f, 0.f, -5.f, 8.f};
+    p2.colorGrading.wheels[2] = {38.f, 35.f, 5.f};
+    runCase("BwMixer+SelectiveColorAbs+SplitTone", p2);
+}
+
+std::shared_ptr<const sony2fuji::DcpLook> buildSyntheticDcpLook() {
+    std::vector<uint8_t> bytes{'R', 'L', 'O', 'O', 'K', 'D', 'C', 'P'};
+    auto addU32 = [&](uint32_t v) {
+        for (int i = 0; i < 4; ++i) bytes.push_back(static_cast<uint8_t>((v >> (i * 8)) & 0xffu));
+    };
+    auto addF32 = [&](float v) {
+        uint32_t bits = 0; std::memcpy(&bits, &v, 4); addU32(bits);
+    };
+    auto addF64 = [&](double v) {
+        uint64_t bits = 0; std::memcpy(&bits, &v, 8);
+        for (int i = 0; i < 8; ++i) bytes.push_back(static_cast<uint8_t>((bits >> (i * 8)) & 0xffu));
+    };
+    for (uint32_t v : {2u, 0u, 0u, 2u, 2u, 2u, 4097u, 2u}) addU32(v);
+    for (uint32_t v : {1u, 2u, 2u, 2u}) addU32(v);
+    for (int m = 0; m < 2; ++m) for (int i = 0; i < 9; ++i) addF64(i % 4 == 0 ? 1.0 : 0.0);
+    addF64(1.0);
+    for (int v = 0; v < 2; ++v) for (int h = 0; h < 2; ++h) for (int s = 0; s < 2; ++s) {
+        addF32(h ? 6.0f : 0.0f); addF32(s ? 1.04f : 1.0f); addF32((s && v) ? 0.98f : 1.0f);
+    }
+    for (int v = 0; v < 2; ++v) for (int h = 0; h < 2; ++h) for (int s = 0; s < 2; ++s) {
+        addF32(0.0f); addF32(1.0f); addF32(1.0f);
+    }
+    for (int i = 0; i <= 4096; ++i) {
+        const double x = i / 4096.0;
+        addF64(0.9 * x + 0.1 * (x * x * (3.0 - 2.0 * x)));
+    }
+    bytes.push_back('{'); bytes.push_back('}');
+    const auto path = std::filesystem::temp_directory_path() /
+        ("rawlab-gles-dcp-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".rlook");
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    }
+    auto dcp = sony2fuji::DcpLook::loadCached(path.u8string());
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    checkPass(dcp != nullptr, "Synthetic v2 DCP loads for GLES test");
+    return dcp;
+}
+
+void testSpatialAndDcpLookParity() {
+    rawlabtest::resetGlesVmState();
+    sony2fuji::GlesPhotoRenderer renderer;
+    const int w = 32, h = 24;
+    sony2fuji::ImageData input(w, h);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            float r = 0.25f + 0.4f * float(x) / (w - 1);
+            float g = 0.22f + 0.3f * float(y) / (h - 1);
+            float b = 0.30f + 0.2f * std::sin(x * 0.7f);
+            if (x == 15) { r = 0.85f; g = 0.12f; b = 0.88f; }
+            if (x == 16) { r = 0.12f; g = 0.85f; b = 0.14f; }
+            input.at(x, y) = sony2fuji::RGB(r, g, b);
+        }
+    }
+
+    const auto dcp = buildSyntheticDcpLook();
+    sony2fuji::RenderParams params;
+    params.dcp = dcp;
+    params.lutStrength = 0.85f;
+    params.atmosphere.clarity = 0.40f;
+    params.atmosphere.dehaze = 0.30f;
+    params.atmosphere.texture = 0.45f;
+    params.defringe.purpleAmount = 10.0f;
+    params.defringe.greenAmount = 8.0f;
+    params.sharpening = 0.60f;
+    params.sharpenV2.luminanceV2 = true;
+    params.sharpenV2.radius = 1.1f;
+    params.sharpenV2.detail = 25.0f;
+    params.sharpenV2.masking = 45.0f;
+
+    auto encodeNeutral = [](sony2fuji::ImageData& img) {
+        for (auto& px : img.pixels) {
+            px = sony2fuji::RGB(
+                sony2fuji::neutralDisplay(px.r),
+                sony2fuji::neutralDisplay(px.g),
+                sony2fuji::neutralDisplay(px.b));
+        }
+    };
+    auto checkStage = [&](const char* label, const sony2fuji::RenderParams& p, auto cpuFn) {
+        sony2fuji::ImageData out;
+        const bool stageOk = renderer.render(input, sony2fuji::ColorSpace::sRGB, p, w, h, 0, out);
+        sony2fuji::ImageData ref = input;
+        cpuFn(ref);
+        const float d = maxPixelDiff(out, ref);
+        checkPass(stageOk && d <= 2.5e-3f, std::string("GLES stage [") + label + "] parity maxDiff=" + std::to_string(d));
+    };
+
+    {
+        sony2fuji::RenderParams p; p.defringe = params.defringe;
+        checkStage("Defringe", p, [&](sony2fuji::ImageData& img) { sony2fuji::applyDefringe(img, p.defringe); encodeNeutral(img); });
+    }
+    {
+        sony2fuji::RenderParams p; p.dcp = dcp; p.lutStrength = 0.85f;
+        checkStage("DcpLook", p, [&](sony2fuji::ImageData& img) {
+            for (auto& px : img.pixels) {
+                const auto looked = dcp->apply(px);
+                const sony2fuji::RGB baseDisplay(
+                    sony2fuji::neutralDisplay(px.r),
+                    sony2fuji::neutralDisplay(px.g),
+                    sony2fuji::neutralDisplay(px.b));
+                px = sony2fuji::RGB(baseDisplay.r + 0.85f * (looked.r - baseDisplay.r),
+                                    baseDisplay.g + 0.85f * (looked.g - baseDisplay.g),
+                                    baseDisplay.b + 0.85f * (looked.b - baseDisplay.b));
+            }
+        });
+    }
+    {
+        sony2fuji::RenderParams p; p.atmosphere.dehaze = 0.30f;
+        checkStage("Dehaze", p, [&](sony2fuji::ImageData& img) { encodeNeutral(img); sony2fuji::applyDehaze(img, p.atmosphere.dehaze); });
+    }
+    {
+        sony2fuji::RenderParams p; p.atmosphere.clarity = 0.40f;
+        checkStage("Clarity", p, [&](sony2fuji::ImageData& img) { encodeNeutral(img); sony2fuji::applyClarity(img, p.atmosphere.clarity); });
+    }
+    {
+        sony2fuji::RenderParams p; p.atmosphere.texture = 0.45f;
+        checkStage("Texture", p, [&](sony2fuji::ImageData& img) { encodeNeutral(img); sony2fuji::applyTexture(img, p.atmosphere.texture); });
+    }
+    {
+        sony2fuji::RenderParams p; p.sharpening = 0.60f; p.sharpenV2 = params.sharpenV2;
+        checkStage("SharpenV2", p, [&](sony2fuji::ImageData& img) { encodeNeutral(img); sony2fuji::applySharpenV2(img, p.sharpening, p.sharpenV2); });
+    }
+
+    sony2fuji::ImageData gpuOut;
+    const bool ok = renderer.render(input, sony2fuji::ColorSpace::sRGB, params, w, h, 0, gpuOut);
+    sony2fuji::ImageData cpuRef = input;
+    sony2fuji::applyDefringe(cpuRef, params.defringe);
+    for (auto& px : cpuRef.pixels) {
+        const auto looked = dcp->apply(px);
+        const sony2fuji::RGB baseDisplay(
+            sony2fuji::neutralDisplay(px.r),
+            sony2fuji::neutralDisplay(px.g),
+            sony2fuji::neutralDisplay(px.b));
+        px = sony2fuji::RGB(
+            baseDisplay.r + params.lutStrength * (looked.r - baseDisplay.r),
+            baseDisplay.g + params.lutStrength * (looked.g - baseDisplay.g),
+            baseDisplay.b + params.lutStrength * (looked.b - baseDisplay.b));
+    }
+    sony2fuji::applyDehaze(cpuRef, params.atmosphere.dehaze);
+    sony2fuji::applyClarity(cpuRef, params.atmosphere.clarity);
+    sony2fuji::applyTexture(cpuRef, params.atmosphere.texture);
+    sony2fuji::applySharpenV2(cpuRef, params.sharpening, params.sharpenV2);
+
+    const float diff = maxPixelDiff(gpuOut, cpuRef);
+    checkPass(ok && diff <= 2.5e-3f,
+              "GLES SPIR-V VM full spatial (defringe+dehaze+clarity+texture+sharpenV2) + DCP parity maxDiff=" +
+              std::to_string(diff));
+}
+
+void testCombinedV014AllFeaturesGlesParity() {
+    rawlabtest::glesVmStats().resetCounters();
+    sony2fuji::GlesPhotoRenderer renderer;
+    const int w = 48, h = 36;
+    sony2fuji::ImageData input(w, h);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            float r = 0.14f + 0.35f * float(x) / (w - 1);
+            float g = 0.12f + 0.30f * float(y) / (h - 1);
+            float b = 0.18f + 0.20f * std::sin(x * 0.5f + y * 0.3f);
+            if (x >= 18 && x < 28 && y >= 12 && y < 22) {
+                r = 0.96f; g = 0.94f; b = 0.92f;
+            } else if (x == 17) {
+                r = 0.85f; g = 0.14f; b = 0.88f;
+            } else if (x == 28) {
+                r = 0.14f; g = 0.84f; b = 0.16f;
+            }
+            input.at(x, y) = sony2fuji::RGB(r, g, b);
+        }
+    }
+
+    const auto dcp = buildSyntheticDcpLook();
+    sony2fuji::RenderParams params{};
+    params.intent = sony2fuji::RenderIntent::Final;
+    params.inputType = sony2fuji::RenderInputType::Buffer;
+    params.inputColorSpace = sony2fuji::ColorSpace::sRGB;
+    params.brightness = 1.0f;
+    params.contrast = 1.0f;
+    params.saturation = 1.0f;
+    params.temperature = 6500.0f;
+    params.dcp = dcp;
+    params.lutStrength = 0.85f;
+    params.calibration = {-25.f, 35.f, 20.f, -20.f, 12.f, 30.f, -15.f};
+    params.pointColor.swatchCount = 1;
+    params.pointColor.swatches[0] = {20.f, 0.55f, 0.55f, 18.f, -22.f, 12.f, -45.f, 65.f, 55.f, 50.f, 50.f, true};
+    params.selectiveColor.method = sony2fuji::SelectiveColorMethod::Relative;
+    params.selectiveColor.bands[0] = {-20.f, 15.f, 10.f, -10.f};
+    params.selectiveColor.bands[4] = {25.f, -15.f, -10.f, 15.f};
+    params.colorGrading.wheels[0] = {220.f, 30.f, -10.f};
+    params.colorGrading.wheels[2] = {42.f, 25.f, 10.f};
+    params.atmosphere.dehaze = 0.25f;
+    params.atmosphere.clarity = 0.35f;
+    params.atmosphere.texture = 0.40f;
+    params.defringe.purpleAmount = 10.0f;
+    params.defringe.greenAmount = 8.0f;
+    params.filmOptics.halationAmount = 55.0f;
+    params.filmOptics.halationThreshold = 60.0f;
+    params.filmOptics.halationRadius = 35.0f;
+    params.filmOptics.halationHue = -25.0f;
+    params.filmOptics.bloomAmount = 40.0f;
+    params.filmOptics.bloomThreshold = 60.0f;
+    params.filmOptics.bloomRadius = 40.0f;
+    params.sharpening = 0.55f;
+    params.sharpenV2.luminanceV2 = true;
+    params.sharpenV2.radius = 1.1f;
+    params.sharpenV2.detail = 25.0f;
+    params.sharpenV2.masking = 45.0f;
+    params.effects.grainAmount = 35.0f;
+    params.effects.grainToneCurve = sony2fuji::GrainToneCurve::NegativeAsymmetric;
+    params.effects.grainFormatPreset = sony2fuji::GrainFormatPreset::Film135;
+
+    sony2fuji::ImageData gpuOut;
+    const bool ok = renderer.render(input, sony2fuji::ColorSpace::sRGB, params, w, h, 0, gpuOut);
+
+    sony2fuji::ImageData cpuRef = input;
+    const auto prepCal = sony2fuji::prepareCameraCalibration(params.calibration);
+    for (auto& px : cpuRef.pixels) {
+        px = sony2fuji::applyCameraCalibrationPixel(px, prepCal);
+    }
+    sony2fuji::applyDefringe(cpuRef, params.defringe);
+    for (auto& px : cpuRef.pixels) {
+        const auto looked = dcp->apply(px);
+        const sony2fuji::RGB baseDisplay(
+            sony2fuji::neutralDisplay(px.r),
+            sony2fuji::neutralDisplay(px.g),
+            sony2fuji::neutralDisplay(px.b));
+        px = sony2fuji::RGB(
+            baseDisplay.r + params.lutStrength * (looked.r - baseDisplay.r),
+            baseDisplay.g + params.lutStrength * (looked.g - baseDisplay.g),
+            baseDisplay.b + params.lutStrength * (looked.b - baseDisplay.b));
+    }
+    sony2fuji::applyDehaze(cpuRef, params.atmosphere.dehaze);
+    for (auto& px : cpuRef.pixels) {
+        px = sony2fuji::applyPointColorPixel(px, params.pointColor);
+        px = sony2fuji::applySelectiveColorPixel(px, params.selectiveColor);
+        px = sony2fuji::applyColorGrading(px, params.colorGrading);
+    }
+    sony2fuji::applyClarity(cpuRef, params.atmosphere.clarity);
+    sony2fuji::applyTexture(cpuRef, params.atmosphere.texture);
+    sony2fuji::applyFilmOptics(cpuRef, params.filmOptics);
+    sony2fuji::applySharpenV2(cpuRef, params.sharpening, params.sharpenV2);
+    sony2fuji::applyPhotoEffects(cpuRef, params.effects);
+
+    const float diff = ok ? maxPixelDiff(gpuOut, cpuRef) : std::numeric_limits<float>::infinity();
+    checkPass(ok && diff <= (2.0f / 255.0f),
+              "GLES SPIR-V VM combined all-v0.14.0 features parity maxDiff=" + std::to_string(diff));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1054,7 +1363,10 @@ int main(int argc, char** argv) {
     testResizeStagesEffectsAndMultiBand();
     testChromaDenoiseUsesWorkingBands();
     testFilmOpticsAndNegativeGrainParity();
+    testCombinedV014AllFeaturesGlesParity();
     testBasicV3AndToneFieldParity();
+    testColorScienceGlesParity();
+    testSpatialAndDcpLookParity();
 
     if (rawlab::test::failureCount() != 0) {
         std::cerr << rawlab::test::failureCount() << " checkPass(s) failed\n";

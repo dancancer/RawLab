@@ -370,6 +370,198 @@ void testApiParityAndForceGpu() {
     sony2fuji_session_destroy(session);
 }
 
+void testCombinedV014AllFeaturesParity() {
+    const int W = 160, H = 120;
+    std::vector<uint8_t> rgbInput(static_cast<size_t>(W) * H * 3u, 0);
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            const float fx = float(x) / float(W - 1);
+            const float fy = float(y) / float(H - 1);
+            const float fineTex = 0.05f * std::sin(x * 1.1f) * std::cos(y * 1.1f);
+            float r = std::clamp(0.12f + 0.42f * fx + 0.08f * std::sin(fx * 12.0f) + fineTex, 0.02f, 0.90f);
+            float g = std::clamp(0.10f + 0.34f * fy + 0.06f * std::cos(fy * 10.0f) - 0.5f * fineTex, 0.02f, 0.90f);
+            float b = std::clamp(0.14f + 0.38f * (1.0f - fx), 0.02f, 0.90f);
+            if (x >= 68 && x < 92 && y >= 48 && y < 72) {
+                r = 0.96f; g = 0.94f; b = 0.92f;
+            } else if (x == 67 && y >= 48 && y < 72) {
+                r = 0.85f; g = 0.14f; b = 0.88f;
+            } else if (x == 92 && y >= 48 && y < 72) {
+                r = 0.14f; g = 0.84f; b = 0.16f;
+            }
+            const size_t idx = (static_cast<size_t>(y) * W + x) * 3u;
+            rgbInput[idx + 0] = static_cast<uint8_t>(std::lround(r * 255.0f));
+            rgbInput[idx + 1] = static_cast<uint8_t>(std::lround(g * 255.0f));
+            rgbInput[idx + 2] = static_cast<uint8_t>(std::lround(b * 255.0f));
+        }
+    }
+
+    sony2fuji_session* session = nullptr;
+    assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
+
+    auto runCase = [&](const char* label, const char* jsonText) {
+        assert(sony2fuji_apply_params(session, jsonText) == SONY2FUJI_STATUS_OK);
+        auto runMode = [&](sony2fuji_gpu_mode mode, sony2fuji_intent intent) {
+            sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), mode};
+            assert(sony2fuji_session_set_gpu_config(session, &gpu) == SONY2FUJI_STATUS_OK);
+            sony2fuji_request req{};
+            req.version = SONY2FUJI_REQUEST_VERSION;
+            req.struct_size = sizeof(req);
+            req.input_type = SONY2FUJI_INPUT_BUFFER;
+            req.input_pixels = rgbInput.data();
+            req.input_width = static_cast<uint32_t>(W);
+            req.input_height = static_cast<uint32_t>(H);
+            req.input_is_linear = 0;
+            req.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+            req.input_color_space = SONY2FUJI_COLOR_SRGB;
+            req.brightness = 1.0f;
+            req.contrast = 1.0f;
+            req.saturation = 1.0f;
+            req.temperature = 6500.0f;
+            req.sharpening = 0.60f;
+            req.size_mode = SONY2FUJI_SIZE_NATIVE;
+            req.intent = intent;
+            req.output_target = SONY2FUJI_TARGET_BUFFER;
+            req.output_format = SONY2FUJI_OUTPUT_RGB8;
+            sony2fuji_buffer out{};
+            assert(sony2fuji_process(session, &req, &out) == SONY2FUJI_STATUS_OK);
+            const auto* ptr = static_cast<const uint8_t*>(out.data);
+            std::vector<uint8_t> bytes(ptr, ptr + out.size_bytes);
+            sony2fuji_release_buffer(&out);
+            return bytes;
+        };
+
+        const auto cpuFinal = runMode(SONY2FUJI_GPU_OFF, SONY2FUJI_INTENT_FINAL);
+        const auto cpuPreview = runMode(SONY2FUJI_GPU_OFF, SONY2FUJI_INTENT_PREVIEW);
+        if (rawlabtest::nativeGpuAvailable()) {
+            const auto gpuFinal = runMode(SONY2FUJI_GPU_FORCE, SONY2FUJI_INTENT_FINAL);
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+            int maxDiffFinal = 0;
+            for (size_t i = 0; i < cpuFinal.size(); ++i) {
+                maxDiffFinal = std::max(maxDiffFinal, std::abs(int(cpuFinal[i]) - int(gpuFinal[i])));
+            }
+            assert(maxDiffFinal <= 2);
+
+            const auto gpuPreview = runMode(SONY2FUJI_GPU_FORCE, SONY2FUJI_INTENT_PREVIEW);
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+            int maxDiffPreview = 0;
+            for (size_t i = 0; i < cpuPreview.size(); ++i) {
+                maxDiffPreview = std::max(maxDiffPreview, std::abs(int(cpuPreview[i]) - int(gpuPreview[i])));
+            }
+            assert(maxDiffPreview <= 2);
+            std::cout << "PASS: Combined v0.14.0 [" << label << "] Force GPU parity (final maxDiff="
+                      << maxDiffFinal << ", preview maxDiff=" << maxDiffPreview << ")\n";
+        } else {
+            assert(!cpuFinal.empty() && cpuFinal.size() == cpuPreview.size());
+            std::cout << "PASS: Combined v0.14.0 [" << label << "] CPU render (native GPU not present)\n";
+        }
+    };
+
+    const char* allColorJson = R"json({
+        "schema_version": 20,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "memory.png", "type": "raster"},
+        "edits": {
+            "exposure": {"mode": "sensor", "ev": 0.0, "brightness": 1.0},
+            "white_balance": {"mode": "none"},
+            "look": {"path": null, "strength": 1.0},
+            "tone": {"contrast": 1.0, "saturation": 1.0, "highlights": 0.0, "shadows": 0.0},
+            "color": {
+                "calibration": {
+                    "shadow_tint": -20.0,
+                    "red_hue": 25.0, "red_saturation": 18.0,
+                    "green_hue": -15.0, "green_saturation": 12.0,
+                    "blue_hue": 30.0, "blue_saturation": -10.0
+                },
+                "point_color": {
+                    "swatches": [{
+                        "src_hue": 22.0, "src_saturation": 0.55, "src_luminance": 0.55,
+                        "hue_shift": 18.0, "saturation_shift": -22.0, "luminance_shift": 10.0,
+                        "variance": -45.0, "range": 65.0, "hue_range": 55.0, "sat_range": 50.0, "lum_range": 50.0,
+                        "enabled": true
+                    }]
+                },
+                "selective_color": {
+                    "method": "relative",
+                    "bands": {
+                        "reds": {"cyan": -20.0, "magenta": 15.0, "yellow": 10.0, "black": -10.0},
+                        "blues": {"cyan": 25.0, "magenta": -15.0, "yellow": -10.0, "black": 15.0}
+                    }
+                }
+            },
+            "color_grading": {
+                "shadows": {"hue": 215.0, "saturation": 25.0, "luminance": -8.0},
+                "highlights": {"hue": 42.0, "saturation": 20.0, "luminance": 8.0},
+                "blending": 60.0,
+                "balance": 10.0
+            },
+            "detail": {
+                "sharpening": 0.60,
+                "luminance_v2": true,
+                "sharpening_radius": 1.2,
+                "sharpening_detail": 25.0,
+                "sharpening_masking": 50.0
+            },
+            "lens_correction": {
+                "defringe_purple_amount": 8.0,
+                "defringe_purple_hue": 50.0,
+                "defringe_green_amount": 6.0,
+                "defringe_green_hue": 50.0
+            },
+            "effects": {
+                "clarity": 0.40,
+                "dehaze": 0.25,
+                "texture": 0.45,
+                "grain_amount": 35.0,
+                "grain_size": 25.0,
+                "grain_roughness": 50.0,
+                "grain_tone_curve": "negative_asymmetric",
+                "grain_format_preset": "135",
+                "halation": {"amount": 60.0, "threshold": 65.0, "radius": 35.0, "hue": -25.0},
+                "bloom": {"amount": 40.0, "threshold": 65.0, "radius": 40.0}
+            }
+        },
+        "output": {"path": "out.png", "format": "png", "size": {"mode": "native"}}
+    })json";
+
+    const char* bwFilmJson = R"json({
+        "schema_version": 20,
+        "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+        "input": {"path": "memory.png", "type": "raster"},
+        "edits": {
+            "exposure": {"mode": "sensor", "ev": 0.0, "brightness": 1.0},
+            "white_balance": {"mode": "none"},
+            "look": {"path": null, "strength": 1.0},
+            "tone": {"contrast": 1.0, "saturation": 1.0, "highlights": 0.0, "shadows": 0.0},
+            "color": {
+                "calibration": {"shadow_tint": 15.0, "red_hue": -25.0, "blue_saturation": 35.0},
+                "bw": {"enabled": true, "mixer": {"red": 45.0, "yellow": 20.0, "blue": -50.0}},
+                "selective_color": {"method": "absolute", "bands": {"neutrals": {"cyan": 8.0, "black": 10.0}}}
+            },
+            "detail": {
+                "sharpening": 0.50,
+                "luminance_v2": true,
+                "sharpening_radius": 1.1,
+                "sharpening_detail": 20.0,
+                "sharpening_masking": 40.0
+            },
+            "effects": {
+                "clarity": 0.30,
+                "texture": 0.35,
+                "grain_amount": 40.0,
+                "grain_tone_curve": "negative_asymmetric",
+                "grain_format_preset": "120",
+                "halation": {"amount": 50.0, "threshold": 65.0, "radius": 30.0, "hue": 20.0},
+                "bloom": {"amount": 30.0, "threshold": 70.0, "radius": 35.0}
+            }
+        },
+        "output": {"path": "out.png", "format": "png", "size": {"mode": "native"}}
+    })json";
+
+    runCase("Calibration+PointColor+Selective+Grading+Defringe+Dehaze+Clarity+Texture+Halation+Bloom+SharpenV2+AsymGrain", allColorJson);
+    runCase("BwMixer+Clarity+Texture+Halation+Bloom+SharpenV2+120Grain", bwFilmJson);
+    sony2fuji_session_destroy(session);
+}
+
 } // namespace
 
 int main() {
@@ -378,5 +570,6 @@ int main() {
     testZeroBypassAndFieldRoi();
     testNegativeAsymmetricGrainAndPresets();
     testApiParityAndForceGpu();
+    testCombinedV014AllFeaturesParity();
     return 0;
 }

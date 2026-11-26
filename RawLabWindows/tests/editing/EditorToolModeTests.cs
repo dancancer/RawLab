@@ -18,6 +18,10 @@ public sealed class EditorToolModeTests
             [EditorAdjustmentTool.MasterRecipe] = EditorToolMode.MasterRecipe,
             [EditorAdjustmentTool.ColorGrading] = EditorToolMode.ColorGrading,
             [EditorAdjustmentTool.Hsl] = EditorToolMode.Hsl,
+            [EditorAdjustmentTool.PointColor] = EditorToolMode.PointColor,
+            [EditorAdjustmentTool.SelectiveColor] = EditorToolMode.SelectiveColor,
+            [EditorAdjustmentTool.BwMixer] = EditorToolMode.BwMixer,
+            [EditorAdjustmentTool.CameraCalibration] = EditorToolMode.CameraCalibration,
             [EditorAdjustmentTool.WhiteBalance] = EditorToolMode.WhiteBalance,
             [EditorAdjustmentTool.Denoise] = EditorToolMode.Denoise,
             [EditorAdjustmentTool.Vignette] = EditorToolMode.PhotoEffects,
@@ -103,6 +107,10 @@ public sealed class EditorToolModeTests
             (EditorAdjustmentTool.MasterRecipe, EditorToolMode.MasterRecipe),
             (EditorAdjustmentTool.ColorGrading, EditorToolMode.ColorGrading),
             (EditorAdjustmentTool.Hsl, EditorToolMode.Hsl),
+            (EditorAdjustmentTool.PointColor, EditorToolMode.PointColor),
+            (EditorAdjustmentTool.SelectiveColor, EditorToolMode.SelectiveColor),
+            (EditorAdjustmentTool.BwMixer, EditorToolMode.BwMixer),
+            (EditorAdjustmentTool.CameraCalibration, EditorToolMode.CameraCalibration),
             (EditorAdjustmentTool.Denoise, EditorToolMode.Denoise),
         })
         {

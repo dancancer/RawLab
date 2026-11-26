@@ -90,11 +90,42 @@ extension ContentView {
             ), onEditingChanged: setSliderEditing)
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .pointColor && !workingSettings.isHDREditing {
+            IOSPointColorControls(
+                settings: Binding(get: { workingSettings.pointColorSettings }, set: { workingSettings.pointColorSettings = $0 }),
+                selectedIndex: $coordinator.selectedPointColorSwatchIndex,
+                eyedropperEnabled: $coordinator.pointColorEyedropperEnabled,
+                canSample: viewModel.hasImage && !editingLocked,
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .selectiveColor && !workingSettings.isHDREditing {
+            IOSSelectiveColorControls(
+                settings: Binding(get: { workingSettings.selectiveColorSettings }, set: { workingSettings.selectiveColorSettings = $0 }),
+                selectedBandIndex: $coordinator.selectedSelectiveColorBandIndex,
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .bwMixer && !workingSettings.isHDREditing {
+            IOSBwMixerControls(
+                settings: Binding(get: { workingSettings.bwMixerSettings }, set: { workingSettings.bwMixerSettings = $0 }),
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
+        } else if coordinator.selectedColorScienceTool == .cameraCalibration && !workingSettings.isHDREditing {
+            IOSCameraCalibrationControls(
+                settings: Binding(get: { workingSettings.calibrationSettings }, set: { workingSettings.calibrationSettings = $0 }),
+                onEditingChanged: setSliderEditing
+            )
+            .disabled(!viewModel.hasImage || editingLocked)
         } else if let hdrTool = selectedHDRRenditionTool, let keyPath = hdrTool.hdrRenditionKeyPath {
             hdrRenditionPanel(hdrTool, keyPath: keyPath)
         } else if let adjustment = selectedAdjustment {
             if adjustment == .temperature || adjustment == .tint {
                 whiteBalancePanel
+                    .disabled(!viewModel.hasImage || editingLocked)
+            } else if adjustment == .sharpening && !workingSettings.isHDREditing {
+                sharpeningV2Panel
                     .disabled(!viewModel.hasImage || editingLocked)
             } else {
                 scalarAdjustmentPanel(adjustment)
@@ -235,6 +266,132 @@ extension ContentView {
             .disabled(coordinator.autoExposing || viewModel.isBusy)
             .accessibilityIdentifier("exposure.auto")
         }
+    }
+
+    var sharpeningV2Panel: some View {
+        let v2 = workingSettings.sharpenV2Settings
+        return VStack(alignment: .leading, spacing: 10) {
+            AdjustmentControl(
+                title: AdjustmentKind.sharpening.title,
+                value: Binding(
+                    get: { workingSettings.sharpening },
+                    set: { newValue in
+                        var next = workingSettings
+                        next.applySharpenV2Edit(amount: newValue)
+                        applySettingsChange(next)
+                    }
+                ),
+                range: AdjustmentKind.sharpening.range,
+                step: AdjustmentKind.sharpening.step,
+                defaultValue: 0,
+                unit: AdjustmentKind.sharpening.unit,
+                formatter: AdjustmentKind.sharpening.formatted,
+                identifier: "adjustment.sharpening",
+                onEditingChanged: setSliderEditing
+            )
+            Toggle(L10n.text("明度锐化"), isOn: Binding(
+                get: { v2.luminanceV2 },
+                set: { enabled in
+                    var next = workingSettings
+                    next.applySharpenV2Edit(luminanceV2: enabled)
+                    applySettingsChange(next)
+                }
+            ))
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("sharpening.luminanceV2")
+            Group {
+                AdjustmentControl(
+                    title: L10n.text("锐化半径"),
+                    value: Binding(
+                        get: { workingSettings.sharpenV2Settings.radius },
+                        set: { value in
+                            var next = workingSettings
+                            next.applySharpenV2Edit(radius: value)
+                            applySettingsChange(next)
+                            viewModel.updateSharpenMaskPreviewIfNeeded(
+                                radius: next.sharpenV2Settings.radius,
+                                masking: next.sharpenV2Settings.masking
+                            )
+                        }
+                    ),
+                    range: SharpenV2Settings.radiusRange,
+                    step: 0.05,
+                    defaultValue: 1.0,
+                    formatter: { String(format: "%.2f", locale: L10n.locale, $0) },
+                    identifier: "adjustment.sharpeningRadius",
+                    onEditingChanged: setSliderEditing
+                )
+                AdjustmentControl(
+                    title: L10n.text("锐化细节"),
+                    value: Binding(
+                        get: { workingSettings.sharpenV2Settings.detail },
+                        set: { value in
+                            var next = workingSettings
+                            next.applySharpenV2Edit(detail: value)
+                            applySettingsChange(next)
+                        }
+                    ),
+                    range: SharpenV2Settings.detailRange,
+                    step: 1,
+                    defaultValue: 25,
+                    formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                    identifier: "adjustment.sharpeningDetail",
+                    onEditingChanged: setSliderEditing
+                )
+                AdjustmentControl(
+                    title: L10n.text("锐化蒙版"),
+                    value: Binding(
+                        get: { workingSettings.sharpenV2Settings.masking },
+                        set: { value in
+                            var next = workingSettings
+                            next.applySharpenV2Edit(masking: value)
+                            applySettingsChange(next)
+                            viewModel.updateSharpenMaskPreviewIfNeeded(
+                                radius: next.sharpenV2Settings.radius,
+                                masking: next.sharpenV2Settings.masking
+                            )
+                        }
+                    ),
+                    range: SharpenV2Settings.maskingRange,
+                    step: 1,
+                    defaultValue: 0,
+                    formatter: { String(format: "%.0f", locale: L10n.locale, $0) },
+                    identifier: "adjustment.sharpeningMasking",
+                    onEditingChanged: { editing in
+                        setSliderEditing(editing)
+                        if !editing { viewModel.setSharpenMaskPreview(false, settings: workingSettings) }
+                    }
+                )
+            }
+            .environment(\.compactAdjustmentRows, true)
+            Text(L10n.text("边缘蒙版预览"))
+                .font(.subheadline.weight(.medium))
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(viewModel.sharpenMaskPreviewActive ? Color.yellow.opacity(0.25) : Color(.secondarySystemFill))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(viewModel.sharpenMaskPreviewActive ? Color.yellow : Color.clear, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { _ in
+                            if !viewModel.sharpenMaskPreviewActive {
+                                viewModel.setSharpenMaskPreview(true, settings: workingSettings)
+                            }
+                        }
+                        .onEnded { _ in
+                            viewModel.setSharpenMaskPreview(false, settings: workingSettings)
+                        }
+                )
+                .accessibilityIdentifier("sharpening.maskPreview")
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+        .onDisappear { viewModel.setSharpenMaskPreview(false, settings: workingSettings) }
     }
 
     var whiteBalancePanel: some View {

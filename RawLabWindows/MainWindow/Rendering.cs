@@ -33,7 +33,7 @@ public partial class MainWindow
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ClearTransferNoticesOnSourceChange();
             ClearExternalReloadOnSourceChange();
-            ResetAITask();CancelProcessingMigration();CancelWbProbe();CancelCurveTarget();CancelHslTarget();RestoreEdits(path); hdrSource = openedHDR;
+            ResetAITask();CancelProcessingMigration();CancelWbProbe();CancelPointColorProbe();CancelCurveTarget();CancelHslTarget();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
@@ -41,6 +41,7 @@ public partial class MainWindow
             file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;
             Collection.BeginEditing(Collection.Photos.FirstOrDefault(photo=>StringComparer.OrdinalIgnoreCase.Equals(photo.Path,path))?.ID ?? "");viewport.Fit();
             clippingOverlay=null;
+            ClearSharpenMaskPreview();
             suspendedTransform = null;
             workspaceLayout.PhotoOpened();
             RefreshWorkspace();
@@ -139,7 +140,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
-        CancelHslTarget();CancelCurveTarget();CancelWbProbe();
+        CancelHslTarget();CancelCurveTarget();CancelWbProbe();CancelPointColorProbe();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}

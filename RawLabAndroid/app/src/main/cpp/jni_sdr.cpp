@@ -760,3 +760,27 @@ Java_com_rawlab_android_raster_NativeMpf_nativeInspectSdrJpegMpf(JNIEnv* env, jo
         return source.chars ? static_cast<jint>(sony2fuji_inspect_sdr_jpeg_mpf(source.chars)) : -1;
     } catch (...) { return -1; }
 }
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_rawlab_android_engine_NativeProcessor_nativeRenderSharpenMaskPreview(
+    JNIEnv* env, jclass, jobject sourceBitmap, jfloat radius, jfloat masking, jobject reusableBitmap) {
+    try {
+        AndroidBitmapInfo info{};
+        if (!sourceBitmap || AndroidBitmap_getInfo(env, sourceBitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS ||
+            info.width == 0 || info.height == 0 || info.width > INT32_MAX || info.height > INT32_MAX) {
+            throw std::invalid_argument("Invalid source bitmap for sharpen mask preview");
+        }
+        BitmapPixels pixels(env, sourceBitmap, static_cast<jint>(info.width), static_cast<jint>(info.height), SONY2FUJI_PIXEL_RGBA8);
+        sony2fuji_buffer src{};
+        src.data = const_cast<uint8_t*>(static_cast<const uint8_t*>(pixels.bytes));
+        src.size_bytes = pixels.stride * static_cast<size_t>(info.height);
+        src.width = info.width;
+        src.height = info.height;
+        src.stride_bytes = pixels.stride;
+        src.pixel_format = SONY2FUJI_PIXEL_RGBA8;
+        Buffer out;
+        check(sony2fuji_render_sharpen_mask_preview(&src, radius, masking, &out.value));
+        return writeRgba8Bitmap(env, out.value, reusableBitmap, nullptr);
+    } catch (...) { handleSdrException(env, "Not enough memory for sharpen mask preview"); }
+    return nullptr;
+}

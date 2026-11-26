@@ -360,6 +360,19 @@ struct EditorCoordinatorTests {
         check(abs(coordinator.workingSettings.exposure - 0.5) < 0.0001, "undoEditorDraft steps back local draft edit")
         coordinator.redoEditorDraft()
         check(abs(coordinator.workingSettings.exposure - 1.0) < 0.0001, "redoEditorDraft restores local draft edit")
+
+        // 9. HDR transition clears SDR-only v0.14 color science tool selection and eyedropper
+        coordinator.selectEditorTool(.pointColor)
+        coordinator.finishDraftNavigation(apply: false)
+        coordinator.pointColorEyedropperEnabled = true
+        check(coordinator.selectedColorScienceTool == .pointColor && coordinator.currentEditorTool == .pointColor &&
+              coordinator.pointColorEyedropperEnabled,
+              "Selecting .pointColor activates selectedColorScienceTool")
+        coordinator.normalizeHDRNavigation(isHDREditing: true)
+        check(coordinator.selectedColorScienceTool == nil && coordinator.selectedGroup == .light &&
+              coordinator.selectedAdjustment == .exposure && coordinator.selectedHDRRenditionTool == nil &&
+              !coordinator.pointColorEyedropperEnabled && coordinator.currentEditorTool == .adjustment(.exposure),
+              "normalizeHDRNavigation(isHDREditing: true) clears SDR-only selectedColorScienceTool and eyedropper")
     }
 
     static func testExpansionAndOverviewNavigation() {

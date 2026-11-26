@@ -164,6 +164,7 @@ struct AdjustmentDock: View {
                 if tool == .hsl { model.cancelHSLTarget(); model.hslTargetEnabled = false }
                 if tool == .toneCurve { model.cancelCurveTarget(); model.curveTargetEnabled = false }
                 if tool == .whiteBalance { model.cancelWBProbe(); model.wbEyedropperEnabled = false }
+                if tool == .pointColor { model.cancelPointColorEyedropper() }
                 ParameterValueField.cancelPendingInputs()
                 collapsedTool = tool
             } else {
@@ -231,9 +232,7 @@ struct AdjustmentDock: View {
 
     private func toolUnavailableReason(_ tool: EditorAdjustmentTool) -> String? {
         if model.settings.isHDREditing && !supportsHDR(tool) { return L10n.text("HDR 模式暂不支持此工具。") }
-        if tool == .lens && RenderEngine.isX3fInput(model.file) && model.settings.x3fMode == .normal { return L10n.text("此输入不支持镜头校正") }
-        if tool == .lens && RenderEngine.isRasterInput(model.file) { return L10n.text("仅 RAW 照片支持镜头校正。") }
-        if tool == .lens && !model.canUseLensCorrection { return L10n.text("此输入不支持镜头校正") }
+        if tool == .lens && !model.canUseLensPanel { return L10n.text("此输入不支持镜头校正") }
         return nil
     }
 
@@ -278,6 +277,43 @@ struct AdjustmentDock: View {
                         model.setInteracting(editing)
                     }, onCancelTarget: model.cancelHSLTarget)
             }
+        } else if tool == .pointColor {
+            MacPointColorControls(
+                settings: Binding(get: { model.settings.pointColorSettings }, set: { model.settings.pointColorSettings = $0 }),
+                selectedIndex: $model.selectedPointColorSwatchIndex,
+                eyedropperEnabled: $model.pointColorEyedropperEnabled,
+                resetVersion: resetVersion,
+                canSample: model.result != nil,
+                onEditingChanged: model.setInteracting,
+                onCancelEyedropper: model.cancelPointColorEyedropper,
+                onReset: { model.requestAdjustmentReset(.tool(.pointColor)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .selectiveColor {
+            MacSelectiveColorControls(
+                settings: Binding(get: { model.settings.selectiveColorSettings }, set: { model.settings.selectiveColorSettings = $0 }),
+                selectedBandIndex: $model.selectedSelectiveColorBandIndex,
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.selectiveColor)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .bwMixer {
+            MacBwMixerControls(
+                settings: Binding(get: { model.settings.bwMixerSettings }, set: { model.settings.bwMixerSettings = $0 }),
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.bwMixer)) }
+            )
+            .disabled(model.result == nil)
+        } else if tool == .cameraCalibration {
+            MacCameraCalibrationControls(
+                settings: Binding(get: { model.settings.calibrationSettings }, set: { model.settings.calibrationSettings = $0 }),
+                resetVersion: resetVersion,
+                onEditingChanged: model.setInteracting,
+                onReset: { model.requestAdjustmentReset(.tool(.cameraCalibration)) }
+            )
+            .disabled(model.result == nil)
         } else if tool == .denoise {
             if model.settings.isHDREditing {
                 VStack(spacing: 8) {
@@ -292,6 +328,7 @@ struct AdjustmentDock: View {
             hdrRenditionRow(tool, keyPath: keyPath)
         } else if let parameter = tool.parameter {
             if parameter.isWhiteBalance { whiteBalance }
+            else if parameter == .sharpening && !model.settings.isHDREditing { sharpeningV2Controls }
             else { parameterRow(parameter) }
         } else if tool == .recipe {
             MasterRecipeDock(model: model)
@@ -404,6 +441,8 @@ struct AdjustmentDock: View {
                     if parameter == .temperature { model.settings.temperature = clamped }
                     else if parameter == .tint { model.settings.tint = clamped }
                     model.settings.whiteBalanceMode = .asShot
+                } else if parameter == .sharpening && !model.settings.isHDREditing {
+                    model.settings.applySharpenV2Edit(amount: newValue)
                 } else {
                     model.settings.set(parameter, to: newValue)
                 }
@@ -413,6 +452,99 @@ struct AdjustmentDock: View {
         autoBusy: model.autoExposing, compact: true, titleOverride: title)
         .id("\(parameter.rawValue).\(resetVersion)")
         .disabled(model.result == nil)
+    }
+
+    private var sharpeningV2Controls: some View {
+        let v2 = model.settings.sharpenV2Settings
+        let maskingSpec = ParameterRow(
+            title: L10n.text("锐化蒙版"),
+            value: Binding(
+                get: { model.settings.sharpenV2Settings.masking },
+                set: { model.settings.applySharpenV2Edit(masking: $0) }
+            ),
+            range: SharpenV2Settings.maskingRange,
+            defaultValue: 0,
+            precision: .standard,
+            identifier: "value.sharpeningMasking",
+            onEditingChanged: { editing in
+                model.setInteracting(editing)
+                if !editing { model.setSharpenMaskPreview(false) }
+            },
+            onOptionDraggingChanged: { active in
+                model.setSharpenMaskPreview(active)
+            },
+            externalResetRevision: resetVersion,
+            compact: true
+        )
+        return VStack(alignment: .leading, spacing: 6) {
+            parameterRow(.sharpening)
+            Toggle(L10n.text("明度锐化"), isOn: Binding(
+                get: { v2.luminanceV2 },
+                set: { model.settings.applySharpenV2Edit(luminanceV2: $0) }
+            ))
+            .controlSize(.small)
+            .accessibilityIdentifier("sharpening.luminanceV2")
+            .disabled(model.result == nil)
+            ParameterRow(
+                title: L10n.text("锐化半径"),
+                value: Binding(
+                    get: { model.settings.sharpenV2Settings.radius },
+                    set: { model.settings.applySharpenV2Edit(radius: $0) }
+                ),
+                range: SharpenV2Settings.radiusRange,
+                defaultValue: 1.0,
+                precision: .exposure,
+                identifier: "value.sharpeningRadius",
+                onEditingChanged: model.setInteracting,
+                externalResetRevision: resetVersion,
+                compact: true
+            )
+            .disabled(model.result == nil)
+            ParameterRow(
+                title: L10n.text("锐化细节"),
+                value: Binding(
+                    get: { model.settings.sharpenV2Settings.detail },
+                    set: { model.settings.applySharpenV2Edit(detail: $0) }
+                ),
+                range: SharpenV2Settings.detailRange,
+                defaultValue: 25,
+                precision: .standard,
+                identifier: "value.sharpeningDetail",
+                onEditingChanged: model.setInteracting,
+                externalResetRevision: resetVersion,
+                compact: true
+            )
+            .disabled(model.result == nil)
+            maskingSpec
+                .disabled(model.result == nil)
+            HStack(spacing: 8) {
+                Text(L10n.text("边缘蒙版预览"))
+                    .font(.caption.weight(.medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(model.sharpenMaskPreviewActive ? Color.accentColor.opacity(0.25) : Color.secondary.opacity(0.14))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(model.sharpenMaskPreviewActive ? Color.accentColor : Color.secondary.opacity(0.35), lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { _ in
+                                if !model.sharpenMaskPreviewActive { model.setSharpenMaskPreview(true) }
+                            }
+                            .onEnded { _ in
+                                model.setSharpenMaskPreview(false)
+                            }
+                    )
+                    .disabled(model.result == nil)
+                    .accessibilityIdentifier("sharpening.maskPreview")
+                Spacer(minLength: 0)
+            }
+        }
     }
 
     private func supportsHDR(_ tool: EditorAdjustmentTool) -> Bool {

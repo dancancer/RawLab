@@ -8,6 +8,7 @@
 #include "sony2fuji/sony2fuji.h"
 #include "core/pixel_buffer.h"
 #include "core/photo_geometry.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/photo_tone_curve.h"
 #include "core/render_params.h"
 
@@ -69,6 +70,10 @@ void applyDetailAdjustments(
     ProcessingVersion version,
     const ClarityField* clarityField = nullptr,
     const SubRectMap& roiMap = {},
+    float texture = 0.0f,
+    const SharpenV2Options& sharpenV2 = {},
+    int textureSourceWidth = 0,
+    int textureSourceHeight = 0,
     const FilmOpticsOptions& filmOptics = {},
     const FilmOpticsField* filmOpticsField = nullptr
 );

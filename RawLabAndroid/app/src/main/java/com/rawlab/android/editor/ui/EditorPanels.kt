@@ -3,6 +3,8 @@ package com.rawlab.android.editor.ui
 import com.rawlab.android.ui.AppIcons
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.PointColorCanvasControls
+import com.rawlab.android.editor.controls.PointColorProbeActions
 import com.rawlab.android.editor.controls.WbProbeActions
 import com.rawlab.android.editor.controls.WbProbeCanvasControls
 import com.rawlab.android.editor.controls.HslTargetCanvasControls
@@ -112,8 +114,10 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null,
+    pointColorProbe: PointColorProbeActions? = null,
     isAdjustingSlider: Boolean = false,
-    bottomControlsInset: Dp = 64.dp) {
+    bottomControlsInset: Dp = 64.dp,
+    sharpenMaskOverlay: android.graphics.Bitmap? = null) {
     val controlsBaseInset = if (workspaceControls) maxOf(64.dp, bottomControlsInset) else 12.dp
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + controlsBaseInset + if (workspaceControls) 20.dp else 24.dp
@@ -132,7 +136,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
         android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
     Box(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background).testTag("editor-canvas"), contentAlignment = Alignment.Center) {
         state.preview?.let {
-            val hdrPreview = rememberPhotoHDRPreview(it.hdr?.result)
+            val hdrResetKey = Triple(state.photo?.identity, it.renderedGeometry, it.hdr?.result?.let { f -> f.nativeWidth to f.nativeHeight })
+            val hdrPreview = rememberPhotoHDRPreview(it.hdr?.result, resetKey = hdrResetKey)
             val geometryDraft = state.draft?.takeIf { draft -> draft.group == AdjustmentGroup.GEOMETRY }
             if (it.renderedGeometry.isIdentity && (geometryDraft != null || !state.edits.geometry.isIdentity))
                 GeometryCropCanvas(it, state.visibleEdits.geometry, editing = geometryDraft != null,
@@ -142,9 +147,9 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                 onDraftEdit(state.visibleEdits.copy(geometry = value), false)
             }
             else PhotoCanvas(it, compare && state.draft?.group != AdjustmentGroup.GEOMETRY, state.photo?.name.orEmpty(), photoCanvas, photoInfo, infoMode, onInfoClick, onPreviewSizeChange,
-                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null && wbProbe == null, hslTarget = hslTarget, wbProbe = wbProbe,
+                mode = view.preferredMode, holdingBefore = view.holdingBefore && state.draft?.group != AdjustmentGroup.GEOMETRY && hslTarget == null && wbProbe == null && pointColorProbe == null, hslTarget = hslTarget, wbProbe = wbProbe, pointColorProbe = pointColorProbe,
                 showOverlays = !view.purePreview, margins = view.margins, workspaceControls = workspaceControls,
-                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview,
+                histogramExpanded = histogramExpanded, onHistogramExpandedChange = onHistogramExpandedChange, hdrPreview = hdrPreview, hdrResetKey = hdrResetKey,
                 detail = state.detail.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY },
                 detailTiles = state.detailTiles.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY }.orEmpty(),
                 onDetailRequest = if (state.draft?.group == AdjustmentGroup.GEOMETRY) ({}) else onDetailRequest,
@@ -157,9 +162,11 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                     Column(Modifier.wrapContentWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (showTargetStatus && hslTarget != null) HslTargetCanvasControls(hslTarget, Modifier.padding(8.dp))
                         if (showTargetStatus && wbProbe != null) WbProbeCanvasControls(wbProbe, Modifier.padding(8.dp))
+                        if (showTargetStatus && pointColorProbe != null) PointColorCanvasControls(pointColorProbe, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
-                })
+                },
+                sharpenMaskBitmap = sharpenMaskOverlay.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY })
         } ?: if (loading.showsEmptyCanvasLoading) {
             EmptyCanvasLoading(reduceMotion = reduceMotion)
         } else {

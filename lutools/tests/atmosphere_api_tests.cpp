@@ -1,4 +1,5 @@
 #include "sony2fuji/ffi/sony2fuji_c.h"
+#include "native_gpu_test_support.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_tone_controls.h"
 #include <algorithm>
@@ -134,11 +135,32 @@ int main(int argc,char** argv) {
             gpu.mode=SONY2FUJI_GPU_AUTO;
             require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"Auto mode");
             require(render(session,request)==active && sony2fuji_session_get_last_backend(session)==SONY2FUJI_BACKEND_CPU,
-                "Auto uses whole CPU path");
+                "Auto uses whole CPU path for display buffer");
+            auto scene=request;scene.input_type=SONY2FUJI_INPUT_BUFFER;
+            gpu.mode=SONY2FUJI_GPU_OFF;
+            require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"CPU mode for scene");
+            const auto sceneCpu=render(session,scene);
             gpu.mode=SONY2FUJI_GPU_FORCE;
             require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"Force mode");
-            auto scene=request;scene.input_type=SONY2FUJI_INPUT_BUFFER;sony2fuji_buffer unsupported{};
-            require(sony2fuji_process(session,&scene,&unsupported)==SONY2FUJI_STATUS_UNSUPPORTED,"Force reports unsupported");
+            sony2fuji_buffer forcedOut{};
+            const auto forcedStatus=sony2fuji_process(session,&scene,&forcedOut);
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+            if (rawlabtest::nativeGpuAvailable()) {
+                require(forcedStatus==SONY2FUJI_STATUS_OK &&
+                    sony2fuji_session_get_last_backend(session)==rawlabtest::nativeBackend,
+                    "Force GPU executes atmosphere stages natively");
+                const auto* forcedBytes=static_cast<const uint8_t*>(forcedOut.data);
+                require(forcedOut.size_bytes==sceneCpu.size(),"GPU atmosphere byte count matches CPU");
+                int maxDiff=0;
+                for(size_t i=0;i<sceneCpu.size();++i) maxDiff=std::max(maxDiff,std::abs(int(forcedBytes[i])-int(sceneCpu[i])));
+                require(maxDiff<=2,"GPU atmosphere matches CPU within 2 RGB8");
+            } else {
+                require(forcedStatus==SONY2FUJI_STATUS_UNSUPPORTED,"Force without adapter reports unsupported");
+            }
+#else
+            require(forcedStatus==SONY2FUJI_STATUS_UNSUPPORTED,"Force on CPU-only build reports unsupported");
+#endif
+            sony2fuji_release_buffer(&forcedOut);
             gpu.mode=SONY2FUJI_GPU_OFF;
             require(sony2fuji_session_set_gpu_config(session,&gpu)==SONY2FUJI_STATUS_OK,"restore CPU");
         }

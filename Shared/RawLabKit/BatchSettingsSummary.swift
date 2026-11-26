@@ -38,7 +38,7 @@ public enum BatchSettingsSummary {
                 BatchSettingRow(title: $0.title, value: $0.displayValue($0.value(from: settings)))
             } + geometry(settings.geometrySettings)
         }
-        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening, .clarity, .dehaze]
+        let scalars: [AdjustmentKind] = [.strength, .highlights, .shadows, .contrast, .toneCurve, .blackPoint, .whitePoint, .saturation, .vibrance, .sharpening, .clarity, .dehaze, .texture]
         let tools = scalars.filter { settings.curveSettings.mode == .legacy || $0 != .toneCurve }.map {
             BatchSettingRow(title: $0 == .toneCurve ? L10n.text("S 曲线") : $0.title, value: $0.displayValue($0.value(from: settings)))
         }

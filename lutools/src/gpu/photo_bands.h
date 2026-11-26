@@ -28,12 +28,15 @@ public:
         maxRows_ = static_cast<uint32_t>(std::min<size_t>(height, std::min(limit_ / outputRowBytes, dispatchLimit / width)));
     }
 
-    PhotoBand at(uint32_t row) const {
+    PhotoBand at(uint32_t row, uint32_t halo = 0) const {
         auto rows = std::min(maxRows_, height_ - row);
-        // 两边各多读一行，覆盖 CPU/GPU 浮点舍入在双线性采样边界上的差异。
-        const uint32_t first = uint32_t(float(row) * scale_) > 0 ? uint32_t(float(row) * scale_) - 1 : 0;
+        // 两边各多读一行，覆盖 CPU/GPU 浮点舍入在双线性采样边界上的差异；空间滤波另加 halo 行。
+        const uint32_t padBefore = 1u + halo;
+        const uint32_t padAfter = 2u + halo;
+        const uint32_t scaledStart = uint32_t(float(row) * scale_);
+        const uint32_t first = scaledStart > padBefore ? scaledStart - padBefore : 0u;
         auto lastRow = [&](uint32_t n) {
-            return std::min(sourceHeight_ - 1, uint32_t(float(row + n - 1) * scale_) + 2);
+            return std::min(sourceHeight_ - 1, uint32_t(float(row + n - 1) * scale_) + padAfter);
         };
         while (rows > 1 && size_t(lastRow(rows) - first + 1) * sourceRowBytes_ > limit_) rows = (rows + 1) / 2;
         const auto last = lastRow(rows);

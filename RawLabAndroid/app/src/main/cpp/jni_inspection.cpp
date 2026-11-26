@@ -171,3 +171,31 @@ Java_com_rawlab_android_editor_inspection_InspectionNative_nativeRenderOverlay(
         return JNI_FALSE;
     }
 }
+
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_rawlab_android_editor_inspection_InspectionNative_nativePointColorPreviewSwatch(
+    JNIEnv* env,
+    jclass,
+    jfloat srcHue,
+    jfloat srcSaturation,
+    jfloat srcLuminance,
+    jfloat hueShift,
+    jfloat saturationShift,
+    jfloat luminanceShift) {
+    float srcRgb[3]{};
+    float shiftedRgb[3]{};
+    if (sony2fuji_point_color_preview_swatch(
+            srcHue, srcSaturation, srcLuminance,
+            hueShift, saturationShift, luminanceShift,
+            srcRgb, shiftedRgb) != SONY2FUJI_STATUS_OK) {
+        return nullptr;
+    }
+    const jfloat values[6] = {
+        srcRgb[0], srcRgb[1], srcRgb[2],
+        shiftedRgb[0], shiftedRgb[1], shiftedRgb[2],
+    };
+    jfloatArray out = env->NewFloatArray(6);
+    if (!out) return nullptr;
+    env->SetFloatArrayRegion(out, 0, 6, values);
+    return env->ExceptionCheck() ? nullptr : out;
+}

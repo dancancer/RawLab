@@ -791,6 +791,55 @@ extension Sony2FujiProcessor {
             throw displayImageFailure(status)
         }
     }
+
+    func extractRGBA8Preview(from cgImage: CGImage) -> (width: Int, height: Int, data: Data)? {
+        let width = cgImage.width
+        let height = cgImage.height
+        guard width > 0, height > 0 else { return nil }
+        let stride = width * 4
+        var data = Data(count: stride * height)
+        let ok = data.withUnsafeMutableBytes { raw -> Bool in
+            guard let base = raw.baseAddress,
+                  let ctx = CGContext(
+                      data: base,
+                      width: width,
+                      height: height,
+                      bitsPerComponent: 8,
+                      bytesPerRow: stride,
+                      space: outputColorSpace(),
+                      bitmapInfo: bitmapInfo(for: 4).rawValue
+                  ) else { return false }
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return ok ? (width, height, data) : nil
+    }
+
+    func renderSharpenMaskPreview(
+        fromRGBA8 rgba8: Data,
+        width: Int,
+        height: Int,
+        radius: Double,
+        masking: Double
+    ) -> UIImage? {
+        guard width > 0, height > 0, rgba8.count >= width * height * 4 else { return nil }
+        var out = sony2fuji_buffer()
+        defer { sony2fuji_release_buffer(&out) }
+        let status: sony2fuji_status = rgba8.withUnsafeBytes { raw in
+            var src = sony2fuji_buffer()
+            src.data = UnsafeMutableRawPointer(mutating: raw.baseAddress)
+            src.size_bytes = rgba8.count
+            src.width = UInt32(width)
+            src.height = UInt32(height)
+            src.stride_bytes = UInt32(width * 4)
+            src.pixel_format = SONY2FUJI_PIXEL_RGBA8
+            return sony2fuji_render_sharpen_mask_preview(&src, Float(radius), Float(masking), &out)
+        }
+        guard status == SONY2FUJI_STATUS_OK,
+              let buffer = try? takeBuffer(&out),
+              let cgImage = makeCGImage(from: buffer) else { return nil }
+        return UIImage(cgImage: cgImage, scale: 1, orientation: .up)
+    }
 }
 
 extension UIImage.Orientation {

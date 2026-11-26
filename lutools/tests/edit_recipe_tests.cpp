@@ -581,22 +581,28 @@ void v20SdrContractsAndStubs() {
     try { (void)sony2fuji::serializeEditRecipe(badDowngrade); } catch (const std::invalid_argument&) { rejectedSerialize = true; }
     check(rejectedSerialize, "serializeEditRecipe rejects schemaVersion < 20 when v0.14.0 features are active");
 
-    // Narrow Wave 0 C ABI helpers validate arguments and return UNSUPPORTED.
+    // C ABI sharpen mask preview rejects invalid input and returns an owned mask buffer.
     uint8_t dummyPixel[3] = {128, 128, 128};
     sony2fuji_buffer srcBuf{};
     srcBuf.data = dummyPixel;
+    srcBuf.size_bytes = sizeof(dummyPixel);
     srcBuf.width = 1;
     srcBuf.height = 1;
+    srcBuf.pixel_format = SONY2FUJI_PIXEL_RGB8;
     sony2fuji_buffer outMask{};
     check(sony2fuji_render_sharpen_mask_preview(nullptr, 1.0f, 50.0f, &outMask) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "sharpen mask preview rejects null source");
-    check(sony2fuji_render_sharpen_mask_preview(&srcBuf, 1.0f, 50.0f, &outMask) == SONY2FUJI_STATUS_UNSUPPORTED,
-          "sharpen mask preview returns clean UNSUPPORTED stub in Wave 0");
+    check(sony2fuji_render_sharpen_mask_preview(&srcBuf, 1.0f, 50.0f, &outMask) == SONY2FUJI_STATUS_OK &&
+          outMask.width == 1 && outMask.height == 1 && outMask.data != nullptr,
+          "sharpen mask preview renders edge mask buffer");
+    sony2fuji_release_buffer(&outMask);
     float srcRgb[3]{}, dstRgb[3]{};
     check(sony2fuji_point_color_preview_swatch(360.0f, 0.5f, 0.5f, 0.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "point color swatch preview rejects src_hue >= 360");
-    check(sony2fuji_point_color_preview_swatch(120.0f, 0.5f, 0.5f, 10.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_UNSUPPORTED,
-          "point color swatch preview returns clean UNSUPPORTED stub in Wave 0");
+    check(sony2fuji_point_color_preview_swatch(120.0f, 0.5f, 0.5f, 10.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_OK,
+          "point color swatch preview computes before/after RGB");
+    check(srcRgb[1] > srcRgb[0] && dstRgb[2] > srcRgb[2],
+          "point color swatch preview shifts hue from green toward cyan-blue for positive hue_shift");
 }
 
 } // namespace
