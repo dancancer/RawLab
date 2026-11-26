@@ -523,7 +523,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 }
                 state.edits.hdr?.takeIf { state.edits.isHDREditing }?.let { hdr ->
-                    var hdrExpanded by remember(sourceKey) { mutableStateOf(false) }
+                    var hdrExpanded by rememberSaveable(sourceKey) { mutableStateOf(false) }
                     TextButton(onClick = { hdrExpanded = !hdrExpanded }, modifier = Modifier.testTag("hdr-rendition")) {
                         Text(stringResource(R.string.hdr_rendition))
                     }
@@ -534,7 +534,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                         }
                     }
                     if (state.photo?.isCameraRawHDR == true && state.photo.hdrSource?.isProRAW != true) {
-                        var cameraOpen by remember(sourceKey) { mutableStateOf(false) }
+                        var cameraOpen by rememberSaveable(sourceKey) { mutableStateOf(false) }
                         TextButton(onClick = { cameraOpen = !cameraOpen }, enabled = !state.importingHDRCameraProfile,
                             modifier = Modifier.testTag("hdr-camera")) { Text("HDR RAW") }
                         if (cameraOpen) HDRCameraDevelopmentRows(hdr.cameraSettings,
