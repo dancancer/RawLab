@@ -303,6 +303,39 @@ class MutationAnchorTests(unittest.TestCase):
             self.assertNotEqual(mutated_c.returncode, 0, "Injecting third-party lookup into lutools/CMakeLists.txt must fail RED")
             self.assertIn("test_lutools_cmakelists_delegates_third_party_deps_to_cmake_dir", mutated_c.stdout + mutated_c.stderr)
 
+    def test_anchor_9_frozen_session_setter_fails_test_single_param_channel(self) -> None:
+        scopes = ("RawLab/RawLab", "RawLabMac/Sources", "RawLabAndroid/app/src/main", "RawLabWindows", "Shared",
+                  "lutools/src/cli")
+        code = {".swift", ".kt", ".kts", ".java", ".cs", ".c", ".cc", ".cpp", ".h", ".hpp", ".m", ".mm"}
+        with tempfile.TemporaryDirectory(prefix="rawlab-mut-param-channel-") as tmp:
+            root = Path(tmp)
+            _copy_files(root, ("scripts/ci/test_single_param_channel.py",))
+            for scope in scopes:
+                shutil.copytree(ROOT / scope, root / scope,
+                                ignore=lambda _dir, names: [n for n in names if Path(n).suffix and Path(n).suffix not in code])
+
+            test_target = root / "scripts/ci/test_single_param_channel.py"
+            baseline = _run_test_script(test_target, root)
+            self.assertEqual(baseline.returncode, 0, baseline.stdout + baseline.stderr)
+
+            # Restoring the removed sticky tone-curve helper must turn the guard red.
+            sampling = root / "Shared/RawLabNative/ToneCurveSampling.swift"
+            source = sampling.read_text(encoding="utf-8")
+            self.assertTrue(source.endswith("    }\n}\n"))
+            sampling.write_text(
+                source[:-2]
+                + "\n    func applyToSession(_ session: OpaquePointer) -> sony2fuji_status {\n"
+                + "        var config = nativeSetV2Config\n"
+                + "        return sony2fuji_session_set_tone_curves_v2(session, &config)\n"
+                + "    }\n}\n",
+                encoding="utf-8",
+            )
+
+            mutated = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated.returncode, 0, "A frozen session setter in production must fail test_single_param_channel.py")
+            self.assertIn("ToneCurveSampling.swift:", mutated.stdout + mutated.stderr)
+            self.assertIn("sony2fuji_session_set_tone_curves_v2", mutated.stdout + mutated.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
