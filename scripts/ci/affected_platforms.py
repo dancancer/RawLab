@@ -163,8 +163,6 @@ def select(event_name, event, sha, changed_files, last_success):
         return platforms, config["checks"] == "full", False, f"manual {config['platform']}/{config['checks']}; separate from CI result"
     if event_name == "pull_request":
         pull = event["pull_request"]
-        if event.get("action") == "edited" and not (event.get("changes") or {}).get("base"):
-            return set(), False, True, "pull request edit did not change base branch: keeping prior checks"
         if pull.get("draft"):
             return set(), False, True, "draft pull request: platform checks wait for ready for review"
         if is_cold_pull_request(pull):
@@ -224,16 +222,23 @@ def edit_reference(runs, jobs_of, own_id):
 
     GitHub evaluates the newest pull_request run of the workflow on the head, so a title/body
     edit run must report the head's existing verdict itself. None means that run has not
-    reported yet; a missing, skipped or cancelled result is not a pass. Earlier edit runs,
-    and runs cancelled before starting a job, are passed over.
+    reported yet; a missing, skipped or cancelled result is not a pass. Earlier edit runs are
+    passed over, and so is a run cancelled before its selection job was named (normally an edit
+    run superseded by the next edit). Any other completed run without a selection job, such as
+    one awaiting fork approval (action_required) or a startup_failure, fails closed instead of
+    falling back to an older run that may have tested another base.
     """
     for run in sorted((run for run in runs if run["id"] < own_id), key=lambda run: run["id"], reverse=True):
-        jobs = {job["name"]: job for job in jobs_of(run["id"])}
+        jobs = {job["name"]: job for job in jobs_of(run)}
+        if EDIT_JOB in jobs:
+            continue
         selection = jobs.get(SELECT_JOB)
         if selection is None:
-            if EDIT_JOB in jobs or run["status"] == "completed":
+            if run["status"] != "completed":
+                return None
+            if run.get("conclusion") == "cancelled":
                 continue
-            return None
+            return run.get("conclusion") or "missing"
         if selection["conclusion"] == "skipped":
             continue
         result = jobs.get(RESULT_JOB)
@@ -243,17 +248,33 @@ def edit_reference(runs, jobs_of, own_id):
     return "missing"
 
 
-def github_edit_reference(pull, poll_seconds=30, limit_minutes=170):
-    """Wait for the head's automatic CI result; stays inside the selection job's timeout."""
+def github_edit_reference(pull, own_id, workflow, get=None, clock=time.monotonic, sleep=time.sleep,
+                          poll_seconds=60, limit_minutes=170):
+    """Wait for the head's automatic CI result; stays inside the selection job's timeout.
+
+    Jobs of a completed run attempt are fetched once, so each round costs one runs request plus
+    one per unfinished run, however many earlier edits the head has.
+    """
+    get = get or _github_get
     query = urllib.parse.urlencode({"head_sha": pull["head"]["sha"], "event": "pull_request", "per_page": 100})
+    finished_jobs = {}
+
     def runs():
-        found = _github_get(f"actions/workflows/{_workflow_file()}/runs?{query}")["workflow_runs"]
+        found = get(f"actions/workflows/{workflow}/runs?{query}")["workflow_runs"]
         return [run for run in found
                 if any(item["number"] == pull["number"] for item in run.get("pull_requests") or [])
                 or (not run.get("pull_requests") and run.get("head_branch") == pull["head"]["ref"])]
-    def jobs_of(run_id):
-        return _github_get(f"actions/runs/{run_id}/jobs?per_page=100")["jobs"]
-    own_id, deadline = int(os.environ["GITHUB_RUN_ID"]), time.monotonic() + limit_minutes * 60
+
+    def jobs_of(run):
+        key = (run["id"], run.get("run_attempt"))
+        if key in finished_jobs:
+            return finished_jobs[key]
+        jobs = get(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
+        if run["status"] == "completed":
+            finished_jobs[key] = jobs
+        return jobs
+
+    deadline = clock() + limit_minutes * 60
     while True:
         try:
             conclusion = edit_reference(runs(), jobs_of, own_id)
@@ -262,9 +283,9 @@ def github_edit_reference(pull, poll_seconds=30, limit_minutes=170):
             conclusion = None
         if conclusion is not None:
             return conclusion
-        if time.monotonic() >= deadline:
+        if clock() >= deadline:
             return "still pending"
-        time.sleep(poll_seconds)
+        sleep(poll_seconds)
 
 
 def verify(needs):
@@ -372,7 +393,8 @@ def main():
         event = json.load(stream)
     if is_description_edit(event_name, event):
         pull = event["pull_request"]
-        reference = "draft" if pull.get("draft") else github_edit_reference(pull)
+        reference = "draft" if pull.get("draft") else github_edit_reference(
+            pull, int(os.environ["GITHUB_RUN_ID"]), _workflow_file())
         config = {"mode": "edit", "platform": "none", "checks": "models", "contracts": False}
         write_selection(set(), False, bool(pull.get("draft")),
                         f"title/body edit: CI result reuses this head's automatic result ({reference})",

@@ -365,13 +365,21 @@ isolated `-noop` concurrency group and do not cancel active checks.
 A title/body edit still creates a `pull_request` run on the same head. GitHub was
 observed (#691, #698) to read the required **CI result** from the newest such run,
 so an edit run without that check blocks a PR whose head already passed. An edit
-run therefore selects no checks; its selection job (named *Reuse the CI result of this head*) finds the
-newest earlier automatic run for this PR and head, waits up to 170 minutes for its
-**CI result**, and the edit run's **CI result** passes only if that one passed.
-A failed, cancelled, missing or still-unfinished result fails it, so an edit
-cannot turn an unverified head green; edits on drafts stay skipped. A newer push
-or base change supersedes the edit run. If the wait runs out, push again or edit
-again after the automatic run finishes.
+run therefore selects no checks. Its selection job (named *Reuse the CI result of
+this head*) finds the newest earlier automatic run for this PR and head, polling
+once a minute for up to 170 minutes, and the edit run's **CI result** passes only
+if that run's result passed. Earlier edit runs are passed over, and so is a run
+cancelled before it started a job (normally an edit run superseded by the next
+edit). Every other outcome fails closed instead of falling back to an older run:
+a failed, cancelled, missing, unfinished or timed-out result, and a run that never
+started for another reason, such as one awaiting fork approval (`action_required`)
+or a `startup_failure`. So an edit cannot turn an unverified head green, including
+one whose base changed. Edits on drafts stay skipped. A newer push or base change
+supersedes the edit run.
+
+Because the newest run decides, re-running the automatic run does not clear a
+failed edit run's **CI result**: once the automatic result has passed, edit the
+title or body again (the new edit run reuses it) or push a new commit.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
 workflow runs when a same-repository PR closes (external fork PRs never save

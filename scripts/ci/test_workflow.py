@@ -807,6 +807,18 @@ class WorkflowContractTests(unittest.TestCase):
         for ctx in (base_edit_ctx, sync_ctx, push_ctx, dispatch_ctx):
             self.assertEqual(_eval_gha_expr(changes_name, ctx), SELECT_JOB)
 
+        # With the selection a title/body edit writes (test_affected_platforms.EditSelectionOutputTests),
+        # every check job stays skipped; only the aggregate result runs.
+        edit_outputs = {**{platform: "false" for platform in PLATFORMS}, "contracts": "false",
+                        "mode": "edit", "checks": "models", "draft": "false", "reference": "success"}
+        edit_needs = {"_cancelled": False, "needs": {"changes": {"result": "success", "outputs": edit_outputs}}}
+        for name, job in self.workflow["jobs"].items():
+            if name in ("changes", "result"):
+                continue
+            with self.subTest(job=name):
+                self.assertFalse(_gha_truthy(_eval_gha_expr(_strip_expr(job["if"]), edit_needs)))
+        self.assertTrue(_gha_truthy(_eval_gha_expr(result_if, edit_needs)))
+
         self.assertNotEqual(
             _eval_gha_template(group_tmpl, title_edit_ctx),
             _eval_gha_template(group_tmpl, sync_ctx),
