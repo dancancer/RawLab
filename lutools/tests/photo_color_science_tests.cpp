@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "native_gpu_test_support.h"
 #include "core/photo_bw_mixer.h"
 #include "core/photo_calibration.h"
 #include "core/photo_color_grading.h"
@@ -460,7 +461,7 @@ void testZeroValueExactBypass() {
     checkPass(maxRgb8Diff(a, b) == 0, "Zero-value v0.14 color science exact bypass max_diff == 0");
 }
 
-void testMetalForceGpuAndParity() {
+void testNativeGpuForceGpuAndParity(bool requireMetal) {
     const auto grid = makeColorfulGrid(32, 24);
 
     // Build combined Track A color science state exercising all 4 features together.
@@ -498,19 +499,57 @@ void testMetalForceGpuAndParity() {
         {"highlights", {{"hue", 35.0}, {"saturation", 40.0}, {"luminance", 5.0}}}
     };
 
+    const auto expectedBackend = requireMetal ? SONY2FUJI_BACKEND_METAL : rawlabtest::nativeBackend;
+    auto verifyCase = [&](const char* label, const RenderedRgb8& cpu, const RenderedRgb8& gpu) {
+        checkPass(gpu.backend == expectedBackend,
+            std::string("Native Force GPU backend active for ") + label +
+            " (got=" + std::to_string(static_cast<int>(gpu.backend)) +
+            ", expected=" + std::to_string(static_cast<int>(expectedBackend)) + ")");
+        requirePass(cpu.rgb8.size() == gpu.rgb8.size() &&
+            cpu.width == gpu.width && cpu.height == gpu.height,
+            std::string("rendered buffer dimensions match for ") + label);
+        int maxDiff = 0;
+        int worstX = 0, worstY = 0, worstC = 0, worstCpu = 0, worstGpu = 0;
+        size_t over2Count = 0;
+        bool hasWorst = false;
+        for (int y = 0; y < cpu.height; ++y) {
+            for (int x = 0; x < cpu.width; ++x) {
+                for (int c = 0; c < 3; ++c) {
+                    const size_t idx = (static_cast<size_t>(y) * cpu.width + static_cast<size_t>(x)) * 3u + static_cast<size_t>(c);
+                    const int cv = int(cpu.rgb8[idx]);
+                    const int gv = int(gpu.rgb8[idx]);
+                    const int d = std::abs(cv - gv);
+                    if (d > 2) ++over2Count;
+                    if (!hasWorst || d > maxDiff) {
+                        hasWorst = true;
+                        maxDiff = d;
+                        worstX = x;
+                        worstY = y;
+                        worstC = c;
+                        worstCpu = cv;
+                        worstGpu = gv;
+                    }
+                }
+            }
+        }
+        if (maxDiff > 2) {
+            std::cerr << "DIAG: color science [" << label << "] maxDiff=" << maxDiff
+                      << " worst=(" << worstX << "," << worstY << ",c=" << worstC
+                      << " cpu=" << worstCpu << " gpu=" << worstGpu
+                      << " over2Channels=" << over2Count << ")\n";
+        }
+        checkPass(maxDiff <= 2,
+            std::string("CPU vs native GPU RGB8 parity <= 2 for ") + label +
+            " (maxDiff=" + std::to_string(maxDiff) + ")");
+    };
+
     const auto cpuCombined = renderWithEditJson(grid, 32, 24, makeBaseEditStateJson(combined, combinedGrading), SONY2FUJI_GPU_OFF);
     const auto gpuCombined = renderWithEditJson(grid, 32, 24, makeBaseEditStateJson(combined, combinedGrading), SONY2FUJI_GPU_FORCE);
-    checkPass(gpuCombined.backend == SONY2FUJI_BACKEND_METAL, "Metal Force GPU backend active for color science");
-    checkPass(maxRgb8Diff(cpuCombined, gpuCombined) <= 2,
-        "CPU vs Metal RGB8 parity <= 2 for combined calibration + point_color + selective_color (maxDiff=" +
-        std::to_string(maxRgb8Diff(cpuCombined, gpuCombined)) + ")");
+    verifyCase("combined calibration + point_color + selective_color + grading", cpuCombined, gpuCombined);
 
     const auto cpuBw = renderWithEditJson(grid, 32, 24, makeBaseEditStateJson(bwCombined, bwCombinedGrading), SONY2FUJI_GPU_OFF);
     const auto gpuBw = renderWithEditJson(grid, 32, 24, makeBaseEditStateJson(bwCombined, bwCombinedGrading), SONY2FUJI_GPU_FORCE);
-    checkPass(gpuBw.backend == SONY2FUJI_BACKEND_METAL, "Metal Force GPU backend active for B&W + split tone");
-    checkPass(maxRgb8Diff(cpuBw, gpuBw) <= 2,
-        "CPU vs Metal RGB8 parity <= 2 for B&W + selective_color + grading (maxDiff=" +
-        std::to_string(maxRgb8Diff(cpuBw, gpuBw)) + ")");
+    verifyCase("B&W + selective_color + grading", cpuBw, gpuBw);
 }
 
 } // namespace
@@ -524,13 +563,16 @@ int main(int argc, char** argv) {
             }
         }
         if (runMetal) {
-            testMetalForceGpuAndParity();
+            testNativeGpuForceGpuAndParity(true);
         } else {
             testCalibrationNeutralInvariant();
             testPointColorVarianceAndPreview();
             testSelectiveColor9Bands();
             testBwMixerAndSplitToneOrder();
             testZeroValueExactBypass();
+            if (rawlabtest::nativeGpuAvailable()) {
+                testNativeGpuForceGpuAndParity(false);
+            }
         }
         return rawlab::test::exitCode();
     } catch (const std::exception& error) {

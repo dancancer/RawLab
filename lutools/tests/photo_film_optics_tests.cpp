@@ -397,6 +397,44 @@ void testCombinedV014AllFeaturesParity() {
 
     sony2fuji_session* session = nullptr;
     assert(sony2fuji_session_create(&session) == SONY2FUJI_STATUS_OK);
+    bool allPassed = true;
+
+    struct DiffStats {
+        int maxDiff = 0;
+        int worstX = 0;
+        int worstY = 0;
+        int worstC = 0;
+        int worstCpu = 0;
+        int worstGpu = 0;
+        size_t over2Count = 0;
+    };
+    auto compareRgb8 = [&](const std::vector<uint8_t>& cpu, const std::vector<uint8_t>& gpu) {
+        assert(cpu.size() == static_cast<size_t>(W) * H * 3u);
+        assert(gpu.size() == cpu.size());
+        DiffStats stats;
+        bool hasWorst = false;
+        for (int y = 0; y < H; ++y) {
+            for (int x = 0; x < W; ++x) {
+                for (int c = 0; c < 3; ++c) {
+                    const size_t idx = (static_cast<size_t>(y) * W + static_cast<size_t>(x)) * 3u + static_cast<size_t>(c);
+                    const int cv = int(cpu[idx]);
+                    const int gv = int(gpu[idx]);
+                    const int d = std::abs(cv - gv);
+                    if (d > 2) ++stats.over2Count;
+                    if (!hasWorst || d > stats.maxDiff) {
+                        hasWorst = true;
+                        stats.maxDiff = d;
+                        stats.worstX = x;
+                        stats.worstY = y;
+                        stats.worstC = c;
+                        stats.worstCpu = cv;
+                        stats.worstGpu = gv;
+                    }
+                }
+            }
+        }
+        return stats;
+    };
 
     auto runCase = [&](const char* label, const char* jsonText) {
         assert(sony2fuji_apply_params(session, jsonText) == SONY2FUJI_STATUS_OK);
@@ -435,21 +473,27 @@ void testCombinedV014AllFeaturesParity() {
         if (rawlabtest::nativeGpuAvailable()) {
             const auto gpuFinal = runMode(SONY2FUJI_GPU_FORCE, SONY2FUJI_INTENT_FINAL);
             assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
-            int maxDiffFinal = 0;
-            for (size_t i = 0; i < cpuFinal.size(); ++i) {
-                maxDiffFinal = std::max(maxDiffFinal, std::abs(int(cpuFinal[i]) - int(gpuFinal[i])));
-            }
-            assert(maxDiffFinal <= 2);
+            const DiffStats finalStats = compareRgb8(cpuFinal, gpuFinal);
 
             const auto gpuPreview = runMode(SONY2FUJI_GPU_FORCE, SONY2FUJI_INTENT_PREVIEW);
             assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
-            int maxDiffPreview = 0;
-            for (size_t i = 0; i < cpuPreview.size(); ++i) {
-                maxDiffPreview = std::max(maxDiffPreview, std::abs(int(cpuPreview[i]) - int(gpuPreview[i])));
+            const DiffStats previewStats = compareRgb8(cpuPreview, gpuPreview);
+
+            if (finalStats.maxDiff > 2 || previewStats.maxDiff > 2) {
+                std::cerr << "FAIL: Combined v0.14.0 [" << label << "] parity exceeded <= 2 RGB8: "
+                          << "final maxDiff=" << finalStats.maxDiff
+                          << " worst=(" << finalStats.worstX << "," << finalStats.worstY << ",c=" << finalStats.worstC
+                          << " cpu=" << finalStats.worstCpu << " gpu=" << finalStats.worstGpu
+                          << " over2Channels=" << finalStats.over2Count << "); "
+                          << "preview maxDiff=" << previewStats.maxDiff
+                          << " worst=(" << previewStats.worstX << "," << previewStats.worstY << ",c=" << previewStats.worstC
+                          << " cpu=" << previewStats.worstCpu << " gpu=" << previewStats.worstGpu
+                          << " over2Channels=" << previewStats.over2Count << ")\n";
+                allPassed = false;
+            } else {
+                std::cout << "PASS: Combined v0.14.0 [" << label << "] Force GPU parity (final maxDiff="
+                          << finalStats.maxDiff << ", preview maxDiff=" << previewStats.maxDiff << ")\n";
             }
-            assert(maxDiffPreview <= 2);
-            std::cout << "PASS: Combined v0.14.0 [" << label << "] Force GPU parity (final maxDiff="
-                      << maxDiffFinal << ", preview maxDiff=" << maxDiffPreview << ")\n";
         } else {
             assert(!cpuFinal.empty() && cpuFinal.size() == cpuPreview.size());
             std::cout << "PASS: Combined v0.14.0 [" << label << "] CPU render (native GPU not present)\n";
@@ -560,6 +604,7 @@ void testCombinedV014AllFeaturesParity() {
     runCase("Calibration+PointColor+Selective+Grading+Defringe+Dehaze+Clarity+Texture+Halation+Bloom+SharpenV2+AsymGrain", allColorJson);
     runCase("BwMixer+Clarity+Texture+Halation+Bloom+SharpenV2+120Grain", bwFilmJson);
     sony2fuji_session_destroy(session);
+    assert(allPassed);
 }
 
 } // namespace
