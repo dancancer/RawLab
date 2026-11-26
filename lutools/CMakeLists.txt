@@ -91,6 +91,7 @@ set(CORE_SOURCES
     src/core/hdr_rendering.cpp
     src/core/hdr_pipeline.cpp
     src/core/hdr_detail.cpp
+    src/core/hdr_display.cpp
     src/core/hdr_look.cpp
     src/core/photo_color.cpp
     src/core/photo_tone_controls.cpp
@@ -146,6 +147,8 @@ set(CORE_SOURCES
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     # P3 的硬阈值需与冻结的 float32 分步计算一致，避免 FMA 改变分支。
     set_source_files_properties(src/core/noise_aware_sharpen.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+    # HDR 显示统计与映射须与客户端原逐步舍入及 GPU 着色器一致（GCC 不识别源码内 pragma）。
+    set_source_files_properties(src/core/hdr_display.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 elseif(MSVC)
     set_source_files_properties(src/core/noise_aware_sharpen.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
 endif()
@@ -792,6 +795,12 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     rawlab_add_test(
         NAME hdr_resample
         SOURCES tests/hdr_resample_tests.cpp
+        LIBRARIES sony2fuji_core
+        LABELS hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME hdr_display_mapping
+        SOURCES tests/hdr_display_mapping_tests.cpp
         LIBRARIES sony2fuji_core
         LABELS hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )

@@ -3,6 +3,7 @@
 #include "ffi/session_internal.h"
 #include "core/bsh_diagnostics.h"
 #include "core/edit_recipe_params.h"
+#include "core/hdr_display.h"
 #include "core/hdr_look.h"
 #include "core/hdr_pipeline.h"
 #include "core/hdr_progress.h"
@@ -11,8 +12,10 @@
 #include "platform/hdr_image.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -549,6 +552,21 @@ sony2fuji_status encodeHdrDisplay8Buffer(
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }
 }
+
+// 显示统计与映射按 float 索引行，因此另需 4 字节对齐与 128MP 栅格上限。
+bool validateHdrDisplayPlane(const sony2fuji_hdr_buffer_v1* plane, sony2fuji_status& outError) noexcept {
+    if (!plane) {
+        outError = SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        return false;
+    }
+    if (!validateHdrFloatSourceFor8Bit(plane, outError)) return false;
+    if (uint64_t(plane->width) * plane->height > 128000000u || plane->stride_bytes % sizeof(float) != 0 ||
+        reinterpret_cast<uintptr_t>(plane->data) % alignof(float) != 0) {
+        outError = SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 extern "C" {
@@ -697,6 +715,86 @@ sony2fuji_status sony2fuji_hdr_encode_rgba8_into(
             dst_stride_bytes));
     } catch (const std::bad_alloc&) {
         return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_hdr_analyze_luminance(
+    const sony2fuji_hdr_buffer_v1* image,
+    uint32_t* ev_bins,
+    uint32_t* above_white,
+    float* peak_luminance
+) {
+    if (!ev_bins || !above_white || !peak_luminance) return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    sony2fuji_status err = SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (!validateHdrDisplayPlane(image, err)) return err;
+    try {
+        hdr::LuminanceStatistics stats;
+        if (!hdr::analyzeLuminance(static_cast<const float*>(image->data), image->width, image->height,
+                static_cast<size_t>(image->stride_bytes / sizeof(float)), stats)) {
+            return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        }
+        std::copy(std::begin(stats.bins), std::end(stats.bins), ev_bins);
+        *above_white = stats.aboveWhite;
+        *peak_luminance = stats.peak;
+        return SONY2FUJI_STATUS_OK;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
+}
+
+sony2fuji_status sony2fuji_hdr_display_into(
+    const sony2fuji_hdr_buffer_v1* hdrPlane,
+    const sony2fuji_hdr_buffer_v1* sdrPlane,
+    float display_headroom,
+    float content_headroom,
+    uint32_t flags,
+    void* dst,
+    uint64_t dst_size_bytes,
+    uint64_t dst_stride_bytes
+) {
+    static_assert(hdr::kDisplaySdr == SONY2FUJI_HDR_DISPLAY_SDR && hdr::kDisplayFalseColor == SONY2FUJI_HDR_DISPLAY_FALSE_COLOR &&
+        hdr::kDisplayP3 == SONY2FUJI_HDR_DISPLAY_P3 && hdr::kDisplayClampSdr == SONY2FUJI_HDR_DISPLAY_CLAMP_SDR &&
+        hdr::kDisplayBgra8Srgb == SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, "HDR display flags");
+    const bool falseColor = (flags & SONY2FUJI_HDR_DISPLAY_FALSE_COLOR) != 0;
+    if (!dst || (flags & ~uint32_t(hdr::kDisplayAllFlags)) != 0 || (!sdrPlane && !falseColor) ||
+        !std::isfinite(content_headroom) || content_headroom < 1.0f) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    sony2fuji_status err = SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    if (!validateHdrDisplayPlane(hdrPlane, err) || (sdrPlane && !validateHdrDisplayPlane(sdrPlane, err))) return err;
+    if (sdrPlane && (sdrPlane->width != hdrPlane->width || sdrPlane->height != hdrPlane->height)) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    const uint64_t rowBytes = uint64_t(hdrPlane->width) * ((flags & SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB) ? 4u : 8u);
+    if (dst_stride_bytes < rowBytes ||
+        (hdrPlane->height > 1u &&
+         dst_stride_bytes > (std::numeric_limits<uint64_t>::max() - rowBytes) / (hdrPlane->height - 1u)) ||
+        uint64_t(hdrPlane->height - 1u) * dst_stride_bytes + rowBytes > dst_size_bytes ||
+        dst_size_bytes > std::numeric_limits<size_t>::max() ||
+        overlaps(hdrPlane->data, hdrPlane->size_bytes, dst, dst_size_bytes) ||
+        (sdrPlane && overlaps(sdrPlane->data, sdrPlane->size_bytes, dst, dst_size_bytes))) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+    try {
+        hdr::DisplayPlanes planes;
+        planes.hdr = static_cast<const float*>(hdrPlane->data);
+        planes.hdrStride = static_cast<size_t>(hdrPlane->stride_bytes / sizeof(float));
+        if (sdrPlane) {
+            planes.sdr = static_cast<const float*>(sdrPlane->data);
+            planes.sdrStride = static_cast<size_t>(sdrPlane->stride_bytes / sizeof(float));
+        }
+        planes.dst = static_cast<uint8_t*>(dst);
+        planes.dstStride = static_cast<size_t>(dst_stride_bytes);
+        planes.width = hdrPlane->width;
+        planes.height = hdrPlane->height;
+        switch (hdr::mapDisplay(planes, display_headroom, content_headroom, flags)) {
+            case hdr::DisplayResult::Ok: return SONY2FUJI_STATUS_OK;
+            case hdr::DisplayResult::NonFinite: return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+            case hdr::DisplayResult::Unrepresentable: return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        }
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
     } catch (...) {
         return SONY2FUJI_STATUS_PROCESSING_ERROR;
     }

@@ -2447,6 +2447,18 @@
       "symbol": "sony2fuji_hdr_encode_rgba8_into"
     },
     {
+      "name": "sony2fuji_hdr_analyze_luminance",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "uint32_t*", "uint32_t*", "float*"],
+      "symbol": "sony2fuji_hdr_analyze_luminance"
+    },
+    {
+      "name": "sony2fuji_hdr_display_into",
+      "return_type": "sony2fuji_status",
+      "params": ["const sony2fuji_hdr_buffer_v1*", "const sony2fuji_hdr_buffer_v1*", "float", "float", "uint32_t", "void*", "uint64_t", "uint64_t"],
+      "symbol": "sony2fuji_hdr_display_into"
+    },
+    {
       "name": "sony2fuji_hdr_create_hsl_probe",
       "return_type": "sony2fuji_status",
       "params": ["sony2fuji_session*", "const sony2fuji_hdr_image_pair_v1*", "const sony2fuji_hdr_request_v1*", "uint64_t", "uint64_t", "sony2fuji_hsl_probe**", "sony2fuji_hdr_diagnostic_v1*"],
