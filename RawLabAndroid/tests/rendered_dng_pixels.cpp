@@ -1,5 +1,5 @@
 #define STB_IMAGE_IMPLEMENTATION
-#include "core/stb_image.h"
+#include "../../lutools/tests/stb_image.h"
 
 #include <tiffio.h>
 #include <algorithm>
