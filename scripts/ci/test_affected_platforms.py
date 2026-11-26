@@ -363,8 +363,10 @@ class DescriptionEditTests(unittest.TestCase):
         # A fork PR retargeted to main waits for approval (action_required, no jobs); an
         # approved edit run must not restate the older pass on the previous base.
         older_pass = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
-        for conclusion, expected in (("action_required", "action_required"), ("startup_failure", "startup_failure"),
-                                     ("stale", "stale"), (None, "missing")):
+        for conclusion, expected in (("action_required", "not started (action_required)"),
+                                     ("startup_failure", "not started (startup_failure)"),
+                                     ("stale", "not started (stale)"), (None, "not started (None)"),
+                                     ("success", "not started (success)")):
             for jobs in ((), (self.UNNAMED[:2] + (conclusion,),)):
                 with self.subTest(conclusion=conclusion, jobs=len(jobs)):
                     never_ran = self.workflow_run(20, "completed", *jobs, conclusion=conclusion)
@@ -451,6 +453,23 @@ class EditPollingTests(unittest.TestCase):
                 return {"jobs": self.jobs("success")}
             return {"workflow_runs": [self.workflow_run(10)]}
         self.assertEqual(self.poll(get), "success")
+
+    def test_a_rerun_attempt_is_fetched_again(self):
+        # Run 11 is first cancelled before start (skipped, its empty job list cached); a rerun
+        # makes attempt 2 the newest automatic result, which must be fetched rather than reused.
+        rounds = []
+        def runs():
+            rounds.append(None)
+            rerun = len(rounds) > 2
+            return [self.workflow_run(10, status="in_progress", conclusion=None),
+                    self.workflow_run(11, conclusion="success" if rerun else "cancelled", attempt=2 if rerun else 1)]
+        def jobs(run_id):
+            if run_id == 10:
+                return self.jobs("failure")[:1]
+            return self.jobs("success") if len(rounds) > 2 else []
+        get, calls = self.api(runs, jobs)
+        self.assertEqual(self.poll(get), "success")
+        self.assertEqual(len([path for path in calls if "runs/11/jobs" in path]), 2)
 
     def test_requests_do_not_grow_with_earlier_edits(self):
         edits = 7

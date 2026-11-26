@@ -238,7 +238,8 @@ def edit_reference(runs, jobs_of, own_id):
                 return None
             if run.get("conclusion") == "cancelled":
                 continue
-            return run.get("conclusion") or "missing"
+            # Never pass through the run's own conclusion: without a CI result job it proves nothing.
+            return f"not started ({run.get('conclusion')})"
         if selection["conclusion"] == "skipped":
             continue
         result = jobs.get(RESULT_JOB)
