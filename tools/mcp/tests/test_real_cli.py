@@ -3,10 +3,12 @@ import json
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import unittest
+import zlib
 
 from mcp import Client, StdioServerParameters
 
@@ -701,3 +703,283 @@ class RealCliTests(unittest.IsolatedAsyncioTestCase):
                         )
                     self.assertEqual(ctx.exception.code, "unsupported")
                     self.assertEqual(ctx.exception.status, 4)
+
+    async def test_v014_diagnose_print_transfer_save_preset_and_sync_photo_edit(self):
+        def write_png_rgb8(path: Path, width: int, height: int, rows: list[bytes]):
+            def chunk(kind: bytes, data: bytes) -> bytes:
+                crc = zlib.crc32(kind + data) & 0xFFFFFFFF
+                return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", crc)
+
+            ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+            raw = b"".join(b"\x00" + row for row in rows)
+            path.write_bytes(
+                b"\x89PNG\r\n\x1a\n"
+                + chunk(b"IHDR", ihdr)
+                + chunk(b"IDAT", zlib.compress(raw))
+                + chunk(b"IEND", b"")
+            )
+
+        with tempfile.TemporaryDirectory(prefix="rawlab-mcp-v014-e2e-") as directory:
+            root = Path(directory).resolve()
+            data_dir = root / "appdata"
+            source = root / "photo.dng"
+            sibling_photo = root / "sibling.jpg"
+            shutil.copyfile(ROOT / "lutools/tests/fixtures/linear-uncompressed.dng", source)
+            sibling_photo.write_bytes(b"sibling")
+
+            # Synthetic portrait with uneven cheek (reddish) and forehead (sallow)
+            portrait_png = root / "portrait_skin_variance.png"
+            rows = []
+            for y in range(24):
+                row = bytearray()
+                for x in range(24):
+                    if x < 12:
+                        row.extend((224, 156, 152))  # Reddish cheek sample
+                    else:
+                        row.extend((214, 184, 136))  # Sallow forehead sample
+                rows.append(bytes(row))
+            write_png_rgb8(portrait_png, 24, 24, rows)
+
+            # Synthetic monochrome PNG for B&W guidance check
+            mono_png = root / "mono_scene.png"
+            mono_rows = [bytes([128, 128, 128] * 16) for _ in range(16)]
+            write_png_rgb8(mono_png, 16, 16, mono_rows)
+
+            # Build complete v20 SDR recipe covering all 29 v0.14.0 fields
+            sel_bands = {
+                b: {"cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0}
+                for b in ("reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks")
+            }
+            sel_bands["reds"] = {"cyan": -15.0, "magenta": 8.0, "yellow": 6.0, "black": -2.0}
+            sel_bands["cyans"] = {"cyan": 12.0, "magenta": -4.0, "yellow": -10.0, "black": 3.0}
+            bw_mixer = {"red": 25.5, "orange": 18.25, "yellow": 12.0, "green": -15.5, "aqua": -28.0, "blue": -35.25, "purple": 10.5, "magenta": 6.25}
+            swatches = [{
+                "src_hue": 19.5, "src_saturation": 0.28, "src_luminance": 0.72,
+                "hue_shift": 3.5, "saturation_shift": -8.0, "luminance_shift": 2.5,
+                "variance": -32.0, "range": 55.0, "hue_range": 48.0,
+                "sat_range": 50.0, "lum_range": 52.0, "enabled": True,
+            }]
+            recipe = root / "recipe_v20.json"
+            recipe.write_text(json.dumps({
+                "schema_version": 20,
+                "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+                "input": {"path": source.name, "type": "raw"},
+                "edits": {
+                    "exposure": {"mode": "preview", "ev": 0.2, "brightness": 1.0},
+                    "white_balance": {"mode": "camera"},
+                    "look": {"path": None, "strength": 1.0},
+                    "tone": {"contrast": 1.08, "saturation": 1.04, "highlights": -0.1, "shadows": 0.15, "s_curve": 0.0},
+                    "color": {
+                        "vibrance": 0.06,
+                        "calibration": {
+                            "shadow_tint": -12.0, "red_hue": 8.5, "red_saturation": 14.0,
+                            "green_hue": -6.0, "green_saturation": 5.5, "blue_hue": -10.5, "blue_saturation": 18.0,
+                        },
+                        "point_color": {"swatches": swatches},
+                        "selective_color": {"method": "absolute", "bands": sel_bands},
+                        "bw": {"enabled": True, "mixer": bw_mixer},
+                    },
+                    "detail": {"sharpening": 0.25, "luminance_v2": True, "sharpening_radius": 1.4, "sharpening_detail": 42.5, "sharpening_masking": 62.0},
+                    "effects": {
+                        "texture": 0.325,
+                        "grain_tone_curve": "negative_asymmetric",
+                        "grain_format_preset": "135",
+                        "halation": {"amount": 28.5, "threshold": 82.0, "radius": 45.5, "hue": -14.0},
+                        "bloom": {"amount": 22.25, "threshold": 68.0, "radius": 52.5},
+                    },
+                    "lens_correction": {
+                        "distortion": False, "tca": False, "vignetting": False, "auto_crop": True, "profile_id": None,
+                        "defringe_purple_amount": 6.5, "defringe_purple_hue": 35.0,
+                        "defringe_green_amount": 4.25, "defringe_green_hue": 65.0,
+                    },
+                },
+                "output": {"path": "unused.png", "format": "png"},
+            }), encoding="utf-8")
+
+            transfer = subprocess.run(
+                [CLI, "--recipe", str(recipe), "--print-transfer", "--json"],
+                capture_output=True, encoding="utf-8", check=False, timeout=120,
+            )
+            self.assertEqual(transfer.returncode, 0, f"stdout={transfer.stdout} stderr={transfer.stderr}")
+            transfer_payload = json.loads(transfer.stdout)["result"]
+            transfer_values = transfer_payload["values"]
+
+            expected_v014_keys = {
+                "color.calibration.shadow_tint", "color.calibration.red_hue", "color.calibration.red_saturation",
+                "color.calibration.green_hue", "color.calibration.green_saturation", "color.calibration.blue_hue", "color.calibration.blue_saturation",
+                "color.point_color", "color.selective_color", "color.bw.enabled", "color.bw.mixer",
+                "effects.texture", "effects.grain.tone_curve", "effects.grain.format_preset",
+                "effects.halation.amount", "effects.halation.threshold", "effects.halation.radius", "effects.halation.hue",
+                "effects.bloom.amount", "effects.bloom.threshold", "effects.bloom.radius",
+                "detail.sharpening.luminance_v2", "detail.sharpening.radius", "detail.sharpening.detail", "detail.sharpening.masking",
+                "geometry.lens.defringe_purple_amount", "geometry.lens.defringe_purple_hue",
+                "geometry.lens.defringe_green_amount", "geometry.lens.defringe_green_hue",
+            }
+            self.assertTrue(expected_v014_keys.issubset(transfer_values.keys()))
+            self.assertAlmostEqual(transfer_values["effects.texture"], 32.5, places=3)
+            self.assertEqual(transfer_values["effects.grain.tone_curve"], "negative_asymmetric")
+            self.assertEqual(transfer_values["effects.grain.format_preset"], "135")
+            self.assertTrue(transfer_values["detail.sharpening.luminance_v2"])
+            self.assertAlmostEqual(transfer_values["detail.sharpening.masking"], 62.0, places=3)
+
+            params = StdioServerParameters(command=sys.executable, args=[
+                "-m", "rawlab_mcp", "--cli", CLI,
+                "--read-root", str(root), "--write-root", str(root),
+                "--enable-gui-sync", "--data-dir", str(data_dir),
+            ], env={**os.environ, "PYTHONPATH": str(ROOT / "tools/mcp/src")})
+
+            async with Client(params) as client:
+                # 1. Live diagnose_image on portrait & monochrome PNGs
+                if sys.platform in ("darwin", "win32"):
+                    diag_portrait = await client.call_tool("diagnose_image", {
+                        "image_path": str(portrait_png),
+                        "samples": ["0.25,0.5,face_cheek", "0.75,0.5,face_forehead"],
+                    })
+                    self.assertFalse(diag_portrait.is_error, str(diag_portrait))
+                    p_res = diag_portrait.structured_content["result"]
+                    self.assertTrue(p_res["portrait_diagnostics"]["blotchy_variance_detected"])
+                    self.assertIn("color.point_color", " ".join(p_res["portrait_diagnostics"]["recommendations"]))
+                    self.assertIn("color.point_color", " ".join(p_res["auto_diagnostics"]))
+                    self.assertEqual(p_res["v014_guidance"]["detail_and_texture"]["recommended_masking_min"], 50.0)
+
+                    diag_mono = await client.call_tool("diagnose_image", {
+                        "image_path": str(mono_png),
+                    })
+                    self.assertFalse(diag_mono.is_error, str(diag_mono))
+                    m_res = diag_mono.structured_content["result"]
+                    self.assertTrue(m_res["v014_guidance"]["film_and_color"]["monochrome_candidate"])
+                    self.assertIn("color.bw.enabled=true", " ".join(m_res["auto_diagnostics"]))
+
+                # 2. save_preset round-trips all 29 v0.14.0 fields from --print-transfer
+                saved = await client.call_tool("save_preset", {
+                    "name": "All 29 V20 Fields",
+                    "values": transfer_values,
+                    "is_raw": transfer_payload["source"]["is_raw"],
+                    "processing_version": transfer_payload["source"]["processing_version"],
+                })
+                self.assertFalse(saved.is_error, str(saved))
+                presets_doc = json.loads((data_dir / "Presets" / "presets.json").read_text(encoding="utf-8"))
+                saved_vals = presets_doc["presets"][0]["payload"]["values"]
+                for k in expected_v014_keys:
+                    self.assertIn(k, saved_vals, f"Preset dropped {k}")
+
+                # 3. sync_photo_edit writes all 29 fields & preserves orthogonal + future fields across merge/resets
+                all_29_adjustments = {
+                    "processing_version": 3,
+                    "texture": 32.5,
+                    "calibration": {
+                        "shadow_tint": -12.0, "red_hue": 8.5, "red_saturation": 14.0,
+                        "green_hue": -6.0, "green_saturation": 5.5, "blue_hue": -10.5, "blue_saturation": 18.0,
+                    },
+                    "point_color": {"swatches": swatches},
+                    "selective_color": {"method": "absolute", "bands": sel_bands},
+                    "bw": {"enabled": True, "mixer": bw_mixer},
+                    "sharpen_v2": {"luminance_v2": True, "radius": 1.4, "detail": 42.5, "masking": 62.0},
+                    "film_optics": {
+                        "halation_amount": 28.5, "halation_threshold": 82.0, "halation_radius": 45.5, "halation_hue": -14.0,
+                        "bloom_amount": 22.25, "bloom_threshold": 68.0, "bloom_radius": 52.5,
+                    },
+                    "photo_effects": {"grain_tone_curve": "negative_asymmetric", "grain_format_preset": "135"},
+                    "lens_correction": {
+                        "defringe_purple_amount": 6.5, "defringe_purple_hue": 35.0,
+                        "defringe_green_amount": 4.25, "defringe_green_hue": 65.0,
+                    },
+                }
+                synced = await client.call_tool("sync_photo_edit", {
+                    "photo_path": str(source),
+                    "adjustments": all_29_adjustments,
+                    "film_id": "builtin:classic_chrome",
+                })
+                if sys.platform not in ("darwin", "win32"):
+                    self.assertTrue(synced.is_error)
+                    self.assertEqual(synced.structured_content["error"]["status"], 4)
+                    return
+
+                self.assertFalse(synced.is_error, str(synced))
+                photo_key = synced.structured_content["result"]["photo_path"]
+                edits_path = data_dir / "Edits" / "edits.json"
+                edits_doc = json.loads(edits_path.read_text(encoding="utf-8"))
+                sibling_slice = '{"customSibling":42,"identity":{"size":7}}'
+                if sys.platform == "darwin":
+                    st = edits_doc["records"][photo_key]["state"]["settings"]
+                    self.assertEqual(st["atmosphere"]["texture"], 32.5)
+                    self.assertEqual(st["cameraCalibration"]["shadowTint"], -12.0)
+                    self.assertEqual(len(st["pointColor"]["swatches"]), 1)
+                    self.assertEqual(st["selectiveColor"]["method"], "absolute")
+                    self.assertTrue(st["bwMixer"]["enabled"])
+                    self.assertEqual(st["sharpenV2"]["masking"], 62.0)
+                    self.assertEqual(st["filmOptics"]["halationAmount"], 28.5)
+                    self.assertEqual(st["photoEffects"]["grainToneCurve"], "negative_asymmetric")
+                    self.assertEqual(st["photoEffects"]["grainFormatPreset"], "135")
+                    self.assertEqual(st["lensCorrection"]["defringePurpleAmount"], 6.5)
+
+                    # Inject orthogonal + future fields alongside untouched verbatim sibling
+                    st["hdr"] = {"mode": "hdr", "peakLimit": 2.5}
+                    st["aiDenoiseEnabled"] = True
+                    st["aiDenoiseStrength"] = 72.0
+                    st["aiDenoiseBlend"] = 68.0
+                    st["lutID"] = "builtin:classic_chrome"
+                    st["futureV15Field"] = {"nested": [1, 2, 3]}
+                    edits_raw = (
+                        '{"records":{'
+                        + json.dumps(photo_key) + ':' + json.dumps(edits_doc["records"][photo_key])
+                        + ',' + json.dumps(str(sibling_photo)) + ':' + sibling_slice
+                        + '},"version":1}'
+                    )
+                else:
+                    st = edits_doc["Records"][photo_key]["Settings"]
+                    self.assertEqual(st["Atmosphere"]["Texture"], 32.5)
+                    self.assertEqual(st["Effects"]["GrainToneCurve"], "negative_asymmetric")
+                    self.assertEqual(st["Effects"]["GrainFormatPreset"], "135")
+                    self.assertEqual(st["Lens"]["DefringePurpleAmount"], 6.5)
+                    st["HDR"] = {"Mode": "hdr", "PeakLimit": 2.5}
+                    st["AIDenoiseEnabled"] = True
+                    st["aiDenoiseStrength"] = 72.0
+                    st["AIDenoiseBlend"] = 68.0
+                    st["lutID"] = "builtin:classic_chrome"
+                    st["FutureV15Field"] = {"nested": [1, 2, 3]}
+                    edits_raw = (
+                        '{"Records":{'
+                        + json.dumps(photo_key) + ':' + json.dumps(edits_doc["Records"][photo_key])
+                        + ',' + json.dumps(str(sibling_photo)) + ':' + sibling_slice
+                        + '},"Version":1}'
+                    )
+                edits_path.write_text(edits_raw, encoding="utf-8")
+
+                # Partial texture reset + null reset of optional v0.14.0 blocks
+                reset_sync = await client.call_tool("sync_photo_edit", {
+                    "photo_path": str(source),
+                    "adjustments": {
+                        "texture": None,
+                        "calibration": None,
+                        "point_color": {"swatches": []},
+                        "selective_color": None,
+                        "bw": {"enabled": False},
+                        "sharpen_v2": None,
+                        "film_optics": None,
+                    },
+                })
+                self.assertFalse(reset_sync.is_error, str(reset_sync))
+                after_raw = edits_path.read_text(encoding="utf-8")
+                self.assertIn(sibling_slice, after_raw)
+                after_doc = json.loads(after_raw)
+                if sys.platform == "darwin":
+                    st2 = after_doc["records"][photo_key]["state"]["settings"]
+                    for erased in ("atmosphere", "cameraCalibration", "pointColor", "selectiveColor", "bwMixer", "sharpenV2", "filmOptics"):
+                        self.assertNotIn(erased, st2, f"Expected {erased} erased after reset")
+                    self.assertEqual(st2["hdr"], {"mode": "hdr", "peakLimit": 2.5})
+                    self.assertTrue(st2["aiDenoiseEnabled"])
+                    self.assertEqual(st2["aiDenoiseStrength"], 72.0)
+                    self.assertEqual(st2["aiDenoiseBlend"], 68.0)
+                    self.assertEqual(st2["lutID"], "builtin:classic_chrome")
+                    self.assertEqual(st2["futureV15Field"], {"nested": [1, 2, 3]})
+                else:
+                    st2 = after_doc["Records"][photo_key]["Settings"]
+                    for erased in ("Atmosphere", "CameraCalibration", "PointColor", "SelectiveColor", "BwMixer", "SharpenV2", "FilmOptics"):
+                        self.assertNotIn(erased, st2, f"Expected {erased} erased after reset")
+                    self.assertEqual(st2["HDR"], {"Mode": "hdr", "PeakLimit": 2.5})
+                    self.assertTrue(st2["AIDenoiseEnabled"])
+                    self.assertEqual(st2["aiDenoiseStrength"], 72.0)
+                    self.assertEqual(st2["AIDenoiseBlend"], 68.0)
+                    self.assertEqual(st2["lutID"], "builtin:classic_chrome")
+                    self.assertEqual(st2["FutureV15Field"], {"nested": [1, 2, 3]})

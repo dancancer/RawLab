@@ -658,6 +658,246 @@ void testOverflowVersionAndNormalizedUnreadablePresetCollision() {
     assert(sr.status == GuiStoreStatus::InvalidArgument);
 }
 
+void testV014MacAndWindowsRoundTripExplicitResetsAndOrthogonalPreservation() {
+    TempDirGuard guard("rawlab-gui-store-v014");
+    const auto macDir = guard.dir / "mac-data";
+    const auto winDir = guard.dir / "win-data";
+    const auto photo = guard.dir / "IMG_V014.ARW";
+    writeRaw(photo, "RAWDATA");
+    const std::string photoPathStr = pathToUtf8(photo);
+
+    const Json selBands = {
+        {"reds", {{"cyan", -15.0}, {"magenta", 8.0}, {"yellow", 6.0}, {"black", -2.0}}},
+        {"yellows", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"greens", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"cyans", {{"cyan", 12.0}, {"magenta", -4.0}, {"yellow", -8.0}, {"black", 2.0}}},
+        {"blues", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"magentas", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"whites", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"neutrals", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+        {"blacks", {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}}},
+    };
+    const Json bwMixer = {
+        {"red", 25.5}, {"orange", 18.25}, {"yellow", 12.0}, {"green", -15.5},
+        {"aqua", -28.0}, {"blue", -35.25}, {"purple", 10.5}, {"magenta", 6.25},
+    };
+    const Json swatches = Json::array({
+        {
+            {"src_hue", 20.5}, {"src_saturation", 0.3}, {"src_luminance", 0.72},
+            {"hue_shift", 2.0}, {"saturation_shift", -8.0}, {"luminance_shift", 1.5},
+            {"variance", -35.0}, {"range", 50.0}, {"hue_range", 45.0},
+            {"sat_range", 50.0}, {"lum_range", 50.0}, {"enabled", true},
+        },
+    });
+    const Json allV014Adj = {
+        {"processing_version", 3},
+        {"clarity", 15.0},
+        {"texture", 32.5},
+        {"ai_denoise_enabled", true},
+        {"ai_denoise_blend", 65.0},
+        {"calibration", {
+            {"shadow_tint", -12.0}, {"red_hue", 8.5}, {"red_saturation", 14.0},
+            {"green_hue", -6.0}, {"green_saturation", 5.5}, {"blue_hue", -10.5}, {"blue_saturation", 18.0},
+        }},
+        {"point_color", {{"swatches", swatches}}},
+        {"selective_color", {{"method", "absolute"}, {"bands", selBands}}},
+        {"bw", {{"enabled", true}, {"mixer", bwMixer}}},
+        {"sharpen_v2", {{"luminance_v2", true}, {"radius", 1.4}, {"detail", 42.5}, {"masking", 62.0}}},
+        {"film_optics", {
+            {"halation_amount", 28.5}, {"halation_threshold", 82.0}, {"halation_radius", 45.5}, {"halation_hue", -14.0},
+            {"bloom_amount", 22.25}, {"bloom_threshold", 68.0}, {"bloom_radius", 52.5},
+        }},
+        {"photo_effects", {{"grain_tone_curve", "negative_asymmetric"}, {"grain_format_preset", "135"}}},
+        {"lens_correction", {
+            {"defringe_purple_amount", 6.5}, {"defringe_purple_hue", 35.0},
+            {"defringe_green_amount", 4.25}, {"defringe_green_hue", 65.0},
+        }},
+    };
+
+    // 1. Validate unknown-key rejection inside v0.14.0 adjustment sub-objects
+    GuiStoreOptions macOpts;
+    macOpts.targetPlatform = GuiStorePlatform::MacOS;
+    macOpts.readIdentity = [&](const std::string& p, GuiStorePlatform) {
+        GuiStoreFileIdentity id;
+        id.path = p;
+        id.size = 7;
+        id.macModified = 750000000.25;
+        id.macFileNumber = 777;
+        return id;
+    };
+    const Json badSwatchKeyReq = {
+        {"data_dir", pathToUtf8(macDir)},
+        {"photo_path", photoPathStr},
+        {"is_raster", false},
+        {"adjustments", {{"point_color", {{"swatches", Json::array({{{"src_hue", 20.0}, {"src_saturation", 0.3}, {"src_luminance", 0.7}, {"typo", 1}}})}}}}},
+    };
+    const auto badSwatchRes = syncPhotoEditFromRequestJson(badSwatchKeyReq.dump(), macOpts);
+    assert(!badSwatchRes.ok && badSwatchRes.status == GuiStoreStatus::InvalidArgument);
+
+    // 2. Mac create -> orthogonal + future + sibling injection -> partial texture reset -> null/default erasures
+    const Json macCreateReq = {
+        {"data_dir", pathToUtf8(macDir)},
+        {"photo_path", photoPathStr},
+        {"is_raster", false},
+        {"film_id", "builtin:astia"},
+        {"adjustments", allV014Adj},
+    };
+    const auto m1 = syncPhotoEditFromRequestJson(macCreateReq.dump(), macOpts);
+    assert(m1.ok);
+
+    const std::string macSiblingSlice = R"({"identity":{"fileNumber":888,"modified":1,"path":"/Sibling.ARW","size":5},"state":{"filmID":"","settings":{"exposure":0.1}}})";
+    Json macDoc = Json::parse(readRaw(macDir / "Edits" / "edits.json"));
+    Json& mSt = macDoc.at("records").at(photoPathStr).at("state").at("settings");
+    assert(mSt.at("atmosphere").at("clarity") == 15.0);
+    assert(mSt.at("atmosphere").at("texture") == 32.5);
+    assert(mSt.at("cameraCalibration").at("shadowTint") == -12.0);
+    assert(mSt.at("pointColor").at("swatches").size() == 1);
+    assert(mSt.at("selectiveColor").at("method") == "absolute");
+    assert(mSt.at("bwMixer").at("enabled") == true);
+    assert(mSt.at("sharpenV2").at("masking") == 62.0);
+    assert(mSt.at("filmOptics").at("halationAmount") == 28.5);
+    assert(mSt.at("photoEffects").at("grainToneCurve") == "negative_asymmetric");
+    assert(mSt.at("photoEffects").at("grainFormatPreset") == "135");
+    assert(mSt.at("lensCorrection").at("defringePurpleAmount") == 6.5);
+    assert(mSt.at("aiDenoiseEnabled") == true);
+    assert(mSt.at("aiDenoiseBlend") == 65.0);
+
+    // Inject orthogonal fields & future unknown keys (non-settingsVersion-2 modern record preserves lutID too)
+    mSt["hdr"] = {{"mode", "hdr"}, {"peakLimit", 3.0}};
+    mSt["hdrCameraAI"] = false;
+    mSt["proRAWDecodeVersion"] = 2;
+    mSt["aiDenoiseStrength"] = 70.0;
+    mSt["lutID"] = "builtin:astia";
+    mSt["futureExtension"] = {{"k", "keep"}};
+    const std::string macSeeded = "{\"version\":1,\"records\":{" + Json(photoPathStr).dump() + ":" +
+        macDoc.at("records").at(photoPathStr).dump() + ",\"/Sibling.ARW\":" + macSiblingSlice + "}}";
+    writeRaw(macDir / "Edits" / "edits.json", macSeeded);
+
+    // Partial update modifies texture while keeping clarity=15, then resets texture & v0.14.0 blocks via null/defaults
+    const Json macTextureOnly = {
+        {"data_dir", pathToUtf8(macDir)},
+        {"photo_path", photoPathStr},
+        {"is_raster", false},
+        {"adjustments", {{"texture", -20.0}}},
+    };
+    assert(syncPhotoEditFromRequestJson(macTextureOnly.dump(), macOpts).ok);
+    const Json mStMid = Json::parse(readRaw(macDir / "Edits" / "edits.json")).at("records").at(photoPathStr).at("state").at("settings");
+    assert(mStMid.at("atmosphere").at("clarity") == 15.0);
+    assert(mStMid.at("atmosphere").at("texture") == -20.0);
+
+    const Json macResetReq = {
+        {"data_dir", pathToUtf8(macDir)},
+        {"photo_path", photoPathStr},
+        {"is_raster", false},
+        {"adjustments", {
+            {"texture", 0.0},
+            {"calibration", {{"shadow_tint", 0.0}}},
+            {"point_color", {{"swatches", Json::array()}}},
+            {"selective_color", nullptr},
+            {"bw", {{"enabled", false}}},
+            {"sharpen_v2", nullptr},
+            {"film_optics", {{"halation_amount", 0.0}}},
+            {"photo_effects", {{"vignette_amount", 0.0}}},
+            {"lens_correction", nullptr},
+        }},
+    };
+    assert(syncPhotoEditFromRequestJson(macResetReq.dump(), macOpts).ok);
+    const std::string macFinalRaw = readRaw(macDir / "Edits" / "edits.json");
+    assert(macFinalRaw.find(macSiblingSlice) != std::string::npos);
+    const Json mStEnd = Json::parse(macFinalRaw).at("records").at(photoPathStr).at("state").at("settings");
+    assert(mStEnd.at("atmosphere").at("clarity") == 15.0);
+    assert(!mStEnd.at("atmosphere").contains("texture"));
+    for (const char* erased : {"cameraCalibration", "pointColor", "selectiveColor", "bwMixer", "sharpenV2", "filmOptics", "photoEffects", "lensCorrection"}) {
+        assert(!mStEnd.contains(erased));
+    }
+    assert(mStEnd.at("hdr").at("peakLimit") == 3.0);
+    assert(mStEnd.at("aiDenoiseEnabled") == true);
+    assert(mStEnd.at("aiDenoiseBlend") == 65.0);
+    assert(mStEnd.at("aiDenoiseStrength") == 70.0);
+    assert(mStEnd.at("lutID") == "builtin:astia");
+    assert(mStEnd.at("proRAWDecodeVersion") == 2);
+    assert(mStEnd.at("futureExtension").at("k") == "keep");
+
+    // 3. Windows NEW record creation includes GrainToneCurve, GrainFormatPreset, Defringe*, and resets erase cleanly
+    GuiStoreOptions winOpts;
+    winOpts.targetPlatform = GuiStorePlatform::Windows;
+    winOpts.readIdentity = [&](const std::string& p, GuiStorePlatform) {
+        GuiStoreFileIdentity id;
+        id.path = p;
+        id.size = 7;
+        id.winModifiedTicks = 638500000000000000LL;
+        id.winCreatedTicks = 638400000000000000LL;
+        id.winFileId = "v014-win-id";
+        return id;
+    };
+    const std::string winPhoto = "C:\\Photos\\V014_Portrait.ARW";
+    const Json winCreateReq = {
+        {"data_dir", pathToUtf8(winDir)},
+        {"photo_path", winPhoto},
+        {"is_raster", false},
+        {"film_id", "builtin:classic_chrome"},
+        {"adjustments", allV014Adj},
+    };
+    const auto w1 = syncPhotoEditFromRequestJson(winCreateReq.dump(), winOpts);
+    assert(w1.ok);
+
+    Json winDoc = Json::parse(readRaw(winDir / "Edits" / "edits.json"));
+    Json& wSt = winDoc.at("Records").at(winPhoto).at("Settings");
+    assert(wSt.at("Atmosphere").at("Texture") == 32.5);
+    assert(wSt.at("Effects").at("GrainToneCurve") == "negative_asymmetric");
+    assert(wSt.at("Effects").at("GrainFormatPreset") == "135");
+    assert(wSt.at("Lens").at("DefringePurpleAmount") == 6.5);
+    assert(wSt.at("Lens").at("DefringePurpleHue") == 35.0);
+    assert(wSt.at("Lens").at("DefringeGreenAmount") == 4.25);
+    assert(wSt.at("Lens").at("DefringeGreenHue") == 65.0);
+    assert(wSt.at("CameraCalibration").at("shadowTint") == -12.0);
+    assert(wSt.at("PointColor").at("swatches").size() == 1);
+    assert(wSt.at("SelectiveColor").at("method") == "absolute");
+    assert(wSt.at("BwMixer").at("enabled") == true);
+    assert(wSt.at("SharpenV2").at("luminanceV2") == true);
+    assert(wSt.at("FilmOptics").at("bloomAmount") == 22.25);
+
+    wSt["HDR"] = {{"Mode", "hdr"}, {"PeakLimit", 2.5}};
+    wSt["ProRAWDecodeVersion"] = 2;
+    wSt["aiDenoiseStrength"] = 70.0;
+    wSt["lutID"] = "builtin:classic_chrome";
+    wSt["FutureWin"] = 99;
+    writeRaw(winDir / "Edits" / "edits.json", winDoc.dump());
+
+    const Json winResetReq = {
+        {"data_dir", pathToUtf8(winDir)},
+        {"photo_path", winPhoto},
+        {"is_raster", false},
+        {"adjustments", {
+            {"clarity", 0.0},
+            {"texture", nullptr},
+            {"calibration", nullptr},
+            {"point_color", nullptr},
+            {"selective_color", {{"method", "relative"}}},
+            {"bw", nullptr},
+            {"sharpen_v2", nullptr},
+            {"film_optics", nullptr},
+            {"photo_effects", nullptr},
+            {"lens_correction", nullptr},
+            {"ai_denoise_blend", 100.0},
+        }},
+    };
+    assert(syncPhotoEditFromRequestJson(winResetReq.dump(), winOpts).ok);
+    const Json wStEnd = Json::parse(readRaw(winDir / "Edits" / "edits.json")).at("Records").at(winPhoto).at("Settings");
+    for (const char* erased : {"Atmosphere", "CameraCalibration", "PointColor", "SelectiveColor", "BwMixer", "SharpenV2", "FilmOptics", "AIDenoiseBlend"}) {
+        assert(!wStEnd.contains(erased));
+    }
+    assert(!wStEnd.at("Effects").contains("GrainToneCurve"));
+    assert(!wStEnd.at("Effects").contains("GrainFormatPreset"));
+    assert(!wStEnd.at("Lens").contains("DefringePurpleAmount"));
+    assert(wStEnd.at("HDR").at("PeakLimit") == 2.5);
+    assert(wStEnd.at("AIDenoiseEnabled") == true);
+    assert(wStEnd.at("aiDenoiseStrength") == 70.0);
+    assert(wStEnd.at("lutID") == "builtin:classic_chrome");
+    assert(wStEnd.at("ProRAWDecodeVersion") == 2);
+    assert(wStEnd.at("FutureWin") == 99);
+}
+
 } // namespace
 
 int main() {
@@ -668,6 +908,7 @@ int main() {
     testSymlinkRejections();
     testMacPartialMergeAndZeroResets();
     testOverflowVersionAndNormalizedUnreadablePresetCollision();
+    testV014MacAndWindowsRoundTripExplicitResetsAndOrthogonalPreservation();
     std::cout << "gui_store_tests passed\n";
     return 0;
 }
