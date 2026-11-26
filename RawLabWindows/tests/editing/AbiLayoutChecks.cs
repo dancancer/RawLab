@@ -120,7 +120,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_pyramid_level",
         "sony2fuji_pyramid_level0_grid",
         "sony2fuji_pyramid_tiles",
-        "sony2fuji_render_sharpen_mask_preview",
         "sony2fuji_sample_region_bsh",
         "sony2fuji_session_create_hsl_probe",
         "sony2fuji_session_estimate_auto_exposure",
