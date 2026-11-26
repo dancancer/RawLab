@@ -222,6 +222,47 @@ public struct Adjustments: Equatable, Codable {
         setExactEditingEffect(parameter, to: min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10)))
     }
     public mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) { setExactEditingEffect(parameter, to: value) }
+    public mutating func setGrainEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        guard value.isFinite else { return }
+        let rounded = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
+        if isHDREditing { hdr?.effectsSettings[keyPath: parameter.hdrKeyPath] = rounded; return }
+        var state = effectSettings
+        guard state[keyPath: parameter.keyPath] != rounded else { return }
+        state[keyPath: parameter.keyPath] = rounded
+        if parameter == .grainSize || parameter == .grainRoughness {
+            if let presetValues = state.grainFormatPreset.presetValues {
+                if state.grainSize != presetValues.size || state.grainRoughness != presetValues.roughness {
+                    state.grainFormatPreset = .custom
+                }
+            }
+        }
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func applyGrainToneCurve(_ curve: GrainToneCurve) {
+        guard !isHDREditing else { return }
+        var state = effectSettings
+        guard state.grainToneCurve != curve else { return }
+        state.grainToneCurve = curve
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func applyGrainFormatPreset(_ preset: GrainFormatPreset) {
+        guard !isHDREditing else { return }
+        var state = effectSettings
+        state.grainFormatPreset = preset
+        if let values = preset.presetValues {
+            state.grainSize = values.size
+            state.grainRoughness = values.roughness
+        }
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func setFilmOptics(_ parameter: FilmOpticsParameter, to value: Double) {
+        guard !isHDREditing, value.isFinite else { return }
+        let rounded = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
+        var state = filmOpticsSettings
+        guard state[keyPath: parameter.keyPath] != rounded else { return }
+        state[keyPath: parameter.keyPath] = rounded
+        filmOptics = state.isDefault ? nil : state
+    }
     public mutating func setExactEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
         let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value))

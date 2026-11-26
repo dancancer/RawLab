@@ -17,6 +17,7 @@ struct ControlGroupTests {
         try currentTools()
         try recipeReset()
         try invalidResetSources()
+        try filmPhysicsControlsAndResets()
     }
 
     private static func aiDenoise() throws {
@@ -449,5 +450,33 @@ struct ControlGroupTests {
         if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .hslColor(7), snapshot: state(invalid), context: rawContext) {
             check(true, "Malformed HSL source is blocked before indexing a color")
         } else { check(false, "Malformed HSL source is blocked before indexing a color") }
+    }
+
+    private static func filmPhysicsControlsAndResets() throws {
+        var s = Adjustments()
+        s.applyGrainToneCurve(.negativeAsymmetric)
+        s.applyGrainFormatPreset(.film135)
+        check(s.effectSettings.grainToneCurve == .negativeAsymmetric && s.effectSettings.grainFormatPreset == .film135 &&
+              s.effectSettings.grainSize == 18 && s.effectSettings.grainRoughness == 65,
+              "135 grain format preset applies canonical grain scale and roughness")
+        s.applyGrainFormatPreset(.film120)
+        check(s.effectSettings.grainFormatPreset == .film120 && s.effectSettings.grainSize == 34 && s.effectSettings.grainRoughness == 22,
+              "120 grain format preset applies medium-format scale and roughness")
+        s.setGrainEffect(.grainSize, to: 41)
+        check(s.effectSettings.grainFormatPreset == .custom && s.effectSettings.grainSize == 41 && s.effectSettings.grainRoughness == 22,
+              "Manual grain size edit transitions preset to Custom while preserving tuning")
+        s.setFilmOptics(.halationAmount, to: 65)
+        s.setFilmOptics(.bloomAmount, to: 40)
+        check(!s.filmOpticsSettings.isHalationDefault && !s.filmOpticsSettings.isBloomDefault &&
+              MacEditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(s), context: rawContext),
+              "Film optics changes mark Effects group modified")
+        s.filmOpticsSettings.resetHalation()
+        check(s.filmOpticsSettings.isHalationDefault && !s.filmOpticsSettings.isBloomDefault,
+              "Halation reset preserves Bloom parameters")
+        let effectsReset = candidate(.group(.effects), state(s))
+        check(effectsReset.settings.filmOpticsSettings.isDefault &&
+              effectsReset.settings.effectSettings.grainToneCurve == .legacy &&
+              effectsReset.settings.effectSettings.grainFormatPreset == .custom,
+              "Effects group reset clears Halation, Bloom, and Grain curve/preset")
     }
 }

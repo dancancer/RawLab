@@ -368,6 +368,15 @@ public sealed record FilmOpticsSettings(
     public bool IsDefault => HalationAmount == 0 && HalationThreshold == 75 && HalationRadius == 35 &&
         HalationHue == 0 && BloomAmount == 0 && BloomThreshold == 70 && BloomRadius == 40;
 
+    [JsonIgnore]
+    public bool IsHalationDefault => HalationAmount == 0 && HalationThreshold == 75 && HalationRadius == 35 && HalationHue == 0;
+
+    [JsonIgnore]
+    public bool IsBloomDefault => BloomAmount == 0 && BloomThreshold == 70 && BloomRadius == 40;
+
+    public FilmOpticsSettings ResetHalation() => this with { HalationAmount = 0, HalationThreshold = 75, HalationRadius = 35, HalationHue = 0 };
+    public FilmOpticsSettings ResetBloom() => this with { BloomAmount = 0, BloomThreshold = 70, BloomRadius = 40 };
+
     public void Validate()
     {
         CheckRange(HalationAmount, AdjustmentFieldSpec.Fields.EffectsHalationAmount.WindowsModel, nameof(HalationAmount));

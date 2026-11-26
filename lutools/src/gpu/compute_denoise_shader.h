@@ -59,12 +59,15 @@ V3 photoEffects(V3 pixel, uint x, uint y) {
         pixel = vignette.x < 0.0 ? pixel * gain : 1.0 - (1.0 - pixel) * gain;
     }
     if (grain.y > 0.0) {
-        float scale = .7 + grain.z * .055, rough = grain.w * .007;
+        float effSize = resolveGrainSize(grain.z, firmThreshold);
+        float effRough = resolveGrainRoughness(grain.w, firmThreshold);
+        float scale = .7 + effSize * .055, rough = effRough * .007;
         float u = (float(x) + .5) / scale, v = (float(y) + .5) / scale;
         float fine = grainNoise(u, v, 0x243f6a88u), coarse = grainNoise(u * .47 + 17.3, v * .47 + 31.7, 0x85a308d3u);
         float noise = ((1.0 - rough) * fine + rough * coarse) / sqrt((1.0 - rough) * (1.0 - rough) + rough * rough);
         float light = effectsLuminance(pixel);
-        float delta = noise * grain.y * .0012 * sqrt(4.0 * light * (1.0 - light));
+        float weight = grainToneWeight(light, direction);
+        float delta = noise * grain.y * .0012 * weight;
         pixel = clamp(pixel + delta, 0.0, 1.0);
     }
     return pixel;
@@ -72,6 +75,34 @@ V3 photoEffects(V3 pixel, uint x, uint y) {
 V3 imagePixel(int x, int y) {
     uint index = (uint(clamp(y, 0, int(height) - 1)) - sourceRow) * width + uint(clamp(x, 0, int(width) - 1));
     return V3(readA(index * 3u), readA(index * 3u + 1u), readA(index * 3u + 2u));
+}
+float foFetchProxyB1(uint baseOff, uint pW, uint pH, float fx, float fy) {
+    float cx = clamp(fx, 0.0, float(pW - 1u));
+    float cy = clamp(fy, 0.0, float(pH - 1u));
+    int x0 = int(floor(cx)), y0 = int(floor(cy));
+    int x1 = min(int(pW) - 1, x0 + 1), y1 = min(int(pH) - 1, y0 + 1);
+    float tx = cx - float(x0), ty = cy - float(y0);
+    float v00 = readB(baseOff + uint(y0) * pW + uint(x0));
+    float v10 = readB(baseOff + uint(y0) * pW + uint(x1));
+    float v01 = readB(baseOff + uint(y1) * pW + uint(x0));
+    float v11 = readB(baseOff + uint(y1) * pW + uint(x1));
+    return (v00 * (1.0 - tx) + v10 * tx) * (1.0 - ty) + (v01 * (1.0 - tx) + v11 * tx) * ty;
+}
+V3 foFetchProxyB3(uint baseOff, uint pW, uint pH, float fx, float fy) {
+    float cx = clamp(fx, 0.0, float(pW - 1u));
+    float cy = clamp(fy, 0.0, float(pH - 1u));
+    int x0 = int(floor(cx)), y0 = int(floor(cy));
+    int x1 = min(int(pW) - 1, x0 + 1), y1 = min(int(pH) - 1, y0 + 1);
+    float tx = cx - float(x0), ty = cy - float(y0);
+    uint i00 = baseOff + (uint(y0) * pW + uint(x0)) * 3u;
+    uint i10 = baseOff + (uint(y0) * pW + uint(x1)) * 3u;
+    uint i01 = baseOff + (uint(y1) * pW + uint(x0)) * 3u;
+    uint i11 = baseOff + (uint(y1) * pW + uint(x1)) * 3u;
+    V3 c00 = V3(readB(i00), readB(i00 + 1u), readB(i00 + 2u));
+    V3 c10 = V3(readB(i10), readB(i10 + 1u), readB(i10 + 2u));
+    V3 c01 = V3(readB(i01), readB(i01 + 1u), readB(i01 + 2u));
+    V3 c11 = V3(readB(i11), readB(i11 + 1u), readB(i11 + 2u));
+    return (c00 * (1.0 - tx) + c10 * tx) * (1.0 - ty) + (c01 * (1.0 - tx) + c11 * tx) * ty;
 }
 void filterPixel(uint i) {
     if (i >= count) return;
@@ -161,7 +192,7 @@ void filterPixel(uint i) {
             uint a = i * 8u + channel * 4u;
             writeA(i * 2u + channel, readB(a) * g.x + readB(a + 1u) * g.y + readB(a + 2u) * g.z + readB(a + 3u));
         }
-    } else {
+    } else if (stage == 11u || stage == 12u) {
         y += int(outputRow);
         V3 pixel = imagePixel(x, y);
         if (stage == 11u) pixel = photoEffects(pixel, uint(x), uint(y));
@@ -176,6 +207,109 @@ void filterPixel(uint i) {
                 clamp(pixel + strength * (pixel - blurred), 0.0, 1.0);
         }
         writeA(i * 3u, pixel.x); writeA(i * 3u + 1u, pixel.y); writeA(i * 3u + 2u, pixel.z);
+    } else if (stage == 13u) {
+        uint px = i % step, py = i / step + outputRow;
+        float fx0 = float(px) * float(width) / float(step);
+        float fx1 = float(px + 1u) * float(width) / float(step);
+        float fy0 = float(py) * float(height) / float(level);
+        float fy1 = float(py + 1u) * float(height) / float(level);
+        int ix0 = int(floor(fx0));
+        if (ix0 < 0) ix0 = 0;
+        int cx1 = -int(floor(-fx1));
+        int ix1 = cx1 > (ix0 + 1) ? cx1 : (ix0 + 1);
+        if (ix1 > int(width)) ix1 = int(width);
+        int iy0 = int(floor(fy0));
+        if (iy0 < 0) iy0 = 0;
+        int cy1 = -int(floor(-fy1));
+        int iy1 = cy1 > (iy0 + 1) ? cy1 : (iy0 + 1);
+        if (iy1 > int(height)) iy1 = int(height);
+        int stepX = (ix1 - ix0 + 15) / 16;
+        if (stepX < 1) stepX = 1;
+        int stepY = (iy1 - iy0 + 15) / 16;
+        if (stepY < 1) stepY = 1;
+        V3 acc = V3(0.0, 0.0, 0.0);
+        float samples = 0.0;
+        for (int sy = iy0; sy < iy1; sy += stepY) {
+            int bandY = clamp(sy - int(sourceRow), 0, int(radius) - 1);
+            uint rowBase = uint(bandY) * width;
+            for (int sx = ix0; sx < ix1; sx += stepX) {
+                uint idx = (rowBase + uint(sx)) * 3u;
+                V3 srgbPx = V3(readA(idx), readA(idx + 1u), readA(idx + 2u));
+                V3 lin = foSrgbToLin3(srgbPx);
+                float lum = foLuminance3(lin);
+                if (channels == 1u) {
+                    float ex = foHighlightExcess(lum, epsilon);
+                    float ratio = lum > 1e-6 ? (ex / lum) : 0.0;
+                    acc += lin * ratio;
+                } else {
+                    float maxCh = max(lin.x, max(lin.y, lin.z));
+                    float sig = max(lum, maxCh * 0.55);
+                    acc.x += foHighlightExcess(sig, epsilon);
+                }
+                samples += 1.0;
+            }
+        }
+        float inv = samples > 0.0 ? (1.0 / samples) : 0.0;
+        if (channels == 1u) {
+            writeA(i * 3u, acc.x * inv);
+            writeA(i * 3u + 1u, acc.y * inv);
+            writeA(i * 3u + 2u, acc.z * inv);
+        } else {
+            writeA(i, acc.x * inv);
+        }
+    } else if (stage == 14u || stage == 15u) {
+        int rad = int(radius);
+        float invTwoSigSq = 0.5 / max(sigma * sigma, 0.01);
+        if (channels == 3u) {
+            V3 acc = V3(0.0, 0.0, 0.0);
+            float wSum = 0.0;
+            for (int d = -rad; d <= rad; ++d) {
+                int sx = stage == 14u ? clamp(x + d, 0, int(width) - 1) : x;
+                int sy = stage == 15u ? clamp(y + d, 0, int(height) - 1) : y;
+                float w = exp(-float(d * d) * invTwoSigSq);
+                uint idx = (uint(sy) * width + uint(sx)) * 3u;
+                acc += V3(readA(idx), readA(idx + 1u), readA(idx + 2u)) * w;
+                wSum += w;
+            }
+            V3 val = acc / max(wSum, 1e-6);
+            uint outIdx = i * 3u;
+            if (stage == 15u && direction != 0u) {
+                V3 coreVal = V3(readB(outIdx), readB(outIdx + 1u), readB(outIdx + 2u));
+                val = coreVal * strength + val * epsilon;
+            }
+            writeA(outIdx, val.x); writeA(outIdx + 1u, val.y); writeA(outIdx + 2u, val.z);
+        } else {
+            float acc = 0.0, wSum = 0.0;
+            for (int d = -rad; d <= rad; ++d) {
+                int sx = stage == 14u ? clamp(x + d, 0, int(width) - 1) : x;
+                int sy = stage == 15u ? clamp(y + d, 0, int(height) - 1) : y;
+                float w = exp(-float(d * d) * invTwoSigSq);
+                acc += readA(uint(sy) * width + uint(sx)) * w;
+                wSum += w;
+            }
+            float val = acc / max(wSum, 1e-6);
+            if (stage == 15u && direction != 0u) {
+                val = readB(i) * strength + val * epsilon;
+            }
+            writeA(i, val);
+        }
+    } else if (stage == 16u) {
+        y += int(outputRow);
+        V3 pixel = imagePixel(x, y);
+        float halGlow = 0.0;
+        if (vignette.y > 0.5 && step > 0u && level > 0u) {
+            float hx = (float(x) + 0.5) * (float(step) / float(width)) - 0.5;
+            float hy = (float(y) + 0.5) * (float(level) / float(height)) - 0.5;
+            halGlow = foFetchProxyB1(0u, step, level, hx, hy);
+        }
+        V3 bloomGlow = V3(0.0, 0.0, 0.0);
+        if (vignette.z > 0.5 && direction > 0u && firmThreshold > 0u) {
+            float bx = (float(x) + 0.5) * (float(direction) / float(width)) - 0.5;
+            float by = (float(y) + 0.5) * (float(firmThreshold) / float(height)) - 0.5;
+            bloomGlow = foFetchProxyB3(channels, direction, firmThreshold, bx, by);
+        }
+        V3 blended = foApplyOpticsBlend(pixel, halGlow, bloomGlow, strength, epsilon, vignette.x);
+        writeA(i * 3u, blended.x); writeA(i * 3u + 1u, blended.y); writeA(i * 3u + 2u, blended.z);
     }
 }
 )shader";

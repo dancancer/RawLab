@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <cmath>
 #include <cstdint>
 
 namespace sony2fuji {
@@ -36,6 +37,38 @@ struct PhotoEffectsOptions {
     }
     bool valid() const;
 };
+
+inline float resolveGrainSize(float grainSize, GrainFormatPreset preset) {
+    switch (preset) {
+        case GrainFormatPreset::Film135: return 18.0f;
+        case GrainFormatPreset::Film120: return 34.0f;
+        case GrainFormatPreset::Custom:
+        default: return grainSize;
+    }
+}
+
+inline float resolveGrainRoughness(float grainRoughness, GrainFormatPreset preset) {
+    switch (preset) {
+        case GrainFormatPreset::Film135: return 65.0f;
+        case GrainFormatPreset::Film120: return 22.0f;
+        case GrainFormatPreset::Custom:
+        default: return grainRoughness;
+    }
+}
+
+inline float grainToneWeight(float luma, GrainToneCurve curve) {
+    luma = luma < 0.0f ? 0.0f : (luma > 1.0f ? 1.0f : luma);
+    if (curve == GrainToneCurve::NegativeAsymmetric) {
+        auto sm = [](float v) {
+            v = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+            return v * v * (3.0f - 2.0f * v);
+        };
+        const float shadowRise = sm(luma / 0.06f);
+        const float hiCut = 1.0f - sm((luma - 0.22f) / 0.75f);
+        return shadowRise * std::sqrt(hiCut > 0.0f ? hiCut : 0.0f) * (0.20f + 0.90f * hiCut);
+    }
+    return std::sqrt(4.0f * luma * (1.0f - luma));
+}
 
 // The coordinate field is shared by the display-sRGB and extended-linear
 // finishers. A strip uses the full output dimensions and absolute coordinates.

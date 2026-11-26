@@ -427,9 +427,17 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = parameterEnabled) { value, dragging ->
                 editParameter(edits.withEditingEffects(value), dragging)
             }
-            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled) { value, dragging ->
-                editParameter(edits.withEditingEffects(value), dragging)
-            }
+            13 -> PhotoEffectsControls(
+                value = edits.editingEffects,
+                vignette = false,
+                enabled = parameterEnabled,
+                isHDREditing = edits.isHDREditing,
+                filmOptics = edits.filmOptics,
+                onFilmOpticsChange = { optics, dragging ->
+                    if (!edits.isHDREditing) editParameter(edits.copy(filmOptics = optics), dragging)
+                },
+                onChange = { value, dragging -> editParameter(edits.withEditingEffects(value), dragging) },
+            )
             21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange,
                 globalSelected = gradingGlobal, onGlobalSelectedChange = onGradingGlobalChange) { value, dragging ->
                 editParameter(edits.withEditingGrading(value), dragging)

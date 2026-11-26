@@ -1,9 +1,9 @@
 #pragma once
 
-static const char* kPhotoEffectsShaderSource = R"metal(
-#include <metal_stdlib>
-using namespace metal;
+#include "gpu/photo_film_optics_shader.h"
+#include <string>
 
+static const char* kPhotoEffectsShaderSource = R"metal(
 struct EffectsParams {
     uint width, height;
     float vignetteAmount, vignetteMidpoint, vignetteRoundness, vignetteFeather, vignetteHighlights;
@@ -75,17 +75,25 @@ kernel void photoEffects(
         pixel = params.vignetteAmount < 0 ? pixel * gain : 1 - (1 - pixel) * gain;
     }
     if (params.grainAmount > 0) {
-        const float grainScale = 0.7f + params.grainSize * 0.055f;
-        const float rough = params.grainRoughness * 0.007f;
+        const float effSize = resolveGrainSize(params.grainSize, params.grainFormatPreset);
+        const float effRough = resolveGrainRoughness(params.grainRoughness, params.grainFormatPreset);
+        const float grainScale = 0.7f + effSize * 0.055f;
+        const float rough = effRough * 0.007f;
         const float normalization = 1 / sqrt((1 - rough) * (1 - rough) + rough * rough);
         const float u = (x + 0.5f) / grainScale, v = (y + 0.5f) / grainScale;
         const float fine = grainNoise(u, v, 0x243f6a88u);
         const float coarse = grainNoise(u * 0.47f + 17.3f, v * 0.47f + 31.7f, 0x85a308d3u);
         const float noise = ((1 - rough) * fine + rough * coarse) * normalization;
         const float luma = effectsLuminance(pixel);
-        const float delta = noise * params.grainAmount * 0.0012f * sqrt(4 * luma * (1 - luma));
+        const float weight = grainToneWeight(luma, params.grainToneCurve);
+        const float delta = noise * params.grainAmount * 0.0012f * weight;
         pixel = clamp(pixel + delta, 0.f, 1.f);
     }
     destination[gid] = packed_float3(pixel);
 }
 )metal";
+
+inline std::string metalEffectsCombinedShaderSource() {
+    return std::string("#include <metal_stdlib>\nusing namespace metal;\n#define V3 float3\n") +
+        sony2fuji::kFilmOpticsSharedShaderBody + kPhotoEffectsShaderSource;
+}

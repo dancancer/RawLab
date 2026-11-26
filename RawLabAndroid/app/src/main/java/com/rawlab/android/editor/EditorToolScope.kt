@@ -31,10 +31,15 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
             else current.copy(denoise = value.denoise, displayChromaDenoise = value.displayChromaDenoise)
         AdjustmentGroup.VIGNETTE -> current.withEditingEffects(value.editingEffects.copy(
             grainAmount = current.editingEffects.grainAmount, grainSize = current.editingEffects.grainSize,
-            grainRoughness = current.editingEffects.grainRoughness))
+            grainRoughness = current.editingEffects.grainRoughness,
+            grainToneCurve = current.editingEffects.grainToneCurve,
+            grainFormatPreset = current.editingEffects.grainFormatPreset))
         AdjustmentGroup.GRAIN -> current.withEditingEffects(current.editingEffects.copy(
             grainAmount = value.editingEffects.grainAmount, grainSize = value.editingEffects.grainSize,
-            grainRoughness = value.editingEffects.grainRoughness))
+            grainRoughness = value.editingEffects.grainRoughness,
+            grainToneCurve = if (current.isHDREditing) current.editingEffects.grainToneCurve else value.editingEffects.grainToneCurve,
+            grainFormatPreset = if (current.isHDREditing) current.editingEffects.grainFormatPreset else value.editingEffects.grainFormatPreset))
+            .let { if (current.isHDREditing) it else it.copy(filmOptics = value.filmOptics) }
         AdjustmentGroup.HSL -> current.withEditingHsl(value.editingHsl)
         AdjustmentGroup.LENS -> current.copy(lens = value.lens)
         AdjustmentGroup.GEOMETRY -> current.copy(geometry = value.geometry)

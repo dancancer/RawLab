@@ -278,6 +278,26 @@ data class PhotoEffectsSettings(
         }
     }
 
+    fun applyGrainFormatPreset(preset: GrainFormatPreset): PhotoEffectsSettings = when (preset) {
+        GrainFormatPreset.CUSTOM -> copy(grainFormatPreset = preset)
+        GrainFormatPreset.FILM_135 -> copy(grainFormatPreset = preset, grainSize = 18f, grainRoughness = 65f)
+        GrainFormatPreset.FILM_120 -> copy(grainFormatPreset = preset, grainSize = 34f, grainRoughness = 22f)
+    }
+
+    fun withGrainEffect(parameter: PhotoEffectParameter, value: Float): PhotoEffectsSettings {
+        val next = withEffect(parameter, value)
+        if (next == this) return this
+        if (parameter != PhotoEffectParameter.GRAIN_SIZE && parameter != PhotoEffectParameter.GRAIN_ROUGHNESS) {
+            return next
+        }
+        val matchesPreset = when (next.grainFormatPreset) {
+            GrainFormatPreset.CUSTOM -> true
+            GrainFormatPreset.FILM_135 -> next.grainSize == 18f && next.grainRoughness == 65f
+            GrainFormatPreset.FILM_120 -> next.grainSize == 34f && next.grainRoughness == 22f
+        }
+        return if (matchesPreset) next else next.copy(grainFormatPreset = GrainFormatPreset.CUSTOM)
+    }
+
     fun value(parameter: PhotoEffectParameter): Float = when (parameter) {
         PhotoEffectParameter.VIGNETTE_AMOUNT -> vignetteAmount
         PhotoEffectParameter.VIGNETTE_MIDPOINT -> vignetteMidpoint

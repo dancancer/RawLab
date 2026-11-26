@@ -7,6 +7,7 @@
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
 #include "core/photo_effects.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_lut.h"
 #include "core/photo_rendering.h"
 #include "core/photo_tone_controls.h"
@@ -994,6 +995,48 @@ void testBasicV3AndToneFieldParity() {
     }
 }
 
+void testFilmOpticsAndNegativeGrainParity() {
+    sony2fuji::GlesPhotoRenderer renderer;
+    sony2fuji::ImageData input(48, 36);
+    for (int y = 0; y < 36; ++y) {
+        for (int x = 0; x < 48; ++x) {
+            const bool center = (x >= 18 && x < 30 && y >= 12 && y < 24);
+            input.at(x, y) = center ? sony2fuji::RGB{0.96f, 0.96f, 0.96f} : sony2fuji::RGB{0.08f, 0.08f, 0.08f};
+        }
+    }
+    sony2fuji::RenderParams params{};
+    params.intent = sony2fuji::RenderIntent::Final;
+    params.inputType = sony2fuji::RenderInputType::Buffer;
+    params.inputColorSpace = sony2fuji::ColorSpace::sRGB;
+    params.brightness = 1.0f;
+    params.contrast = 1.0f;
+    params.saturation = 1.0f;
+    params.temperature = 6500.0f;
+    params.filmOptics.halationAmount = 70.0f;
+    params.filmOptics.halationThreshold = 60.0f;
+    params.filmOptics.halationRadius = 35.0f;
+    params.filmOptics.halationHue = -25.0f;
+    params.filmOptics.bloomAmount = 45.0f;
+    params.filmOptics.bloomThreshold = 60.0f;
+    params.filmOptics.bloomRadius = 40.0f;
+    params.effects.grainAmount = 45.0f;
+    params.effects.grainToneCurve = sony2fuji::GrainToneCurve::NegativeAsymmetric;
+    params.effects.grainFormatPreset = sony2fuji::GrainFormatPreset::Film135;
+
+    sony2fuji::ImageData gpuOut;
+    const bool ok = renderer.render(input, sony2fuji::ColorSpace::sRGB, params, 48, 36, 0, gpuOut);
+
+    sony2fuji::ImageData cpuRef = input;
+    for (auto& px : cpuRef.pixels) {
+        px = {sony2fuji::neutralDisplay(px.r), sony2fuji::neutralDisplay(px.g), sony2fuji::neutralDisplay(px.b)};
+    }
+    sony2fuji::applyFilmOptics(cpuRef, params.filmOptics);
+    sony2fuji::applyPhotoEffects(cpuRef, params.effects);
+
+    const float diff = maxPixelDiff(gpuOut, cpuRef);
+    checkPass(ok && diff <= 5e-4f, "GLES FilmOptics + NegativeAsymmetric + 135 grain parity maxDiff=" + std::to_string(diff));
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1010,6 +1053,7 @@ int main(int argc, char** argv) {
     testShaderBranchesPixelParity();
     testResizeStagesEffectsAndMultiBand();
     testChromaDenoiseUsesWorkingBands();
+    testFilmOpticsAndNegativeGrainParity();
     testBasicV3AndToneFieldParity();
 
     if (rawlab::test::failureCount() != 0) {

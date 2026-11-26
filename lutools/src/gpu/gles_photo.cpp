@@ -426,8 +426,8 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
             bt ? std::clamp(params.basicTone.shadows, -1.0f, 1.0f) : 0.0f, 0.0f, 0.0f);
         context.setBasicToneField(params);
         context.setLut(params.lutStrength > 0 ? params.lut : nullptr);
-        if (params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
-            params.sharpening > 0 || params.preserveSourceResolution) {
+        if (params.effects.active() || params.filmOptics.active() || params.chromaDenoise != 0 ||
+            params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution) {
             context.cachedRevision = 0;
             ImageData native(input.width, input.height);
             context.bands(input, input.width, input.height, 2, &native);
@@ -453,7 +453,24 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
                     return failFilter("GLES chroma denoise failed", chromaErr);
                 }
             }
-            if (params.noiseReduction > 0 || params.sharpening > 0) {
+            if (params.filmOptics.active()) {
+                if (params.noiseReduction > 0) {
+                    lastGpuFilterOutcome() = {};
+                    if (!gpuDetailFilter(native, params.noiseReduction, 0.0f)) {
+                        return failFilter("GLES noise reduction filter failed");
+                    }
+                }
+                lastGpuFilterOutcome() = {};
+                if (!gpuFilmOptics(native, params.filmOptics)) {
+                    return failFilter("GLES film optics filter failed");
+                }
+                if (params.sharpening > 0) {
+                    lastGpuFilterOutcome() = {};
+                    if (!gpuDetailFilter(native, 0.0f, params.sharpening)) {
+                        return failFilter("GLES sharpening filter failed");
+                    }
+                }
+            } else if (params.noiseReduction > 0 || params.sharpening > 0) {
                 lastGpuFilterOutcome() = {};
                 if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
                     return failFilter("GLES detail filter failed");

@@ -282,7 +282,7 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, "LUT requires CPU evaluation"};
         return false;
     }
-    const bool nativeFilters = params.effects.active() || params.chromaDenoise != 0 ||
+    const bool nativeFilters = params.effects.active() || params.filmOptics.active() || params.chromaDenoise != 0 ||
         params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 || width > 65535 || height > 65535 ||
         (nativeFilters && (input.width > 65535 || input.height > 65535)) ||
@@ -427,7 +427,24 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
                     return failFilter("D3D11 chroma denoise failed", chromaErr);
                 }
             }
-            if (params.noiseReduction > 0 || params.sharpening > 0) {
+            if (params.filmOptics.active()) {
+                if (params.noiseReduction > 0) {
+                    lastGpuFilterOutcome() = {};
+                    if (!gpuDetailFilter(native, params.noiseReduction, 0.0f)) {
+                        return failFilter("D3D11 noise reduction filter failed");
+                    }
+                }
+                lastGpuFilterOutcome() = {};
+                if (!gpuFilmOptics(native, params.filmOptics)) {
+                    return failFilter("D3D11 film optics filter failed");
+                }
+                if (params.sharpening > 0) {
+                    lastGpuFilterOutcome() = {};
+                    if (!gpuDetailFilter(native, 0.0f, params.sharpening)) {
+                        return failFilter("D3D11 sharpening filter failed");
+                    }
+                }
+            } else if (params.noiseReduction > 0 || params.sharpening > 0) {
                 lastGpuFilterOutcome() = {};
                 if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
                     return failFilter("D3D11 detail filter failed");

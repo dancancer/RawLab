@@ -7,6 +7,7 @@
 #include "core/photo_basic_controls_v3.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
 #include "core/photo_rendering.h"
@@ -414,7 +415,9 @@ void applyDetailAdjustments(
     int sourceHeight,
     ProcessingVersion version,
     const ClarityField* clarityField,
-    const SubRectMap& roiMap
+    const SubRectMap& roiMap,
+    const FilmOpticsOptions& filmOptics,
+    const FilmOpticsField* filmOpticsField
 ) {
     if (noiseReduction > 0.0f) {
         applyNoiseReduction(image, noiseReduction);
@@ -423,6 +426,13 @@ void applyDetailAdjustments(
         applyClarityWithField(image, clarity, *clarityField, roiMap);
     } else {
         applyClarity(image, clarity, sourceWidth, sourceHeight, version);
+    }
+    if (filmOptics.active()) {
+        if (filmOpticsField && !filmOpticsField->empty() && roiMap.active()) {
+            applyFilmOpticsWithField(image, *filmOpticsField, filmOptics, roiMap);
+        } else {
+            applyFilmOptics(image, filmOptics);
+        }
     }
     if (sharpening > 0.0f) {
         applySharpening(image, sharpening);
