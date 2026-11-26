@@ -760,7 +760,11 @@ sony2fuji_status sony2fuji_hdr_display_into(
         uint32_t(hdr::kDisplayClampSdr) == SONY2FUJI_HDR_DISPLAY_CLAMP_SDR &&
         uint32_t(hdr::kDisplayBgra8Srgb) == SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, "HDR display flags");
     const bool falseColor = (flags & SONY2FUJI_HDR_DISPLAY_FALSE_COLOR) != 0;
-    if (!dst || (flags & ~uint32_t(hdr::kDisplayAllFlags)) != 0 || (!sdrPlane && !falseColor) ||
+    const bool bgra8 = (flags & SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB) != 0;
+    // 8 位 sRGB 装不下扩展 HDR，也不能承载 P3 值：这些组合没有正确解释，直接拒绝。
+    const bool contradictory = bgra8 &&
+        ((flags & SONY2FUJI_HDR_DISPLAY_P3) != 0 || (!falseColor && (flags & SONY2FUJI_HDR_DISPLAY_SDR) == 0));
+    if (!dst || (flags & ~uint32_t(hdr::kDisplayAllFlags)) != 0 || contradictory || (!sdrPlane && !falseColor) ||
         !std::isfinite(content_headroom) || content_headroom < 1.0f) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
@@ -769,7 +773,7 @@ sony2fuji_status sony2fuji_hdr_display_into(
     if (sdrPlane && (sdrPlane->width != hdrPlane->width || sdrPlane->height != hdrPlane->height)) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
-    const uint64_t rowBytes = uint64_t(hdrPlane->width) * ((flags & SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB) ? 4u : 8u);
+    const uint64_t rowBytes = uint64_t(hdrPlane->width) * (bgra8 ? 4u : 8u);
     if (dst_stride_bytes < rowBytes ||
         (hdrPlane->height > 1u &&
          dst_stride_bytes > (std::numeric_limits<uint64_t>::max() - rowBytes) / (hdrPlane->height - 1u)) ||

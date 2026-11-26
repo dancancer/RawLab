@@ -401,9 +401,17 @@ sony2fuji_status sony2fuji_hdr_analyze_luminance(
     float* peak_luminance
 );
 
-// Flags for sony2fuji_hdr_display_into. Without SDR or FALSE_COLOR the HDR plane is shown and
-// luminance above 1 is compressed by a shoulder that maps content_headroom onto
-// display_headroom (non-finite -> 1, clamped to [1, 65504]); display_headroom <= 1 shows SDR.
+// Flags for sony2fuji_hdr_display_into, combined with bitwise OR into its uint32_t argument.
+// Without SDR or FALSE_COLOR the HDR plane is shown and luminance above 1 is compressed by a
+// shoulder that maps content_headroom onto display_headroom (non-finite -> 1, clamped to
+// [1, 65504]); display_headroom <= 1 shows SDR.
+// Valid combinations:
+// - RGBA16F output (BGRA8_SRGB clear): any of SDR, FALSE_COLOR, P3, CLAMP_SDR.
+//   FALSE_COLOR is a monitoring view of the HDR plane: its fixed band colours are emitted as is,
+//   whatever SDR, P3 or CLAMP_SDR say, so a client can pass its presentation flags unchanged.
+// - BGRA8_SRGB output: requires SDR or FALSE_COLOR (8-bit sRGB cannot hold the extended HDR
+//   presentation) and excludes P3 (P3 values under sRGB encoding are meaningless).
+// Unknown bits and other combinations return SONY2FUJI_STATUS_INVALID_ARGUMENT.
 typedef enum sony2fuji_hdr_display_flag {
     SONY2FUJI_HDR_DISPLAY_SDR = 1,          // show the SDR plane
     SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2,  // luminance bands of the HDR plane; sdr may be NULL

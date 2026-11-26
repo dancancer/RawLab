@@ -224,9 +224,10 @@ void testDisplayOutputLimitsAndLayout() {
     display16(overHdr, &overSdrPlane, 2, 1, 0, status);
     check(status == SONY2FUJI_STATUS_PROCESSING_ERROR, "RGBA16F channel beyond 65504 is unrepresentable");
     std::vector<uint8_t> bgra(4);
-    status = sony2fuji_hdr_display_into(&overHdr, &overSdrPlane, 2, 1, SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, bgra.data(), 4, 4);
+    status = sony2fuji_hdr_display_into(&overHdr, &overHdr, 2, 1,
+        SONY2FUJI_HDR_DISPLAY_SDR | SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, bgra.data(), 4, 4);
     check(status == SONY2FUJI_STATUS_OK && bgra[2] == 255 && bgra[0] == 255 && bgra[3] == 255,
-          "BGRA8 encodes out-of-range values by clamping");
+          "BGRA8 encodes out-of-range SDR values by clamping");
 
     // 输出行距大于一行时，行尾填充保持原样。
     std::vector<float> two(12, 0.5f);
@@ -296,6 +297,41 @@ void testDisplayRejectsInvalidInput() {
           "non-finite HDR sample rejected even when SDR is shown");
 }
 
+void testFlagCombinations() {
+    std::vector<float> hdrValues(12, 2);
+    std::vector<float> sdrValues(12, 0.5f);
+    auto hdr = plane(hdrValues, 2, 2);
+    auto sdr = plane(sdrValues, 2, 2);
+    std::vector<uint16_t> out16(16);
+    std::vector<uint8_t> out8(16);
+    const auto rgba16 = [&](uint32_t flags, const sony2fuji_hdr_buffer_v1* s) {
+        return sony2fuji_hdr_display_into(&hdr, s, 2, 4, flags, out16.data(), 32, 16);
+    };
+    const auto bgra8 = [&](uint32_t flags, const sony2fuji_hdr_buffer_v1* s) {
+        return sony2fuji_hdr_display_into(&hdr, s, 2, 4, flags | SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, out8.data(), 16, 8);
+    };
+    constexpr uint32_t sdrFlag = SONY2FUJI_HDR_DISPLAY_SDR, falseColor = SONY2FUJI_HDR_DISPLAY_FALSE_COLOR;
+    constexpr uint32_t p3 = SONY2FUJI_HDR_DISPLAY_P3, clamp = SONY2FUJI_HDR_DISPLAY_CLAMP_SDR;
+    // RGBA16F 下四个呈现标志任意组合都有确定含义（各端现有调用都在其中）。
+    bool all = true;
+    for (uint32_t flags = 0; flags < 16; ++flags) all = all && rgba16(flags, &sdr) == SONY2FUJI_STATUS_OK;
+    check(all, "every RGBA16F combination of SDR, FALSE_COLOR, P3 and CLAMP_SDR is accepted");
+    check(bgra8(falseColor, nullptr) == SONY2FUJI_STATUS_OK && bgra8(sdrFlag, &sdr) == SONY2FUJI_STATUS_OK &&
+          bgra8(sdrFlag | clamp, &sdr) == SONY2FUJI_STATUS_OK && bgra8(falseColor | sdrFlag, &sdr) == SONY2FUJI_STATUS_OK,
+          "BGRA8 is accepted for false color and for the SDR plane");
+    check(bgra8(sdrFlag | p3, &sdr) == SONY2FUJI_STATUS_INVALID_ARGUMENT &&
+          bgra8(falseColor | p3, nullptr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "P3 values under sRGB BGRA8 encoding are rejected");
+    check(bgra8(0, &sdr) == SONY2FUJI_STATUS_INVALID_ARGUMENT && bgra8(clamp, &sdr) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
+          "BGRA8 without SDR or FALSE_COLOR (extended HDR in 8 bits) is rejected");
+    // 假色是 HDR 平面的监看视图：带不带 SDR、P3、CLAMP_SDR 结果相同。
+    rgba16(falseColor, &sdr);
+    const auto plain = out16;
+    rgba16(falseColor | sdrFlag | p3 | clamp, &sdr);
+    check(out16 == plain && out16[0] == half(1) && out16[1] == half(0.6f) && out16[2] == 0,
+          "false color ignores the presentation flags");
+}
+
 } // namespace
 
 int main() {
@@ -306,6 +342,7 @@ int main() {
         testFalseColor();
         testDisplayOutputLimitsAndLayout();
         testDisplayRejectsInvalidInput();
+        testFlagCombinations();
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
         return 1;
