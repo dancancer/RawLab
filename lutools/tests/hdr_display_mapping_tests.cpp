@@ -332,6 +332,106 @@ void testFlagCombinations() {
           "false color ignores the presentation flags");
 }
 
+// 肩部 y -> 1 + (y - 1) / (1 + a (y - 1))，a = (c - h) / ((h - 1)(c - 1))：除端点外还锁定中间点，
+// 换成线性压缩或其他曲线都会失败。
+void testShoulderCurve() {
+    const double c = 8, h = 4, a = (c - h) / ((h - 1) * (c - 1));
+    const std::vector<float> ys{1.25f, 1.5f, 2, 3, 4, 5, 6, 7, 8};
+    std::vector<float> gray, sdrValues;
+    for (float y : ys) { gray.insert(gray.end(), {y, y, y}); sdrValues.insert(sdrValues.end(), {0.5f, 0.5f, 0.5f}); }
+    auto hdr = plane(gray, uint32_t(ys.size()), 1);
+    auto sdr = plane(sdrValues, uint32_t(ys.size()), 1);
+    sony2fuji_status status;
+    const auto out = display16(hdr, &sdr, float(h), float(c), 0, status);
+    bool onCurve = status == SONY2FUJI_STATUS_OK;
+    double previous = 1, previousSlope = 2;
+    for (size_t i = 0; i < ys.size() && onCurve; ++i) {
+        const double expected = 1 + (ys[i] - 1) / (1 + a * (ys[i] - 1));
+        const double actual = sony2fuji::hdr::halfToFloat(out[i * 4]);
+        onCurve = std::fabs(actual - expected) <= expected * 0.001 && out[i * 4] == out[i * 4 + 1] &&
+                  out[i * 4] == out[i * 4 + 2];
+        const double slope = (actual - previous) / (ys[i] - (i ? ys[i - 1] : 1.0));
+        onCurve = onCurve && slope < previousSlope; // 凹函数：斜率随亮度单调下降
+        previous = actual; previousSlope = slope;
+    }
+    check(onCurve, "shoulder follows 1 + (y-1)/(1 + a(y-1)) at intermediate points, gray stays gray");
+    check(std::fabs(sony2fuji::hdr::halfToFloat(out[2 * 4]) - 1.84) < 0.002 &&
+          std::fabs(sony2fuji::hdr::halfToFloat(out[4 * 4]) - 32.0 / 11.0) < 0.003,
+          "shoulder maps 2 -> 1.84 and 4 -> 32/11 for content 8 on a display of 4");
+    // 色度比例保持：彩色像素按同一亮度比例缩放。
+    std::vector<float> color{6, 3, 1.5f};
+    std::vector<float> colorSdr(3, 0.5f);
+    auto colorSdrPlane = plane(colorSdr, 1, 1);
+    const auto colored = display16(plane(color, 1, 1), &colorSdrPlane, float(h), float(c), 0, status);
+    const double r = sony2fuji::hdr::halfToFloat(colored[0]), g = sony2fuji::hdr::halfToFloat(colored[1]),
+                 b = sony2fuji::hdr::halfToFloat(colored[2]);
+    check(status == SONY2FUJI_STATUS_OK && std::fabs(r / g - 2) < 0.004 && std::fabs(g / b - 2) < 0.004,
+          "shoulder scales all channels by the same luminance ratio");
+}
+
+struct GoldenCase {
+    float headroom;
+    uint32_t flags;
+    std::vector<uint16_t> halves;
+};
+
+// 与 RawLabMac/tests/HDRCanvasTests.swift、RawLab/tests/HDRCanvasTests.swift 的 Metal 对照金标为同一组数：
+// 核心逻辑变化会在这里先失败，提醒同步重新生成 Metal 对照期望值。
+void checkGolden(const char* name, const std::vector<float>& hdrValues, const std::vector<float>& sdrValues,
+                 uint32_t peakBits, const std::vector<GoldenCase>& cases) {
+    auto hdrCopy = hdrValues, sdrCopy = sdrValues;
+    const auto width = uint32_t(hdrValues.size() / 3);
+    auto hdr = plane(hdrCopy, width, 1);
+    auto sdr = plane(sdrCopy, width, 1);
+    const auto stats = analyze(hdr);
+    uint32_t peakActual;
+    std::memcpy(&peakActual, &stats.peak, sizeof(peakActual));
+    check(stats.status == SONY2FUJI_STATUS_OK && peakActual == peakBits,
+          std::string(name) + " Metal parity content headroom matches the core peak");
+    float peak;
+    std::memcpy(&peak, &peakBits, sizeof(peak));
+    for (const auto& golden : cases) {
+        sony2fuji_status status;
+        const auto out = display16(hdr, &sdr, golden.headroom, peak,
+            SONY2FUJI_HDR_DISPLAY_P3 | SONY2FUJI_HDR_DISPLAY_CLAMP_SDR | golden.flags, status);
+        bool same = status == SONY2FUJI_STATUS_OK;
+        for (uint32_t i = 0; i < width && same; ++i)
+            for (int ch = 0; ch < 3; ++ch) same = same && out[i * 4 + ch] == golden.halves[i * 3 + ch];
+        check(same, std::string(name) + " Metal parity golden, headroom " + std::to_string(golden.headroom) +
+              " flags " + std::to_string(golden.flags));
+    }
+}
+
+void testMetalParityGoldens() {
+    constexpr uint32_t sdrFlag = SONY2FUJI_HDR_DISPLAY_SDR, falseColor = SONY2FUJI_HDR_DISPLAY_FALSE_COLOR;
+    checkGolden("Mac",
+        {0.002f, 0.005f, 0.001f, 0.5f, 0.4f, 0.3f, 1.5f, 1.4f, 1.2f, 6, 5, 4, 12, 9, 7, 0, 1.2f, 0.3f},
+        {0.002f, 0.005f, 0.001f, 0.5f, 0.4f, 0.3f, 1, 0.9f, 0.8f, 1, 1, 1, 1, 1, 1, 0, 1, 0.3f}, 0x4117e4f7, {
+        {1.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3bdc, 0x3b3a, 0x3a7c,
+                   0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x31ae, 0x3bbc, 0x3587}},
+        {1.005f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c3c, 0x3c03, 0x3af8,
+                     0x3c8e, 0x3bdf, 0x3a6c, 0x3cdb, 0x3bb5, 0x3a20, 0x32d1, 0x3ca4, 0x35c3}},
+        {2.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3d7a, 0x3d2f, 0x3c81,
+                   0x4048, 0x3f67, 0x3e0a, 0x40d5, 0x3fab, 0x3e18, 0x32d1, 0x3ca4, 0x35c3}},
+        {4.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3dca, 0x3d7b, 0x3cc4,
+                   0x4339, 0x423e, 0x4118, 0x44d5, 0x43ab, 0x4218, 0x32d1, 0x3ca4, 0x35c3}},
+        {8.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3de9, 0x3d99, 0x3cdd,
+                   0x4561, 0x44a7, 0x4397, 0x48d5, 0x47ab, 0x4618, 0x32d1, 0x3ca4, 0x35c3}},
+        {4.0f, sdrFlag, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3bdc, 0x3b3a, 0x3a7c,
+                         0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x31ae, 0x3bbc, 0x3587}},
+        {2.0f, falseColor, {0x251f, 0x30cd, 0x399a, 0x359a, 0x359a, 0x359a, 0x3c00, 0x38cd, 0x0000,
+                            0x3c00, 0x0000, 0x359a, 0x3c00, 0x0000, 0x359a, 0x359a, 0x359a, 0x359a}},
+    });
+    checkGolden("iOS",
+        {0.002f, 0.005f, 0.001f, 0.5f, 0.4f, 0.3f, 6, 5, 4},
+        {0.002f, 0.005f, 0.001f, 0.5f, 0.4f, 0.3f, 1, 1, 1}, 0x40a47e28, {
+        {1.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00}},
+        {2.0f, 0, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x4088, 0x3fd5, 0x3e64}},
+        {4.0f, sdrFlag, {0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00}},
+        {2.0f, falseColor, {0x251f, 0x30cd, 0x399a, 0x359a, 0x359a, 0x359a, 0x3c00, 0x0000, 0x359a}},
+    });
+}
+
 } // namespace
 
 int main() {
@@ -343,6 +443,8 @@ int main() {
         testDisplayOutputLimitsAndLayout();
         testDisplayRejectsInvalidInput();
         testFlagCombinations();
+        testShoulderCurve();
+        testMetalParityGoldens();
     } catch (const std::exception& error) {
         std::cerr << "FAIL: " << error.what() << '\n';
         return 1;
