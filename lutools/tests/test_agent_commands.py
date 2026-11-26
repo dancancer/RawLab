@@ -292,6 +292,26 @@ class AgentCommands(unittest.TestCase):
                 result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
                 self.assertEqual(result["input_type"], "hdr_raster")
 
+    def test_hdr_oversized_long_edge_is_an_argument_error(self):
+        capabilities = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        if 14 not in capabilities["recipe_versions"]:
+            self.skipTest("CLI runtime has no HDR v14 capability")
+        self.document = {
+            "schema_version": 14,
+            "processing": {"family": "rawlab_hdr", "version": 7, "quality": "standard"},
+            "input": {"path": str(pathlib.Path(__file__).parent / "fixtures/bayer-demosaic.dng"), "type": "raw"},
+            "edits": {"exposure": {"ev": 0}, "white_balance": {"mode": "relative"}},
+            "output": {"path": "hdr.jpg", "format": "hdr_jpeg", "base_color": "srgb"},
+        }
+        self.write_recipe()
+        # 外部调用方（MCP）按错误码区分参数错误与处理失败；超出 1..65535 的长边必须是参数错误。
+        for mode in (("--preview", self.root / "preview.png"), ("--analyze",)):
+            with self.subTest(mode=mode[0]):
+                error = self.envelope(self.run_cli("--recipe", self.recipe, *mode, "--long-edge", "70000", "--json"),
+                                      error="invalid_argument")["error"]
+                self.assertEqual(error["status"], 1)
+                self.assertFalse((self.root / "preview.png").exists())
+
     def test_lens_database_validation_flag_order(self):
         self.write_recipe()
         for groups in itertools.permutations((("--recipe", self.recipe), ("--lens-database", self.root / "lenses.xml"), ("--print-recipe",))):

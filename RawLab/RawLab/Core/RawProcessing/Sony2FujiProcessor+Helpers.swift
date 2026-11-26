@@ -465,43 +465,6 @@ extension Sony2FujiProcessor {
         }
     }
 
-    func applyViewportROI(session: OpaquePointer, roi: ViewportROI?) -> sony2fuji_status {
-        var nativeRoi = sony2fuji_viewport_roi()
-        nativeRoi.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi>.size)
-        if let roi {
-            nativeRoi.enabled = 1
-            nativeRoi.norm_x0 = Double(roi.normalizedRect.minX)
-            nativeRoi.norm_y0 = Double(roi.normalizedRect.minY)
-            nativeRoi.norm_x1 = Double(roi.normalizedRect.maxX)
-            nativeRoi.norm_y1 = Double(roi.normalizedRect.maxY)
-            nativeRoi.max_output_long_edge = UInt32(max(0, roi.maxOutputLongEdge))
-        } else {
-            nativeRoi.enabled = 0
-        }
-        return sony2fuji_session_set_viewport_roi(session, &nativeRoi)
-    }
-
-    func readViewportROIResult(session: OpaquePointer) -> ViewportROIResult? {
-        var result = sony2fuji_viewport_roi_result()
-        result.struct_size = UInt32(MemoryLayout<sony2fuji_viewport_roi_result>.size)
-        guard sony2fuji_session_get_viewport_roi_result(session, &result) == SONY2FUJI_STATUS_OK,
-              result.active != 0,
-              result.native_x1 > result.native_x0,
-              result.native_y1 > result.native_y0,
-              result.full_native_width > 0,
-              result.full_native_height > 0 else {
-            return nil
-        }
-        return ViewportROIResult(
-            nativeX0: Int(result.native_x0),
-            nativeY0: Int(result.native_y0),
-            nativeX1: Int(result.native_x1),
-            nativeY1: Int(result.native_y1),
-            fullNativeWidth: Int(result.full_native_width),
-            fullNativeHeight: Int(result.full_native_height)
-        )
-    }
-
     func processRaw(
         session: OpaquePointer,
         request: inout sony2fuji_request,

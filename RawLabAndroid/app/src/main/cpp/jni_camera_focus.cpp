@@ -388,29 +388,4 @@ Java_com_rawlab_android_camera_SonyCameraNative_nativeFocusStateSnapshot(
     return res;
 }
 
-JNIEXPORT jdoubleArray JNICALL
-Java_com_rawlab_android_camera_SonyCameraNative_nativeFocusStateResolveRender(
-    JNIEnv* env, jobject, jbyteArray stateArr, jdouble left, jdouble top,
-    jdouble fittedWidth, jdouble fittedHeight, jdouble minDefaultPx, jdouble maxDefaultPx, jdouble minLearnedPx
-) {
-    sony2fuji_sony_focus_state st{};
-    if (!readFocusState(env, stateArr, st)) return nullptr;
-    sony2fuji_sony_focus_render_decision dec{};
-    sony2fuji_sony_focus_state_resolve_render(
-        &st, left, top, fittedWidth, fittedHeight, minDefaultPx, maxDefaultPx, minLearnedPx, &dec);
-    jdouble out[8]{
-        static_cast<jdouble>(dec.mode),
-        static_cast<jdouble>(dec.effective_focus_locked),
-        dec.tap_box.x,
-        dec.tap_box.y,
-        dec.tap_box.width,
-        dec.tap_box.height,
-        dec.tap_box.is_normalized_square != 0 ? 1.0 : 0.0,
-        dec.tap_box.focused != 0 ? 1.0 : 0.0,
-    };
-    jdoubleArray res = env->NewDoubleArray(8);
-    if (res) env->SetDoubleArrayRegion(res, 0, 8, out);
-    return res;
-}
-
 } // extern "C"

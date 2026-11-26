@@ -31,7 +31,7 @@ int enableJXL(LibRaw& raw, dng_host& host, const char* path) {
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
-#include "core/stb_image.h"
+#include "stb_image.h"
 using namespace sony2fuji;
 
 float medianLuminance(const ImageData& image) {

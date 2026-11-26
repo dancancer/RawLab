@@ -10,7 +10,7 @@
 #ifdef TEST_LENS_WAVELET_DNG
 #define STBI_ONLY_PNG
 #endif
-#include "core/stb_image.h"
+#include "stb_image.h"
 
 #include <tiffio.h>
 

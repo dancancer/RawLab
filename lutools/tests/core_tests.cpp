@@ -15,7 +15,7 @@
 #endif
 #include "stb_image_write.h"
 #define STB_IMAGE_IMPLEMENTATION
-#include "core/stb_image.h"
+#include "stb_image.h"
 #include "core/processing_cancellation.h"
 #include <cerrno>
 #include <cmath>

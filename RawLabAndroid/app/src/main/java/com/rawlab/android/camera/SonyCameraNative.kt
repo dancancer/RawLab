@@ -107,7 +107,6 @@ internal object SonyCameraNative {
     @JvmStatic external fun nativeParseResponse(payload: ByteArray): IntArray
     @JvmStatic external fun nativeParseEvent(payload: ByteArray): IntArray
 
-    @JvmStatic external fun nativeIsValidPhotoFilename(name: String): Boolean
     @JvmStatic external fun nativeIsPhotoFilename(name: String): Boolean
     @JvmStatic external fun nativeValidatePhotoHeader(name: String, prefix: ByteArray): Boolean
 
@@ -169,10 +168,6 @@ internal object SonyCameraNative {
     @JvmStatic external fun nativeFocusStateOnTick(state: ByteArray, nowMs: Long)
     @JvmStatic external fun nativeFocusStateOnTimeout(state: ByteArray, generation: Long, nowMs: Long)
     @JvmStatic external fun nativeFocusStateSnapshot(state: ByteArray): DoubleArray
-    @JvmStatic external fun nativeFocusStateResolveRender(
-        state: ByteArray, left: Double, top: Double, fittedWidth: Double, fittedHeight: Double,
-        minDefaultPx: Double, maxDefaultPx: Double, minLearnedPx: Double,
-    ): DoubleArray
 
     @JvmStatic
     fun initCmdPacket(guid: UUID, clientName: String, protocolVersion: Int = 0x10000): ByteArray {

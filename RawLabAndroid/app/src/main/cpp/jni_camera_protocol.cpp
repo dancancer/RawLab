@@ -254,14 +254,6 @@ Java_com_rawlab_android_camera_SonyCameraNative_nativeParseEvent(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_com_rawlab_android_camera_SonyCameraNative_nativeIsValidPhotoFilename(
-    JNIEnv* env, jobject, jstring nameStr
-) {
-    const std::string name = readJString(env, nameStr);
-    return sony2fuji_sony_is_valid_photo_filename(name.c_str()) != 0 ? JNI_TRUE : JNI_FALSE;
-}
-
-JNIEXPORT jboolean JNICALL
 Java_com_rawlab_android_camera_SonyCameraNative_nativeIsPhotoFilename(
     JNIEnv* env, jobject, jstring nameStr
 ) {

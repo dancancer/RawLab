@@ -11,7 +11,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STBI_ONLY_JPEG
 #define STBI_NO_STDIO
-#include "core/stb_image.h"
+#include "stb_image.h"
 
 using namespace sony2fuji;
 

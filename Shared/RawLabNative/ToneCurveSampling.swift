@@ -39,9 +39,4 @@ public extension ToneCurveSettings {
         }
         return status == SONY2FUJI_STATUS_OK ? output : x
     }
-
-    func applyToSession(_ session: OpaquePointer) -> sony2fuji_status {
-        var config = nativeSetV2Config
-        return sony2fuji_session_set_tone_curves_v2(session, &config)
-    }
 }
