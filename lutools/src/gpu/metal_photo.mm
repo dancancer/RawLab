@@ -1541,10 +1541,10 @@ bool renderPhotoMetalImpl(
                     "Failed to allocate Metal film optics proxy buffers");
             }
             auto rowSpanForProxy = [&](uint32_t py) -> std::pair<uint32_t, uint32_t> {
-                const float fy0 = float(py) * float(srcH) / float(outH);
-                const float fy1 = float(py + 1u) * float(srcH) / float(outH);
-                const uint32_t iy0 = static_cast<uint32_t>(std::max(0, int(std::floor(fy0))));
-                const uint32_t iy1 = static_cast<uint32_t>(std::min<int>(int(srcH), std::max<int>(int(iy0) + 1, int(std::ceil(fy1)))));
+                const uint32_t iy0 = static_cast<uint32_t>((uint64_t(py) * srcH) / outH);
+                const uint32_t iy1 = std::min<uint32_t>(
+                    srcH,
+                    std::max<uint32_t>(iy0 + 1u, static_cast<uint32_t>((uint64_t(py + 1u) * srcH + outH - 1u) / outH)));
                 return {iy0, iy1};
             };
             id<MTLBuffer> bandSrc = nil;

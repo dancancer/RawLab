@@ -199,14 +199,10 @@ kernel void filmOpticsDownsample(
     uint px = gid % p.proxyWidth;
     uint pyLocal = gid / p.proxyWidth;
     uint py = pyLocal + p.dstProxyRowOffset;
-    float fx0 = float(px) * float(p.width) / float(p.proxyWidth);
-    float fx1 = float(px + 1u) * float(p.width) / float(p.proxyWidth);
-    float fy0 = float(py) * float(p.height) / float(p.proxyHeight);
-    float fy1 = float(py + 1u) * float(p.height) / float(p.proxyHeight);
-    int ix0 = max(0, int(floor(fx0)));
-    int ix1 = min(int(p.width), max(ix0 + 1, int(ceil(fx1))));
-    int iy0 = max(0, int(floor(fy0)));
-    int iy1 = min(int(p.height), max(iy0 + 1, int(ceil(fy1))));
+    int ix0 = max(0, int((px * p.width) / p.proxyWidth));
+    int ix1 = min(int(p.width), max(ix0 + 1, int(((px + 1u) * p.width + p.proxyWidth - 1u) / p.proxyWidth)));
+    int iy0 = max(0, int((py * p.height) / p.proxyHeight));
+    int iy1 = min(int(p.height), max(iy0 + 1, int(((py + 1u) * p.height + p.proxyHeight - 1u) / p.proxyHeight)));
     int stepX = max(1, (ix1 - ix0 + 15) / 16);
     int stepY = max(1, (iy1 - iy0 + 15) / 16);
     bool isBloom = p.channelCount == 3u;

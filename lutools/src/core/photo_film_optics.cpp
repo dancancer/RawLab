@@ -245,16 +245,14 @@ FilmOpticsField buildFilmOpticsField(
         std::vector<float> excess(n, 0.0f);
         parallelRowRanges(geom.proxyHeight, geom.proxyWidth, [&](int firstRow, int lastRow) {
             for (int py = firstRow; py < lastRow; ++py) {
-                const float fy0 = float(py) * float(guideH) / float(geom.proxyHeight);
-                const float fy1 = float(py + 1) * float(guideH) / float(geom.proxyHeight);
-                const int iy0 = std::max(0, int(std::floor(fy0)));
-                const int iy1 = std::min(guideH, std::max(iy0 + 1, int(std::ceil(fy1))));
+                const int iy0 = std::max(0, static_cast<int>((static_cast<int64_t>(py) * guideH) / geom.proxyHeight));
+                const int iy1 = std::min(guideH, std::max(iy0 + 1, static_cast<int>(
+                    (static_cast<int64_t>(py + 1) * guideH + geom.proxyHeight - 1) / geom.proxyHeight)));
                 const int stepY = std::max(1, (iy1 - iy0 + 15) / 16);
                 for (int px = 0; px < geom.proxyWidth; ++px) {
-                    const float fx0 = float(px) * float(guideW) / float(geom.proxyWidth);
-                    const float fx1 = float(px + 1) * float(guideW) / float(geom.proxyWidth);
-                    const int ix0 = std::max(0, int(std::floor(fx0)));
-                    const int ix1 = std::min(guideW, std::max(ix0 + 1, int(std::ceil(fx1))));
+                    const int ix0 = std::max(0, static_cast<int>((static_cast<int64_t>(px) * guideW) / geom.proxyWidth));
+                    const int ix1 = std::min(guideW, std::max(ix0 + 1, static_cast<int>(
+                        (static_cast<int64_t>(px + 1) * guideW + geom.proxyWidth - 1) / geom.proxyWidth)));
                     const int stepX = std::max(1, (ix1 - ix0 + 15) / 16);
                     float sum = 0.0f;
                     int count = 0;
@@ -290,16 +288,14 @@ FilmOpticsField buildFilmOpticsField(
         std::vector<float> excess(n, 0.0f);
         parallelRowRanges(geom.proxyHeight, geom.proxyWidth, [&](int firstRow, int lastRow) {
             for (int py = firstRow; py < lastRow; ++py) {
-                const float fy0 = float(py) * float(guideH) / float(geom.proxyHeight);
-                const float fy1 = float(py + 1) * float(guideH) / float(geom.proxyHeight);
-                const int iy0 = std::max(0, int(std::floor(fy0)));
-                const int iy1 = std::min(guideH, std::max(iy0 + 1, int(std::ceil(fy1))));
+                const int iy0 = std::max(0, static_cast<int>((static_cast<int64_t>(py) * guideH) / geom.proxyHeight));
+                const int iy1 = std::min(guideH, std::max(iy0 + 1, static_cast<int>(
+                    (static_cast<int64_t>(py + 1) * guideH + geom.proxyHeight - 1) / geom.proxyHeight)));
                 const int stepY = std::max(1, (iy1 - iy0 + 15) / 16);
                 for (int px = 0; px < geom.proxyWidth; ++px) {
-                    const float fx0 = float(px) * float(guideW) / float(geom.proxyWidth);
-                    const float fx1 = float(px + 1) * float(guideW) / float(geom.proxyWidth);
-                    const int ix0 = std::max(0, int(std::floor(fx0)));
-                    const int ix1 = std::min(guideW, std::max(ix0 + 1, int(std::ceil(fx1))));
+                    const int ix0 = std::max(0, static_cast<int>((static_cast<int64_t>(px) * guideW) / geom.proxyWidth));
+                    const int ix1 = std::min(guideW, std::max(ix0 + 1, static_cast<int>(
+                        (static_cast<int64_t>(px + 1) * guideW + geom.proxyWidth - 1) / geom.proxyWidth)));
                     const int stepX = std::max(1, (ix1 - ix0 + 15) / 16);
                     float sr = 0.0f, sg = 0.0f, sb = 0.0f;
                     int count = 0;

@@ -213,18 +213,12 @@ inline constexpr const char* kFilterShaderBodyPart2 = R"shader(    } else if (st
         writeA(i * 3u, pixel.x); writeA(i * 3u + 1u, pixel.y); writeA(i * 3u + 2u, pixel.z);
     } else if (stage == 13u) {
         uint px = i % step, py = i / step + outputRow;
-        float fx0 = float(px) * float(width) / float(step);
-        float fx1 = float(px + 1u) * float(width) / float(step);
-        float fy0 = float(py) * float(height) / float(level);
-        float fy1 = float(py + 1u) * float(height) / float(level);
-        int ix0 = int(floor(fx0));
-        if (ix0 < 0) ix0 = 0;
-        int cx1 = -int(floor(-fx1));
+        int ix0 = int((px * width) / step);
+        int cx1 = int(((px + 1u) * width + step - 1u) / step);
         int ix1 = cx1 > (ix0 + 1) ? cx1 : (ix0 + 1);
         if (ix1 > int(width)) ix1 = int(width);
-        int iy0 = int(floor(fy0));
-        if (iy0 < 0) iy0 = 0;
-        int cy1 = -int(floor(-fy1));
+        int iy0 = int((py * height) / level);
+        int cy1 = int(((py + 1u) * height + level - 1u) / level);
         int iy1 = cy1 > (iy0 + 1) ? cy1 : (iy0 + 1);
         if (iy1 > int(height)) iy1 = int(height);
         int stepX = (ix1 - ix0 + 15) / 16;
