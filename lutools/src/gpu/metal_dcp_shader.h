@@ -33,7 +33,7 @@ struct DcpParams {
 #define DCP_LERP3(a, b, t) lerp3((a), (b), (t))
 #define DCP_FINITE(v) all(isfinite(v))
 #define DCP_DATA(idx) dcpData[(idx)]
-#define DCP_MARK_INVALID() atomic_store_explicit(dcpInvalid, 1u, memory_order_relaxed)
+#define DCP_MARK_INVALID atomic_store_explicit(dcpInvalid, 1u, memory_order_relaxed)
 )metal") + dcpLookShaderBody() + R"metal(
 #undef DCP_FN
 #undef DCP_V3

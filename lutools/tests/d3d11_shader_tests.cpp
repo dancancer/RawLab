@@ -55,7 +55,22 @@ int main() {
     if (FAILED(buffer->GetVariableByName("band")->GetDesc(&band)) || band.StartOffset != 4576 || band.Size != 16) return 1;
     if (FAILED(buffer->GetVariableByName("basicV3")->GetDesc(&basicV3)) || basicV3.StartOffset != 4592 || basicV3.Size != 16) return 1;
     if (FAILED(buffer->GetVariableByName("basicTone")->GetDesc(&basicTone)) || basicTone.StartOffset != 4608 || basicTone.Size != 16) return 1;
-    std::cout << "PASS: cs_5_0 color shader compiles; reflected constants match the 4624-byte host layout\n";
+
+    ComPtr<ID3DBlob> spatialCode, spatialErrors;
+    const auto spatialStatus = D3DCompile(sony2fuji::kD3DSpatialShader.data(), sony2fuji::kD3DSpatialShader.size(),
+        "RawLab spatial shader", nullptr, nullptr, "main", "cs_5_0",
+        D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, 0, &spatialCode, &spatialErrors);
+    if (FAILED(spatialStatus)) {
+        if (spatialErrors) std::cerr << static_cast<const char*>(spatialErrors->GetBufferPointer());
+        return 1;
+    }
+    ComPtr<ID3D11ShaderReflection> spatialReflection;
+    if (FAILED(D3DReflect(spatialCode->GetBufferPointer(), spatialCode->GetBufferSize(), IID_PPV_ARGS(&spatialReflection)))) return 1;
+    auto* spatialBuffer = spatialReflection->GetConstantBufferByName("SpatialParamsBuffer");
+    D3D11_SHADER_BUFFER_DESC spatialDesc{};
+    if (FAILED(spatialBuffer->GetDesc(&spatialDesc)) || spatialDesc.Size != sizeof(sony2fuji::SpatialGpuParams)) return 1;
+
+    std::cout << "PASS: cs_5_0 color & spatial shaders compile; reflected constants match the 4624-byte and 224-byte host layouts\n";
     std::cout << "Shader compilation/reflection does not establish hardware GPU execution\n";
     return 0;
 }

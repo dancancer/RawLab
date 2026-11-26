@@ -70,7 +70,7 @@ inline bool packDcpLookGpuData(
 // Embedding callers define dialect-specific helper macros around this string:
 //   DCP_FN, DCP_V3, DCP_V3C(x,y,z), DCP_U3, DCP_U3C(x,y,z), DCP_U4,
 //   DCP_CTX_DECL, DCP_CTX_ARG, DCP_SRGB_GAMMA(x), DCP_NEUTRAL(x),
-//   DCP_LERP3(a,b,t), DCP_FINITE(v), DCP_DATA(idx), DCP_MARK_INVALID()
+//   DCP_LERP3(a,b,t), DCP_FINITE(v), DCP_DATA(idx), DCP_MARK_INVALID
 inline std::string dcpLookShaderBody() {
     return R"shader(
 DCP_FN float dcpWrapHue(float hueVal) {
@@ -121,7 +121,7 @@ DCP_FN DCP_V3 dcpEvalHsv(DCP_V3 col, DCP_U4 dimsVec, uint tableOffset DCP_CTX_DE
         }
     }
     if (!DCP_FINITE(adj)) {
-        DCP_MARK_INVALID();
+        DCP_MARK_INVALID;
         return DCP_V3C(0.0, 0.0, 0.0);
     }
     hue = dcpWrapHue(hue + adj.x / 60.0);
@@ -155,9 +155,9 @@ DCP_FN DCP_V3 dcpApplyLookPixel(
 ) {
     DCP_V3 baseDisplay = DCP_V3C(DCP_NEUTRAL(linearSrgb.x), DCP_NEUTRAL(linearSrgb.y), DCP_NEUTRAL(linearSrgb.z));
     DCP_V3 col = dcpApplyMat(linearSrgb, inRow0, inRow1, inRow2);
-    if (!DCP_FINITE(col)) { DCP_MARK_INVALID(); return DCP_V3C(0.0, 0.0, 0.0); }
+    if (!DCP_FINITE(col)) { DCP_MARK_INVALID; return DCP_V3C(0.0, 0.0, 0.0); }
     col = dcpEvalHsv(col, calibDims, 0u DCP_CTX_ARG) * expScale;
-    if (!DCP_FINITE(col)) { DCP_MARK_INVALID(); return DCP_V3C(0.0, 0.0, 0.0); }
+    if (!DCP_FINITE(col)) { DCP_MARK_INVALID; return DCP_V3C(0.0, 0.0, 0.0); }
     col = clamp(dcpEvalHsv(col, lookDims, lookStart DCP_CTX_ARG),
                 DCP_V3C(0.0, 0.0, 0.0), DCP_V3C(1.0, 1.0, 1.0));
     float lo = min(col.x, min(col.y, col.z));
@@ -167,7 +167,7 @@ DCP_FN DCP_V3 dcpApplyLookPixel(
     DCP_V3 scaleVec = hi != lo ? (col - DCP_V3C(lo, lo, lo)) / (hi - lo) : DCP_V3C(0.0, 0.0, 0.0);
     col = DCP_V3C(lower, lower, lower) + (upper - lower) * scaleVec;
     col = dcpApplyMat(col, outRow0, outRow1, outRow2);
-    if (!DCP_FINITE(col)) { DCP_MARK_INVALID(); return DCP_V3C(0.0, 0.0, 0.0); }
+    if (!DCP_FINITE(col)) { DCP_MARK_INVALID; return DCP_V3C(0.0, 0.0, 0.0); }
     DCP_V3 filmDisplay = clamp(DCP_V3C(DCP_SRGB_GAMMA(col.x), DCP_SRGB_GAMMA(col.y), DCP_SRGB_GAMMA(col.z)),
                                DCP_V3C(0.0, 0.0, 0.0), DCP_V3C(1.0, 1.0, 1.0));
     return DCP_LERP3(baseDisplay, filmDisplay, blendStrength);

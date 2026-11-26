@@ -93,7 +93,7 @@ float dcpSrgbGamma(float x) {
 #define DCP_LERP3(a, b, t) mix((a), (b), (t))
 #define DCP_FINITE(v) (abs((v).x) <= 3.4e38 && abs((v).y) <= 3.4e38 && abs((v).z) <= 3.4e38)
 #define DCP_DATA(idx) auxField[dcpOffsets.z + (idx)]
-#define DCP_MARK_INVALID() (dcpInvalid[0] = 1u)
+#define DCP_MARK_INVALID (dcpInvalid[0] = 1u)
 )glsl" + dcpLookShaderBody() + R"glsl(
 #undef DCP_FN
 #undef DCP_V3

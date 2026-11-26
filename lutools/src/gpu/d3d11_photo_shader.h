@@ -68,7 +68,7 @@ float dcpSrgbGamma(float x) {
 #define DCP_LERP3(a, b, t) lerp((a), (b), (t))
 #define DCP_FINITE(v) all(isfinite(v))
 #define DCP_DATA(idx) dcpData[(idx)]
-#define DCP_MARK_INVALID() InterlockedOr(dcpInvalid[0], 1u)
+#define DCP_MARK_INVALID InterlockedOr(dcpInvalid[0], 1u)
 )hlsl" + dcpLookShaderBody() + R"hlsl(
 #undef DCP_FN
 #undef DCP_V3
