@@ -23,6 +23,17 @@ struct DefringeOptions {
     }
 };
 
+// 由滑块值派生的逐像素常量。CPU 与三个 GPU 后端共用这一份推导，GPU 只读取结果：
+// Intel 宿主的 Metal 编译器曾把着色器里的 clamp(x / 20, 0, 1) 错误折叠成 clamp(x, 0, 1) / 20（#695）。
+struct DefringeWeights {
+    float purpleNorm = 0.0f;
+    float purpleCenter = 290.0f;
+    float greenNorm = 0.0f;
+    float greenCenter = 120.0f;
+};
+
+DefringeWeights defringeWeights(const DefringeOptions& options);
+
 void applyDefringe(ImageData& image, const DefringeOptions& options);
 
 } // namespace sony2fuji

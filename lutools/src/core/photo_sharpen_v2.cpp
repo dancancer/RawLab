@@ -76,6 +76,20 @@ bool SharpenV2Options::valid() const {
     return true;
 }
 
+SharpenV2Coefficients sharpenV2Coefficients(float amount, const SharpenV2Options& options) {
+    SharpenV2Coefficients c;
+    const float strength = std::clamp(amount, 0.0f, 2.0f);
+    const float detailNorm = std::clamp(options.detail / 100.0f, 0.0f, 1.0f);
+    c.coring = 0.012f * (1.0f - detailNorm);
+    c.detailGain = strength * (0.7f + 1.2f * detailNorm);
+    if (std::isfinite(options.masking) && options.masking > 0.0f) {
+        const float m = std::clamp(options.masking / 100.0f, 0.0f, 1.0f);
+        c.maskLow = 0.06f * m;
+        c.maskSpan = 0.05f * m;
+    }
+    return c;
+}
+
 void computeSharpenEdgeMask(
     const std::vector<float>& luma,
     int width,
@@ -91,7 +105,9 @@ void computeSharpenEdgeMask(
     outMask.resize(count, 1.0f);
 
     if (!std::isfinite(masking) || masking <= 0.0f) return;
-    const float m = std::clamp(masking / 100.0f, 0.0f, 1.0f);
+    SharpenV2Options maskOptions;
+    maskOptions.masking = masking;
+    const SharpenV2Coefficients coefficients = sharpenV2Coefficients(0.0f, maskOptions);
     const float clampedRadius = std::clamp(std::isfinite(radius) ? radius : 1.0f, 0.5f, 3.0f);
 
     // 3x3 normalized Sobel gradient magnitude on display luminance.
@@ -139,8 +155,8 @@ void computeSharpenEdgeMask(
     });
 
     const std::vector<float> edgeField = separableGaussian(dilated, width, height, 0.5f * clampedRadius, 5);
-    const float low = 0.06f * m;
-    const float span = 0.05f * m;
+    const float low = coefficients.maskLow;
+    const float span = coefficients.maskSpan;
 
     parallelPixelRanges(count, [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) {
@@ -158,9 +174,8 @@ void applySharpenV2(ImageData& image, float amount, const SharpenV2Options& opti
     const size_t count = static_cast<size_t>(w) * static_cast<size_t>(h);
     if (image.pixels.size() != count) return;
 
-    const float strength = std::clamp(amount, 0.0f, 2.0f);
     const float radius = std::clamp(options.radius, 0.5f, 3.0f);
-    const float detailNorm = std::clamp(options.detail / 100.0f, 0.0f, 1.0f);
+    const SharpenV2Coefficients coefficients = sharpenV2Coefficients(amount, options);
 
     std::vector<float> luma(count, 0.0f);
     parallelPixelRanges(count, [&](size_t first, size_t last) {
@@ -177,8 +192,8 @@ void applySharpenV2(ImageData& image, float amount, const SharpenV2Options& opti
     std::vector<float> edgeMask;
     computeSharpenEdgeMask(luma, w, h, radius, options.masking, edgeMask);
 
-    const float coring = 0.012f * (1.0f - detailNorm);
-    const float detailGain = strength * (0.7f + 1.2f * detailNorm);
+    const float coring = coefficients.coring;
+    const float detailGain = coefficients.detailGain;
 
     parallelPixelRanges(count, [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) {

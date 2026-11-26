@@ -38,6 +38,15 @@ bool DefringeOptions::valid() const {
     return true;
 }
 
+DefringeWeights defringeWeights(const DefringeOptions& options) {
+    DefringeWeights weights;
+    weights.purpleNorm = std::clamp(options.purpleAmount / 20.0f, 0.0f, 1.0f);
+    weights.greenNorm = std::clamp(options.greenAmount / 20.0f, 0.0f, 1.0f);
+    weights.purpleCenter = 270.0f + (std::clamp(options.purpleHue, 0.0f, 100.0f) / 100.0f) * 40.0f;
+    weights.greenCenter = 95.0f + (std::clamp(options.greenHue, 0.0f, 100.0f) / 100.0f) * 50.0f;
+    return weights;
+}
+
 void applyDefringe(ImageData& image, const DefringeOptions& options) {
     // Exact zero-value bypass when both purple and green amounts are 0.
     if (!options.valid() || !options.active()) return;
@@ -76,10 +85,11 @@ void applyDefringe(ImageData& image, const DefringeOptions& options) {
         }
     });
 
-    const float purpleNorm = std::clamp(options.purpleAmount / 20.0f, 0.0f, 1.0f);
-    const float greenNorm = std::clamp(options.greenAmount / 20.0f, 0.0f, 1.0f);
-    const float purpleCenter = 270.0f + (std::clamp(options.purpleHue, 0.0f, 100.0f) / 100.0f) * 40.0f;
-    const float greenCenter = 95.0f + (std::clamp(options.greenHue, 0.0f, 100.0f) / 100.0f) * 50.0f;
+    const DefringeWeights weights = defringeWeights(options);
+    const float purpleNorm = weights.purpleNorm;
+    const float greenNorm = weights.greenNorm;
+    const float purpleCenter = weights.purpleCenter;
+    const float greenCenter = weights.greenCenter;
     constexpr float kHueHalfWidth = 45.0f;
 
     parallelRowRanges(h, w, [&](int firstRow, int lastRow) {
