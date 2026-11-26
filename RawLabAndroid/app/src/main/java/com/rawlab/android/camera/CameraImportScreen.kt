@@ -716,8 +716,9 @@ private fun cameraJpegSummaryText(options: CameraJPEGOptions): String {
 
 @Composable
 private fun CameraJpegSettingsContent(state: CameraImportState, model: CameraImportViewModel) {
-    var edgeText by remember { mutableStateOf(state.incrementalJpeg.longEdge?.toString().orEmpty()) }
-    var qualityText by remember { mutableStateOf(state.incrementalJpeg.quality.toString()) }
+    // 无效的半截输入只存在这里，ViewModel 已记为无效；重建若退回有效值会与“不可开始”的状态脱节。
+    var edgeText by rememberSaveable { mutableStateOf(state.incrementalJpeg.longEdge?.toString().orEmpty()) }
+    var qualityText by rememberSaveable { mutableStateOf(state.incrementalJpeg.quality.toString()) }
     LaunchedEffect(state.incrementalJpeg.longEdge) {
         val target = state.incrementalJpeg.longEdge?.toString().orEmpty()
         if (edgeText.toIntOrNull() != state.incrementalJpeg.longEdge) edgeText = target

@@ -57,6 +57,7 @@ import com.rawlab.android.editor.ui.DcpImportDialog
 import com.rawlab.android.editor.ui.EditorScreen
 import com.rawlab.android.editor.ui.LUTCompatibilityDialog
 import com.rawlab.android.editor.ui.AdjustmentSheet
+import com.rawlab.android.editor.ui.AdjustmentSheetSaver
 import com.rawlab.android.editor.ui.AdjustmentTransferSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetSheet
 import com.rawlab.android.editor.ui.AdjustmentPresetAction
@@ -152,9 +153,9 @@ private fun RawLabApp(
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(updates) { updates.check(manual = false) }
-    var adjustmentSheet by remember { mutableStateOf<AdjustmentSheet?>(null) }
-    var presetLibrary by remember { mutableStateOf(false) }
-    var savingPreset by remember { mutableStateOf(false) }
+    var adjustmentSheet by rememberSaveable(stateSaver = AdjustmentSheetSaver) { mutableStateOf<AdjustmentSheet?>(null) }
+    var presetLibrary by rememberSaveable { mutableStateOf(false) }
+    var savingPreset by rememberSaveable { mutableStateOf(false) }
     var selectedPreset by remember { mutableStateOf<AdjustmentPreset?>(null) }
     var presetAction by remember { mutableStateOf<AdjustmentPresetAction?>(null) }
     fun history(undo: Boolean) {

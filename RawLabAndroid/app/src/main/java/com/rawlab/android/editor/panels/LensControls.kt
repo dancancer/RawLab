@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -31,8 +32,8 @@ import com.rawlab.android.settings.LensSettings
 
 @Composable
 fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading: Boolean = false, onReset: (() -> Unit)? = null, change: (LensSettings) -> Unit) {
-    var choosing by remember { mutableStateOf(false) }
-    var metadata by remember { mutableStateOf(false) }
+    var choosing by rememberSaveable { mutableStateOf(false) }
+    var metadata by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
@@ -131,7 +132,7 @@ private fun LensToggle(title: Int, checked: Boolean, enabled: Boolean, tag: Stri
 
 @Composable
 private fun LensChooser(candidates: List<LensCandidate>, selected: String?, dismiss: () -> Unit, select: (LensCandidate) -> Unit) {
-    var search by remember { mutableStateOf("") }
+    var search by rememberSaveable { mutableStateOf("") }
     val filtered = remember(candidates, search) {
         candidates.filter { it.title.contains(search, ignoreCase = true) }
             .sortedWith(compareByDescending<LensCandidate> { it.isMatch }.thenBy { it.title })
@@ -161,8 +162,8 @@ private fun LensChooser(candidates: List<LensCandidate>, selected: String?, dism
 
 @Composable
 private fun LensMetadataDialog(value: LensSettings, dismiss: () -> Unit, change: (LensSettings) -> Unit) {
-    var focal by remember { mutableStateOf(value.focalLength?.toString().orEmpty()) }
-    var crop by remember { mutableStateOf(value.cropFactor?.toString().orEmpty()) }
+    var focal by rememberSaveable { mutableStateOf(value.focalLength?.toString().orEmpty()) }
+    var crop by rememberSaveable { mutableStateOf(value.cropFactor?.toString().orEmpty()) }
     fun parsed(text: String) = text.trim().replace(',', '.').toFloatOrNull()?.takeIf { it.isFinite() }
     val valid = (focal.isBlank() || parsed(focal)?.let { it in 0.1f..10000f } == true) &&
         (crop.isBlank() || parsed(crop)?.let { it in 0.1f..100f } == true)
