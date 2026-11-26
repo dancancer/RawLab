@@ -8,7 +8,7 @@ enum class AdjustmentGroup(val tool: Int) {
     SATURATION(7), WHITE_BALANCE(8), SHARPENING(10), DENOISE(11), VIGNETTE(12), GRAIN(13),
     HSL(14), RECIPE(15), LENS(16), GEOMETRY(17), BLACK_POINT(18), WHITE_POINT(19),
     VIBRANCE(20), GRADING(21), CLARITY(22), DEHAZE(23),
-    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27);
+    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27), TEXTURE(28);
 
     companion object {
         fun forTool(tool: Int): AdjustmentGroup = entries.first { it.tool == if (tool == 9) 8 else tool }
@@ -26,7 +26,8 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.CURVE -> current.withEditingCurve(value.editingCurve).withEditingCurveStrength(value.editingCurveStrength)
         AdjustmentGroup.SATURATION -> current.copy(saturation = value.saturation)
         AdjustmentGroup.WHITE_BALANCE -> current.copy(customWb = value.customWb, temperature = value.temperature, tint = value.tint)
-        AdjustmentGroup.SHARPENING -> current.withEditingSharpening(value.editingSharpening)
+        AdjustmentGroup.SHARPENING -> if (current.isHDREditing) current.withEditingSharpening(value.editingSharpening)
+            else current.withEditingSharpening(value.editingSharpening).copy(sharpenV2 = value.sharpenV2)
         AdjustmentGroup.DENOISE -> if (current.isHDREditing) current.withHDRDenoise(value.hdr!!.detailSettings.denoise)
             else current.copy(denoise = value.denoise, displayChromaDenoise = value.displayChromaDenoise)
         AdjustmentGroup.VIGNETTE -> current.withEditingEffects(value.editingEffects.copy(
@@ -44,6 +45,7 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.GRADING -> current.withEditingGrading(value.editingGrading)
         AdjustmentGroup.CLARITY -> current.withEditingClarity(value.editingClarity)
         AdjustmentGroup.DEHAZE -> current.withEditingDehaze(value.editingDehaze)
+        AdjustmentGroup.TEXTURE -> current.copy(texture = value.texture)
         AdjustmentGroup.HDR_PEAK_LIMIT -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(peakLimitEV = value.hdr!!.renditionSettings.peakLimitEV))) else current
         AdjustmentGroup.HDR_SDR_EXPOSURE -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrExposureEV = value.hdr!!.renditionSettings.sdrExposureEV))) else current
         AdjustmentGroup.HDR_SDR_CONTRAST -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrContrast = value.hdr!!.renditionSettings.sdrContrast))) else current

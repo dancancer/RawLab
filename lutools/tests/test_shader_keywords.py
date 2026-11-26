@@ -39,6 +39,12 @@ SHARED_SHADER_BODIES = {
     "photo_tone_curve_shader.h": [
         r'R"shader\((.*?)\)shader"',
     ],
+    "dcp_look_shader.h": [
+        r'R"shader\((.*?)\)shader"',
+    ],
+    "photo_spatial_shader.h": [
+        r'R"shader\((.*?)\)shader"',
+    ],
 }
 
 

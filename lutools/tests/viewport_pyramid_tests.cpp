@@ -340,11 +340,11 @@ void testFastFullResGpuAndParity() {
         checkPass(queryFastGpu(session.get(), q, nullptr) == baselineSupported,
                   "committed state matches baseline query");
 
-        Json atmJson = baseSdrStateJson();
-        atmJson["edits"]["effects"] = {{"clarity", 0.5}, {"dehaze", 0.0}};
-        const std::string atmStr = atmJson.dump();
-        checkPass(queryFastGpu(session.get(), q, &atmStr) == 0,
-                  "atmosphere clarity rejects fast full-res GPU");
+        Json geomJson = baseSdrStateJson();
+        geomJson["edits"]["geometry"] = {{"straighten_degrees", 3.0}};
+        const std::string geomStr = geomJson.dump();
+        checkPass(queryFastGpu(session.get(), q, &geomStr) == 0,
+                  "geometry straighten rejects fast full-res GPU");
 
         // Now pass edit_state_json = nullptr -> MUST still equal baselineSupported and render on same backend!
         checkPass(queryFastGpu(session.get(), q, nullptr) == baselineSupported,
@@ -442,9 +442,24 @@ void testFastFullResGpuAndParity() {
             };
             checkPositiveParity("schema18 free endpoint X curve", j);
         }
+        // 7. Atmosphere clarity & dehaze & texture + luminance sharpenV2 + defringe
+        {
+            Json j = baseSdrStateJson();
+            j["schema_version"] = 20;
+            j["edits"]["effects"] = {{"clarity", 0.45}, {"dehaze", 0.25}, {"texture", 0.35}};
+            checkPositiveParity("atmosphere clarity+dehaze+texture", j);
+        }
+        {
+            Json j = baseSdrStateJson();
+            j["schema_version"] = 20;
+            j["edits"]["detail"] = {{"sharpening", 0.4}, {"luminance_v2", true}, {"sharpening_radius", 1.2},
+                                      {"sharpening_detail", 35.0}, {"sharpening_masking", 60.0}};
+            j["edits"]["lens_correction"] = {{"defringe_purple_amount", 6.0}, {"defringe_purple_hue", 50.0}};
+            checkPositiveParity("sharpenV2 and defringe", j);
+        }
     }
 
-    // DCP .rlook parity: must match actual Metal backend execution
+    // DCP .rlook parity: must match actual GPU backend execution
     {
         auto session = makeSession(SONY2FUJI_GPU_AUTO);
         Json j = baseSdrStateJson();
@@ -452,12 +467,11 @@ void testFastFullResGpuAndParity() {
         const std::string s = j.dump();
         const int32_t supported = queryFastGpu(session.get(), q, &s);
         const auto backend = renderAndGetBackend(session.get(), rawPath, &s);
-// gpu-portability: metal-only the DCP rlook fast path exists only in Metal; D3D11/GLES report 0 and render on CPU
-#ifdef SONY2FUJI_ENABLE_METAL
-        checkPass(supported == (backend == SONY2FUJI_BACKEND_METAL ? 1 : 0),
-                  "DCP rlook capability matches Metal DCP pipeline availability");
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_D3D11) || defined(SONY2FUJI_ENABLE_GLES)
+        checkPass(supported == (isGpuBackend(backend) ? 1 : 0),
+                  "DCP rlook capability matches native GPU DCP pipeline availability");
 #else
-        checkPass(supported == 0 && backend == SONY2FUJI_BACKEND_CPU, "DCP rlook non-Metal is 0");
+        checkPass(supported == 0 && backend == SONY2FUJI_BACKEND_CPU, "DCP rlook CPU-only build is 0");
 #endif
     }
 
@@ -501,13 +515,7 @@ void testFastFullResGpuAndParity() {
             const std::string s = j.dump();
             checkPass(queryFastGpu(session.get(), q, &s) == 0, "geometry crop -> 0");
         }
-        // atmosphere dehaze
-        {
-            Json j = baseSdrStateJson();
-            j["edits"]["effects"] = {{"dehaze", 0.25}};
-            const std::string s = j.dump();
-            checkPass(queryFastGpu(session.get(), q, &s) == 0, "atmosphere dehaze -> 0");
-        }
+        // atmosphere dehaze covered in positive parity above; retain crop/straighten negative gates
         // non-GPU-supported steep custom curve (3 * dy / dx > 16)
         {
             Json j = baseSdrStateJson();

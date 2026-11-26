@@ -21,6 +21,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.rawlab.android.R
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
+import com.rawlab.android.editor.controls.LocalCompactAdjustmentRows
+import com.rawlab.android.editor.controls.NumericControl
 import com.rawlab.android.engine.LensCandidate
 import com.rawlab.android.engine.LensInfo
 import com.rawlab.android.i18n.AppStrings
@@ -83,10 +86,35 @@ fun LensControls(value: LensSettings, info: LensInfo?, enabled: Boolean, loading
             Text(stringResource(R.string.lens_jpeg_hint), style = MaterialTheme.typography.bodySmall)
         }
         info?.cropPercent?.let { Text(AppStrings.format(R.string.lens_crop_percent, it), style = MaterialTheme.typography.bodySmall) }
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        DefringeControls(value, enabled, change)
     }
     if (metadata) LensMetadataDialog(value, { metadata = false }) { change(it); metadata = false }
     if (choosing) LensChooser(info?.candidates.orEmpty(), value.profileId, { choosing = false }) {
         change(value.copy(manual = true, profileId = it.id)); choosing = false
+    }
+}
+
+@Composable
+private fun DefringeControls(value: LensSettings, enabled: Boolean, change: (LensSettings) -> Unit) {
+    val f = AdjustmentFieldSpec.Fields
+    val amountRange = f.GEOMETRY_LENS_DEFRINGE_PURPLE_AMOUNT.androidModel.floatRange!!
+    val hueRange = f.GEOMETRY_LENS_DEFRINGE_PURPLE_HUE.androidModel.floatRange!!
+    CompositionLocalProvider(LocalCompactAdjustmentRows provides true) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            NumericControl(R.string.lens_defringe_purple_amount, value.defringePurpleAmount, amountRange, "", enabled,
+                { v, _ -> change(value.copy(defringePurpleAmount = v)) }, { change(value.copy(defringePurpleAmount = 0f)) },
+                defaultValue = 0f)
+            NumericControl(R.string.lens_defringe_purple_hue, value.defringePurpleHue, hueRange, "", enabled,
+                { v, _ -> change(value.copy(defringePurpleHue = v)) }, { change(value.copy(defringePurpleHue = 50f)) },
+                defaultValue = 50f)
+            NumericControl(R.string.lens_defringe_green_amount, value.defringeGreenAmount, amountRange, "", enabled,
+                { v, _ -> change(value.copy(defringeGreenAmount = v)) }, { change(value.copy(defringeGreenAmount = 0f)) },
+                defaultValue = 0f)
+            NumericControl(R.string.lens_defringe_green_hue, value.defringeGreenHue, hueRange, "", enabled,
+                { v, _ -> change(value.copy(defringeGreenHue = v)) }, { change(value.copy(defringeGreenHue = 50f)) },
+                defaultValue = 50f)
+        }
     }
 }
 

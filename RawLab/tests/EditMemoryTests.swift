@@ -352,7 +352,7 @@ extension EditMemoryTests {
             (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
                       .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
             (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
-            (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
+            (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.texture), .adjustment(.vignette), .adjustment(.grain)]),
             (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
             (.geometry, [.geometry, .lens]),
             (.hdrRendition, [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation])

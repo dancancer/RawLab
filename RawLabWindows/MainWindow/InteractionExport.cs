@@ -233,6 +233,7 @@ public partial class MainWindow
         if(!updateQuitApproved){e.Cancel=true;Dispatcher.BeginInvoke(new Action(()=>_=PrepareUpdateQuitAsync()));return;}
         updateQuitApproved=false;
         CancelParameterInputs();CancelViewingInput();
+        ClearSharpenMaskPreview();
         if(!ResolveTransformDraft() || !SaveEdits()){e.Cancel=true;return;}
         if(Application.Current is App app)app.SetSystemPhotoAdmission(false);
         Volatile.Write(ref closing, true);

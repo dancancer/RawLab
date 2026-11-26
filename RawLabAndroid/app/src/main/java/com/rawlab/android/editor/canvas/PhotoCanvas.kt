@@ -178,6 +178,7 @@ internal fun PhotoCanvas(
     onInspectionMove: (Float, Float) -> Unit = { _, _ -> },
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null,
+    sharpenMaskBitmap: android.graphics.Bitmap? = null,
 ) {
     val wipeDescription = stringResource(R.string.editor_compare_split)
     val fitDescription = stringResource(R.string.zoom_fit)
@@ -268,12 +269,13 @@ internal fun PhotoCanvas(
                 }
                 val wipe = compare && mode == ComparisonMode.WIPE
                 val overlayActive = inspection.overlay.isActive
-                val hdrBitmap = if (overlayActive) null else if (neutralOnly || before)
+                val activeMaskBitmap = if (!neutralOnly && !before) sharpenMaskBitmap else null
+                val hdrBitmap = if (overlayActive || activeMaskBitmap != null) null else if (neutralOnly || before)
                     HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
                 else hdrPreview.bitmap
                 val rawShownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
-                val shownBitmap = InspectionBitmap.rememberBitmap(rawShownBitmap, inspection.overlay)
-                val activeTiles = if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
+                val shownBitmap = activeMaskBitmap ?: InspectionBitmap.rememberBitmap(rawShownBitmap, inspection.overlay)
+                val activeTiles = if (activeMaskBitmap != null) emptyList() else if (detailTiles.isNotEmpty() && pair.hdr == null) detailTiles else listOfNotNull(detail)
                 Box(Modifier.fillMaxSize()
                     .pointerInput(state, area, compare, mode, viewingEnabled, hslTarget != null, wbProbe != null, inspection.monitorEnabled) {
                         if (hslTarget == null && wbProbe == null && !inspection.monitorEnabled) detectTapGestures(onDoubleTap = { hold(false); state.doubleTap(it, area) },

@@ -1029,7 +1029,8 @@ struct EditorView: View {
                     inspectionAnchors: model.inspectionMarkerPoints(),
                     inspectionPinMode: model.geometryDraft == nil && model.inspection.pinModeEnabled,
                     onInspectionHover: { point in model.updateInspectionHover(point) },
-                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) })
+                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) },
+                    sharpenMaskOverlay: model.geometryDraft == nil ? model.sharpenMaskOverlay : nil)
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {

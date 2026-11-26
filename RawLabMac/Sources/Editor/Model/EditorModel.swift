@@ -81,13 +81,24 @@ final class EditorModel: ObservableObject {
     var resetReturnGeometryTab: MacGeometryTab?
     var resetSource: URL?
 
-    @Published var settings = Adjustments() { didSet { if !updatingMetadata && oldValue != settings { edited() } } }
+    @Published var settings = Adjustments() { didSet {
+        if !updatingMetadata && oldValue != settings {
+            edited()
+            if sharpenMaskPreviewActive && (oldValue.sharpenV2Settings.radius != settings.sharpenV2Settings.radius ||
+                oldValue.sharpenV2Settings.masking != settings.sharpenV2Settings.masking) {
+                refreshSharpenMaskPreviewIfNeeded()
+            }
+        }
+    } }
     func selectX3fMode(_ mode: X3fMode) {
         guard RenderEngine.isX3fInput(file), settings.x3fMode != mode else { return }
         var next = settings
         // 一次提交显影身份和兼容设置，保存与预览始终使用同一候选状态。
         next.selectX3fMode(mode)
         settings = next
+    }
+    var canUseLensPanel: Bool {
+        file != nil && !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal)
     }
     var canUseLensCorrection: Bool {
         file != nil && !RenderEngine.isRasterInput(file) &&
@@ -220,6 +231,7 @@ final class EditorModel: ObservableObject {
         wbEyedropperEnabled = false; wbProbeSampling = false; wbProbeNotice = nil
         closeQuickPresets()
         cancelCollectionExportPreparation()
+        clearSharpenMaskPreviewCache()
     } }
     @Published var file: URL?
     @Published var sourceIsHDR=false
@@ -358,6 +370,14 @@ final class EditorModel: ObservableObject {
     @Published var adjustmentHistoryRevision = 0
     @Published var adjustmentClipboard: AdjustmentTransferPayload?
     @Published var adjustmentSheet: AdjustmentSheetKind?
+    @Published var sharpenMaskPreviewActive = false
+    @Published var sharpenMaskOverlay: CGImage?
+    private let sharpenMaskQueue = DispatchQueue(label: "rawlab.sharpen-mask-preview", qos: .userInteractive)
+    private var sharpenMaskRequestEpoch: UInt64 = 0
+    private var cachedMaskSourceFrameID: ObjectIdentifier?
+    private var cachedMaskSourceSize: (width: Int, height: Int) = (0, 0)
+    private var cachedMaskSourceData: Data?
+    private var sharpenMaskMemoryPressureSource: DispatchSourceMemoryPressure?
     @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
     var adjustmentSheetPreset: AdjustmentPreset?
@@ -456,8 +476,77 @@ final class EditorModel: ObservableObject {
         timer.resume()
         debounceTimer = timer
         startExternalStoreWatcher()
+        let pressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+        pressureSource.setEventHandler { [weak self] in self?.clearSharpenMaskPreviewCache() }
+        pressureSource.resume()
+        sharpenMaskMemoryPressureSource = pressureSource
     }
-    deinit { externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel() }
+    deinit {
+        sharpenMaskMemoryPressureSource?.cancel()
+        sharpenMaskMemoryPressureSource = nil
+        externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel()
+    }
+}
+
+extension EditorModel {
+    func clearSharpenMaskPreviewCache() {
+        sharpenMaskRequestEpoch &+= 1
+        sharpenMaskPreviewActive = false
+        sharpenMaskOverlay = nil
+        cachedMaskSourceFrameID = nil
+        cachedMaskSourceSize = (0, 0)
+        cachedMaskSourceData = nil
+    }
+
+    func setSharpenMaskPreview(_ active: Bool) {
+        guard active != sharpenMaskPreviewActive else {
+            if active { refreshSharpenMaskPreviewIfNeeded() }
+            return
+        }
+        sharpenMaskPreviewActive = active
+        if active {
+            refreshSharpenMaskPreviewIfNeeded()
+        } else {
+            sharpenMaskRequestEpoch &+= 1
+            sharpenMaskOverlay = nil
+        }
+    }
+
+    func refreshSharpenMaskPreviewIfNeeded() {
+        guard sharpenMaskPreviewActive, let frame = result, !settings.isHDREditing, geometryDraft == nil else {
+            sharpenMaskOverlay = nil
+            return
+        }
+        let source = sourceRevision
+        let radius = settings.sharpenV2Settings.radius
+        let masking = settings.sharpenV2Settings.masking
+        let cgImage = frame.image
+        let frameID = ObjectIdentifier(cgImage)
+        sharpenMaskRequestEpoch &+= 1
+        let epoch = sharpenMaskRequestEpoch
+        let cached = (cachedMaskSourceFrameID == frameID) ? cachedMaskSourceData : nil
+        let cachedSize = cachedMaskSourceSize
+        sharpenMaskQueue.async { [weak self] in
+            let prepared: (width: Int, height: Int, data: Data)? = if let cached, cachedSize.width > 0, cachedSize.height > 0 {
+                (cachedSize.width, cachedSize.height, cached)
+            } else {
+                RenderEngine.extractRGBA8Preview(from: cgImage)
+            }
+            guard let prepared,
+                  let maskImage = RenderEngine.renderSharpenMaskPreview(fromRGBA8: prepared.data,
+                      width: prepared.width, height: prepared.height, radius: radius, masking: masking) else {
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self, self.sourceRevision == source, self.sharpenMaskRequestEpoch == epoch,
+                      self.sharpenMaskPreviewActive else { return }
+                self.cachedMaskSourceFrameID = frameID
+                self.cachedMaskSourceSize = (prepared.width, prepared.height)
+                self.cachedMaskSourceData = prepared.data
+                self.sharpenMaskOverlay = maskImage
+            }
+        }
+    }
 }
 
 extension EditorModel {

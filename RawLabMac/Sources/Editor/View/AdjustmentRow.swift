@@ -11,6 +11,7 @@ struct RoundParameterSlider: NSViewRepresentable {
     let mapping: ParameterSliderMapping
     let colors: [Color]
     let onEditingChanged: (Bool) -> Void
+    var onOptionDraggingChanged: ((Bool) -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NativeParameterSlider {
@@ -21,6 +22,7 @@ struct RoundParameterSlider: NSViewRepresentable {
         slider.target = context.coordinator
         slider.action = #selector(Coordinator.changed(_:))
         slider.onEditingChanged = { [weak coordinator = context.coordinator] in coordinator?.parent.onEditingChanged($0) }
+        slider.onOptionDraggingChanged = { [weak coordinator = context.coordinator] in coordinator?.parent.onOptionDraggingChanged?($0) }
         slider.onStep = { [weak coordinator = context.coordinator] direction, fine in
             coordinator?.step(direction, fine: fine)
         }
@@ -51,11 +53,26 @@ struct RoundParameterSlider: NSViewRepresentable {
 
 final class NativeParameterSlider: NSSlider {
     var onEditingChanged: ((Bool) -> Void)?
+    var onOptionDraggingChanged: ((Bool) -> Void)?
     var onStep: ((Int, Bool) -> Void)?
     override func mouseDown(with event: NSEvent) {
         guard isEnabled, ParameterValueField.commitPendingInputs() else { return }
         onEditingChanged?(true)
-        defer { onEditingChanged?(false) }
+        var optionActive = event.modifierFlags.contains(.option)
+        if onOptionDraggingChanged != nil { onOptionDraggingChanged?(optionActive) }
+        let monitor = onOptionDraggingChanged == nil ? nil : NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] ev in
+            let nextOption = ev.modifierFlags.contains(.option)
+            if nextOption != optionActive {
+                optionActive = nextOption
+                self?.onOptionDraggingChanged?(nextOption)
+            }
+            return ev
+        }
+        defer {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            if optionActive { onOptionDraggingChanged?(false) }
+            onEditingChanged?(false)
+        }
         super.mouseDown(with: event)
     }
     override func keyDown(with event: NSEvent) {
@@ -110,6 +127,7 @@ struct ParameterRow: View {
     var precision = ParameterPrecision.standard
     let identifier: String
     var onEditingChanged: (Bool) -> Void = { _ in }
+    var onOptionDraggingChanged: ((Bool) -> Void)? = nil
     var invalidInputPolicy: ParameterInvalidInputPolicy = .restore
     var onValidityChange: (Bool) -> Void = { _ in }
     var externalResetRevision = 0
@@ -196,7 +214,7 @@ struct ParameterRow: View {
     private var track: some View {
         RoundParameterSlider(value: $value, range: range, defaultValue: defaultValue,
                              precision: precision, mapping: sliderMapping, colors: trackColors,
-                             onEditingChanged: onEditingChanged)
+                             onEditingChanged: onEditingChanged, onOptionDraggingChanged: onOptionDraggingChanged)
             .frame(maxWidth: .infinity, minHeight: 22)
             .modifier(ParameterResetGesture(action: reset))
             .accessibilityLabel(accessibilityTitle ?? title)

@@ -11,7 +11,23 @@ final class RawEditorViewModel: ObservableObject {
         case final
     }
 
-    @Published var previewImage: UIImage?
+    @Published var previewImage: UIImage? {
+        didSet {
+            if sharpenMaskPreviewActive {
+                updateSharpenMaskPreviewIfNeeded(
+                    radius: currentPreviewSettings.sharpenV2Settings.radius,
+                    masking: currentPreviewSettings.sharpenV2Settings.masking
+                )
+            }
+        }
+    }
+    @Published var sharpenMaskPreviewActive = false
+    @Published var sharpenMaskOverlay: UIImage?
+    private let sharpenMaskQueue = DispatchQueue(label: "com.rawlab.sharpen-mask", qos: .userInitiated)
+    private var sharpenMaskRequestEpoch: UInt64 = 0
+    private var cachedMaskSourceFrameID: ObjectIdentifier?
+    private var cachedMaskSourceSize: (width: Int, height: Int) = (0, 0)
+    private var cachedMaskSourceData: Data?
     @Published var detailOverlay: PhotoDetailOverlay?
     @Published var detailTiles: [PhotoDetailOverlay] = []
     @Published var detailBacking: PhotoDetailBacking?
@@ -182,6 +198,7 @@ final class RawEditorViewModel: ObservableObject {
             sourceNativeSize = nil
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
+            clearSharpenMaskPreviewCache()
             closeQuickPresets()
         }
     }
@@ -323,6 +340,7 @@ final class RawEditorViewModel: ObservableObject {
             )
             InspectionSamplerCache.shared.clear()
             InspectionOverlayRenderer.shared.clear()
+            self.clearSharpenMaskPreviewCache()
             self.renderQueue.async { [weak self] in
                 self?.processor.clearHDRSessionCache()
             }
@@ -332,6 +350,75 @@ final class RawEditorViewModel: ObservableObject {
     deinit {
         if let memoryWarningObserver {
             NotificationCenter.default.removeObserver(memoryWarningObserver)
+        }
+        clearSharpenMaskPreviewCache()
+    }
+
+    func clearSharpenMaskPreviewCache() {
+        sharpenMaskRequestEpoch &+= 1
+        sharpenMaskPreviewActive = false
+        sharpenMaskOverlay = nil
+        cachedMaskSourceFrameID = nil
+        cachedMaskSourceSize = (0, 0)
+        cachedMaskSourceData = nil
+    }
+
+    func setSharpenMaskPreview(_ active: Bool, settings: RawSettings) {
+        if active == sharpenMaskPreviewActive {
+            if active {
+                updateSharpenMaskPreviewIfNeeded(
+                    radius: settings.sharpenV2Settings.radius,
+                    masking: settings.sharpenV2Settings.masking
+                )
+            }
+            return
+        }
+        sharpenMaskPreviewActive = active
+        if active {
+            updateSharpenMaskPreviewIfNeeded(
+                radius: settings.sharpenV2Settings.radius,
+                masking: settings.sharpenV2Settings.masking
+            )
+        } else {
+            sharpenMaskRequestEpoch &+= 1
+            sharpenMaskOverlay = nil
+        }
+    }
+
+    func updateSharpenMaskPreviewIfNeeded(radius: Double, masking: Double) {
+        guard sharpenMaskPreviewActive, let cgImage = previewImage?.cgImage else {
+            sharpenMaskOverlay = nil
+            return
+        }
+        let source = sourceRevision
+        let frameID = ObjectIdentifier(cgImage)
+        sharpenMaskRequestEpoch &+= 1
+        let epoch = sharpenMaskRequestEpoch
+        let cached = (cachedMaskSourceFrameID == frameID) ? cachedMaskSourceData : nil
+        let cachedSize = cachedMaskSourceSize
+        let processor = self.processor
+        sharpenMaskQueue.async { [weak self] in
+            let prepared: (width: Int, height: Int, data: Data)? = if let cached, cachedSize.width > 0, cachedSize.height > 0 {
+                (cachedSize.width, cachedSize.height, cached)
+            } else {
+                processor.extractRGBA8Preview(from: cgImage)
+            }
+            guard let prepared,
+                  let maskImage = processor.renderSharpenMaskPreview(
+                    fromRGBA8: prepared.data,
+                    width: prepared.width,
+                    height: prepared.height,
+                    radius: radius,
+                    masking: masking
+                  ) else { return }
+            DispatchQueue.main.async {
+                guard let self, self.sourceRevision == source, self.sharpenMaskRequestEpoch == epoch,
+                      self.sharpenMaskPreviewActive else { return }
+                self.cachedMaskSourceFrameID = frameID
+                self.cachedMaskSourceSize = (prepared.width, prepared.height)
+                self.cachedMaskSourceData = prepared.data
+                self.sharpenMaskOverlay = maskImage
+            }
         }
     }
 

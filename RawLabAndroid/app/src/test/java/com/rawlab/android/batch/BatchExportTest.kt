@@ -328,9 +328,16 @@ class BatchExportTest {
         val root = Files.createTempDirectory("rawlab-raster-settings").toFile()
         try {
             val hsl = HslSettings().withValue(0, 2, 32f)
+            val defringe = LensSettings(
+                defringePurpleAmount = 6f,
+                defringePurpleHue = 40f,
+                defringeGreenAmount = 4f,
+                defringeGreenHue = 60f,
+            )
             val stored = EditSettings(film = "velvia", strength = .6f, exposure = .35f,
                 customWb = true, temperature = 4300f, tint = 18f, exposureMode = 0,
-                hsl = hsl, recipeID = "recipe", lens = LensSettings(distortion = true),
+                hsl = hsl, recipeID = "recipe",
+                lens = defringe.copy(distortion = true, tca = true, vignetting = true),
                 denoise = DenoiseSettings(true, 10f, 72f, 100f))
             val rasterSource = BatchSourceSnapshot(PhotoIdentity("raster-source"), File(root, "source.jpg"),
                 stored, inputKind = PhotoInputKind.RASTER)
@@ -339,7 +346,7 @@ class BatchExportTest {
             assertEquals(6500f, rawTarget.temperature)
             assertEquals(stored.tint, rawTarget.tint)
             assertEquals(EditSettings().exposureMode, rawTarget.exposureMode)
-            assertEquals(LensSettings(), rawTarget.lens)
+            assertEquals(defringe, rawTarget.lens)
             assertEquals(stored.recipeID, rawTarget.recipeID)
             assertEquals(stored.strength, rawTarget.strength)
             assertEquals(stored.hsl, rawTarget.hsl)
@@ -363,7 +370,7 @@ class BatchExportTest {
             assertEquals(6500f, rasterTarget.temperature)
             assertEquals(0f, rasterTarget.tint)
             assertEquals(2, rasterTarget.exposureMode)
-            assertEquals(LensSettings(), rasterTarget.lens)
+            assertEquals(defringe, rasterTarget.lens)
             assertEquals(stored.recipeID, rasterTarget.recipeID)
             assertEquals(stored.hsl, rasterTarget.hsl)
             assertEquals(stored.denoise, rasterTarget.denoise)
