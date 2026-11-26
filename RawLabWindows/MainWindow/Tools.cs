@@ -780,7 +780,7 @@ public partial class MainWindow
                 RefreshAIControls();
             }
             if (InspectorModificationCache.ShouldRefreshSubEditor(toolMode==EditorToolMode.PhotoEffects))
-                PhotoEffectsEditor.Refresh(settings.EditingEffects,selectedEffect);
+                PhotoEffectsEditor.Refresh(settings.EditingEffects,selectedEffect,settings.FilmOptics,hdrEditing);
             UpdateCategoryRings();
             if (!dragFastPath)
             {

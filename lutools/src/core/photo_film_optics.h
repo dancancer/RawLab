@@ -1,8 +1,13 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <algorithm>
+#include <cmath>
+#include <vector>
 
 namespace sony2fuji {
+
+struct SubRectMap;
 
 struct FilmOpticsOptions {
     float halationAmount = 0.0f;     // [0, 100]
@@ -13,7 +18,12 @@ struct FilmOpticsOptions {
     float bloomThreshold = 70.0f;    // [0, 100]
     float bloomRadius = 40.0f;       // [0, 100]
 
-    bool valid() const;
+    bool valid() const {
+        auto in0100 = [](float v) { return std::isfinite(v) && v >= 0.0f && v <= 100.0f; };
+        return in0100(halationAmount) && in0100(halationThreshold) && in0100(halationRadius) &&
+               in0100(bloomAmount) && in0100(bloomThreshold) && in0100(bloomRadius) &&
+               std::isfinite(halationHue) && halationHue >= -100.0f && halationHue <= 100.0f;
+    }
     bool active() const { return halationAmount > 0.0f || bloomAmount > 0.0f; }
     bool halationIsDefault() const {
         return halationAmount == 0.0f && halationThreshold == 75.0f &&
@@ -31,6 +41,67 @@ struct FilmOpticsOptions {
                bloomRadius == other.bloomRadius;
     }
 };
+
+struct FilmOpticsProxyGeometry {
+    int proxyWidth = 1;
+    int proxyHeight = 1;
+    float proxySigma = 1.0f;
+    float coreSigma = 0.55f;
+    float tailSigma = 0.835f;
+    int coreRadiusPx = 1;
+    int tailRadiusPx = 1;
+};
+
+inline FilmOpticsProxyGeometry computeFilmOpticsProxyGeometry(
+    int sourceWidth,
+    int sourceHeight,
+    float radiusParam,
+    bool isBloom,
+    int maxProxyLongEdge = 1024
+) {
+    FilmOpticsProxyGeometry g;
+    if (sourceWidth <= 0 || sourceHeight <= 0) return g;
+    const float r = std::clamp(radiusParam, 0.0f, 100.0f) / 100.0f;
+    const float diag = std::hypot(float(sourceWidth), float(sourceHeight));
+    const float sigmaNorm = isBloom ? (0.0040f + 0.0400f * r) : (0.0020f + 0.0280f * r);
+    const float sigmaFull = std::max(0.5f, sigmaNorm * diag);
+    const float longEdge = float(std::max(sourceWidth, sourceHeight));
+    const float scale = std::min({1.0f, 4.5f / sigmaFull, float(std::max(1, maxProxyLongEdge)) / longEdge});
+    g.proxyWidth = std::clamp(int(std::floor(float(sourceWidth) * scale + 0.5f)), 1, sourceWidth);
+    g.proxyHeight = std::clamp(int(std::floor(float(sourceHeight) * scale + 0.5f)), 1, sourceHeight);
+    const float actualScale = float(g.proxyWidth) / float(sourceWidth);
+    g.proxySigma = std::max(0.35f, sigmaFull * actualScale);
+    g.coreSigma = std::max(0.35f, 0.55f * g.proxySigma);
+    g.tailSigma = std::max(0.35f, 0.835f * g.proxySigma);
+    g.coreRadiusPx = std::clamp(int(std::ceil(3.5f * g.coreSigma)), 1, 24);
+    g.tailRadiusPx = std::clamp(int(std::ceil(3.5f * g.tailSigma)), 1, 24);
+    return g;
+}
+
+struct FilmOpticsField {
+    int halWidth = 0;
+    int halHeight = 0;
+    std::vector<float> halGlow;
+    int bloomWidth = 0;
+    int bloomHeight = 0;
+    std::vector<float> bloomGlow; // interleaved RGB (3 floats per proxy texel)
+
+    bool empty() const { return halGlow.empty() && bloomGlow.empty(); }
+};
+
+FilmOpticsField buildFilmOpticsField(
+    const ImageData& guideSrgb,
+    int sourceWidth,
+    int sourceHeight,
+    const FilmOpticsOptions& options
+);
+
+void applyFilmOpticsWithField(
+    ImageData& image,
+    const FilmOpticsField& field,
+    const FilmOpticsOptions& options,
+    const SubRectMap& roiMap
+);
 
 void applyFilmOptics(ImageData& image, const FilmOpticsOptions& options);
 

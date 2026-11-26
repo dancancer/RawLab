@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/photo_effects.h"
+#include "core/photo_film_optics.h"
 #include "gpu/photo_gpu.h"
 #include "sony2fuji/processing_version.h"
 #include <algorithm>
@@ -38,5 +39,6 @@ bool gpuGuidedFilter(const float* guide, const float* input, int width, int heig
                      int radius, float epsilon, float* output);
 bool gpuPhotoEffects(ImageData& image, const PhotoEffectsOptions& settings);
 bool gpuDetailFilter(ImageData& image, float noiseReduction, float sharpening);
+bool gpuFilmOptics(ImageData& image, const FilmOpticsOptions& options);
 
 } // namespace sony2fuji

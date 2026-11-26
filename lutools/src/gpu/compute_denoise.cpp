@@ -155,6 +155,8 @@ bool computePhotoEffects(FilterDevice& device, ImageData& image, const PhotoEffe
     if (!settings.active()) return true;
     FilterParams p;
     p.stage = static_cast<uint32_t>(FilterStage::PhotoEffects);
+    p.direction = static_cast<uint32_t>(settings.grainToneCurve);
+    p.firmThreshold = static_cast<uint32_t>(settings.grainFormatPreset);
     p.vignette[0] = settings.vignetteAmount; p.vignette[1] = settings.vignetteMidpoint;
     p.vignette[2] = settings.vignetteRoundness; p.vignette[3] = settings.vignetteFeather;
     p.grain[0] = settings.vignetteHighlights; p.grain[1] = settings.grainAmount;
@@ -185,6 +187,170 @@ bool computeDetailFilter(FilterDevice& device, ImageData& image, float noiseRedu
     if (!imageFilter(device, image, makeParams(0), &working)) return false;
     if (!imageFilter(device, working, makeParams(1))) return false;
     image = std::move(working);
+    return true;
+}
+
+bool computeFilmOptics(FilterDevice& device, ImageData& image, const FilmOpticsOptions& options) {
+    if (!options.valid()) return false;
+    if (!options.active()) return true;
+    if (image.width <= 0 || image.height <= 0 ||
+        image.pixels.size() != static_cast<size_t>(image.width) * static_cast<size_t>(image.height)) {
+        return false;
+    }
+
+    const uint32_t srcW = static_cast<uint32_t>(image.width);
+    const uint32_t srcH = static_cast<uint32_t>(image.height);
+    const size_t rowFloats = static_cast<size_t>(srcW) * 3u;
+    const size_t maxSrcRows = (8u * 1024u * 1024u) / (rowFloats * sizeof(float));
+    if (maxSrcRows == 0) {
+        lastGpuFilterOutcome() = {
+            GpuFailureKind::Unsupported,
+            GpuBackendFault::UnsupportedCapability,
+            "Image row exceeds 8 MiB filter band budget"
+        };
+        return false;
+    }
+
+    auto buildGlowProxy = [&](bool isBloom, float thresh, float radiusParam,
+                              uint32_t& outW, uint32_t& outH, std::vector<float>& outGlow) -> bool {
+        const auto geom = computeFilmOpticsProxyGeometry(image.width, image.height, radiusParam, isBloom, 1024);
+        outW = static_cast<uint32_t>(geom.proxyWidth);
+        outH = static_cast<uint32_t>(geom.proxyHeight);
+        const uint32_t ch = isBloom ? 3u : 1u;
+        const size_t totalProxyPixels = static_cast<size_t>(outW) * static_cast<size_t>(outH);
+        const size_t totalProxyFloats = totalProxyPixels * ch;
+        std::vector<float> excessCpu(totalProxyFloats, 0.0f);
+
+        auto rowSpanForProxy = [&](uint32_t py) -> std::pair<uint32_t, uint32_t> {
+            const uint32_t iy0 = static_cast<uint32_t>((uint64_t(py) * srcH) / outH);
+            const uint32_t iy1 = std::min<uint32_t>(
+                srcH,
+                std::max<uint32_t>(iy0 + 1u, static_cast<uint32_t>((uint64_t(py + 1u) * srcH + outH - 1u) / outH)));
+            return {iy0, iy1};
+        };
+
+        for (uint32_t pyStart = 0; pyStart < outH;) {
+            const auto firstSpan = rowSpanForProxy(pyStart);
+            const uint32_t batchSrcY0 = firstSpan.first;
+            uint32_t batchSrcY1 = firstSpan.second;
+            if (batchSrcY1 - batchSrcY0 > maxSrcRows) {
+                lastGpuFilterOutcome() = {
+                    GpuFailureKind::Unsupported,
+                    GpuBackendFault::UnsupportedCapability,
+                    "Film optics proxy row span exceeds 8 MiB band budget"
+                };
+                return false;
+            }
+            uint32_t pyEnd = pyStart + 1u;
+            while (pyEnd < outH) {
+                const auto nextSpan = rowSpanForProxy(pyEnd);
+                if (nextSpan.second - batchSrcY0 > maxSrcRows) break;
+                batchSrcY1 = nextSpan.second;
+                ++pyEnd;
+            }
+            const uint32_t batchProxyRows = pyEnd - pyStart;
+            const uint32_t srcSpanRows = batchSrcY1 - batchSrcY0;
+            auto bandIn = device.allocate(
+                static_cast<size_t>(srcSpanRows) * rowFloats,
+                reinterpret_cast<const float*>(image.pixels.data() + static_cast<size_t>(batchSrcY0) * srcW));
+            const size_t batchFloats = static_cast<size_t>(batchProxyRows) * outW * ch;
+            auto proxyOut = device.allocate(batchFloats);
+
+            FilterParams p;
+            p.width = srcW; p.height = srcH;
+            p.step = outW; p.level = outH;
+            p.channels = isBloom ? 1u : 0u;
+            p.radius = srcSpanRows;
+            p.sourceRow = batchSrcY0; p.outputRow = pyStart;
+            p.count = batchProxyRows * outW;
+            p.epsilon = thresh;
+            dispatch(device, p, FilterStage::FilmOpticsDownsample, *bandIn, nullptr, *proxyOut);
+            if (!finiteOutput(device, *proxyOut, batchFloats,
+                excessCpu.data() + static_cast<size_t>(pyStart) * outW * ch)) {
+                return false;
+            }
+            pyStart = pyEnd;
+        }
+
+        auto proxyA = device.allocate(totalProxyFloats, excessCpu.data());
+        auto tmp = device.allocate(totalProxyFloats);
+        auto core = device.allocate(totalProxyFloats);
+        auto tail = device.allocate(totalProxyFloats);
+
+        FilterParams blurParams;
+        blurParams.width = outW; blurParams.height = outH;
+        blurParams.channels = ch;
+        blurParams.count = static_cast<uint32_t>(totalProxyPixels);
+        blurParams.radius = static_cast<uint32_t>(geom.coreRadiusPx);
+        blurParams.sigma = geom.coreSigma;
+        dispatch(device, blurParams, FilterStage::FilmOpticsBlurH, *proxyA, nullptr, *tmp);
+        dispatch(device, blurParams, FilterStage::FilmOpticsBlurV, *tmp, nullptr, *core);
+
+        blurParams.radius = static_cast<uint32_t>(geom.tailRadiusPx);
+        blurParams.sigma = geom.tailSigma;
+        blurParams.direction = 1u;
+        blurParams.strength = 0.40f;
+        blurParams.epsilon = 0.60f;
+        dispatch(device, blurParams, FilterStage::FilmOpticsBlurH, *core, nullptr, *tmp);
+        dispatch(device, blurParams, FilterStage::FilmOpticsBlurV, *tmp, core.get(), *tail);
+
+        outGlow.resize(totalProxyFloats);
+        return finiteOutput(device, *tail, totalProxyFloats, outGlow.data());
+    };
+
+    const bool hasHal = options.halationAmount > 0.0f;
+    const bool hasBloom = options.bloomAmount > 0.0f;
+    uint32_t halW = 0, halH = 0, bloomW = 0, bloomH = 0;
+    std::vector<float> halGlow, bloomGlow;
+    if (hasHal && !buildGlowProxy(false, options.halationThreshold, options.halationRadius, halW, halH, halGlow)) {
+        return false;
+    }
+    if (hasBloom && !buildGlowProxy(true, options.bloomThreshold, options.bloomRadius, bloomW, bloomH, bloomGlow)) {
+        return false;
+    }
+
+    std::vector<float> packedGlow;
+    packedGlow.reserve(halGlow.size() + bloomGlow.size());
+    packedGlow.insert(packedGlow.end(), halGlow.begin(), halGlow.end());
+    const uint32_t bloomOffsetFloats = static_cast<uint32_t>(packedGlow.size());
+    packedGlow.insert(packedGlow.end(), bloomGlow.begin(), bloomGlow.end());
+    if (packedGlow.empty()) return true;
+
+    auto glowGpu = device.allocate(packedGlow.size(), packedGlow.data());
+    const size_t bandRows = std::min<size_t>(maxSrcRows, srcH);
+    auto bandIn = device.allocate(bandRows * rowFloats);
+    auto bandOut = device.allocate(bandRows * rowFloats);
+    std::vector<float> scratch;
+    scratch.reserve(bandRows * rowFloats);
+    ImageData result(image.width, image.height);
+
+    FilterParams comp;
+    comp.width = srcW; comp.height = srcH;
+    comp.step = halW; comp.level = halH;
+    comp.channels = bloomOffsetFloats;
+    comp.direction = bloomW; comp.firmThreshold = bloomH;
+    comp.strength = options.halationAmount;
+    comp.epsilon = options.halationHue;
+    comp.vignette[0] = options.bloomAmount;
+    comp.vignette[1] = hasHal ? 1.0f : 0.0f;
+    comp.vignette[2] = hasBloom ? 1.0f : 0.0f;
+
+    for (uint32_t row = 0; row < srcH;) {
+        const uint32_t rows = static_cast<uint32_t>(std::min<size_t>(bandRows, srcH - row));
+        device.write(*bandIn, static_cast<size_t>(rows) * rowFloats,
+            reinterpret_cast<const float*>(image.pixels.data() + static_cast<size_t>(row) * srcW));
+        comp.sourceRow = row;
+        comp.outputRow = row;
+        comp.count = rows * srcW;
+        dispatch(device, comp, FilterStage::FilmOpticsComposite, *bandIn, glowGpu.get(), *bandOut);
+        if (!finiteOutput(device, *bandOut, static_cast<size_t>(rows) * rowFloats,
+            reinterpret_cast<float*>(result.pixels.data() + static_cast<size_t>(row) * srcW), scratch)) {
+            return false;
+        }
+        row += rows;
+    }
+
+    image = std::move(result);
     return true;
 }
 } // namespace sony2fuji

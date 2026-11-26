@@ -54,9 +54,33 @@ extension ContentView {
                     }, channel: $coordinator.hslChannel)
             }.disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .vignette || selectedAdjustment == .grain {
-            IOSPhotoEffectsControls(effect: selectedAdjustment ?? .vignette, value: { parameter in
-                Binding(get: { workingSettings.editingEffectValue(parameter) }, set: { workingSettings.setEditingEffect(parameter, to: $0) })
-            }, onEditingChanged: setSliderEditing)
+            let isGrain = selectedAdjustment == .grain
+            IOSPhotoEffectsControls(
+                effect: selectedAdjustment ?? .vignette,
+                value: { parameter in
+                    Binding(
+                        get: { workingSettings.editingEffectValue(parameter) },
+                        set: { value in
+                            if isGrain { workingSettings.setGrainEffect(parameter, to: value) }
+                            else { workingSettings.setEditingEffect(parameter, to: value) }
+                        }
+                    )
+                },
+                onEditingChanged: setSliderEditing,
+                isHDREditing: workingSettings.isHDREditing,
+                grainToneCurve: Binding(
+                    get: { workingSettings.effectSettings.grainToneCurve },
+                    set: { workingSettings.applyGrainToneCurve($0) }
+                ),
+                grainFormatPreset: Binding(
+                    get: { workingSettings.effectSettings.grainFormatPreset },
+                    set: { workingSettings.applyGrainFormatPreset($0) }
+                ),
+                filmOptics: Binding(
+                    get: { workingSettings.filmOpticsSettings },
+                    set: { workingSettings.filmOpticsSettings = $0 }
+                )
+            )
                 .padding(.horizontal, 16)
                 .disabled(!viewModel.hasImage || editingLocked)
         } else if selectedAdjustment == .noiseReduction && !workingSettings.isHDREditing {

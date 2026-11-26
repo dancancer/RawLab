@@ -198,4 +198,7 @@ bool gpuPhotoEffects(ImageData& image, const PhotoEffectsOptions& settings) {
 bool gpuDetailFilter(ImageData& image, float noiseReduction, float sharpening) {
     return compute([&](FilterDevice& device) { return computeDetailFilter(device, image, noiseReduction, sharpening); });
 }
+bool gpuFilmOptics(ImageData& image, const FilmOpticsOptions& options) {
+    return compute([&](FilterDevice& device) { return computeFilmOptics(device, image, options); });
+}
 }

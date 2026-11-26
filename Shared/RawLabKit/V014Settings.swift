@@ -27,6 +27,12 @@ public enum GrainToneCurve: String, CaseIterable, Identifiable, Codable, Sendabl
     case legacy = "legacy"
     case negativeAsymmetric = "negative_asymmetric"
     public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .legacy: return L10n.text("传统曲线")
+        case .negativeAsymmetric: return L10n.text("负片非对称")
+        }
+    }
 }
 
 public enum GrainFormatPreset: String, CaseIterable, Identifiable, Codable, Sendable {
@@ -34,6 +40,20 @@ public enum GrainFormatPreset: String, CaseIterable, Identifiable, Codable, Send
     case film135 = "135"
     case film120 = "120"
     public var id: String { rawValue }
+    public var title: String {
+        switch self {
+        case .custom: return L10n.text("自定义")
+        case .film135: return L10n.text("135 胶片")
+        case .film120: return L10n.text("120 中画幅")
+        }
+    }
+    public var presetValues: (size: Double, roughness: Double)? {
+        switch self {
+        case .custom: return nil
+        case .film135: return (18.0, 65.0)
+        case .film120: return (34.0, 22.0)
+        }
+    }
 }
 
 public struct CameraCalibrationSettings: Codable, Equatable, Hashable, Sendable {
@@ -491,6 +511,18 @@ public struct FilmOpticsSettings: Codable, Equatable, Hashable, Sendable {
     }
 
     public var isDefault: Bool { self == Self() }
+    public var isHalationDefault: Bool {
+        halationAmount == 0 && halationThreshold == 75 && halationRadius == 35 && halationHue == 0
+    }
+    public var isBloomDefault: Bool {
+        bloomAmount == 0 && bloomThreshold == 70 && bloomRadius == 40
+    }
+    public mutating func resetHalation() {
+        halationAmount = 0; halationThreshold = 75; halationRadius = 35; halationHue = 0
+    }
+    public mutating func resetBloom() {
+        bloomAmount = 0; bloomThreshold = 70; bloomRadius = 40
+    }
     public var isValid: Bool {
         halationAmount.isFinite && Self.halationAmountRange.contains(halationAmount)
             && halationThreshold.isFinite && Self.halationThresholdRange.contains(halationThreshold)
@@ -518,4 +550,48 @@ public struct FilmOpticsSettings: Codable, Equatable, Hashable, Sendable {
         case halationAmount, halationThreshold, halationRadius, halationHue
         case bloomAmount, bloomThreshold, bloomRadius
     }
+}
+
+public enum FilmOpticsParameter: String, CaseIterable, Identifiable, Sendable {
+    case halationAmount, halationThreshold, halationRadius, halationHue
+    case bloomAmount, bloomThreshold, bloomRadius
+
+    public var id: String { rawValue }
+    public var isHalation: Bool {
+        switch self {
+        case .halationAmount, .halationThreshold, .halationRadius, .halationHue: return true
+        case .bloomAmount, .bloomThreshold, .bloomRadius: return false
+        }
+    }
+    public var title: String {
+        switch self {
+        case .halationAmount, .bloomAmount: return L10n.text("强度")
+        case .halationThreshold, .bloomThreshold: return L10n.text("阈值")
+        case .halationRadius, .bloomRadius: return L10n.text("半径")
+        case .halationHue: return L10n.text("色相")
+        }
+    }
+    public var range: ClosedRange<Double> {
+        switch self {
+        case .halationAmount: return FilmOpticsSettings.halationAmountRange
+        case .halationThreshold: return FilmOpticsSettings.halationThresholdRange
+        case .halationRadius: return FilmOpticsSettings.halationRadiusRange
+        case .halationHue: return FilmOpticsSettings.halationHueRange
+        case .bloomAmount: return FilmOpticsSettings.bloomAmountRange
+        case .bloomThreshold: return FilmOpticsSettings.bloomThresholdRange
+        case .bloomRadius: return FilmOpticsSettings.bloomRadiusRange
+        }
+    }
+    public var keyPath: WritableKeyPath<FilmOpticsSettings, Double> {
+        switch self {
+        case .halationAmount: return \.halationAmount
+        case .halationThreshold: return \.halationThreshold
+        case .halationRadius: return \.halationRadius
+        case .halationHue: return \.halationHue
+        case .bloomAmount: return \.bloomAmount
+        case .bloomThreshold: return \.bloomThreshold
+        case .bloomRadius: return \.bloomRadius
+        }
+    }
+    public var defaultValue: Double { FilmOpticsSettings()[keyPath: keyPath] }
 }

@@ -9,6 +9,7 @@ struct AdjustmentDock: View {
     @State private var showsExposure = true
     @State private var showsTones = true
     @State private var collapsedTool: EditorAdjustmentTool?
+    @State private var expandedOptics: MacFilmOpticsControls.Kind?
     private var navigation: EditorAdjustmentNavigation {
         model.adjustmentNavigation.normalized(isHDREditing: model.settings.isHDREditing)
     }
@@ -71,7 +72,7 @@ struct AdjustmentDock: View {
                 }
             } else { Spacer(minLength: 0) }
         }
-        .onChange(of: navigation.tool) { _, _ in collapsedTool = nil }
+        .onChange(of: navigation.tool) { _, _ in collapsedTool = nil; expandedOptics = nil }
         .frame(maxWidth: .infinity)
         .environment(\.parameterInputScope, "\(model.file?.absoluteString ?? "").\(navigation.tool.rawValue)")
         .background(Color(nsColor: .windowBackgroundColor)).tint(.yellow)
@@ -132,6 +133,10 @@ struct AdjustmentDock: View {
         ForEach(group.tools) { tool in
             if tool != .strength { toolSection(tool) }
         }
+        if group == .effects {
+            filmOpticsSection(.halation)
+            filmOpticsSection(.bloom)
+        }
         if group == .looks {
             Button(action: model.showQuickPresets) {
                 Label(L10n.text("我的预设"), systemImage: "bookmark")
@@ -152,6 +157,7 @@ struct AdjustmentDock: View {
                 model.selectAdjustmentGeometryTab(tool == .lens ? .lens : .crop)
             } else if navigation.tool != tool {
                 collapsedTool = nil
+                expandedOptics = nil
                 model.selectAdjustmentTool(tool)
             } else if open {
                 if tool == .colorGrading || tool == .toneCurve { model.cancelAdjustmentInteraction() }
@@ -163,6 +169,7 @@ struct AdjustmentDock: View {
                 collapsedTool = tool
             } else {
                 collapsedTool = nil
+                expandedOptics = nil
             }
         }) {
             if !tool.usesGeometryDraft { editorContent(tool) }
@@ -170,6 +177,27 @@ struct AdjustmentDock: View {
         .contextMenu {
             Button(L10n.format("重置%@", tool.title)) { model.requestAdjustmentReset(.tool(tool)) }
                 .disabled(!changed)
+        }
+    }
+
+    private func filmOpticsSection(_ kind: MacFilmOpticsControls.Kind) -> some View {
+        let open = expandedOptics == kind
+        let isDefault = kind.isHalation ? model.settings.filmOpticsSettings.isHalationDefault : model.settings.filmOpticsSettings.isBloomDefault
+        let hdrReason = model.settings.isHDREditing ? L10n.text("HDR 模式暂不支持此工具。") : nil
+        return section(title: kind.title, id: "tool.\(kind.rawValue)", open: open,
+                       available: hdrReason == nil && model.result != nil,
+                       changed: !isDefault, reason: hdrReason, toggle: {
+            ParameterValueField.cancelPendingInputs()
+            expandedOptics = open ? nil : kind
+        }) {
+            MacFilmOpticsControls(model: model, kind: kind).id("\(kind.rawValue).\(resetVersion)")
+        }
+        .contextMenu {
+            Button(L10n.format("重置%@", kind.title)) {
+                ParameterValueField.cancelPendingInputs()
+                if kind.isHalation { model.settings.filmOpticsSettings.resetHalation() }
+                else { model.settings.filmOpticsSettings.resetBloom() }
+            }.disabled(isDefault || model.settings.isHDREditing)
         }
     }
 

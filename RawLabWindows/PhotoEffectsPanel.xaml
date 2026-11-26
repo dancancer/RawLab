@@ -8,6 +8,33 @@
   <Button x:Name="ResetGroupButton" HorizontalAlignment="Right" Click="ResetGroupClicked" ToolTip="{DynamicResource '重置当前效果'}" AutomationProperties.Name="{DynamicResource '重置当前效果'}" Width="28" Height="28" MinHeight="28" Padding="3" Margin="0"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
   <StackPanel x:Name="VignetteParameters"/>
   <Expander x:Name="VignetteDetails" Header="{DynamicResource '精细调整'}"><StackPanel x:Name="VignetteFineParameters"/></Expander>
-  <StackPanel x:Name="GrainParameters"/>
+  <StackPanel x:Name="GrainParameters">
+   <StackPanel x:Name="GrainOptions" Margin="0,2,0,4">
+    <TextBlock Text="{DynamicResource '颗粒曲线'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,4,0,3"/>
+    <ComboBox x:Name="GrainToneCurveBox" SelectionChanged="GrainToneCurveChanged" AutomationProperties.Name="{DynamicResource '颗粒曲线'}" AutomationProperties.AutomationId="effects.grain.toneCurve">
+     <ComboBoxItem Content="{DynamicResource '传统曲线'}"/>
+     <ComboBoxItem Content="{DynamicResource '负片非对称'}"/>
+    </ComboBox>
+    <TextBlock Text="{DynamicResource '颗粒画幅'}" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,3"/>
+    <ComboBox x:Name="GrainFormatPresetBox" SelectionChanged="GrainFormatPresetChanged" AutomationProperties.Name="{DynamicResource '颗粒画幅'}" AutomationProperties.AutomationId="effects.grain.formatPreset">
+     <ComboBoxItem Content="{DynamicResource '自定义'}"/>
+     <ComboBoxItem Content="{DynamicResource '135 胶片'}"/>
+     <ComboBoxItem Content="{DynamicResource '120 中画幅'}"/>
+    </ComboBox>
+   </StackPanel>
+   <StackPanel x:Name="GrainRows"/>
+   <StackPanel x:Name="FilmOpticsSurface" Margin="0,8,0,0">
+    <DockPanel>
+     <Button x:Name="ResetHalationButton" DockPanel.Dock="Right" Click="ResetHalationClicked" ToolTip="{DynamicResource '重置'}" AutomationProperties.Name="{DynamicResource '重置'}" Style="{StaticResource ToolButton}" Padding="6,2" AutomationProperties.AutomationId="effects.halation.reset"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
+     <Expander x:Name="HalationExpander" Header="{DynamicResource '光晕'}" IsExpanded="False" AutomationProperties.AutomationId="effects.halation.expander"/>
+    </DockPanel>
+    <StackPanel x:Name="HalationParameters"/>
+    <DockPanel Margin="0,4,0,0">
+     <Button x:Name="ResetBloomButton" DockPanel.Dock="Right" Click="ResetBloomClicked" ToolTip="{DynamicResource '重置'}" AutomationProperties.Name="{DynamicResource '重置'}" Style="{StaticResource ToolButton}" Padding="6,2" AutomationProperties.AutomationId="effects.bloom.reset"><local:EditorIcon Kind="Reset" Width="16" Height="16"/></Button>
+     <Expander x:Name="BloomExpander" Header="{DynamicResource '柔光'}" IsExpanded="False" AutomationProperties.AutomationId="effects.bloom.expander"/>
+    </DockPanel>
+    <StackPanel x:Name="BloomParameters"/>
+   </StackPanel>
+  </StackPanel>
  </StackPanel>
 </UserControl>

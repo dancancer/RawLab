@@ -8,6 +8,7 @@
 #include "core/photo_bw_mixer.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
 #include "core/photo_point_color.h"
@@ -434,7 +435,9 @@ void applyDetailAdjustments(
     float texture,
     const SharpenV2Options& sharpenV2,
     int textureSourceWidth,
-    int textureSourceHeight
+    int textureSourceHeight,
+    const FilmOpticsOptions& filmOptics,
+    const FilmOpticsField* filmOpticsField
 ) {
     if (noiseReduction > 0.0f) {
         applyNoiseReduction(image, noiseReduction);
@@ -446,6 +449,13 @@ void applyDetailAdjustments(
     }
     if (texture != 0.0f) {
         applyTexture(image, texture, textureSourceWidth, textureSourceHeight);
+    }
+    if (filmOptics.active()) {
+        if (filmOpticsField && !filmOpticsField->empty() && roiMap.active()) {
+            applyFilmOpticsWithField(image, *filmOpticsField, filmOptics, roiMap);
+        } else {
+            applyFilmOptics(image, filmOptics);
+        }
     }
     if (sharpening > 0.0f) {
         if (sharpenV2.luminanceV2) {

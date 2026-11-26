@@ -52,17 +52,32 @@ struct IOSDenoiseControls: View {
 }
 
 struct IOSPhotoEffectsControls: View {
+    @Environment(\.locale) private var localizationLocale
     let effect: AdjustmentKind
     let value: (PhotoEffectParameter) -> Binding<Double>
     let onEditingChanged: (Bool) -> Void
+    var isHDREditing: Bool = false
+    var grainToneCurve: Binding<GrainToneCurve> = .constant(.legacy)
+    var grainFormatPreset: Binding<GrainFormatPreset> = .constant(.custom)
+    var filmOptics: Binding<FilmOpticsSettings> = .constant(.init())
     @State private var advancedExpanded = false
+    @State private var halationExpanded = false
+    @State private var bloomExpanded = false
 
     private var parameters: [PhotoEffectParameter] {
         PhotoEffectParameter.allCases.filter { $0.isVignette == (effect == .vignette) }
     }
 
     var body: some View {
+        let _ = localizationLocale
         VStack(alignment: .leading, spacing: 12) {
+            if effect == .grain && !isHDREditing {
+                IOSFilmGrainOptionsView(
+                    toneCurve: grainToneCurve,
+                    formatPreset: grainFormatPreset,
+                    localeIdentifier: localizationLocale.identifier
+                )
+            }
             parameterControl(effect == .vignette ? .vignetteAmount : .grainAmount)
             DisclosureGroup(isExpanded: $advancedExpanded) {
                 VStack(alignment: .leading, spacing: 12) {
@@ -84,6 +99,22 @@ struct IOSPhotoEffectsControls: View {
                     .frame(minHeight: 44)
                     .accessibilityIdentifier("effects.\(effect.rawValue).advanced")
             }
+            if effect == .grain && !isHDREditing {
+                IOSFilmOpticsGroupSection(
+                    title: L10n.text("光晕"),
+                    isHalation: true,
+                    isExpanded: $halationExpanded,
+                    filmOptics: filmOptics,
+                    onEditingChanged: onEditingChanged
+                )
+                IOSFilmOpticsGroupSection(
+                    title: L10n.text("柔光"),
+                    isHalation: false,
+                    isExpanded: $bloomExpanded,
+                    filmOptics: filmOptics,
+                    onEditingChanged: onEditingChanged
+                )
+            }
         }
         .id(effect.rawValue)
     }
@@ -95,6 +126,110 @@ struct IOSPhotoEffectsControls: View {
                           identifier: "effects.\(effect.rawValue).\(parameter.rawValue)",
                           onEditingChanged: onEditingChanged)
             .disabled(parameter == .vignetteHighlights && value(.vignetteAmount).wrappedValue >= 0)
+    }
+}
+
+private struct IOSFilmGrainOptionsView: View {
+    @Binding var toneCurve: GrainToneCurve
+    @Binding var formatPreset: GrainFormatPreset
+    let localeIdentifier: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Picker(L10n.text("颗粒曲线"), selection: $toneCurve) {
+                ForEach(GrainToneCurve.allCases) { curve in
+                    Text(curve.title).tag(curve)
+                }
+            }
+            .pickerStyle(.menu)
+            .id("curve.\(localeIdentifier)")
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("effects.grain.toneCurve")
+
+            Spacer(minLength: 4)
+
+            Picker(L10n.text("颗粒画幅"), selection: $formatPreset) {
+                ForEach(GrainFormatPreset.allCases) { preset in
+                    Text(preset.title).tag(preset)
+                }
+            }
+            .pickerStyle(.menu)
+            .id("preset.\(localeIdentifier)")
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("effects.grain.formatPreset")
+        }
+    }
+}
+
+private struct IOSFilmOpticsGroupSection: View {
+    let title: String
+    let isHalation: Bool
+    @Binding var isExpanded: Bool
+    @Binding var filmOptics: FilmOpticsSettings
+    let onEditingChanged: (Bool) -> Void
+
+    private var parameters: [FilmOpticsParameter] {
+        FilmOpticsParameter.allCases.filter { $0.isHalation == isHalation }
+    }
+
+    private var amountValue: Double {
+        isHalation ? filmOptics.halationAmount : filmOptics.bloomAmount
+    }
+
+    private var isDefault: Bool {
+        isHalation ? filmOptics.isHalationDefault : filmOptics.isBloomDefault
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $isExpanded) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Spacer(minLength: 0)
+                    Button {
+                        if isHalation { filmOptics.resetHalation() }
+                        else { filmOptics.resetBloom() }
+                    } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDefault)
+                    .accessibilityLabel(L10n.format("重置%@", title))
+                    .accessibilityIdentifier("effects.\(isHalation ? "halation" : "bloom").reset")
+                }
+                ForEach(parameters) { parameter in
+                    AdjustmentControl(
+                        title: parameter.title,
+                        value: Binding(
+                            get: { filmOptics[keyPath: parameter.keyPath] },
+                            set: { newValue in
+                                guard newValue.isFinite else { return }
+                                let r = parameter.range
+                                let quantized = min(r.upperBound, max(r.lowerBound, (newValue * 10).rounded() / 10))
+                                filmOptics[keyPath: parameter.keyPath] = quantized
+                            }
+                        ),
+                        range: parameter.range,
+                        step: 1,
+                        defaultValue: parameter.defaultValue,
+                        formatter: { String(format: $0 == 0 || parameter.range.lowerBound >= 0 ? "%.0f" : "%+.0f", locale: L10n.locale, $0) },
+                        identifier: "effects.\(isHalation ? "halation" : "bloom").\(parameter.rawValue)",
+                        onEditingChanged: onEditingChanged
+                    )
+                    .disabled(parameter != .halationAmount && parameter != .bloomAmount && amountValue == 0)
+                }
+            }
+            .padding(.top, 8)
+        } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.subheadline)
+                if !isDefault {
+                    Circle().fill(Color.yellow).frame(width: 5, height: 5).accessibilityHidden(true)
+                }
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("effects.\(isHalation ? "halation" : "bloom").disclosure")
+        }
     }
 }
 

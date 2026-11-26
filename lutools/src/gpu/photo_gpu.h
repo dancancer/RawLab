@@ -53,6 +53,7 @@ struct PhotoGpuCapabilities {
     bool ready = false;
     bool supportsEffects = false;
     bool supportsDcp = false;
+    bool supportsFilmOptics = false;
     bool dimensionsSupported = false;
 };
 

@@ -10,7 +10,8 @@ namespace sony2fuji {
 enum class FilterStage : uint32_t {
     SwtRows, SwtColumns, EnergyRows, Threshold, IswtColumns, IswtRows,
     GuideProducts, MeanRows, MeanColumns, GuideCoefficients, GuideReconstruct,
-    PhotoEffects, Detail
+    PhotoEffects, Detail,
+    FilmOpticsDownsample, FilmOpticsBlurH, FilmOpticsBlurV, FilmOpticsComposite
 };
 
 struct FilterParams {
@@ -55,5 +56,6 @@ bool computeGuidedFilter(FilterDevice& device, const float* guide, const float* 
                          int width, int height, int radius, float epsilon, float* output);
 bool computePhotoEffects(FilterDevice& device, ImageData& image, const PhotoEffectsOptions& settings);
 bool computeDetailFilter(FilterDevice& device, ImageData& image, float noiseReduction, float sharpening);
+bool computeFilmOptics(FilterDevice& device, ImageData& image, const FilmOpticsOptions& options);
 
 } // namespace sony2fuji

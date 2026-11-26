@@ -39,6 +39,9 @@ SHARED_SHADER_BODIES = {
     "photo_tone_curve_shader.h": [
         r'R"shader\((.*?)\)shader"',
     ],
+    "photo_film_optics_shader.h": [
+        r'R"shader\((.*?)\)shader"',
+    ],
     "photo_color_science_shader.h": [
         r'R"shader\((.*?)\)shader"',
     ],

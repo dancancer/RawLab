@@ -19,6 +19,7 @@ bool gpuWaveletFilter(const float*, int, int, const WaveletFilterSettings&, floa
 bool gpuGuidedFilter(const float*, const float*, int, int, int, float, float*) { return false; }
 bool gpuPhotoEffects(ImageData&, const PhotoEffectsOptions&) { return false; }
 bool gpuDetailFilter(ImageData&, float, float) { return false; }
+bool gpuFilmOptics(ImageData&, const FilmOpticsOptions&) { return false; }
 }
 
 int main(int argc, char** argv) {

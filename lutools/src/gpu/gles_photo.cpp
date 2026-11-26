@@ -653,8 +653,8 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         const bool textureActive = params.atmosphere.texture != 0.0f;
         const bool sharpenV2Active = params.sharpening > 0.0f && params.sharpenV2.luminanceV2;
         const bool nativeFilters = defringeActive || params.atmosphere.active() || sharpenV2Active ||
-            params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
-            params.sharpening > 0 || params.preserveSourceResolution;
+            params.effects.active() || params.filmOptics.active() || params.chromaDenoise != 0 ||
+            params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
         if (nativeFilters) {
             context.cachedRevision = 0;
             const int pw = input.width;
@@ -759,6 +759,12 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
                 ImageData textured(pw, ph);
                 context.spatialTextureBands(native, textured, texSigma, params.atmosphere.texture);
                 native = std::move(textured);
+            }
+            if (params.filmOptics.active()) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuFilmOptics(native, params.filmOptics)) {
+                    return failFilter("GLES film optics filter failed");
+                }
             }
             if (sharpenV2Active) {
                 ImageData sharpened(pw, ph);

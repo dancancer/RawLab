@@ -581,6 +581,14 @@ public sealed class Adjustments
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
     }
+    public void SetGrainEffect(PhotoEffectParameter id, double value)
+    {
+        var previous = EditingEffects;
+        SetEffect(id, value);
+        if (!IsHDREditing && EditingEffects != previous &&
+            id is PhotoEffectParameter.GrainSize or PhotoEffectParameter.GrainRoughness)
+            EditingEffects = EditingEffects.WithCustomPresetIfDeviated();
+    }
     public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
     public bool IsEffectDefault(bool vignette) =>
         PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)

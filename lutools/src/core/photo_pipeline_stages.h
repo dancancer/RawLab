@@ -20,6 +20,7 @@
 namespace sony2fuji {
 
 struct ClarityField;
+struct FilmOpticsField;
 
 inline float clampFloat(float value, float low, float high) {
     return std::max(low, std::min(high, value));
@@ -72,7 +73,9 @@ void applyDetailAdjustments(
     float texture = 0.0f,
     const SharpenV2Options& sharpenV2 = {},
     int textureSourceWidth = 0,
-    int textureSourceHeight = 0
+    int textureSourceHeight = 0,
+    const FilmOpticsOptions& filmOptics = {},
+    const FilmOpticsField* filmOpticsField = nullptr
 );
 
 void applyOutputSharpening(ImageData& image, OutputSharpening level);

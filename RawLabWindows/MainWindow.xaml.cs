@@ -197,6 +197,10 @@ public partial class MainWindow : Window
             if(!ready || syncing || exporting || transform.Active)return;
             settings.EditingEffects=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
         };
+        PhotoEffectsEditor.FilmOpticsChanged+=(value,dragging)=>{
+            if(!ready || syncing || exporting || transform.Active || settings.IsHDREditing)return;
+            settings.FilmOptics=value;interacting=dragging;RefreshControls();MarkEdited();Schedule();
+        };
         WhiteBalanceEditor.Changed+=(parameter,value,dragging)=>{
             if(!ready || syncing || exporting || transform.Active)return;
             if (file != null && PhotoInput.IsRaster(file) && !settings.IsHDREditing) settings.SetRasterWhiteBalance(parameter,value);

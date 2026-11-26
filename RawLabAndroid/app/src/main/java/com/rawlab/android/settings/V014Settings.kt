@@ -197,4 +197,19 @@ data class FilmOpticsSettings(
         require(bloomRadius.isFinite() && bloomRadius in f.EFFECTS_BLOOM_RADIUS.androidModel.floatRange!!)
     }
     val isDefault get() = this == FilmOpticsSettings()
+    val isHalationDefault get() = halationAmount == 0f && halationThreshold == 75f && halationRadius == 35f && halationHue == 0f
+    val isBloomDefault get() = bloomAmount == 0f && bloomThreshold == 70f && bloomRadius == 40f
+
+    fun resetHalation(): FilmOpticsSettings = copy(
+        halationAmount = 0f,
+        halationThreshold = 75f,
+        halationRadius = 35f,
+        halationHue = 0f,
+    )
+
+    fun resetBloom(): FilmOpticsSettings = copy(
+        bloomAmount = 0f,
+        bloomThreshold = 70f,
+        bloomRadius = 40f,
+    )
 }

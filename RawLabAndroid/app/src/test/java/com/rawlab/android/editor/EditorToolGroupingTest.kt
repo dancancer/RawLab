@@ -9,6 +9,12 @@ import com.rawlab.android.editor.ui.editorToolOrder
 import com.rawlab.android.editor.ui.editorToolTitles
 import com.rawlab.android.editor.ui.whiteBalanceChanged
 import com.rawlab.android.settings.EditSettings
+import com.rawlab.android.settings.FilmOpticsSettings
+import com.rawlab.android.settings.GrainFormatPreset
+import com.rawlab.android.settings.GrainToneCurve
+import com.rawlab.android.settings.PhotoEffectParameter
+import com.rawlab.android.settings.editingEffects
+import com.rawlab.android.settings.withEditingEffects
 import com.rawlab.android.editor.ui.editorToolIcons
 
 class EditorToolGroupingTest {
@@ -61,6 +67,26 @@ class EditorToolGroupingTest {
     @Test fun everyVisibleToolHasItsOwnIcon() {
         val icons = editorToolOrder.map { editorToolIcons[it] }
         assertEquals(editorToolOrder.filterIndexed { i, _ -> icons.indexOf(icons[i]) != i }.toString(), icons.size, icons.toSet().size)
+    }
+
+    @Test fun grainPresetsAndFilmOpticsSurviveDraftProjection() {
+        val fx135 = EditSettings().editingEffects.applyGrainFormatPreset(GrainFormatPreset.FILM_135)
+        assertEquals(18f, fx135.grainSize)
+        assertEquals(65f, fx135.grainRoughness)
+        val fxCustom = fx135.withGrainEffect(PhotoEffectParameter.GRAIN_SIZE, 29f)
+        assertEquals(GrainFormatPreset.CUSTOM, fxCustom.grainFormatPreset)
+        assertEquals(29f, fxCustom.grainSize)
+
+        val base = EditSettings().withEditingEffects(EditSettings().editingEffects.copy(vignetteAmount = -30f))
+        val edited = base.withEditingEffects(
+            base.editingEffects.copy(grainToneCurve = GrainToneCurve.NEGATIVE_ASYMMETRIC, grainFormatPreset = GrainFormatPreset.FILM_120)
+        ).copy(filmOptics = FilmOpticsSettings(halationAmount = 50f, bloomAmount = 25f))
+        val projected = AdjustmentGroup.GRAIN.project(edited, base, base)
+        assertEquals(-30f, projected.editingEffects.vignetteAmount)
+        assertEquals(GrainToneCurve.NEGATIVE_ASYMMETRIC, projected.editingEffects.grainToneCurve)
+        assertEquals(GrainFormatPreset.FILM_120, projected.editingEffects.grainFormatPreset)
+        assertEquals(50f, projected.filmOptics.halationAmount)
+        assertEquals(25f, projected.filmOptics.bloomAmount)
     }
 
     @Test fun sharpenV2AutoEnablesOnNewEditsWhilePreservingLegacy() {
