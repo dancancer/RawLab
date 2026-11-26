@@ -168,6 +168,13 @@ internal object NativeHDRBridge {
     fun clearSessionCache(session: Long) = nativeClearHdrSessionCache(session)
 
     fun plane(pair: NativeHDRImage, hdr: Boolean): FloatArray = nativePlane(pair.handle, hdr)
+    fun analyzeLuminance(values: FloatArray, width: Int, height: Int, stride: Int, bins: IntArray, peak: FloatArray): Int =
+        nativeAnalyzeLuminance(values, width, height, stride, bins, peak)
+
+    /** 把紧密排列的 HDR/SDR 平面 [firstRow, firstRow + rowCount) 行映射为 RGBA16F；超出半精度范围时返回 false。 */
+    fun displayRows(hdr: FloatArray, sdr: FloatArray, width: Int, height: Int, firstRow: Int, rowCount: Int,
+        displayHeadroom: Float, contentHeadroom: Float, flags: Int, output: ShortArray): Boolean =
+        nativeDisplayRows(hdr, sdr, width, height, firstRow, rowCount, displayHeadroom, contentHeadroom, flags, output)
     fun estimateAutoExposure(session: Long, source: NativeHDRImage, settings: HDRSettings, cancellationGeneration: Long): Float =
         nativeEstimateAutoExposure(session, source.handle, settings.temperature, settings.tint, cancellationGeneration)
 
@@ -251,6 +258,12 @@ internal object NativeHDRBridge {
     private external fun nativeFingerprint(pair: Long): ByteArray
     @JvmStatic
     private external fun nativePlane(pair: Long, hdr: Boolean): FloatArray
+    @JvmStatic
+    private external fun nativeAnalyzeLuminance(values: FloatArray, width: Int, height: Int, stride: Int,
+        bins: IntArray, peak: FloatArray): Int
+    @JvmStatic
+    private external fun nativeDisplayRows(hdr: FloatArray, sdr: FloatArray, width: Int, height: Int, firstRow: Int,
+        rowCount: Int, displayHeadroom: Float, contentHeadroom: Float, flags: Int, output: ShortArray): Boolean
     @JvmStatic
     private external fun nativeSdrBitmap(pair: Long, bitmap: Bitmap)
     @JvmStatic

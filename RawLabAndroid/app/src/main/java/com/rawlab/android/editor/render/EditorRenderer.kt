@@ -7,7 +7,6 @@ import com.rawlab.android.engine.HDRProgressListener
 import com.rawlab.android.engine.NativeHDRBridge
 import com.rawlab.android.photo.HDRSourceInfo
 import com.rawlab.android.engine.NativeHDRImage
-import com.rawlab.android.engine.HDRDisplayMath
 import com.rawlab.android.engine.requireAsset
 import com.rawlab.android.settings.HDRSettings
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings

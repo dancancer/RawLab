@@ -9,8 +9,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.rawlab.android.engine.HDRDisplayMath
 import com.rawlab.android.engine.HDRDisplayParameters
+import com.rawlab.android.engine.HDRPreviewMode
+import com.rawlab.android.engine.NativeHDRBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -28,6 +29,11 @@ internal fun canRetainBitmap(
     val nextAspect = nextWidth.toDouble() / nextHeight.toDouble()
     return abs(prevAspect - nextAspect) <= 0.02 * maxOf(prevAspect, nextAspect)
 }
+
+// 与 sony2fuji_hdr.h 的 SONY2FUJI_HDR_DISPLAY_* 标志位一致。
+private const val SONY2FUJI_HDR_DISPLAY_SDR = 1
+private const val SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2
+private const val DISPLAY_ROW_BAND = 16
 
 /** Packs the float pair into an extended-range bitmap; it never labels ARGB_8888 as HDR. */
 internal object HDRBitmapAdapter {
@@ -59,17 +65,17 @@ internal object HDRBitmapAdapter {
 
     fun bitmap(frame: HDRPreviewFrame, parameters: HDRDisplayParameters, checkCancellation: () -> Unit = {}): Bitmap? {
         if (Build.VERSION.SDK_INT < 26) return null
-        var source = 0
-        var output = 0
         val packed = ShortArray(frame.width * frame.height * 4)
-        val color = FloatArray(3)
-        val rgba = FloatArray(4)
-        for (pixel in 0 until frame.width * frame.height) {
-            if (pixel % frame.width == 0) checkCancellation()
-            HDRDisplayMath.pixelInto(frame.hdr, frame.sdr, source, frame.contentHeadroom, parameters, color)
-            rgba[0] = color[0]; rgba[1] = color[1]; rgba[2] = color[2]; rgba[3] = 1f
-            if (!HDRDisplayMath.packHalfInto(rgba, packed, output)) return null
-            source += 3; output += 4
+        // 线性扩展 sRGB、SDR 平面不夹取：与共享核心的默认显示约定一致，按行段映射以便及时取消。
+        val flags = (if (parameters.mode == HDRPreviewMode.SDR) SONY2FUJI_HDR_DISPLAY_SDR else 0) or
+            (if (parameters.falseColor) SONY2FUJI_HDR_DISPLAY_FALSE_COLOR else 0)
+        var row = 0
+        while (row < frame.height) {
+            checkCancellation()
+            val rows = minOf(DISPLAY_ROW_BAND, frame.height - row)
+            if (!NativeHDRBridge.displayRows(frame.hdr, frame.sdr, frame.width, frame.height, row, rows,
+                    parameters.safeHeadroom, frame.contentHeadroom, flags, packed)) return null
+            row += rows
         }
         return runCatching {
             Bitmap.createBitmap(frame.width, frame.height, Bitmap.Config.RGBA_F16, true,

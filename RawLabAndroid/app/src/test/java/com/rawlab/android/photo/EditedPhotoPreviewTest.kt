@@ -267,6 +267,7 @@ class EditedPhotoPreviewTest {
                 override val outputNativeHeight: Int = 3000
                 override fun snapshot(): HDRPreviewFrame = HDRPreviewFrame(
                     2, 2, FloatArray(12), FloatArray(12), 2.0f, 2.0f, 4000, 3000,
+                    com.rawlab.android.engine.HDRStatistics(IntArray(256), 0, 1f, 4),
                 )
                 override fun sdrBitmap() = TestBitmaps.stub()
                 override fun close() = Unit

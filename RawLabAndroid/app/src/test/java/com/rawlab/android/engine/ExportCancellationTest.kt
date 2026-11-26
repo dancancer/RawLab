@@ -605,7 +605,8 @@ class ExportCancellationTest {
                     override val sourceInfo: HDRSourceInfo = hdrInfo
                     override val outputNativeWidth: Int = 4000
                     override val outputNativeHeight: Int = 3000
-                    override fun snapshot(): HDRPreviewFrame = HDRPreviewFrame(2, 2, FloatArray(12), FloatArray(12), 2f, 2f, 4000, 3000)
+                    override fun snapshot(): HDRPreviewFrame = HDRPreviewFrame(2, 2, FloatArray(12), FloatArray(12), 2f, 2f, 4000, 3000,
+                        HDRStatistics(IntArray(256), 0, 1f, 4))
                     override fun sdrBitmap() = TestBitmaps.stub()
                     override fun close() = Unit
                 }
