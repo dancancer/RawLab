@@ -113,7 +113,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
     onInspectionAnchorSelect: (Long) -> Unit = {},
     wbProbe: WbProbeActions? = null,
     isAdjustingSlider: Boolean = false,
-    bottomControlsInset: Dp = 64.dp) {
+    bottomControlsInset: Dp = 64.dp,
+    sharpenMaskOverlay: android.graphics.Bitmap? = null) {
     val controlsBaseInset = if (workspaceControls) maxOf(64.dp, bottomControlsInset) else 12.dp
     val comparisonInset = if (compare) with(LocalDensity.current) {
         MaterialTheme.typography.labelSmall.lineHeight.toDp() + controlsBaseInset + if (workspaceControls) 20.dp else 24.dp
@@ -160,7 +161,8 @@ internal fun EditorCanvas(state: EditorState, compare: Boolean, photoCanvas: Pho
                         if (showTargetStatus && wbProbe != null) WbProbeCanvasControls(wbProbe, Modifier.padding(8.dp))
                         EditorSaveNotice(state, onSaveRetry, Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
                     }
-                })
+                },
+                sharpenMaskBitmap = sharpenMaskOverlay.takeIf { state.draft?.group != AdjustmentGroup.GEOMETRY })
         } ?: if (loading.showsEmptyCanvasLoading) {
             EmptyCanvasLoading(reduceMotion = reduceMotion)
         } else {

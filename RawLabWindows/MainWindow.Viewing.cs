@@ -14,6 +14,12 @@ public partial class MainWindow
     private readonly HashSet<ContextMenu> viewingMenus=[];
     private (BitmapSource Source, BitmapSource Mask)? clippingOverlay;
     private bool clippingOverlayPending;
+    private (BitmapSource Source, byte[] Bgra8, int Width, int Height, int Stride)? cachedSharpenMaskInput;
+    private (BitmapSource Source, BitmapSource Mask, double Radius, double Masking)? sharpenMaskOverlay;
+    private bool sharpenMaskPreviewActive;
+    private int sharpenMaskInFlight;
+    private bool sharpenMaskPending => sharpenMaskInFlight > 0;
+    private long sharpenMaskRequestEpoch;
     private bool beforeKeyDown;
     private readonly ViewSourceState viewSourceState = new();
     private PhotoPreviewResourceWatch? viewSourceWatch;
@@ -148,8 +154,13 @@ public partial class MainWindow
         var neutralDisplay = needReferenceOverlay ? EnsureInspectionOverlayBitmap(rawNeutral) : rawNeutral;
         NeutralCanvas.SetImage(neutralDisplay, reference?.Clipping);
         if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
-        var resultDisplay = EnsureInspectionOverlayBitmap(HDRPresentationBitmap(result) ?? openingPreview);
-        ResultCanvas.SetImage(resultDisplay, clippingOverlay?.Mask);
+        if (sharpenMaskOverlay is { } maskEntry && !ReferenceEquals(maskEntry.Source, result?.Image)) sharpenMaskOverlay = null;
+        if (cachedSharpenMaskInput is { } cachedInput && !ReferenceEquals(cachedInput.Source, result?.Image)) cachedSharpenMaskInput = null;
+        BitmapSource? sharpenMaskImage = sharpenMaskPreviewActive ? sharpenMaskOverlay?.Mask : null;
+        var showingSharpenMask = sharpenMaskImage != null;
+        var resultDisplay = sharpenMaskImage
+            ?? EnsureInspectionOverlayBitmap(HDRPresentationBitmap(result) ?? openingPreview);
+        ResultCanvas.SetImage(resultDisplay, showingSharpenMask ? null : clippingOverlay?.Mask);
         var rawComparison = HDRPresentationBitmap(reference);
         var comparisonDisplay = needReferenceOverlay ? EnsureInspectionOverlayBitmap(rawComparison) : rawComparison;
         ResultCanvas.SetComparison(comparisonDisplay, reference?.Clipping);
@@ -162,6 +173,75 @@ public partial class MainWindow
         RefreshInspection();
         RefreshHDRPresentation();
         RefreshClippingMask();
+        if (sharpenMaskPreviewActive && !sharpenMaskPending && result?.Image is { } currentMaskSource &&
+            (sharpenMaskOverlay is not { } currentMaskOverlay || !ReferenceEquals(currentMaskOverlay.Source, currentMaskSource) ||
+                currentMaskOverlay.Radius != settings.SharpenV2.Radius || currentMaskOverlay.Masking != settings.SharpenV2.Masking))
+            RefreshSharpenMaskPreview();
+    }
+
+    private void SetSharpenMaskPreview(bool active)
+    {
+        if (sharpenMaskPreviewActive == active) return;
+        sharpenMaskPreviewActive = active;
+        if (!active)
+        {
+            ++sharpenMaskRequestEpoch;
+            sharpenMaskOverlay = null;
+            RefreshViewingFrames();
+            return;
+        }
+        RefreshSharpenMaskPreview();
+    }
+
+    private void ClearSharpenMaskPreview(bool refresh = false)
+    {
+        var wasActive = sharpenMaskPreviewActive || sharpenMaskOverlay != null;
+        sharpenMaskPreviewActive = false;
+        ++sharpenMaskRequestEpoch;
+        sharpenMaskOverlay = null;
+        cachedSharpenMaskInput = null;
+        if (refresh && wasActive && !closing) RefreshViewingFrames();
+    }
+
+    private async void RefreshSharpenMaskPreview()
+    {
+        if (closing || !sharpenMaskPreviewActive || result?.Image is not { } source) return;
+        var (radius, masking) = (settings.SharpenV2.Radius, settings.SharpenV2.Masking);
+        if (sharpenMaskOverlay is { } existing && ReferenceEquals(existing.Source, source) &&
+            existing.Radius == radius && existing.Masking == masking)
+        {
+            RefreshViewingFrames();
+            return;
+        }
+        var epoch = ++sharpenMaskRequestEpoch;
+        ++sharpenMaskInFlight;
+        try
+        {
+            (byte[] Bgra8, int Width, int Height, int Stride) input;
+            if (cachedSharpenMaskInput is { } cached && ReferenceEquals(cached.Source, source))
+            {
+                input = (cached.Bgra8, cached.Width, cached.Height, cached.Stride);
+            }
+            else
+            {
+                input = await Task.Run(() => RenderEngine.ExtractBGRA8Preview(source));
+                if (closing || !sharpenMaskPreviewActive || epoch != sharpenMaskRequestEpoch || !ReferenceEquals(result?.Image, source)) return;
+                cachedSharpenMaskInput = (source, input.Bgra8, input.Width, input.Height, input.Stride);
+            }
+            var mask = await Task.Run(() => RenderEngine.RenderSharpenMaskPreview(
+                input.Bgra8, input.Width, input.Height, input.Stride, radius, masking));
+            if (mask != null && !closing && sharpenMaskPreviewActive && epoch == sharpenMaskRequestEpoch &&
+                ReferenceEquals(result?.Image, source))
+            {
+                sharpenMaskOverlay = (source, mask, radius, masking);
+                RefreshViewingFrames();
+            }
+        }
+        catch (Exception error)
+        {
+            if (!closing && sharpenMaskPreviewActive && epoch == sharpenMaskRequestEpoch && ReferenceEquals(result?.Image, source)) Report(error);
+        }
+        finally { if (sharpenMaskInFlight > 0) --sharpenMaskInFlight; }
     }
     private async void RefreshClippingMask()
     {

@@ -101,7 +101,7 @@ extension RawEditorViewModel {
         previewBuffer.sourceLensMetadata = rasterBase.buffer.sourceLensMetadata
         neutral.geometry = geometry
         neutral.lensCorrection = lens
-        let comparison = geometry.isIdentity && !lens.isEnabled ? baseBuffer : try processor.processBuffer(
+        let comparison = geometry.isIdentity && !lens.isEnabled && !lens.hasDefringeSettings ? baseBuffer : try processor.processBuffer(
             buffer: rasterBase.buffer, settings: neutral, previewLongEdge: previewMaxDimension, lutURL: nil)
         let basePreviewImage = processor.makeUIImage(from: comparison, orientation: .up)
         let baseHistogram = processor.computeRGBHistogram(from: comparison)

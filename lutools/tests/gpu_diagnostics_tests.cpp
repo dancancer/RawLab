@@ -136,15 +136,35 @@ int main() {
         }
     }
 
-    // 3. Atmosphere (clarity/dehaze).
+    // 3. Atmosphere (clarity/dehaze) runs on GPU when a native backend is available.
     resetAllSessionControls(session);
     {
         sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.4f, 0.f};
         assert(sony2fuji_session_set_atmosphere(session, &atmo) == SONY2FUJI_STATUS_OK);
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+        setGpuMode(session, SONY2FUJI_GPU_AUTO);
+        sony2fuji_buffer out{};
+        assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
+        sony2fuji_release_buffer(&out);
+        if (rawlabtest::nativeGpuAvailable()) {
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+            assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_NONE);
+            setGpuMode(session, SONY2FUJI_GPU_FORCE);
+            assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
+            sony2fuji_release_buffer(&out);
+            assert(sony2fuji_session_get_last_backend(session) == rawlabtest::nativeBackend);
+        } else {
+            assert(sony2fuji_session_get_last_backend(session) == SONY2FUJI_BACKEND_CPU);
+            const auto reason = sony2fuji_session_get_gpu_fallback_reason(session);
+            assert(reason == SONY2FUJI_GPU_FALLBACK_GPU_DISABLED ||
+                   reason == SONY2FUJI_GPU_FALLBACK_NO_ADAPTER);
+        }
+#else
         expectFallback(session, bufferReq,
                        SONY2FUJI_GPU_FALLBACK_ATMOSPHERE,
                        SONY2FUJI_GPU_FALLBACK_ATMOSPHERE,
                        "atmosphere");
+#endif
     }
 
     // 4. GPU-supported channel curves run on native GPU; precision-limited channel curve falls back with CURVES.
@@ -257,18 +277,31 @@ int main() {
     // 8. Non-GPU control diagnostics survive an HSL probe without clearing or leaking errors.
     resetAllSessionControls(session);
     {
-        sony2fuji_atmosphere_config atmo{SONY2FUJI_ATMOSPHERE_CONFIG_VERSION, sizeof(atmo), 0.3f, 0.f};
-        assert(sony2fuji_session_set_atmosphere(session, &atmo) == SONY2FUJI_STATUS_OK);
+        sony2fuji_tone_curve_set_config curves{};
+        curves.version = SONY2FUJI_TONE_CURVE_SET_CONFIG_VERSION;
+        curves.struct_size = sizeof(curves);
+        for (auto& c : curves.curves) {
+            c.version = SONY2FUJI_TONE_CURVE_CONFIG_VERSION;
+            c.struct_size = sizeof(c);
+            c.mode = SONY2FUJI_CURVE_LEGACY;
+        }
+        curves.curves[1].mode = SONY2FUJI_CURVE_CUSTOM;
+        curves.curves[1].count = 4;
+        curves.curves[1].points[0] = {0.0, 0.0};
+        curves.curves[1].points[1] = {0.5, 0.1};
+        curves.curves[1].points[2] = {std::nextafter(0.5, 1.0), 0.9};
+        curves.curves[1].points[3] = {1.0, 1.0};
+        assert(sony2fuji_session_set_tone_curves(session, &curves) == SONY2FUJI_STATUS_OK);
         setGpuMode(session, SONY2FUJI_GPU_AUTO);
         sony2fuji_buffer out{};
         assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
         sony2fuji_release_buffer(&out);
-        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_ATMOSPHERE);
+        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_CURVES);
 
         sony2fuji_hsl_probe* probe = nullptr;
         assert(sony2fuji_session_create_hsl_probe(session, &bufferReq, 1, 1, &probe) == SONY2FUJI_STATUS_OK);
         sony2fuji_hsl_probe_destroy(probe);
-        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_ATMOSPHERE);
+        assert(sony2fuji_session_get_gpu_fallback_reason(session) == SONY2FUJI_GPU_FALLBACK_CURVES);
         assert(sony2fuji_session_get_unsupported_reason(session) == SONY2FUJI_UNSUPPORTED_NONE);
     }
 

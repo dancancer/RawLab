@@ -629,4 +629,7 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int sony2fuji_inspection_render_overlay(
         ref Buffer src, InspectionOverlayMode mode, ref Buffer dst);
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int sony2fuji_render_sharpen_mask_preview(
+        ref Buffer source, float radius, float masking, out Buffer outMask);
 }

@@ -1,5 +1,7 @@
 #pragma once
+#include "dcp_look_shader.h"
 #include "photo_log_shader.h"
+#include "photo_spatial_shader.h"
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
@@ -7,7 +9,7 @@ namespace sony2fuji {
 inline const std::string kD3DPhotoShader = toneControlsShader("float3") + colorGradingShader("float3") + toneCurveShader("float3") + photoLogShader(ShaderDialect::Hlsl) + R"hlsl(
 cbuffer Params : register(b0) {
     uint4 dimensions; // source width/height, destination width/height
-    uint4 control; // stage, HSL active, use LUT, LUT size
+    uint4 control; // stage, HSL active, use LUT/DCP (0=none, 1=LUT, 2=DCP), LUT size
     float4 toSrgb[3];
     float4 toFilm[3];
     float4 exposureStrength;
@@ -26,20 +28,62 @@ cbuffer Params : register(b0) {
     float4 parametricSplits;
     float4 colorGradingGlobal;
     float4 colorGradingMix;
-    uint4 band; // source row, destination row, output rows, reserved
+    uint4 band; // source row, destination row, output rows, evalPhase
     uint4 basicV3; // basicV3, basicToneActive, fieldWidth, fieldHeight
     float4 basicTone; // highlights, shadows, reserved, reserved
+};
+cbuffer DcpParamsBuffer : register(b1) {
+    float4 dcpInput[3];
+    float4 dcpOutput[3];
+    float4 dcpExposure;
+    uint4 dcpCalib;
+    uint4 dcpLook;
+    uint4 dcpOffsets;
 };
 StructuredBuffer<float3> source : register(t0);
 StructuredBuffer<float3> film : register(t1);
 StructuredBuffer<float2> basicToneField : register(t2);
+StructuredBuffer<float> dcpData : register(t3);
 RWStructuredBuffer<float3> destination : register(u0);
+RWStructuredBuffer<uint> dcpInvalid : register(u1);
 float neutral(float x) {
     if (x <= 0) return 0;
     float gray=0.1845;
     float scene=1/(1+(1-gray)/gray*pow(gray/x,1.5));
     return scene<=0.0031308 ? scene*12.92 : 1.055*pow(scene,1/2.4)-0.055;
 }
+float dcpSrgbGamma(float x) {
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+}
+#define DCP_FN
+#define DCP_V3 float3
+#define DCP_V3C(x, y, z) float3((x), (y), (z))
+#define DCP_U3 uint3
+#define DCP_U3C(x, y, z) uint3((x), (y), (z))
+#define DCP_U4 uint4
+#define DCP_CTX_DECL
+#define DCP_CTX_ARG
+#define DCP_SRGB_GAMMA(x) dcpSrgbGamma(x)
+#define DCP_NEUTRAL(x) neutral(x)
+#define DCP_LERP3(a, b, t) lerp((a), (b), (t))
+#define DCP_FINITE(v) all(isfinite(v))
+#define DCP_DATA(idx) dcpData[(idx)]
+#define DCP_MARK_INVALID InterlockedOr(dcpInvalid[0], 1u)
+)hlsl" + dcpLookShaderBody() + R"hlsl(
+#undef DCP_FN
+#undef DCP_V3
+#undef DCP_V3C
+#undef DCP_U3
+#undef DCP_U3C
+#undef DCP_U4
+#undef DCP_CTX_DECL
+#undef DCP_CTX_ARG
+#undef DCP_SRGB_GAMMA
+#undef DCP_NEUTRAL
+#undef DCP_LERP3
+#undef DCP_FINITE
+#undef DCP_DATA
+#undef DCP_MARK_INVALID
 float3 sampleLut(uint3 p) { return film[(p.z*control.w+p.y)*control.w+p.x]; }
 float3 lookup(float3 x) {
     float3 p=saturate((x-domainLow.xyz)/(domainHigh.xyz-domainLow.xyz))*(control.w-1);
@@ -131,21 +175,40 @@ float2 sampleBasicToneField(uint2 coord, uint2 coordSize) {
     return lerp(lerp(v00, v10, t.x), lerp(v01, v11, t.x), t.y);
 }
 float3 evaluate(float3 inputColor, uint2 coord, uint2 coordSize) {
-    float3 scene=float3(dot(toSrgb[0].xyz,inputColor),dot(toSrgb[1].xyz,inputColor),dot(toSrgb[2].xyz,inputColor))*exposureStrength.xyz;
-    if(basicV3.y!=0) {
-        float2 si=sampleBasicToneField(coord,coordSize);
-        scene*=tcBasicToneV3Gain(tcLuminance(scene),si.x,si.y,basicTone.x,basicTone.y);
-    }
-    float3 pixel=float3(neutral(scene.r),neutral(scene.g),neutral(scene.b));
-    if(control.z!=0) {
-        float3 lutInput=pixel;
-        if(logTransfer.w==0) {
-            float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
-            lutInput=float3(encodePhotoLog(fg.r,logTransfer.x!=0),encodePhotoLog(fg.g,logTransfer.x!=0),encodePhotoLog(fg.b,logTransfer.x!=0));
+    uint evalPhase = band.w;
+    float3 pixel = inputColor;
+    if (evalPhase != 2u && evalPhase != 3u) {
+        float3 scene=float3(dot(toSrgb[0].xyz,inputColor),dot(toSrgb[1].xyz,inputColor),dot(toSrgb[2].xyz,inputColor))*exposureStrength.xyz;
+        if(basicV3.y!=0) {
+            float2 si=sampleBasicToneField(coord,coordSize);
+            scene*=tcBasicToneV3Gain(tcLuminance(scene),si.x,si.y,basicTone.x,basicTone.y);
         }
-        float3 look=lookup(lutInput);
-        if(logTransfer.y!=0)look=float3(neutral(decodePhotoLog(look.r,logTransfer.z!=0)),neutral(decodePhotoLog(look.g,logTransfer.z!=0)),neutral(decodePhotoLog(look.b,logTransfer.z!=0)));
-        pixel=lerp(pixel,look,exposureStrength.w);
+        if (evalPhase == 1u) return scene;
+        inputColor = scene;
+    }
+    if (evalPhase != 3u) {
+        float3 scene = inputColor;
+        if (control.z == 2u) {
+            pixel = dcpApplyLookPixel(
+                scene,
+                dcpInput[0].xyz, dcpInput[1].xyz, dcpInput[2].xyz,
+                dcpOutput[0].xyz, dcpOutput[1].xyz, dcpOutput[2].xyz,
+                dcpExposure.x,
+                dcpCalib, dcpLook, dcpOffsets.x, dcpOffsets.y, exposureStrength.w);
+        } else {
+            pixel=float3(neutral(scene.r),neutral(scene.g),neutral(scene.b));
+            if(control.z == 1u) {
+                float3 lutInput=pixel;
+                if(logTransfer.w==0) {
+                    float3 fg=float3(dot(toFilm[0].xyz,scene),dot(toFilm[1].xyz,scene),dot(toFilm[2].xyz,scene));
+                    lutInput=float3(encodePhotoLog(fg.r,logTransfer.x!=0),encodePhotoLog(fg.g,logTransfer.x!=0),encodePhotoLog(fg.b,logTransfer.x!=0));
+                }
+                float3 look=lookup(lutInput);
+                if(logTransfer.y!=0)look=float3(neutral(decodePhotoLog(look.r,logTransfer.z!=0)),neutral(decodePhotoLog(look.g,logTransfer.z!=0)),neutral(decodePhotoLog(look.b,logTransfer.z!=0)));
+                pixel=lerp(pixel,look,exposureStrength.w);
+            }
+        }
+        if (evalPhase == 2u || evalPhase == 4u) return pixel;
     }
     pixel=basicV3.x!=0 ? tcBasicBlackWhiteV3(pixel,toneControls.x,toneControls.y)
         : tcBlackWhite(pixel,toneControls.x,toneControls.y);
@@ -212,6 +275,108 @@ void main(uint3 id : SV_DispatchThreadID) {
         pixel=control.x==2 ? lerp(pixel,blurred,saturate(detail.y)*.4) : saturate(pixel+clamp(detail.z,0,2)*(pixel-blurred));
     }
     destination[id.y*dimensions.z+id.x]=pixel;
+}
+)hlsl";
+
+inline const std::string kD3DSpatialShader = std::string(R"hlsl(
+cbuffer SpatialParamsBuffer : register(b0) {
+    uint4 spDims;        // width, height, rowOffset, rows
+    uint4 spBandInfo;    // srcRowOffset, auxRowOffset, radius, stage
+    float4 spSharpenCfg; // strength, sharpenDetail, sharpenMasking, sharpenRadius
+    float4 spDefringeCfg;// purpleAmount, purpleHue, greenAmount, greenHue
+    float4 spAirlight;
+    uint4 spFlags;
+    uint4 spBandDims;    // srcRows, auxRows, dstWidth, dstHeight
+    float4 spWeights[7];
+};
+StructuredBuffer<float3> spSrc : register(t0);
+StructuredBuffer<float3> spAux : register(t1);
+StructuredBuffer<float> spField : register(t2);
+RWStructuredBuffer<float3> spDst : register(u0);
+
+float3 spLoadSrc(int x, int y) {
+    uint cx = (uint)clamp(x, 0, (int)spDims.x - 1);
+    int minY = (int)spBandInfo.x;
+    int maxY = minY + (int)max(1u, spBandDims.x) - 1;
+    uint cy = (uint)clamp(y, minY, maxY);
+    return spSrc[(cy - spBandInfo.x) * spDims.x + cx];
+}
+float3 spLoadAux(int x, int y) {
+    uint cx = (uint)clamp(x, 0, (int)spDims.x - 1);
+    int minY = (int)spBandInfo.y;
+    int maxY = minY + (int)max(1u, spBandDims.y) - 1;
+    uint cy = (uint)clamp(y, minY, maxY);
+    return spAux[(cy - spBandInfo.y) * spDims.x + cx];
+}
+float spReadWeight(uint idx) {
+    float4 wv = spWeights[idx >> 2u];
+    uint lane = idx & 3u;
+    return lane == 0u ? wv.x : (lane == 1u ? wv.y : (lane == 2u ? wv.z : wv.w));
+}
+
+#define SP_FN
+#define SP_V3 float3
+#define SP_V3C(x, y, z) float3((x), (y), (z))
+#define SP_CTX_DECL
+#define SP_CTX_ARG
+#define SP_SRC(ix, iy) spLoadSrc((ix), (iy))
+#define SP_AUX(ix, iy) spLoadAux((ix), (iy))
+#define SP_FIELD(idx) spField[(idx)]
+#define SP_FINITE(v) all(isfinite(v))
+#define SP_WEIGHT(idx) spReadWeight(idx)
+#define SP_WIDTH spDims.x
+#define SP_HEIGHT spDims.y
+#define SP_RADIUS spBandInfo.z
+#define SP_STRENGTH spSharpenCfg.x
+#define SP_SHARPEN_DETAIL spSharpenCfg.y
+#define SP_SHARPEN_MASKING spSharpenCfg.z
+#define SP_PURPLE_AMT spDefringeCfg.x
+#define SP_PURPLE_HUE spDefringeCfg.y
+#define SP_GREEN_AMT spDefringeCfg.z
+#define SP_GREEN_HUE spDefringeCfg.w
+#define SP_AIRLIGHT spAirlight
+#define SP_FLAGS spFlags
+)hlsl") + photoSpatialShaderBody() + R"hlsl(
+#undef SP_FN
+#undef SP_V3
+#undef SP_V3C
+#undef SP_CTX_DECL
+#undef SP_CTX_ARG
+#undef SP_SRC
+#undef SP_AUX
+#undef SP_FIELD
+#undef SP_FINITE
+#undef SP_WEIGHT
+#undef SP_WIDTH
+#undef SP_HEIGHT
+#undef SP_RADIUS
+#undef SP_STRENGTH
+#undef SP_SHARPEN_DETAIL
+#undef SP_SHARPEN_MASKING
+#undef SP_PURPLE_AMT
+#undef SP_PURPLE_HUE
+#undef SP_GREEN_AMT
+#undef SP_GREEN_HUE
+#undef SP_AIRLIGHT
+#undef SP_FLAGS
+
+[numthreads(16, 16, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= spDims.x || id.y >= spDims.w) return;
+    int x = (int)id.x;
+    int y = (int)(id.y + spDims.z);
+    float3 outCol;
+    uint st = spBandInfo.w;
+    if (st == 0u) outCol = spDefringePixel(x, y);
+    else if (st == 1u) outCol = spDehazePixel(x, y);
+    else if (st == 2u) outCol = spClarityPixel(x, y);
+    else if (st == 3u) outCol = spTextureBlurHPixel(x, y);
+    else if (st == 4u) outCol = spTextureApplyVPixel(x, y);
+    else if (st == 5u) outCol = spSharpenPrepHPixel(x, y);
+    else if (st == 6u) outCol = spSharpenPrepVPixel(x, y);
+    else if (st == 7u) outCol = spSharpenMaskHPixel(x, y);
+    else outCol = spSharpenApplyPixel(x, y);
+    spDst[id.y * spDims.x + id.x] = outCol;
 }
 )hlsl";
 }

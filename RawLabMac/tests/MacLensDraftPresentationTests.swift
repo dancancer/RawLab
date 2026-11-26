@@ -7,6 +7,7 @@ import SwiftUI
 final class EditorModel: ObservableObject {
     @Published var lensDraftSettings = LensCorrectionSettings()
     var lensDraftPreviewIsCurrent = true
+    var canUseLensCorrection = true
     var result: RenderedImage?
     func updateLensDraft(_ edit: (inout LensCorrectionSettings) -> Void) { edit(&lensDraftSettings) }
 }

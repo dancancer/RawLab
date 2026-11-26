@@ -139,6 +139,7 @@ private fun RawLabApp(
     diagnostics: com.rawlab.android.diagnostics.DiagnosticViewModel,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
+    val sharpenMaskOverlay by model.sharpenMaskOverlay.collectAsStateWithLifecycle()
     val quickPreset by model.quickPreset.collectAsStateWithLifecycle()
     var presetLibraryRevision by remember { mutableIntStateOf(0) }
     val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
@@ -295,6 +296,9 @@ private fun RawLabApp(
                     completed(accepted)
                 }
             },
+            sharpenMaskOverlay = sharpenMaskOverlay,
+            onSharpenMaskPreviewChange = { active, radius, masking -> model.setSharpenMaskPreview(active, radius, masking) },
+            onSharpenMaskSettingsChange = { radius, masking -> model.updateSharpenMaskSettings(radius, masking) },
             hslTarget = HslTargetActions(hslTarget, model::setHslTargetEnabled, model::setHslTargetAxis,
                 { x, y -> model.beginHslTarget(x, y) }, model::moveHslTarget, model::endHslTarget,
                 model::cancelHslTarget, model::keyHslTarget, model::rejectHslTarget,

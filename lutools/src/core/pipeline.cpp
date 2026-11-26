@@ -11,6 +11,7 @@
 #include "core/lut_compatibility.h"
 #include "core/parallel_pixels.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_defringe.h"
 #include "core/photo_pipeline_stages.h"
 #include "core/x3f_processor.h"
 #include "gpu/denoise.h"
@@ -1339,7 +1340,7 @@ RenderStatus Pipeline::migrateProcessing(const RenderParams& params, ProcessingM
             local.shadows = values[3];
             local.saturation = values[4];
             worker.toneControls_ = {values[5], values[6], values[7]};
-            worker.atmosphere_ = {values[8], values[9]};
+            worker.atmosphere_ = {values[8], values[9], atmosphere_.texture};
             MigrationFrame frame;
             frame.retainNativePixels = exact;
             frame.validationReference = reference;
@@ -1690,9 +1691,12 @@ RenderStatus Pipeline::processPreviewRoi(
     const bool needGuides = basicToneActive || atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f;
 
     int halo = geometry_.active() ? 4 : 2;
+    if (defringe_.active()) halo += 4;
     if (waveletActive) halo += 96;
     if (chromaMode != 0) halo += 32;
     if (local.noiseReduction > 0.0f || local.sharpening > 0.0f) halo += 16;
+    if (atmosphere_.texture != 0.0f) halo += 14;
+    if (sharpenV2_.luminanceV2 && local.sharpening > 0.0f) halo += 12;
 
     const auto srcRect = computeGeometrySourceBounds(canvasW, canvasH, geometry_,
         plan.ox0, plan.oy0, plan.ox1, plan.oy1, halo);
@@ -1812,6 +1816,9 @@ RenderStatus Pipeline::processPreviewRoi(
             guideParams.highlights = guideParams.shadows = 0.0f;
         }
         if (atmosphere_.dehaze != 0.0f || atmosphere_.clarity != 0.0f) {
+            if (defringe_.active()) {
+                applyDefringe(guideImage, defringe_);
+            }
             GpuConfig cpuLook = gpuConfig_;
             cpuLook.mode = GpuMode::Off;
             status = applyPhotoLook(guideImage, lut, dcp, guideParams.lutStrength, displayInput, cpuLook);
@@ -1860,11 +1867,17 @@ RenderStatus Pipeline::processPreviewRoi(
     local.dcp = dcp;
     local.relativeWB = wb;
     local.effects = photoEffects_;
+    local.atmosphere = atmosphere_;
     local.chromaDenoise = chromaMode;
     local.preserveSourceResolution = waveletActive || geometry_.active();
     local.hsl = hsl_;
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
+    local.sharpenV2 = sharpenV2_;
+    local.defringe = defringe_;
+    local.atmosphereSourceWidth = canvasW;
+    local.atmosphereSourceHeight = canvasH;
+    local.processingVersion = processingVersion_;
     local.customCurve = toneCurve_;
     local.channelCurves = channelCurves_;
     local.curveApplyToLuminosity = curveApplyToLuminosity_;
@@ -1881,6 +1894,9 @@ RenderStatus Pipeline::processPreviewRoi(
     if (basicToneActive) {
         applyBasicToneV3WithField(image, basicTone, basicField, roiMap);
         local.highlights = local.shadows = 0.0f;
+    }
+    if (defringe_.active()) {
+        applyDefringe(image, defringe_);
     }
 
     GpuConfig lookConfig = gpuConfig_;
@@ -1901,9 +1917,14 @@ RenderStatus Pipeline::processPreviewRoi(
     const auto chromaResult = applyChromaDenoiseWorking(image, chromaMode);
     checkProcessingCancellation();
     if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
+    const int texDiagW = std::max(1, static_cast<int>(std::lround(
+        roiMap.fullWidth * double(image.width) / std::max(1.0, roiMap.sourceSpanX))));
+    const int texDiagH = std::max(1, static_cast<int>(std::lround(
+        roiMap.fullHeight * double(image.height) / std::max(1.0, roiMap.sourceSpanY))));
     applyDetailAdjustments(image, local.noiseReduction, local.sharpening, atmosphere_.clarity,
         canvasW, canvasH, processingVersion_,
-        atmosphere_.clarity != 0.0f ? &clarityField : nullptr, roiMap);
+        atmosphere_.clarity != 0.0f ? &clarityField : nullptr, roiMap,
+        atmosphere_.texture, sharpenV2_, texDiagW, texDiagH);
     checkProcessingCancellation();
     applyPhotoEffectsROI(image, photoEffects_, roiMap);
 
@@ -2029,7 +2050,7 @@ RenderStatus Pipeline::processImpl(
         [](const auto& curve) { return !curve.gpuSupported(); });
 #if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     const bool curvesGpuUnsupported = !toneCurve_.gpuSupported() || channelCurvesUnsupported;
-    const bool cpuOnlyStages = atmosphereActive || curvesGpuUnsupported;
+    const bool cpuOnlyStages = curvesGpuUnsupported;
 #else
     const bool channelCurvesActive = std::any_of(channelCurves_.begin(), channelCurves_.end(),
         [](const auto& curve) { return curve.active(); });
@@ -2043,8 +2064,8 @@ RenderStatus Pipeline::processImpl(
         chromaMode == 0 && interactivePreview_ &&
         local.intent == RenderIntent::Preview && local.outputTarget == RenderOutputTarget::Buffer;
     auto cpuStageFallbackReason = [&]() {
-        if (atmosphereActive) return GpuFallbackReason::Atmosphere;
 #if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
+        if (atmosphereActive) return GpuFallbackReason::Atmosphere;
         if (basicControlsActive) return GpuFallbackReason::BasicV3Controls;
 #endif
         if (curvesGpuUnsupported) return GpuFallbackReason::Curves;
@@ -2110,7 +2131,7 @@ RenderStatus Pipeline::processImpl(
         } else if (LUTParser::detectFormat(local.lutPath) == "rlook") {
             dcp = DcpLook::loadCached(local.lutPath);
             if (!dcp) return RenderStatus::Unsupported;
-#if !defined(SONY2FUJI_ENABLE_METAL)
+#if !defined(SONY2FUJI_ENABLE_METAL) && !defined(SONY2FUJI_ENABLE_GLES) && !defined(SONY2FUJI_ENABLE_D3D11)
             if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
                 gpuFallbackReason_ == GpuFallbackReason::None) {
                 gpuFallbackReason_ = GpuFallbackReason::DcpLook;
@@ -2128,10 +2149,8 @@ RenderStatus Pipeline::processImpl(
         }
     }
 
-#if defined(SONY2FUJI_ENABLE_METAL)
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
     bool sessionGpuPipeline = !cpuOnlyStages && gpuConfig_.mode != GpuMode::Off;
-#elif defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
-    bool sessionGpuPipeline = !cpuOnlyStages && !dcp && gpuConfig_.mode != GpuMode::Off;
 #else
     bool sessionGpuPipeline = false;
     if (!cpuAnalysis && gpuConfig_.mode != GpuMode::Off &&
@@ -2467,11 +2486,17 @@ RenderStatus Pipeline::processImpl(
     local.dcp = dcp;
     local.relativeWB = wb;
     local.effects = photoEffects_;
+    local.atmosphere = atmosphere_;
     local.chromaDenoise = chromaMode;
     local.preserveSourceResolution = waveletActive || geometryActive || (basicToneActive && !viewportPreview);
     local.hsl = hsl_;
     local.toneControls = toneControls_;
     local.colorGrading = colorGrading_;
+    local.sharpenV2 = sharpenV2_;
+    local.defringe = defringe_;
+    local.atmosphereSourceWidth = atmosphereSourceWidth;
+    local.atmosphereSourceHeight = atmosphereSourceHeight;
+    local.processingVersion = processingVersion_;
     local.customCurve = toneCurve_;
     local.channelCurves = channelCurves_;
     local.curveApplyToLuminosity = curveApplyToLuminosity_;
@@ -2631,7 +2656,7 @@ RenderStatus Pipeline::processImpl(
 
     // A pixel-radius filter must run at source resolution for preview/export parity.
     if (!neighborhoodActive && !geometryActive && local.intent == RenderIntent::Preview && local.sharpening <= 0.0f &&
-        local.noiseReduction <= 0.0f && chromaMode == 0 && !effectsActive && (!waveletActive || fastWavelet)) {
+        local.noiseReduction <= 0.0f && !defringe_.active() && chromaMode == 0 && !effectsActive && (!waveletActive || fastWavelet)) {
         uint32_t width = 0, height = 0;
         status = computeTargetSize(local, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height), &width, &height);
         if (status != RenderStatus::Ok) return status;
@@ -2663,10 +2688,14 @@ RenderStatus Pipeline::processImpl(
         }
         local.highlights = local.shadows = 0.0f;
     }
+    if (defringe_.active()) {
+        applyDefringe(image, defringe_);
+    }
 
     auto lookConfig = gpuConfig_;
     if (cpuAnalysis || contractCPU || gpuPipeline || neighborhoodActive || basicControlsActive ||
-        hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive || effectsActive) {
+        hslActive || toneControlsActive || colorGradingActive || chromaMode != 0 || waveletActive ||
+        effectsActive || defringe_.active() || (sharpenV2_.luminanceV2 && local.sharpening > 0.0f)) {
         lookConfig.mode = GpuMode::Off;
     }
     status = applyPhotoLook(image, lut, dcp, local.lutStrength, displayInput, lookConfig);
@@ -2685,7 +2714,8 @@ RenderStatus Pipeline::processImpl(
     checkProcessingCancellation();
     if (chromaResult != ErrorCode::Success) return mapErrorCode(chromaResult);
     applyDetailAdjustments(image, local.noiseReduction, local.sharpening, atmosphere_.clarity,
-        atmosphereSourceWidth, atmosphereSourceHeight, processingVersion_);
+        atmosphereSourceWidth, atmosphereSourceHeight, processingVersion_,
+        nullptr, {}, atmosphere_.texture, sharpenV2_, image.width, image.height);
     checkProcessingCancellation();
     applyPhotoEffects(image, photoEffects_);
 
@@ -2816,7 +2846,7 @@ RenderStatus Pipeline::supportsFastFullResGpu(
     if (isNormalX3f(effectiveInputPath.c_str(), x3f)) {
         return RenderStatus::Ok;
     }
-    if (wavelet.active() || chroma != 0 || geometry.active() || atmosphere.active() ||
+    if (wavelet.active() || chroma != 0 || geometry.active() ||
         !masterCurveGpuSupported || !channelCurvesGpuSupported) {
         return RenderStatus::Ok;
     }
@@ -2849,11 +2879,7 @@ RenderStatus Pipeline::supportsFastFullResGpu(
             if (!dcp) {
                 return RenderStatus::Ok;
             }
-#if !defined(SONY2FUJI_ENABLE_METAL)
-            return RenderStatus::Ok;
-#else
             useDcp = true;
-#endif
         } else {
             std::shared_ptr<LUT3D> lut;
             if (loadLUT(lookPath.c_str(), &lut) != RenderStatus::Ok || !lut || !lut->isPhotoLUT() || lut->requiresCPU()) {
@@ -2861,6 +2887,7 @@ RenderStatus Pipeline::supportsFastFullResGpu(
             }
         }
     }
+    (void)useDcp;
 
 #if defined(SONY2FUJI_ENABLE_METAL)
     const PhotoGpuCapabilities caps = queryMetalPhotoCapabilities(gpuCheckW, gpuCheckH);

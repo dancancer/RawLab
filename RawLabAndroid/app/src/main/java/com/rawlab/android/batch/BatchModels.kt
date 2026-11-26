@@ -91,14 +91,14 @@ data class BatchSourceSnapshot(
     /** Resolve camera-only state for a target without mutating the frozen source edit. */
     fun settingsFor(targetKind: PhotoInputKind): EditSettings {
         if (inputKind == PhotoInputKind.RAW && targetKind == PhotoInputKind.RASTER)
-            return settings.copy(lens = LensSettings())
+            return settings.copy(lens = settings.lens.defringeOnly())
         if (inputKind != PhotoInputKind.RASTER || targetKind != PhotoInputKind.RAW) return settings
         return settings.copy(
             exposureMode = EditSettings().exposureMode,
             customWb = false,
             temperature = 6500f,
             tint = if (settings.recipeID == null) 0f else settings.tint,
-            lens = LensSettings(),
+            lens = settings.lens.defringeOnly(),
         )
     }
 

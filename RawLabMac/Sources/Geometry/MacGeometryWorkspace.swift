@@ -27,7 +27,7 @@ struct MacGeometryWorkspace: View {
                             .foregroundStyle(model.geometryDraftTab == tab ? Color.yellow : Color.secondary)
                             .accessibilityIdentifier("geometry.tab.\(tab.rawValue)")
                             .accessibilityAddTraits(model.geometryDraftTab == tab ? .isSelected : [])
-                            .disabled(tab == .lens && !model.canUseLensCorrection)
+                            .disabled(tab == .lens && !model.canUseLensPanel)
                     }
                 }.padding(.horizontal, 10)
             }.frame(height: 32)

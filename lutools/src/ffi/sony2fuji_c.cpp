@@ -5,6 +5,7 @@
 
 #include "core/hsl_probe.h"
 #include "core/jpeg_mpf.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/render_params.h"
 
 #include <algorithm>
@@ -1531,14 +1532,88 @@ sony2fuji_status sony2fuji_render_sharpen_mask_preview(
     if (out_mask) {
         *out_mask = sony2fuji_buffer{};
     }
-    if (!source || !source->data || source->width == 0 || source->height == 0 || !out_mask) {
+    if (!source || !source->data || source->width == 0 || source->height == 0 || !out_mask ||
+        sony2fuji::exceedsOutputPixelCap(source->width, source->height)) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
     if (!std::isfinite(radius) || radius < 0.5f || radius > 3.0f ||
         !std::isfinite(masking) || masking < 0.0f || masking > 100.0f) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
-    return SONY2FUJI_STATUS_UNSUPPORTED;
+    const auto fmt = source->pixel_format;
+    if (fmt != SONY2FUJI_PIXEL_RGB8 && fmt != SONY2FUJI_PIXEL_RGBA8 &&
+        fmt != SONY2FUJI_PIXEL_RGBA16 && fmt != SONY2FUJI_PIXEL_BGRA8) {
+        return SONY2FUJI_STATUS_UNSUPPORTED;
+    }
+    const uint64_t srcBpp = fmt == SONY2FUJI_PIXEL_RGBA16 ? 8ull
+        : ((fmt == SONY2FUJI_PIXEL_RGBA8 || fmt == SONY2FUJI_PIXEL_BGRA8) ? 4ull : 3ull);
+    const uint64_t minStride = uint64_t(source->width) * srcBpp;
+    const uint64_t srcStride = source->stride_bytes > 0 ? uint64_t(source->stride_bytes) : minStride;
+    if (srcStride < minStride || source->size_bytes < uint64_t(source->height) * srcStride) {
+        return SONY2FUJI_STATUS_INVALID_ARGUMENT;
+    }
+
+    try {
+        const int w = static_cast<int>(source->width);
+        const int h = static_cast<int>(source->height);
+        const size_t pixelCount = static_cast<size_t>(w) * static_cast<size_t>(h);
+        std::vector<float> luma(pixelCount, 0.0f);
+        const auto* srcBytes = static_cast<const uint8_t*>(source->data);
+
+        for (int y = 0; y < h; ++y) {
+            const uint8_t* row = srcBytes + size_t(y) * size_t(srcStride);
+            const size_t outRow = size_t(y) * size_t(w);
+            for (int x = 0; x < w; ++x) {
+                const uint8_t* px = row + size_t(x) * size_t(srcBpp);
+                float r = 0.0f, g = 0.0f, b = 0.0f;
+                if (fmt == SONY2FUJI_PIXEL_BGRA8) {
+                    b = px[0] / 255.0f; g = px[1] / 255.0f; r = px[2] / 255.0f;
+                } else if (fmt == SONY2FUJI_PIXEL_RGBA16) {
+                    r = (px[0] | (px[1] << 8)) / 65535.0f;
+                    g = (px[2] | (px[3] << 8)) / 65535.0f;
+                    b = (px[4] | (px[5] << 8)) / 65535.0f;
+                } else {
+                    r = px[0] / 255.0f; g = px[1] / 255.0f; b = px[2] / 255.0f;
+                }
+                luma[outRow + size_t(x)] = 0.2126f * r + 0.7152f * g + 0.0722f * b;
+            }
+        }
+
+        std::vector<float> mask;
+        sony2fuji::computeSharpenEdgeMask(luma, w, h, radius, masking, mask);
+        if (mask.size() != pixelCount) {
+            return SONY2FUJI_STATUS_PROCESSING_ERROR;
+        }
+
+        const auto outFormat = fmt == SONY2FUJI_PIXEL_RGB8 ? sony2fuji::PixelBufferFormat::RGB8
+            : (fmt == SONY2FUJI_PIXEL_BGRA8 ? sony2fuji::PixelBufferFormat::BGRA8 : sony2fuji::PixelBufferFormat::RGBA8);
+        const size_t dstBpp = outFormat == sony2fuji::PixelBufferFormat::RGB8 ? 3u : 4u;
+        sony2fuji::OwnedPixelBuffer owned;
+        owned.width = source->width;
+        owned.height = source->height;
+        owned.strideBytes = static_cast<uint32_t>(size_t(source->width) * dstBpp);
+        owned.format = outFormat;
+        owned.sizeBytes = size_t(source->height) * size_t(owned.strideBytes);
+        owned.data = std::malloc(owned.sizeBytes);
+        if (!owned.data) {
+            return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+        }
+        auto* dst = static_cast<uint8_t*>(owned.data);
+        for (size_t i = 0; i < pixelCount; ++i) {
+            const uint8_t v = static_cast<uint8_t>(std::lround(std::clamp(mask[i], 0.0f, 1.0f) * 255.0f));
+            uint8_t* px = dst + i * dstBpp;
+            px[0] = v;
+            px[1] = v;
+            px[2] = v;
+            if (dstBpp == 4u) px[3] = 255u;
+        }
+        *out_mask = toFfiBuffer(owned);
+        return SONY2FUJI_STATUS_OK;
+    } catch (const std::bad_alloc&) {
+        return SONY2FUJI_STATUS_OUT_OF_MEMORY;
+    } catch (...) {
+        return SONY2FUJI_STATUS_PROCESSING_ERROR;
+    }
 }
 
 sony2fuji_status sony2fuji_point_color_preview_swatch(

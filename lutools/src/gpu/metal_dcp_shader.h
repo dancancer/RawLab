@@ -1,9 +1,15 @@
 #pragma once
 
+#include "gpu/dcp_look_shader.h"
+#include <string>
+
 // HSV/tone stages follow Adobe DNG SDK reference algorithms.
 // Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
 // See third_party/Adobe-DNG-SDK-LICENSE.txt.
-static const char* kDcpShaderSource = R"metal(
+namespace sony2fuji {
+
+inline std::string metalDcpShaderSource() {
+    return std::string(R"metal(
 struct DcpParams {
     float input[9];
     float output[9];
@@ -14,67 +20,35 @@ struct DcpParams {
     uint toneOffset;
 };
 
-inline bool dcpFinite(float3 value, device atomic_uint* invalid) {
-    if (all(isfinite(value))) return true;
-    atomic_store_explicit(invalid, 1u, memory_order_relaxed);
-    return false;
-}
-
-inline float3 dcpMatrix(float3 rgb, constant float* m) {
-    return float3(m[0]*rgb.r+m[1]*rgb.g+m[2]*rgb.b,
-                  m[3]*rgb.r+m[4]*rgb.g+m[5]*rgb.b,
-                  m[6]*rgb.r+m[7]*rgb.g+m[8]*rgb.b);
-}
-
-inline float dcpWrap(float hue) {
-    hue = fmod(hue, 6.0f);
-    if (hue < 0.0f) hue += 6.0f;
-    return hue >= 6.0f ? 0.0f : hue;
-}
-
-inline float3 dcpHsv(float3 rgb, constant uint* dims, device const float* data,
-                      uint offset, device atomic_uint* invalid) {
-    if (dims[0] == 0u) return rgb;
-    rgb = clamp(rgb, 0.0f, 1.0f);
-    float hi = max(rgb.r, max(rgb.g, rgb.b)), lo = min(rgb.r, min(rgb.g, rgb.b));
-    float delta = hi - lo, divisor = delta > 0.0f ? delta : 1.0f;
-    float hue = hi == rgb.r ? (rgb.g-rgb.b)/divisor :
-                hi == rgb.g ? 2.0f+(rgb.b-rgb.r)/divisor : 4.0f+(rgb.r-rgb.g)/divisor;
-    hue = dcpWrap(hue);
-    float sat = hi > 0.0f ? delta/hi : 0.0f;
-    float encoded = dims[3] == 1u ? srgbGamma(hi) : hi;
-    float3 position = float3(hue*float(dims[0])/6.0f, sat*float(dims[1]-1u), encoded*float(dims[2]-1u));
-    uint3 low = uint3(min(uint(position.x), dims[0]-1u), min(uint(position.y), dims[1]-2u),
-                     dims[2] > 1u ? min(uint(position.z), dims[2]-2u) : 0u);
-    float3 fraction = position-float3(low), adjustment = 0.0f;
-    for (uint h=0; h<2; ++h) for (uint s=0; s<2; ++s) for (uint v=0; v<2; ++v) {
-        float weight = (h ? fraction.x : 1.0f-fraction.x) * (s ? fraction.y : 1.0f-fraction.y) *
-                       (v ? fraction.z : 1.0f-fraction.z);
-        uint index = offset+3u*((min(low.z+v,dims[2]-1u)*dims[0]+(low.x+h)%dims[0])*dims[1]+low.y+s);
-        adjustment += weight*float3(data[index],data[index+1u],data[index+2u]);
-    }
-    if (!dcpFinite(adjustment, invalid)) return 0.0f;
-    hue = dcpWrap(hue+adjustment.x/60.0f);
-    sat = clamp(sat*adjustment.y,0.0f,1.0f);
-    float value = clamp(encoded*adjustment.z,0.0f,1.0f);
-    if (dims[3] == 1u) value = value <= .04045f ? value/12.92f : pow((value+.055f)/1.055f,2.4f);
-    float chroma = value*sat, x = chroma*(1.0f-abs(fmod(hue,2.0f)-1.0f));
-    switch (uint(hue)) {
-        case 0u: rgb=float3(chroma,x,0); break;
-        case 1u: rgb=float3(x,chroma,0); break;
-        case 2u: rgb=float3(0,chroma,x); break;
-        case 3u: rgb=float3(0,x,chroma); break;
-        case 4u: rgb=float3(x,0,chroma); break;
-        default: rgb=float3(chroma,0,x); break;
-    }
-    return clamp(rgb+value-chroma,0.0f,1.0f);
-}
-
-inline float dcpTone(float value, device const float* data, uint offset) {
-    float position=clamp(value,0.0f,1.0f)*4096.0f;
-    uint index=min(uint(position),4095u);
-    return data[offset+index]+(data[offset+index+1u]-data[offset+index])*(position-float(index));
-}
+#define DCP_FN inline
+#define DCP_V3 float3
+#define DCP_V3C(x, y, z) float3((x), (y), (z))
+#define DCP_U3 uint3
+#define DCP_U3C(x, y, z) uint3((x), (y), (z))
+#define DCP_U4 uint4
+#define DCP_CTX_DECL , device const float* dcpData, device atomic_uint* dcpInvalid
+#define DCP_CTX_ARG , dcpData, dcpInvalid
+#define DCP_SRGB_GAMMA(x) srgbGamma(x)
+#define DCP_NEUTRAL(x) neutralDisplay(x)
+#define DCP_LERP3(a, b, t) lerp3((a), (b), (t))
+#define DCP_FINITE(v) all(isfinite(v))
+#define DCP_DATA(idx) dcpData[(idx)]
+#define DCP_MARK_INVALID atomic_store_explicit(dcpInvalid, 1u, memory_order_relaxed)
+)metal") + dcpLookShaderBody() + R"metal(
+#undef DCP_FN
+#undef DCP_V3
+#undef DCP_V3C
+#undef DCP_U3
+#undef DCP_U3C
+#undef DCP_U4
+#undef DCP_CTX_DECL
+#undef DCP_CTX_ARG
+#undef DCP_SRGB_GAMMA
+#undef DCP_NEUTRAL
+#undef DCP_LERP3
+#undef DCP_FINITE
+#undef DCP_DATA
+#undef DCP_MARK_INVALID
 
 kernel void baseAndDcp(
     constant Params& params [[buffer(0)]],
@@ -84,19 +58,22 @@ kernel void baseAndDcp(
     device const float* data [[buffer(4)]],
     device atomic_uint* invalid [[buffer(5)]],
     uint gid [[thread_position_in_grid]]) {
-    if (gid >= params.srcWidth*params.srcHeight) return;
-    float3 input=float3(source[gid]), rgb=dcpMatrix(input,dcp.input);
-    if (!dcpFinite(rgb,invalid)) { destination[gid]=packed_float3(0.0f); return; }
-    rgb=dcpHsv(rgb,dcp.calibration,data,0u,invalid)*dcp.exposure;
-    if (!dcpFinite(rgb,invalid)) { destination[gid]=packed_float3(0.0f); return; }
-    rgb=clamp(dcpHsv(rgb,dcp.look,data,dcp.lookOffset,invalid),0.0f,1.0f);
-    float lo=min(rgb.r,min(rgb.g,rgb.b)), hi=max(rgb.r,max(rgb.g,rgb.b));
-    float lower=dcpTone(lo,data,dcp.toneOffset), upper=dcpTone(hi,data,dcp.toneOffset);
-    rgb=lower+(upper-lower)*(hi != lo ? (rgb-lo)/(hi-lo) : float3(0.0f));
-    rgb=dcpMatrix(rgb,dcp.output);
-    if (!dcpFinite(rgb,invalid)) { destination[gid]=packed_float3(0.0f); return; }
-    float3 film=clamp(float3(srgbGamma(rgb.r),srgbGamma(rgb.g),srgbGamma(rgb.b)),0.0f,1.0f);
-    float3 base=float3(neutralDisplay(input.r),neutralDisplay(input.g),neutralDisplay(input.b));
-    destination[gid]=packed_float3(lerp3(base,film,params.lutStrength));
+    if (gid >= params.srcWidth * params.srcHeight) return;
+    float3 inCol = float3(source[gid]);
+    float3 inR0 = float3(dcp.input[0], dcp.input[1], dcp.input[2]);
+    float3 inR1 = float3(dcp.input[3], dcp.input[4], dcp.input[5]);
+    float3 inR2 = float3(dcp.input[6], dcp.input[7], dcp.input[8]);
+    float3 outR0 = float3(dcp.output[0], dcp.output[1], dcp.output[2]);
+    float3 outR1 = float3(dcp.output[3], dcp.output[4], dcp.output[5]);
+    float3 outR2 = float3(dcp.output[6], dcp.output[7], dcp.output[8]);
+    uint4 cal = uint4(dcp.calibration[0], dcp.calibration[1], dcp.calibration[2], dcp.calibration[3]);
+    uint4 lk = uint4(dcp.look[0], dcp.look[1], dcp.look[2], dcp.look[3]);
+    destination[gid] = packed_float3(dcpApplyLookPixel(
+        inCol, inR0, inR1, inR2, outR0, outR1, outR2,
+        dcp.exposure, cal, lk, dcp.lookOffset, dcp.toneOffset,
+        params.lutStrength, data, invalid));
 }
 )metal";
+}
+
+} // namespace sony2fuji

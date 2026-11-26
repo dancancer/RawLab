@@ -1,6 +1,9 @@
 #include "gpu/d3d11_photo.h"
 #include "gpu/d3d11_photo_shader.h"
+#include "core/photo_atmosphere.h"
+#include "core/photo_defringe.h"
 #include "core/photo_lut.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/chroma_denoise.h"
 #include "core/processing_cancellation.h"
 #include "gpu/denoise.h"
@@ -75,13 +78,16 @@ struct Buffer {
 struct D3D11PhotoRenderer::Impl {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
-    ComPtr<ID3D11ComputeShader> shader;
-    ComPtr<ID3D11Buffer> constants, staging;
+    ComPtr<ID3D11ComputeShader> shader, spatialShader;
+    ComPtr<ID3D11Buffer> constants, dcpConstants, spatialConstants, staging;
     Buffer source, processing[2], resized, film, basicField;
+    Buffer dcpData, dcpInvalid, spAux1, spAux2, spField;
     uint64_t revision = 0;
     int sourceWidth = 0, sourceHeight = 0;
     size_t stagingBytes = 0;
     std::shared_ptr<LUT3D> cachedLut;
+    std::shared_ptr<const DcpLook> cachedDcp;
+    DcpGpuUniforms currentDcpUniforms{};
 
     void initialize() {
 #if defined(RAWLAB_D3D11_TESTING)
@@ -113,9 +119,18 @@ struct D3D11PhotoRenderer::Impl {
             "RawLab photo shader", kD3DPhotoShader, "main", "cs_5_0",
             D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, checked);
         checked(device->CreateComputeShader(bytecode.data(), bytecode.size(), nullptr, &shader));
-        D3D11_BUFFER_DESC desc{};
-        desc.ByteWidth = sizeof(Parameters); desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-        checked(device->CreateBuffer(&desc, nullptr, &constants));
+        const auto spatialBytecode = compileD3D11Shader(
+            "RawLab spatial shader", kD3DSpatialShader, "main", "cs_5_0",
+            D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_IEEE_STRICTNESS, checked);
+        checked(device->CreateComputeShader(spatialBytecode.data(), spatialBytecode.size(), nullptr, &spatialShader));
+        auto createCb = [&](UINT size, ComPtr<ID3D11Buffer>& outCb) {
+            D3D11_BUFFER_DESC desc{};
+            desc.ByteWidth = size; desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+            checked(device->CreateBuffer(&desc, nullptr, &outCb));
+        };
+        createCb(sizeof(Parameters), constants);
+        createCb(sizeof(DcpGpuUniforms), dcpConstants);
+        createCb(sizeof(SpatialGpuParams), spatialConstants);
     }
     void allocateTyped(Buffer& buffer, size_t count, size_t stride, bool writable) {
         if (!count || count > std::numeric_limits<UINT>::max() / stride) throw GpuCapabilityLimitError("GPU buffer too large");
@@ -176,9 +191,62 @@ struct D3D11PhotoRenderer::Impl {
         write(film, values.data(), values.size());
         cachedLut = lut;
     }
+    void setDcp(const std::shared_ptr<const DcpLook>& dcp) {
+        if (dcpInvalid.bytes == 0) {
+            allocateTyped(dcpInvalid, 1, sizeof(uint32_t), true);
+        }
+        if (!dcp) {
+            currentDcpUniforms = {};
+            if (dcpData.bytes == 0) {
+                const float dummy[1]{0.0f};
+                allocateTyped(dcpData, 1, sizeof(float), false);
+                writeBytes(dcpData, dummy, sizeof(dummy));
+            }
+            return;
+        }
+        if (cachedDcp != dcp) {
+            std::vector<float> data;
+            DcpGpuUniforms uniforms{};
+            if (!packDcpLookGpuData(*dcp, uniforms, data)) {
+                throw std::runtime_error("Invalid DCP look data");
+            }
+            cachedDcp.reset();
+            allocateTyped(dcpData, data.size(), sizeof(float), false);
+            writeBytes(dcpData, data.data(), data.size() * sizeof(float));
+            currentDcpUniforms = uniforms;
+            cachedDcp = dcp;
+        }
+    }
+    void clearDcpInvalid() {
+        const uint32_t zero = 0u;
+        allocateTyped(dcpInvalid, 1, sizeof(uint32_t), true);
+        writeBytes(dcpInvalid, &zero, sizeof(zero));
+    }
+    bool hasDcpInvalid() {
+        checkProcessingCancellation();
+        const size_t bytes = sizeof(uint32_t);
+        if (stagingBytes < bytes) {
+            staging.Reset(); stagingBytes = 0;
+            D3D11_BUFFER_DESC desc{};
+            desc.ByteWidth = static_cast<UINT>(bytes);
+            desc.Usage = D3D11_USAGE_STAGING;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            checked(device->CreateBuffer(&desc, nullptr, &staging));
+            stagingBytes = bytes;
+        }
+        D3D11_BOX box{}; box.right = static_cast<UINT>(bytes); box.bottom = box.back = 1;
+        context->CopySubresourceRegion(staging.Get(), 0, 0, 0, 0, dcpInvalid.data.Get(), 0, &box);
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        checked(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped));
+        uint32_t flag = 0u;
+        std::memcpy(&flag, mapped.pData, sizeof(uint32_t));
+        context->Unmap(staging.Get(), 0);
+        checked(d3d11DeviceStatus(*device.Get()));
+        return flag != 0u;
+    }
     void dispatch(Buffer& input, Buffer& output, Parameters params, uint32_t stage,
         uint32_t sw, uint32_t sh, uint32_t dw, uint32_t dh,
-        uint32_t sourceRow = 0, uint32_t outputRow = 0, uint32_t rows = 0) {
+        uint32_t sourceRow = 0, uint32_t outputRow = 0, uint32_t rows = 0, uint32_t evalPhase = 0) {
         // 阶段边界即安全边界（对齐 gles_photo）：每次 GPU 提交前轮询一次，取消时上一阶段的
         // 结果仍在临时缓冲，output 直到末尾 read 才发布，重抛不会留下半成品。
         checkProcessingCancellation();
@@ -186,17 +254,25 @@ struct D3D11PhotoRenderer::Impl {
         allocate(output,static_cast<size_t>(dw)*rows,true);
         params.dimensions[0]=sw; params.dimensions[1]=sh; params.dimensions[2]=dw; params.dimensions[3]=dh;
         params.control[0]=stage;
-        params.band[0]=sourceRow;params.band[1]=outputRow;params.band[2]=rows;
+        params.band[0]=sourceRow;params.band[1]=outputRow;params.band[2]=rows;params.band[3]=evalPhase;
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
+        context->UpdateSubresource(dcpConstants.Get(),0,nullptr,&currentDcpUniforms,0,0);
         context->CSSetShader(shader.Get(),nullptr,0);
-        auto cb=constants.Get(); context->CSSetConstantBuffers(0,1,&cb);
-        ID3D11ShaderResourceView* views[]={input.srv.Get(),params.control[2] ? film.srv.Get() : nullptr,basicField.srv.Get()};
-        context->CSSetShaderResources(0,3,views);
-        auto uav=output.uav.Get();context->CSSetUnorderedAccessViews(0,1,&uav,nullptr);
+        ID3D11Buffer* cbs[2] = {constants.Get(), dcpConstants.Get()};
+        context->CSSetConstantBuffers(0, 2, cbs);
+        ID3D11ShaderResourceView* views[] = {
+            input.srv.Get(),
+            params.control[2] == 1u ? film.srv.Get() : nullptr,
+            basicField.srv.Get(),
+            dcpData.srv.Get()
+        };
+        context->CSSetShaderResources(0, 4, views);
+        ID3D11UnorderedAccessView* uavs[2] = {output.uav.Get(), dcpInvalid.uav.Get()};
+        context->CSSetUnorderedAccessViews(0, 2, uavs, nullptr);
         context->Dispatch((dw+15)/16,(rows+15)/16,1);
         // Unbind before ping-pong: the next pass may read the previous UAV.
-        ID3D11ShaderResourceView* emptyViews[3]{}; ID3D11UnorderedAccessView* emptyUav=nullptr;
-        context->CSSetShaderResources(0,3,emptyViews);context->CSSetUnorderedAccessViews(0,1,&emptyUav,nullptr);
+        ID3D11ShaderResourceView* emptyViews[4]{}; ID3D11UnorderedAccessView* emptyUavs[2]{};
+        context->CSSetShaderResources(0, 4, emptyViews); context->CSSetUnorderedAccessViews(0, 2, emptyUavs, nullptr);
         checked(d3d11DeviceStatus(*device.Get()));
     }
     void read(Buffer& buffer, RGB* output, size_t count) {
@@ -221,7 +297,7 @@ struct D3D11PhotoRenderer::Impl {
         read(buffer, output.pixels.data(), output.pixels.size());
     }
     void bands(const ImageData& input, uint32_t width, uint32_t height, Parameters params,
-               uint32_t stage, ImageData& output) {
+               uint32_t stage, ImageData& output, uint32_t evalPhase = 0) {
         const size_t dispatchLimit = std::min<size_t>(UINT32_MAX, size_t(width) * (65535 * 16));
         const PhotoBands plan(input.width, input.height, width, height, kPhotoTileBytes, dispatchLimit);
         size_t sourceCapacity = 0, outputCapacity = 0;
@@ -239,8 +315,164 @@ struct D3D11PhotoRenderer::Impl {
             const auto count = size_t(band.last - band.first + 1) * input.width;
             write(source, input.pixels.data() + size_t(band.first) * input.width, count);
             dispatch(source, processing[0], params, stage, input.width, input.height, width, height,
-                band.first, row, band.rows);
+                band.first, row, band.rows, evalPhase);
             read(processing[0], output.pixels.data() + size_t(row) * width, size_t(band.rows) * width);
+            row += band.rows;
+        }
+    }
+    void uploadSpField(const std::vector<float>* data) {
+        if (data && !data->empty()) {
+            allocateTyped(spField, data->size(), sizeof(float), false);
+            writeBytes(spField, data->data(), data->size() * sizeof(float));
+        } else if (spField.bytes == 0) {
+            const float dummy[1]{0.0f};
+            allocateTyped(spField, 1, sizeof(float), false);
+            writeBytes(spField, dummy, sizeof(dummy));
+        }
+    }
+    void dispatchSpatial(const SpatialGpuParams& sp, Buffer& srcBuf, Buffer& dstBuf, Buffer& auxBuf) {
+        checkProcessingCancellation();
+        allocate(dstBuf, static_cast<size_t>(sp.width) * sp.rows, true);
+        context->UpdateSubresource(spatialConstants.Get(), 0, nullptr, &sp, 0, 0);
+        context->CSSetShader(spatialShader.Get(), nullptr, 0);
+        auto cb = spatialConstants.Get();
+        context->CSSetConstantBuffers(0, 1, &cb);
+        ID3D11ShaderResourceView* views[3] = {srcBuf.srv.Get(), auxBuf.srv.Get(), spField.srv.Get()};
+        context->CSSetShaderResources(0, 3, views);
+        auto uav = dstBuf.uav.Get();
+        context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+        context->Dispatch((sp.width + 15u) / 16u, (sp.rows + 15u) / 16u, 1u);
+        ID3D11ShaderResourceView* emptyViews[3]{};
+        ID3D11UnorderedAccessView* emptyUav = nullptr;
+        context->CSSetShaderResources(0, 3, emptyViews);
+        context->CSSetUnorderedAccessViews(0, 1, &emptyUav, nullptr);
+        checked(d3d11DeviceStatus(*device.Get()));
+    }
+    void spatialBands(const ImageData& input, ImageData& output, SpatialGpuParams spTemplate, uint32_t halo,
+                      const std::vector<float>* fieldData) {
+        uploadSpField(fieldData);
+        if (spAux1.bytes == 0) allocate(spAux1, 1, true);
+        const uint32_t w = static_cast<uint32_t>(input.width);
+        const uint32_t h = static_cast<uint32_t>(input.height);
+        const size_t dispatchLimit = std::min<size_t>(UINT32_MAX, size_t(w) * (65535 * 16));
+        const PhotoBands plan(w, h, w, h, kPhotoTileBytes, dispatchLimit);
+        size_t sourceCap = 0, outputCap = 0;
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, halo);
+            sourceCap = std::max(sourceCap, size_t(band.last - band.first + 1) * w);
+            outputCap = std::max(outputCap, size_t(band.rows) * w);
+            row += band.rows;
+        }
+        allocate(source, sourceCap, false);
+        allocate(processing[0], outputCap, true);
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, halo);
+            const uint32_t bandRows = band.last - band.first + 1u;
+            write(source, input.pixels.data() + size_t(band.first) * w, size_t(bandRows) * w);
+            auto sp = spTemplate;
+            sp.width = w; sp.height = h;
+            sp.rowOffset = row; sp.rows = band.rows;
+            sp.srcRowOffset = band.first; sp.auxRowOffset = band.first;
+            sp.bandDims[0] = bandRows; sp.bandDims[1] = bandRows;
+            dispatchSpatial(sp, source, processing[0], spAux1);
+            read(processing[0], output.pixels.data() + size_t(row) * w, size_t(band.rows) * w);
+            row += band.rows;
+        }
+    }
+    void spatialTextureBands(const ImageData& input, ImageData& output, float sigma, float strength) {
+        uploadSpField(nullptr);
+        const uint32_t w = static_cast<uint32_t>(input.width);
+        const uint32_t h = static_cast<uint32_t>(input.height);
+        SpatialGpuParams spBase{};
+        spBase.strength = strength;
+        fillSpatialGaussianWeights(sigma, 12, spBase);
+        const size_t dispatchLimit = std::min<size_t>(UINT32_MAX, size_t(w) * (65535 * 16));
+        const PhotoBands plan(w, h, w, h, kPhotoTileBytes, dispatchLimit);
+        size_t sourceCap = 0, outputCap = 0;
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, spBase.radius);
+            sourceCap = std::max(sourceCap, size_t(band.last - band.first + 1) * w);
+            outputCap = std::max(outputCap, size_t(band.rows) * w);
+            row += band.rows;
+        }
+        allocate(source, sourceCap, false);
+        allocate(spAux1, sourceCap, true);
+        allocate(processing[0], outputCap, true);
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, spBase.radius);
+            const uint32_t bandRows = band.last - band.first + 1u;
+            write(source, input.pixels.data() + size_t(band.first) * w, size_t(bandRows) * w);
+            auto spH = spBase;
+            spH.width = w; spH.height = h;
+            spH.rowOffset = band.first; spH.rows = bandRows;
+            spH.srcRowOffset = band.first; spH.auxRowOffset = band.first;
+            spH.bandDims[0] = bandRows; spH.bandDims[1] = bandRows;
+            spH.stage = static_cast<uint32_t>(SpatialKernel::TextureBlurH);
+            dispatchSpatial(spH, source, spAux1, source);
+            auto spV = spH;
+            spV.rowOffset = row; spV.rows = band.rows;
+            spV.stage = static_cast<uint32_t>(SpatialKernel::TextureApplyV);
+            dispatchSpatial(spV, source, processing[0], spAux1);
+            read(processing[0], output.pixels.data() + size_t(row) * w, size_t(band.rows) * w);
+            row += band.rows;
+        }
+    }
+    void spatialSharpenV2Bands(const ImageData& input, ImageData& output, float amount,
+                               const SharpenV2Options& opts) {
+        uploadSpField(nullptr);
+        const uint32_t w = static_cast<uint32_t>(input.width);
+        const uint32_t h = static_cast<uint32_t>(input.height);
+        const float radius = std::clamp(opts.radius, 0.5f, 3.0f);
+        SpatialGpuParams spSharp{};
+        spSharp.strength = std::clamp(amount, 0.0f, 2.0f);
+        spSharp.sharpenDetail = opts.detail;
+        spSharp.sharpenMasking = opts.masking;
+        spSharp.sharpenRadius = radius;
+        fillSpatialGaussianWeights(radius, 9, spSharp);
+        const uint32_t rMask = opts.masking > 0.0f
+            ? static_cast<uint32_t>(std::clamp(static_cast<int>(std::ceil(3.0f * 0.5f * radius)), 1, 5))
+            : 0u;
+        const uint32_t halo = rMask + std::max(spSharp.radius, 1u) + 1u;
+        const size_t dispatchLimit = std::min<size_t>(UINT32_MAX, size_t(w) * (65535 * 16));
+        const PhotoBands plan(w, h, w, h, kPhotoTileBytes, dispatchLimit);
+        size_t sourceCap = 0, outputCap = 0;
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, halo);
+            sourceCap = std::max(sourceCap, size_t(band.last - band.first + 1) * w);
+            outputCap = std::max(outputCap, size_t(band.rows) * w);
+            row += band.rows;
+        }
+        allocate(source, sourceCap, false);
+        allocate(spAux1, sourceCap, true);
+        allocate(spAux2, sourceCap, true);
+        allocate(processing[0], outputCap, true);
+        for (uint32_t row = 0; row < h;) {
+            const auto band = plan.at(row, halo);
+            const uint32_t bandRows = band.last - band.first + 1u;
+            write(source, input.pixels.data() + size_t(band.first) * w, size_t(bandRows) * w);
+            auto sp = spSharp;
+            sp.width = w; sp.height = h;
+            sp.rowOffset = band.first; sp.rows = bandRows;
+            sp.srcRowOffset = band.first; sp.auxRowOffset = band.first;
+            sp.bandDims[0] = bandRows; sp.bandDims[1] = bandRows;
+            sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepH);
+            dispatchSpatial(sp, source, spAux1, source);
+            sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepV);
+            dispatchSpatial(sp, spAux1, spAux2, spAux1);
+            Buffer* auxPtr = &spAux2;
+            auto spApply = sp;
+            if (rMask > 0u) {
+                auto spMask = sp;
+                fillSpatialGaussianWeights(0.5f * radius, 5, spMask);
+                spMask.stage = static_cast<uint32_t>(SpatialKernel::SharpenMaskH);
+                dispatchSpatial(spMask, spAux2, spAux1, spAux2);
+                auxPtr = &spAux1;
+                spApply = spMask;
+            }
+            spApply.rowOffset = row; spApply.rows = band.rows;
+            spApply.stage = static_cast<uint32_t>(SpatialKernel::SharpenApply);
+            dispatchSpatial(spApply, source, processing[0], *auxPtr);
+            read(processing[0], output.pixels.data() + size_t(row) * w, size_t(band.rows) * w);
             row += band.rows;
         }
     }
@@ -282,8 +514,21 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability, "LUT requires CPU evaluation"};
         return false;
     }
-    const bool nativeFilters = params.effects.active() || params.chromaDenoise != 0 ||
-        params.noiseReduction > 0 || params.sharpening > 0 || params.preserveSourceResolution;
+    const bool useDcp = params.dcp && params.lutStrength > 0.0f;
+    const bool useLut = params.lut && params.lutStrength > 0.0f;
+    if (useDcp && useLut) {
+        outcome = {GpuFailureKind::Unsupported, GpuBackendFault::UnsupportedCapability,
+            "Cannot combine DCP look and 3D LUT in Direct3D 11 pass"};
+        return false;
+    }
+    const bool defringeActive = params.defringe.active();
+    const bool dehazeActive = params.atmosphere.dehaze != 0.0f;
+    const bool clarityActive = params.atmosphere.clarity != 0.0f;
+    const bool textureActive = params.atmosphere.texture != 0.0f;
+    const bool sharpenV2Active = params.sharpening > 0.0f && params.sharpenV2.luminanceV2;
+    const bool nativeFilters = defringeActive || params.atmosphere.active() || sharpenV2Active ||
+        params.effects.active() || params.chromaDenoise != 0 || params.noiseReduction > 0 ||
+        params.sharpening > 0 || params.preserveSourceResolution;
     if (input.width <= 0 || input.height <= 0 || width == 0 || height == 0 || width > 65535 || height > 65535 ||
         (nativeFilters && (input.width > 65535 || input.height > 65535)) ||
         input.pixels.size() != static_cast<size_t>(input.width) * input.height || !params.validForGpu()) {
@@ -381,8 +626,15 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
             p.hslSaturation[index/4][index%4]=params.hsl.saturation[index];
             p.hslLightness[index/4][index%4]=params.hsl.lightness[index];
         }
-        if (params.lut && params.lutStrength>0) {
-            c.setLut(params.lut);p.control[2]=1;p.control[3]=params.lut->getSize();
+        if (useDcp) {
+            c.setDcp(params.dcp);
+            c.clearDcpInvalid();
+            p.control[2] = 2u;
+        } else if (useLut) {
+            c.setDcp(nullptr);
+            c.setLut(params.lut);
+            p.control[2] = 1u;
+            p.control[3] = params.lut->getSize();
             p.logTransfer[0]=params.lut->inputTransfer()==LUTTransfer::FLog;
             p.logTransfer[1]=params.lut->outputTransfer()!=LUTTransfer::Display;
             p.logTransfer[2]=params.lut->outputTransfer()==LUTTransfer::FLog;
@@ -390,6 +642,8 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
             auto low=params.lut->domainMin(),high=params.lut->domainMax();
             p.domainLow[0]=low.r;p.domainLow[1]=low.g;p.domainLow[2]=low.b;
             p.domainHigh[0]=high.r;p.domainHigh[1]=high.g;p.domainHigh[2]=high.b;
+        } else {
+            c.setDcp(nullptr);
         }
         if (nativeFilters || input.pixels.size() > kPhotoTileBytes / sizeof(RGB) ||
             uint64_t(width) * height > kPhotoTileBytes / sizeof(RGB)) {
@@ -402,8 +656,64 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
             // 分带上传会覆盖 source，不能继续沿用上一张整图的 revision。
             c.revision = 0;
             const uint32_t pw = nativeFilters ? input.width : width, ph = nativeFilters ? input.height : height;
+            const uint32_t stageMode = params.intent == RenderIntent::Preview ? 0u : 4u;
+            const int diagSrcW = params.atmosphereSourceWidth > 0 ? params.atmosphereSourceWidth : static_cast<int>(pw);
+            const int diagSrcH = params.atmosphereSourceHeight > 0 ? params.atmosphereSourceHeight : static_cast<int>(ph);
             ImageData native(static_cast<int>(pw), static_cast<int>(ph));
-            c.bands(input, pw, ph, p, params.intent == RenderIntent::Preview ? 0 : 4, native);
+            if (nativeFilters && defringeActive) {
+                c.bands(input, pw, ph, p, stageMode, native, 1u);
+                SpatialGpuParams spDefringe{};
+                spDefringe.stage = static_cast<uint32_t>(SpatialKernel::Defringe);
+                spDefringe.defringePurpleAmount = params.defringe.purpleAmount;
+                spDefringe.defringePurpleHue = params.defringe.purpleHue;
+                spDefringe.defringeGreenAmount = params.defringe.greenAmount;
+                spDefringe.defringeGreenHue = params.defringe.greenHue;
+                ImageData defringed(static_cast<int>(pw), static_cast<int>(ph));
+                c.spatialBands(native, defringed, spDefringe, 3u, nullptr);
+                c.bands(defringed, pw, ph, p, stageMode, native, 2u);
+                if (useDcp && c.hasDcpInvalid()) {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Non-finite DCP stage"};
+                    OutputDebugStringA(outcome.message.c_str());
+                    return false;
+                }
+                if (dehazeActive) {
+                    const auto dehazeState = buildDehazeAnalysis(native, diagSrcW, diagSrcH, params.processingVersion);
+                    std::vector<float> dehazeData;
+                    SpatialGpuParams spDehaze{};
+                    spDehaze.stage = static_cast<uint32_t>(SpatialKernel::Dehaze);
+                    spDehaze.strength = params.atmosphere.dehaze;
+                    packDehazeAnalysisBuffer(dehazeState, dehazeData, spDehaze);
+                    ImageData dehazed(static_cast<int>(pw), static_cast<int>(ph));
+                    c.spatialBands(native, dehazed, spDehaze, 0u, &dehazeData);
+                    native = std::move(dehazed);
+                }
+                ImageData toned(static_cast<int>(pw), static_cast<int>(ph));
+                c.bands(native, pw, ph, p, stageMode, toned, 3u);
+                native = std::move(toned);
+            } else if (nativeFilters && dehazeActive) {
+                c.bands(input, pw, ph, p, stageMode, native, 4u);
+                if (useDcp && c.hasDcpInvalid()) {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Non-finite DCP stage"};
+                    OutputDebugStringA(outcome.message.c_str());
+                    return false;
+                }
+                const auto dehazeState = buildDehazeAnalysis(native, diagSrcW, diagSrcH, params.processingVersion);
+                std::vector<float> dehazeData;
+                SpatialGpuParams spDehaze{};
+                spDehaze.stage = static_cast<uint32_t>(SpatialKernel::Dehaze);
+                spDehaze.strength = params.atmosphere.dehaze;
+                packDehazeAnalysisBuffer(dehazeState, dehazeData, spDehaze);
+                ImageData dehazed(static_cast<int>(pw), static_cast<int>(ph));
+                c.spatialBands(native, dehazed, spDehaze, 0u, &dehazeData);
+                c.bands(dehazed, pw, ph, p, stageMode, native, 3u);
+            } else {
+                c.bands(input, pw, ph, p, stageMode, native, 0u);
+                if (useDcp && c.hasDcpInvalid()) {
+                    outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Non-finite DCP stage"};
+                    OutputDebugStringA(outcome.message.c_str());
+                    return false;
+                }
+            }
             auto failFilter = [&](const char* fallbackMessage, ErrorCode err = ErrorCode::ProcessingError) {
                 const auto filterOutcome = lastGpuFilterOutcome();
                 if (err == ErrorCode::OutOfMemory || filterOutcome.failure == GpuFailureKind::OutOfMemory) {
@@ -427,9 +737,36 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
                     return failFilter("D3D11 chroma denoise failed", chromaErr);
                 }
             }
-            if (params.noiseReduction > 0 || params.sharpening > 0) {
+            if (params.noiseReduction > 0) {
                 lastGpuFilterOutcome() = {};
-                if (!gpuDetailFilter(native, params.noiseReduction, params.sharpening)) {
+                if (!gpuDetailFilter(native, params.noiseReduction, 0.0f)) {
+                    return failFilter("D3D11 detail filter failed");
+                }
+            }
+            if (clarityActive) {
+                const auto clarityState = buildClarityField(native, diagSrcW, diagSrcH, params.processingVersion);
+                std::vector<float> clarityData;
+                SpatialGpuParams spClarity{};
+                spClarity.stage = static_cast<uint32_t>(SpatialKernel::Clarity);
+                spClarity.strength = params.atmosphere.clarity;
+                packClarityFieldBuffer(clarityState, clarityData, spClarity);
+                ImageData clarified(static_cast<int>(pw), static_cast<int>(ph));
+                c.spatialBands(native, clarified, spClarity, 0u, &clarityData);
+                native = std::move(clarified);
+            }
+            if (textureActive) {
+                const float texSigma = textureBlurSigma(static_cast<int>(pw), static_cast<int>(ph));
+                ImageData textured(static_cast<int>(pw), static_cast<int>(ph));
+                c.spatialTextureBands(native, textured, texSigma, params.atmosphere.texture);
+                native = std::move(textured);
+            }
+            if (sharpenV2Active) {
+                ImageData sharpened(static_cast<int>(pw), static_cast<int>(ph));
+                c.spatialSharpenV2Bands(native, sharpened, params.sharpening, params.sharpenV2);
+                native = std::move(sharpened);
+            } else if (params.sharpening > 0) {
+                lastGpuFilterOutcome() = {};
+                if (!gpuDetailFilter(native, 0.0f, params.sharpening)) {
                     return failFilter("D3D11 detail filter failed");
                 }
             }
@@ -449,14 +786,20 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
             lastInitError_.clear();
             return true;
         }
-        if (revision==0 || revision!=c.revision || input.width!=c.sourceWidth || input.height!=c.sourceHeight) {
+        const uint64_t effectiveRev = useDcp ? 0ull : revision;
+        if (effectiveRev==0 || effectiveRev!=c.revision || input.width!=c.sourceWidth || input.height!=c.sourceHeight) {
             c.revision=0;c.allocate(c.source,input.pixels.size(),false);
             c.write(c.source, input.pixels.data(), input.pixels.size());
-            c.revision=revision;c.sourceWidth=input.width;c.sourceHeight=input.height;
+            c.revision=effectiveRev;c.sourceWidth=input.width;c.sourceHeight=input.height;
         }
         const bool early=params.intent==RenderIntent::Preview;
         const uint32_t pw=early ? width : input.width,ph=early ? height : input.height;
         c.dispatch(c.source,c.processing[0],p,0,input.width,input.height,pw,ph);
+        if (useDcp && c.hasDcpInvalid()) {
+            outcome = {GpuFailureKind::ProcessingError, GpuBackendFault::DeviceError, "Non-finite DCP stage"};
+            OutputDebugStringA(outcome.message.c_str());
+            return false;
+        }
         auto* final=&c.processing[0];
         if (pw!=width || ph!=height) { c.dispatch(*final,c.resized,p,1,pw,ph,width,height);final=&c.resized; }
         ImageData result(static_cast<int>(width),static_cast<int>(height));c.read(*final,result);

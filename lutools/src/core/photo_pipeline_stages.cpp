@@ -414,7 +414,11 @@ void applyDetailAdjustments(
     int sourceHeight,
     ProcessingVersion version,
     const ClarityField* clarityField,
-    const SubRectMap& roiMap
+    const SubRectMap& roiMap,
+    float texture,
+    const SharpenV2Options& sharpenV2,
+    int textureSourceWidth,
+    int textureSourceHeight
 ) {
     if (noiseReduction > 0.0f) {
         applyNoiseReduction(image, noiseReduction);
@@ -424,8 +428,15 @@ void applyDetailAdjustments(
     } else {
         applyClarity(image, clarity, sourceWidth, sourceHeight, version);
     }
+    if (texture != 0.0f) {
+        applyTexture(image, texture, textureSourceWidth, textureSourceHeight);
+    }
     if (sharpening > 0.0f) {
-        applySharpening(image, sharpening);
+        if (sharpenV2.luminanceV2) {
+            applySharpenV2(image, sharpening, sharpenV2);
+        } else {
+            applySharpening(image, sharpening);
+        }
     }
 }
 

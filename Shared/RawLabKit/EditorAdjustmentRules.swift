@@ -103,7 +103,7 @@ public enum EditorAdjustmentRules {
         (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
                   .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
         (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
-        (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
+        (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.texture), .adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
         (.geometry, [.geometry, .lens]),
         (.hdrRendition, [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation])
@@ -298,7 +298,7 @@ public enum EditorAdjustmentRules {
         for (kp, name) in scalars where before[keyPath: kp] != after[keyPath: kp] { fields.append(name) }
         if before.whiteBalanceMode != after.whiteBalanceMode || before.temperature != after.temperature || before.tint != after.tint { fields.append("白平衡") }
         if before.hslSettings != after.hslSettings { fields.append("HSL") }
-        let extras: [(KeyPath<Adjustments, Double>, String)] = [(\.blackPoint, "黑场"), (\.whitePoint, "白场"), (\.vibrance, "鲜艳度"), (\.clarity, "清晰度"), (\.dehaze, "去朦胧")]
+        let extras: [(KeyPath<Adjustments, Double>, String)] = [(\.blackPoint, "黑场"), (\.whitePoint, "白场"), (\.vibrance, "鲜艳度"), (\.clarity, "清晰度"), (\.dehaze, "去朦胧"), (\.texture, "纹理")]
         for (kp, name) in extras where before[keyPath: kp] != after[keyPath: kp] { fields.append(name) }
         if before.curveSettings != after.curveSettings { fields.append("曲线") }
         if before.gradingSettings != after.gradingSettings { fields.append("颜色分级") }

@@ -242,9 +242,37 @@ public partial class MainWindow : Window
             interacting=dragging;
             if(selectedHdrRenditionParameter is {} rendition)settings.SetHDRRendition(rendition,value);
             else if(selectedAtmosphereParameter is {} atmosphere)settings.SetAtmosphere(atmosphere,value);
-            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);else settings.Set(selectedParameter,ParameterSpec.All[(int)selectedParameter].ToCanonical(value));
+            else if(selectedToneParameter is {} tone)settings.SetTone(tone,value);
+            else if(selectedParameter==Parameter.Sharpening && !settings.IsHDREditing)settings.ApplySharpenV2Edit(amount:ParameterSpec.All[(int)Parameter.Sharpening].ToCanonical(value));
+            else settings.Set(selectedParameter,ParameterSpec.All[(int)selectedParameter].ToCanonical(value));
             MarkEdited();RefreshControls();Schedule();
         };
+        SharpenRadiusRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active || settings.IsHDREditing) return;
+            interacting = dragging;
+            settings.ApplySharpenV2Edit(radius: value);
+            MarkEdited(); RefreshControls();
+            if (sharpenMaskPreviewActive) RefreshSharpenMaskPreview();
+            Schedule();
+        };
+        SharpenDetailRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active || settings.IsHDREditing) return;
+            interacting = dragging;
+            settings.ApplySharpenV2Edit(detail: value);
+            MarkEdited(); RefreshControls(); Schedule();
+        };
+        SharpenMaskingRow.Changed += (value, dragging) => {
+            if (!ready || syncing || exporting || transform.Active || settings.IsHDREditing) return;
+            interacting = dragging;
+            settings.ApplySharpenV2Edit(masking: value);
+            MarkEdited(); RefreshControls();
+            if (sharpenMaskPreviewActive) RefreshSharpenMaskPreview();
+            Schedule();
+        };
+        SharpenMaskingRow.AltDraggingChanged += active => SetSharpenMaskPreview(active);
+        SharpenRadiusRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
+        SharpenDetailRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
+        SharpenMaskingRow.InvalidInput += () => SetStatus(() => Loc.Text("请输入有效数字"), true);
         LookStrengthRow.Changed += (value, dragging) => {
             if (!ready || syncing || exporting || transform.Active) return;
             interacting = dragging;
@@ -272,4 +300,15 @@ public partial class MainWindow : Window
             await this.desktopUpdates.PerformStartupCheckAsync();
         };
     }
+
+    private void SharpenLuminanceV2Changed(object sender, RoutedEventArgs e)
+    {
+        if (!ready || syncing || exporting || transform.Active || settings.IsHDREditing) return;
+        settings.ApplySharpenV2Edit(luminanceV2: SharpenLuminanceV2Check.IsChecked == true);
+        MarkEdited(); RefreshControls(); Schedule();
+    }
+
+    private void SharpenMaskPreviewDown(object sender, MouseButtonEventArgs e) => SetSharpenMaskPreview(true);
+    private void SharpenMaskPreviewUp(object sender, MouseButtonEventArgs e) => SetSharpenMaskPreview(false);
+    private void SharpenMaskPreviewLost(object sender, MouseEventArgs e) => SetSharpenMaskPreview(false);
 }

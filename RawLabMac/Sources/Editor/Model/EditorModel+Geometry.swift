@@ -35,7 +35,7 @@ enum MacGeometryDeparture { case apply, discard, stay }
 
 extension EditorModel {
     @discardableResult func beginGeometryDraft(tab: MacGeometryTab = .crop) -> Bool {
-        if tab == .lens && !canUseLensCorrection { return false }
+        if tab == .lens && !canUseLensPanel { return false }
         if geometryDraft != nil { return selectGeometryDraftTab(tab) }
         guard file != nil, result != nil, !exporting, !lookLibraryBusy, saveEdits() else { return false }
         geometryDraftEntrySaveError = saveError
@@ -54,7 +54,7 @@ extension EditorModel {
     }
 
     @discardableResult func selectGeometryDraftTab(_ tab: MacGeometryTab) -> Bool {
-        if tab == .lens && !canUseLensCorrection { return false }
+        if tab == .lens && !canUseLensPanel { return false }
         ParameterValueField.cancelPendingInputs()
         guard geometryDraft != nil, invalidGeometryDraftInputs.isEmpty else { return false }
         geometryDraftTab = tab
@@ -82,8 +82,13 @@ extension EditorModel {
     }
 
     func updateLensDraft(_ edit: (inout LensCorrectionSettings) -> Void) {
-        guard canUseLensCorrection, var draft = geometryDraft else { return }
+        guard canUseLensPanel, var draft = geometryDraft else { return }
         edit(&draft.lens)
+        if !canUseLensCorrection {
+            draft.lens.distortion = false
+            draft.lens.tca = false
+            draft.lens.vignetting = false
+        }
         guard draft != geometryDraft else { return }
         geometryDraft = draft; geometryDraftPreviewReady = false
         schedule()

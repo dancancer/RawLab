@@ -76,7 +76,11 @@ static void basicControlsBackendChecks(const std::string& path) {
         gpu.mode = SONY2FUJI_GPU_AUTO;
         require(sony2fuji_session_set_gpu_config(pointer, &gpu) == SONY2FUJI_STATUS_OK, "backend auto");
         const auto autoPixels = render(pointer, request);
-        const bool gpuSupportedControl = control < 6;
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+        const bool gpuSupportedControl = true;
+#else
+        const bool gpuSupportedControl = false;
+#endif
         if (gpuSupportedControl && rawlabtest::nativeGpuAvailable()) {
             require(sony2fuji_session_get_last_backend(pointer) == rawlabtest::nativeBackend,
                 "GPU-supported BasicV3 control routes Auto to native GPU");

@@ -255,6 +255,18 @@ public sealed class EditWorkflowTests
                 sharpenV2Reset.Candidate!.Settings.SharpenV2 == null &&
                 !EditorAdjustmentRules.IsModified(Tool(EditorAdjustmentTool.Sharpening), sharpenV2Reset.Candidate),
                 "Sharpening tool reset clears SharpenV2 back to default");
+            var legacySharpen = neutral.Clone();
+            legacySharpen.Set(Parameter.Sharpening, 0.35);
+            legacySharpen.ApplySharpenV2Edit(amount: 0.6);
+            Check(legacySharpen[Parameter.Sharpening] == 0.6 && !legacySharpen.SharpenV2.LuminanceV2,
+                "ApplySharpenV2Edit preserves untouched legacy RGB sharpening mode on historical edits");
+            legacySharpen.ApplySharpenV2Edit(masking: 55);
+            Check(legacySharpen.SharpenV2.LuminanceV2 && legacySharpen.SharpenV2.Masking == 55,
+                "ApplySharpenV2Edit enables LuminanceV2 when adjusting v2 controls");
+            var freshSharpen = neutral.Clone();
+            freshSharpen.ApplySharpenV2Edit(amount: 0.4);
+            Check(freshSharpen.SharpenV2.LuminanceV2,
+                "ApplySharpenV2Edit auto-enables LuminanceV2 on new edits");
             var grainCurveAdjustments = new Adjustments { Effects = new PhotoEffectsSettings(GrainToneCurve: GrainToneCurve.NegativeAsymmetric) };
             var grainPresetAdjustments = new Adjustments { Effects = new PhotoEffectsSettings(GrainFormatPreset: GrainFormatPreset.Film135) };
             Check(!grainCurveAdjustments.IsEffectDefault(false) && !grainPresetAdjustments.IsEffectDefault(false) && new Adjustments().IsEffectDefault(false),

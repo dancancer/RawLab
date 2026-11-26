@@ -3,9 +3,16 @@ package com.rawlab.android.editor
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withContext
 import com.rawlab.android.adjustments.AdjustmentHistoryTransaction
 import com.rawlab.android.adjustments.AdjustmentOutcome
 import com.rawlab.android.adjustments.AdjustmentPayload
@@ -57,10 +64,21 @@ class EditorViewModel internal constructor(
     @Volatile private var sourceRevision = 0L
     private var currentRevision = 0L
 
+    private val _sharpenMaskOverlay = MutableStateFlow<Bitmap?>(null)
+    val sharpenMaskOverlay: StateFlow<Bitmap?> = _sharpenMaskOverlay.asStateFlow()
+    private var sharpenMaskActive = false
+    private var sharpenMaskRadius = 1.0f
+    private var sharpenMaskMasking = 0f
+    private var sharpenMaskEpoch = 0L
+    private var sharpenMaskJob: Job? = null
+
     internal val session = EditorDocumentSession(
         dependencies = dependencies,
         scope = scope,
-        onSourceRevisionSynced = { sourceRevision = it },
+        onSourceRevisionSynced = {
+            sourceRevision = it
+            clearSharpenMaskPreviewCache()
+        },
         onCurrentRevisionSynced = { currentRevision = it },
     )
     private val mutable = session.mutable
@@ -72,7 +90,10 @@ class EditorViewModel internal constructor(
 
     internal val viewport = ViewportRenderEngine(
         session = session,
-        onPreviewAccepted = { result -> previewCoordinator.accept(result) },
+        onPreviewAccepted = { result ->
+            previewCoordinator.accept(result)
+            if (sharpenMaskActive) refreshSharpenMaskPreview()
+        },
         onLateExportCompleted = { result -> exportHolder.onLateExportCompleted(result) },
         onRenderSubmittedHook = { work ->
             if (work !is com.rawlab.android.editor.render.Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
@@ -97,10 +118,16 @@ class EditorViewModel internal constructor(
     private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(session, viewport)
 
     private val memoryCallbacks = object : ComponentCallbacks2 {
-        override fun onTrimMemory(level: Int) = viewport.reclaimMemory(level, keepLastRequest = true)
+        override fun onTrimMemory(level: Int) {
+            viewport.reclaimMemory(level, keepLastRequest = true)
+            clearSharpenMaskPreviewCache()
+        }
         override fun onConfigurationChanged(newConfig: Configuration) = Unit
         @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
-        override fun onLowMemory() = viewport.reclaimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, keepLastRequest = true)
+        override fun onLowMemory() {
+            viewport.reclaimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, keepLastRequest = true)
+            clearSharpenMaskPreviewCache()
+        }
     }
 
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
@@ -251,6 +278,57 @@ class EditorViewModel internal constructor(
     fun setDetailNeedsBefore(needed: Boolean) = viewport.setCompareBefore(needed)
     fun updateDetailRequest(request: ViewportRoiRequest?) = viewport.updateViewport(request)
 
+    fun clearSharpenMaskPreviewCache() {
+        sharpenMaskEpoch += 1L
+        sharpenMaskActive = false
+        sharpenMaskJob?.cancel()
+        sharpenMaskJob = null
+        _sharpenMaskOverlay.value = null
+    }
+
+    fun setSharpenMaskPreview(active: Boolean, radius: Float, masking: Float) {
+        sharpenMaskRadius = radius
+        sharpenMaskMasking = masking
+        if (!active) {
+            clearSharpenMaskPreviewCache()
+            return
+        }
+        if (!sharpenMaskActive) {
+            sharpenMaskActive = true
+        }
+        refreshSharpenMaskPreview()
+    }
+
+    fun updateSharpenMaskSettings(radius: Float, masking: Float) {
+        sharpenMaskRadius = radius
+        sharpenMaskMasking = masking
+        if (sharpenMaskActive) refreshSharpenMaskPreview()
+    }
+
+    private fun refreshSharpenMaskPreview() {
+        val current = state.value
+        val sourceBitmap = current.preview?.result?.takeUnless { it.isRecycled }
+        if (!sharpenMaskActive || sourceBitmap == null || current.visibleEdits.isHDREditing || current.draft?.group == AdjustmentGroup.GEOMETRY) {
+            _sharpenMaskOverlay.value = null
+            return
+        }
+        val expectedSource = sourceRevision
+        val radius = sharpenMaskRadius
+        val masking = sharpenMaskMasking
+        val epoch = ++sharpenMaskEpoch
+        sharpenMaskJob?.cancel()
+        sharpenMaskJob = scope.launch {
+            val mask = withContext(Dispatchers.Default) {
+                runCatching {
+                    NativeProcessor.renderSharpenMaskPreview(sourceBitmap, radius, masking, null)
+                }.getOrNull()
+            }
+            if (sourceRevision == expectedSource && sharpenMaskEpoch == epoch && sharpenMaskActive) {
+                _sharpenMaskOverlay.value = mask
+            }
+        }
+    }
+
     fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) = systemPhotoHolder.receive(uris, requestID)
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)
     fun setHslTargetEnabled(enabled: Boolean) {
@@ -398,6 +476,7 @@ class EditorViewModel internal constructor(
 
     override fun onCleared() {
         appContext.unregisterComponentCallbacks(memoryCallbacks)
+        clearSharpenMaskPreviewCache()
         draftHolder.preserveEditorDraft()
         previewCache.setForegroundBusy(photoPreviewOwner, false)
         previewCache.close()

@@ -629,10 +629,23 @@ class NativeProcessor(mode: Int = AUTO, lensDatabase: File? = null) : AutoClosea
     companion object {
         @JvmStatic external fun nativeX3fAvailable(): Boolean
         @JvmStatic external fun nativeX3fDefaultMode(input: String): Int
+        @JvmStatic private external fun nativeRenderSharpenMaskPreview(
+            sourceBitmap: Bitmap,
+            radius: Float,
+            masking: Float,
+            reusableBitmap: Bitmap?,
+        ): Bitmap?
         const val CPU = 0
         const val AUTO = 1
         const val FORCE = 2
         init { System.loadLibrary("rawlab-jni") }
+
+        fun renderSharpenMaskPreview(
+            sourceBitmap: Bitmap,
+            radius: Float,
+            masking: Float,
+            reusableBitmap: Bitmap? = null,
+        ): Bitmap? = nativeRenderSharpenMaskPreview(sourceBitmap, radius, masking, reusableBitmap)
 
         fun x3fDefaultMode(input: File): X3fMode = when (nativeX3fDefaultMode(input.path)) {
             X3fMode.LEGACY.nativeValue -> X3fMode.LEGACY

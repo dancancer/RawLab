@@ -167,7 +167,7 @@ public enum AdjustmentGroup: String, CaseIterable, Identifiable, Sendable {
         case .tone: return [.contrast, .highlights, .shadows, .blackPoint, .whitePoint, .toneCurve]
         case .color: return [.saturation, .vibrance]
         case .detail: return [.denoiseMode, .sharpening]
-        case .effects: return [.clarity, .dehaze, .vignetteAmount, .grainAmount]
+        case .effects: return [.clarity, .dehaze, .texture, .vignetteAmount, .grainAmount]
         case .lens, .geometry: return []
         }
     }
@@ -182,7 +182,7 @@ public enum EditorAdjustmentGroup: String, CaseIterable, Identifiable, Sendable 
         case .looks: return [.film, .recipe, .strength]
         case .light: return [.exposure, .highlights, .shadows, .blackPoint, .whitePoint, .contrast, .toneCurve]
         case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .colorGrading]
-        case .effects: return [.clarity, .dehaze, .vignette, .grain]
+        case .effects: return [.clarity, .dehaze, .texture, .vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
         case .hdrRendition: return [.hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation]
@@ -195,7 +195,7 @@ public enum EditorAdjustmentGroup: String, CaseIterable, Identifiable, Sendable 
 
 public enum EditorAdjustmentTool: String, CaseIterable, Identifiable, Sendable {
     case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
-    case clarity, dehaze, whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
+    case clarity, dehaze, texture, whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
     case hdrPeakLimit, hdrSDRExposure, hdrSDRContrast, hdrSDRSaturation
     public var id: String { rawValue }
     public var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
@@ -212,7 +212,7 @@ public enum EditorAdjustmentTool: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .strength: return .strength; case .exposure: return .exposure; case .highlights: return .highlights
         case .shadows: return .shadows; case .blackPoint: return .blackPoint; case .whitePoint: return .whitePoint
-        case .vibrance: return .vibrance; case .clarity: return .clarity; case .dehaze: return .dehaze
+        case .vibrance: return .vibrance; case .clarity: return .clarity; case .dehaze: return .dehaze; case .texture: return .texture
         case .contrast: return .contrast; case .toneCurve: return .toneCurve; case .whiteBalance: return .temperature
         case .saturation: return .saturation; case .vignette: return .vignetteAmount; case .grain: return .grainAmount
         case .denoise: return .denoiseMode; case .sharpening: return .sharpening
@@ -367,7 +367,7 @@ public struct AdjustmentSpec {
 
 public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
     case strength, exposure, temperature, tint, contrast, highlights, shadows, blackPoint, whitePoint, vibrance, toneCurve, saturation, sharpening, rawNoiseReduction, denoiseMode
-    case vignetteAmount, grainAmount, clarity, dehaze
+    case vignetteAmount, grainAmount, clarity, dehaze, texture
     public var id: String { rawValue }
     public var isWhiteBalance: Bool { self == .temperature || self == .tint }
     public var isPhotoEffect: Bool { self == .vignetteAmount || self == .grainAmount }
@@ -393,7 +393,7 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         case .temperature: return f.colorWhiteBalanceTemperatureKelvin.macosModel; case .tint: return f.colorWhiteBalanceTint.macosModel
         case .blackPoint: return f.toneBlackPoint.macosModel; case .whitePoint: return f.toneWhitePoint.macosModel
         case .vibrance: return f.colorVibrance.macosModel; case .clarity: return f.effectsClarity.macosModel
-        case .dehaze: return f.effectsDehaze.macosModel; case .contrast: return f.lightContrast.macosModel
+        case .dehaze: return f.effectsDehaze.macosModel; case .texture: return f.effectsTexture.macosModel; case .contrast: return f.lightContrast.macosModel
         case .highlights: return f.lightHighlights.macosModel; case .shadows: return f.lightShadows.macosModel
         case .toneCurve: return f.lightSCurve.macosModel; case .saturation: return f.colorSaturation.macosModel
         case .sharpening: return f.detailSharpening.macosModel; case .rawNoiseReduction: return f.detailDenoiseRawLevel.macosModel
@@ -446,7 +446,7 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .strength: return "camera.aperture"; case .exposure: return "plusminus.circle"; case .highlights: return "sun.max"
         case .shadows: return "moon"; case .blackPoint: return "circle.fill"; case .whitePoint: return "circle"
-        case .vibrance: return "drop.fill"; case .clarity: return "circle.dotted.circle"; case .dehaze: return "cloud.fog"
+        case .vibrance: return "drop.fill"; case .clarity: return "circle.dotted.circle"; case .dehaze: return "cloud.fog"; case .texture: return "circle.grid.3x3"
         case .contrast: return "circle.lefthalf.filled"; case .toneCurve: return "waveform.path"; case .saturation: return "drop.halffull"
         case .temperature: return "thermometer.medium"; case .tint: return "camera.filters"; case .sharpening: return "triangle"
         case .rawNoiseReduction, .denoiseMode: return "circle.dotted"; case .vignetteAmount: return "circle.lefthalf.filled.inverse"
@@ -464,6 +464,7 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
         case .vibrance: return makeSpec(title: L10n.text("鲜艳度"), keyPath: \.vibrance)
         case .clarity: return makeSpec(title: L10n.text("清晰度"), keyPath: \.clarity)
         case .dehaze: return makeSpec(title: L10n.text("去朦胧"), keyPath: \.dehaze)
+        case .texture: return makeSpec(title: L10n.text("纹理"), keyPath: \.texture, step: 1.0, decimals: 0)
         case .contrast: return makeSpec(title: L10n.text("对比度"), keyPath: \.contrast, step: 0.001, displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1, displayValue: { ($0 - 1) * 100 }, modelValue: { 1 + $0 / 100 })
         case .highlights: return makeSpec(title: L10n.text("高光"), keyPath: \.highlights, step: 0.001, displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1, displayValue: { -$0 * 100 }, modelValue: { -$0 / 100 })
         case .shadows: return makeSpec(title: L10n.text("阴影"), keyPath: \.shadows, step: 0.001, displayRange: -100...100, displayDefault: 0, displayScale: 100, decimals: 1)
@@ -479,11 +480,11 @@ public enum AdjustmentParameter: String, CaseIterable, Identifiable, Sendable {
 }
 
 public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendable {
-    case strength, exposure, highlights, shadows, contrast, blackPoint, whitePoint, vibrance, clarity, dehaze
+    case strength, exposure, highlights, shadows, contrast, blackPoint, whitePoint, vibrance, clarity, dehaze, texture
     case toneCurve, saturation, hsl, colorGrading, temperature, tint, noiseReduction, sharpening, vignette, grain
 
     public static let toolCases: [AdjustmentKind] = allCases.filter { $0 != .tint }
-    public static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze]
+    public static let badgeKinds: Set<AdjustmentKind> = [.strength, .exposure, .highlights, .shadows, .contrast, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .texture]
     public var id: String { rawValue }
 
     private var parameter: AdjustmentParameter? {
@@ -515,7 +516,7 @@ public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendabl
         switch self {
         case .strength: return Adjustments.lutStrengthRange
         case .exposure: return -5...5
-        case .contrast, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .highlights, .shadows, .toneCurve, .saturation, .hsl: return -100...100
+        case .contrast, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .texture, .highlights, .shadows, .toneCurve, .saturation, .hsl: return -100...100
         case .colorGrading: return 0...100
         case .temperature: return Adjustments.temperatureRange
         case .tint: return Adjustments.tintRange
@@ -568,7 +569,7 @@ public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendabl
     }
     public var unit: String {
         switch self {
-        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze: return "%"
+        case .strength, .contrast, .highlights, .shadows, .toneCurve, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .texture: return "%"
         case .exposure: return "EV"; case .temperature: return "K"; default: return ""
         }
     }
@@ -584,7 +585,7 @@ public enum AdjustmentKind: String, CaseIterable, Identifiable, Codable, Sendabl
         switch self {
         case .strength: return String(format: "%.0f%%", value * 100)
         case .exposure: return String(format: "%+.2f EV", value)
-        case .contrast, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .highlights, .shadows, .toneCurve: return String(format: "%+.0f%%", value)
+        case .contrast, .saturation, .sharpening, .blackPoint, .whitePoint, .vibrance, .clarity, .dehaze, .texture, .highlights, .shadows, .toneCurve: return String(format: "%+.0f%%", value)
         case .noiseReduction: return String(format: "%.2f", value)
         case .temperature: return String(format: "%.0fK", value)
         case .tint: return String(format: "%.0f", value)

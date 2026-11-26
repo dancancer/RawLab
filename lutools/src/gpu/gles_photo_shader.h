@@ -1,5 +1,7 @@
 #pragma once
+#include "dcp_look_shader.h"
 #include "photo_log_shader.h"
+#include "photo_spatial_shader.h"
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
@@ -12,7 +14,8 @@ precision highp int;
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
-layout(std430, binding = 2) readonly buffer BasicToneField { float basicField[]; };
+layout(std430, binding = 2) readonly buffer AuxField { float auxField[]; };
+layout(std430, binding = 3) writeonly buffer DcpInvalid { uint dcpInvalid[]; };
 layout(binding = 0) uniform highp sampler3D film;
 uniform uvec2 sourceSize;
 uniform uvec2 destinationSize;
@@ -21,6 +24,7 @@ uniform uint destinationStartRow;
 uniform uint pixelCount;
 uniform uint outputOffset;
 uniform int stage;
+uniform int evalPhase;
 uniform bool useLut;
 uniform bool inputIsSRGB;
 uniform bool inputIsFLog;
@@ -42,6 +46,14 @@ layout(std140, binding = 0) uniform CurveParams {
     vec4 parametricSplits;
     vec4 curveRanges[128];
     vec4 curveTangents[128];
+};
+layout(std140, binding = 1) uniform DcpParams {
+    vec4 dcpInput[3];
+    vec4 dcpOutput[3];
+    vec4 dcpExposure;
+    uvec4 dcpCalib;
+    uvec4 dcpLook;
+    uvec4 dcpOffsets; // lookOffset, toneOffset, dataBaseOffset, active
 };
 uniform bool hslActive;
 uniform vec3 toneControls;
@@ -65,6 +77,38 @@ float neutral(float x) {
     float linear = 1.0 / (1.0 + (1.0 - gray) / gray * pow(gray / x, 1.5));
     return linear <= 0.0031308 ? 12.92 * linear : 1.055 * pow(linear, 1.0 / 2.4) - 0.055;
 }
+float dcpSrgbGamma(float x) {
+    return x <= 0.0031308 ? 12.92 * x : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+}
+#define DCP_FN
+#define DCP_V3 vec3
+#define DCP_V3C(x, y, z) vec3((x), (y), (z))
+#define DCP_U3 uvec3
+#define DCP_U3C(x, y, z) uvec3((x), (y), (z))
+#define DCP_U4 uvec4
+#define DCP_CTX_DECL
+#define DCP_CTX_ARG
+#define DCP_SRGB_GAMMA(x) dcpSrgbGamma(x)
+#define DCP_NEUTRAL(x) neutral(x)
+#define DCP_LERP3(a, b, t) mix((a), (b), (t))
+#define DCP_FINITE(v) (abs((v).x) <= 3.4e38 && abs((v).y) <= 3.4e38 && abs((v).z) <= 3.4e38)
+#define DCP_DATA(idx) auxField[dcpOffsets.z + (idx)]
+#define DCP_MARK_INVALID (dcpInvalid[0] = 1u)
+)glsl" + dcpLookShaderBody() + R"glsl(
+#undef DCP_FN
+#undef DCP_V3
+#undef DCP_V3C
+#undef DCP_U3
+#undef DCP_U3C
+#undef DCP_U4
+#undef DCP_CTX_DECL
+#undef DCP_CTX_ARG
+#undef DCP_SRGB_GAMMA
+#undef DCP_NEUTRAL
+#undef DCP_LERP3
+#undef DCP_FINITE
+#undef DCP_DATA
+#undef DCP_MARK_INVALID
 vec3 lookup(vec3 x) {
     vec3 p = clamp((x - domainMin) / (domainMax - domainMin), 0.0, 1.0) * float(lutSize - 1);
     ivec3 low = ivec3(floor(p));
@@ -160,29 +204,47 @@ vec2 sampleBasicToneField(uvec2 coord, uvec2 coordSize) {
     uint i10 = (low.y * fw + high.x) * 2u;
     uint i01 = (high.y * fw + low.x) * 2u;
     uint i11 = (high.y * fw + high.x) * 2u;
-    vec2 v00 = vec2(basicField[i00], basicField[i00 + 1u]);
-    vec2 v10 = vec2(basicField[i10], basicField[i10 + 1u]);
-    vec2 v01 = vec2(basicField[i01], basicField[i01 + 1u]);
-    vec2 v11 = vec2(basicField[i11], basicField[i11 + 1u]);
+    vec2 v00 = vec2(auxField[i00], auxField[i00 + 1u]);
+    vec2 v10 = vec2(auxField[i10], auxField[i10 + 1u]);
+    vec2 v01 = vec2(auxField[i01], auxField[i01 + 1u]);
+    vec2 v11 = vec2(auxField[i11], auxField[i11 + 1u]);
     return mix(mix(v00, v10, t.x), mix(v01, v11, t.x), t.y);
 }
 
 vec3 evaluate(vec3 inputColor, uvec2 coord, uvec2 coordSize) {
-    vec3 linear = (toSrgb * inputColor) * exposureWB;
-    if (basicToneActive != 0) {
-        vec2 si = sampleBasicToneField(coord, coordSize);
-        linear *= tcBasicToneV3Gain(tcLuminance(linear), si.x, si.y, basicTone.x, basicTone.y);
-    }
-    vec3 pixel = vec3(neutral(linear.r), neutral(linear.g), neutral(linear.b));
-    if (useLut) {
-        vec3 lookInput = pixel;
-        if (!inputIsSRGB) {
-            vec3 fgamut = toFGamut * linear;
-            lookInput = vec3(encodePhotoLog(fgamut.r, inputIsFLog), encodePhotoLog(fgamut.g, inputIsFLog), encodePhotoLog(fgamut.b, inputIsFLog));
+    vec3 pixel = inputColor;
+    if (evalPhase != 2 && evalPhase != 3) {
+        vec3 linear = (toSrgb * inputColor) * exposureWB;
+        if (basicToneActive != 0) {
+            vec2 si = sampleBasicToneField(coord, coordSize);
+            linear *= tcBasicToneV3Gain(tcLuminance(linear), si.x, si.y, basicTone.x, basicTone.y);
         }
-        vec3 look = lookup(lookInput);
-        if (outputIsLog) look = vec3(neutral(decodePhotoLog(look.r, outputIsFLog)), neutral(decodePhotoLog(look.g, outputIsFLog)), neutral(decodePhotoLog(look.b, outputIsFLog)));
-        pixel = mix(pixel, look, strength);
+        if (evalPhase == 1) return linear;
+        inputColor = linear;
+    }
+    if (evalPhase != 3) {
+        vec3 linear = inputColor;
+        if (dcpOffsets.w != 0u) {
+            pixel = dcpApplyLookPixel(
+                linear,
+                dcpInput[0].xyz, dcpInput[1].xyz, dcpInput[2].xyz,
+                dcpOutput[0].xyz, dcpOutput[1].xyz, dcpOutput[2].xyz,
+                dcpExposure.x,
+                dcpCalib, dcpLook, dcpOffsets.x, dcpOffsets.y, strength);
+        } else {
+            pixel = vec3(neutral(linear.r), neutral(linear.g), neutral(linear.b));
+            if (useLut) {
+                vec3 lookInput = pixel;
+                if (!inputIsSRGB) {
+                    vec3 fgamut = toFGamut * linear;
+                    lookInput = vec3(encodePhotoLog(fgamut.r, inputIsFLog), encodePhotoLog(fgamut.g, inputIsFLog), encodePhotoLog(fgamut.b, inputIsFLog));
+                }
+                vec3 look = lookup(lookInput);
+                if (outputIsLog) look = vec3(neutral(decodePhotoLog(look.r, outputIsFLog)), neutral(decodePhotoLog(look.g, outputIsFLog)), neutral(decodePhotoLog(look.b, outputIsFLog)));
+                pixel = mix(pixel, look, strength);
+            }
+        }
+        if (evalPhase == 2 || evalPhase == 4) return pixel;
     }
     pixel = basicV3 != 0 ? tcBasicBlackWhiteV3(pixel, toneControls.x, toneControls.y)
         : tcBlackWhite(pixel, toneControls.x, toneControls.y);
@@ -249,6 +311,117 @@ void main() {
     }
     uint outIndex = (outputOffset + i) * 3u;
     dst[outIndex] = value.r; dst[outIndex + 1u] = value.g; dst[outIndex + 2u] = value.b;
+}
+)glsl";
+
+inline const std::string kPhotoSpatialShader = std::string(R"glsl(#version 310 es
+precision highp float;
+precision highp int;
+layout(local_size_x = 128) in;
+layout(std430, binding = 0) readonly buffer SpatialSrc { float spSrc[]; };
+layout(std430, binding = 1) writeonly buffer SpatialDst { float spDst[]; };
+layout(std430, binding = 2) readonly buffer SpatialAux { float spAux[]; };
+layout(std430, binding = 3) readonly buffer SpatialField { float spField[]; };
+layout(std140, binding = 0) uniform SpatialParams {
+    uvec4 dims;       // width, height, rowOffset, rows
+    uvec4 bandInfo;   // srcRowOffset, auxRowOffset, radius, stage
+    vec4 sharpenCfg;  // strength, sharpenDetail, sharpenMasking, sharpenRadius
+    vec4 defringeCfg; // purpleAmount, purpleHue, greenAmount, greenHue
+    vec4 spAirlight;  // r, g, b, minTransmission
+    uvec4 spFlags;    // basicV3, fieldWidth, fieldHeight, fieldOffset
+    uvec4 spBandDims; // srcRows, auxRows, dstWidth, dstHeight
+    vec4 spWeights[7];
+};
+
+vec3 spLoadSrc(int x, int y) {
+    uint cx = uint(clamp(x, 0, int(dims.x) - 1));
+    int minY = int(bandInfo.x);
+    int maxY = minY + int(max(1u, spBandDims.x)) - 1;
+    uint cy = uint(clamp(y, minY, maxY));
+    uint idx = ((cy - bandInfo.x) * dims.x + cx) * 3u;
+    return vec3(spSrc[idx], spSrc[idx + 1u], spSrc[idx + 2u]);
+}
+vec3 spLoadAux(int x, int y) {
+    uint cx = uint(clamp(x, 0, int(dims.x) - 1));
+    int minY = int(bandInfo.y);
+    int maxY = minY + int(max(1u, spBandDims.y)) - 1;
+    uint cy = uint(clamp(y, minY, maxY));
+    uint idx = ((cy - bandInfo.y) * dims.x + cx) * 3u;
+    return vec3(spAux[idx], spAux[idx + 1u], spAux[idx + 2u]);
+}
+float spReadWeight(uint idx) {
+    vec4 wv = spWeights[idx >> 2u];
+    uint lane = idx & 3u;
+    return lane == 0u ? wv.x : (lane == 1u ? wv.y : (lane == 2u ? wv.z : wv.w));
+}
+
+#define SP_FN
+#define SP_V3 vec3
+#define SP_V3C(x, y, z) vec3((x), (y), (z))
+#define SP_CTX_DECL
+#define SP_CTX_ARG
+#define SP_SRC(ix, iy) spLoadSrc((ix), (iy))
+#define SP_AUX(ix, iy) spLoadAux((ix), (iy))
+#define SP_FIELD(idx) spField[(idx)]
+#define SP_FINITE(v) (abs((v).x) <= 3.4e38 && abs((v).y) <= 3.4e38 && abs((v).z) <= 3.4e38)
+#define SP_WEIGHT(idx) spReadWeight(idx)
+#define SP_WIDTH dims.x
+#define SP_HEIGHT dims.y
+#define SP_RADIUS bandInfo.z
+#define SP_STRENGTH sharpenCfg.x
+#define SP_SHARPEN_DETAIL sharpenCfg.y
+#define SP_SHARPEN_MASKING sharpenCfg.z
+#define SP_PURPLE_AMT defringeCfg.x
+#define SP_PURPLE_HUE defringeCfg.y
+#define SP_GREEN_AMT defringeCfg.z
+#define SP_GREEN_HUE defringeCfg.w
+#define SP_AIRLIGHT spAirlight
+#define SP_FLAGS spFlags
+)glsl") + photoSpatialShaderBody() + R"glsl(
+#undef SP_FN
+#undef SP_V3
+#undef SP_V3C
+#undef SP_CTX_DECL
+#undef SP_CTX_ARG
+#undef SP_SRC
+#undef SP_AUX
+#undef SP_FIELD
+#undef SP_FINITE
+#undef SP_WEIGHT
+#undef SP_WIDTH
+#undef SP_HEIGHT
+#undef SP_RADIUS
+#undef SP_STRENGTH
+#undef SP_SHARPEN_DETAIL
+#undef SP_SHARPEN_MASKING
+#undef SP_PURPLE_AMT
+#undef SP_PURPLE_HUE
+#undef SP_GREEN_AMT
+#undef SP_GREEN_HUE
+#undef SP_AIRLIGHT
+#undef SP_FLAGS
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    uint count = dims.x * dims.w;
+    if (i >= count) return;
+    int x = int(i % dims.x);
+    int y = int(i / dims.x + dims.z);
+    vec3 outCol;
+    uint st = bandInfo.w;
+    if (st == 0u) outCol = spDefringePixel(x, y);
+    else if (st == 1u) outCol = spDehazePixel(x, y);
+    else if (st == 2u) outCol = spClarityPixel(x, y);
+    else if (st == 3u) outCol = spTextureBlurHPixel(x, y);
+    else if (st == 4u) outCol = spTextureApplyVPixel(x, y);
+    else if (st == 5u) outCol = spSharpenPrepHPixel(x, y);
+    else if (st == 6u) outCol = spSharpenPrepVPixel(x, y);
+    else if (st == 7u) outCol = spSharpenMaskHPixel(x, y);
+    else outCol = spSharpenApplyPixel(x, y);
+    uint outIdx = i * 3u;
+    spDst[outIdx] = outCol.x;
+    spDst[outIdx + 1u] = outCol.y;
+    spDst[outIdx + 2u] = outCol.z;
 }
 )glsl";
 }

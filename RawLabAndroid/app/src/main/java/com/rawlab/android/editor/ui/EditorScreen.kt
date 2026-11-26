@@ -140,7 +140,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onDismissUnusableRecord: () -> Unit = {},
     systemPhotoRequest: SystemPhotoOpenRequest? = null,
     onSystemPhotoConsumed: (SystemPhotoOpenRequest) -> Unit = {},
-    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) }) {
+    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) },
+    sharpenMaskOverlay: android.graphics.Bitmap? = null,
+    onSharpenMaskPreviewChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onSharpenMaskSettingsChange: (Float, Float) -> Unit = { _, _ -> }) {
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
@@ -520,7 +523,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 }
             },
-            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll })
+            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll },
+            onSharpenMaskPreviewChange = onSharpenMaskPreviewChange,
+            onSharpenMaskSettingsChange = onSharpenMaskSettingsChange)
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
@@ -825,6 +830,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                     wbProbe = canvasWbProbe,
                                     isAdjustingSlider = adjusting,
                                     bottomControlsInset = bottomControlsInset,
+                                    sharpenMaskOverlay = sharpenMaskOverlay,
                                 )
                                 EditorCanvasBottomStack(
                                     visible = !view.purePreview,
@@ -872,6 +878,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             wbProbe = canvasWbProbe,
                             isAdjustingSlider = adjusting,
                             bottomControlsInset = bottomControlsInset,
+                            sharpenMaskOverlay = sharpenMaskOverlay,
                         )
                         EditorCanvasBottomStack(
                             visible = !view.purePreview && state.photo != null,

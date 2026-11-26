@@ -41,6 +41,7 @@ public partial class MainWindow
             file=path;sourceChanged=true;openingPreview=placeholder;renderFailed=false;interacting=false;exactReady=false;result=null;photoInfo=null;++photoInfoRevision;syncing=true;
             Collection.BeginEditing(Collection.Photos.FirstOrDefault(photo=>StringComparer.OrdinalIgnoreCase.Equals(photo.Path,path))?.ID ?? "");viewport.Fit();
             clippingOverlay=null;
+            ClearSharpenMaskPreview();
             suspendedTransform = null;
             workspaceLayout.PhotoOpened();
             RefreshWorkspace();
