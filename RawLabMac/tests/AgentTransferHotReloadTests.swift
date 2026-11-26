@@ -251,6 +251,107 @@ private func rendered(_ model: EditorModel) throws {
                   "EditorModel hot-reloads live CLI --sync-photo-edit update")
         try rendered(model)
 
+        // 7b. Live sony2fuji CLI --save-preset & --sync-photo-edit for all 29 v0.14.0 fields + hot reload in EditorModel
+        let v014PresetRevBefore = model.presetLibraryRevision
+        let allSelBands: [String: [String: Double]] = [
+            "reds": ["cyan": -12.0, "magenta": 6.0, "yellow": 4.0, "black": 0.0],
+            "yellows": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "greens": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "cyans": ["cyan": 10.0, "magenta": 0.0, "yellow": -6.0, "black": 0.0],
+            "blues": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "magentas": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "whites": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "neutrals": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+            "blacks": ["cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0],
+        ]
+        let allBwMixer: [String: Double] = [
+            "red": 22.0, "orange": 16.0, "yellow": 8.0, "green": -10.0,
+            "aqua": -20.0, "blue": -28.0, "purple": 6.0, "magenta": 4.0,
+        ]
+        let swatch: [String: Any] = [
+            "src_hue": 20.0, "src_saturation": 0.28, "src_luminance": 0.72,
+            "hue_shift": 2.0, "saturation_shift": -6.0, "luminance_shift": 1.0,
+            "variance": -30.0, "range": 50.0, "hue_range": 45.0,
+            "sat_range": 50.0, "lum_range": 55.0, "enabled": true,
+        ]
+        let v014PresetRes = try runCliSubcommand("--save-preset", requestObject: [
+            "data_dir": root.path,
+            "name": "Live CLI V014",
+            "is_raw": true,
+            "processing_version": 3,
+            "values": [
+                "color.calibration.shadow_tint": -10.0,
+                "color.calibration.red_hue": 8.0,
+                "color.calibration.red_saturation": 12.0,
+                "color.calibration.green_hue": -4.0,
+                "color.calibration.green_saturation": 5.0,
+                "color.calibration.blue_hue": -9.0,
+                "color.calibration.blue_saturation": 14.0,
+                "color.point_color": ["swatches": [swatch]],
+                "color.selective_color": ["method": "absolute", "bands": allSelBands],
+                "color.bw.enabled": true,
+                "color.bw.mixer": allBwMixer,
+                "effects.texture": 24.5,
+                "effects.grain.tone_curve": "negative_asymmetric",
+                "effects.grain.format_preset": "135",
+                "effects.halation.amount": 18.0,
+                "effects.halation.threshold": 82.0,
+                "effects.halation.radius": 44.0,
+                "effects.halation.hue": -8.0,
+                "effects.bloom.amount": 14.0,
+                "effects.bloom.threshold": 70.0,
+                "effects.bloom.radius": 48.0,
+                "detail.sharpening.luminance_v2": true,
+                "detail.sharpening.radius": 1.35,
+                "detail.sharpening.detail": 38.0,
+                "detail.sharpening.masking": 62.0,
+                "geometry.lens.defringe_purple_amount": 5.0,
+                "geometry.lens.defringe_purple_hue": 40.0,
+                "geometry.lens.defringe_green_amount": 3.5,
+                "geometry.lens.defringe_green_hue": 60.0,
+            ],
+        ])
+        try check((v014PresetRes["action"] as? String) == "created", "live CLI save_preset v0.14.0 created preset")
+        let v014PresetWatched = waitUntil(3.0) { model.presetLibraryRevision > v014PresetRevBefore }
+        try check(v014PresetWatched, "live CLI v0.14.0 save_preset bumps EditorModel.presetLibraryRevision")
+        let v014PresetsList = try externalPresetStore.list()
+        try check(v014PresetsList.contains(where: { $0.name == "Live CLI V014" }),
+                  "AdjustmentPresetStore decodes v0.14.0 CLI presets.json entry")
+
+        let v014SyncRes = try runCliSubcommand("--sync-photo-edit", requestObject: [
+            "data_dir": root.path,
+            "photo_path": photo.path,
+            "is_raster": true,
+            "adjustments": [
+                "texture": 24.5,
+                "calibration": ["shadow_tint": -10.0, "red_hue": 8.0],
+                "point_color": ["swatches": [swatch]],
+                "selective_color": ["method": "absolute", "bands": allSelBands],
+                "bw": ["enabled": true, "mixer": allBwMixer],
+                "sharpen_v2": ["luminance_v2": true, "radius": 1.35, "detail": 38.0, "masking": 62.0],
+                "film_optics": ["halation_amount": 18.0, "bloom_amount": 14.0],
+                "photo_effects": ["grain_tone_curve": "negative_asymmetric", "grain_format_preset": "135"],
+                "lens_correction": ["defringe_purple_amount": 5.0, "defringe_green_amount": 3.5],
+            ],
+        ])
+        try check((v014SyncRes["action"] as? String) == "updated", "live CLI v0.14.0 sync_photo_edit updated record")
+        let v014EditReloaded = waitUntil(3.0) {
+            abs(model.settings.atmosphereSettings.texture - 24.5) < 1e-6 &&
+            abs(model.settings.calibrationSettings.shadowTint - (-10.0)) < 1e-6 &&
+            model.settings.pointColorSettings.swatches.count == 1 &&
+            model.settings.selectiveColorSettings.method == .absolute &&
+            model.settings.bwMixerSettings.enabled &&
+            model.settings.sharpenV2Settings.luminanceV2 &&
+            abs(model.settings.sharpenV2Settings.masking - 62.0) < 1e-6 &&
+            abs(model.settings.filmOpticsSettings.halationAmount - 18.0) < 1e-6 &&
+            model.settings.effectSettings.grainToneCurve == .negativeAsymmetric &&
+            model.settings.effectSettings.grainFormatPreset == .film135 &&
+            abs(model.settings.lensSettings.defringePurpleAmount - 5.0) < 1e-6
+        }
+        try check(v014EditReloaded && !model.hasActiveExternalReloadBanner,
+                  "EditorModel hot-reloads live CLI v0.14.0 --sync-photo-edit update")
+        try rendered(model)
+
         // 8. CanonicalV2 + lutID record upgraded by live sony2fuji --sync-photo-edit remains decodable by MacEditPersistence
         let canonicalPhoto = root.appendingPathComponent("canonical-v2-photo.png")
         let canonicalDest = CGImageDestinationCreateWithURL(canonicalPhoto as CFURL, "public.png" as CFString, 1, nil)!

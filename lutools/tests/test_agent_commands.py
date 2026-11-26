@@ -527,6 +527,162 @@ class AgentCommands(unittest.TestCase):
             self.assertEqual(sync_proc.returncode, 4)
             self.envelope(sync_proc, "sync_photo_edit", "unsupported")
 
+    def test_v20_print_transfer_save_preset_and_sync_photo_edit(self):
+        dng_src = pathlib.Path(__file__).parent / "fixtures" / "linear-uncompressed.dng"
+        sel_bands = {
+            b: {"cyan": 0.0, "magenta": 0.0, "yellow": 0.0, "black": 0.0}
+            for b in ("reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks")
+        }
+        sel_bands["reds"] = {"cyan": -12.0, "magenta": 6.5, "yellow": 4.0, "black": 0.0}
+        bw_mixer = {"red": 20.0, "orange": 15.0, "yellow": 8.0, "green": -10.0, "aqua": -22.0, "blue": -30.0, "purple": 5.0, "magenta": 4.0}
+        swatches = [{
+            "src_hue": 21.0, "src_saturation": 0.30, "src_luminance": 0.70,
+            "hue_shift": -2.5, "saturation_shift": -6.0, "luminance_shift": 1.5,
+            "variance": -28.0, "range": 50.0, "hue_range": 45.0, "sat_range": 50.0, "lum_range": 50.0, "enabled": True,
+        }]
+
+        # 1. v20 raster recipe with defringe & all 29 v0.14.0 fields round-trips --print-transfer -> --save-preset
+        photo_link = self.root / "input.dng"
+        photo_link.write_bytes(dng_src.read_bytes())
+        v20_recipe = self.root / "recipe_v20.json"
+        v20_recipe.write_text(json.dumps({
+            "schema_version": 20,
+            "processing": {"family": "rawlab", "version": 3, "quality": "standard"},
+            "input": {"path": photo_link.name, "type": "raw"},
+            "edits": {
+                "exposure": {"mode": "preview", "ev": 0.25, "brightness": 1.0},
+                "white_balance": {"mode": "camera"},
+                "color": {
+                    "calibration": {
+                        "shadow_tint": -9.0, "red_hue": 6.0, "red_saturation": 11.0,
+                        "green_hue": -4.0, "green_saturation": 3.5, "blue_hue": -8.0, "blue_saturation": 12.0,
+                    },
+                    "point_color": {"swatches": swatches},
+                    "selective_color": {"method": "absolute", "bands": sel_bands},
+                    "bw": {"enabled": True, "mixer": bw_mixer},
+                },
+                "detail": {"sharpening": 0.3, "luminance_v2": True, "sharpening_radius": 1.35, "sharpening_detail": 38.0, "sharpening_masking": 58.0},
+                "effects": {
+                    "texture": -0.18,
+                    "grain_tone_curve": "negative_asymmetric",
+                    "grain_format_preset": "120",
+                    "halation": {"amount": 22.0, "threshold": 80.0, "radius": 42.0, "hue": -8.0},
+                    "bloom": {"amount": 16.0, "threshold": 72.0, "radius": 48.0},
+                },
+                "lens_correction": {
+                    "distortion": False, "tca": False, "vignetting": False, "auto_crop": True, "profile_id": None,
+                    "defringe_purple_amount": 5.5, "defringe_purple_hue": 40.0,
+                    "defringe_green_amount": 3.0, "defringe_green_hue": 60.0,
+                },
+            },
+            "output": {"path": "unused.png", "format": "png"},
+        }), encoding="utf-8")
+
+        pt = self.envelope(self.run_cli("--recipe", v20_recipe, "--print-transfer", "--json"), "print_transfer")["result"]
+        vals = pt["values"]
+        self.assertAlmostEqual(vals["effects.texture"], -18.0, places=3)
+        self.assertEqual(vals["effects.grain.tone_curve"], "negative_asymmetric")
+        self.assertEqual(vals["effects.grain.format_preset"], "120")
+        self.assertEqual(vals["detail.sharpening.luminance_v2"], True)
+        self.assertAlmostEqual(vals["detail.sharpening.masking"], 58.0, places=3)
+        self.assertAlmostEqual(vals["geometry.lens.defringe_purple_amount"], 5.5, places=3)
+
+        data_dir = self.root / "gui-v20"
+        preset_req = self.root / "v20_preset_req.json"
+        preset_req.write_text(json.dumps({
+            "data_dir": str(data_dir),
+            "name": "CLI V20 Master",
+            "is_raw": pt["source"]["is_raw"],
+            "processing_version": pt["source"]["processing_version"],
+            "values": vals,
+        }), encoding="utf-8")
+        preset_env = self.envelope(self.run_cli("--save-preset", "--request", preset_req, "--json"), "save_preset")
+        self.assertEqual(preset_env["result"]["action"], "created")
+        saved_vals = json.loads((data_dir / "Presets" / "presets.json").read_text(encoding="utf-8"))["presets"][0]["payload"]["values"]
+        self.assertEqual(saved_vals["color.point_color"]["swatches"][0]["variance"], vals["color.point_color"]["swatches"][0]["variance"])
+
+        # 2. --sync-photo-edit round-trip + explicit null reset + orthogonal preservation
+        photo = self.root / "sample_v20.dng"
+        photo.write_bytes(dng_src.read_bytes())
+        sync_req = self.root / "v20_sync.json"
+        sync_req.write_text(json.dumps({
+            "data_dir": str(data_dir),
+            "photo_path": str(photo),
+            "is_raster": True,
+            "film_id": "builtin:astia",
+            "adjustments": {
+                "texture": 25.0,
+                "calibration": {"shadow_tint": -10.0},
+                "point_color": {"swatches": swatches},
+                "selective_color": {"method": "absolute", "bands": sel_bands},
+                "bw": {"enabled": True, "mixer": bw_mixer},
+                "sharpen_v2": {"luminance_v2": True, "masking": 60.0},
+                "film_optics": {"halation_amount": 20.0},
+                "photo_effects": {"grain_tone_curve": "negative_asymmetric", "grain_format_preset": "135"},
+                "lens_correction": {"defringe_purple_amount": 4.5, "defringe_purple_hue": 42.0},
+            },
+        }), encoding="utf-8")
+        sync_proc = self.run_cli("--sync-photo-edit", "--request", sync_req, "--json")
+        if sys.platform not in ("darwin", "win32"):
+            self.assertEqual(sync_proc.returncode, 4)
+            return
+        sync_env = self.envelope(sync_proc, "sync_photo_edit")
+        photo_key = sync_env["result"]["photo_path"]
+        edits_file = data_dir / "Edits" / "edits.json"
+        doc = json.loads(edits_file.read_text(encoding="utf-8"))
+
+        if sys.platform == "darwin":
+            st = doc["records"][photo_key]["state"]["settings"]
+            st["hdr"] = {"mode": "hdr"}
+            st["aiDenoiseEnabled"] = True
+            st["aiDenoiseStrength"] = 80.0
+            st["lutID"] = "builtin:astia"
+            st["futureUnknown"] = {"v": 15}
+        else:
+            st = doc["Records"][photo_key]["Settings"]
+            st["HDR"] = {"Mode": "hdr"}
+            st["AIDenoiseEnabled"] = True
+            st["aiDenoiseStrength"] = 80.0
+            st["lutID"] = "builtin:astia"
+            st["FutureUnknown"] = {"v": 15}
+        edits_file.write_text(json.dumps(doc), encoding="utf-8")
+
+        reset_req = self.root / "v20_reset.json"
+        reset_req.write_text(json.dumps({
+            "data_dir": str(data_dir),
+            "photo_path": str(photo),
+            "is_raster": True,
+            "adjustments": {
+                "texture": 0.0,
+                "calibration": None,
+                "point_color": None,
+                "selective_color": None,
+                "bw": None,
+                "sharpen_v2": {"luminance_v2": False, "radius": 1.0, "detail": 25.0, "masking": 0.0},
+                "film_optics": None,
+            },
+        }), encoding="utf-8")
+        self.envelope(self.run_cli("--sync-photo-edit", "--request", reset_req, "--json"), "sync_photo_edit")
+        after = json.loads(edits_file.read_text(encoding="utf-8"))
+        if sys.platform == "darwin":
+            st2 = after["records"][photo_key]["state"]["settings"]
+            for k in ("atmosphere", "cameraCalibration", "pointColor", "selectiveColor", "bwMixer", "sharpenV2", "filmOptics"):
+                self.assertNotIn(k, st2)
+            self.assertEqual(st2["hdr"], {"mode": "hdr"})
+            self.assertTrue(st2["aiDenoiseEnabled"])
+            self.assertEqual(st2["aiDenoiseStrength"], 80.0)
+            self.assertEqual(st2["lutID"], "builtin:astia")
+            self.assertEqual(st2["futureUnknown"], {"v": 15})
+        else:
+            st2 = after["Records"][photo_key]["Settings"]
+            for k in ("Atmosphere", "CameraCalibration", "PointColor", "SelectiveColor", "BwMixer", "SharpenV2", "FilmOptics"):
+                self.assertNotIn(k, st2)
+            self.assertEqual(st2["HDR"], {"Mode": "hdr"})
+            self.assertTrue(st2["AIDenoiseEnabled"])
+            self.assertEqual(st2["aiDenoiseStrength"], 80.0)
+            self.assertEqual(st2["lutID"], "builtin:astia")
+            self.assertEqual(st2["FutureUnknown"], {"v": 15})
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

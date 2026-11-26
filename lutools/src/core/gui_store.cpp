@@ -1447,12 +1447,96 @@ struct ParsedAdjustments {
     std::optional<std::string> masterRecipeId;
     std::string filmId;
 
-    // Track which canonical adjustment inputs were explicitly passed (non-null)
+    // Track which canonical adjustment inputs were explicitly passed (non-null or explicit null reset)
     std::unordered_set<std::string> explicitInputs;
+    std::unordered_set<std::string> explicitNulls;
     bool hasWhiteBalanceMode = false;
     bool hasTemp = false;
     bool hasTint = false;
 };
+
+bool isDefaultEffects(const ParsedAdjustments::Effects& e) {
+    return e.vignetteAmount == 0.0 && e.vignetteMidpoint == 50.0 &&
+        e.vignetteRoundness == 0.0 && e.vignetteFeather == 50.0 &&
+        e.vignetteHighlights == 0.0 && e.grainAmount == 0.0 &&
+        e.grainSize == 25.0 && e.grainRoughness == 50.0 &&
+        e.grainToneCurve == "legacy" && e.grainFormatPreset == "custom";
+}
+
+bool isDefaultLens(const ParsedAdjustments::Lens& l) {
+    return !l.distortion && !l.tca && !l.vignetting && l.autoCrop &&
+        !l.profileId.has_value() && l.defringePurpleAmount == 0.0 &&
+        l.defringePurpleHue == 50.0 && l.defringeGreenAmount == 0.0 &&
+        l.defringeGreenHue == 50.0;
+}
+
+bool isDefaultGeometry(const ParsedAdjustments::Geometry& g) {
+    return g.cropX == 0.0 && g.cropY == 0.0 && g.cropWidth == 1.0 && g.cropHeight == 1.0 &&
+        g.quarterTurns == 0 && !g.flipHorizontal && !g.flipVertical &&
+        g.straightenDegrees == 0.0 && g.perspectiveHorizontal == 0.0 && g.perspectiveVertical == 0.0;
+}
+
+bool isDefaultHsl(const Json& hsl) {
+    for (const char* axis : {"hue", "saturation", "lightness"}) {
+        if (!hsl.contains(axis) || !hsl.at(axis).is_array()) return false;
+        for (const auto& v : hsl.at(axis)) {
+            if (v.get<double>() != 0.0) return false;
+        }
+    }
+    return true;
+}
+
+Json defaultWindowsEffectsJson() {
+    return Json{
+        {"VignetteAmount", 0.0}, {"VignetteMidpoint", 50.0}, {"VignetteRoundness", 0.0},
+        {"VignetteFeather", 50.0}, {"VignetteHighlights", 0.0},
+        {"GrainAmount", 0.0}, {"GrainSize", 25.0}, {"GrainRoughness", 50.0},
+    };
+}
+
+Json buildWindowsEffectsJson(const ParsedAdjustments::Effects& e) {
+    Json fx = {
+        {"VignetteAmount", e.vignetteAmount},
+        {"VignetteMidpoint", e.vignetteMidpoint},
+        {"VignetteRoundness", e.vignetteRoundness},
+        {"VignetteFeather", e.vignetteFeather},
+        {"VignetteHighlights", e.vignetteHighlights},
+        {"GrainAmount", e.grainAmount},
+        {"GrainSize", e.grainSize},
+        {"GrainRoughness", e.grainRoughness},
+    };
+    if (e.grainToneCurve != "legacy") fx["GrainToneCurve"] = e.grainToneCurve;
+    if (e.grainFormatPreset != "custom") fx["GrainFormatPreset"] = e.grainFormatPreset;
+    return fx;
+}
+
+Json defaultWindowsLensJson() {
+    return Json{
+        {"Distortion", false}, {"Tca", false}, {"AutoCrop", true}, {"Manual", false},
+        {"ProfileId", nullptr}, {"FocalLength", nullptr}, {"CropFactor", nullptr}, {"Vignetting", false},
+    };
+}
+
+Json buildWindowsLensJson(const ParsedAdjustments::Lens& l) {
+    Json lc = {
+        {"Distortion", l.distortion},
+        {"Tca", l.tca},
+        {"AutoCrop", l.autoCrop},
+        {"Manual", l.profileId.has_value()},
+        {"ProfileId", l.profileId.has_value() ? Json(*l.profileId) : Json(nullptr)},
+        {"FocalLength", nullptr},
+        {"CropFactor", nullptr},
+        {"Vignetting", l.vignetting},
+    };
+    if (l.defringePurpleAmount != 0.0 || l.defringePurpleHue != 50.0 ||
+        l.defringeGreenAmount != 0.0 || l.defringeGreenHue != 50.0) {
+        lc["DefringePurpleAmount"] = l.defringePurpleAmount;
+        lc["DefringePurpleHue"] = l.defringePurpleHue;
+        lc["DefringeGreenAmount"] = l.defringeGreenAmount;
+        lc["DefringeGreenHue"] = l.defringeGreenHue;
+    }
+    return lc;
+}
 
 ParsedAdjustments parseAndValidateAdjustments(
     const Json& adjustments,
@@ -1488,7 +1572,8 @@ ParsedAdjustments parseAndValidateAdjustments(
     out.masterRecipeId = masterRecipeId;
 
     for (const auto& kv : adjustments.items()) {
-        if (!kv.value().is_null()) out.explicitInputs.insert(kv.key());
+        if (kv.value().is_null()) out.explicitNulls.insert(kv.key());
+        else out.explicitInputs.insert(kv.key());
     }
 
     if (adjustments.contains("processing_version")) {
@@ -1657,15 +1742,24 @@ ParsedAdjustments parseAndValidateAdjustments(
                 throw StoreError(2, "invalid_argument", "Unsupported calibration key: " + kv.key());
             }
         }
-        out.calibration = Json{
-            {"shadowTint", roundDigits(numIn(cal, "shadow_tint", 0.0, -100.0, 100.0), 4)},
-            {"redHue", roundDigits(numIn(cal, "red_hue", 0.0, -100.0, 100.0), 4)},
-            {"redSaturation", roundDigits(numIn(cal, "red_saturation", 0.0, -100.0, 100.0), 4)},
-            {"greenHue", roundDigits(numIn(cal, "green_hue", 0.0, -100.0, 100.0), 4)},
-            {"greenSaturation", roundDigits(numIn(cal, "green_saturation", 0.0, -100.0, 100.0), 4)},
-            {"blueHue", roundDigits(numIn(cal, "blue_hue", 0.0, -100.0, 100.0), 4)},
-            {"blueSaturation", roundDigits(numIn(cal, "blue_saturation", 0.0, -100.0, 100.0), 4)},
-        };
+        const double st = roundDigits(numIn(cal, "shadow_tint", 0.0, -100.0, 100.0), 4);
+        const double rh = roundDigits(numIn(cal, "red_hue", 0.0, -100.0, 100.0), 4);
+        const double rs = roundDigits(numIn(cal, "red_saturation", 0.0, -100.0, 100.0), 4);
+        const double gh = roundDigits(numIn(cal, "green_hue", 0.0, -100.0, 100.0), 4);
+        const double gs = roundDigits(numIn(cal, "green_saturation", 0.0, -100.0, 100.0), 4);
+        const double bh = roundDigits(numIn(cal, "blue_hue", 0.0, -100.0, 100.0), 4);
+        const double bs = roundDigits(numIn(cal, "blue_saturation", 0.0, -100.0, 100.0), 4);
+        if (st != 0.0 || rh != 0.0 || rs != 0.0 || gh != 0.0 || gs != 0.0 || bh != 0.0 || bs != 0.0) {
+            out.calibration = Json{
+                {"shadowTint", st},
+                {"redHue", rh},
+                {"redSaturation", rs},
+                {"greenHue", gh},
+                {"greenSaturation", gs},
+                {"blueHue", bh},
+                {"blueSaturation", bs},
+            };
+        }
     }
 
     if (adjustments.contains("point_color") && !adjustments.at("point_color").is_null()) {
@@ -1676,12 +1770,25 @@ ParsedAdjustments parseAndValidateAdjustments(
         if (pc.at("swatches").size() > 8) {
             throw StoreError(2, "invalid_argument", "point_color.swatches exceeds max 8");
         }
+        static const std::unordered_set<std::string> kSwatchKeys = {
+            "src_hue", "src_saturation", "src_luminance",
+            "hue_shift", "saturation_shift", "luminance_shift", "variance",
+            "range", "hue_range", "sat_range", "lum_range", "enabled",
+        };
         Json swOut = Json::array();
         for (const auto& sw : pc.at("swatches")) {
             if (!sw.is_object() || !sw.contains("src_hue") || !sw.contains("src_saturation") || !sw.contains("src_luminance")) {
                 throw StoreError(2, "invalid_argument", "point_color swatch missing required coordinates");
             }
-            const double srcHue = numIn(sw, "src_hue", 0.0, 0.0, 360.0);
+            for (const auto& sk : sw.items()) {
+                if (kSwatchKeys.find(sk.key()) == kSwatchKeys.end()) {
+                    throw StoreError(2, "invalid_argument", "Unsupported point_color swatch key: " + sk.key());
+                }
+            }
+            if (sw.at("src_hue").is_null() || sw.at("src_saturation").is_null() || sw.at("src_luminance").is_null()) {
+                throw StoreError(2, "invalid_argument", "point_color swatch source coordinates cannot be null");
+            }
+            const double srcHue = roundDigits(numIn(sw, "src_hue", 0.0, 0.0, 360.0), 4);
             if (srcHue >= 360.0) throw StoreError(2, "invalid_argument", "point_color.src_hue must be < 360");
             bool enabled = true;
             if (sw.contains("enabled")) {
@@ -1691,7 +1798,7 @@ ParsedAdjustments parseAndValidateAdjustments(
                 enabled = sw.at("enabled").get<bool>();
             }
             swOut.push_back({
-                {"srcHue", roundDigits(srcHue, 4)},
+                {"srcHue", srcHue},
                 {"srcSaturation", roundDigits(numIn(sw, "src_saturation", 0.0, 0.0, 1.0), 6)},
                 {"srcLuminance", roundDigits(numIn(sw, "src_luminance", 0.0, 0.0, 1.0), 6)},
                 {"hueShift", roundDigits(numIn(sw, "hue_shift", 0.0, -100.0, 100.0), 4)},
@@ -1705,14 +1812,21 @@ ParsedAdjustments parseAndValidateAdjustments(
                 {"enabled", enabled},
             });
         }
-        out.pointColor = Json{{"swatches", std::move(swOut)}};
+        if (!swOut.empty()) {
+            out.pointColor = Json{{"swatches", std::move(swOut)}};
+        }
     }
 
     if (adjustments.contains("selective_color") && !adjustments.at("selective_color").is_null()) {
         const Json& sc = adjustments.at("selective_color");
         if (!sc.is_object()) throw StoreError(2, "invalid_argument", "selective_color must be an object");
+        for (const auto& kv : sc.items()) {
+            if (kv.key() != "method" && kv.key() != "bands") {
+                throw StoreError(2, "invalid_argument", "Unsupported selective_color key: " + kv.key());
+            }
+        }
         std::string method = "relative";
-        if (sc.contains("method")) {
+        if (sc.contains("method") && !sc.at("method").is_null()) {
             if (!sc.at("method").is_string()) throw StoreError(2, "invalid_argument", "selective_color.method must be string");
             method = sc.at("method").get<std::string>();
             if (method != "relative" && method != "absolute") throw StoreError(2, "invalid_argument", "selective_color.method invalid");
@@ -1721,30 +1835,60 @@ ParsedAdjustments parseAndValidateAdjustments(
         static const std::array<const char*, 9> kBands = {
             "reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"
         };
-        if (sc.contains("bands") && sc.at("bands").is_object()) {
+        static const std::unordered_set<std::string> kBandSet(kBands.begin(), kBands.end());
+        static const std::unordered_set<std::string> kCompSet = {"cyan", "magenta", "yellow", "black"};
+        bool hasNonZeroBand = false;
+        if (sc.contains("bands") && !sc.at("bands").is_null()) {
+            if (!sc.at("bands").is_object()) {
+                throw StoreError(2, "invalid_argument", "selective_color.bands must be an object");
+            }
             const Json& bIn = sc.at("bands");
+            for (const auto& kv : bIn.items()) {
+                if (kBandSet.find(kv.key()) == kBandSet.end()) {
+                    throw StoreError(2, "invalid_argument", "Unsupported selective_color band: " + kv.key());
+                }
+            }
             for (const char* bName : kBands) {
-                if (bIn.contains(bName)) {
+                if (bIn.contains(bName) && !bIn.at(bName).is_null()) {
                     const Json& c = bIn.at(bName);
-                    bandsOut[bName] = {
-                        {"cyan", roundDigits(numIn(c, "cyan", 0.0, -100.0, 100.0), 4)},
-                        {"magenta", roundDigits(numIn(c, "magenta", 0.0, -100.0, 100.0), 4)},
-                        {"yellow", roundDigits(numIn(c, "yellow", 0.0, -100.0, 100.0), 4)},
-                        {"black", roundDigits(numIn(c, "black", 0.0, -100.0, 100.0), 4)},
-                    };
+                    if (!c.is_object()) {
+                        throw StoreError(2, "invalid_argument", std::string("selective_color.bands.") + bName + " must be an object");
+                    }
+                    for (const auto& ckv : c.items()) {
+                        if (kCompSet.find(ckv.key()) == kCompSet.end()) {
+                            throw StoreError(2, "invalid_argument", "Unsupported selective_color component: " + ckv.key());
+                        }
+                    }
+                    const double cy = roundDigits(numIn(c, "cyan", 0.0, -100.0, 100.0), 4);
+                    const double mg = roundDigits(numIn(c, "magenta", 0.0, -100.0, 100.0), 4);
+                    const double yl = roundDigits(numIn(c, "yellow", 0.0, -100.0, 100.0), 4);
+                    const double bk = roundDigits(numIn(c, "black", 0.0, -100.0, 100.0), 4);
+                    if (cy != 0.0 || mg != 0.0 || yl != 0.0 || bk != 0.0) hasNonZeroBand = true;
+                    bandsOut[bName] = {{"cyan", cy}, {"magenta", mg}, {"yellow", yl}, {"black", bk}};
                 } else {
                     bandsOut[bName] = {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}};
                 }
             }
+        } else {
+            for (const char* bName : kBands) {
+                bandsOut[bName] = {{"cyan", 0.0}, {"magenta", 0.0}, {"yellow", 0.0}, {"black", 0.0}};
+            }
         }
-        out.selectiveColor = Json{{"method", method}, {"bands", std::move(bandsOut)}};
+        if (method != "relative" || hasNonZeroBand) {
+            out.selectiveColor = Json{{"method", method}, {"bands", std::move(bandsOut)}};
+        }
     }
 
     if (adjustments.contains("bw") && !adjustments.at("bw").is_null()) {
         const Json& bw = adjustments.at("bw");
         if (!bw.is_object()) throw StoreError(2, "invalid_argument", "bw must be an object");
+        for (const auto& kv : bw.items()) {
+            if (kv.key() != "enabled" && kv.key() != "mixer") {
+                throw StoreError(2, "invalid_argument", "Unsupported bw key: " + kv.key());
+            }
+        }
         bool enabled = false;
-        if (bw.contains("enabled")) {
+        if (bw.contains("enabled") && !bw.at("enabled").is_null()) {
             if (!bw.at("enabled").is_boolean()) {
                 throw StoreError(2, "invalid_argument", "bw.enabled must be boolean");
             }
@@ -1754,45 +1898,89 @@ ParsedAdjustments parseAndValidateAdjustments(
         static const std::array<const char*, 8> kCh = {
             "red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"
         };
-        if (bw.contains("mixer") && bw.at("mixer").is_object()) {
+        static const std::unordered_set<std::string> kChSet(kCh.begin(), kCh.end());
+        bool hasNonZeroWeight = false;
+        if (bw.contains("mixer") && !bw.at("mixer").is_null()) {
+            if (!bw.at("mixer").is_object()) throw StoreError(2, "invalid_argument", "bw.mixer must be an object");
             const Json& mx = bw.at("mixer");
-            for (const char* ck : kCh) mixerOut[ck] = roundDigits(numIn(mx, ck, 0.0, -100.0, 100.0), 4);
+            for (const auto& kv : mx.items()) {
+                if (kChSet.find(kv.key()) == kChSet.end()) {
+                    throw StoreError(2, "invalid_argument", "Unsupported bw.mixer channel: " + kv.key());
+                }
+            }
+            for (const char* ck : kCh) {
+                const double w = roundDigits(numIn(mx, ck, 0.0, -100.0, 100.0), 4);
+                if (w != 0.0) hasNonZeroWeight = true;
+                mixerOut[ck] = w;
+            }
         } else {
             for (const char* ck : kCh) mixerOut[ck] = 0.0;
         }
-        out.bwMixer = Json{{"enabled", enabled}, {"mixer", std::move(mixerOut)}};
+        if (enabled || hasNonZeroWeight) {
+            out.bwMixer = Json{{"enabled", enabled}, {"mixer", std::move(mixerOut)}};
+        }
     }
 
     if (adjustments.contains("sharpen_v2") && !adjustments.at("sharpen_v2").is_null()) {
         const Json& sv = adjustments.at("sharpen_v2");
         if (!sv.is_object()) throw StoreError(2, "invalid_argument", "sharpen_v2 must be an object");
+        for (const auto& kv : sv.items()) {
+            if (kv.key() != "luminance_v2" && kv.key() != "radius" &&
+                kv.key() != "detail" && kv.key() != "masking") {
+                throw StoreError(2, "invalid_argument", "Unsupported sharpen_v2 key: " + kv.key());
+            }
+        }
         bool lumV2 = false;
-        if (sv.contains("luminance_v2")) {
+        if (sv.contains("luminance_v2") && !sv.at("luminance_v2").is_null()) {
             if (!sv.at("luminance_v2").is_boolean()) {
                 throw StoreError(2, "invalid_argument", "sharpen_v2.luminance_v2 must be boolean");
             }
             lumV2 = sv.at("luminance_v2").get<bool>();
         }
-        out.sharpenV2 = Json{
-            {"luminanceV2", lumV2},
-            {"radius", roundDigits(numIn(sv, "radius", 1.0, 0.5, 3.0), 4)},
-            {"detail", roundDigits(numIn(sv, "detail", 25.0, 0.0, 100.0), 4)},
-            {"masking", roundDigits(numIn(sv, "masking", 0.0, 0.0, 100.0), 4)},
-        };
+        const double radius = roundDigits(numIn(sv, "radius", 1.0, 0.5, 3.0), 4);
+        const double detail = roundDigits(numIn(sv, "detail", 25.0, 0.0, 100.0), 4);
+        const double masking = roundDigits(numIn(sv, "masking", 0.0, 0.0, 100.0), 4);
+        if (lumV2 || radius != 1.0 || detail != 25.0 || masking != 0.0) {
+            out.sharpenV2 = Json{
+                {"luminanceV2", lumV2},
+                {"radius", radius},
+                {"detail", detail},
+                {"masking", masking},
+            };
+        }
     }
 
     if (adjustments.contains("film_optics") && !adjustments.at("film_optics").is_null()) {
         const Json& fo = adjustments.at("film_optics");
         if (!fo.is_object()) throw StoreError(2, "invalid_argument", "film_optics must be an object");
-        out.filmOptics = Json{
-            {"halationAmount", roundDigits(numIn(fo, "halation_amount", 0.0, 0.0, 100.0), 4)},
-            {"halationThreshold", roundDigits(numIn(fo, "halation_threshold", 75.0, 0.0, 100.0), 4)},
-            {"halationRadius", roundDigits(numIn(fo, "halation_radius", 35.0, 0.0, 100.0), 4)},
-            {"halationHue", roundDigits(numIn(fo, "halation_hue", 0.0, -100.0, 100.0), 4)},
-            {"bloomAmount", roundDigits(numIn(fo, "bloom_amount", 0.0, 0.0, 100.0), 4)},
-            {"bloomThreshold", roundDigits(numIn(fo, "bloom_threshold", 70.0, 0.0, 100.0), 4)},
-            {"bloomRadius", roundDigits(numIn(fo, "bloom_radius", 40.0, 0.0, 100.0), 4)},
+        static const std::unordered_set<std::string> kFoKeys = {
+            "halation_amount", "halation_threshold", "halation_radius", "halation_hue",
+            "bloom_amount", "bloom_threshold", "bloom_radius",
         };
+        for (const auto& kv : fo.items()) {
+            if (kFoKeys.find(kv.key()) == kFoKeys.end()) {
+                throw StoreError(2, "invalid_argument", "Unsupported film_optics key: " + kv.key());
+            }
+        }
+        const double hAmt = roundDigits(numIn(fo, "halation_amount", 0.0, 0.0, 100.0), 4);
+        const double hThr = roundDigits(numIn(fo, "halation_threshold", 75.0, 0.0, 100.0), 4);
+        const double hRad = roundDigits(numIn(fo, "halation_radius", 35.0, 0.0, 100.0), 4);
+        const double hHue = roundDigits(numIn(fo, "halation_hue", 0.0, -100.0, 100.0), 4);
+        const double bAmt = roundDigits(numIn(fo, "bloom_amount", 0.0, 0.0, 100.0), 4);
+        const double bThr = roundDigits(numIn(fo, "bloom_threshold", 70.0, 0.0, 100.0), 4);
+        const double bRad = roundDigits(numIn(fo, "bloom_radius", 40.0, 0.0, 100.0), 4);
+        if (hAmt != 0.0 || hThr != 75.0 || hRad != 35.0 || hHue != 0.0 ||
+            bAmt != 0.0 || bThr != 70.0 || bRad != 40.0) {
+            out.filmOptics = Json{
+                {"halationAmount", hAmt},
+                {"halationThreshold", hThr},
+                {"halationRadius", hRad},
+                {"halationHue", hHue},
+                {"bloomAmount", bAmt},
+                {"bloomThreshold", bThr},
+                {"bloomRadius", bRad},
+            };
+        }
     }
 
     if (adjustments.contains("tone_curve") && !adjustments.at("tone_curve").is_null()) {
@@ -2066,7 +2254,7 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         {"supportsRawNoiseReduction", !isRaster},
         {"masterRecipeSettingsVersion", adj.masterRecipeSettingsVersion},
     };
-    if (adj.aiDenoiseBlend.has_value()) {
+    if (adj.aiDenoiseBlend.has_value() && *adj.aiDenoiseBlend != 100.0) {
         settings["aiDenoiseBlend"] = *adj.aiDenoiseBlend;
     }
     if (adj.chromaNoiseReduction.has_value() && *adj.chromaNoiseReduction != 0) {
@@ -2108,10 +2296,10 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
     if (adj.colorGradingCanonical.has_value()) {
         settings["colorGrading"] = *adj.colorGradingCanonical;
     }
-    if (adj.hsl.has_value()) {
+    if (adj.hsl.has_value() && !isDefaultHsl(*adj.hsl)) {
         settings["hsl"] = *adj.hsl;
     }
-    if (adj.effects.has_value()) {
+    if (adj.effects.has_value() && !isDefaultEffects(*adj.effects)) {
         Json fx = {
             {"vignetteAmount", adj.effects->vignetteAmount},
             {"vignetteMidpoint", adj.effects->vignetteMidpoint},
@@ -2126,7 +2314,7 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
         if (adj.effects->grainFormatPreset != "custom") fx["grainFormatPreset"] = adj.effects->grainFormatPreset;
         settings["photoEffects"] = std::move(fx);
     }
-    if (adj.lens.has_value()) {
+    if (adj.lens.has_value() && !isDefaultLens(*adj.lens)) {
         Json lc = {
             {"distortion", adj.lens->distortion},
             {"tca", adj.lens->tca},
@@ -2135,16 +2323,13 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
             {"mode", adj.lens->profileId.has_value() ? "manual" : "automatic"},
             {"profileID", adj.lens->profileId.has_value() ? Json(*adj.lens->profileId) : Json(nullptr)},
         };
-        if (adj.lens->defringePurpleAmount != 0.0 || adj.lens->defringePurpleHue != 50.0 ||
-            adj.lens->defringeGreenAmount != 0.0 || adj.lens->defringeGreenHue != 50.0) {
-            lc["defringePurpleAmount"] = adj.lens->defringePurpleAmount;
-            lc["defringePurpleHue"] = adj.lens->defringePurpleHue;
-            lc["defringeGreenAmount"] = adj.lens->defringeGreenAmount;
-            lc["defringeGreenHue"] = adj.lens->defringeGreenHue;
-        }
+        if (adj.lens->defringePurpleAmount != 0.0) lc["defringePurpleAmount"] = adj.lens->defringePurpleAmount;
+        if (adj.lens->defringePurpleHue != 50.0) lc["defringePurpleHue"] = adj.lens->defringePurpleHue;
+        if (adj.lens->defringeGreenAmount != 0.0) lc["defringeGreenAmount"] = adj.lens->defringeGreenAmount;
+        if (adj.lens->defringeGreenHue != 50.0) lc["defringeGreenHue"] = adj.lens->defringeGreenHue;
         settings["lensCorrection"] = std::move(lc);
     }
-    if (adj.geometry.has_value()) {
+    if (adj.geometry.has_value() && !isDefaultGeometry(*adj.geometry)) {
         settings["geometry"] = {
             {"cropX", adj.geometry->cropX},
             {"cropY", adj.geometry->cropY},
@@ -2195,7 +2380,7 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
     };
     std::unordered_set<std::string> explicitKeys;
     for (const auto& [adjKey, settingsKey] : kKeyMap) {
-        if (adj.explicitInputs.count(adjKey) && settings.contains(settingsKey)) {
+        if ((adj.explicitInputs.count(adjKey) || adj.explicitNulls.count(adjKey)) && settings.contains(settingsKey)) {
             explicitKeys.insert(settingsKey);
         }
     }
@@ -2204,15 +2389,18 @@ std::pair<Json, std::unordered_set<std::string>> buildMacEditState(
     }
     if (adj.hasTemp) explicitKeys.insert("temperature");
     if (adj.hasTint) explicitKeys.insert("tint");
-    if ((adj.explicitInputs.count("black_point") || adj.explicitInputs.count("white_point") || adj.explicitInputs.count("vibrance")) &&
+    if ((adj.explicitInputs.count("black_point") || adj.explicitInputs.count("white_point") || adj.explicitInputs.count("vibrance") ||
+         adj.explicitNulls.count("black_point") || adj.explicitNulls.count("white_point") || adj.explicitNulls.count("vibrance")) &&
         settings.contains("toneControls")) {
         explicitKeys.insert("toneControls");
     }
-    if ((adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze") || adj.explicitInputs.count("texture")) &&
+    if ((adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze") || adj.explicitInputs.count("texture") ||
+         adj.explicitNulls.count("clarity") || adj.explicitNulls.count("dehaze") || adj.explicitNulls.count("texture")) &&
         settings.contains("atmosphere")) {
         explicitKeys.insert("atmosphere");
     }
-    if (explicitKeys.count("toneCurveConfig") && settings.at("toneCurveConfig").value("mode", "") == "custom") {
+    if (explicitKeys.count("toneCurveConfig") && settings.contains("toneCurveConfig") &&
+        settings.at("toneCurveConfig").value("mode", "") == "custom") {
         explicitKeys.insert("toneCurve");
     }
     if (adj.masterRecipeId.has_value()) {
@@ -2372,33 +2560,55 @@ std::string syncMacEditsFile(
                     mergedSettings[k] = v;
                 }
             }
-            if (adj.chromaNoiseReduction.has_value()) {
-                if (*adj.chromaNoiseReduction == 0) {
-                    mergedSettings.erase("chromaNoiseReduction");
-                } else {
-                    mergedSettings["chromaNoiseReduction"] = static_cast<double>(*adj.chromaNoiseReduction);
+            auto touched = [&](const char* key) -> bool {
+                return adj.explicitInputs.count(key) > 0 || adj.explicitNulls.count(key) > 0;
+            };
+            static const std::array<std::pair<const char*, const char*>, 15> kResetEraseKeys = {{
+                {"ai_denoise_blend", "aiDenoiseBlend"},
+                {"wavelet", "waveletNoiseReduction"},
+                {"tone_curve", "toneCurveConfig"},
+                {"color_grading", "colorGrading"},
+                {"calibration", "cameraCalibration"},
+                {"point_color", "pointColor"},
+                {"selective_color", "selectiveColor"},
+                {"bw", "bwMixer"},
+                {"sharpen_v2", "sharpenV2"},
+                {"film_optics", "filmOptics"},
+                {"hsl", "hsl"},
+                {"photo_effects", "photoEffects"},
+                {"lens_correction", "lensCorrection"},
+                {"geometry", "geometry"},
+                {"chroma_noise_reduction", "chromaNoiseReduction"},
+            }};
+            for (const auto& [adjKey, settingsKey] : kResetEraseKeys) {
+                if (touched(adjKey) && !newState.at("settings").contains(settingsKey)) {
+                    mergedSettings.erase(settingsKey);
                 }
             }
-            if (adj.explicitInputs.count("black_point") || adj.explicitInputs.count("white_point") || adj.explicitInputs.count("vibrance")) {
+            if (touched("black_point") || touched("white_point") || touched("vibrance")) {
                 Json tc = (mergedSettings.contains("toneControls") && mergedSettings.at("toneControls").is_object())
                     ? mergedSettings.at("toneControls")
                     : Json{{"blackPoint", 0.0}, {"whitePoint", 0.0}, {"vibrance", 0.0}};
-                if (adj.explicitInputs.count("black_point")) tc["blackPoint"] = adj.blackPoint;
-                if (adj.explicitInputs.count("white_point")) tc["whitePoint"] = adj.whitePoint;
-                if (adj.explicitInputs.count("vibrance")) tc["vibrance"] = adj.vibrance;
+                if (touched("black_point")) tc["blackPoint"] = adj.blackPoint;
+                if (touched("white_point")) tc["whitePoint"] = adj.whitePoint;
+                if (touched("vibrance")) tc["vibrance"] = adj.vibrance;
                 if (tc.value("blackPoint", 0.0) == 0.0 && tc.value("whitePoint", 0.0) == 0.0 && tc.value("vibrance", 0.0) == 0.0) {
                     mergedSettings.erase("toneControls");
                 } else {
                     mergedSettings["toneControls"] = std::move(tc);
                 }
             }
-            if (adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze")) {
+            if (touched("clarity") || touched("dehaze") || touched("texture")) {
                 Json atm = (mergedSettings.contains("atmosphere") && mergedSettings.at("atmosphere").is_object())
                     ? mergedSettings.at("atmosphere")
                     : Json{{"clarity", 0.0}, {"dehaze", 0.0}};
-                if (adj.explicitInputs.count("clarity")) atm["clarity"] = adj.clarity;
-                if (adj.explicitInputs.count("dehaze")) atm["dehaze"] = adj.dehaze;
-                if (atm.value("clarity", 0.0) == 0.0 && atm.value("dehaze", 0.0) == 0.0) {
+                if (touched("clarity")) atm["clarity"] = adj.clarity;
+                if (touched("dehaze")) atm["dehaze"] = adj.dehaze;
+                if (touched("texture")) {
+                    if (adj.texture == 0.0) atm.erase("texture");
+                    else atm["texture"] = adj.texture;
+                }
+                if (atm.value("clarity", 0.0) == 0.0 && atm.value("dehaze", 0.0) == 0.0 && atm.value("texture", 0.0) == 0.0) {
                     mergedSettings.erase("atmosphere");
                 } else {
                     mergedSettings["atmosphere"] = std::move(atm);
@@ -2643,20 +2853,23 @@ std::string syncWindowsEditsFile(
         Json mergedSettings = existingSettings;
         mergedSettings["SettingsVersion"] = 2;
 
+        auto touched = [&](const char* key) -> bool {
+            return adj.explicitInputs.count(key) > 0 || adj.explicitNulls.count(key) > 0;
+        };
         std::array<double, 10> vals = extractOrMigrateWindowsValues(existingSettings);
-        if (adj.explicitInputs.count("strength")) vals[0] = adj.strength;
-        if (adj.explicitInputs.count("exposure")) vals[1] = adj.exposure;
+        if (touched("strength")) vals[0] = adj.strength;
+        if (touched("exposure")) vals[1] = adj.exposure;
         if (adj.hasWhiteBalanceMode || adj.hasTemp) vals[2] = adj.effectiveTemp;
         if (adj.hasWhiteBalanceMode || adj.hasTint) vals[3] = adj.effectiveTint;
-        if (adj.explicitInputs.count("contrast")) vals[4] = 1.0 + adj.contrastPct / 100.0;
-        if (adj.explicitInputs.count("highlights")) vals[5] = -adj.highlightsPct / 100.0;
-        if (adj.explicitInputs.count("shadows")) vals[6] = adj.shadowsPct / 100.0;
-        if (adj.explicitInputs.count("s_curve") ||
+        if (touched("contrast")) vals[4] = 1.0 + adj.contrastPct / 100.0;
+        if (touched("highlights")) vals[5] = -adj.highlightsPct / 100.0;
+        if (touched("shadows")) vals[6] = adj.shadowsPct / 100.0;
+        if (touched("s_curve") ||
             (adj.toneCurveConfig.has_value() && adj.toneCurveConfig->value("mode", "") == "custom")) {
             vals[7] = adj.sCurvePct / 100.0;
         }
-        if (adj.explicitInputs.count("saturation")) vals[8] = 1.0 + adj.saturationPct / 100.0;
-        if (adj.explicitInputs.count("sharpening")) vals[9] = adj.sharpeningPct / 100.0;
+        if (touched("saturation")) vals[8] = 1.0 + adj.saturationPct / 100.0;
+        if (touched("sharpening")) vals[9] = adj.sharpeningPct / 100.0;
         mergedSettings["Values"] = Json::array({
             vals[0], vals[1], vals[2], vals[3], vals[4],
             vals[5], vals[6], vals[7], vals[8], vals[9],
@@ -2674,15 +2887,15 @@ std::string syncWindowsEditsFile(
         if (adj.explicitInputs.count("x3f_mode") || !mergedSettings.contains("X3fMode")) {
             mergedSettings["X3fMode"] = adj.x3fMode;
         }
-        if (adj.explicitInputs.count("ai_denoise_enabled") || !mergedSettings.contains("AIDenoiseEnabled")) {
+        if (touched("ai_denoise_enabled") || !mergedSettings.contains("AIDenoiseEnabled")) {
             mergedSettings["AIDenoiseEnabled"] = adj.aiDenoiseEnabled;
         }
-        if (adj.explicitInputs.count("ai_denoise_blend")) {
-            if (*adj.aiDenoiseBlend == 100.0) mergedSettings.erase("AIDenoiseBlend");
+        if (touched("ai_denoise_blend")) {
+            if (!adj.aiDenoiseBlend.has_value() || *adj.aiDenoiseBlend == 100.0) mergedSettings.erase("AIDenoiseBlend");
             else mergedSettings["AIDenoiseBlend"] = *adj.aiDenoiseBlend;
         }
-        if (adj.chromaNoiseReduction.has_value()) {
-            mergedSettings["DisplayChromaDenoise"] = *adj.chromaNoiseReduction;
+        if (touched("chroma_noise_reduction")) {
+            mergedSettings["DisplayChromaDenoise"] = adj.chromaNoiseReduction.value_or(0);
         } else if (!mergedSettings.contains("DisplayChromaDenoise")) {
             mergedSettings["DisplayChromaDenoise"] = 0;
         }
@@ -2693,21 +2906,13 @@ std::string syncWindowsEditsFile(
                 {"Chroma", adj.wavelet->chroma},
                 {"Coarse", adj.wavelet->coarse},
             };
+        } else if (adj.explicitNulls.count("wavelet")) {
+            mergedSettings["Denoise"] = {{"Enabled", false}, {"Luma", 0.0}, {"Chroma", 46.0}, {"Coarse", 50.0}};
         }
         if (adj.effects.has_value()) {
-            Json fx = {
-                {"VignetteAmount", adj.effects->vignetteAmount},
-                {"VignetteMidpoint", adj.effects->vignetteMidpoint},
-                {"VignetteRoundness", adj.effects->vignetteRoundness},
-                {"VignetteFeather", adj.effects->vignetteFeather},
-                {"VignetteHighlights", adj.effects->vignetteHighlights},
-                {"GrainAmount", adj.effects->grainAmount},
-                {"GrainSize", adj.effects->grainSize},
-                {"GrainRoughness", adj.effects->grainRoughness},
-            };
-            if (adj.effects->grainToneCurve != "legacy") fx["GrainToneCurve"] = adj.effects->grainToneCurve;
-            if (adj.effects->grainFormatPreset != "custom") fx["GrainFormatPreset"] = adj.effects->grainFormatPreset;
-            mergedSettings["Effects"] = std::move(fx);
+            mergedSettings["Effects"] = buildWindowsEffectsJson(*adj.effects);
+        } else if (adj.explicitNulls.count("photo_effects")) {
+            mergedSettings["Effects"] = defaultWindowsEffectsJson();
         }
         if (adj.hsl.has_value()) {
             Json hslArr = Json::array();
@@ -2715,26 +2920,13 @@ std::string syncWindowsEditsFile(
                 for (const Json& v : adj.hsl->at(axis)) hslArr.push_back(v);
             }
             mergedSettings["Hsl"] = {{"Values", std::move(hslArr)}};
+        } else if (adj.explicitNulls.count("hsl")) {
+            mergedSettings["Hsl"] = {{"Values", std::vector<double>(24, 0.0)}};
         }
         if (adj.lens.has_value()) {
-            Json lc = {
-                {"Distortion", adj.lens->distortion},
-                {"Tca", adj.lens->tca},
-                {"AutoCrop", adj.lens->autoCrop},
-                {"Manual", adj.lens->profileId.has_value()},
-                {"ProfileId", adj.lens->profileId.has_value() ? Json(*adj.lens->profileId) : Json(nullptr)},
-                {"FocalLength", nullptr},
-                {"CropFactor", nullptr},
-                {"Vignetting", adj.lens->vignetting},
-            };
-            if (adj.lens->defringePurpleAmount != 0.0 || adj.lens->defringePurpleHue != 50.0 ||
-                adj.lens->defringeGreenAmount != 0.0 || adj.lens->defringeGreenHue != 50.0) {
-                lc["DefringePurpleAmount"] = adj.lens->defringePurpleAmount;
-                lc["DefringePurpleHue"] = adj.lens->defringePurpleHue;
-                lc["DefringeGreenAmount"] = adj.lens->defringeGreenAmount;
-                lc["DefringeGreenHue"] = adj.lens->defringeGreenHue;
-            }
-            mergedSettings["Lens"] = std::move(lc);
+            mergedSettings["Lens"] = buildWindowsLensJson(*adj.lens);
+        } else if (adj.explicitNulls.count("lens_correction")) {
+            mergedSettings["Lens"] = defaultWindowsLensJson();
         }
         if (adj.geometry.has_value()) {
             mergedSettings["Geometry"] = {
@@ -2749,27 +2941,33 @@ std::string syncWindowsEditsFile(
                 {"PerspectiveHorizontal", adj.geometry->perspectiveHorizontal},
                 {"PerspectiveVertical", adj.geometry->perspectiveVertical},
             };
+        } else if (adj.explicitNulls.count("geometry")) {
+            mergedSettings["Geometry"] = {
+                {"CropX", 0.0}, {"CropY", 0.0}, {"CropWidth", 1.0}, {"CropHeight", 1.0},
+                {"QuarterTurns", 0}, {"FlipHorizontal", false}, {"FlipVertical", false},
+                {"StraightenDegrees", 0.0}, {"PerspectiveHorizontal", 0.0}, {"PerspectiveVertical", 0.0},
+            };
         }
-        if (adj.explicitInputs.count("black_point") || adj.explicitInputs.count("white_point") || adj.explicitInputs.count("vibrance")) {
+        if (touched("black_point") || touched("white_point") || touched("vibrance")) {
             Json tc = (mergedSettings.contains("ToneControls") && mergedSettings.at("ToneControls").is_object())
                 ? mergedSettings.at("ToneControls")
                 : Json{{"BlackPoint", 0.0}, {"WhitePoint", 0.0}, {"Vibrance", 0.0}};
-            if (adj.explicitInputs.count("black_point")) tc["BlackPoint"] = adj.blackPoint;
-            if (adj.explicitInputs.count("white_point")) tc["WhitePoint"] = adj.whitePoint;
-            if (adj.explicitInputs.count("vibrance")) tc["Vibrance"] = adj.vibrance;
+            if (touched("black_point")) tc["BlackPoint"] = adj.blackPoint;
+            if (touched("white_point")) tc["WhitePoint"] = adj.whitePoint;
+            if (touched("vibrance")) tc["Vibrance"] = adj.vibrance;
             if (tc.value("BlackPoint", 0.0) == 0.0 && tc.value("WhitePoint", 0.0) == 0.0 && tc.value("Vibrance", 0.0) == 0.0) {
                 mergedSettings.erase("ToneControls");
             } else {
                 mergedSettings["ToneControls"] = std::move(tc);
             }
         }
-        if (adj.explicitInputs.count("clarity") || adj.explicitInputs.count("dehaze") || adj.explicitInputs.count("texture")) {
+        if (touched("clarity") || touched("dehaze") || touched("texture")) {
             Json atm = (mergedSettings.contains("Atmosphere") && mergedSettings.at("Atmosphere").is_object())
                 ? mergedSettings.at("Atmosphere")
                 : Json{{"Clarity", 0.0}, {"Dehaze", 0.0}};
-            if (adj.explicitInputs.count("clarity")) atm["Clarity"] = adj.clarity;
-            if (adj.explicitInputs.count("dehaze")) atm["Dehaze"] = adj.dehaze;
-            if (adj.explicitInputs.count("texture")) atm["Texture"] = adj.texture;
+            if (touched("clarity")) atm["Clarity"] = adj.clarity;
+            if (touched("dehaze")) atm["Dehaze"] = adj.dehaze;
+            if (touched("texture")) atm["Texture"] = adj.texture;
             if (atm.value("Clarity", 0.0) == 0.0 && atm.value("Dehaze", 0.0) == 0.0 && atm.value("Texture", 0.0) == 0.0) {
                 mergedSettings.erase("Atmosphere");
             } else {
@@ -2777,17 +2975,25 @@ std::string syncWindowsEditsFile(
                 mergedSettings["Atmosphere"] = std::move(atm);
             }
         }
-        if (adj.calibration.has_value()) mergedSettings["CameraCalibration"] = *adj.calibration;
-        if (adj.pointColor.has_value()) mergedSettings["PointColor"] = *adj.pointColor;
-        if (adj.selectiveColor.has_value()) mergedSettings["SelectiveColor"] = *adj.selectiveColor;
-        if (adj.bwMixer.has_value()) mergedSettings["BwMixer"] = *adj.bwMixer;
-        if (adj.sharpenV2.has_value()) mergedSettings["SharpenV2"] = *adj.sharpenV2;
-        if (adj.filmOptics.has_value()) mergedSettings["FilmOptics"] = *adj.filmOptics;
+        auto syncOptionalBlock = [&](const char* adjKey, const char* winKey, const std::optional<Json>& value) {
+            if (value.has_value()) mergedSettings[winKey] = *value;
+            else if (touched(adjKey)) mergedSettings.erase(winKey);
+        };
+        syncOptionalBlock("calibration", "CameraCalibration", adj.calibration);
+        syncOptionalBlock("point_color", "PointColor", adj.pointColor);
+        syncOptionalBlock("selective_color", "SelectiveColor", adj.selectiveColor);
+        syncOptionalBlock("bw", "BwMixer", adj.bwMixer);
+        syncOptionalBlock("sharpen_v2", "SharpenV2", adj.sharpenV2);
+        syncOptionalBlock("film_optics", "FilmOptics", adj.filmOptics);
         if (adj.colorGradingCanonical.has_value()) {
             mergedSettings["ColorGrading"] = buildWindowsColorGrading(*adj.colorGradingCanonical);
+        } else if (adj.explicitNulls.count("color_grading")) {
+            mergedSettings.erase("ColorGrading");
         }
         if (adj.toneCurveConfig.has_value()) {
             mergedSettings["Curve"] = *adj.toneCurveConfig;
+        } else if (adj.explicitNulls.count("tone_curve")) {
+            mergedSettings.erase("Curve");
         }
         if (adj.explicitInputs.count("master_recipe_settings_version") || !mergedSettings.contains("MasterRecipeSettingsVersion")) {
             mergedSettings["MasterRecipeSettingsVersion"] = adj.masterRecipeSettingsVersion;
@@ -2841,26 +3047,13 @@ std::string syncWindowsEditsFile(
                 ? Json{{"Enabled", adj.wavelet->enabled}, {"Luma", adj.wavelet->luma}, {"Chroma", adj.wavelet->chroma}, {"Coarse", adj.wavelet->coarse}}
                 : Json{{"Enabled", false}, {"Luma", 0.0}, {"Chroma", 46.0}, {"Coarse", 50.0}}},
             {"Effects", adj.effects.has_value()
-                ? Json{
-                    {"VignetteAmount", adj.effects->vignetteAmount}, {"VignetteMidpoint", adj.effects->vignetteMidpoint},
-                    {"VignetteRoundness", adj.effects->vignetteRoundness}, {"VignetteFeather", adj.effects->vignetteFeather},
-                    {"VignetteHighlights", adj.effects->vignetteHighlights}, {"GrainAmount", adj.effects->grainAmount},
-                    {"GrainSize", adj.effects->grainSize}, {"GrainRoughness", adj.effects->grainRoughness}}
-                : Json{
-                    {"VignetteAmount", 0.0}, {"VignetteMidpoint", 50.0}, {"VignetteRoundness", 0.0},
-                    {"VignetteFeather", 50.0}, {"VignetteHighlights", 0.0}, {"GrainAmount", 0.0},
-                    {"GrainSize", 25.0}, {"GrainRoughness", 50.0}}},
+                ? buildWindowsEffectsJson(*adj.effects)
+                : defaultWindowsEffectsJson()},
             {"DisplayChromaDenoise", adj.chromaNoiseReduction.value_or(0)},
             {"MasterRecipeID", adj.masterRecipeId.has_value() ? Json(*adj.masterRecipeId) : Json(nullptr)},
             {"Lens", adj.lens.has_value()
-                ? Json{
-                    {"Distortion", adj.lens->distortion}, {"Tca", adj.lens->tca},
-                    {"AutoCrop", adj.lens->autoCrop}, {"Manual", adj.lens->profileId.has_value()},
-                    {"ProfileId", adj.lens->profileId.has_value() ? Json(*adj.lens->profileId) : Json(nullptr)},
-                    {"FocalLength", nullptr}, {"CropFactor", nullptr}, {"Vignetting", adj.lens->vignetting}}
-                : Json{
-                    {"Distortion", false}, {"Tca", false}, {"AutoCrop", true}, {"Manual", false},
-                    {"ProfileId", nullptr}, {"FocalLength", nullptr}, {"CropFactor", nullptr}, {"Vignetting", false}}},
+                ? buildWindowsLensJson(*adj.lens)
+                : defaultWindowsLensJson()},
             {"Geometry", adj.geometry.has_value()
                 ? Json{
                     {"CropX", adj.geometry->cropX}, {"CropY", adj.geometry->cropY},

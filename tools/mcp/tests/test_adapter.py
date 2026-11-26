@@ -1278,6 +1278,74 @@ class AdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(res.error.code, expected_code)
                 self.assertEqual(res.error.status, expected_status)
 
+    def test_mcp_schema_and_transfer_spec_expose_all_29_v014_fields(self):
+        from rawlab_mcp import gui_sync
+        from rawlab_mcp.server import (
+            GUI_SYNC_TOOL_SPECS,
+            READ_ONLY_TOOL_SPECS,
+            SavePresetArguments,
+            SyncPhotoEditArguments,
+        )
+
+        specs = gui_sync.transfer_field_specs()
+        preset_schema = SavePresetArguments.model_json_schema()
+        v014_fields = preset_schema["properties"]["values"]["x_v014_transfer_fields"]
+        self.assertEqual(len(v014_fields), 29)
+        for fid in v014_fields:
+            self.assertIn(fid, specs, f"Missing v0.14.0 field in transfer_field_specs: {fid}")
+
+        # Verify SavePresetArguments & SyncPhotoEditArguments validate nested v0.14.0 payloads cleanly
+        parsed_preset = SavePresetArguments(
+            name="v0.14.0 Master Check",
+            values={
+                "color.calibration.shadow_tint": -8.0,
+                "color.point_color": {
+                    "swatches": [{
+                        "src_hue": 20.0, "src_saturation": 0.25, "src_luminance": 0.72,
+                        "hue_shift": 2.0, "saturation_shift": -6.0, "luminance_shift": 1.0,
+                        "variance": -35.0, "range": 50.0, "hue_range": 45.0,
+                        "sat_range": 50.0, "lum_range": 55.0, "enabled": True,
+                    }]
+                },
+                "color.selective_color": {
+                    "method": "relative",
+                    "bands": {b: {"cyan": 0, "magenta": 0, "yellow": 0, "black": 0}
+                              for b in ("reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks")},
+                },
+                "color.bw.enabled": False,
+                "color.bw.mixer": {c: 0 for c in ("red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta")},
+                "effects.texture": 15.0,
+                "effects.grain.tone_curve": "negative_asymmetric",
+                "effects.grain.format_preset": "135",
+                "effects.halation.amount": 18.0,
+                "effects.bloom.amount": 12.0,
+                "detail.sharpening.luminance_v2": True,
+                "detail.sharpening.masking": 60.0,
+                "geometry.lens.defringe_purple_amount": 3.5,
+            },
+        )
+        self.assertEqual(parsed_preset.values["effects.grain.format_preset"], "135")
+
+        sync_schema = SyncPhotoEditArguments.model_json_schema()
+        adj_keys = sync_schema["properties"]["adjustments"]["x_v014_adjustment_keys"]
+        for key in ("texture", "calibration", "point_color", "selective_color", "bw", "sharpen_v2", "film_optics", "photo_effects", "lens_correction"):
+            self.assertIn(key, adj_keys)
+        parsed_sync = SyncPhotoEditArguments(
+            photo_path="/photos/portrait.ARW",
+            adjustments={
+                "texture": -12.0,
+                "calibration": {"red_hue": 4.0},
+                "point_color": None,
+                "sharpen_v2": {"luminance_v2": True, "masking": 65.0},
+            },
+        )
+        self.assertIsNone(parsed_sync.adjustments["point_color"])
+
+        # Tool descriptions reflect v0.14.0 darkroom capabilities
+        self.assertIn("point_color", READ_ONLY_TOOL_SPECS["diagnose_image"][2])
+        self.assertIn("v0.14.0", GUI_SYNC_TOOL_SPECS["save_preset"][2])
+        self.assertIn("v0.14.0", GUI_SYNC_TOOL_SPECS["sync_photo_edit"][2])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -59,6 +59,11 @@ def _load_transfer_spec() -> dict[str, dict[str, Any]]:
 _TRANSFER_FIELDS: dict[str, dict[str, Any]] = _load_transfer_spec()
 
 
+def transfer_field_specs() -> dict[str, dict[str, Any]]:
+    """Return a shallow copy of the spec-backed SDR/HDR transfer field map."""
+    return dict(_TRANSFER_FIELDS)
+
+
 def resolve_controlled_subpath(data_dir: Path, subdir: str, filename: str) -> Path:
     if not subdir or "/" in subdir or "\\" in subdir or subdir in (".", ".."):
         raise AdapterError("Invalid controlled subdirectory")
