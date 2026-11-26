@@ -145,6 +145,7 @@ struct HDRCommandResult {
     sony2fuji_hdr_diagnostic_v1 diagnostic=hdrInitial<sony2fuji_hdr_diagnostic_v1>();
     float sourceHeadroom=0,editedHeadroom=0;
     OwnedFfiBuffer sdrRgba16{};
+    std::string error;
 };
 
 HDRCommandResult renderHDR(
@@ -168,7 +169,16 @@ HDRCommandResult renderHDR(
     EditRecipe stateSource = recipe;
     if (stateSource.outputPath.empty()) stateSource.outputPath = "unused-analyze.png";
     if (stateSource.schemaVersion < 14) stateSource.hdr->hdrOutput = true;
-    const std::string editState = serializeEditRecipe(stateSource);
+    std::string editState;
+    try {
+        editState = serializeEditRecipe(stateSource);
+    } catch (const std::invalid_argument& error) {
+        // 已解析的配方原样回写不会失败；能失败的只有 CLI 改写的字段（如 --long-edge 超出 1..65535），
+        // 核心对同样的值返回参数错误，这里保持 invalid_argument 状态码，并给出具体字段。
+        result.status=SONY2FUJI_STATUS_INVALID_ARGUMENT;
+        result.error=error.what();
+        return result;
+    }
     auto execOptions = hdrInitial<sony2fuji_hdr_render_options_v1>();
     execOptions.intent = SONY2FUJI_INTENT_FINAL;
     execOptions.long_edge = recipe.outputLongEdge;
@@ -1088,7 +1098,8 @@ int runAgentCommands(int argc, char* argv[]) {
             }
         }
         if (status != SONY2FUJI_STATUS_OK) return fail(statusCode(status), recipe.hdr ?
-            "HDR processing failed; diagnostic reason="+std::to_string(hdrResult.diagnostic.reason) :
+            "HDR processing failed; "+(hdrResult.error.empty() ?
+                "diagnostic reason="+std::to_string(hdrResult.diagnostic.reason) : hdrResult.error) :
             (sourceError.empty() ? sony2fuji_status_message(status) : sourceError),status);
 
         if (analyze && !preview) {
