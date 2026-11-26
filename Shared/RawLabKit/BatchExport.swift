@@ -258,10 +258,10 @@ public struct BatchSourceSnapshot: Codable, Equatable {
     }
     public var sourceURL: URL { get { sourceFile.withReadAccess { $0 } } set { sourceFile = .externallyManaged(newValue) } }
     public func settings(for targetKind: BatchSourceKind) -> Adjustments {
-        if sourceKind == .raw, targetKind == .raster { var r = settings; r.lensCorrection = nil; return r }
+        if sourceKind == .raw, targetKind == .raster { var r = settings; r.lensCorrection = r.lensCorrection?.defringeOnly; return r }
         guard sourceKind == .raster, targetKind == .raw else { return settings }
         var r = settings; r.exposureMode = Adjustments.default.exposureMode; r.whiteBalanceMode = .camera; r.temperature = 6500
-        if r.masterRecipeID == nil { r.tint = 0 }; r.lensCorrection = nil; return r
+        if r.masterRecipeID == nil { r.tint = 0 }; r.lensCorrection = r.lensCorrection?.defringeOnly; return r
     }
     public func settings(for target: BatchTarget, resolveX3fMode: BatchExportJob.X3fModeResolver = BatchExportJob.resolveX3fMode) throws -> Adjustments {
         var r = settings(for: target.sourceKind); if target.isX3f { r.selectX3fMode(try resolveX3fMode(target.identity, target.sourceURL)) }; return r
@@ -663,7 +663,7 @@ public struct MacBatchExportJob: Codable {
         if MacBatchExportEnvironment.isRasterInput(source), !MacBatchExportEnvironment.isRasterInput(input) {
             let recipeTint = resolved.masterRecipe != nil ? resolved.tint : nil
             resolved.exposureMode = Adjustments().exposureMode; resolved.resolveWhiteBalance(nil); resolved.resetWhiteBalance()
-            if let recipeTint { resolved.tint = recipeTint }; resolved.rawNoiseReduction = 0; resolved.lensCorrection = nil
+            if let recipeTint { resolved.tint = recipeTint }; resolved.rawNoiseReduction = 0; resolved.lensCorrection = resolved.lensCorrection?.defringeOnly
         }
         if MacBatchExportEnvironment.isX3fInput(input) { resolved.selectX3fMode(try resolveX3fMode(input)) }
         return resolved

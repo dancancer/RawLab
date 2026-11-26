@@ -64,7 +64,14 @@ internal static class PhotoInput
             if (keepRasterRelativeWb) prepared.ClearAsShotWhiteBalance();
             else { prepared.ResolveWhiteBalance(null); prepared.ResetWhiteBalance(); }
         }
-        prepared.Lens=new(false,false,false);
+        prepared.Lens = new(
+            Distortion: false,
+            Tca: false,
+            AutoCrop: false,
+            DefringePurpleAmount: value.Lens.DefringePurpleAmount,
+            DefringePurpleHue: value.Lens.DefringePurpleHue,
+            DefringeGreenAmount: value.Lens.DefringeGreenAmount,
+            DefringeGreenHue: value.Lens.DefringeGreenHue);
         return prepared;
     }
 

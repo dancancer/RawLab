@@ -221,4 +221,56 @@ final class BatchRetentionAndPresentationTests: XCTestCase {
         XCTAssertFalse(preflight.isRunning)
         XCTAssertEqual(completedCalls, 0)
     }
+
+    func testBatchExportPreservesDefringeAcrossRasterTransitionsAndGrainEffectReset() throws {
+        var settings = Adjustments()
+        settings.lensCorrection = LensCorrectionSettings(
+            distortion: true, tca: true, autoCrop: false, mode: .manual, profileID: "lens-a", vignetting: true,
+            defringePurpleAmount: 7, defringePurpleHue: 42, defringeGreenAmount: 3, defringeGreenHue: 62
+        )
+        let sourceURL = temporaryRoot.appendingPathComponent("src.jpg")
+        try Data("jpg".utf8).write(to: sourceURL)
+
+        let rasterSnapshot = BatchSourceSnapshot(
+            identity: PhotoIdentity(resourceIdentifier: "raster-1"),
+            sourceURL: sourceURL,
+            displayName: "src.jpg",
+            sourceKind: .raster,
+            settings: settings
+        )
+        let rasterToRaw = rasterSnapshot.settings(for: .raw)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.distortion, false)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.tca, false)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.vignetting, false)
+        XCTAssertNil(rasterToRaw.lensCorrection?.profileID)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.defringePurpleAmount, 7)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.defringePurpleHue, 42)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.defringeGreenAmount, 3)
+        XCTAssertEqual(rasterToRaw.lensCorrection?.defringeGreenHue, 62)
+
+        let rawSnapshot = BatchSourceSnapshot(
+            identity: PhotoIdentity(resourceIdentifier: "raw-1"),
+            sourceURL: temporaryRoot.appendingPathComponent("src.arw"),
+            displayName: "src.arw",
+            sourceKind: .raw,
+            settings: settings
+        )
+        let rawToRaster = rawSnapshot.settings(for: .raster)
+        XCTAssertEqual(rawToRaster.lensCorrection?.distortion, false)
+        XCTAssertEqual(rawToRaster.lensCorrection?.defringePurpleAmount, 7)
+
+        let job = MacBatchExportJob(source: sourceURL, settings: settings, look: nil, lookName: "Sharp")
+        let jobToRaw = try job.settings(for: temporaryRoot.appendingPathComponent("target.dng"), resolveX3fMode: { _ in X3fMode.normal })
+        XCTAssertEqual(jobToRaw.lensCorrection?.distortion, false)
+        XCTAssertEqual(jobToRaw.lensCorrection?.defringePurpleAmount, 7)
+        XCTAssertEqual(jobToRaw.lensCorrection?.defringeGreenAmount, 3)
+
+        var grainSettings = Adjustments()
+        grainSettings.effectSettings.grainToneCurve = .negativeAsymmetric
+        grainSettings.effectSettings.grainFormatPreset = .film135
+        XCTAssertFalse(grainSettings.isEffectDefault(.grainAmount))
+        grainSettings.resetEffect(.grainAmount)
+        XCTAssertTrue(grainSettings.isEffectDefault(.grainAmount))
+        XCTAssertNil(grainSettings.photoEffects)
+    }
 }

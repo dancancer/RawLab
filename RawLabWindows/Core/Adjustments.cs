@@ -582,8 +582,11 @@ public sealed class Adjustments
         };
     }
     public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
-    public bool IsEffectDefault(bool vignette) => PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
-        .All(spec => EditingEffects[spec.Id] == spec.DefaultValue);
+    public bool IsEffectDefault(bool vignette) =>
+        PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
+            .All(spec => EditingEffects[spec.Id] == spec.DefaultValue)
+        && (vignette || (EditingEffects.GrainToneCurve == GrainToneCurve.Legacy
+            && EditingEffects.GrainFormatPreset == GrainFormatPreset.Custom));
     public void ResetGroup(string group)
     {
         foreach (var spec in ParameterSpec.All.Where(p => p.Group == group)) Reset(spec.Id);

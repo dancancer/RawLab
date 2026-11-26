@@ -128,6 +128,52 @@
       }
     },
     {
+      "id": "single-reset-sharpen-v2-only-raw",
+      "target": {
+        "kind": "sdr_raw",
+        "as_shot_wb": [
+          5200,
+          8
+        ],
+        "lens_valid": true,
+        "supports_raw_denoise": false,
+        "available_looks": [],
+        "seed_payload": {
+          "payload_version": 1,
+          "scope_version": 1,
+          "source": {
+            "identifier": "seed.ARW",
+            "is_raw": true,
+            "processing_version": 3
+          },
+          "values": {
+            "detail.sharpening.luminance_v2": true,
+            "detail.sharpening.radius": 1.8,
+            "detail.sharpening.detail": 60,
+            "detail.sharpening.masking": 40,
+            "light.exposure": 0.75
+          }
+        }
+      },
+      "scope": {
+        "kind": "tool",
+        "field": "detail.sharpening"
+      },
+      "expect": {
+        "status": "changed",
+        "values": {
+          "detail.sharpening": 0,
+          "detail.sharpening.luminance_v2": false,
+          "detail.sharpening.radius": 1.0,
+          "detail.sharpening.detail": 25.0,
+          "detail.sharpening.masking": 0.0
+        },
+        "untouched": [
+          "light.exposure"
+        ]
+      }
+    },
+    {
       "id": "group-reset-light-raw",
       "target": {
         "kind": "sdr_raw",

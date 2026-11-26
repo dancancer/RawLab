@@ -230,9 +230,16 @@ public struct Adjustments: Equatable, Codable {
     }
     public mutating func resetEffect(_ tool: AdjustmentParameter) {
         for p in PhotoEffectParameter.allCases where p.isVignette == (tool == .vignetteAmount) { setEffect(p, to: p.defaultValue) }
+        if tool != .vignetteAmount && !isHDREditing {
+            var state = effectSettings
+            state.grainToneCurve = .legacy
+            state.grainFormatPreset = .custom
+            photoEffects = state.isDefault ? nil : state
+        }
     }
     public func isEffectDefault(_ tool: AdjustmentParameter) -> Bool {
         PhotoEffectParameter.allCases.filter { $0.isVignette == (tool == .vignetteAmount) }.allSatisfy { editingEffectValue($0) == $0.defaultValue }
+            && (tool == .vignetteAmount || (effectSettings.grainToneCurve == .legacy && effectSettings.grainFormatPreset == .custom))
     }
 
     public var waveletSettings: WaveletDenoiseSettings { waveletNoiseReduction }
@@ -412,16 +419,7 @@ public struct Adjustments: Equatable, Codable {
             state.whiteBalanceMode = .asShot; state.resolveWhiteBalance(nil); state.temperature = 6500; state.tint = 0
         }
         state.rawNoiseReduction = 0; state.aiDenoiseEnabled = false
-        if let df = state.lensCorrection, df.hasDefringeSettings {
-            state.lensCorrection = LensCorrectionSettings(
-                defringePurpleAmount: df.defringePurpleAmount,
-                defringePurpleHue: df.defringePurpleHue,
-                defringeGreenAmount: df.defringeGreenAmount,
-                defringeGreenHue: df.defringeGreenHue
-            )
-        } else {
-            state.lensCorrection = nil
-        }
+        state.lensCorrection = state.lensCorrection?.defringeOnly
         return state
     }
 

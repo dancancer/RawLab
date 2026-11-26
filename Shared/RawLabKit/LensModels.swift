@@ -29,6 +29,15 @@ public struct LensCorrectionSettings: Codable, Equatable, Sendable {
         defringePurpleAmount != 0.0 || defringePurpleHue != 50.0
             || defringeGreenAmount != 0.0 || defringeGreenHue != 50.0
     }
+    public var defringeOnly: LensCorrectionSettings? {
+        guard hasDefringeSettings else { return nil }
+        return LensCorrectionSettings(
+            defringePurpleAmount: defringePurpleAmount,
+            defringePurpleHue: defringePurpleHue,
+            defringeGreenAmount: defringeGreenAmount,
+            defringeGreenHue: defringeGreenHue
+        )
+    }
     public var isValid: Bool {
         defringePurpleAmount.isFinite && Self.defringeAmountRange.contains(defringePurpleAmount)
             && defringePurpleHue.isFinite && Self.defringeHueRange.contains(defringePurpleHue)

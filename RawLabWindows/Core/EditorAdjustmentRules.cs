@@ -248,6 +248,9 @@ public static class EditorAdjustmentRules
                     effects = effects with { GrainToneCurve = GrainToneCurve.Legacy, GrainFormatPreset = GrainFormatPreset.Custom };
                 return value with { Effects = effects };
             case EditorAdjustmentTool.Denoise: return value with { Denoise = defaults.Denoise, DisplayChromaDenoise = defaults.DisplayChromaDenoise, AIDenoiseEnabled = false, AIDenoiseBlend = null };
+            case EditorAdjustmentTool.Sharpening:
+                value.Values[(int)Parameter.Sharpening] = defaults.Values[(int)Parameter.Sharpening];
+                return value with { SharpenV2 = null };
             case EditorAdjustmentTool.Geometry: return value with { Geometry = defaults.Geometry };
             case EditorAdjustmentTool.Lens: return value with { Lens = defaults.Lens };
             default:
