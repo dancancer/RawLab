@@ -386,6 +386,54 @@ sony2fuji_status sony2fuji_hdr_encode_rgba8_into(
     uint64_t dst_size_bytes,
     uint64_t dst_stride_bytes
 );
+
+// HDR luminance histogram of a linear-sRGB RGB32F buffer (at most 128,000,000 pixels).
+// Rec.709 luminance is evaluated in double precision and binned over [-8, +8] EV at
+// 16 bins per EV into the caller's SONY2FUJI_HDR_LUMINANCE_BINS counters; luminance <= 0
+// counts in bin 0. above_white counts luminance > 1 and peak_luminance is max(1, luminance)
+// rounded to float. Non-finite samples return SONY2FUJI_STATUS_INVALID_ARGUMENT; outputs are
+// written only on success.
+#define SONY2FUJI_HDR_LUMINANCE_BINS 256u
+sony2fuji_status sony2fuji_hdr_analyze_luminance(
+    const sony2fuji_hdr_buffer_v1* image,
+    uint32_t* ev_bins,
+    uint32_t* above_white,
+    float* peak_luminance
+);
+
+// Flags for sony2fuji_hdr_display_into, combined with bitwise OR into its uint32_t argument.
+// Without SDR or FALSE_COLOR the HDR plane is shown and luminance above 1 is compressed by a
+// shoulder that maps content_headroom onto display_headroom (non-finite -> 1, clamped to
+// [1, 65504]); display_headroom <= 1 shows SDR.
+// Valid combinations:
+// - RGBA16F output (BGRA8_SRGB clear): any of SDR, FALSE_COLOR, P3, CLAMP_SDR.
+//   FALSE_COLOR is a monitoring view of the HDR plane: its fixed band colours are emitted as is,
+//   whatever SDR, P3 or CLAMP_SDR say, so a client can pass its presentation flags unchanged.
+// - BGRA8_SRGB output: requires SDR or FALSE_COLOR (8-bit sRGB cannot hold the extended HDR
+//   presentation) and excludes P3 (P3 values under sRGB encoding are meaningless).
+// Unknown bits and other combinations return SONY2FUJI_STATUS_INVALID_ARGUMENT.
+typedef enum sony2fuji_hdr_display_flag {
+    SONY2FUJI_HDR_DISPLAY_SDR = 1,          // show the SDR plane
+    SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2,  // luminance bands of the HDR plane; sdr may be NULL
+    SONY2FUJI_HDR_DISPLAY_P3 = 4,           // linear Display P3 output instead of linear sRGB
+    SONY2FUJI_HDR_DISPLAY_CLAMP_SDR = 8,    // clamp the shown SDR plane to [0, 1]
+    SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB = 16   // sRGB-encoded opaque BGRA8 instead of linear RGBA16F (alpha 1)
+} sony2fuji_hdr_display_flag;
+// Maps an HDR/SDR pair of equal size (linear-sRGB RGB32F, at most 128,000,000 pixels) into the
+// caller's dst: 8 bytes per pixel for RGBA16F, 4 for BGRA8. content_headroom must be finite and
+// >= 1. Invalid arguments or non-finite samples return SONY2FUJI_STATUS_INVALID_ARGUMENT; an
+// RGBA16F channel beyond +-65504 returns SONY2FUJI_STATUS_PROCESSING_ERROR. dst is undefined
+// after a failure.
+sony2fuji_status sony2fuji_hdr_display_into(
+    const sony2fuji_hdr_buffer_v1* hdr,
+    const sony2fuji_hdr_buffer_v1* sdr,
+    float display_headroom,
+    float content_headroom,
+    uint32_t flags,
+    void* dst,
+    uint64_t dst_size_bytes,
+    uint64_t dst_stride_bytes
+);
 // 捕获几何调整后的 HDR，在自然饱和度之后、HSL/分级/外观之前取样。
 // 使用 sony2fuji_hsl_probe_sample/destroy；RGB 为扩展线性 sRGB，
 // hsl[2] 为有界坐标 Y/(1+Y)，不修改来源或渲染结果。

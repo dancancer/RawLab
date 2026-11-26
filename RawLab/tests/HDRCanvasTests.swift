@@ -15,7 +15,8 @@ private final class TestLinearHDRImage: HDRLinearDisplayImage {
     private(set) var linearPlaneAccessThreads: [Bool] = []
     private(set) var rgba16FCallCount = 0
 
-    init(width: Int = 8, height: Int = 4, hdrValues: [Float]? = nil, sdrValues: [Float]? = nil) throws {
+    init(width: Int = 8, height: Int = 4, hdrValues: [Float]? = nil, sdrValues: [Float]? = nil,
+         contentHeadroom: Float = 4) throws {
         self.width = width
         self.height = height
         let count = width * height * 3
@@ -34,9 +35,9 @@ private final class TestLinearHDRImage: HDRLinearDisplayImage {
         }
         self.hdrPixels = hdr
         self.sdrPixels = sdr
-        self.statistics = try hdr.withUnsafeBufferPointer { buf in
-            try HDRStatistics.analyze(buf, width: width, height: height, stride: width * 3)
-        }
+        // 统计由共享核心计算，这里只需要 Metal 内核读取的内容峰值。
+        self.statistics = HDRStatistics(bins: [Double](repeating: 0, count: 256), aboveWhite: 0,
+                                        headroom: contentHeadroom, pixels: width * height)
         let rgba = [UInt8](repeating: 255, count: width * height * 4)
         let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
         let provider = CGDataProvider(data: Data(rgba) as CFData)!
@@ -335,22 +336,26 @@ private final class SlowRGBA16FSpy: HDRDisplayImage {
             hdrFlat.append(contentsOf: [h.x, h.y, h.z])
             sdrFlat.append(contentsOf: [s.x, s.y, s.z])
         }
-        let parityImage = try TestLinearHDRImage(width: testPixels.count, height: 1, hdrValues: hdrFlat, sdrValues: sdrFlat)
-        for params in [
-            HDRDisplayParameters(headroom: 1.0, mode: .automatic, falseColor: false),
-            HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: false),
-            HDRDisplayParameters(headroom: 4.0, mode: .sdr, falseColor: false),
-            HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: true)
-        ] {
+        // 期望值由 sony2fuji_hdr_display_into（P3 | CLAMP_SDR，SDR/假色按模式）生成；内容峰值为
+        // sony2fuji_hdr_analyze_luminance 对这三个像素的结果。核心逻辑变化时须同步重新生成。
+        let parityImage = try TestLinearHDRImage(width: testPixels.count, height: 1, hdrValues: hdrFlat, sdrValues: sdrFlat,
+                                                 contentHeadroom: Float(bitPattern: 0x40a4_7e28))
+        let parityCases: [(HDRDisplayParameters, [UInt16])] = [
+            (HDRDisplayParameters(headroom: 1.0, mode: .automatic, falseColor: false),
+             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00]),
+            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: false),
+             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x4088, 0x3fd5, 0x3e64]),
+            (HDRDisplayParameters(headroom: 4.0, mode: .sdr, falseColor: false),
+             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00]),
+            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: true),
+             [0x251f, 0x30cd, 0x399a, 0x359a, 0x359a, 0x359a, 0x3c00, 0x0000, 0x359a])
+        ]
+        for (params, expected) in parityCases {
             let gpuData = try HDRCanvasRenderer.metalRGBA16F(linear: parityImage, parameters: params, device: device)
             try gpuData.withUnsafeBytes { raw in
                 let gpuWords = raw.bindMemory(to: UInt16.self)
                 for i in 0..<testPixels.count {
-                    let expectedVec = try HDRDisplayMath.pixel(
-                        hdr: testPixels[i].0, sdr: testPixels[i].1,
-                        contentHeadroom: parityImage.statistics.headroom, parameters: params
-                    )
-                    let expectedBits = try HDRDisplayMath.half(expectedVec)
+                    let expectedBits = expected[(i * 3)..<(i * 3 + 3)].map { $0 }
                     for c in 0..<3 {
                         let gVal = Float(Float16(bitPattern: gpuWords[i * 4 + c]))
                         let eVal = Float(Float16(bitPattern: expectedBits[c]))

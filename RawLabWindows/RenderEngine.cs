@@ -288,32 +288,25 @@ internal sealed partial class RenderEngine : IDisposable
 
     internal static BitmapSource CreateClippingMask(BitmapSource image)
     {
-        var width = image.PixelWidth;
-        var height = image.PixelHeight;
-        var stride = checked(width * 4);
-        // 显影结果是已冻结的不透明 BGRA 像素。分块读取，遮罩每像素只存一个调色板索引。
-        const int chunkRows = 32;
-        var pixels = new byte[checked(stride * Math.Min(chunkRows, height))];
-        var indices = new byte[checked(width * height)];
-        for (var row = 0; row < height; row += chunkRows)
+        // 高光/黑位分类与 HDR 路径、完整渲染共用核心 sony2fuji_analyze_image 的遮罩，不在 C# 重算。
+        var (pixels, width, height, stride) = ExtractBGRA8Preview(image);
+        var pin = GCHandle.Alloc(pixels, GCHandleType.Pinned);
+        Native.Buffer mask = default;
+        try
         {
-            var rows = Math.Min(chunkRows, height - row);
-            image.CopyPixels(new Int32Rect(0, row, width, rows), pixels, stride, 0);
-            var start = row * width;
-            for (int i = 0, offset = 0; i < rows * width; i++, offset += 4)
+            var buffer = new Native.Buffer
             {
-                var b = pixels[offset];
-                var g = pixels[offset + 1];
-                var r = pixels[offset + 2];
-                if (r == 255 || g == 255 || b == 255) indices[start + i] = 1;
-                else if (r == 0 && g == 0 && b == 0) indices[start + i] = 2;
-            }
+                Data = pin.AddrOfPinnedObject(), Size = (nuint)pixels.Length, Width = (uint)width, Height = (uint)height,
+                Stride = (uint)stride, PixelFormat = Native.PixelFormatBgra8
+            };
+            Native.CheckWithoutSession(AnalyzeStatistics(ref buffer, true, new uint[768], out _, out _, out mask));
+            return Bitmap(mask, opaque: false);
         }
-        // 与原有统计一致：高光标红，黑位标蓝，其余透明。
-        var palette = new BitmapPalette([Color.FromArgb(0, 0, 0, 0), Color.FromArgb(160, 255, 0, 0), Color.FromArgb(160, 0, 130, 255)]);
-        var mask = BitmapSource.Create(width, height, image.DpiX, image.DpiY, PixelFormats.Indexed8, palette, indices, width);
-        mask.Freeze();
-        return mask;
+        finally
+        {
+            Native.sony2fuji_release_buffer(ref mask);
+            pin.Free();
+        }
     }
 
     internal static (byte[] Bgra8, int Width, int Height, int Stride) ExtractBGRA8Preview(BitmapSource image)

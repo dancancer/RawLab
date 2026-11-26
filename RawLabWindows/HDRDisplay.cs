@@ -40,22 +40,22 @@ internal sealed record HDRLuminanceStatistics(uint[] Bins, double AboveWhite);
 
 internal static class HDRDisplay
 {
-    private static readonly uint FalseColorOverHeadroom = PackBgra(255, 0, 160);
-    private static readonly uint FalseColorHighlight = PackBgra(255, 203, 0);
-    private static readonly uint FalseColorShadow = PackBgra(39, 108, 218);
-    private static readonly uint FalseColorMid = PackBgra(160, 160, 160);
+    private const uint FalseColorBgra8Flags = HDRNative.DisplayFalseColor | HDRNative.DisplayBgra8Srgb;
+    private const int FalseColorRowBand = 16;
 
     internal static HDRLuminanceStatistics Analyze(HDRFloatImage image)
     {
-        var bins = new uint[256]; long above = 0;
-        for (var i=0;i<image.RGB.Length;i+=3) {
-            var y=.2126f*image.RGB[i]+.7152f*image.RGB[i+1]+.0722f*image.RGB[i+2];
-            if (!float.IsFinite(y)) throw new InvalidDataException("Nonfinite HDR luminance");
-            var ev=y>0 ? MathF.Log2(y) : -8;
-            bins[Math.Clamp((int)((Math.Clamp(ev,-8,8)+8)*16),0,255)]++;
-            if(y>1)above++;
+        var bins = new uint[256];
+        var pin = GCHandle.Alloc(image.RGB, GCHandleType.Pinned);
+        try
+        {
+            var buffer = FloatBuffer(image, pin.AddrOfPinnedObject(), 0, image.Height);
+            var status = Native.sony2fuji_hdr_analyze_luminance(ref buffer, bins, out var above, out _);
+            if (status == Native.StatusInvalidArgument) throw new InvalidDataException("Nonfinite HDR luminance");
+            Native.CheckWithoutSession(status);
+            return new(bins, (double)above / (image.Width * image.Height));
         }
-        return new(bins,(double)above/(image.Width*image.Height));
+        finally { pin.Free(); }
     }
 
     internal static BitmapSource FalseColor(HDRFloatImage image, float headroom, CancellationToken cancellation = default)
@@ -63,27 +63,54 @@ internal static class HDRDisplay
         var width = image.Width;
         var height = image.Height;
         var bytes = new byte[checked(width * height * 4)];
-        var pixels = MemoryMarshal.Cast<byte, uint>(bytes);
-        var rgb = image.RGB;
-        for (var row = 0; row < height; row++)
+        var source = GCHandle.Alloc(image.RGB, GCHandleType.Pinned);
+        var target = GCHandle.Alloc(bytes, GCHandleType.Pinned);
+        try
         {
-            cancellation.ThrowIfCancellationRequested();
-            var rowOffset = row * width;
-            for (var col = 0; col < width; col++)
+            // 假色分档与 sRGB 编码在共享核心；按行段调用以保留逐段取消。
+            for (var row = 0; row < height; row += FalseColorRowBand)
             {
-                var p = rowOffset + col;
-                var i = p * 3;
-                var y = .2126f * rgb[i] + .7152f * rgb[i + 1] + .0722f * rgb[i + 2];
-                pixels[p] = y > headroom ? FalseColorOverHeadroom
-                    : y > 1f ? FalseColorHighlight
-                    : y <= .01f ? FalseColorShadow
-                    : FalseColorMid;
+                cancellation.ThrowIfCancellationRequested();
+                var rows = Math.Min(FalseColorRowBand, height - row);
+                var buffer = FloatBuffer(image, source.AddrOfPinnedObject(), row, rows);
+                var status = Native.sony2fuji_hdr_display_into(ref buffer, IntPtr.Zero, headroom, 1, FalseColorBgra8Flags,
+                    target.AddrOfPinnedObject() + checked(row * width * 4), (ulong)rows * (ulong)width * 4, (ulong)width * 4);
+                if (status == Native.StatusInvalidArgument) throw new InvalidDataException("Nonfinite HDR luminance");
+                Native.CheckWithoutSession(status);
             }
+        }
+        finally
+        {
+            target.Free();
+            source.Free();
         }
         var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Pbgra32, null, bytes, width * 4);
         bitmap.Freeze();
         return bitmap;
     }
+
+    // 紧密排列的 RGB32F 平面上 [firstRow, firstRow + rows) 行的线性 sRGB 视图；data 须已钉住。
+    private static Native.HDRBuffer FloatBuffer(HDRFloatImage image, IntPtr data, int firstRow, int rows)
+    {
+        var rowBytes = checked((ulong)image.Width * 12);
+        if (image.Width <= 0 || image.Height <= 0 || (ulong)image.RGB.Length * sizeof(float) < rowBytes * (ulong)image.Height)
+            throw new InvalidDataException("Invalid HDR float buffer");
+        return new Native.HDRBuffer
+        {
+            Version = 1,
+            StructSize = (uint)Marshal.SizeOf<Native.HDRBuffer>(),
+            Data = data + checked((nint)((ulong)firstRow * rowBytes)),
+            SizeBytes = (ulong)rows * rowBytes,
+            Width = (uint)image.Width,
+            Height = (uint)rows,
+            StrideBytes = rowBytes,
+            PixelFormat = HDRNative.PixelRGB32FLinear,
+            ColorEncoding = HDRNative.LinearSRGB,
+            ContentHeadroom = image.ContentHeadroom,
+            HeadroomKind = image.HeadroomKind
+        };
+    }
+
     internal static HDRRenderedPair CopyPair(Native.HDRImagePair pair)
     {
         var hdr = Copy(pair.Hdr); var sdr = Copy(pair.Sdr);
@@ -121,20 +148,7 @@ internal static class HDRDisplay
         Native.Buffer output = default;
         try
         {
-            var hdrBuffer = new Native.HDRBuffer
-            {
-                Version = 1,
-                StructSize = (uint)Marshal.SizeOf<Native.HDRBuffer>(),
-                Data = pin.AddrOfPinnedObject(),
-                SizeBytes = (ulong)floatCount * sizeof(float),
-                Width = (uint)image.Width,
-                Height = (uint)image.Height,
-                StrideBytes = (ulong)image.Width * 12,
-                PixelFormat = HDRNative.PixelRGB32FLinear,
-                ColorEncoding = HDRNative.LinearSRGB,
-                ContentHeadroom = image.ContentHeadroom,
-                HeadroomKind = image.HeadroomKind
-            };
+            var hdrBuffer = FloatBuffer(image, pin.AddrOfPinnedObject(), 0, image.Height);
             var status = bgra
                 ? Native.sony2fuji_hdr_encode_bgra8(ref hdrBuffer, out output)
                 : Native.sony2fuji_hdr_encode_rgba8(ref hdrBuffer, out output);
@@ -261,7 +275,4 @@ internal static class HDRDisplay
         }
         return new(width, height, checked((int)buffer.StrideBytes), values, buffer.ContentHeadroom, buffer.HeadroomKind);
     }
-
-    private static uint PackBgra(byte r, byte g, byte b) =>
-        (uint)b | ((uint)g << 8) | ((uint)r << 16) | 0xFF00_0000u;
 }

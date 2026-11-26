@@ -527,6 +527,11 @@ internal static partial class Native
         ref HDRBuffer source, out Buffer outRgba8);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_encode_bgra8(
         ref HDRBuffer source, out Buffer outBgra8);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_analyze_luminance(
+        ref HDRBuffer image, [Out] uint[] evBins, out uint aboveWhite, out float peakLuminance);
+    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_display_into(
+        ref HDRBuffer hdr, IntPtr sdr, float displayHeadroom, float contentHeadroom, uint flags,
+        IntPtr dst, ulong dstSizeBytes, ulong dstStrideBytes);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_hdr_create_hsl_probe_json(
         Session session, ref HDRImagePair source, ref HDRRenderOptions options,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson, ulong sourceRevision, ulong requestRevision,
