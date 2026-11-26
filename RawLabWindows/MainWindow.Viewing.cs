@@ -17,7 +17,8 @@ public partial class MainWindow
     private (BitmapSource Source, byte[] Bgra8, int Width, int Height, int Stride)? cachedSharpenMaskInput;
     private (BitmapSource Source, BitmapSource Mask, double Radius, double Masking)? sharpenMaskOverlay;
     private bool sharpenMaskPreviewActive;
-    private bool sharpenMaskPending;
+    private int sharpenMaskInFlight;
+    private bool sharpenMaskPending => sharpenMaskInFlight > 0;
     private long sharpenMaskRequestEpoch;
     private bool beforeKeyDown;
     private readonly ViewSourceState viewSourceState = new();
@@ -155,10 +156,10 @@ public partial class MainWindow
         if (clippingOverlay is { } overlay && !ReferenceEquals(overlay.Source, result?.Image)) clippingOverlay = null;
         if (sharpenMaskOverlay is { } maskEntry && !ReferenceEquals(maskEntry.Source, result?.Image)) sharpenMaskOverlay = null;
         if (cachedSharpenMaskInput is { } cachedInput && !ReferenceEquals(cachedInput.Source, result?.Image)) cachedSharpenMaskInput = null;
-        var showingSharpenMask = sharpenMaskPreviewActive && sharpenMaskOverlay?.Mask is { } sharpenMaskImage;
-        var resultDisplay = showingSharpenMask
-            ? sharpenMaskImage
-            : EnsureInspectionOverlayBitmap(HDRPresentationBitmap(result) ?? openingPreview);
+        BitmapSource? sharpenMaskImage = sharpenMaskPreviewActive ? sharpenMaskOverlay?.Mask : null;
+        var showingSharpenMask = sharpenMaskImage != null;
+        var resultDisplay = sharpenMaskImage
+            ?? EnsureInspectionOverlayBitmap(HDRPresentationBitmap(result) ?? openingPreview);
         ResultCanvas.SetImage(resultDisplay, showingSharpenMask ? null : clippingOverlay?.Mask);
         var rawComparison = HDRPresentationBitmap(reference);
         var comparisonDisplay = needReferenceOverlay ? EnsureInspectionOverlayBitmap(rawComparison) : rawComparison;
@@ -213,7 +214,7 @@ public partial class MainWindow
             return;
         }
         var epoch = ++sharpenMaskRequestEpoch;
-        sharpenMaskPending = true;
+        ++sharpenMaskInFlight;
         try
         {
             (byte[] Bgra8, int Width, int Height, int Stride) input;
@@ -238,9 +239,9 @@ public partial class MainWindow
         }
         catch (Exception error)
         {
-            if (!closing && sharpenMaskPreviewActive && ReferenceEquals(result?.Image, source)) Report(error);
+            if (!closing && sharpenMaskPreviewActive && epoch == sharpenMaskRequestEpoch && ReferenceEquals(result?.Image, source)) Report(error);
         }
-        finally { sharpenMaskPending = false; }
+        finally { if (sharpenMaskInFlight > 0) --sharpenMaskInFlight; }
     }
     private async void RefreshClippingMask()
     {

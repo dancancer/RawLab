@@ -438,7 +438,7 @@ struct GlesPhotoRenderer::Impl {
             spH.srcRowOffset = band.first; spH.auxRowOffset = band.first;
             spH.bandDims[0] = bandRows; spH.bandDims[1] = bandRows;
             spH.stage = static_cast<uint32_t>(SpatialKernel::TextureBlurH);
-            dispatchSpatial(spH, 0, 5, 5);
+            dispatchSpatial(spH, 0, 5, 0);
 
             const size_t dstBytes = size_t(band.rows) * rowBytes;
             allocate(2, dstBytes);
@@ -484,7 +484,7 @@ struct GlesPhotoRenderer::Impl {
             sp.bandDims[0] = bandRows; sp.bandDims[1] = bandRows;
 
             sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepH);
-            dispatchSpatial(sp, 0, 5, 5);
+            dispatchSpatial(sp, 0, 5, 0);
             sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepV);
             dispatchSpatial(sp, 5, 6, 5);
             int auxSlot = 6;

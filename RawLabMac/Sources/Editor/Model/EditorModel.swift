@@ -241,7 +241,9 @@ final class EditorModel: ObservableObject {
     @Published var importing=false
     var pendingOpenID=UUID()
     @Published var neutral: RenderedImage?
-    @Published var result: RenderedImage?
+    @Published var result: RenderedImage? { didSet {
+        if sharpenMaskPreviewActive { refreshSharpenMaskPreviewIfNeeded() }
+    } }
     @Published var busy = false { didSet { if oldValue && !busy { resumeResetToolIfReady() } } }
     @Published var autoExposing = false
     var editRevision = UUID() { didSet {

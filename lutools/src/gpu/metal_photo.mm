@@ -815,9 +815,18 @@ MetalContext& metalContext() {
             context.noisePipeline = makePipeline(context.device, library, @"noiseReduction");
             context.sharpenPipeline = makePipeline(context.device, library, @"sharpen");
             NSString* spatialSource = [NSString stringWithUTF8String:kSpatialShaderSource.c_str()];
+            MTLCompileOptions* spatialOptions = [MTLCompileOptions new];
+            if (@available(macOS 15.0, iOS 18.0, *)) {
+                spatialOptions.mathMode = MTLMathModeSafe;
+            } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                spatialOptions.fastMathEnabled = NO;
+#pragma clang diagnostic pop
+            }
             NSError* spatialError = nil;
             id<MTLLibrary> spatialLibrary =
-                [context.device newLibraryWithSource:spatialSource options:nil error:&spatialError];
+                [context.device newLibraryWithSource:spatialSource options:spatialOptions error:&spatialError];
             if (spatialLibrary && !spatialError) {
                 context.defringePipeline = makePipeline(context.device, spatialLibrary, @"spatialDefringe");
                 context.dehazePipeline = makePipeline(context.device, spatialLibrary, @"spatialDehaze");

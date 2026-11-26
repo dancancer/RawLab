@@ -2887,6 +2887,7 @@ RenderStatus Pipeline::supportsFastFullResGpu(
             }
         }
     }
+    (void)useDcp;
 
 #if defined(SONY2FUJI_ENABLE_METAL)
     const PhotoGpuCapabilities caps = queryMetalPhotoCapabilities(gpuCheckW, gpuCheckH);

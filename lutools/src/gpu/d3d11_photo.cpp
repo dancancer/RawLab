@@ -408,7 +408,7 @@ struct D3D11PhotoRenderer::Impl {
             spH.srcRowOffset = band.first; spH.auxRowOffset = band.first;
             spH.bandDims[0] = bandRows; spH.bandDims[1] = bandRows;
             spH.stage = static_cast<uint32_t>(SpatialKernel::TextureBlurH);
-            dispatchSpatial(spH, source, spAux1, spAux1);
+            dispatchSpatial(spH, source, spAux1, source);
             auto spV = spH;
             spV.rowOffset = row; spV.rows = band.rows;
             spV.stage = static_cast<uint32_t>(SpatialKernel::TextureApplyV);
@@ -456,7 +456,7 @@ struct D3D11PhotoRenderer::Impl {
             sp.srcRowOffset = band.first; sp.auxRowOffset = band.first;
             sp.bandDims[0] = bandRows; sp.bandDims[1] = bandRows;
             sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepH);
-            dispatchSpatial(sp, source, spAux1, spAux1);
+            dispatchSpatial(sp, source, spAux1, source);
             sp.stage = static_cast<uint32_t>(SpatialKernel::SharpenPrepV);
             dispatchSpatial(sp, spAux1, spAux2, spAux1);
             Buffer* auxPtr = &spAux2;
