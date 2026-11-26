@@ -2093,7 +2093,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     rawlab_add_test(
         NAME viewport_roi
         SOURCES tests/viewport_roi_tests.cpp
-        DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples"
+        DEFINES TEST_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples" TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         LIBRARIES sony2fuji_core
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
