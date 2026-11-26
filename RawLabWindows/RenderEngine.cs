@@ -20,8 +20,9 @@ internal sealed partial class RenderEngine : IDisposable
     private Native.CancellationCallback? cancellationCallback;
     private readonly StatisticsAnalyzer statisticsAnalyzer;
     private sealed record Stamp(string Path,long Length,long Time,long Created=0);
-    private sealed record PreviewKey(Native.Request Request,DenoiseSettings Denoise,PhotoEffectsSettings Effects,ToneControlsSettings ToneControls,AtmosphereSettings Atmosphere,ColorGradingSettings ColorGrading,ToneCurveSettings Curve,int DisplayChromaDenoise,
-        int ExposureMode,HslSettings Hsl,LensSettings Lens,GeometrySettings Geometry,ProcessingIdentity Processing,X3fMode X3fMode,int RecipeSettingsVersion,double Strength,bool AIEnabled,double AIBlend,int Mode,OriginalIdentity Raw,OriginalIdentity? Lut,HDRSettings? HDR,int? ProRAWDecodeVersion,string? SourceFingerprint);
+    // EditState 是 SDR 渲染实际交给 sony2fuji_session_render 的规范编辑状态 JSON，新增编辑字段无需在此逐项登记；
+    // HDR 编辑走 HDRNative.Render、不消费该 JSON（为 null），由 HDR 记录参与键。
+    private sealed record PreviewKey(string? EditState,HDRSettings? HDR,int? ProRAWDecodeVersion,int Mode,OriginalIdentity Raw,OriginalIdentity? Lut,string? SourceFingerprint);
     private readonly string lensDatabase;
     private readonly AppPaths appPaths;
     private Stamp? lensStamp;
@@ -210,11 +211,11 @@ internal sealed partial class RenderEngine : IDisposable
                 PhotoInput.ProbeCameraRaw(path, out var cameraInfo, settings.Processing.Version) == HDRProbeState.Supported)
                 sourceFingerprint = cameraInfo!.CacheIdentity;
             var preparedRecipe = settings.IsHDREditing ? (PreparedRecipeSettings?)null : PrepareRecipe(path, settings);
-            var keySettings = preparedRecipe?.Settings ?? settings;
-            var key=new PreviewKey(
-                preparedRecipe is { } resolved ? resolved.Request(path,lut,2000,null) : settings.Request(path,lut,2000,null),
-                keySettings.Denoise,keySettings.Effects,keySettings.ToneControls,keySettings.Atmosphere,keySettings.ColorGrading,keySettings.Curve,keySettings.DisplayChromaDenoise,
-                keySettings.ExposureMode,keySettings.Hsl,keySettings.Lens,keySettings.Geometry,keySettings.Processing,keySettings.X3fMode,keySettings.MasterRecipeSettingsVersion,keySettings[Parameter.Strength],keySettings.ActiveAIDenoise,keySettings.AIDenoiseStrength,gpuMode,rawStamp,lutStamp,keySettings.HDR,keySettings.ProRAWDecodeVersion,sourceFingerprint);
+            // 与 PrepareExecution 为预览生成的编码一致：同一已解析配方设置、栅格判定和 LUT 路径。
+            var editState = preparedRecipe is { } resolved
+                ? CanonicalEditRecipe.EncodeState(resolved.Settings, PhotoInput.IsRaster(path), lutPath: lut)
+                : null;
+            var key=new PreviewKey(editState,settings.HDR,settings.ProRAWDecodeVersion,gpuMode,rawStamp,lutStamp,sourceFingerprint);
             var fingerprintChanged = lastSourceFingerprint != sourceFingerprint;
             lastSourceFingerprint = sourceFingerprint;
             // HDR previews have a 2000px ceiling, including the viewport's native-size request.

@@ -250,6 +250,12 @@ public sealed class WpfSuiteTests
 
     [StaFact]
     [Trait("Category", "Native")]
+    [Trait("Suite", "recipe-white-balance")]
+    public void PreviewCacheTracksEveryRenderedEditWorks() =>
+        WpfTestHost.Run(() => PreviewCacheEditChecks.Run(TestInputs.Repo(), TestInputs.Raw(), Check));
+
+    [StaFact]
+    [Trait("Category", "Native")]
     [Trait("Suite", "atmosphere-render")]
     public void AtmosphereRenderWorks() =>
         WpfTestHost.Run(() => AtmosphereRenderChecks.Run(TestInputs.Repo(), TestInputs.Results("atmosphere-render"), TestInputs.Cli(), Check));

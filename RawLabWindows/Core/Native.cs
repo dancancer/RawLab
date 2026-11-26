@@ -456,7 +456,6 @@ internal static partial class Native
     [StructLayout(LayoutKind.Sequential)]
     internal struct LensReportV2 { public LensReport Base; public int HasVignetting, AppliedVignetting; }
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report_v2(Session session, out LensReportV2 report);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_lens_report(Session session,out LensReport report);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_inspect_lens(Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string input,out LensReport report,[Out] LensProfile[]? profiles,uint capacity,out uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_create_hsl_probe_json(
         Session session, ref RenderOptions options, [MarshalAs(UnmanagedType.LPUTF8Str)] string? editStateJson,
@@ -473,16 +472,12 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_unsupported_reason(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_gpu_fallback_reason(Session session);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_session_get_gpu_error(Session session);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve(ref ToneCurveConfig config,[In] double[] x,[Out] double[] y,uint count);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_sample_tone_curve_v2(
         ref ToneCurveConfig config, ref ToneCurveParametricConfig parametric, [In] double[] x, [Out] double[] y, uint count);
     [DllImport(Dll, EntryPoint="sony2fuji_sample_tone_curve_v2", CallingConvention=CallingConvention.Cdecl)]
     internal static extern int SampleToneCurveV2WithoutParametric(
         ref ToneCurveConfig config, IntPtr parametric, [In] double[] x, [Out] double[] y, uint count);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_tone_curves_v2(
-        Session session, ref ToneCurveSetV2Config config);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_exposure(Session session,out float baseline,out float metadata);
-    [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_get_effective_raw_white_balance(Session session,out float temperature,out float tint);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_resolve_recipe_wb(Session session,ref RecipeWbRequest request,out RecipeWbResult result);
     [DllImport(Dll, CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_sample_wb_probe_json(
@@ -552,7 +547,6 @@ internal static partial class Native
     internal static extern int sony2fuji_hdr_camera_ai_key(Session session,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string path, [Out] byte[] key, uint capacity, ref HDRDiagnostic diagnostic);
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_available();
-    [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_ai_hardware_available();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern IntPtr sony2fuji_ai_get_devices();
     [DllImport(Dll,CallingConvention=CallingConvention.Cdecl)] internal static extern int sony2fuji_session_set_ai_device(
         Session session,[MarshalAs(UnmanagedType.LPUTF8Str)] string deviceID);
@@ -570,13 +564,6 @@ internal static partial class Native
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int sony2fuji_compare_lut_previews(ref Buffer candidate, ref Buffer reference,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string conditions, ref DcpBlob output);
-    [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern int CompileDcp(
-        IntPtr source,
-        nuint sourceSizeBytes,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourceName,
-        ref DcpBlob output,
-        ref DcpErrorReason reason);
     [DllImport(Dll, EntryPoint = "sony2fuji_compile_dcp_with_options", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int CompileDcpWithOptions(
         IntPtr source,
@@ -601,10 +588,6 @@ internal static partial class Native
     [DllImport(Dll, EntryPoint = "sony2fuji_prepare_lut_compatibility", ExactSpelling = true, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int PrepareLutCompatibility([MarshalAs(UnmanagedType.LPUTF8Str)] string path,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string request, ref DcpBlob output);
-    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern int sony2fuji_geometry_output_size(
-        uint sourceWidth, uint sourceHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
-        out uint outWidth, out uint outHeight);
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int sony2fuji_geometry_infer_source_size(
         uint outputWidth, uint outputHeight, ref GeometryConfig geometry, ref PerspectiveConfig perspective,
