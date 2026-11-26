@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "sony2fuji/edit_recipe.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "sony2fuji/ffi/sony2fuji_hdr.h"
 
@@ -7,7 +8,10 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <functional>
+#include <initializer_list>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace {
@@ -555,9 +559,230 @@ void testHdrRoiParityHeadroomAndSubRect() {
 #endif
 }
 
+// 色相扫描 + 带彩边的亮度阶梯：每个色彩算子都有可作用的像素，去紫/绿边也有边缘可处理。
+std::vector<uint8_t> makeStageOrderPattern(uint32_t width, uint32_t height) {
+    std::vector<uint8_t> pixels(size_t(width) * height * 3);
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const float fx = float(x) / float(width - 1);
+            const float fy = float(y) / float(height - 1);
+            float r, g, b;
+            if (fy < 0.55f) {
+                const float hue = fx * 6.0f;
+                const float s = 0.15f + 0.85f * fy / 0.55f;
+                const float v = 0.35f + 0.6f * std::fabs(std::sin(float(x) * 0.05f));
+                const int sector = int(hue) % 6;
+                const float f = hue - std::floor(hue);
+                const float p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+                const float table[6][3] = {{v, t, p}, {q, v, p}, {p, v, t}, {p, q, v}, {t, p, v}, {v, p, q}};
+                r = table[sector][0];
+                g = table[sector][1];
+                b = table[sector][2];
+            } else {
+                r = g = b = fx + 0.08f * std::sin(float(x) * 0.7f) * std::cos(float(y) * 0.53f);
+                if ((x / 9) % 2 == 0 && (y / 11) % 2 == 1) { r += 0.25f; b += 0.3f; g -= 0.05f; }
+                if (x % 13 < 2) { g += 0.25f; r -= 0.1f; }
+            }
+            const size_t idx = (size_t(y) * width + x) * 3;
+            pixels[idx + 0] = static_cast<uint8_t>(std::lround(std::clamp(r, 0.0f, 1.0f) * 255.0f));
+            pixels[idx + 1] = static_cast<uint8_t>(std::lround(std::clamp(g, 0.0f, 1.0f) * 255.0f));
+            pixels[idx + 2] = static_cast<uint8_t>(std::lround(std::clamp(b, 0.0f, 1.0f) * 255.0f));
+        }
+    }
+    return pixels;
+}
+
+sony2fuji_tone_curve_config customCurve(std::initializer_list<std::pair<double, double>> points) {
+    sony2fuji_tone_curve_config curve{SONY2FUJI_TONE_CURVE_CONFIG_VERSION, sizeof(curve), SONY2FUJI_CURVE_CUSTOM,
+        static_cast<uint32_t>(points.size()), {}};
+    uint32_t i = 0;
+    for (const auto& point : points) curve.points[i++] = {point.first, point.second};
+    return curve;
+}
+
+struct StageCase {
+    const char* name;
+    std::function<void(sony2fuji::EditRecipe&)> apply;
+    // 逐像素算子只容许 ROI 重采样的 ±1 DN 级舍入；空间算子另有引导图分析场的近似。
+    int maxDiff;
+    double meanDiff;
+};
+
+// 1:1 视口 ROI 与导出整图必须走同一条阶段链：任一算子在某条路径缺失或顺序错位，
+// 同一区域的像素就会明显偏离。逐个算子单独开启，再把全部逐像素算子叠在一起锁定顺序。
+void testStageOrderRoiMatchesFullRender() {
+    constexpr uint32_t width = 360;
+    constexpr uint32_t height = 240;
+    const auto src = makeStageOrderPattern(width, height);
+    const std::string fixtures = TEST_FIXTURE_DIR;
+    const auto curves = [](sony2fuji::EditRecipe& r) {
+        r.toneCurve = customCurve({{0, 0.05}, {0.25, 0.17}, {0.7, 0.85}, {1, 0.97}});
+        r.channelCurves[0] = customCurve({{0, 0}, {0.5, 0.6}, {1, 1}});
+        r.channelCurves[2] = customCurve({{0, 0.08}, {0.5, 0.45}, {1, 1}});
+        r.parametricCurve.highlights = -35;
+        r.parametricCurve.darks = 30;
+    };
+    const auto bwPoints = [](sony2fuji::EditRecipe& r) {
+        r.toneControls.black_point = -0.6f;
+        r.toneControls.white_point = 0.5f;
+    };
+    const auto vibrance = [](sony2fuji::EditRecipe& r) { r.toneControls.vibrance = 0.7f; };
+    const auto hsl = [](sony2fuji::EditRecipe& r) {
+        for (int i = 0; i < 8; ++i) {
+            r.hsl.hue[i] = i % 2 ? 40.0f : -30.0f;
+            r.hsl.saturation[i] = i % 3 ? 35.0f : -45.0f;
+            r.hsl.lightness[i] = i % 2 ? -25.0f : 30.0f;
+        }
+    };
+    const auto pointColor = [](sony2fuji::EditRecipe& r) {
+        r.pointColor.swatchCount = 2;
+        auto& a = r.pointColor.swatches[0];
+        a.srcHue = 25; a.srcSaturation = 0.6f; a.srcLuminance = 0.55f;
+        a.hueShift = 30; a.saturationShift = 40; a.luminanceShift = -20; a.variance = -30; a.range = 70;
+        auto& b = r.pointColor.swatches[1];
+        b.srcHue = 210; b.srcSaturation = 0.7f; b.srcLuminance = 0.45f;
+        b.hueShift = -40; b.saturationShift = -30; b.luminanceShift = 25; b.variance = 40; b.range = 60;
+    };
+    const auto selective = [](sony2fuji::EditRecipe& r) {
+        for (int i = 0; i < 9; ++i)
+            r.selectiveColor.bands[i] = {float(i * 7 - 30), float(25 - i * 6), float(i % 2 ? 30 : -20), float(i % 3 ? 10 : -15)};
+    };
+    const auto grading = [](sony2fuji::EditRecipe& r) {
+        auto& g = r.colorGradingV2;
+        g.shadows_hue = 200; g.shadows_saturation = 45; g.shadows_luminance = -20;
+        g.midtones_hue = 40; g.midtones_saturation = 25;
+        g.highlights_hue = 60; g.highlights_saturation = 30; g.highlights_luminance = 15;
+        g.global_hue = 300; g.global_saturation = 15; g.blending = 70; g.balance = -20;
+    };
+    const auto calibration = [](sony2fuji::EditRecipe& r) { r.calibration = {25, 30, 40, -25, -30, 20, 35}; };
+    const auto look = [fixtures](sony2fuji::EditRecipe& r) {
+        r.lookPath = fixtures + "/golden-srgb-look.cube";
+        r.lookStrength = 0.8f;
+    };
+    const auto tone = [](sony2fuji::EditRecipe& r) { r.contrast = 1.35f; r.saturation = 1.3f; };
+    const auto whiteBalance = [](sony2fuji::EditRecipe& r) {
+        r.exposureEv = 0.4f;
+        r.rasterRelativeWb = true;
+        r.temperatureKelvin = 5200;
+        r.tint = 15;
+    };
+    const auto bwMixer = [](sony2fuji::EditRecipe& r) {
+        r.bw.enabled = true;
+        r.bw.weights = {40, -20, 30, -50, 25, -35, 60, -10};
+    };
+    const auto everyColorStage = [=](sony2fuji::EditRecipe& r) {
+        whiteBalance(r); calibration(r); look(r); tone(r); curves(r); bwPoints(r);
+        vibrance(r); hsl(r); pointColor(r); selective(r); grading(r);
+    };
+
+    const std::vector<StageCase> cases = {
+        {"exposure_white_balance", whiteBalance, 2, 0.35},
+        {"calibration", calibration, 2, 0.35},
+        {"look", look, 2, 0.35},
+        {"contrast_saturation", tone, 2, 0.35},
+        {"curves", curves, 2, 0.35},
+        {"luminosity_curve", [=](sony2fuji::EditRecipe& r) { curves(r); r.curveApplyToLuminosity = true; }, 2, 0.35},
+        {"black_white_points", bwPoints, 2, 0.35},
+        {"vibrance", vibrance, 2, 0.35},
+        {"hsl", hsl, 2, 0.35},
+        {"point_color", pointColor, 2, 0.35},
+        {"selective_color", selective, 2, 0.35},
+        {"color_grading", grading, 2, 0.35},
+        {"bw_mixer", bwMixer, 2, 0.35},
+        {"bw_mixer_then_color", [=](sony2fuji::EditRecipe& r) { bwMixer(r); grading(r); hsl(r); }, 2, 0.35},
+        {"every_color_stage", everyColorStage, 2, 0.35},
+        {"defringe", [](sony2fuji::EditRecipe& r) { r.defringe = {12, 60, 8, 40}; }, 2, 0.35},
+        {"dehaze", [](sony2fuji::EditRecipe& r) { r.atmosphere.dehaze = 0.6f; }, 4, 0.5},
+        {"clarity", [](sony2fuji::EditRecipe& r) { r.atmosphere.clarity = 0.6f; }, 4, 0.5},
+        {"texture", [](sony2fuji::EditRecipe& r) { r.texture = 0.6f; }, 2, 0.35},
+        {"chroma_denoise", [](sony2fuji::EditRecipe& r) { r.chromaDenoise = 1; }, 2, 0.35},
+        {"sharpen", [](sony2fuji::EditRecipe& r) { r.sharpening = 0.9f; r.sharpenV2 = {true, 1.4f, 40, 20}; }, 2, 0.35},
+        {"film_optics", [](sony2fuji::EditRecipe& r) { r.filmOptics = {45, 65, 40, 10, 35, 60, 45}; }, 4, 0.5},
+        {"effects", [](sony2fuji::EditRecipe& r) {
+            r.effects.vignette_amount = -45; r.effects.grain_amount = 30; r.effects.grain_size = 30; }, 2, 0.35},
+    };
+
+    sony2fuji_render_options_v1 options{};
+    options.version = SONY2FUJI_RENDER_OPTIONS_V1_VERSION;
+    options.struct_size = sizeof(options);
+    options.input_type = SONY2FUJI_INPUT_DISPLAY_BUFFER;
+    options.input_pixel_format = SONY2FUJI_PIXEL_RGB8;
+    options.input_pixels = src.data();
+    options.input_width = width;
+    options.input_height = height;
+    options.input_color_space = SONY2FUJI_COLOR_SRGB;
+    options.output_target = SONY2FUJI_TARGET_BUFFER;
+    options.output_format = SONY2FUJI_OUTPUT_RGB8;
+
+    for (const auto version : {SONY2FUJI_PROCESSING_LEGACY, SONY2FUJI_PROCESSING_BASIC_V3}) {
+        auto session = createSession();
+        sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+        require(sony2fuji_session_set_gpu_config(session.get(), &gpu) == SONY2FUJI_STATUS_OK, "gpu off failed");
+        for (const auto& stage : cases) {
+            sony2fuji::EditRecipe recipe;
+            recipe.schemaVersion = 20;
+            recipe.processingVersion = version;
+            recipe.rasterInput = true;
+            recipe.exposureMode = SONY2FUJI_EXPOSURE_SENSOR;
+            recipe.inputPath = "pattern.png";
+            recipe.outputPath = "out.png";
+            recipe.outputFormat = SONY2FUJI_OUTPUT_PNG;
+            stage.apply(recipe);
+            const std::string json = sony2fuji::serializeEditRecipe(recipe);
+            const std::string label = std::string(stage.name) +
+                (version == SONY2FUJI_PROCESSING_BASIC_V3 ? " [basic v3]" : " [legacy]");
+
+            auto full = options;
+            full.intent = SONY2FUJI_INTENT_FINAL;
+            full.size_mode = SONY2FUJI_SIZE_NATIVE;
+            BufferGuard fullOut;
+            require(sony2fuji_session_render(session.get(), &full, json.c_str(), &fullOut.buf, nullptr) ==
+                SONY2FUJI_STATUS_OK, label + " full render failed");
+
+            sony2fuji_viewport_roi roi{sizeof(roi), 1, 0.30, 0.20, 0.70, 0.75, 0};
+            auto preview = options;
+            preview.intent = SONY2FUJI_INTENT_PREVIEW;
+            preview.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+            preview.preview_long_edge = 1024;
+            preview.interactive_preview = 1;
+            preview.viewport_roi = &roi;
+            BufferGuard roiOut;
+            sony2fuji_viewport_roi_result meta{};
+            meta.struct_size = sizeof(meta);
+            require(sony2fuji_session_render(session.get(), &preview, json.c_str(), &roiOut.buf, &meta) ==
+                SONY2FUJI_STATUS_OK, label + " ROI render failed");
+            require(meta.active == 1 && roiOut.buf.width == meta.native_x1 - meta.native_x0 &&
+                    roiOut.buf.height == meta.native_y1 - meta.native_y0 &&
+                    meta.full_native_width == fullOut.buf.width && meta.full_native_height == fullOut.buf.height,
+                label + " ROI must be a 1:1 tile of the full render");
+
+            const auto* fullBytes = static_cast<const uint8_t*>(fullOut.buf.data);
+            const auto* roiBytes = static_cast<const uint8_t*>(roiOut.buf.data);
+            int maxDiff = 0;
+            double sum = 0;
+            for (uint32_t y = 0; y < roiOut.buf.height; ++y) {
+                for (uint32_t x = 0; x < roiOut.buf.width; ++x) {
+                    const size_t f = size_t(meta.native_y0 + y) * fullOut.buf.stride_bytes + size_t(meta.native_x0 + x) * 3;
+                    const size_t t = size_t(y) * roiOut.buf.stride_bytes + size_t(x) * 3;
+                    for (int c = 0; c < 3; ++c) {
+                        const int d = std::abs(int(fullBytes[f + c]) - int(roiBytes[t + c]));
+                        maxDiff = std::max(maxDiff, d);
+                        sum += d;
+                    }
+                }
+            }
+            const double meanDiff = sum / (double(roiOut.buf.width) * roiOut.buf.height * 3);
+            rawlab::test::checkPass(maxDiff <= stage.maxDiff && meanDiff <= stage.meanDiff,
+                label + " ROI matches full render (max=" + std::to_string(maxDiff) +
+                " mean=" + std::to_string(meanDiff) + ")");
+        }
+    }
+}
+
 } // namespace
 
 RAWLAB_TEST_MAIN(
+    testStageOrderRoiMatchesFullRender();
     testSdrBufferRoiParity(240, 160, 0, 2);
     testSdrBufferRoiParity(1400, 900, 1, 2);
     testSdrBufferRoiParity(240, 160, 2, 2);
