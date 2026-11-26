@@ -335,6 +335,17 @@ class MutationAnchorTests(unittest.TestCase):
             self.assertNotEqual(mutated.returncode, 0, "A frozen session setter in production must fail test_single_param_channel.py")
             self.assertIn("ToneCurveSampling.swift:", mutated.stdout + mutated.stderr)
             self.assertIn("sony2fuji_session_set_tone_curves_v2", mutated.stdout + mutated.stderr)
+            sampling.write_text(source, encoding="utf-8")
+
+            # Pointing the CLI back at the struct-taking HDR render entry point must also turn it red.
+            agent_cpp = root / "lutools/src/cli/agent_commands.cpp"
+            cli_source = agent_cpp.read_text(encoding="utf-8")
+            self.assertEqual(cli_source.count("sony2fuji_hdr_render_json("), 1)
+            agent_cpp.write_text(cli_source.replace("sony2fuji_hdr_render_json(", "sony2fuji_hdr_render(", 1), encoding="utf-8")
+            mutated_cli = _run_test_script(test_target, root)
+            self.assertNotEqual(mutated_cli.returncode, 0, "A struct-taking HDR entry point in production must fail test_single_param_channel.py")
+            self.assertIn("agent_commands.cpp:", mutated_cli.stdout + mutated_cli.stderr)
+            self.assertIn("frozen edit channel sony2fuji_hdr_render;", mutated_cli.stdout + mutated_cli.stderr)
 
 
 if __name__ == "__main__":

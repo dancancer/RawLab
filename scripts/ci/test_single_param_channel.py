@@ -2,7 +2,8 @@
 
 The C ABI still exports the per-feature sticky setters (`sony2fuji_session_set_hsl`,
 `..._set_tone_curves_v2`, `..._set_lens_correction_v2`, ...) and the nested
-`sony2fuji_hdr_request_v1..v9` structs, but they are frozen compatibility ABI
+`sony2fuji_hdr_request_v1..v9` structs with the HDR functions that take them, but they are frozen
+compatibility ABI
 (lutools/AGENTS.md, "Interface & Layering Discipline"). Clients and the CLI send edit state through
 `sony2fuji_apply_params`, `sony2fuji_session_render` with JSON and the `*_json` HDR entry points.
 Setters that configure runtime handles or input metadata are not edit state and stay allowed.
@@ -55,12 +56,32 @@ ALLOWED_SESSION_SETTERS = frozenset({
 KNOWN_EXCEPTIONS = frozenset({
     # iOS paste-adjustments lens check inspects lenses on the long-lived preview session
     # (withRawSession(reuse: true)). sony2fuji_apply_params would also reset that session's other
-    # edit state and caches (for example the dehaze analysis), so it is not a drop-in replacement.
+    # edit state and caches (for example the dehaze analysis). iOS re-applies full params before each
+    # render, so the cost would be cache invalidation rather than lost edits, but the swap is not
+    # state-neutral.
     ("RawLab/RawLab/Core/RawProcessing/Sony2FujiProcessor+Lens.swift", "sony2fuji_session_set_lens_correction_v2"),
+})
+
+# HDR entry points that take a sony2fuji_hdr_request_v* pointer; each has a `_json` sibling. Matching
+# the function names also catches bindings that declare the request struct under another name (C#).
+FROZEN_HDR_FUNCTIONS = frozenset({
+    "sony2fuji_hdr_render",
+    "sony2fuji_hdr_render_roi",
+    "sony2fuji_hdr_render_camera_raw_roi",
+    "sony2fuji_hdr_render_file_roi",
+    "sony2fuji_hdr_roi_source_bounds",
+    "sony2fuji_hdr_geometry_size",
+    "sony2fuji_hdr_create_hsl_probe",
+    "sony2fuji_hdr_export_stream",
+    "sony2fuji_hdr_export_tiled",
+    "sony2fuji_hdr_export_proraw",
 })
 
 SETTER_RE = re.compile(r"\bsony2fuji_session_set_[A-Za-z0-9_]+")
 HDR_REQUEST_RE = re.compile(r"\bsony2fuji_hdr_request_v[0-9]+\b")
+HDR_FUNCTION_RE = re.compile(r"\bsony2fuji_hdr_[A-Za-z0-9_]+")
+# EditRecipe (sony2fuji/edit_recipe.h) helpers that build the nested request structs.
+RECIPE_REQUEST_RE = re.compile(r"\btoHDR(?:Render)?Request(?:V9)?\b")
 
 
 def frozen_references(text: str) -> list[tuple[int, str]]:
@@ -69,8 +90,12 @@ def frozen_references(text: str) -> list[tuple[int, str]]:
         for match in SETTER_RE.finditer(line):
             if match.group(0) not in ALLOWED_SESSION_SETTERS:
                 found.append((lineno, match.group(0)))
-        for match in HDR_REQUEST_RE.finditer(line):
-            found.append((lineno, match.group(0)))
+        for match in HDR_FUNCTION_RE.finditer(line):
+            if match.group(0) in FROZEN_HDR_FUNCTIONS:
+                found.append((lineno, match.group(0)))
+        for regex in (HDR_REQUEST_RE, RECIPE_REQUEST_RE):
+            for match in regex.finditer(line):
+                found.append((lineno, match.group(0)))
     return found
 
 
@@ -123,6 +148,10 @@ class SingleParamChannelTests(unittest.TestCase):
             "sony2fuji_session_set_cancellation_callback(session, nil, nil)",
             "sony2fuji_apply_params(session, json)",
             "sony2fuji_hdr_render_json(session, &source, &options, json, &result, &diagnostic);",
+            "sony2fuji_hdr_render_roi_json(session, &source, &options, json, &roi, &result, &out, &diag);",
+            "Native.sony2fuji_hdr_export_proraw_json(session, path, ref options, json, ref config, 1, tmp, out, ref r, ref d);",
+            "sony2fuji_hdr_decode_camera_raw(session, path, &options, &result, &diagnostic)",
+            "sony2fuji_hdr_release_pair(&pair)",
             "sony2fuji_session_get_lens_report_v2(session, &report)",
             "// sony2fuji_hdr_request_v* stays frozen",
         ])
@@ -134,6 +163,11 @@ class SingleParamChannelTests(unittest.TestCase):
             "sony2fuji_session_set_viewport_roi_v2(session, &roi)",
             "sony2fuji_hdr_request_v9 request{};",
             "sizeof(sony2fuji_hdr_request_v1)",
+            "sony2fuji_hdr_render(session, &source, request, &result, &diagnostic);",
+            "internal static extern int sony2fuji_hdr_export_proraw(IntPtr session, string path, ref HdrRequest request,",
+            "status = sony2fuji_hdr_render_file_roi(session, file, request, &roi, &result, &out, &diag)",
+            "sony2fuji_hdr_geometry_size(w, h, &request, &ow, &oh, &diag)",
+            "const auto request = recipe.toHDRRenderRequestV9();",
         )
         for snippet in frozen:
             with self.subTest(snippet=snippet):
