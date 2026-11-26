@@ -162,12 +162,16 @@ HDRCommandResult renderHDR(
     if (result.status==SONY2FUJI_STATUS_OK && settings.inputType=="raw" && !lensDatabase.empty())
         result.status=sony2fuji_session_set_lens_database(session.get(),lensDatabase.c_str());
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
-    const bool useV9 = recipe.schemaVersion >= 16;
-    const auto requestV9 = useV9 ? recipe.toHDRRenderRequestV9() : sony2fuji_hdr_request_v9{};
-    const auto requestV8 = useV9 ? requestV9.base : recipe.toHDRRenderRequest();
-    const sony2fuji_hdr_request_v1* requestPtr = useV9
-        ? &requestV9.base.base.base.base.base.base.base.base
-        : &requestV8.base.base.base.base.base.base.base;
+    // 编辑参数只经 canonical 配方 JSON 进入 HDR 核心，不再拼冻结的 sony2fuji_hdr_request_v* 嵌套结构。
+    // 输出路径与格式不参与 HDR 渲染参数；`--input --analyze` 的内存配方没有输出路径，且 schema 6
+    // 只能序列化 hdr_jpeg，这里只为通过序列化校验补占位。
+    EditRecipe stateSource = recipe;
+    if (stateSource.outputPath.empty()) stateSource.outputPath = "unused-analyze.png";
+    if (stateSource.schemaVersion < 14) stateSource.hdr->hdrOutput = true;
+    const std::string editState = serializeEditRecipe(stateSource);
+    auto execOptions = hdrInitial<sony2fuji_hdr_render_options_v1>();
+    execOptions.intent = SONY2FUJI_INTENT_FINAL;
+    execOptions.long_edge = recipe.outputLongEdge;
     if (settings.inputType=="proraw" && settings.hdrOutput && !preview && !analyze) {
         auto info=hdrInitial<sony2fuji_hdr_source_info_v1>();
         result.status=sony2fuji_hdr_probe_proraw(recipe.inputPath.c_str(),&info,&result.diagnostic);
@@ -178,29 +182,22 @@ HDRCommandResult renderHDR(
         // 全零 source_sha256：导出内部在 validate 单次读取时自采冻结摘要，CLI 不再前置扫盘（C-10）。
         auto streamed=hdrInitial<sony2fuji_hdr_stream_result_v1>();
         const auto temporary=std::filesystem::temp_directory_path().u8string();
-        result.status=sony2fuji_hdr_export_proraw(session.get(),recipe.inputPath.c_str(),
-            requestPtr,&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
+        result.status=sony2fuji_hdr_export_proraw_json(session.get(),recipe.inputPath.c_str(),
+            &execOptions,editState.c_str(),&config,1,temporary.c_str(),recipe.outputPath.c_str(),&streamed,&result.diagnostic);
         result.sourceHeadroom=streamed.source_headroom; result.editedHeadroom=streamed.edited_headroom;
         return result;
     }
     auto options=hdrInitial<sony2fuji_hdr_decode_options_v1>(); options.intent=SONY2FUJI_INTENT_FINAL;
     if (settings.inputType=="raw") {
-        sony2fuji_hdr_camera_development_v2 development{};
-        development.base=settings.cameraDevelopment;
-        development.base.lens_profile_id=settings.lensProfile.empty() ? nullptr : settings.lensProfile.c_str();
-        if (!settings.cameraProfilePath.empty()) {
-            development.base.version=2; development.base.struct_size=sizeof(development);
-            development.profile_path=settings.cameraProfilePath.c_str();
-            std::copy(settings.cameraProfileSHA256.begin(),settings.cameraProfileSHA256.end(),development.profile_sha256);
-        }
-        result.status=sony2fuji_hdr_decode_camera_raw_with_development(session.get(),recipe.inputPath.c_str(),
-            &options,&development.base,&source.value,&result.diagnostic);
+        // 相机显影（白平衡、镜头、相机配置）随配方 JSON 的 input.camera_development 传入。
+        result.status=sony2fuji_hdr_decode_camera_raw_json(session.get(),recipe.inputPath.c_str(),
+            &options,editState.c_str(),&source.value,&result.diagnostic);
     } else if (settings.inputType=="proraw") {
         const auto temporary=std::filesystem::temp_directory_path().u8string();
         result.status=sony2fuji_hdr_decode_proraw(session.get(),recipe.inputPath.c_str(),&options,temporary.c_str(),&source.value,&result.diagnostic);
     } else result.status=sony2fuji_hdr_decode(recipe.inputPath.c_str(),&options,&source.value,&result.diagnostic);
     if (result.status==SONY2FUJI_STATUS_OK)
-        result.status=sony2fuji_hdr_render(session.get(),&source.value,requestPtr,&edited.value,&result.diagnostic);
+        result.status=sony2fuji_hdr_render_json(session.get(),&source.value,&execOptions,editState.c_str(),&edited.value,&result.diagnostic);
     if (result.status!=SONY2FUJI_STATUS_OK) return result;
     result.sourceHeadroom=edited.value.source_headroom; result.editedHeadroom=edited.value.hdr.content_headroom;
     if (analyze) {
