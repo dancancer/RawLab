@@ -754,9 +754,11 @@ sony2fuji_status sony2fuji_hdr_display_into(
     uint64_t dst_size_bytes,
     uint64_t dst_stride_bytes
 ) {
-    static_assert(hdr::kDisplaySdr == SONY2FUJI_HDR_DISPLAY_SDR && hdr::kDisplayFalseColor == SONY2FUJI_HDR_DISPLAY_FALSE_COLOR &&
-        hdr::kDisplayP3 == SONY2FUJI_HDR_DISPLAY_P3 && hdr::kDisplayClampSdr == SONY2FUJI_HDR_DISPLAY_CLAMP_SDR &&
-        hdr::kDisplayBgra8Srgb == SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, "HDR display flags");
+    static_assert(uint32_t(hdr::kDisplaySdr) == SONY2FUJI_HDR_DISPLAY_SDR &&
+        uint32_t(hdr::kDisplayFalseColor) == SONY2FUJI_HDR_DISPLAY_FALSE_COLOR &&
+        uint32_t(hdr::kDisplayP3) == SONY2FUJI_HDR_DISPLAY_P3 &&
+        uint32_t(hdr::kDisplayClampSdr) == SONY2FUJI_HDR_DISPLAY_CLAMP_SDR &&
+        uint32_t(hdr::kDisplayBgra8Srgb) == SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB, "HDR display flags");
     const bool falseColor = (flags & SONY2FUJI_HDR_DISPLAY_FALSE_COLOR) != 0;
     if (!dst || (flags & ~uint32_t(hdr::kDisplayAllFlags)) != 0 || (!sdrPlane && !falseColor) ||
         !std::isfinite(content_headroom) || content_headroom < 1.0f) {

@@ -30,7 +30,7 @@ internal fun canRetainBitmap(
     return abs(prevAspect - nextAspect) <= 0.02 * maxOf(prevAspect, nextAspect)
 }
 
-// 与 sony2fuji_hdr.h 的 SONY2FUJI_HDR_DISPLAY_* 标志位一致。
+// sony2fuji_hdr.h 中 sony2fuji_hdr_display_flag 的取值。
 private const val SONY2FUJI_HDR_DISPLAY_SDR = 1
 private const val SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2
 private const val DISPLAY_ROW_BAND = 16

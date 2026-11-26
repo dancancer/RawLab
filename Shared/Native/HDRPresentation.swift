@@ -105,9 +105,9 @@ final class HDRPresentation: HDRDisplayImage, HDRLinearDisplayImage {
     static func rgba16F(hdr: sony2fuji_hdr_buffer_v1, sdr: sony2fuji_hdr_buffer_v1, contentHeadroom: Float,
                         parameters: HDRDisplayParameters) throws -> Data {
         var hdr = hdr, sdr = sdr
-        var flags = UInt32(SONY2FUJI_HDR_DISPLAY_P3) | UInt32(SONY2FUJI_HDR_DISPLAY_CLAMP_SDR)
-        if parameters.mode == .sdr { flags |= UInt32(SONY2FUJI_HDR_DISPLAY_SDR) }
-        if parameters.falseColor { flags |= UInt32(SONY2FUJI_HDR_DISPLAY_FALSE_COLOR) }
+        var flags = SONY2FUJI_HDR_DISPLAY_P3.rawValue | SONY2FUJI_HDR_DISPLAY_CLAMP_SDR.rawValue
+        if parameters.mode == .sdr { flags |= SONY2FUJI_HDR_DISPLAY_SDR.rawValue }
+        if parameters.falseColor { flags |= SONY2FUJI_HDR_DISPLAY_FALSE_COLOR.rawValue }
         let rowBytes = Int(hdr.width) * 8
         var bytes = Data(count: rowBytes * Int(hdr.height))
         let status = bytes.withUnsafeMutableBytes { raw in

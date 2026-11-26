@@ -40,8 +40,7 @@ internal sealed record HDRLuminanceStatistics(uint[] Bins, double AboveWhite);
 
 internal static class HDRDisplay
 {
-    // sony2fuji_hdr.h：SONY2FUJI_HDR_DISPLAY_FALSE_COLOR | SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB。
-    private const uint FalseColorBgra8Flags = 2 | 16;
+    private const uint FalseColorBgra8Flags = HDRNative.DisplayFalseColor | HDRNative.DisplayBgra8Srgb;
     private const int FalseColorRowBand = 16;
 
     internal static HDRLuminanceStatistics Analyze(HDRFloatImage image)

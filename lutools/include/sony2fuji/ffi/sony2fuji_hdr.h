@@ -404,13 +404,13 @@ sony2fuji_status sony2fuji_hdr_analyze_luminance(
 // Flags for sony2fuji_hdr_display_into. Without SDR or FALSE_COLOR the HDR plane is shown and
 // luminance above 1 is compressed by a shoulder that maps content_headroom onto
 // display_headroom (non-finite -> 1, clamped to [1, 65504]); display_headroom <= 1 shows SDR.
-enum {
+typedef enum sony2fuji_hdr_display_flag {
     SONY2FUJI_HDR_DISPLAY_SDR = 1,          // show the SDR plane
     SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2,  // luminance bands of the HDR plane; sdr may be NULL
-    SONY2FUJI_HDR_DISPLAY_P3 = 4,           // linear Display P3 output instead of linear sRGB (not false color)
+    SONY2FUJI_HDR_DISPLAY_P3 = 4,           // linear Display P3 output instead of linear sRGB
     SONY2FUJI_HDR_DISPLAY_CLAMP_SDR = 8,    // clamp the shown SDR plane to [0, 1]
     SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB = 16   // sRGB-encoded opaque BGRA8 instead of linear RGBA16F (alpha 1)
-};
+} sony2fuji_hdr_display_flag;
 // Maps an HDR/SDR pair of equal size (linear-sRGB RGB32F, at most 128,000,000 pixels) into the
 // caller's dst: 8 bytes per pixel for RGBA16F, 4 for BGRA8. content_headroom must be finite and
 // >= 1. Invalid arguments or non-finite samples return SONY2FUJI_STATUS_INVALID_ARGUMENT; an

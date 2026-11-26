@@ -32,6 +32,9 @@ internal static class HDRNative
     internal const uint ReasonUnsupportedGpu = 13;
     internal const uint PixelRGB32FLinear = 1;
     internal const uint LinearSRGB = 1;
+    // sony2fuji_hdr_display_flag（sony2fuji_hdr.h）。
+    internal const uint DisplayFalseColor = 2;
+    internal const uint DisplayBgra8Srgb = 16;
     internal const uint ContainerCameraRaw = 3;
     internal const uint ContainerProRAW = 4;
     private const uint CameraSourceBayer = 1;

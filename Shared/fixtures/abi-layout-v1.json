@@ -3008,6 +3008,17 @@
         {"name": "SONY2FUJI_SONY_FOCUS_RENDER_LIVE_FRAMES", "value": 1},
         {"name": "SONY2FUJI_SONY_FOCUS_RENDER_TAP_RETICLE", "value": 2}
       ]
+    },
+    {
+      "enum": "sony2fuji_hdr_display_flag",
+      "size": 4,
+      "values": [
+        {"name": "SONY2FUJI_HDR_DISPLAY_SDR", "value": 1},
+        {"name": "SONY2FUJI_HDR_DISPLAY_FALSE_COLOR", "value": 2},
+        {"name": "SONY2FUJI_HDR_DISPLAY_P3", "value": 4},
+        {"name": "SONY2FUJI_HDR_DISPLAY_CLAMP_SDR", "value": 8},
+        {"name": "SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB", "value": 16}
+      ]
     }
   ],
   "callbacks": [
