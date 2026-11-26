@@ -113,7 +113,7 @@ public:
             nullptr, 0, &level, 1, D3D11_SDK_VERSION, &device, nullptr, &context))) break;
         if (!device) throw GpuUnavailableError("No D3D11 hardware filter adapter");
 #endif
-        const std::string source = std::string(prefix) + kFilmOpticsSharedShaderBody + kFilterShaderBody +
+        const std::string source = std::string(prefix) + kFilmOpticsSharedShaderBody + filterShaderBody() +
             "\n[numthreads(128,1,1)] void main(uint3 id : SV_DispatchThreadID) { filterPixel(baseIndex + id.x); }\n";
         const auto bytecode = compileD3D11Shader(
             "RawLab filters", source, "main", "cs_5_0",

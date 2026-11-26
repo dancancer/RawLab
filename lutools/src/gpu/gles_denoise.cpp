@@ -142,7 +142,7 @@ public:
             groups <= 0 || blocks < 4 || bytes <= 0) throw GpuUnavailableError("GLES 3.1 filter limits unavailable");
         blockLimit = static_cast<size_t>(bytes);
         dispatchLimit = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(groups) * groupSize, UINT32_MAX));
-        const std::string source = std::string(prefix) + kFilmOpticsSharedShaderBody + kFilterShaderBody +
+        const std::string source = std::string(prefix) + kFilmOpticsSharedShaderBody + filterShaderBody() +
             "\nvoid main() { filterPixel(baseIndex + gl_GlobalInvocationID.x); }\n";
         const char* text = source.c_str();
         const auto shader = glCreateShader(GL_COMPUTE_SHADER);

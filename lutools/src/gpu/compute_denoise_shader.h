@@ -1,7 +1,9 @@
 #pragma once
 
+#include <string>
+
 // One arithmetic body for GLSL and HLSL; adapters supply typed buffer access.
-inline constexpr const char* kFilterShaderBody = R"shader(
+inline constexpr const char* kFilterShaderBodyPart1 = R"shader(
 int periodicIndex(int index, int length) {
     // GLSL ES does not define remainder for negative operands.
     return index < 0 ? length - 1 - ((-index - 1) % length) : index % length;
@@ -166,7 +168,9 @@ void filterPixel(uint i) {
             float next = sum + delta; correction = (next - sum) - delta; sum = next;
         }
         writeA(i, sum / float(2u * radius + 1u));
-    } else if (stage == 9u) {
+)shader";
+
+inline constexpr const char* kFilterShaderBodyPart2 = R"shader(    } else if (stage == 9u) {
         uint m = i * 17u;
         V3 g = V3(readA(m), readA(m + 1u), readA(m + 2u));
         float a = readA(m + 3u) - g.x * g.x + epsilon, b = readA(m + 4u) - g.x * g.y;
@@ -313,3 +317,7 @@ void filterPixel(uint i) {
     }
 }
 )shader";
+
+inline std::string filterShaderBody() {
+    return std::string(kFilterShaderBodyPart1) + kFilterShaderBodyPart2;
+}
