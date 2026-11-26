@@ -166,6 +166,7 @@ public partial class MainWindow
         if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
         if (mode != WorkspaceMode.Editing && curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
         if (mode != WorkspaceMode.Editing && wbProbeEnabled) CancelWbProbe();
+        if (mode != WorkspaceMode.Editing && pointColorProbeEnabled) CancelPointColorProbe();
         if (mode != WorkspaceMode.Editing && inspection.PinModeEnabled)
         {
             inspection.PinModeEnabled = false;
@@ -235,6 +236,7 @@ public partial class MainWindow
             if (hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
             if (curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
             if (wbProbeEnabled) CancelWbProbe();
+            if (pointColorProbeEnabled) CancelPointColorProbe();
             if (inspection.PinModeEnabled)
             {
                 inspection.PinModeEnabled = false;

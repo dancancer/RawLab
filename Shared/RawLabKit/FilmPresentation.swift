@@ -65,7 +65,8 @@ public enum EditorLayoutPolicy {
         switch group {
         case .looks: return [.film, .recipe]
         case .light: return [.adjustment(.exposure), .adjustment(.contrast), .adjustment(.highlights), .adjustment(.shadows), .adjustment(.whitePoint), .adjustment(.blackPoint), .adjustment(.toneCurve)]
-        case .color: return [.adjustment(.temperature), .adjustment(.vibrance), .adjustment(.saturation), .adjustment(.hsl), .adjustment(.colorGrading)]
+        case .color: return [.adjustment(.temperature), .adjustment(.vibrance), .adjustment(.saturation), .adjustment(.hsl),
+                             .pointColor, .selectiveColor, .bwMixer, .adjustment(.colorGrading), .cameraCalibration]
         case .detail: return [.adjustment(.sharpening), .adjustment(.noiseReduction)]
         default: return EditorAdjustmentRules.tools(group)
         }

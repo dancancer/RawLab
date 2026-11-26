@@ -27,7 +27,7 @@ public partial class MainWindow
     private void OpenCollectionClicked(object sender,RoutedEventArgs e)
     {
         if(CollectionBusy)return;
-        CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
+        CancelHslTarget(); CancelCurveTarget(); CancelWbProbe(); CancelPointColorProbe();
         if(!CommitCollectionInputs())return;
         if(Collection.CurrentID!=null && (!ResolveTransformDraft() || !SaveEdits()))return;
         if(file!=null)Collection.Add([file],file);
@@ -57,7 +57,7 @@ public partial class MainWindow
             OpenFile(photos[0]);
         }
         else {
-            CancelHslTarget(); CancelCurveTarget(); CancelWbProbe();
+            CancelHslTarget(); CancelCurveTarget(); CancelWbProbe(); CancelPointColorProbe();
             if(!CommitCollectionInputs())return true;
             if(!ResolveTransformDraft())return true;
             if(!SaveEdits())return false;

@@ -133,6 +133,14 @@ public extension EditorToolSelection {
                 kind.setValue(kind.value(from: value), in: &result)
                 if kind == .exposure { result.exposureMode = value.exposureMode }
             }
+        case .pointColor:
+            result.pointColor = value.pointColor
+        case .selectiveColor:
+            result.selectiveColor = value.selectiveColor
+        case .bwMixer:
+            result.bwMixer = value.bwMixer
+        case .cameraCalibration:
+            result.cameraCalibration = value.cameraCalibration
         case .hdrPeakLimit, .hdrSDRExposure, .hdrSDRContrast, .hdrSDRSaturation:
             if result.isHDREditing, let keyPath = hdrRenditionKeyPath {
                 result.hdr?.renditionSettings[keyPath: keyPath] = value.hdr?.renditionSettings[keyPath: keyPath] ?? 0

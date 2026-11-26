@@ -34,6 +34,10 @@
         D00700000000000000000002 /* HSLTargetNative.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00700000000000000000012; };
         D00600000000000000000004 /* ColorGradingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000014; };
         D00600000000000000000003 /* ColorGradingWheelControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00600000000000000000013; };
+        A01400000000000000000001 /* IOSCameraCalibrationControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01400000000000000000011; };
+        A01400000000000000000002 /* IOSPointColorControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01400000000000000000012; };
+        A01400000000000000000003 /* IOSSelectiveColorControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01400000000000000000013; };
+        A01400000000000000000004 /* IOSBwMixerControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = A01400000000000000000014; };
 		9171D9624EE7BCB6F01BAA38 /* IOSAdjustmentScopeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */; };
 		909DE06A520C0C51F1C0B936 /* IOSAdjustmentPresetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */; };
 		14F0A7B0ADEC409D4F0A11F0 /* RawEditorViewModel+AdjustmentPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */; };
@@ -255,6 +259,10 @@
         D00700000000000000000012 /* HSLTargetNative.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HSLTargetNative.swift; path = "../Shared/HSLTargetNative.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000014 /* ColorGradingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingControls.swift; path = "RawLab/UI/Panels/ColorGradingControls.swift"; sourceTree = SOURCE_ROOT; };
         D00600000000000000000013 /* ColorGradingWheelControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ColorGradingWheelControl.swift; path = "../Shared/ColorGradingWheelControl.swift"; sourceTree = SOURCE_ROOT; };
+        A01400000000000000000011 /* IOSCameraCalibrationControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IOSCameraCalibrationControls.swift; path = "RawLab/UI/Panels/IOSCameraCalibrationControls.swift"; sourceTree = SOURCE_ROOT; };
+        A01400000000000000000012 /* IOSPointColorControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IOSPointColorControls.swift; path = "RawLab/UI/Panels/IOSPointColorControls.swift"; sourceTree = SOURCE_ROOT; };
+        A01400000000000000000013 /* IOSSelectiveColorControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IOSSelectiveColorControls.swift; path = "RawLab/UI/Panels/IOSSelectiveColorControls.swift"; sourceTree = SOURCE_ROOT; };
+        A01400000000000000000014 /* IOSBwMixerControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = IOSBwMixerControls.swift; path = "RawLab/UI/Panels/IOSBwMixerControls.swift"; sourceTree = SOURCE_ROOT; };
 		D7CEB7450EE1B7A78EF0B590 /* IOSAdjustmentScopeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentScopeEditor.swift"; path = "RawLab/UI/Editor/IOSAdjustmentScopeEditor.swift"; sourceTree = SOURCE_ROOT; };
 		8192A9B6A993925B76278A8E /* IOSAdjustmentPresetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "IOSAdjustmentPresetView.swift"; path = "RawLab/UI/Editor/IOSAdjustmentPresetView.swift"; sourceTree = SOURCE_ROOT; };
 		FFB7F58510C1A1C611BA4923 /* RawEditorViewModel+AdjustmentPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "RawEditorViewModel+AdjustmentPresets.swift"; path = "RawLab/Core/ViewModel/RawEditorViewModel+AdjustmentPresets.swift"; sourceTree = SOURCE_ROOT; };
@@ -746,6 +754,10 @@
 				D00800000000000000000015,
 				D00600000000000000000014,
 				D00600000000000000000013,
+				A01400000000000000000011,
+				A01400000000000000000012,
+				A01400000000000000000013,
+				A01400000000000000000014,
 				AB1900000000000000000012,
 				8F3A1B2C3D4E5F6789012346,
 				8F3A1B2C3D4E5F6789012350,
@@ -1437,6 +1449,10 @@
 				D00800000000000000000005,
 				D00600000000000000000004,
 				D00600000000000000000003,
+				A01400000000000000000001,
+				A01400000000000000000002,
+				A01400000000000000000003,
+				A01400000000000000000004,
 				D00300000000000000000002,
 				D12000000000000000000003,
 				D12000000000000000000004,

@@ -3,6 +3,7 @@ package com.rawlab.android
 import com.rawlab.android.camera.CameraImportScreen
 import com.rawlab.android.camera.CameraImportViewModel
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.PointColorProbeActions
 import com.rawlab.android.editor.controls.WbProbeActions
 
 import android.os.Build
@@ -143,6 +144,9 @@ private fun RawLabApp(
     var presetLibraryRevision by remember { mutableIntStateOf(0) }
     val hslTarget by model.hslTarget.collectAsStateWithLifecycle()
     val wbProbe by model.wbProbe.collectAsStateWithLifecycle()
+    val pointColorEyedropper by model.pointColorEyedropperEnabled.collectAsStateWithLifecycle()
+    val selectedPointColorSwatch by model.selectedPointColorSwatch.collectAsStateWithLifecycle()
+    val selectedSelectiveColorBand by model.selectedSelectiveColorBand.collectAsStateWithLifecycle()
     val updateState by updates.state.collectAsStateWithLifecycle()
     val usageState by usage.state.collectAsStateWithLifecycle()
     var about by rememberSaveable { mutableStateOf(false) }
@@ -301,6 +305,12 @@ private fun RawLabApp(
                 model::setCurveTargetChannel),
             wbProbe = WbProbeActions(wbProbe, model::setWbProbeEnabled, model::beginWbProbe,
                 model::cancelWbProbe, model::rejectWbProbe),
+            pointColorProbe = PointColorProbeActions(pointColorEyedropper, model::setPointColorEyedropperEnabled,
+                model::samplePointColor, model::cancelPointColorEyedropper, model::cancelPointColorEyedropper),
+            selectedPointColorSwatch = selectedPointColorSwatch,
+            onSelectedPointColorSwatchChange = model::setSelectedPointColorSwatch,
+            selectedSelectiveColorBand = selectedSelectiveColorBand,
+            onSelectedSelectiveColorBandChange = model::setSelectedSelectiveColorBand,
             onEdit = model::edit, onRetry = model::retry, onSelectFilm = model::selectFilm,
             onPrepareReset = model::prepareReset, onCommitReset = model::commitReset,
             onResetUnusableRecord = model::resetUnusableImportRecord,

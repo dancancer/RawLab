@@ -126,6 +126,7 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+Inspection.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+HSLTarget.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+WBProbe.swift"
+        "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+PointColor.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentHistory.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+AdjustmentTransfer.swift"
         "$ROOT/RawLabMac/Sources/Editor/Model/EditorModel+ExternalReload.swift"

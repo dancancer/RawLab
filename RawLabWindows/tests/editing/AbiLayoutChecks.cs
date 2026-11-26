@@ -114,7 +114,6 @@ internal static class AbiLayoutChecks
         "sony2fuji_hdr_roi_source_bounds",
         "sony2fuji_hdr_roi_source_bounds_json",
         "sony2fuji_inspect_sdr_jpeg_mpf",
-        "sony2fuji_point_color_preview_swatch",
         "sony2fuji_preview_lut_compatibility",
         "sony2fuji_process",
         "sony2fuji_pyramid_level",

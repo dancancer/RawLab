@@ -3,12 +3,13 @@
 #include "photo_tone_shader.h"
 #include "photo_color_grading_shader.h"
 #include "photo_tone_curve_shader.h"
+#include "photo_color_science_shader.h"
 
 namespace sony2fuji {
 inline const std::string kPhotoComputeShader = std::string(R"glsl(#version 310 es
 precision highp float;
 precision highp int;
-)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + toneCurveShader("vec3") + photoLogShader(ShaderDialect::Glsl) + R"glsl(
+)glsl") + toneControlsShader("vec3") + colorGradingShader("vec3") + toneCurveShader("vec3") + photoLogShader(ShaderDialect::Glsl) + colorScienceShader(ShaderDialect::Glsl) + R"glsl(
 layout(local_size_x = 128) in;
 layout(std430, binding = 0) readonly buffer Source { float src[]; };
 layout(std430, binding = 1) writeonly buffer Destination { float dst[]; };
@@ -168,7 +169,7 @@ vec2 sampleBasicToneField(uvec2 coord, uvec2 coordSize) {
 }
 
 vec3 evaluate(vec3 inputColor, uvec2 coord, uvec2 coordSize) {
-    vec3 linear = (toSrgb * inputColor) * exposureWB;
+    vec3 linear = csApplyCalibration((toSrgb * inputColor) * exposureWB);
     if (basicToneActive != 0) {
         vec2 si = sampleBasicToneField(coord, coordSize);
         linear *= tcBasicToneV3Gain(tcLuminance(linear), si.x, si.y, basicTone.x, basicTone.y);
@@ -184,6 +185,7 @@ vec3 evaluate(vec3 inputColor, uvec2 coord, uvec2 coordSize) {
         if (outputIsLog) look = vec3(neutral(decodePhotoLog(look.r, outputIsFLog)), neutral(decodePhotoLog(look.g, outputIsFLog)), neutral(decodePhotoLog(look.b, outputIsFLog)));
         pixel = mix(pixel, look, strength);
     }
+    pixel = csApplyBwMixer(pixel);
     pixel = basicV3 != 0 ? tcBasicBlackWhiteV3(pixel, toneControls.x, toneControls.y)
         : tcBlackWhite(pixel, toneControls.x, toneControls.y);
     if (basicV3 == 0) {
@@ -214,7 +216,8 @@ vec3 evaluate(vec3 inputColor, uvec2 coord, uvec2 coordSize) {
         pixel = vec3(luminance) + (pixel - luminance) * tone.y;
     }
     vec3 vibranced = basicV3 != 0 ? tcBasicVibranceV3(pixel, toneControls.z) : tcVibrance(pixel, toneControls.z);
-    return cgApply(applyHsl(vibranced),
+    vec3 colored = csApplySelectiveColor(csApplyPointColor(applyHsl(vibranced)));
+    return cgApply(colored,
         colorGrading[0].xyz, colorGrading[0].w,
         colorGrading[1].xyz, colorGrading[1].w,
         colorGrading[2].xyz, colorGrading[2].w,

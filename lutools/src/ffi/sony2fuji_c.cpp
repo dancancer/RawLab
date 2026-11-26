@@ -5,6 +5,7 @@
 
 #include "core/hsl_probe.h"
 #include "core/jpeg_mpf.h"
+#include "core/photo_point_color.h"
 #include "core/render_params.h"
 
 #include <algorithm>
@@ -1562,5 +1563,16 @@ sony2fuji_status sony2fuji_point_color_preview_swatch(
         !std::isfinite(luminance_shift) || luminance_shift < -100.0f || luminance_shift > 100.0f) {
         return SONY2FUJI_STATUS_INVALID_ARGUMENT;
     }
-    return SONY2FUJI_STATUS_UNSUPPORTED;
+    return sony2fuji::pointColorPreviewSwatch(
+               src_hue,
+               src_saturation,
+               src_luminance,
+               hue_shift,
+               saturation_shift,
+               luminance_shift,
+               out_src_rgb,
+               out_shifted_rgb
+           )
+        ? SONY2FUJI_STATUS_OK
+        : SONY2FUJI_STATUS_INVALID_ARGUMENT;
 }

@@ -181,7 +181,7 @@ public enum EditorAdjustmentGroup: String, CaseIterable, Identifiable, Sendable 
         switch self {
         case .looks: return [.film, .recipe, .strength]
         case .light: return [.exposure, .highlights, .shadows, .blackPoint, .whitePoint, .contrast, .toneCurve]
-        case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .colorGrading]
+        case .color: return [.whiteBalance, .saturation, .vibrance, .hsl, .pointColor, .selectiveColor, .bwMixer, .colorGrading, .cameraCalibration]
         case .effects: return [.clarity, .dehaze, .vignette, .grain]
         case .detail: return [.denoise, .sharpening]
         case .geometry: return [.geometry, .lens]
@@ -195,7 +195,7 @@ public enum EditorAdjustmentGroup: String, CaseIterable, Identifiable, Sendable 
 
 public enum EditorAdjustmentTool: String, CaseIterable, Identifiable, Sendable {
     case film, recipe, strength, exposure, highlights, shadows, blackPoint, whitePoint, vibrance, contrast, toneCurve
-    case clarity, dehaze, whiteBalance, saturation, hsl, colorGrading, vignette, grain, denoise, sharpening, geometry, lens
+    case clarity, dehaze, whiteBalance, saturation, hsl, pointColor, selectiveColor, bwMixer, colorGrading, cameraCalibration, vignette, grain, denoise, sharpening, geometry, lens
     case hdrPeakLimit, hdrSDRExposure, hdrSDRContrast, hdrSDRSaturation
     public var id: String { rawValue }
     public var group: EditorAdjustmentGroup { EditorAdjustmentGroup.allCases.first { $0.tools.contains(self) }! }
@@ -223,6 +223,8 @@ public enum EditorAdjustmentTool: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .film: return L10n.text("胶片"); case .recipe: return L10n.text("大师配方")
         case .whiteBalance: return L10n.text("白平衡"); case .colorGrading: return L10n.text("颜色分级")
+        case .pointColor: return L10n.text("点颜色"); case .selectiveColor: return L10n.text("可选颜色")
+        case .bwMixer: return L10n.text("黑白"); case .cameraCalibration: return L10n.text("相机校准")
         case .toneCurve: return L10n.text("曲线"); case .hsl: return "HSL"
         case .geometry: return L10n.text("几何"); case .lens: return L10n.text("镜头")
         case .hdrPeakLimit: return L10n.text("HDR 亮度上限"); case .hdrSDRExposure: return L10n.text("SDR 底图曝光")
@@ -233,6 +235,8 @@ public enum EditorAdjustmentTool: String, CaseIterable, Identifiable, Sendable {
     public var symbol: String {
         switch self {
         case .film: return "film"; case .recipe: return "photo.stack"; case .colorGrading: return "paintpalette"
+        case .pointColor: return "eyedropper"; case .selectiveColor: return "circle.hexagongrid"
+        case .bwMixer: return "circle.lefthalf.filled"; case .cameraCalibration: return "camera.aperture"
         case .hsl: return "slider.horizontal.3"; case .geometry: return "crop.rotate"; case .lens: return "viewfinder"
         case .hdrPeakLimit: return "sun.max"; case .hdrSDRExposure: return "plusminus.circle"
         case .hdrSDRContrast: return "circle.lefthalf.filled"; case .hdrSDRSaturation: return "drop.halffull"

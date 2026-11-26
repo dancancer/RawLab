@@ -212,6 +212,10 @@ public sealed class EditWorkflowTests
                 if (EditorAdjustmentRules.ToneParameterFor(tool) is { } toneParameter) ownedState.SetTone(toneParameter, 25);
                 ownedState.Set(Parameter.Strength, .37); ownedState.Set(Parameter.Highlights, -.11); ownedState.Set(Parameter.Shadows, -.14);
                 ownedState.Set(Parameter.Contrast, 1.23); ownedState.Set(Parameter.ToneCurve, -.19); ownedState.Set(Parameter.Temperature, 6000); ownedState.Set(Parameter.Tint, 12);
+                ownedState.Calibration = new CameraCalibrationSettings(ShadowTint: 15, RedHue: -20);
+                ownedState.PointColor = new PointColorSettings([new PointColorSwatch(SrcHue: 25, SrcSaturation: 0.4, SrcLuminance: 0.6, Variance: -50)]);
+                ownedState.SelectiveColor = new SelectiveColorSettings(SelectiveColorMethod.Absolute, new SelectiveColorBands { Reds = new SelectiveColorBand(Cyan: 20) });
+                ownedState.BwMixer = new BwMixerSettings(true, new BwMixerWeights(Red: 30));
                 var edit = Edit(ownedState); var frozen = edit.Settings.Copy(); var expected = frozen.Copy(); var ownedLook = edit.Look;
                 switch (tool)
                 {
@@ -222,6 +226,10 @@ public sealed class EditWorkflowTests
                         expected.Values[2] = 5200; expected.Values[3] = 8; expected = expected with { CameraWhiteBalance = true }; break;
                     case EditorAdjustmentTool.ColorGrading: expected = expected with { ColorGrading = null }; break;
                     case EditorAdjustmentTool.Hsl: expected = expected with { Hsl = new() }; break;
+                    case EditorAdjustmentTool.PointColor: expected = expected with { PointColor = null }; break;
+                    case EditorAdjustmentTool.SelectiveColor: expected = expected with { SelectiveColor = null }; break;
+                    case EditorAdjustmentTool.BwMixer: expected = expected with { BwMixer = null }; break;
+                    case EditorAdjustmentTool.CameraCalibration: expected = expected with { CameraCalibration = null }; break;
                     case EditorAdjustmentTool.Vignette: expected = expected with { Effects = new(GrainAmount: 0, GrainSize: 66, GrainRoughness: 80) }; break;
                     case EditorAdjustmentTool.Grain: expected = expected with { Effects = new(0, 21, 11, 70, 33) }; break;
                     case EditorAdjustmentTool.Denoise: expected = expected with { Denoise = new(), DisplayChromaDenoise = 0 }; break;
@@ -259,6 +267,17 @@ public sealed class EditWorkflowTests
             var grainPresetAdjustments = new Adjustments { Effects = new PhotoEffectsSettings(GrainFormatPreset: GrainFormatPreset.Film135) };
             Check(!grainCurveAdjustments.IsEffectDefault(false) && !grainPresetAdjustments.IsEffectDefault(false) && new Adjustments().IsEffectDefault(false),
                 "IsEffectDefault(false) tracks v0.14.0 grain tone curve and format preset");
+            var trackAColorOnly = neutral.Clone();
+            trackAColorOnly.Calibration = new CameraCalibrationSettings(ShadowTint: 12);
+            trackAColorOnly.PointColor = new PointColorSettings([new PointColorSwatch(SrcHue: 35, SrcSaturation: 0.5, SrcLuminance: 0.6, Variance: -40)]);
+            trackAColorOnly.SelectiveColor = new SelectiveColorSettings(SelectiveColorMethod.Absolute, new SelectiveColorBands { Yellows = new SelectiveColorBand(Yellow: 15) });
+            trackAColorOnly.BwMixer = new BwMixerSettings(true, new BwMixerWeights(Red: 20));
+            var trackAColorEdit = Edit(trackAColorOnly, null);
+            foreach (var colorTool in new[] { EditorAdjustmentTool.CameraCalibration, EditorAdjustmentTool.PointColor, EditorAdjustmentTool.SelectiveColor, EditorAdjustmentTool.BwMixer })
+                Check(EditorAdjustmentRules.IsModified(Tool(colorTool), trackAColorEdit), "Modified check detects Track A color tool: " + colorTool);
+            var resetColorGroup = EditorAdjustmentRules.PrepareReset(Group(EditorAdjustmentGroup.Color), trackAColorEdit);
+            Check(resetColorGroup.Status == EditorResetStatus.Ready && !EditorAdjustmentRules.IsModified(Group(EditorAdjustmentGroup.Color), resetColorGroup.Candidate!),
+                "Color group reset clears Camera Calibration, Point Color, Selective Color, and B&W Mixer");
             var resetContext = new EditorResetContext("resolved-film.cube", 10);
             var resetToken = EditorResetTransaction.Prepare(Group(EditorAdjustmentGroup.Light), resetIdentity.Path, 2, 3, mixedEdit, resetContext);
             var exposedCandidate = resetToken.Candidate!;

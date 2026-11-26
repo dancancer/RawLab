@@ -16,6 +16,7 @@ public extension Adjustments {
 public enum EditorToolSelection: Hashable, Codable, Sendable {
     case adjustment(AdjustmentKind)
     case film, recipe, lens, geometry
+    case pointColor, selectiveColor, bwMixer, cameraCalibration
     case hdrPeakLimit, hdrSDRExposure, hdrSDRContrast, hdrSDRSaturation
 
     public var hdrRenditionKeyPath: WritableKeyPath<HDRRenditionSettings, Double>? {
@@ -31,6 +32,8 @@ public enum EditorToolSelection: Hashable, Codable, Sendable {
     public var adjustmentTool: EditorAdjustmentTool {
         switch self {
         case .film: return .film; case .recipe: return .recipe; case .lens: return .lens; case .geometry: return .geometry
+        case .pointColor: return .pointColor; case .selectiveColor: return .selectiveColor
+        case .bwMixer: return .bwMixer; case .cameraCalibration: return .cameraCalibration
         case .hdrPeakLimit: return .hdrPeakLimit; case .hdrSDRExposure: return .hdrSDRExposure
         case .hdrSDRContrast: return .hdrSDRContrast; case .hdrSDRSaturation: return .hdrSDRSaturation
         case .adjustment(.temperature), .adjustment(.tint): return .whiteBalance
@@ -102,7 +105,8 @@ public enum EditorAdjustmentRules {
         (.looks, [.film, .recipe, .adjustment(.strength)]),
         (.light, [.adjustment(.exposure), .adjustment(.highlights), .adjustment(.shadows),
                   .adjustment(.blackPoint), .adjustment(.whitePoint), .adjustment(.contrast), .adjustment(.toneCurve)]),
-        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl), .adjustment(.colorGrading)]),
+        (.color, [.adjustment(.temperature), .adjustment(.saturation), .adjustment(.vibrance), .adjustment(.hsl),
+                  .pointColor, .selectiveColor, .bwMixer, .adjustment(.colorGrading), .cameraCalibration]),
         (.effects, [.adjustment(.clarity), .adjustment(.dehaze), .adjustment(.vignette), .adjustment(.grain)]),
         (.detail, [.adjustment(.noiseReduction), .adjustment(.sharpening)]),
         (.geometry, [.geometry, .lens]),
@@ -146,6 +150,10 @@ public enum EditorAdjustmentRules {
             case .toneCurve: return settings.toneCurve != 0 || !settings.curveSettings.isDefault
             case .colorGrading: return !settings.gradingSettings.isDefault
             case .hsl: return !settings.hslSettings.isIdentity
+            case .pointColor: return !settings.pointColorSettings.isDefault
+            case .selectiveColor: return !settings.selectiveColorSettings.isDefault
+            case .bwMixer: return !settings.bwMixerSettings.isDefault
+            case .cameraCalibration: return !settings.calibrationSettings.isDefault
             case .vignette: return PhotoEffectParameter.allCases.filter(\.isVignette).contains { settings.effectSettings[keyPath: $0.keyPath] != $0.defaultValue }
             case .grain:
                 return PhotoEffectParameter.allCases.filter { !$0.isVignette }.contains {
@@ -342,6 +350,10 @@ public enum EditorAdjustmentRules {
             case .toneCurve: result.toneCurve = defaults.toneCurve; result.toneCurveConfig = nil
             case .colorGrading: result.colorGrading = nil
             case .hsl: result.hsl = nil
+            case .pointColor: result.pointColor = nil
+            case .selectiveColor: result.selectiveColor = nil
+            case .bwMixer: result.bwMixer = nil
+            case .cameraCalibration: result.cameraCalibration = nil
             case .vignette: result.resetEffect(.vignetteAmount)
             case .grain: result.resetEffect(.grainAmount)
             case .sharpening:

@@ -179,6 +179,7 @@ extension EditorModel {
         cancelHSLTarget(); hslTargetEnabled = false
         cancelCurveTarget(); curveTargetEnabled = false
         cancelWBProbe(); wbEyedropperEnabled = false
+        cancelPointColorEyedropper()
         if adjustmentNavigation.tool == .colorGrading || adjustmentNavigation.tool == .toneCurve { cancelAdjustmentInteraction() }
         ParameterValueField.cancelPendingInputs()
         guard resetReturnTool == nil, resetConfirmation == nil else { return }
@@ -197,6 +198,7 @@ extension EditorModel {
         cancelHSLTarget()
         cancelCurveTarget()
         cancelWBProbe()
+        cancelPointColorEyedropper()
         ParameterValueField.cancelPendingInputs()
         guard !busy, !exporting, !lookLibraryBusy, resetConfirmation == nil, resetReturnTool == nil else { return }
         if scope == .all, geometryDraft != nil {

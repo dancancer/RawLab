@@ -477,6 +477,18 @@
               <Button x:Name="GradingCategory" Click="GradingCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '颜色分级'}" AutomationProperties.Name="{DynamicResource '颜色分级'}">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="GradingCategoryRing"/><local:EditorIcon Kind="ColorGrading" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '颜色分级'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
+              <Button x:Name="PointColorCategory" Click="PointColorCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '点颜色'}" AutomationProperties.Name="{DynamicResource '点颜色'}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="PointColorCategoryRing"/><local:EditorIcon Kind="PointColor" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '点颜色'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
+              <Button x:Name="SelectiveColorCategory" Click="SelectiveColorCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '可选颜色'}" AutomationProperties.Name="{DynamicResource '可选颜色'}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="SelectiveColorCategoryRing"/><local:EditorIcon Kind="SelectiveColor" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '可选颜色'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
+              <Button x:Name="BwMixerCategory" Click="BwMixerCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '黑白'}" AutomationProperties.Name="{DynamicResource '黑白'}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="BwMixerCategoryRing"/><local:EditorIcon Kind="BwMixer" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '黑白'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
+              <Button x:Name="CalibrationCategory" Click="CalibrationCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '相机校准'}" AutomationProperties.Name="{DynamicResource '相机校准'}">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="CalibrationCategoryRing"/><local:EditorIcon Kind="CameraCalibration" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '相机校准'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
+              </Button>
               <Button x:Name="WhiteBalanceCategory" Click="WhiteBalanceCategoryClicked" Style="{StaticResource ToolButton}" ToolTip="{DynamicResource '白平衡'}" AutomationProperties.Name="{DynamicResource '白平衡'}" AutomationProperties.AutomationId="WhiteBalance">
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><Grid Width="18" Height="18"><local:AdjustmentRing Compact="True" x:Name="WhiteBalanceCategoryRing"/><local:EditorIcon Kind="Temperature" Width="16" Height="16"/></Grid><TextBlock Text="{DynamicResource '白平衡'}" FontSize="{DynamicResource EditorCaptionSize}" TextWrapping="NoWrap" TextAlignment="Left" HorizontalAlignment="Left" Margin="6,0,0,0" VerticalAlignment="Center"/></StackPanel>
               </Button>
@@ -530,6 +542,10 @@
             <Border x:Name="GeometrySurface" Visibility="Collapsed"><local:GeometryPanel x:Name="GeometryEditor"/></Border>
             <Border x:Name="HslSurface" Visibility="Collapsed"><local:HslPanel x:Name="HslEditor"/></Border>
             <Border x:Name="GradingSurface" Visibility="Collapsed"><local:ColorGradingPanel x:Name="GradingEditor"/></Border>
+            <Border x:Name="PointColorSurface" Visibility="Collapsed"><local:PointColorPanel x:Name="PointColorEditor"/></Border>
+            <Border x:Name="SelectiveColorSurface" Visibility="Collapsed"><local:SelectiveColorPanel x:Name="SelectiveColorEditor"/></Border>
+            <Border x:Name="BwMixerSurface" Visibility="Collapsed"><local:BwMixerPanel x:Name="BwMixerEditor"/></Border>
+            <Border x:Name="CalibrationSurface" Visibility="Collapsed"><local:CameraCalibrationPanel x:Name="CalibrationEditor"/></Border>
             <Border x:Name="CurveSurface" Visibility="Collapsed"><local:ToneCurvePanel x:Name="CurveEditor"/></Border>
             <Border x:Name="WhiteBalanceSurface" Visibility="Collapsed"><local:WhiteBalancePanel x:Name="WhiteBalanceEditor"/></Border>
             <Border x:Name="PhotoEffectsSurface" Visibility="Collapsed">

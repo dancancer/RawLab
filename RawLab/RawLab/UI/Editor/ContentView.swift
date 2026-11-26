@@ -359,6 +359,18 @@ struct ContentView: View {
             coordinator.curveTargetEnabled = false
             coordinator.wbEyedropperEnabled = false
             coordinator.wbProbeNotice = nil
+            coordinator.pointColorEyedropperEnabled = false
+            if coordinator.isAdjustingSlider { cancelSliderInteraction() }
+            coordinator.cancelRulerFocus()
+        }
+        .onChange(of: coordinator.selectedColorScienceTool) { _, _ in
+            coordinator.cancelHSLTarget()
+            coordinator.hslTargetEnabled = false
+            coordinator.cancelCurveTarget()
+            coordinator.curveTargetEnabled = false
+            coordinator.wbEyedropperEnabled = false
+            coordinator.wbProbeNotice = nil
+            coordinator.pointColorEyedropperEnabled = false
             if coordinator.isAdjustingSlider { cancelSliderInteraction() }
             coordinator.cancelRulerFocus()
         }
@@ -371,6 +383,7 @@ struct ContentView: View {
         .onChange(of: coordinator.hslTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.curveTargetEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.wbEyedropperEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
+        .onChange(of: coordinator.pointColorEyedropperEnabled) { _, _ in coordinator.photoViewing.endTemporaryViewing() }
         .onChange(of: coordinator.adjustmentFine) { _, _ in cancelSliderInteraction() }
         .onAppear {
             viewModel.loadLUTsIfNeeded()

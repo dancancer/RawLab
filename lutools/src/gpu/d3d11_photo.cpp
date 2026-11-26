@@ -1,5 +1,6 @@
 #include "gpu/d3d11_photo.h"
 #include "gpu/d3d11_photo_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
 #include "core/processing_cancellation.h"
@@ -76,7 +77,7 @@ struct D3D11PhotoRenderer::Impl {
     ComPtr<ID3D11Device> device;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11ComputeShader> shader;
-    ComPtr<ID3D11Buffer> constants, staging;
+    ComPtr<ID3D11Buffer> constants, colorScienceConstants, staging;
     Buffer source, processing[2], resized, film, basicField;
     uint64_t revision = 0;
     int sourceWidth = 0, sourceHeight = 0;
@@ -116,6 +117,9 @@ struct D3D11PhotoRenderer::Impl {
         D3D11_BUFFER_DESC desc{};
         desc.ByteWidth = sizeof(Parameters); desc.Usage = D3D11_USAGE_DEFAULT; desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
         checked(device->CreateBuffer(&desc, nullptr, &constants));
+        D3D11_BUFFER_DESC csDesc{};
+        csDesc.ByteWidth = sizeof(ColorScienceGpuParams); csDesc.Usage = D3D11_USAGE_DEFAULT; csDesc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+        checked(device->CreateBuffer(&csDesc, nullptr, &colorScienceConstants));
     }
     void allocateTyped(Buffer& buffer, size_t count, size_t stride, bool writable) {
         if (!count || count > std::numeric_limits<UINT>::max() / stride) throw GpuCapabilityLimitError("GPU buffer too large");
@@ -189,7 +193,8 @@ struct D3D11PhotoRenderer::Impl {
         params.band[0]=sourceRow;params.band[1]=outputRow;params.band[2]=rows;
         context->UpdateSubresource(constants.Get(),0,nullptr,&params,0,0);
         context->CSSetShader(shader.Get(),nullptr,0);
-        auto cb=constants.Get(); context->CSSetConstantBuffers(0,1,&cb);
+        ID3D11Buffer* cbs[]={constants.Get(),colorScienceConstants.Get()};
+        context->CSSetConstantBuffers(0,2,cbs);
         ID3D11ShaderResourceView* views[]={input.srv.Get(),params.control[2] ? film.srv.Get() : nullptr,basicField.srv.Get()};
         context->CSSetShaderResources(0,3,views);
         auto uav=output.uav.Get();context->CSSetUnorderedAccessViews(0,1,&uav,nullptr);
@@ -363,6 +368,8 @@ bool D3D11PhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpac
         p.basicTone[0] = bt ? std::clamp(params.basicTone.highlights, -1.0f, 1.0f) : 0.0f;
         p.basicTone[1] = bt ? std::clamp(params.basicTone.shadows, -1.0f, 1.0f) : 0.0f;
         c.setBasicToneField(params);
+        const ColorScienceGpuParams csParams = colorScienceGpuParameters(params);
+        c.context->UpdateSubresource(c.colorScienceConstants.Get(), 0, nullptr, &csParams, 0, 0);
         const auto grading=colorGradingParameters(params.colorGrading);
         for (size_t zone=0;zone<3;++zone) {
             p.colorGrading[zone][0]=grading.coefficients[zone].r;

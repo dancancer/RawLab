@@ -79,4 +79,14 @@ internal object InspectionNative {
         dstBitmap: Bitmap,
         mode: Int,
     ): Boolean
+
+    @JvmStatic
+    external fun nativePointColorPreviewSwatch(
+        srcHue: Float,
+        srcSaturation: Float,
+        srcLuminance: Float,
+        hueShift: Float,
+        saturationShift: Float,
+        luminanceShift: Float,
+    ): FloatArray?
 }

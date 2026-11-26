@@ -38,9 +38,14 @@ import com.rawlab.android.R
 import com.rawlab.android.analytics.UsageFilmKind
 import com.rawlab.android.editor.*
 import com.rawlab.android.editor.Operation
+import com.rawlab.android.editor.controls.BwMixerControls
+import com.rawlab.android.editor.controls.CameraCalibrationControls
 import com.rawlab.android.editor.controls.DenoiseControls
 import com.rawlab.android.editor.controls.HslControls
 import com.rawlab.android.editor.controls.NumericControl
+import com.rawlab.android.editor.controls.PointColorControls
+import com.rawlab.android.editor.controls.PointColorProbeActions
+import com.rawlab.android.editor.controls.SelectiveColorControls
 import com.rawlab.android.editor.controls.LocalAdjustmentSession
 import com.rawlab.android.editor.controls.LocalAdjustmentFine
 import com.rawlab.android.editor.geometry.GeometryControls
@@ -117,6 +122,9 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, gradingGlobal: Boolean = false, onGradingGlobalChange: (Boolean) -> Unit = {},
     hslTarget: HslTargetActions = HslTargetActions(), wbProbe: WbProbeActions = WbProbeActions(),
+    pointColorProbe: PointColorProbeActions = PointColorProbeActions(),
+    selectedPointColorSwatch: Int = 0, onSelectedPointColorSwatchChange: (Int) -> Unit = {},
+    selectedSelectiveColorBand: Int = 0, onSelectedSelectiveColorBandChange: (Int) -> Unit = {},
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
@@ -238,7 +246,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         // 底栏按内容收紧；复杂工具仍受外层高度上限约束，侧栏保持填满。
         Box(Modifier.weight(1f, fill = sideDock).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine,
-            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides (tool in listOf(8, 9, 11, 12, 13, 14, 21))) {
+            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides (tool in listOf(8, 9, 11, 12, 13, 14, 21, 28, 29, 30, 31))) {
         Column(Modifier.fillMaxWidth()) {
         if (quickPresetsVisible) quickPresetContent() else when (tool) {
             0 -> if (edits.isHDREditing) {
@@ -489,6 +497,20 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             27 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_saturation, edits.hdr!!.renditionSettings.sdrSaturation, -100f..100f, "%", parameterEnabled,
                 { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = value))), dragging) },
                 { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = 0f))), false) })
+            28 -> PointColorControls(edits.pointColor, parameterEnabled, selectedPointColorSwatch,
+                onSelectedPointColorSwatchChange, pointColorProbe) { value, dragging ->
+                editParameter(edits.copy(pointColor = value), dragging)
+            }
+            29 -> SelectiveColorControls(edits.selectiveColor, parameterEnabled, selectedSelectiveColorBand,
+                onSelectedSelectiveColorBandChange) { value, dragging ->
+                editParameter(edits.copy(selectiveColor = value), dragging)
+            }
+            30 -> BwMixerControls(edits.bwMixer, parameterEnabled) { value, dragging ->
+                editParameter(edits.copy(bwMixer = value), dragging)
+            }
+            31 -> CameraCalibrationControls(edits.calibration, parameterEnabled) { value, dragging ->
+                editParameter(edits.copy(calibration = value), dragging)
+            }
         }
         if (tool in listOf(0, 15) && !edits.isHDREditing) CompositionLocalProvider(
             com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides true) { NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%",

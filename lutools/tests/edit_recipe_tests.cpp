@@ -595,8 +595,10 @@ void v20SdrContractsAndStubs() {
     float srcRgb[3]{}, dstRgb[3]{};
     check(sony2fuji_point_color_preview_swatch(360.0f, 0.5f, 0.5f, 0.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_INVALID_ARGUMENT,
           "point color swatch preview rejects src_hue >= 360");
-    check(sony2fuji_point_color_preview_swatch(120.0f, 0.5f, 0.5f, 10.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_UNSUPPORTED,
-          "point color swatch preview returns clean UNSUPPORTED stub in Wave 0");
+    check(sony2fuji_point_color_preview_swatch(120.0f, 0.5f, 0.5f, 10.0f, 0.0f, 0.0f, srcRgb, dstRgb) == SONY2FUJI_STATUS_OK,
+          "point color swatch preview computes before/after RGB");
+    check(srcRgb[1] > srcRgb[0] && dstRgb[2] > srcRgb[2],
+          "point color swatch preview shifts hue from green toward cyan-blue for positive hue_shift");
 }
 
 } // namespace

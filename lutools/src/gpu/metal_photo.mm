@@ -4,6 +4,7 @@
 #include "gpu/photo_tone_shader.h"
 #include "gpu/photo_color_grading_shader.h"
 #include "gpu/photo_tone_curve_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "gpu/metal_dcp_shader.h"
 #include "gpu/metal_effects_shader.h"
 #include "core/photo_lut.h"
@@ -152,7 +153,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::toneCurveShader("float3") + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::toneCurveShader("float3") + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + sony2fuji::colorScienceShader(sony2fuji::ShaderDialect::Metal) + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -409,6 +410,7 @@ kernel void matrixExposure(
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
     device const float* basicField [[buffer(3)]],
+    constant ColorScienceParams& colorScience [[buffer(4)]],
     uint gid [[thread_position_in_grid]]) {
     uint count = params.srcWidth * params.srcHeight;
     if (gid >= count) {
@@ -418,6 +420,7 @@ kernel void matrixExposure(
     result.r *= params.exposureScale * params.wbR;
     result.g *= params.exposureScale * params.wbG;
     result.b *= params.exposureScale * params.wbB;
+    result = csApplyCalibration(result, colorScience);
     if (params.basicToneActive != 0u) {
         uint px = gid % params.srcWidth;
         uint py = gid / params.srcWidth + params.srcRowOffset;
@@ -548,12 +551,13 @@ kernel void toneAdjustments(
     constant Params& params [[buffer(0)]],
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
+    constant ColorScienceParams& colorScience [[buffer(3)]],
     uint gid [[thread_position_in_grid]]) {
     uint count = params.srcWidth * params.srcHeight;
     if (gid >= count) {
         return;
     }
-    float3 raw = float3(source[gid]);
+    float3 raw = csApplyBwMixer(float3(source[gid]), colorScience);
     float3 pixel = params.basicV3 != 0u
         ? tcBasicBlackWhiteV3(raw, params.blackPoint, params.whitePoint)
         : tcBlackWhite(raw, params.blackPoint, params.whitePoint);
@@ -561,7 +565,11 @@ kernel void toneAdjustments(
         float3 vibranced = params.basicV3 != 0u
             ? tcBasicVibranceV3(pixel, params.vibrance)
             : tcVibrance(pixel, params.vibrance);
-        destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
+        float3 colored = csApplySelectiveColor(
+            csApplyPointColor(applyHsl(vibranced, params), colorScience),
+            colorScience
+        );
+        destination[gid] = packed_float3(applyGrading(colored, params));
         return;
     }
     if (params.basicV3 == 0u) {
@@ -607,7 +615,11 @@ kernel void toneAdjustments(
     float3 vibranced = params.basicV3 != 0u
         ? tcBasicVibranceV3(pixel, params.vibrance)
         : tcVibrance(pixel, params.vibrance);
-    destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
+    float3 colored = csApplySelectiveColor(
+        csApplyPointColor(applyHsl(vibranced, params), colorScience),
+        colorScience
+    );
+    destination[gid] = packed_float3(applyGrading(colored, params));
 }
 
 kernel void noiseReduction(
@@ -998,7 +1010,8 @@ id<MTLComputeCommandEncoder> beginKernel(
     size_t count,
     const CachedDcp* dcp = nullptr,
     id<MTLBuffer> invalid = nil,
-    id<MTLBuffer> extraBuffer = nil
+    id<MTLBuffer> extraBuffer = nil,
+    id<MTLBuffer> extraBuffer2 = nil
 ) {
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder || !pipeline || !params || !source || !destination || count == 0) {
@@ -1015,6 +1028,9 @@ id<MTLComputeCommandEncoder> beginKernel(
         [encoder setBuffer:invalid offset:0 atIndex:5];
     } else if (extraBuffer != nil) {
         [encoder setBuffer:extraBuffer offset:0 atIndex:3];
+        if (extraBuffer2 != nil) {
+            [encoder setBuffer:extraBuffer2 offset:0 atIndex:4];
+        }
     }
     const NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
     if (maxThreads == 0) {
@@ -1045,10 +1061,11 @@ bool encodeKernel(
     size_t count,
     const CachedDcp* dcp = nullptr,
     id<MTLBuffer> invalid = nil,
-    id<MTLBuffer> extraBuffer = nil
+    id<MTLBuffer> extraBuffer = nil,
+    id<MTLBuffer> extraBuffer2 = nil
 ) {
     return finishKernel(beginKernel(
-        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid, extraBuffer
+        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid, extraBuffer, extraBuffer2
     ));
 }
 
@@ -1189,6 +1206,15 @@ bool renderPhotoMetalImpl(
         std::memset(basicFieldBuffer.contents, 0, 2 * sizeof(float));
     }
 
+    const sony2fuji::ColorScienceGpuParams csValues = sony2fuji::colorScienceGpuParameters(renderParams);
+    id<MTLBuffer> colorScienceBuffer = makeBuffer(context.device, sizeof(csValues));
+    if (!colorScienceBuffer) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Failed to allocate Metal ColorScience buffer");
+    }
+    std::memcpy(colorScienceBuffer.contents, &csValues, sizeof(csValues));
+
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
     const bool earlyResize = renderParams.intent == sony2fuji::RenderIntent::Preview &&
@@ -1328,16 +1354,18 @@ bool renderPhotoMetalImpl(
                         "Failed to allocate Metal parameter buffer");
                 }
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
-                               const CachedDcp* stages = nullptr, id<MTLBuffer> extraBuffer = nil) {
+                               const CachedDcp* stages = nullptr, id<MTLBuffer> extraBuffer = nil,
+                               id<MTLBuffer> extraBuffer2 = nil) {
                     if (!encodeKernel(command, pipeline, constants, current, next, texture,
-                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil, extraBuffer)) return false;
+                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil,
+                        extraBuffer, extraBuffer2)) return false;
                     std::swap(current, next);
                     return true;
                 };
-                if (beforeChroma && (!run(context.matrixExposurePipeline, nil, nullptr, basicFieldBuffer) ||
+                if (beforeChroma && (!run(context.matrixExposurePipeline, nil, nullptr, basicFieldBuffer, colorScienceBuffer) ||
                     !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
                         useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
-                    !run(context.tonePipeline, nil))) {
+                    !run(context.tonePipeline, nil, nullptr, colorScienceBuffer))) {
                     return failWith(sony2fuji::GpuFailureKind::ProcessingError,
                         sony2fuji::GpuBackendFault::DeviceError,
                         "Failed to encode Metal color/tone pass");

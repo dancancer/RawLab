@@ -3,6 +3,7 @@
 #include "gpu/gles_recovery.h"
 #include "core/processing_cancellation.h"
 #include "gpu/gles_photo_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "gpu/lut_gpu_internal.h"
 #include "core/photo_lut.h"
 #include "core/chroma_denoise.h"
@@ -105,7 +106,7 @@ struct GlesPhotoRenderer::Impl {
     EGLDisplay display = EGL_NO_DISPLAY;
     EGLContext context = EGL_NO_CONTEXT;
     EGLSurface surface = EGL_NO_SURFACE;
-    GLuint program = 0, buffers[4]{}, curveUbo = 0, texture = 0;
+    GLuint program = 0, buffers[4]{}, curveUbo = 0, colorScienceUbo = 0, texture = 0;
     size_t capacities[4]{}, blockLimit = 0, dispatchLimit = 0;
     GLint textureLimit = 0;
     uint64_t cachedRevision = 0;
@@ -119,6 +120,7 @@ struct GlesPhotoRenderer::Impl {
                 if (binding.bound) {
                     glDeleteBuffers(4, buffers);
                     if (curveUbo) glDeleteBuffers(1, &curveUbo);
+                    if (colorScienceUbo) glDeleteBuffers(1, &colorScienceUbo);
                     if (texture) glDeleteTextures(1, &texture);
                     if (program) glDeleteProgram(program);
                 }
@@ -165,6 +167,9 @@ struct GlesPhotoRenderer::Impl {
         glGenBuffers(1, &curveUbo);
         glBindBuffer(GL_UNIFORM_BUFFER, curveUbo);
         glBufferData(GL_UNIFORM_BUFFER, sizeof(CurveUbo), nullptr, GL_DYNAMIC_DRAW);
+        glGenBuffers(1, &colorScienceUbo);
+        glBindBuffer(GL_UNIFORM_BUFFER, colorScienceUbo);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(ColorScienceGpuParams), nullptr, GL_DYNAMIC_DRAW);
         checkGL();
         __android_log_print(ANDROID_LOG_INFO, "RawLabGPU", "%s; %s; SSBO=%lld; groups=%d; texture3D=%d",
             glGetString(GL_RENDERER), glGetString(GL_VERSION), static_cast<long long>(block), groups, textureLimit);
@@ -399,6 +404,10 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
         const bool anyCurve = ubo.curveCounts[0] || ubo.curveCounts[1] || ubo.curveCounts[2] || ubo.curveCounts[3];
         glBufferSubData(GL_UNIFORM_BUFFER, 0, anyCurve ? sizeof(CurveUbo) : 64, &ubo);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, context.curveUbo);
+        const ColorScienceGpuParams csUbo = colorScienceGpuParameters(params);
+        glBindBuffer(GL_UNIFORM_BUFFER, context.colorScienceUbo);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ColorScienceGpuParams), &csUbo);
+        glBindBufferBase(GL_UNIFORM_BUFFER, 1, context.colorScienceUbo);
         glUniform1i(context.uniform("hslActive"), params.hsl.active());
         glUniform3f(context.uniform("toneControls"),
             params.toneControls.blackPoint, params.toneControls.whitePoint, params.toneControls.vibrance);

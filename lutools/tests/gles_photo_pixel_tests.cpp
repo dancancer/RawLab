@@ -11,6 +11,10 @@
 #include "core/photo_rendering.h"
 #include "core/photo_tone_controls.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_bw_mixer.h"
+#include "core/photo_calibration.h"
+#include "core/photo_point_color.h"
+#include "core/photo_selective_color.h"
 #include "core/photo_tone_curve.h"
 #include "gpu/gles_photo.h"
 #include "gpu/photo_tone_curve_shader.h"
@@ -994,6 +998,56 @@ void testBasicV3AndToneFieldParity() {
     }
 }
 
+void testColorScienceGlesParity() {
+    rawlabtest::resetGlesVmState();
+    sony2fuji::GlesPhotoRenderer renderer;
+    const auto input = makeColorfulTestImage(8, 6);
+    const auto toSrgb = sony2fuji::ColorConverter::getConversionMatrix(
+        sony2fuji::ColorSpace::sRGB, sony2fuji::ColorSpace::sRGB);
+    const auto req = makeBaseRequest(8, 6);
+
+    auto runCase = [&](const std::string& label, const sony2fuji::RenderParams& params) {
+        sony2fuji::ImageData gpuOut;
+        const bool ok = renderer.render(input, sony2fuji::ColorSpace::sRGB, params, 8, 6, 0, gpuOut);
+
+        sony2fuji::ImageData cpuRef = input;
+        const auto prepCal = sony2fuji::prepareCameraCalibration(params.calibration);
+        for (auto& px : cpuRef.pixels) {
+            px = sony2fuji::ColorConverter::applyMatrix(px, toSrgb);
+            px = sony2fuji::applyCameraCalibrationPixel(px, prepCal);
+            px = {sony2fuji::neutralDisplay(px.r), sony2fuji::neutralDisplay(px.g), sony2fuji::neutralDisplay(px.b)};
+            px = sony2fuji::applyBwMixerPixel(px, params.bw);
+            px = sony2fuji::applyHsl(px, params.hsl);
+            px = sony2fuji::applyPointColorPixel(px, params.pointColor);
+            px = sony2fuji::applySelectiveColorPixel(px, params.selectiveColor);
+            px = sony2fuji::applyColorGrading(px, params.colorGrading);
+        }
+        const float diff = ok ? maxPixelDiff(gpuOut, cpuRef) : std::numeric_limits<float>::infinity();
+        checkPass(ok && diff <= 2e-4f,
+            "GLES Track A parity [" + label + "] maxDiff=" + std::to_string(diff));
+    };
+
+    sony2fuji::RenderParams p1 = toParams(req);
+    p1.calibration = {-30.f, 40.f, 25.f, -25.f, 15.f, 35.f, -20.f};
+    p1.pointColor.swatchCount = 1;
+    p1.pointColor.swatches[0] = {20.f, 0.55f, 0.55f, 18.f, -22.f, 12.f, -45.f, 65.f, 55.f, 50.f, 50.f, true};
+    p1.selectiveColor.method = sony2fuji::SelectiveColorMethod::Relative;
+    p1.selectiveColor.bands[0] = {-20.f, 15.f, 10.f, -10.f};
+    p1.selectiveColor.bands[4] = {25.f, -15.f, -10.f, 15.f};
+    p1.colorGrading.wheels[0] = {220.f, 30.f, -10.f};
+    p1.colorGrading.wheels[2] = {42.f, 25.f, 10.f};
+    runCase("Calibration+PointColor+SelectiveColor+Grading", p1);
+
+    sony2fuji::RenderParams p2 = toParams(req);
+    p2.calibration = {25.f, -30.f, 0.f, 0.f, 0.f, 0.f, 40.f};
+    p2.bw.enabled = true;
+    p2.bw.weights = {45.f, 15.f, 20.f, 0.f, -10.f, -55.f, -20.f, 10.f};
+    p2.selectiveColor.method = sony2fuji::SelectiveColorMethod::Absolute;
+    p2.selectiveColor.bands[7] = {10.f, 0.f, -5.f, 8.f};
+    p2.colorGrading.wheels[2] = {38.f, 35.f, 5.f};
+    runCase("BwMixer+SelectiveColorAbs+SplitTone", p2);
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1011,6 +1065,7 @@ int main(int argc, char** argv) {
     testResizeStagesEffectsAndMultiBand();
     testChromaDenoiseUsesWorkingBands();
     testBasicV3AndToneFieldParity();
+    testColorScienceGlesParity();
 
     if (rawlab::test::failureCount() != 0) {
         std::cerr << rawlab::test::failureCount() << " checkPass(s) failed\n";
