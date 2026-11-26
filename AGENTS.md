@@ -17,24 +17,24 @@
      或许可证兼容的主流成熟开源库与标准工具，不手搓通用容器/格式编解码、语法解析、加密哈希、网络协议栈或测试/构建框架；
   3. **最后才考虑最小必要自研**：仅当上述两者在跨端色彩/持久化契约、许可证合规、包体积或性能约束上确实无法满足时，
      才自研最小必要实现，并收敛到单一共享模块供调用方复用。
-  4. **禁止规避接缝的跨语言复刻**：
-     - 几何坐标正逆变换、色彩空间/白平衡/曲线数学、区域像素取样、图像分析与逐像素视觉叠加，单一真源必须在 `lutools` 核心；缺少入口时应向核心提炼窄接口，严禁为避开 `/lutools/include/` 评审而在 Swift / Kotlin / C# / Python 中手抄核心公式或像素循环。
-     - CLI、MCP（`tools/mcp/`）及脚本不得在外部语言中手写客户端 `Codable` 私有结构或独立文件锁协议；跨进程读写 `edits.json` / `presets.json` 必须遵循「读取-增量合并-保留未知与正交字段（如 `hdr`、`aiDenoise*`）+ 字节切片保留」契约，且同平台跨进程锁必须采用同一种 OS 锁原语。
-- **主轴把关（Review 与复核）**：以“核心用户痛点与工程风险是否被真实、有效闭环”作为
-  判定主轴，剥离不影响主目标的极低概率理论边界或细枝末节，不让过度苛责的边角细节掩盖
-  已真正解决的问题，同时也不放过真正导致功能不可用或契约失真的实质缺陷。
+  4. **算法与持久化契约不跨语言复刻**：
+     - 几何坐标正逆变换、色彩空间/白平衡/曲线数学、区域像素取样、图像分析与逐像素视觉叠加，单一真源在 `lutools` 核心；
+       核心缺少入口时向核心提炼窄接口，不在 Swift / Kotlin / C# / Python 中另写一份公式或像素循环。
+     - 跨进程读写 `edits.json` / `presets.json` 遵循「读取-增量合并-保留未知与正交字段」契约，并与客户端使用同一种 OS 文件锁；
+       CLI / MCP 侧细则见 [tools/mcp/AGENTS.md](tools/mcp/AGENTS.md)。
+- **主轴把关（Review 与复核）**：以“核心用户痛点与工程风险是否被真实、有效闭环”作为判定主轴，
+  按下列两类区分结论；实质缺陷必须指出，非阻断项不改变结论。
   - **阻断项**：功能不可用、崩溃或未定义行为（UB）、数据丢失或静默损坏、并发竞态、
     安全与权限敞口、跨端语义或公共契约失真、以及测试假绿或静默跳过。
-  - **非阻断项**：主目标已有效闭环下的极端理论边界、局部代码风格偏好或顺手优化建议，
-    仅作为非阻断简注记录，不降级结论，也不为此反复打回已解决核心问题的交付。
+  - **非阻断项**：主目标已有效闭环下的极端理论边界、局部代码风格偏好或顺手优化建议，作为简注记录。
 - **诚实声明与授权红线**：严格区分“已实跑通过”“静态核对”与“待真机/硬件验证”，未执行的
   平台、UI 或硬件门禁不得表述为已验证，也不因当前环境缺少物理硬件而否定已闭环的代码逻辑。
   推送远端（`push`）、创建 PR、合并分支、打标签、上传安装包、创建 Release、签名与部署，
   均须事先获得用户明确授权。
 - **门禁阈值与豁免变更授权**：修改 `Shared/specs/` 的 `divergence_policy`（含顺延 `expires_wave`、
   新增豁免类别、调整 `max_divergent_fields`）、放宽复杂度/行数上限或删改 `scripts/ci/` 契约断言，
-  均视同保护规则变更，须事先获得用户明确授权；任何随包分发的规格/目录副本（如 `tools/mcp/src/rawlab_mcp/*.json`）
-  必须由脚本生成并纳入 CI 无遮蔽一致性 `--check` 门禁，禁止手维护静态副本。
+  均视同保护规则变更，须事先获得用户明确授权。
+- **生成物单一来源**：由规格派生、随包分发的副本（常量、规格与目录快照等）由脚本生成，并带 `--check` 一致性门禁，不手工维护。
 
 ## 长期分支
 
@@ -77,16 +77,17 @@
 ## 版本发布
 
 1. 从已验证的 `origin/development` 创建 `release/<version>`，例如 `release/0.5.1`。
-2. **发布分支血统与构建号单调门禁**：切出 `release/<version>` 前须先刷新 `origin/main` 与 `origin/development`，
-   核实全部已发布热修复（`v*` tags）与本轮集成提交均已合入 `origin/development`（`git merge-base --is-ancestor origin/main HEAD`）；
-   `Shared/version.json` 的 `build` 必须**严格大于**所有既有 `v*` 标签及 `origin/main` 上的最大 `build`。
+2. 切出 `release/<version>` 前刷新 `origin/main` 与 `origin/development`，确认已发布的热修复均已回合到
+   `origin/development`，且 `Shared/version.json` 的 `build` 严格大于所有已发布版本（由 `scripts/ci/test_versioning.py` 校验）。
 3. 发布分支只做版本号、打包、发布文档和必要的发布修复，不混入新功能。
-4. 完成目标平台构建、测试和发布验收；**所有待发布成品必须在本机执行真实启动冒烟**（Android 签名且经 R8 混淆的 Release APK 须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` DEX JNI 检查、16 KB 对齐、`apksigner verify`，并在本地模拟器上运行 `bash RawLabAndroid/scripts/smoke-release-apk.sh <apk> --avd <avd-name>` 完成 2 次干净冷启动校验），**不得以“无真机 / 真机验收记录未覆盖边界”免除对实际待发安装包（macOS 签名包、Android 正式 APK 模拟器冷启动、Windows 发布包）的本地启动验证**；仅未覆盖的物理设备/真机硬件能力边界必须明确记录。
+4. 完成目标平台构建、测试和发布验收；每个待发布成品都要在本机真实启动冒烟，各平台步骤见
+   [统一发版与四端打包规范](docs/process/release-packaging-guide.md)。缺少真机只影响真机硬件能力的覆盖，
+   须明确记录，不免除对实际待发安装包的本地启动验证。
 5. 经用户明确授权后通过 PR 合入 `main`，为发布提交创建 `v<version>` 标签（不得覆盖已有标签），
    并将发布修复回合到 `development`。
 6. 上传安装包、创建 Release、签名或部署均需要相应授权；采用 Gitflow 本身不代表授权发布。
-   取得发布授权后，统一按 [统一发版与四端打包规范](docs/process/release-packaging-guide.md) 与本机私有清单
-   `"$HOME/.config/rawlab/release-env.sh"`、`"$HOME/.config/rawlab/release-hosts.md"` 执行四端构建、签名、Draft 上架与线上 `latest/download/*` 验签，不再重复向用户询问已知路径或主机信息。
+   取得授权后按 [统一发版与四端打包规范](docs/process/release-packaging-guide.md) 执行；本机路径、密钥位置与主机信息
+   以私有清单 `"$HOME/.config/rawlab/release-env.sh"`、`"$HOME/.config/rawlab/release-hosts.md"` 为准。
 
 ## 紧急修复
 
@@ -113,10 +114,11 @@
 - GPU `Auto` 保留 CPU 回退，`Force` 不伪装 GPU 成功。
 - **AI 降噪例外**：只在硬件 GPU 后端（Mac Core ML、Windows DirectML）运行，不可用时明确提示，
   不回退到 CPU 神经网络推理；普通显影的 CPU 路径不受影响。
-- **UI 线程、缓存与状态生命周期不变量**：
-  - 严禁在 SwiftUI `body`、UIKit `configure`/`layoutSubviews`、Compose 重组函数或 WPF `LayoutUpdated` 中同步执行整图或瓦片级逐像素 CPU 计算。
-  - 所有预览、分块与观察层像素缓存必须绑定切图清理与系统内存压力回收（如 iOS `didReceiveMemoryWarningNotification`），禁止无清理入口的常驻全局缓存。
-  - Android 用户会话态（含锚点、工具模式、草稿）必须驻留 `ViewModel` 或 `rememberSaveable`，禁止放在裸 `remember` 中；桌面外部文件热重载必须与本地异步保存队列串行排空或通过递增纪元作废在途旧写盘。
+- **UI 线程、缓存与状态生命周期**：
+  - 整图或瓦片级逐像素 CPU 计算不在 UI 线程的布局、重组或绘制回调中同步执行。
+  - 预览、分块与观察层像素缓存都有清理入口：随切图清理，并响应系统内存压力回收。
+  - 用户会话态（锚点、工具模式、草稿、未提交的选项）在配置变更和视图重建后保留；Android 放在 `ViewModel` 或 `rememberSaveable`。
+  - 桌面外部文件热重载与本地异步保存队列串行排空，或通过递增纪元作废在途旧写盘。
 
 ### 分层门禁与平台入口
 
@@ -130,7 +132,7 @@
   `ctest --test-dir lutools/build-macos --output-on-failure`。
 - **iOS**：遵守 [RawLab/AGENTS.md](RawLab/AGENTS.md)，使用其现有构建与平台测试。
 - **Mac**：使用 `bash RawLabMac/build.sh` 及受影响的 `RawLabMac/tests/` 检查。
-- **Android**：使用 `RawLabAndroid/` 的 Gradle 测试、构建及相关设备/GLES 验证；Release APK 构建须通过 `RawLabAndroid/tests/check-rum-jni-classes.py` 及 `RawLabAndroid/scripts/smoke-release-apk.sh`。
+- **Android**：使用 `RawLabAndroid/` 的 Gradle 测试、构建及相关设备/GLES 验证；Release APK 按发版规范构建并冒烟。
 - **Windows**：使用 `RawLabWindows/` 的现有构建和测试；没有硬件 GPU 时不声称已完成硬件验证。
 - **纯流程或文档修改**：只检查内容、链接和 diff，不机械执行全平台构建。
 
