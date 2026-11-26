@@ -25,6 +25,7 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 
 namespace sony2fuji {
@@ -2538,8 +2539,13 @@ RenderStatus Pipeline::processImpl(
         }
     }
 
-#if defined(SONY2FUJI_ENABLE_METAL)
-    if (gpuPipeline) {
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
+    // 后端直接读取 RAW 缓存；Auto 回退时再从缓存恢复 CPU 工作图。
+    const bool rawGpuSource = local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview;
+    // 运行一个编译进来的 GPU 后端并统一处理结果：成功即出图；显存不足直接失败；Force 不伪装成功；
+    // Auto 恢复 CPU 工作图后返回 nullopt，继续走 CPU 链。
+    auto runGpuBackend = [&](RenderBackend backend, bool moveLargeRawCache, auto&& render)
+        -> std::optional<RenderStatus> {
         checkProcessingCancellation();
         uint32_t width = static_cast<uint32_t>(image.width);
         uint32_t height = static_cast<uint32_t>(image.height);
@@ -2547,12 +2553,10 @@ RenderStatus Pipeline::processImpl(
             status = computeTargetSize(local, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height), &width, &height);
             if (status != RenderStatus::Ok) return status;
         }
-        const auto& source = local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview
-            ? rawCache_ : image;
         ImageData rendered;
-        const auto outcome = renderPhotoMetalWithOutcome(source, colorSpace, local, width, height, rendered);
+        const GpuRenderOutcome outcome = render(rawGpuSource ? rawCache_ : image, width, height, rendered);
         if (outcome.succeeded()) {
-            lastBackend_ = RenderBackend::Metal;
+            lastBackend_ = backend;
             gpuFallbackReason_ = GpuFallbackReason::None;
             gpuErrorDetail_.clear();
             return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
@@ -2567,80 +2571,46 @@ RenderStatus Pipeline::processImpl(
             }
             return RenderStatus::ProcessingError;
         }
-        if (local.inputType == RenderInputType::Raw && !waveletActive && !viewportPreview) {
-            if (rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget && !previewToBuffer)
+        if (rawGpuSource) {
+            if (moveLargeRawCache &&
+                rawCache_.pixels.size() * sizeof(RGB) > WaveletRenderCache::defaultPreviewBudget && !previewToBuffer)
                 image = std::move(rawCache_);
             else
                 image = rawCache_;
         }
+        return std::nullopt;
+    };
+#endif
+#if defined(SONY2FUJI_ENABLE_METAL)
+    if (gpuPipeline) {
+        // Metal 不持有会话纹理，导出回退时可把超预算的 RAW 缓存直接移交 CPU，省一次整幅拷贝。
+        const auto finished = runGpuBackend(RenderBackend::Metal, true,
+            [&](const ImageData& source, uint32_t width, uint32_t height, ImageData& rendered) {
+                return renderPhotoMetalWithOutcome(source, colorSpace, local, width, height, rendered);
+            });
+        if (finished) return *finished;
     }
 #endif
 #if defined(SONY2FUJI_ENABLE_GLES)
     if (gpuPipeline) {
-        checkProcessingCancellation();
-        uint32_t width = static_cast<uint32_t>(image.width);
-        uint32_t height = static_cast<uint32_t>(image.height);
-        if (!geometryActive) {
-            status = computeTargetSize(local, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height), &width, &height);
-            if (status != RenderStatus::Ok) return status;
-        }
-        if (!runtime_->glesRenderer) runtime_->glesRenderer = std::make_unique<GlesPhotoRenderer>();
-        const bool raw = local.inputType == RenderInputType::Raw && !viewportPreview;
-        const auto& source = raw && !waveletActive ? rawCache_ : image;
-        ImageData rendered;
-        const auto outcome = runtime_->glesRenderer->renderWithOutcome(source, colorSpace, local, width, height,
-                raw && !waveletActive ? runtime_->rawRevision : 0, rendered);
-        if (outcome.succeeded()) {
-            lastBackend_ = RenderBackend::Gles;
-            gpuFallbackReason_ = GpuFallbackReason::None;
-            gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
-        }
-        gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
-        gpuErrorDetail_ = outcome.message;
-        if (outcome.failure == GpuFailureKind::OutOfMemory) return RenderStatus::OutOfMemory;
-        if (gpuConfig_.mode == GpuMode::Force) {
-            if (outcome.failure == GpuFailureKind::Unsupported) {
-                unsupportedReason_ = UnsupportedReason::ForceGpu;
-                return RenderStatus::Unsupported;
-            }
-            return RenderStatus::ProcessingError;
-        }
-        if (raw && !waveletActive) image = rawCache_;
+        const auto finished = runGpuBackend(RenderBackend::Gles, false,
+            [&](const ImageData& source, uint32_t width, uint32_t height, ImageData& rendered) {
+                if (!runtime_->glesRenderer) runtime_->glesRenderer = std::make_unique<GlesPhotoRenderer>();
+                return runtime_->glesRenderer->renderWithOutcome(source, colorSpace, local, width, height,
+                    rawGpuSource ? runtime_->rawRevision : 0, rendered);
+            });
+        if (finished) return *finished;
     }
 #endif
 #if defined(SONY2FUJI_ENABLE_D3D11)
     if (gpuPipeline) {
-        checkProcessingCancellation();
-        uint32_t width = static_cast<uint32_t>(image.width);
-        uint32_t height = static_cast<uint32_t>(image.height);
-        if (!geometryActive) {
-            status = computeTargetSize(local, static_cast<uint32_t>(image.width), static_cast<uint32_t>(image.height), &width, &height);
-            if (status != RenderStatus::Ok) return status;
-        }
-        if (!runtime_->d3dRenderer) runtime_->d3dRenderer = std::make_unique<D3D11PhotoRenderer>();
-        const bool raw = local.inputType == RenderInputType::Raw && !viewportPreview;
-        const auto& source = raw && !waveletActive ? rawCache_ : image;
-        ImageData rendered;
-        const auto outcome = runtime_->d3dRenderer->renderWithOutcome(source, colorSpace, local, width, height,
-                raw && !waveletActive ? runtime_->rawRevision : 0, rendered);
-        if (outcome.succeeded()) {
-            lastBackend_ = RenderBackend::D3d11;
-            gpuFallbackReason_ = GpuFallbackReason::None;
-            gpuErrorDetail_.clear();
-            return finishOutput(local, rendered, outBuffer, nativeWidth, nativeHeight, migrationFrame, outImage);
-        }
-        gpuFallbackReason_ = fallbackReasonFromFault(outcome.fault);
-        gpuErrorDetail_ = outcome.message;
-        if (outcome.failure == GpuFailureKind::OutOfMemory) return RenderStatus::OutOfMemory;
-        if (gpuConfig_.mode == GpuMode::Force) {
-            if (outcome.failure == GpuFailureKind::Unsupported) {
-                unsupportedReason_ = UnsupportedReason::ForceGpu;
-                return RenderStatus::Unsupported;
-            }
-            return RenderStatus::ProcessingError;
-        }
-        if (raw && !waveletActive) image = rawCache_;
+        const auto finished = runGpuBackend(RenderBackend::D3d11, false,
+            [&](const ImageData& source, uint32_t width, uint32_t height, ImageData& rendered) {
+                if (!runtime_->d3dRenderer) runtime_->d3dRenderer = std::make_unique<D3D11PhotoRenderer>();
+                return runtime_->d3dRenderer->renderWithOutcome(source, colorSpace, local, width, height,
+                    rawGpuSource ? runtime_->rawRevision : 0, rendered);
+            });
+        if (finished) return *finished;
     }
 #endif
 
