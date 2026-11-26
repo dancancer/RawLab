@@ -353,71 +353,66 @@ void applyPostLookStages(
         ? GammaConverter::removeSRGBGamma(evalMaster(0.0f))
         : 0.0f;
 
+    // 每个像素仍按同一顺序经过各阶段；分块后逐阶段遍历，内层循环保持紧凑，块内像素仍在缓存中。
+    const auto applyTone = [&](RGB& pixel) {
+        if (highlights != 0.0f || shadows != 0.0f) {
+            pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
+        }
+        if (masterActive) {
+            if (params.curveApplyToLuminosity) {
+                const RGB pL(
+                    GammaConverter::removeSRGBGamma(pixel.r),
+                    GammaConverter::removeSRGBGamma(pixel.g),
+                    GammaConverter::removeSRGBGamma(pixel.b)
+                );
+                const float Y = tcLuminosityLinearY(pL);
+                const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
+                const float uPrime = evalMaster(u);
+                pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
+            } else {
+                pixel.r = evalMaster(pixel.r);
+                pixel.g = evalMaster(pixel.g);
+                pixel.b = evalMaster(pixel.b);
+            }
+        }
+        if (channelsActive) {
+            if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
+            if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
+            if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
+        }
+        if (basicV3 && contrastLut.active) {
+            pixel.r = contrastLut.apply(pixel.r);
+            pixel.g = contrastLut.apply(pixel.g);
+            pixel.b = contrastLut.apply(pixel.b);
+        }
+        if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
+            applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
+        }
+    };
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
-        for (size_t index = first; index < last; ++index) {
-            RGB pixel = image.pixels[index];
-            if (bwMixerActive) {
-                pixel = applyBwMixerPixel(pixel, params.bw);
-            }
+        constexpr size_t kBlock = 4096;
+        for (size_t begin = first; begin < last; begin += kBlock) {
+            RGB* const block = image.pixels.data() + begin;
+            const size_t count = std::min(kBlock, last - begin);
+            const auto each = [&](auto&& stage) {
+                for (size_t i = 0; i < count; ++i) stage(block[i]);
+            };
+            if (bwMixerActive) each([&](RGB& p) { p = applyBwMixerPixel(p, params.bw); });
             if (basicV3) {
-                if (bwV3.active) pixel = bwV3.apply(pixel);
+                if (bwV3.active) each([&](RGB& p) { p = bwV3.apply(p); });
             } else if (bwLegacyActive) {
-                pixel = applyBlackWhite(pixel, toneControls);
+                each([&](RGB& p) { p = applyBlackWhite(p, toneControls); });
             }
-            if (repeatBwActive) {
-                pixel = applyBwMixerPixel(pixel, *repeatBwAfterBlackWhite);
-            }
-            if (toneActive) {
-                if (highlights != 0.0f || shadows != 0.0f) {
-                    pixel = detail::hsApplyHighlightsShadows(pixel, highlights, shadows);
-                }
-                if (masterActive) {
-                    if (params.curveApplyToLuminosity) {
-                        const RGB pL(
-                            GammaConverter::removeSRGBGamma(pixel.r),
-                            GammaConverter::removeSRGBGamma(pixel.g),
-                            GammaConverter::removeSRGBGamma(pixel.b)
-                        );
-                        const float Y = tcLuminosityLinearY(pL);
-                        const float u = GammaConverter::applySRGBGamma(std::max(0.0f, Y));
-                        const float uPrime = evalMaster(u);
-                        pixel = tcLuminosityFinish(pL, Y, uPrime, y0Linear);
-                    } else {
-                        pixel.r = evalMaster(pixel.r);
-                        pixel.g = evalMaster(pixel.g);
-                        pixel.b = evalMaster(pixel.b);
-                    }
-                }
-                if (channelsActive) {
-                    if (channels[0].active()) pixel.r = static_cast<float>(channels[0].evaluate(pixel.r));
-                    if (channels[1].active()) pixel.g = static_cast<float>(channels[1].evaluate(pixel.g));
-                    if (channels[2].active()) pixel.b = static_cast<float>(channels[2].evaluate(pixel.b));
-                }
-                if (basicV3 && contrastLut.active) {
-                    pixel.r = contrastLut.apply(pixel.r);
-                    pixel.g = contrastLut.apply(pixel.g);
-                    pixel.b = contrastLut.apply(pixel.b);
-                }
-                if ((!basicV3 && contrast != 1.0f) || saturation != 1.0f) {
-                    applyContrastSaturation(pixel, basicV3 ? 1.f : contrast, saturation);
-                }
-            }
+            if (repeatBwActive) each([&](RGB& p) { p = applyBwMixerPixel(p, *repeatBwAfterBlackWhite); });
+            if (toneActive) each(applyTone);
             if (vibranceActive) {
-                pixel = basicV3 ? basicVibranceV3(pixel, toneControls.vibrance) : applyVibrance(pixel, toneControls);
+                if (basicV3) each([&](RGB& p) { p = basicVibranceV3(p, toneControls.vibrance); });
+                else each([&](RGB& p) { p = applyVibrance(p, toneControls); });
             }
-            if (hslActive) {
-                pixel = applyHsl(pixel, hsl);
-            }
-            if (pointColorActive) {
-                pixel = applyPointColorPixel(pixel, params.pointColor);
-            }
-            if (selectiveColorActive) {
-                pixel = applySelectiveColorPixel(pixel, params.selectiveColor);
-            }
-            if (gradingActive) {
-                pixel = applyColorGradingParameters(pixel, gradingParams);
-            }
-            image.pixels[index] = pixel;
+            if (hslActive) each([&](RGB& p) { p = applyHsl(p, hsl); });
+            if (pointColorActive) each([&](RGB& p) { p = applyPointColorPixel(p, params.pointColor); });
+            if (selectiveColorActive) each([&](RGB& p) { p = applySelectiveColorPixel(p, params.selectiveColor); });
+            if (gradingActive) each([&](RGB& p) { p = applyColorGradingParameters(p, gradingParams); });
         }
     });
 }
