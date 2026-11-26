@@ -278,7 +278,8 @@ public sealed class HDRDisplayTests
     }
 
     [Fact]
-    [Trait("Category", "Model")]
+    [Trait("Category", "Native")]
+    [Trait("Suite", "hdr-look-import")]
     public void FalseColorRendersAllLuminanceBandsAndHonorsCancellation()
     {
         var image = new HDRFloatImage(4, 1, 48,
