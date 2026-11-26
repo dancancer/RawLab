@@ -133,10 +133,11 @@ private fun DetailOverlayTiles(
     val resolved = ArrayList<Pair<PreviewDetailOverlay, androidx.compose.ui.graphics.ImageBitmap>>(tiles.size)
     for (tile in tiles) {
         key(tile.tileKey ?: tile.normalizedRect) {
+            val tileResetKey = tile.tileKey ?: tile.normalizedRect
             val rawBitmap = if (useNeutral) {
-                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled)) ?: tile.neutral
+                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrNeutral, hdrParameters, fp16Enabled, resetKey = tileResetKey)) ?: tile.neutral
             } else {
-                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled)) ?: tile.result
+                (if (overlayMode.isActive) null else HDRBitmapAdapter.rememberBitmap(tile.hdrResult, hdrParameters, fp16Enabled, resetKey = tileResetKey)) ?: tile.result
             }
             if (rawBitmap != null) {
                 val displayBitmap = InspectionBitmap.rememberBitmap(rawBitmap, overlayMode)
@@ -171,6 +172,7 @@ internal fun PhotoCanvas(
     hslTarget: HslTargetActions? = null, workspaceControls: Boolean = false,
     histogramExpanded: Boolean? = null, onHistogramExpandedChange: (Boolean) -> Unit = {},
     hdrPreview: PhotoHDRPreview = rememberPhotoHDRPreview(pair.hdr?.result),
+    hdrResetKey: Any? = null,
     detail: PreviewDetailOverlay? = null,
     detailTiles: List<PreviewDetailOverlay> = emptyList(),
     onDetailRequest: (ViewportRoiRequest?) -> Unit = {},
@@ -269,7 +271,7 @@ internal fun PhotoCanvas(
                 val wipe = compare && mode == ComparisonMode.WIPE
                 val overlayActive = inspection.overlay.isActive
                 val hdrBitmap = if (overlayActive) null else if (neutralOnly || before)
-                    HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
+                    HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled, resetKey = hdrResetKey)
                 else hdrPreview.bitmap
                 val rawShownBitmap = hdrBitmap ?: if (neutralOnly || before) pair.neutral else pair.result
                 val shownBitmap = InspectionBitmap.rememberBitmap(rawShownBitmap, inspection.overlay)
@@ -291,7 +293,7 @@ internal fun PhotoCanvas(
                             clipRect(image.left, image.top, x, image.bottom) { this@drawWithContent.drawContent() }
                             drawLine(Color.White, Offset(x, image.top), Offset(x, image.bottom), 1.dp.toPx())
                         }) {
-                            val neutralBase = if (overlayActive) null else HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled)
+                            val neutralBase = if (overlayActive) null else HDRBitmapAdapter.rememberBitmap(pair.hdr?.neutral, hdrParameters, hdrPreview.fp16Enabled, resetKey = hdrResetKey)
                             val neutralShown = InspectionBitmap.rememberBitmap(neutralBase ?: pair.neutral, inspection.overlay)
                             Image(neutralShown.asImageBitmap(), null, transform, contentScale = ContentScale.Fit)
                             DetailOverlayTiles(activeTiles, useNeutral = true, fullImage = fullImage, hdrParameters = hdrParameters, fp16Enabled = hdrPreview.fp16Enabled, overlayMode = inspection.overlay)

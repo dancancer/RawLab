@@ -254,6 +254,7 @@
     <string name="hdr_peak_unlimited">"制限なし"</string>
     <string name="hdr_preview_auto">"自動 HDR"</string>
     <string name="hdr_preview_sdr">"SDR 互換プレビュー"</string>
+    <string name="hdr_preview_sdr_active">"SDR 互換プレビューを表示しています。"</string>
     <string name="hdr_processing_cpu">"HDR 編集では現在 CPU を使用します。GPU モードを自動またはオフにしてください。"</string>
     <string name="hdr_processing_failed">"HDR 処理に失敗しました（%1$d）。"</string>
     <string name="hdr_reference_white">"基準白"</string>
