@@ -1,5 +1,6 @@
 #include "sony2fuji/gui_store.h"
 
+#include "core/adjustment_field_spec.generated.h"
 #include "nlohmann/json.hpp"
 #include "platform/file_lock.h"
 
@@ -509,7 +510,7 @@ std::string asciiLower(const std::string& s) {
     return out;
 }
 
-enum class FieldValueType { Boolean, Integer, Number, String, Object };
+using FieldValueType = adjustment_field_spec::ValueType;
 
 struct TransferFieldSpec {
     FieldValueType valueType;
@@ -526,124 +527,19 @@ struct TransferFieldSpec {
     std::vector<int> intEnum;
 };
 
+// 字段协议数据（类型、范围、枚举、可空、HDR 专属）由 scripts/specs/generate.py 从
+// Shared/specs/adjustment-fields-v1.json 生成；对象子字段规则与按 HDR 处理版本的字段支持
+// 不在生成范围内，仍在下方手写。
 const std::unordered_map<std::string, TransferFieldSpec>& transferFieldSpecs() {
     static const std::unordered_map<std::string, TransferFieldSpec> specs = [] {
         std::unordered_map<std::string, TransferFieldSpec> m;
-        auto addNum = [&](const char* k, double lo, double hi, bool exMin = false, bool nullable = false, bool hdrOnly = false) {
-            m[k] = TransferFieldSpec{FieldValueType::Number, nullable, true, lo, true, hi, exMin, false, false, hdrOnly, {}, {}};
-        };
-        auto addBool = [&](const char* k) {
-            m[k] = TransferFieldSpec{FieldValueType::Boolean, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        };
-        auto addIntEnum = [&](const char* k, std::vector<int> vals, bool nullable = false) {
-            const int lo = *std::min_element(vals.begin(), vals.end());
-            const int hi = *std::max_element(vals.begin(), vals.end());
-            m[k] = TransferFieldSpec{FieldValueType::Integer, nullable, true, static_cast<double>(lo), true, static_cast<double>(hi), false, false, false, false, {}, std::move(vals)};
-        };
-        auto addStrEnum = [&](const char* k, std::vector<std::string> vals) {
-            m[k] = TransferFieldSpec{FieldValueType::String, false, false, 0, false, 0, false, false, false, false, std::move(vals), {}};
-        };
-
-        m["looks.reference"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        addNum("looks.strength", 0.0, 2.0);
-        addNum("light.exposure", -20.0, 20.0);
-        m["light.exposure_mode"] = TransferFieldSpec{FieldValueType::String, false, false, 0, false, 0, false, false, false, false, {"scene", "preview", "sensor"}, {}};
-        addNum("light.contrast", 0.0, 2.0);
-        addNum("light.highlights", -1.0, 1.0);
-        addNum("light.shadows", -1.0, 1.0);
-        addNum("light.s_curve", -1.0, 1.0);
-        m["light.curve"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        addBool("light.curve.apply_to_luminosity");
-        m["light.curve.parametric"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        addNum("tone.black_point", -100.0, 100.0);
-        addNum("tone.white_point", -100.0, 100.0);
-        addNum("color.vibrance", -100.0, 100.0);
-        m["color.grading.shadows"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        m["color.grading.midtones"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        m["color.grading.highlights"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        m["color.grading.global"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        addNum("color.grading.blending", 0.0, 100.0);
-        addNum("color.grading.balance", -100.0, 100.0);
-        m["color.white_balance.mode"] = TransferFieldSpec{FieldValueType::String, false, false, 0, false, 0, false, false, false, false, {"camera", "temperature", "relative", "none"}, {}};
-        addNum("color.white_balance.temperature_kelvin", 2000.0, 50000.0, false, true);
-        addNum("color.white_balance.tint", -150.0, 150.0, false, true);
-        addNum("color.saturation", 0.0, 2.0);
-        addNum("hdr.relative_temperature", 2000.0, 50000.0, false, false, true);
-        addNum("hdr.relative_tint", -150.0, 150.0, false, false, true);
-        addNum("hdr.peak_limit_ev", 0.0, 6.0, false, false, true);
-        addNum("hdr.sdr_exposure_ev", -4.0, 4.0, false, false, true);
-        addNum("hdr.sdr_contrast", -100.0, 100.0, false, false, true);
-        addNum("hdr.sdr_saturation", -100.0, 100.0, false, false, true);
-        m["hdr.look"] = TransferFieldSpec{FieldValueType::Object, true, false, 0, false, 0, false, false, false, true, {}, {}};
-        m["hdr.camera_development"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, true, {}, {}};
-
-        for (const char* axis : {"hue", "saturation", "lightness"}) {
-            for (const char* ch : {"red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"}) {
-                const std::string key = std::string("color.hsl.") + axis + "." + ch;
-                m[key] = TransferFieldSpec{FieldValueType::Number, false, true, -100.0, true, 100.0, false, false, false, false, {}, {}};
-            }
+        for (const auto& f : adjustment_field_spec::kTransferFields) {
+            m.emplace(f.id, TransferFieldSpec{
+                f.valueType, f.nullable, f.hasMin, f.minVal, f.hasMax, f.maxVal,
+                f.exclusiveMin, f.exclusiveMax, f.nonEmpty, f.hdrOnly,
+                std::vector<std::string>(f.allowedStrings, f.allowedStrings + f.allowedStringCount),
+                std::vector<int>(f.allowedInts, f.allowedInts + f.allowedIntCount)});
         }
-        addNum("color.calibration.shadow_tint", -100.0, 100.0);
-        addNum("color.calibration.red_hue", -100.0, 100.0);
-        addNum("color.calibration.red_saturation", -100.0, 100.0);
-        addNum("color.calibration.green_hue", -100.0, 100.0);
-        addNum("color.calibration.green_saturation", -100.0, 100.0);
-        addNum("color.calibration.blue_hue", -100.0, 100.0);
-        addNum("color.calibration.blue_saturation", -100.0, 100.0);
-        m["color.point_color"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        m["color.selective_color"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-        addBool("color.bw.enabled");
-        m["color.bw.mixer"] = TransferFieldSpec{FieldValueType::Object, false, false, 0, false, 0, false, false, false, false, {}, {}};
-
-        addNum("effects.vignette.amount", -100.0, 100.0);
-        addNum("effects.vignette.midpoint", 0.0, 100.0);
-        addNum("effects.vignette.roundness", -100.0, 100.0);
-        addNum("effects.vignette.feather", 0.0, 100.0);
-        addNum("effects.vignette.highlights", 0.0, 100.0);
-        addNum("effects.grain.amount", 0.0, 100.0);
-        addNum("effects.clarity", -100.0, 100.0);
-        addNum("effects.dehaze", -100.0, 100.0);
-        addNum("effects.texture", -100.0, 100.0);
-        addNum("effects.grain.size", 0.0, 100.0);
-        addNum("effects.grain.roughness", 0.0, 100.0);
-        addStrEnum("effects.grain.tone_curve", {"legacy", "negative_asymmetric"});
-        addStrEnum("effects.grain.format_preset", {"custom", "135", "120"});
-        addNum("effects.halation.amount", 0.0, 100.0);
-        addNum("effects.halation.threshold", 0.0, 100.0);
-        addNum("effects.halation.radius", 0.0, 100.0);
-        addNum("effects.halation.hue", -100.0, 100.0);
-        addNum("effects.bloom.amount", 0.0, 100.0);
-        addNum("effects.bloom.threshold", 0.0, 100.0);
-        addNum("effects.bloom.radius", 0.0, 100.0);
-        addNum("detail.sharpening", 0.0, 2.0);
-        addBool("detail.sharpening.luminance_v2");
-        addNum("detail.sharpening.radius", 0.5, 3.0);
-        addNum("detail.sharpening.detail", 0.0, 100.0);
-        addNum("detail.sharpening.masking", 0.0, 100.0);
-        addIntEnum("detail.denoise.raw_level", {0, 1, 2});
-        addNum("detail.denoise.post_rgb", 0.0, 1.0);
-        addIntEnum("detail.denoise.chroma_mode", {0, 1, 2}, true);
-        m["detail.denoise.wavelet"] = TransferFieldSpec{FieldValueType::Object, true, false, 0, false, 0, false, false, false, false, {}, {}};
-        addNum("geometry.crop.x", 0.0, 1.0);
-        addNum("geometry.crop.y", 0.0, 1.0);
-        addNum("geometry.crop.width", 0.0, 1.0, true);
-        addNum("geometry.crop.height", 0.0, 1.0, true);
-        addIntEnum("geometry.quarter_turns", {0, 1, 2, 3});
-        addBool("geometry.flip_horizontal");
-        addBool("geometry.flip_vertical");
-        addNum("geometry.straighten_degrees", -45.0, 45.0);
-        addNum("geometry.perspective.horizontal", -1.0, 1.0);
-        addNum("geometry.perspective.vertical", -1.0, 1.0);
-        addBool("geometry.lens.distortion");
-        addBool("geometry.lens.tca");
-        addBool("geometry.lens.vignetting");
-        addBool("geometry.lens.auto_crop");
-        m["geometry.lens.profile_id"] = TransferFieldSpec{FieldValueType::String, true, false, 0, false, 0, false, false, true, false, {}, {}};
-        addNum("geometry.lens.defringe_purple_amount", 0.0, 20.0);
-        addNum("geometry.lens.defringe_purple_hue", 0.0, 100.0);
-        addNum("geometry.lens.defringe_green_amount", 0.0, 20.0);
-        addNum("geometry.lens.defringe_green_hue", 0.0, 100.0);
-
         return m;
     }();
     return specs;
