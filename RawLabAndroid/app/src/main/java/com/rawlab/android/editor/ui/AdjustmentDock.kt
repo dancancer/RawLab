@@ -8,7 +8,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
@@ -27,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -35,12 +38,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.rawlab.android.R
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
 import com.rawlab.android.analytics.UsageFilmKind
 import com.rawlab.android.editor.*
 import com.rawlab.android.editor.Operation
+import com.rawlab.android.editor.controls.BwMixerControls
+import com.rawlab.android.editor.controls.CameraCalibrationControls
 import com.rawlab.android.editor.controls.DenoiseControls
 import com.rawlab.android.editor.controls.HslControls
+import com.rawlab.android.editor.controls.LocalCompactAdjustmentRows
 import com.rawlab.android.editor.controls.NumericControl
+import com.rawlab.android.editor.controls.PointColorControls
+import com.rawlab.android.editor.controls.PointColorProbeActions
+import com.rawlab.android.editor.controls.SelectiveColorControls
 import com.rawlab.android.editor.controls.LocalAdjustmentSession
 import com.rawlab.android.editor.controls.LocalAdjustmentFine
 import com.rawlab.android.editor.geometry.GeometryControls
@@ -117,13 +127,18 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
     onPresets: () -> Unit = {}, quickPresetsVisible: Boolean = false, quickPresetContent: @Composable () -> Unit = {}, gradingZone: ColorGradingZone = ColorGradingZone.SHADOWS,
     onGradingZoneChange: (ColorGradingZone) -> Unit = {}, gradingGlobal: Boolean = false, onGradingGlobalChange: (Boolean) -> Unit = {},
     hslTarget: HslTargetActions = HslTargetActions(), wbProbe: WbProbeActions = WbProbeActions(),
+    pointColorProbe: PointColorProbeActions = PointColorProbeActions(),
+    selectedPointColorSwatch: Int = 0, onSelectedPointColorSwatchChange: (Int) -> Unit = {},
+    selectedSelectiveColorBand: Int = 0, onSelectedSelectiveColorBandChange: (Int) -> Unit = {},
     onSelectFilm: (String) -> Boolean = { false }, onImportHDRLook: () -> Unit = {}, onApplyHDRSilver: (Boolean) -> Unit = {},
     onDeleteUnreadableLook: (com.rawlab.android.looks.UnreadableLook) -> Unit = {},
     onRollbackProcessing: () -> Unit = {}, toolOpen: Boolean = true, fine: Boolean = false,
     processingContext: Boolean = false, onDismissProcessingContext: () -> Unit = {},
     onToolUnavailable: (String) -> Unit = {},
     hdrProcessingContent: @Composable () -> Unit = {},
-    workspaceIsCurrent: () -> Boolean = { true }) {
+    workspaceIsCurrent: () -> Boolean = { true },
+    onSharpenMaskPreviewChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onSharpenMaskSettingsChange: (Float, Float) -> Unit = { _, _ -> }) {
     val edits = state.visibleEdits
     val workspaceGroup = AdjustmentGroup.forTool(tool)
     val parameterEnabled = state.controlsEnabled && toolOpen && !quickPresetsVisible && state.draft?.group == workspaceGroup
@@ -238,7 +253,7 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
         // 底栏按内容收紧；复杂工具仍受外层高度上限约束，侧栏保持填满。
         Box(Modifier.weight(1f, fill = sideDock).fillMaxWidth().testTag("editor-parameters").verticalScroll(parameterScroll)) {
         CompositionLocalProvider(LocalAdjustmentSession provides parameterSession, LocalAdjustmentFine provides fine,
-            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides (tool in listOf(8, 9, 11, 12, 13, 14, 21))) {
+            com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides (tool in listOf(8, 9, 11, 12, 13, 14, 21, 29, 30, 31, 32))) {
         Column(Modifier.fillMaxWidth()) {
         if (quickPresetsVisible) quickPresetContent() else when (tool) {
             0 -> if (edits.isHDREditing) {
@@ -427,9 +442,17 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             12 -> PhotoEffectsControls(edits.editingEffects, vignette = true, enabled = parameterEnabled) { value, dragging ->
                 editParameter(edits.withEditingEffects(value), dragging)
             }
-            13 -> PhotoEffectsControls(edits.editingEffects, vignette = false, enabled = parameterEnabled) { value, dragging ->
-                editParameter(edits.withEditingEffects(value), dragging)
-            }
+            13 -> PhotoEffectsControls(
+                value = edits.editingEffects,
+                vignette = false,
+                enabled = parameterEnabled,
+                isHDREditing = edits.isHDREditing,
+                filmOptics = edits.filmOptics,
+                onFilmOpticsChange = { optics, dragging ->
+                    if (!edits.isHDREditing) editParameter(edits.copy(filmOptics = optics), dragging)
+                },
+                onChange = { value, dragging -> editParameter(edits.withEditingEffects(value), dragging) },
+            )
             21 -> ColorGradingControls(edits.editingGrading, parameterEnabled, gradingZone, onGradingZoneChange,
                 globalSelected = gradingGlobal, onGlobalSelectedChange = onGradingGlobalChange) { value, dragging ->
                 editParameter(edits.withEditingGrading(value), dragging)
@@ -475,8 +498,20 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
                 { value, dragging -> editParameter(edits.withEditingClarity(value), dragging) }, { editParameter(edits.withEditingClarity(0f), false) })
             23 -> NumericControl(R.string.dehaze, edits.editingDehaze, -100f..100f, "%", parameterEnabled,
                 { value, dragging -> editParameter(edits.withEditingDehaze(value), dragging) }, { editParameter(edits.withEditingDehaze(0f), false) })
-            10 -> NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", parameterEnabled,
-                { value, dragging -> editParameter(edits.withEditingSharpening(value / 100), dragging) }, { editParameter(edits.withEditingSharpening(0f), false) })
+            28 -> NumericControl(R.string.texture, edits.texture, -100f..100f, "%", parameterEnabled,
+                { value, dragging -> editParameter(edits.copy(texture = value), dragging) }, { editParameter(edits.copy(texture = 0f), false) })
+            10 -> if (edits.isHDREditing) {
+                NumericControl(R.string.sharpening, edits.editingSharpening * 100, 0f..200f, "%", parameterEnabled,
+                    { value, dragging -> editParameter(edits.withEditingSharpening(value / 100), dragging) }, { editParameter(edits.withEditingSharpening(0f), false) })
+            } else {
+                SharpenV2Controls(
+                    edits = edits,
+                    enabled = parameterEnabled,
+                    onEdit = editParameter,
+                    onMaskPreviewChange = onSharpenMaskPreviewChange,
+                    onMaskSettingsChange = onSharpenMaskSettingsChange,
+                )
+            }
             24 -> if (edits.isHDREditing) NumericControl(R.string.hdr_peak_limit, edits.hdr!!.renditionSettings.peakLimitEV, 0f..6f, "EV", parameterEnabled,
                 { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = value))), dragging) },
                 { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(peakLimitEV = 0f))), false) }, stepOverride = .1f)
@@ -489,6 +524,20 @@ internal fun AdjustmentDock(state: EditorState, modifier: Modifier, tool: Int, s
             27 -> if (edits.isHDREditing) NumericControl(R.string.hdr_sdr_saturation, edits.hdr!!.renditionSettings.sdrSaturation, -100f..100f, "%", parameterEnabled,
                 { value, dragging -> editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = value))), dragging) },
                 { editParameter(edits.copy(hdr = edits.hdr.withRendition(edits.hdr.renditionSettings.copy(sdrSaturation = 0f))), false) })
+            29 -> PointColorControls(edits.pointColor, parameterEnabled, selectedPointColorSwatch,
+                onSelectedPointColorSwatchChange, pointColorProbe) { value, dragging ->
+                editParameter(edits.copy(pointColor = value), dragging)
+            }
+            30 -> SelectiveColorControls(edits.selectiveColor, parameterEnabled, selectedSelectiveColorBand,
+                onSelectedSelectiveColorBandChange) { value, dragging ->
+                editParameter(edits.copy(selectiveColor = value), dragging)
+            }
+            31 -> BwMixerControls(edits.bwMixer, parameterEnabled) { value, dragging ->
+                editParameter(edits.copy(bwMixer = value), dragging)
+            }
+            32 -> CameraCalibrationControls(edits.calibration, parameterEnabled) { value, dragging ->
+                editParameter(edits.copy(calibration = value), dragging)
+            }
         }
         if (tool in listOf(0, 15) && !edits.isHDREditing) CompositionLocalProvider(
             com.rawlab.android.editor.controls.LocalCompactAdjustmentRows provides true) { NumericControl(R.string.strength, edits.strength * 100, 0f..200f, "%",
@@ -641,5 +690,136 @@ internal fun UnreadableLookRows(entries: List<com.rawlab.android.looks.Unreadabl
             confirmButton = { TextButton(onClick = { deleting = null; onDelete(entry) }, enabled = enabled,
                 modifier = Modifier.testTag("looks.deleteUnreadable.confirm")) { Text(stringResource(R.string.confirm)) } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel)) } })
+    }
+}
+
+@Composable
+private fun SharpenV2Controls(
+    edits: EditSettings,
+    enabled: Boolean,
+    onEdit: (EditSettings, Boolean) -> Unit,
+    onMaskPreviewChange: (Boolean, Float, Float) -> Unit,
+    onMaskSettingsChange: (Float, Float) -> Unit,
+) {
+    val v2 = edits.sharpenV2
+    val f = AdjustmentFieldSpec.Fields
+    val radiusRange = f.DETAIL_SHARPENING_RADIUS.androidModel.floatRange!!
+    val detailRange = f.DETAIL_SHARPENING_DETAIL.androidModel.floatRange!!
+    val maskingRange = f.DETAIL_SHARPENING_MASKING.androidModel.floatRange!!
+    var previewPressed by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) {
+        onDispose {
+            previewPressed = false
+            onMaskPreviewChange(false, v2.radius, v2.masking)
+        }
+    }
+    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        NumericControl(
+            R.string.sharpening,
+            edits.editingSharpening * 100,
+            0f..200f,
+            "%",
+            enabled,
+            { value, dragging -> onEdit(edits.applySharpenV2Edit(amount = value / 100f), dragging) },
+            { onEdit(edits.applySharpenV2Edit(amount = 0f), false) },
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.sharpening_luminance_v2), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Switch(
+                checked = v2.luminanceV2,
+                onCheckedChange = { onEdit(edits.applySharpenV2Edit(luminanceV2 = it), false) },
+                enabled = enabled,
+                modifier = Modifier.testTag("sharpening.luminanceV2"),
+            )
+        }
+        CompositionLocalProvider(LocalCompactAdjustmentRows provides true) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                NumericControl(
+                    R.string.sharpening_radius,
+                    v2.radius,
+                    radiusRange,
+                    "",
+                    enabled,
+                    { value, dragging ->
+                        val next = edits.applySharpenV2Edit(radius = value)
+                        onEdit(next, dragging)
+                        onMaskSettingsChange(next.sharpenV2.radius, next.sharpenV2.masking)
+                    },
+                    {
+                        val next = edits.applySharpenV2Edit(radius = 1.0f)
+                        onEdit(next, false)
+                        onMaskSettingsChange(1.0f, next.sharpenV2.masking)
+                    },
+                    defaultValue = 1.0f,
+                    stepOverride = 0.05f,
+                )
+                NumericControl(
+                    R.string.sharpening_detail,
+                    v2.detail,
+                    detailRange,
+                    "",
+                    enabled,
+                    { value, dragging -> onEdit(edits.applySharpenV2Edit(detail = value), dragging) },
+                    { onEdit(edits.applySharpenV2Edit(detail = 25f), false) },
+                    defaultValue = 25f,
+                )
+                NumericControl(
+                    R.string.sharpening_masking,
+                    v2.masking,
+                    maskingRange,
+                    "",
+                    enabled,
+                    { value, dragging ->
+                        val next = edits.applySharpenV2Edit(masking = value)
+                        onEdit(next, dragging)
+                        onMaskSettingsChange(next.sharpenV2.radius, next.sharpenV2.masking)
+                    },
+                    {
+                        val next = edits.applySharpenV2Edit(masking = 0f)
+                        onEdit(next, false)
+                        onMaskSettingsChange(next.sharpenV2.radius, 0f)
+                    },
+                    defaultValue = 0f,
+                )
+            }
+        }
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = if (previewPressed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (previewPressed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+                .heightIn(min = 44.dp)
+                .testTag("sharpening.maskPreview")
+                .pointerInput(enabled, v2.radius, v2.masking) {
+                    if (enabled) {
+                        detectTapGestures(onPress = {
+                            previewPressed = true
+                            onMaskPreviewChange(true, v2.radius, v2.masking)
+                            try {
+                                tryAwaitRelease()
+                            } finally {
+                                previewPressed = false
+                                onMaskPreviewChange(false, v2.radius, v2.masking)
+                            }
+                        })
+                    }
+                },
+        ) {
+            Box(Modifier.fillMaxSize().padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.sharpening_edge_mask_preview),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }

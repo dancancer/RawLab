@@ -18,6 +18,10 @@ public sealed class EditorToolModeTests
             [EditorAdjustmentTool.MasterRecipe] = EditorToolMode.MasterRecipe,
             [EditorAdjustmentTool.ColorGrading] = EditorToolMode.ColorGrading,
             [EditorAdjustmentTool.Hsl] = EditorToolMode.Hsl,
+            [EditorAdjustmentTool.PointColor] = EditorToolMode.PointColor,
+            [EditorAdjustmentTool.SelectiveColor] = EditorToolMode.SelectiveColor,
+            [EditorAdjustmentTool.BwMixer] = EditorToolMode.BwMixer,
+            [EditorAdjustmentTool.CameraCalibration] = EditorToolMode.CameraCalibration,
             [EditorAdjustmentTool.WhiteBalance] = EditorToolMode.WhiteBalance,
             [EditorAdjustmentTool.Denoise] = EditorToolMode.Denoise,
             [EditorAdjustmentTool.Vignette] = EditorToolMode.PhotoEffects,
@@ -103,6 +107,10 @@ public sealed class EditorToolModeTests
             (EditorAdjustmentTool.MasterRecipe, EditorToolMode.MasterRecipe),
             (EditorAdjustmentTool.ColorGrading, EditorToolMode.ColorGrading),
             (EditorAdjustmentTool.Hsl, EditorToolMode.Hsl),
+            (EditorAdjustmentTool.PointColor, EditorToolMode.PointColor),
+            (EditorAdjustmentTool.SelectiveColor, EditorToolMode.SelectiveColor),
+            (EditorAdjustmentTool.BwMixer, EditorToolMode.BwMixer),
+            (EditorAdjustmentTool.CameraCalibration, EditorToolMode.CameraCalibration),
             (EditorAdjustmentTool.Denoise, EditorToolMode.Denoise),
         })
         {
@@ -139,5 +147,27 @@ public sealed class EditorToolModeTests
         Assert.Null(state.SelectedAtmosphereParameter);
         Assert.Null(state.SelectedHdrRenditionParameter);
         Assert.Equal(EditorAdjustmentTool.Exposure, EditorToolModeRules.ResolveTool(state));
+    }
+
+    [Fact]
+    [Trait("Category", "Model")]
+    public void GrainFormatPresetsAndFilmOpticsResetWorkCleanly()
+    {
+        var adj = new Adjustments();
+        adj.EditingEffects = adj.EditingEffects.ApplyGrainFormatPreset(GrainFormatPreset.Film135);
+        Assert.Equal(GrainFormatPreset.Film135, adj.EditingEffects.GrainFormatPreset);
+        Assert.Equal(18, adj.EditingEffects.GrainSize);
+        Assert.Equal(65, adj.EditingEffects.GrainRoughness);
+
+        adj.SetGrainEffect(PhotoEffectParameter.GrainSize, 32);
+        Assert.Equal(GrainFormatPreset.Custom, adj.EditingEffects.GrainFormatPreset);
+        Assert.Equal(32, adj.EditingEffects.GrainSize);
+
+        var optics = new FilmOpticsSettings(HalationAmount: 55, BloomAmount: 40);
+        Assert.False(optics.IsHalationDefault);
+        Assert.False(optics.IsBloomDefault);
+        optics = optics.ResetHalation();
+        Assert.True(optics.IsHalationDefault);
+        Assert.False(optics.IsBloomDefault);
     }
 }

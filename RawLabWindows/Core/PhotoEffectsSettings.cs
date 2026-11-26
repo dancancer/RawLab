@@ -106,4 +106,20 @@ public sealed record PhotoEffectsSettings(
         if (!double.IsFinite(value) || value < min || value > max)
             throw new ArgumentOutOfRangeException(name, $"{name} must be finite and between {min} and {max}.");
     }
+
+    public PhotoEffectsSettings ApplyGrainFormatPreset(GrainFormatPreset preset) => preset switch
+    {
+        GrainFormatPreset.Custom => this with { GrainFormatPreset = preset },
+        GrainFormatPreset.Film135 => this with { GrainFormatPreset = preset, GrainSize = 18, GrainRoughness = 65 },
+        GrainFormatPreset.Film120 => this with { GrainFormatPreset = preset, GrainSize = 34, GrainRoughness = 22 },
+        _ => throw new ArgumentOutOfRangeException(nameof(preset))
+    };
+
+    public PhotoEffectsSettings WithCustomPresetIfDeviated()
+    {
+        if (GrainFormatPreset == GrainFormatPreset.Custom) return this;
+        bool matches = (GrainFormatPreset == GrainFormatPreset.Film135 && GrainSize == 18 && GrainRoughness == 65) ||
+                       (GrainFormatPreset == GrainFormatPreset.Film120 && GrainSize == 34 && GrainRoughness == 22);
+        return matches ? this : this with { GrainFormatPreset = GrainFormatPreset.Custom };
+    }
 }

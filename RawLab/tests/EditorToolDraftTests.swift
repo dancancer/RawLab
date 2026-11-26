@@ -140,6 +140,25 @@ import Foundation
             && projectedHdrGrain.hdr?.effectsSettings.grainSize == 37.75
             && projectedHdrGrain.hdr?.effectsSettings.grainRoughness == 50.5,
             "Untouched HDR grain draft siblings preserve exact decimals after store reload")
+
+        var opticsBase = RawSettings.default
+        opticsBase.setEffect(.vignetteAmount, to: -25)
+        var opticsDraft = EditorToolDraft(tool: .adjustment(.grain), original: opticsBase)
+        var opticsEdit = opticsDraft.value
+        opticsEdit.applyGrainToneCurve(.negativeAsymmetric)
+        opticsEdit.applyGrainFormatPreset(.film135)
+        opticsEdit.setFilmOptics(.halationAmount, to: 55)
+        opticsEdit.setFilmOptics(.bloomAmount, to: 30)
+        opticsDraft.update(opticsEdit)
+        try check(opticsDraft.changed, "Film optics and grain curve/preset changes mark Grain draft changed")
+        let projectedOptics = opticsDraft.projecting(on: opticsBase)
+        try check(projectedOptics.effectSettings.grainToneCurve == .negativeAsymmetric
+            && projectedOptics.effectSettings.grainFormatPreset == .film135
+            && projectedOptics.effectSettings.grainSize == 18
+            && projectedOptics.filmOpticsSettings.halationAmount == 55
+            && projectedOptics.filmOpticsSettings.bloomAmount == 30
+            && projectedOptics.effectSettings.vignetteAmount == -25,
+            "Grain draft projection preserves vignette while keeping film optics and grain physics")
     }
 
     static func checkPresent<T>(_ value: T?, _ message: String) throws -> T {

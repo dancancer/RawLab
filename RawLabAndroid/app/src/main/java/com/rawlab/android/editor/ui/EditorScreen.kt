@@ -3,6 +3,7 @@ package com.rawlab.android.editor.ui
 import com.rawlab.android.ui.AppIcons
 
 import com.rawlab.android.editor.controls.HslTargetActions
+import com.rawlab.android.editor.controls.PointColorProbeActions
 import com.rawlab.android.editor.controls.WbProbeActions
 import com.rawlab.android.editor.inspection.InspectionGeometryMapper
 import com.rawlab.android.editor.inspection.InspectionOverlayMode
@@ -112,6 +113,11 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onUndoAdjustment: () -> Unit = {}, onRedoAdjustment: () -> Unit = {},
     hslTarget: HslTargetActions = HslTargetActions(),
     wbProbe: WbProbeActions = WbProbeActions(),
+    pointColorProbe: PointColorProbeActions = PointColorProbeActions(),
+    selectedPointColorSwatch: Int = 0,
+    onSelectedPointColorSwatchChange: (Int) -> Unit = {},
+    selectedSelectiveColorBand: Int = 0,
+    onSelectedSelectiveColorBandChange: (Int) -> Unit = {},
     onAutoExposure: () -> Unit = {},
     onBatchExport: () -> Unit = {},
     onCollection: () -> Unit = {}, collectionEditing: Boolean = false,
@@ -140,7 +146,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     onDismissUnusableRecord: () -> Unit = {},
     systemPhotoRequest: SystemPhotoOpenRequest? = null,
     onSystemPhotoConsumed: (SystemPhotoOpenRequest) -> Unit = {},
-    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) }) {
+    onSystemPhotoReady: (SystemPhotoOpenRequest, (Boolean) -> Unit) -> Unit = { _, finish -> finish(false) },
+    sharpenMaskOverlay: android.graphics.Bitmap? = null,
+    onSharpenMaskPreviewChange: (Boolean, Float, Float) -> Unit = { _, _, _ -> },
+    onSharpenMaskSettingsChange: (Float, Float) -> Unit = { _, _ -> }) {
     var view by rememberSaveable(stateSaver = listSaver<PhotoViewOptions, Any>(save = {
         listOf(it.comparisonEnabled, it.preferredMode.ordinal, it.margins, it.infoMode, it.purePreview)
     }, restore = { PhotoViewOptions(it[0] as Boolean, ComparisonMode.entries[it[1] as Int], it[2] as Boolean, it[3] as Int, it[4] as Boolean) })) { mutableStateOf(PhotoViewOptions()) }
@@ -363,6 +372,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val hdrMode = state.edits.isHDREditing
     val liveHDRMode by rememberUpdatedState(hdrMode)
     val liveWbProbe by rememberUpdatedState(wbProbe)
+    val livePointColorProbe by rememberUpdatedState(pointColorProbe)
     val targetAxis = hslTarget.state.axis
     val targetCurveChannel = hslTarget.state.curveChannel
     val hslWorkspace = toolOpen && tool == 14 && state.draft?.group == AdjustmentGroup.HSL
@@ -381,16 +391,24 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     val canvasWbProbe = if (wbTargetMode) wbProbe.guarded {
         liveWbWorkspace && liveWbProbe.state.enabled && liveSourceKey == sourceKey && !liveHDRMode
     } else null
+    val pointColorWorkspace = toolOpen && tool == 29 && !hdrMode && state.draft?.group == AdjustmentGroup.POINT_COLOR
+    val livePointColorWorkspace by rememberUpdatedState(pointColorWorkspace)
+    val pointColorTargetMode = pointColorProbe.enabled && pointColorWorkspace
+    val canvasPointColorProbe = if (pointColorTargetMode) pointColorProbe.guarded {
+        livePointColorWorkspace && livePointColorProbe.enabled && liveSourceKey == sourceKey && !liveHDRMode
+    } else null
     LaunchedEffect(targetWorkspace) { if (!targetWorkspace && liveTarget.state.enabled) liveTarget.enabled(false) }
     LaunchedEffect(wbWorkspace) { if (!wbWorkspace && liveWbProbe.state.enabled) liveWbProbe.enabled(false) }
-    LaunchedEffect(targetMode, wbTargetMode) {
-        if (targetMode || wbTargetMode) {
+    LaunchedEffect(pointColorWorkspace) { if (!pointColorWorkspace && livePointColorProbe.enabled) livePointColorProbe.setEnabled(false) }
+    LaunchedEffect(targetMode, wbTargetMode, pointColorTargetMode) {
+        if (targetMode || wbTargetMode || pointColorTargetMode) {
             view = view.cancelHold()
             if (inspection.monitorEnabled) inspection = inspection.copy(monitorEnabled = false)
         }
     }
     BackHandler(targetMode) { hslTarget.enabled(false) }
     BackHandler(wbTargetMode) { wbProbe.enabled(false) }
+    BackHandler(pointColorTargetMode) { pointColorProbe.setEnabled(false) }
     val cancelAdjustment = onCancelAdjustment
     val cancelRuler: (() -> Unit) -> Unit = { restore ->
         if (liveSourceKey == sourceKey) {
@@ -428,13 +446,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
     }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { onClosePresets(); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() } }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) { onClosePresets(); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel(); livePointColorProbe.cancel() } }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() }
+        onDispose { lifecycle.removeObserver(observer); view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel(); livePointColorProbe.cancel() }
     }
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     LaunchedEffect(windowFocused, menu, settings, zoomMenu, pendingLeave, preparedReset, state.recoverUnusableRecord, state.operation) {
-        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.recoverUnusableRecord || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel() }
+        if (!windowFocused || menu || settings || zoomMenu || pendingLeave != null || preparedReset != null || state.recoverUnusableRecord || state.operation != Operation.NONE) { view = view.cancelHold(); liveTarget.cancel(); liveWbProbe.cancel(); livePointColorProbe.cancel() }
     }
     BackHandler(quickPresetsVisible) { onClosePresets() }
     BackHandler(view.purePreview) { togglePure() }
@@ -480,7 +498,13 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
             quickPresetsVisible = quickPresetsVisible, quickPresetContent = quickPresetContent, gradingZone = gradingZone,
             onGradingZoneChange = { onCancelAdjustment(); gradingZone = it },
             gradingGlobal = gradingGlobal, onGradingGlobalChange = { onCancelAdjustment(); gradingGlobal = it },
-            hslTarget = hslTarget, wbProbe = wbProbe, onSelectFilm = onSelectFilm,
+            hslTarget = hslTarget, wbProbe = wbProbe,
+            pointColorProbe = pointColorProbe,
+            selectedPointColorSwatch = selectedPointColorSwatch,
+            onSelectedPointColorSwatchChange = onSelectedPointColorSwatchChange,
+            selectedSelectiveColorBand = selectedSelectiveColorBand,
+            onSelectedSelectiveColorBandChange = onSelectedSelectiveColorBandChange,
+            onSelectFilm = onSelectFilm,
             onImportHDRLook = onImportHDRLook, onApplyHDRSilver = onApplyHDRSilver,
             onRollbackProcessing = onRollbackProcessing, toolOpen = toolOpen, fine = fine, onDeleteUnreadableLook = onDeleteUnreadableLook,
             processingContext = processingContext, onDismissProcessingContext = { processingContext = false },
@@ -520,7 +544,9 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                     }
                 }
             },
-            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll })
+            workspaceIsCurrent = { toolOpen && tool == dockTool && !pendingAll },
+            onSharpenMaskPreviewChange = onSharpenMaskPreviewChange,
+            onSharpenMaskSettingsChange = onSharpenMaskSettingsChange)
     })
     val resetPresentation = if (state.photo != null && !view.purePreview) EditorWorkspaceResetPresentation.make(
         state = state, toolOpen = toolOpen, quickPresetsVisible = quickPresetsVisible,
@@ -823,8 +849,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                     onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                                     onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
                                     wbProbe = canvasWbProbe,
+                                    pointColorProbe = canvasPointColorProbe,
                                     isAdjustingSlider = adjusting,
                                     bottomControlsInset = bottomControlsInset,
+                                    sharpenMaskOverlay = sharpenMaskOverlay,
                                 )
                                 EditorCanvasBottomStack(
                                     visible = !view.purePreview,
@@ -833,7 +861,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                                     pair = state.preview,
                                     detailTiles = state.detailTiles,
                                     detailOverlay = state.detail,
-                                    holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
+                                    holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null && canvasPointColorProbe == null,
                                     onPinAnchor = pinCurrentInspectionAnchor,
                                     onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
                                     onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },
@@ -870,8 +898,10 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             onInspectionMove = { x, y -> inspection = inspection.copy(liveOutputX = x, liveOutputY = y) },
                             onInspectionAnchorSelect = { id -> inspection = inspection.copy(selectedAnchorId = id) },
                             wbProbe = canvasWbProbe,
+                            pointColorProbe = canvasPointColorProbe,
                             isAdjustingSlider = adjusting,
                             bottomControlsInset = bottomControlsInset,
+                            sharpenMaskOverlay = sharpenMaskOverlay,
                         )
                         EditorCanvasBottomStack(
                             visible = !view.purePreview && state.photo != null,
@@ -880,7 +910,7 @@ fun EditorScreen(state: EditorState, onAlbum: () -> Unit, onFile: () -> Unit,
                             pair = state.preview,
                             detailTiles = state.detailTiles,
                             detailOverlay = state.detail,
-                            holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null,
+                            holdingBefore = view.holdingBefore && !compare && canvasTarget == null && canvasWbProbe == null && canvasPointColorProbe == null,
                             onPinAnchor = pinCurrentInspectionAnchor,
                             onSelectAnchor = { id -> inspection = inspection.copy(selectedAnchorId = id) },
                             onRemoveAnchor = { id -> inspection = inspection.removeAnchor(id) },

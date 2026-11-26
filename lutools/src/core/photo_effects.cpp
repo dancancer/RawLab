@@ -76,8 +76,10 @@ PhotoEffectSampler::PhotoEffectSampler(const PhotoEffectsOptions& options, int w
     inner_ = radius * (1 - feather * 0.8f);
     const float outer = radius + feather * 0.4f;
     transition_ = std::max(outer - inner_, 2.f / shortSide);
-    grainScale_ = 0.7f + options.grainSize * 0.055f;
-    rough_ = options.grainRoughness * 0.007f;
+    const float effectiveSize = resolveGrainSize(options.grainSize, options.grainFormatPreset);
+    const float effectiveRoughness = resolveGrainRoughness(options.grainRoughness, options.grainFormatPreset);
+    grainScale_ = 0.7f + effectiveSize * 0.055f;
+    rough_ = effectiveRoughness * 0.007f;
     grainNormalization_ = 1 / std::sqrt((1 - rough_) * (1 - rough_) + rough_ * rough_);
 }
 
@@ -109,7 +111,8 @@ RGB PhotoEffectSampler::applySRGB(RGB pixel, int x, int y) const {
     }
     if (options_.grainAmount > 0) {
         const float luma = sdrLuminance(pixel);
-        const float delta = grainNoise(x, y) * options_.grainAmount * .0012f * std::sqrt(4 * luma * (1 - luma));
+        const float weight = grainToneWeight(luma, options_.grainToneCurve);
+        const float delta = grainNoise(x, y) * options_.grainAmount * .0012f * weight;
         pixel = {std::clamp(pixel.r + delta, 0.f, 1.f),
             std::clamp(pixel.g + delta, 0.f, 1.f), std::clamp(pixel.b + delta, 0.f, 1.f)};
     }

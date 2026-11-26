@@ -122,6 +122,7 @@ public partial class MainWindow
         CancelHslTarget();
         CancelCurveTarget();
         CancelWbProbe();
+        CancelPointColorProbe();
         CancelProcessingMigration();
         ApplyAdoptedEditToUi(reloadResult.AdoptedRecord, reloadResult.PreviousRecord);
         processingMigrationReceipt = file != null ? editStore?.ReadProcessingMigration(file) : null;

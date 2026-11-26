@@ -16,6 +16,13 @@
    <TextBlock x:Name="SelectedTitle" Text="{DynamicResource '选择镜头'}" TextTrimming="CharacterEllipsis"/>
   </Button>
   <StackPanel><TextBlock x:Name="StatusText" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,2,0,0" AutomationProperties.LiveSetting="Polite"/><TextBlock x:Name="CropText" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,2,0,0"/></StackPanel>
+  <Separator Margin="0,8,0,6"/>
+  <StackPanel x:Name="DefringePanel">
+   <local:ParameterRow x:Name="DefringePurpleAmountRow" AutomationProperties.AutomationId="lens.defringePurpleAmount"/>
+   <local:ParameterRow x:Name="DefringePurpleHueRow" AutomationProperties.AutomationId="lens.defringePurpleHue"/>
+   <local:ParameterRow x:Name="DefringeGreenAmountRow" AutomationProperties.AutomationId="lens.defringeGreenAmount"/>
+   <local:ParameterRow x:Name="DefringeGreenHueRow" AutomationProperties.AutomationId="lens.defringeGreenHue"/>
+  </StackPanel>
   <Popup x:Name="Chooser" PlacementTarget="{Binding ElementName=ProfileButton}" Placement="Top" StaysOpen="False" AllowsTransparency="True">
    <Border Background="{DynamicResource PopupSurface}" BorderBrush="{DynamicResource Outline}" BorderThickness="1" Padding="8" CornerRadius="4" Width="320">
     <StackPanel>

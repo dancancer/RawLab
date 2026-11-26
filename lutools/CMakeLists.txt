@@ -1409,6 +1409,7 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
             src/core/chroma_denoise.cpp src/core/lut_applicator.cpp src/core/lut_parser.cpp
             src/core/color_converter.cpp src/core/photo_color.cpp src/core/photo_effects.cpp
             src/core/photo_tone_controls.cpp src/core/photo_basic_controls_v3.cpp
+            src/core/dcp_look.cpp src/core/pinned_source_file.cpp
             src/core/photo_atmosphere.cpp src/core/photo_color_grading.cpp src/core/photo_tone_curve.cpp
             src/core/photo_calibration.cpp src/core/photo_point_color.cpp src/core/photo_selective_color.cpp
             src/core/photo_bw_mixer.cpp src/core/photo_sharpen_v2.cpp src/core/photo_defringe.cpp
@@ -1730,6 +1731,24 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS core external_raw ci_macos_arm64 ci_macos_x86_64
     )
     rawlab_add_test(
+        NAME photo_color_science
+        SOURCES tests/photo_color_science_tests.cpp
+        INCLUDES third_party
+        LIBRARIES sony2fuji_core
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    if(APPLE AND SONY2FUJI_ENABLE_GPU)
+        rawlab_add_test(
+            NAME metal_color_science
+            COMMAND photo_color_science_tests --metal
+            ENVIRONMENT
+                "MTL_SHADER_VALIDATION=1"
+                "MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1"
+                "MTL_SHADER_VALIDATION_ABORT_ON_FAULT=1"
+            LABELS gpu metal metal_arm64 ci_macos_arm64
+        )
+    endif()
+    rawlab_add_test(
         NAME photo_color
         SOURCES tests/photo_color_tests.cpp
         LIBRARIES sony2fuji_core
@@ -1750,11 +1769,28 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
+        NAME photo_film_optics_tests
+        TARGET photo_film_optics_tests
+        SOURCES tests/photo_film_optics_tests.cpp
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
         NAME gpu_diagnostics
         SOURCES tests/gpu_diagnostics_tests.cpp
         LIBRARIES sony2fuji_core
         COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
         LABELS core ci_macos_arm64 ci_macos_x86_64 ci_windows
+    )
+    rawlab_add_test(
+        NAME photo_spatial_gpu
+        TARGET photo_spatial_gpu_tests
+        SOURCES tests/photo_spatial_gpu_tests.cpp
+        INCLUDES third_party
+        LIBRARIES sony2fuji_core
+        COMPILE_OPTIONS ${RAWLAB_UNDEBUG_FLAG}
+        LABELS core gpu ci_macos_arm64 ci_macos_x86_64 ci_windows
     )
     rawlab_add_test(
         NAME cpu_parallel_determinism

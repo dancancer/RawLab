@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <array>
 
 namespace sony2fuji {
 
@@ -28,6 +29,16 @@ struct CameraCalibrationOptions {
     }
 };
 
+struct PreparedCameraCalibration {
+    bool active = false;
+    bool hasMatrix = false;
+    // Row-major 3x3 linear sRGB calibration matrix normalized so each row sums to 1.0.
+    std::array<float, 9> matrix{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+    float shadowTint = 0.0f; // normalized [-1, 1]
+};
+
+PreparedCameraCalibration prepareCameraCalibration(const CameraCalibrationOptions& options);
+RGB applyCameraCalibrationPixel(const RGB& linearSrgb, const PreparedCameraCalibration& prep);
 void applyCameraCalibration(ImageData& image, const CameraCalibrationOptions& options);
 
 } // namespace sony2fuji

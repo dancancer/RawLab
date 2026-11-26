@@ -5,11 +5,15 @@
 #include "core/parallel_pixels.h"
 #include "core/photo_atmosphere.h"
 #include "core/photo_basic_controls_v3.h"
+#include "core/photo_bw_mixer.h"
 #include "core/photo_color.h"
 #include "core/photo_color_grading.h"
+#include "core/photo_film_optics.h"
 #include "core/photo_lut.h"
 #include "core/photo_lut_contract.h"
+#include "core/photo_point_color.h"
 #include "core/photo_rendering.h"
+#include "core/photo_selective_color.h"
 #include "core/processing_cancellation.h"
 #include "gpu/photo_tone_curve_shader.h"
 #include "gpu/photo_tone_shader.h"
@@ -317,10 +321,14 @@ void applyPostLookStages(
     const bool toneActive = params.needsToneAdjustments() || masterActive || channelsActive;
     const BasicBlackWhiteV3Prepared bwV3(basicV3 ? toneControls : ToneControlsOptions{});
     const bool bwLegacyActive = !basicV3 && (toneControls.blackPoint != 0.0f || toneControls.whitePoint != 0.0f);
+    const bool bwMixerActive = params.bw.active();
     const bool vibranceActive = toneControls.vibrance != 0.0f;
     const bool hslActive = applyHslAndGrading && hsl.active();
+    const bool pointColorActive = applyHslAndGrading && params.pointColor.active();
+    const bool selectiveColorActive = applyHslAndGrading && params.selectiveColor.active();
     const bool gradingActive = applyHslAndGrading && colorGrading.active();
-    if (!bwV3.active && !bwLegacyActive && !toneActive && !vibranceActive && !hslActive && !gradingActive) {
+    if (!bwMixerActive && !bwV3.active && !bwLegacyActive && !toneActive && !vibranceActive &&
+        !hslActive && !pointColorActive && !selectiveColorActive && !gradingActive) {
         return;
     }
 
@@ -351,6 +359,9 @@ void applyPostLookStages(
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t index = first; index < last; ++index) {
             RGB pixel = image.pixels[index];
+            if (bwMixerActive) {
+                pixel = applyBwMixerPixel(pixel, params.bw);
+            }
             if (basicV3) {
                 if (bwV3.active) pixel = bwV3.apply(pixel);
             } else if (bwLegacyActive) {
@@ -397,6 +408,12 @@ void applyPostLookStages(
             if (hslActive) {
                 pixel = applyHsl(pixel, hsl);
             }
+            if (pointColorActive) {
+                pixel = applyPointColorPixel(pixel, params.pointColor);
+            }
+            if (selectiveColorActive) {
+                pixel = applySelectiveColorPixel(pixel, params.selectiveColor);
+            }
             if (gradingActive) {
                 pixel = applyColorGradingParameters(pixel, gradingParams);
             }
@@ -414,7 +431,13 @@ void applyDetailAdjustments(
     int sourceHeight,
     ProcessingVersion version,
     const ClarityField* clarityField,
-    const SubRectMap& roiMap
+    const SubRectMap& roiMap,
+    float texture,
+    const SharpenV2Options& sharpenV2,
+    int textureSourceWidth,
+    int textureSourceHeight,
+    const FilmOpticsOptions& filmOptics,
+    const FilmOpticsField* filmOpticsField
 ) {
     if (noiseReduction > 0.0f) {
         applyNoiseReduction(image, noiseReduction);
@@ -424,8 +447,22 @@ void applyDetailAdjustments(
     } else {
         applyClarity(image, clarity, sourceWidth, sourceHeight, version);
     }
+    if (texture != 0.0f) {
+        applyTexture(image, texture, textureSourceWidth, textureSourceHeight);
+    }
+    if (filmOptics.active()) {
+        if (filmOpticsField && !filmOpticsField->empty() && roiMap.active()) {
+            applyFilmOpticsWithField(image, *filmOpticsField, filmOptics, roiMap);
+        } else {
+            applyFilmOptics(image, filmOptics);
+        }
+    }
     if (sharpening > 0.0f) {
-        applySharpening(image, sharpening);
+        if (sharpenV2.luminanceV2) {
+            applySharpenV2(image, sharpening, sharpenV2);
+        } else {
+            applySharpening(image, sharpening);
+        }
     }
 }
 

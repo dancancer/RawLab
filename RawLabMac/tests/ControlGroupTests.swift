@@ -17,6 +17,7 @@ struct ControlGroupTests {
         try currentTools()
         try recipeReset()
         try invalidResetSources()
+        try filmPhysicsControlsAndResets()
     }
 
     private static func aiDenoise() throws {
@@ -47,7 +48,7 @@ struct ControlGroupTests {
     private static func currentTools() throws {
         check(EditorAdjustmentGroup.allCases.map(\.rawValue) == ["looks", "light", "color", "effects", "detail", "geometry", "hdrRendition"], "Seven stable group IDs keep their order")
         check(EditorAdjustmentGroup.allCases.map(\.defaultTool) == [.film, .exposure, .whiteBalance, .clarity, .denoise, .geometry, .hdrPeakLimit], "Each group opens its declared default tool")
-        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 27 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all twenty-seven tools")
+        check(EditorAdjustmentGroup.allCases.flatMap(\.tools).count == 32 && EditorAdjustmentTool.allCases.allSatisfy { $0.group.tools.contains($0) }, "One descriptor owns all thirty-two tools")
         var navigation = EditorAdjustmentNavigation()
         navigation.selectedHSLChannel = 6
         navigation.selectGroup(.color)
@@ -281,6 +282,25 @@ struct ControlGroupTests {
         let hsl = candidate(.hslAll, source)
         expected = source; expected.settings.hsl = nil
         check(hsl == expected, "Whole HSL reset preserves white balance and saturation")
+
+        var colorSci = source
+        colorSci.settings.calibrationSettings.shadowTint = -25
+        colorSci.settings.calibrationSettings.redHue = 18
+        colorSci.settings.pointColorSettings = PointColorSettings(swatches: [PointColorSwatch(srcHue: 25, srcSaturation: 0.4, srcLuminance: 0.6, hueShift: 10, variance: -40)])
+        colorSci.settings.selectiveColorSettings.bands.reds.cyan = 15
+        colorSci.settings.bwMixerSettings.enabled = true
+        colorSci.settings.bwMixerSettings.mixer.red = 30
+        for tool in [EditorAdjustmentTool.cameraCalibration, .pointColor, .selectiveColor, .bwMixer] {
+            check(MacEditorAdjustmentRules.isModified(scope: .tool(tool), snapshot: colorSci, context: rawContext), "\(tool) marks modified")
+            let cleared = candidate(.tool(tool), colorSci)
+            check(!MacEditorAdjustmentRules.isModified(scope: .tool(tool), snapshot: cleared, context: rawContext), "\(tool) tool reset clears owned state")
+        }
+        let clearedColor = candidate(.group(.color), colorSci)
+        check(clearedColor.settings.calibrationSettings.isDefault &&
+              clearedColor.settings.pointColorSettings.isDefault &&
+              clearedColor.settings.selectiveColorSettings.isDefault &&
+              clearedColor.settings.bwMixerSettings.isDefault,
+              "Color group reset clears all Track A color science controls")
         var legacy = try JSONDecoder().decode(Adjustments.self, from: Data("{}".utf8))
         check(legacy.exposureMode == .scene && MacEditorAdjustmentRules.isModified(scope: .group(.light), snapshot: state(legacy), context: rawContext),
               "Legacy missing exposure mode keeps scene instead of silently adopting the new-photo default")
@@ -449,5 +469,33 @@ struct ControlGroupTests {
         if case .blocked = MacEditorAdjustmentRules.prepareReset(scope: .hslColor(7), snapshot: state(invalid), context: rawContext) {
             check(true, "Malformed HSL source is blocked before indexing a color")
         } else { check(false, "Malformed HSL source is blocked before indexing a color") }
+    }
+
+    private static func filmPhysicsControlsAndResets() throws {
+        var s = Adjustments()
+        s.applyGrainToneCurve(.negativeAsymmetric)
+        s.applyGrainFormatPreset(.film135)
+        check(s.effectSettings.grainToneCurve == .negativeAsymmetric && s.effectSettings.grainFormatPreset == .film135 &&
+              s.effectSettings.grainSize == 18 && s.effectSettings.grainRoughness == 65,
+              "135 grain format preset applies canonical grain scale and roughness")
+        s.applyGrainFormatPreset(.film120)
+        check(s.effectSettings.grainFormatPreset == .film120 && s.effectSettings.grainSize == 34 && s.effectSettings.grainRoughness == 22,
+              "120 grain format preset applies medium-format scale and roughness")
+        s.setGrainEffect(.grainSize, to: 41)
+        check(s.effectSettings.grainFormatPreset == .custom && s.effectSettings.grainSize == 41 && s.effectSettings.grainRoughness == 22,
+              "Manual grain size edit transitions preset to Custom while preserving tuning")
+        s.setFilmOptics(.halationAmount, to: 65)
+        s.setFilmOptics(.bloomAmount, to: 40)
+        check(!s.filmOpticsSettings.isHalationDefault && !s.filmOpticsSettings.isBloomDefault &&
+              MacEditorAdjustmentRules.isModified(scope: .group(.effects), snapshot: state(s), context: rawContext),
+              "Film optics changes mark Effects group modified")
+        s.filmOpticsSettings.resetHalation()
+        check(s.filmOpticsSettings.isHalationDefault && !s.filmOpticsSettings.isBloomDefault,
+              "Halation reset preserves Bloom parameters")
+        let effectsReset = candidate(.group(.effects), state(s))
+        check(effectsReset.settings.filmOpticsSettings.isDefault &&
+              effectsReset.settings.effectSettings.grainToneCurve == .legacy &&
+              effectsReset.settings.effectSettings.grainFormatPreset == .custom,
+              "Effects group reset clears Halation, Bloom, and Grain curve/preset")
     }
 }

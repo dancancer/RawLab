@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sony2fuji/common.h"
+#include <vector>
 
 namespace sony2fuji {
 
@@ -21,6 +22,15 @@ struct SharpenV2Options {
                detail == other.detail && masking == other.masking;
     }
 };
+
+void computeSharpenEdgeMask(
+    const std::vector<float>& luma,
+    int width,
+    int height,
+    float radius,
+    float masking,
+    std::vector<float>& outMask
+);
 
 void applySharpenV2(ImageData& image, float amount, const SharpenV2Options& options);
 

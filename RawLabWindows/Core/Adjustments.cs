@@ -581,6 +581,14 @@ public sealed class Adjustments
             _ => throw new ArgumentOutOfRangeException(nameof(id))
         };
     }
+    public void SetGrainEffect(PhotoEffectParameter id, double value)
+    {
+        var previous = EditingEffects;
+        SetEffect(id, value);
+        if (!IsHDREditing && EditingEffects != previous &&
+            id is PhotoEffectParameter.GrainSize or PhotoEffectParameter.GrainRoughness)
+            EditingEffects = EditingEffects.WithCustomPresetIfDeviated();
+    }
     public void ResetEffect(PhotoEffectParameter id) => SetEffect(id, EffectDefault(id));
     public bool IsEffectDefault(bool vignette) =>
         PhotoEffectSpec.All.Where(x => x.IsVignette == vignette)
@@ -633,6 +641,47 @@ public sealed class Adjustments
             return;
         }
         if (HDR is { } hdr) HDR = hdr with { Mode = HDRMode.Sdr };
+    }
+
+    public void ApplySharpenV2Edit(double? amount = null, double? radius = null, double? detail = null,
+        double? masking = null, bool? luminanceV2 = null)
+    {
+        if (IsHDREditing)
+        {
+            if (amount is { } hdrAmount && double.IsFinite(hdrAmount))
+                Set(Parameter.Sharpening, Math.Clamp(hdrAmount, 0, 2));
+            return;
+        }
+        var v2 = SharpenV2;
+        if (amount is { } nextAmount && double.IsFinite(nextAmount))
+        {
+            var clamped = Math.Clamp(nextAmount, 0, 2);
+            var preserveLegacy = this[Parameter.Sharpening] > 0 && !v2.LuminanceV2 && v2.IsDefault;
+            Set(Parameter.Sharpening, clamped);
+            if (!preserveLegacy && clamped > 0 && !v2.LuminanceV2)
+                v2 = v2 with { LuminanceV2 = true };
+        }
+        if (luminanceV2 is { } lum)
+            v2 = v2 with { LuminanceV2 = lum };
+        if (radius is { } r && double.IsFinite(r))
+        {
+            var spec = AdjustmentFieldSpec.Fields.DetailSharpeningRadius.WindowsModel;
+            var bounded = Math.Clamp(r, spec.Min!.Value, spec.Max!.Value);
+            v2 = v2 with { Radius = bounded, LuminanceV2 = true };
+        }
+        if (detail is { } d && double.IsFinite(d))
+        {
+            var spec = AdjustmentFieldSpec.Fields.DetailSharpeningDetail.WindowsModel;
+            var bounded = Math.Clamp(d, spec.Min!.Value, spec.Max!.Value);
+            v2 = v2 with { Detail = bounded == 0 ? 0 : bounded, LuminanceV2 = true };
+        }
+        if (masking is { } m && double.IsFinite(m))
+        {
+            var spec = AdjustmentFieldSpec.Fields.DetailSharpeningMasking.WindowsModel;
+            var bounded = Math.Clamp(m, spec.Min!.Value, spec.Max!.Value);
+            v2 = v2 with { Masking = bounded == 0 ? 0 : bounded, LuminanceV2 = true };
+        }
+        SharpenV2 = v2;
     }
 
     internal Native.Request Request(string path, string? lut, int edge, string? output, int? longEdge = null, ResolvedNativeWhiteBalance? resolvedWhiteBalance = null)

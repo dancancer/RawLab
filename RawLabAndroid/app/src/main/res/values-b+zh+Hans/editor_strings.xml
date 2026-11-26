@@ -254,6 +254,7 @@
     <string name="hdr_peak_unlimited">"不限"</string>
     <string name="hdr_preview_auto">"自动 HDR"</string>
     <string name="hdr_preview_sdr">"SDR 兼容预览"</string>
+    <string name="hdr_preview_sdr_active">"当前显示 SDR 兼容预览。"</string>
     <string name="hdr_processing_cpu">"HDR 编辑目前使用 CPU。请将 GPU 模式设为自动或关闭。"</string>
     <string name="hdr_processing_failed">"HDR 处理失败（%1$d）。"</string>
     <string name="hdr_reference_white">"参考白"</string>

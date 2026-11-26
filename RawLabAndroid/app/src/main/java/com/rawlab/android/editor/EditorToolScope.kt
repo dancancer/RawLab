@@ -8,7 +8,8 @@ enum class AdjustmentGroup(val tool: Int) {
     SATURATION(7), WHITE_BALANCE(8), SHARPENING(10), DENOISE(11), VIGNETTE(12), GRAIN(13),
     HSL(14), RECIPE(15), LENS(16), GEOMETRY(17), BLACK_POINT(18), WHITE_POINT(19),
     VIBRANCE(20), GRADING(21), CLARITY(22), DEHAZE(23),
-    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27);
+    HDR_PEAK_LIMIT(24), HDR_SDR_EXPOSURE(25), HDR_SDR_CONTRAST(26), HDR_SDR_SATURATION(27), TEXTURE(28),
+    POINT_COLOR(29), SELECTIVE_COLOR(30), BW_MIXER(31), CAMERA_CALIBRATION(32);
 
     companion object {
         fun forTool(tool: Int): AdjustmentGroup = entries.first { it.tool == if (tool == 9) 8 else tool }
@@ -26,15 +27,21 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.CURVE -> current.withEditingCurve(value.editingCurve).withEditingCurveStrength(value.editingCurveStrength)
         AdjustmentGroup.SATURATION -> current.copy(saturation = value.saturation)
         AdjustmentGroup.WHITE_BALANCE -> current.copy(customWb = value.customWb, temperature = value.temperature, tint = value.tint)
-        AdjustmentGroup.SHARPENING -> current.withEditingSharpening(value.editingSharpening)
+        AdjustmentGroup.SHARPENING -> if (current.isHDREditing) current.withEditingSharpening(value.editingSharpening)
+            else current.withEditingSharpening(value.editingSharpening).copy(sharpenV2 = value.sharpenV2)
         AdjustmentGroup.DENOISE -> if (current.isHDREditing) current.withHDRDenoise(value.hdr!!.detailSettings.denoise)
             else current.copy(denoise = value.denoise, displayChromaDenoise = value.displayChromaDenoise)
         AdjustmentGroup.VIGNETTE -> current.withEditingEffects(value.editingEffects.copy(
             grainAmount = current.editingEffects.grainAmount, grainSize = current.editingEffects.grainSize,
-            grainRoughness = current.editingEffects.grainRoughness))
+            grainRoughness = current.editingEffects.grainRoughness,
+            grainToneCurve = current.editingEffects.grainToneCurve,
+            grainFormatPreset = current.editingEffects.grainFormatPreset))
         AdjustmentGroup.GRAIN -> current.withEditingEffects(current.editingEffects.copy(
             grainAmount = value.editingEffects.grainAmount, grainSize = value.editingEffects.grainSize,
-            grainRoughness = value.editingEffects.grainRoughness))
+            grainRoughness = value.editingEffects.grainRoughness,
+            grainToneCurve = if (current.isHDREditing) current.editingEffects.grainToneCurve else value.editingEffects.grainToneCurve,
+            grainFormatPreset = if (current.isHDREditing) current.editingEffects.grainFormatPreset else value.editingEffects.grainFormatPreset))
+            .let { if (current.isHDREditing) it else it.copy(filmOptics = value.filmOptics) }
         AdjustmentGroup.HSL -> current.withEditingHsl(value.editingHsl)
         AdjustmentGroup.LENS -> current.copy(lens = value.lens)
         AdjustmentGroup.GEOMETRY -> current.copy(geometry = value.geometry)
@@ -44,10 +51,15 @@ internal fun AdjustmentGroup.project(value: EditSettings, original: EditSettings
         AdjustmentGroup.GRADING -> current.withEditingGrading(value.editingGrading)
         AdjustmentGroup.CLARITY -> current.withEditingClarity(value.editingClarity)
         AdjustmentGroup.DEHAZE -> current.withEditingDehaze(value.editingDehaze)
+        AdjustmentGroup.TEXTURE -> current.copy(texture = value.texture)
         AdjustmentGroup.HDR_PEAK_LIMIT -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(peakLimitEV = value.hdr!!.renditionSettings.peakLimitEV))) else current
         AdjustmentGroup.HDR_SDR_EXPOSURE -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrExposureEV = value.hdr!!.renditionSettings.sdrExposureEV))) else current
         AdjustmentGroup.HDR_SDR_CONTRAST -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrContrast = value.hdr!!.renditionSettings.sdrContrast))) else current
         AdjustmentGroup.HDR_SDR_SATURATION -> if (current.isHDREditing) current.copy(hdr = current.hdr!!.withRendition(current.hdr.renditionSettings.copy(sdrSaturation = value.hdr!!.renditionSettings.sdrSaturation))) else current
+        AdjustmentGroup.POINT_COLOR -> current.copy(pointColor = value.pointColor)
+        AdjustmentGroup.SELECTIVE_COLOR -> current.copy(selectiveColor = value.selectiveColor)
+        AdjustmentGroup.BW_MIXER -> current.copy(bwMixer = value.bwMixer)
+        AdjustmentGroup.CAMERA_CALIBRATION -> current.copy(calibration = value.calibration)
     }
     return result.canonicalZeros().synchronizeHDR()
 }

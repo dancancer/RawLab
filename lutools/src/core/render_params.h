@@ -126,6 +126,9 @@ struct RenderParams {
     BwMixerOptions bw{};
     SharpenV2Options sharpenV2{};
     DefringeOptions defringe{};
+    int atmosphereSourceWidth = 0;
+    int atmosphereSourceHeight = 0;
+    ProcessingVersion processingVersion = ProcessingVersion::C5V2;
     ToneCurve customCurve{};
     std::array<ToneCurve, 3> channelCurves{};
     bool curveApplyToLuminosity = false;

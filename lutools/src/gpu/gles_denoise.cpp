@@ -1,6 +1,7 @@
 #include "compute_denoise.h"
 #include "gles_recovery.h"
 #include "compute_denoise_shader.h"
+#include "photo_film_optics_shader.h"
 #include "filter_buffer_pool.h"
 #include <EGL/egl.h>
 #include <GLES3/gl31.h>
@@ -141,7 +142,7 @@ public:
             groups <= 0 || blocks < 4 || bytes <= 0) throw GpuUnavailableError("GLES 3.1 filter limits unavailable");
         blockLimit = static_cast<size_t>(bytes);
         dispatchLimit = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(groups) * groupSize, UINT32_MAX));
-        const std::string source = std::string(prefix) + kFilterShaderBody +
+        const std::string source = std::string(prefix) + kFilmOpticsSharedShaderBody + filterShaderBody() +
             "\nvoid main() { filterPixel(baseIndex + gl_GlobalInvocationID.x); }\n";
         const char* text = source.c_str();
         const auto shader = glCreateShader(GL_COMPUTE_SHADER);

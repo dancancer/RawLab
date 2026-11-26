@@ -63,6 +63,36 @@ public struct Adjustments: Equatable, Codable {
         get { sharpenV2 ?? SharpenV2Settings() }
         set { sharpenV2 = newValue.isDefault ? nil : newValue }
     }
+    public mutating func applySharpenV2Edit(amount: Double? = nil, radius: Double? = nil, detail: Double? = nil,
+                                            masking: Double? = nil, luminanceV2: Bool? = nil) {
+        var v2 = sharpenV2Settings
+        if let amount, amount.isFinite {
+            let clamped = min(max(amount, 0), 2)
+            let preserveLegacy = sharpening > 0 && !v2.luminanceV2 && v2.isDefault
+            sharpening = clamped
+            if !preserveLegacy && clamped > 0 && !v2.luminanceV2 {
+                v2.luminanceV2 = true
+            }
+        }
+        if let luminanceV2 {
+            v2.luminanceV2 = luminanceV2
+        }
+        if let radius, radius.isFinite {
+            v2.radius = min(max(radius, SharpenV2Settings.radiusRange.lowerBound), SharpenV2Settings.radiusRange.upperBound)
+            v2.luminanceV2 = true
+        }
+        if let detail, detail.isFinite {
+            let clean = min(max(detail, SharpenV2Settings.detailRange.lowerBound), SharpenV2Settings.detailRange.upperBound)
+            v2.detail = clean == 0 ? 0 : clean
+            v2.luminanceV2 = true
+        }
+        if let masking, masking.isFinite {
+            let clean = min(max(masking, SharpenV2Settings.maskingRange.lowerBound), SharpenV2Settings.maskingRange.upperBound)
+            v2.masking = clean == 0 ? 0 : clean
+            v2.luminanceV2 = true
+        }
+        sharpenV2Settings = v2
+    }
     public var filmOptics: FilmOpticsSettings?
     public var filmOpticsSettings: FilmOpticsSettings {
         get { filmOptics ?? FilmOpticsSettings() }
@@ -222,6 +252,47 @@ public struct Adjustments: Equatable, Codable {
         setExactEditingEffect(parameter, to: min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10)))
     }
     public mutating func setEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) { setExactEditingEffect(parameter, to: value) }
+    public mutating func setGrainEffect(_ parameter: PhotoEffectParameter, to value: Double) {
+        guard value.isFinite else { return }
+        let rounded = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
+        if isHDREditing { hdr?.effectsSettings[keyPath: parameter.hdrKeyPath] = rounded; return }
+        var state = effectSettings
+        guard state[keyPath: parameter.keyPath] != rounded else { return }
+        state[keyPath: parameter.keyPath] = rounded
+        if parameter == .grainSize || parameter == .grainRoughness {
+            if let presetValues = state.grainFormatPreset.presetValues {
+                if state.grainSize != presetValues.size || state.grainRoughness != presetValues.roughness {
+                    state.grainFormatPreset = .custom
+                }
+            }
+        }
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func applyGrainToneCurve(_ curve: GrainToneCurve) {
+        guard !isHDREditing else { return }
+        var state = effectSettings
+        guard state.grainToneCurve != curve else { return }
+        state.grainToneCurve = curve
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func applyGrainFormatPreset(_ preset: GrainFormatPreset) {
+        guard !isHDREditing else { return }
+        var state = effectSettings
+        state.grainFormatPreset = preset
+        if let values = preset.presetValues {
+            state.grainSize = values.size
+            state.grainRoughness = values.roughness
+        }
+        photoEffects = state.isDefault ? nil : state
+    }
+    public mutating func setFilmOptics(_ parameter: FilmOpticsParameter, to value: Double) {
+        guard !isHDREditing, value.isFinite else { return }
+        let rounded = min(parameter.range.upperBound, max(parameter.range.lowerBound, (value * 10).rounded() / 10))
+        var state = filmOpticsSettings
+        guard state[keyPath: parameter.keyPath] != rounded else { return }
+        state[keyPath: parameter.keyPath] = rounded
+        filmOptics = state.isDefault ? nil : state
+    }
     public mutating func setExactEditingEffect(_ parameter: PhotoEffectParameter, to value: Double) {
         guard value.isFinite else { return }
         let amount = min(parameter.range.upperBound, max(parameter.range.lowerBound, value))

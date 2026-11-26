@@ -4,9 +4,16 @@
 #include "gpu/photo_tone_shader.h"
 #include "gpu/photo_color_grading_shader.h"
 #include "gpu/photo_tone_curve_shader.h"
+#include "gpu/photo_color_science_shader.h"
 #include "gpu/metal_dcp_shader.h"
 #include "gpu/metal_effects_shader.h"
+#include "gpu/photo_film_optics_shader.h"
+#include "core/photo_film_optics.h"
+#include "gpu/photo_spatial_shader.h"
+#include "core/photo_atmosphere.h"
+#include "core/photo_defringe.h"
 #include "core/photo_lut.h"
+#include "core/photo_sharpen_v2.h"
 #include "core/chroma_denoise.h"
 #include "core/processing_cancellation.h"
 
@@ -119,6 +126,20 @@ struct MetalContext {
     id<MTLComputePipelineState> noisePipeline = nil;
     id<MTLComputePipelineState> sharpenPipeline = nil;
     id<MTLComputePipelineState> effectsPipeline = nil;
+    id<MTLComputePipelineState> filmOpticsDownsamplePipeline = nil;
+    id<MTLComputePipelineState> filmOpticsBlurHPipeline = nil;
+    id<MTLComputePipelineState> filmOpticsBlurVPipeline = nil;
+    id<MTLComputePipelineState> filmOpticsCompositePipeline = nil;
+    id<MTLBuffer> filmOpticsDummyBuffer = nil;
+    id<MTLComputePipelineState> defringePipeline = nil;
+    id<MTLComputePipelineState> dehazePipeline = nil;
+    id<MTLComputePipelineState> clarityPipeline = nil;
+    id<MTLComputePipelineState> textureBlurHPipeline = nil;
+    id<MTLComputePipelineState> textureApplyVPipeline = nil;
+    id<MTLComputePipelineState> sharpenPrepHPipeline = nil;
+    id<MTLComputePipelineState> sharpenPrepVPipeline = nil;
+    id<MTLComputePipelineState> sharpenMaskHPipeline = nil;
+    id<MTLComputePipelineState> sharpenApplyPipeline = nil;
     bool ready = false;
 };
 
@@ -152,7 +173,7 @@ CachedDcp gDcpCache;
 static const std::string kShaderSource = std::string(R"metal(
 #include <metal_stdlib>
 using namespace metal;
-)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::toneCurveShader("float3") + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + R"metal(
+)metal") + sony2fuji::toneControlsShader("float3") + sony2fuji::colorGradingShader("float3") + sony2fuji::toneCurveShader("float3") + sony2fuji::photoLogShader(sony2fuji::ShaderDialect::Metal) + sony2fuji::colorScienceShader(sony2fuji::ShaderDialect::Metal) + R"metal(
 struct Params {
     uint srcWidth;
     uint srcHeight;
@@ -409,6 +430,7 @@ kernel void matrixExposure(
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
     device const float* basicField [[buffer(3)]],
+    constant ColorScienceParams& colorScience [[buffer(4)]],
     uint gid [[thread_position_in_grid]]) {
     uint count = params.srcWidth * params.srcHeight;
     if (gid >= count) {
@@ -418,6 +440,7 @@ kernel void matrixExposure(
     result.r *= params.exposureScale * params.wbR;
     result.g *= params.exposureScale * params.wbG;
     result.b *= params.exposureScale * params.wbB;
+    result = csApplyCalibration(result, colorScience);
     if (params.basicToneActive != 0u) {
         uint px = gid % params.srcWidth;
         uint py = gid / params.srcWidth + params.srcRowOffset;
@@ -548,12 +571,13 @@ kernel void toneAdjustments(
     constant Params& params [[buffer(0)]],
     device const packed_float3* source [[buffer(1)]],
     device packed_float3* destination [[buffer(2)]],
+    constant ColorScienceParams& colorScience [[buffer(3)]],
     uint gid [[thread_position_in_grid]]) {
     uint count = params.srcWidth * params.srcHeight;
     if (gid >= count) {
         return;
     }
-    float3 raw = float3(source[gid]);
+    float3 raw = csApplyBwMixer(float3(source[gid]), colorScience);
     float3 pixel = params.basicV3 != 0u
         ? tcBasicBlackWhiteV3(raw, params.blackPoint, params.whitePoint)
         : tcBlackWhite(raw, params.blackPoint, params.whitePoint);
@@ -561,7 +585,11 @@ kernel void toneAdjustments(
         float3 vibranced = params.basicV3 != 0u
             ? tcBasicVibranceV3(pixel, params.vibrance)
             : tcVibrance(pixel, params.vibrance);
-        destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
+        float3 colored = csApplySelectiveColor(
+            csApplyPointColor(applyHsl(vibranced, params), colorScience),
+            colorScience
+        );
+        destination[gid] = packed_float3(applyGrading(colored, params));
         return;
     }
     if (params.basicV3 == 0u) {
@@ -607,7 +635,11 @@ kernel void toneAdjustments(
     float3 vibranced = params.basicV3 != 0u
         ? tcBasicVibranceV3(pixel, params.vibrance)
         : tcVibrance(pixel, params.vibrance);
-    destination[gid] = packed_float3(applyGrading(applyHsl(vibranced, params), params));
+    float3 colored = csApplySelectiveColor(
+        csApplyPointColor(applyHsl(vibranced, params), colorScience),
+        colorScience
+    );
+    destination[gid] = packed_float3(applyGrading(colored, params));
 }
 
 kernel void noiseReduction(
@@ -645,6 +677,119 @@ kernel void sharpen(
     current = clamp(current + strength * (current - blurred), 0.0f, 1.0f);
     destination[gid] = packed_float3(current);
 }
+)metal";
+
+static const std::string kSpatialShaderSource = std::string(R"metal(
+#include <metal_stdlib>
+using namespace metal;
+
+struct SpatialParams {
+    uint width;
+    uint height;
+    uint rowOffset;
+    uint rows;
+    uint srcRowOffset;
+    uint auxRowOffset;
+    uint radius;
+    uint stage;
+    float strength;
+    float sharpenDetail;
+    float sharpenMasking;
+    float sharpenRadius;
+    float defringePurpleAmount;
+    float defringePurpleHue;
+    float defringeGreenAmount;
+    float defringeGreenHue;
+    float4 airlight;
+    uint4 flags;
+    uint4 bandDims;
+    float4 weights[7];
+};
+
+inline float3 spLoadBand(device const packed_float3* buf, int x, int y, uint w, uint rowOff, uint rowCount) {
+    uint cx = uint(clamp(x, 0, int(w) - 1));
+    int minY = int(rowOff);
+    int maxY = minY + int(max(1u, rowCount)) - 1;
+    uint cy = uint(clamp(y, minY, maxY));
+    return float3(buf[(cy - rowOff) * w + cx]);
+}
+
+inline float spReadWeight(constant SpatialParams& p, uint idx) {
+    float4 wv = p.weights[idx >> 2u];
+    uint lane = idx & 3u;
+    return lane == 0u ? wv.x : (lane == 1u ? wv.y : (lane == 2u ? wv.z : wv.w));
+}
+
+#define SP_FN inline
+#define SP_V3 float3
+#define SP_V3C(x, y, z) float3((x), (y), (z))
+#define SP_CTX_DECL , constant SpatialParams& sp, device const packed_float3* spSrc, device const packed_float3* spAux, device const float* spField
+#define SP_CTX_ARG , sp, spSrc, spAux, spField
+#define SP_SRC(ix, iy) spLoadBand(spSrc, (ix), (iy), sp.width, sp.srcRowOffset, sp.bandDims.x)
+#define SP_AUX(ix, iy) spLoadBand(spAux, (ix), (iy), sp.width, sp.auxRowOffset, sp.bandDims.y)
+#define SP_FIELD(idx) spField[(idx)]
+#define SP_FINITE(v) all(isfinite(v))
+#define SP_WEIGHT(idx) spReadWeight(sp, (idx))
+#define SP_WIDTH sp.width
+#define SP_HEIGHT sp.height
+#define SP_RADIUS sp.radius
+#define SP_STRENGTH sp.strength
+#define SP_SHARPEN_DETAIL sp.sharpenDetail
+#define SP_SHARPEN_MASKING sp.sharpenMasking
+#define SP_PURPLE_AMT sp.defringePurpleAmount
+#define SP_PURPLE_HUE sp.defringePurpleHue
+#define SP_GREEN_AMT sp.defringeGreenAmount
+#define SP_GREEN_HUE sp.defringeGreenHue
+#define SP_AIRLIGHT sp.airlight
+#define SP_FLAGS sp.flags
+)metal") + sony2fuji::photoSpatialShaderBody() + R"metal(
+#undef SP_FN
+#undef SP_V3
+#undef SP_V3C
+#undef SP_CTX_DECL
+#undef SP_CTX_ARG
+#undef SP_SRC
+#undef SP_AUX
+#undef SP_FIELD
+#undef SP_FINITE
+#undef SP_WEIGHT
+#undef SP_WIDTH
+#undef SP_HEIGHT
+#undef SP_RADIUS
+#undef SP_STRENGTH
+#undef SP_SHARPEN_DETAIL
+#undef SP_SHARPEN_MASKING
+#undef SP_PURPLE_AMT
+#undef SP_PURPLE_HUE
+#undef SP_GREEN_AMT
+#undef SP_GREEN_HUE
+#undef SP_AIRLIGHT
+#undef SP_FLAGS
+
+#define DEFINE_SPATIAL_KERNEL(KERNEL_NAME, HELPER_FN) \
+kernel void KERNEL_NAME( \
+    constant SpatialParams& sp [[buffer(0)]], \
+    device const packed_float3* spSrc [[buffer(1)]], \
+    device packed_float3* spDst [[buffer(2)]], \
+    device const packed_float3* spAux [[buffer(3)]], \
+    device const float* spField [[buffer(4)]], \
+    uint gid [[thread_position_in_grid]]) { \
+    if (gid >= sp.width * sp.rows) return; \
+    int x = int(gid % sp.width); \
+    int y = int(gid / sp.width + sp.rowOffset); \
+    spDst[gid] = packed_float3(HELPER_FN(x, y, sp, spSrc, spAux, spField)); \
+}
+
+DEFINE_SPATIAL_KERNEL(spatialDefringe, spDefringePixel)
+DEFINE_SPATIAL_KERNEL(spatialDehaze, spDehazePixel)
+DEFINE_SPATIAL_KERNEL(spatialClarity, spClarityPixel)
+DEFINE_SPATIAL_KERNEL(spatialTextureBlurH, spTextureBlurHPixel)
+DEFINE_SPATIAL_KERNEL(spatialTextureApplyV, spTextureApplyVPixel)
+DEFINE_SPATIAL_KERNEL(spatialSharpenPrepH, spSharpenPrepHPixel)
+DEFINE_SPATIAL_KERNEL(spatialSharpenPrepV, spSharpenPrepVPixel)
+DEFINE_SPATIAL_KERNEL(spatialSharpenMaskH, spSharpenMaskHPixel)
+DEFINE_SPATIAL_KERNEL(spatialSharpenApply, spSharpenApplyPixel)
+#undef DEFINE_SPATIAL_KERNEL
 )metal";
 
 id<MTLComputePipelineState> makePipeline(
@@ -688,22 +833,74 @@ MetalContext& metalContext() {
             context.tonePipeline = makePipeline(context.device, library, @"toneAdjustments");
             context.noisePipeline = makePipeline(context.device, library, @"noiseReduction");
             context.sharpenPipeline = makePipeline(context.device, library, @"sharpen");
+            NSString* spatialSource = [NSString stringWithUTF8String:kSpatialShaderSource.c_str()];
+            MTLCompileOptions* spatialOptions = [MTLCompileOptions new];
+            if (@available(macOS 15.0, iOS 18.0, *)) {
+                spatialOptions.mathMode = MTLMathModeSafe;
+            } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                spatialOptions.fastMathEnabled = NO;
+#pragma clang diagnostic pop
+            }
+            NSError* spatialError = nil;
+            id<MTLLibrary> spatialLibrary =
+                [context.device newLibraryWithSource:spatialSource options:spatialOptions error:&spatialError];
+            if (spatialLibrary && !spatialError) {
+                context.defringePipeline = makePipeline(context.device, spatialLibrary, @"spatialDefringe");
+                context.dehazePipeline = makePipeline(context.device, spatialLibrary, @"spatialDehaze");
+                context.clarityPipeline = makePipeline(context.device, spatialLibrary, @"spatialClarity");
+                context.textureBlurHPipeline = makePipeline(context.device, spatialLibrary, @"spatialTextureBlurH");
+                context.textureApplyVPipeline = makePipeline(context.device, spatialLibrary, @"spatialTextureApplyV");
+                context.sharpenPrepHPipeline = makePipeline(context.device, spatialLibrary, @"spatialSharpenPrepH");
+                context.sharpenPrepVPipeline = makePipeline(context.device, spatialLibrary, @"spatialSharpenPrepV");
+                context.sharpenMaskHPipeline = makePipeline(context.device, spatialLibrary, @"spatialSharpenMaskH");
+                context.sharpenApplyPipeline = makePipeline(context.device, spatialLibrary, @"spatialSharpenApply");
+            } else {
+                NSLog(@"RawLab spatial Metal compilation failed: %@", spatialError);
+            }
             context.ready = context.resizePipeline && context.matrixExposurePipeline &&
                 context.baseLutPipeline && context.tonePipeline && context.noisePipeline &&
-                context.sharpenPipeline;
+                context.sharpenPipeline && context.defringePipeline && context.dehazePipeline &&
+                context.clarityPipeline && context.textureBlurHPipeline &&
+                context.textureApplyVPipeline && context.sharpenPrepHPipeline &&
+                context.sharpenPrepVPipeline && context.sharpenMaskHPipeline &&
+                context.sharpenApplyPipeline;
             if (@available(macOS 15.0, iOS 18.0, *)) {
                 MTLCompileOptions* options = [MTLCompileOptions new];
                 options.mathMode = MTLMathModeSafe;
-                NSString* effectsSource = [NSString stringWithUTF8String:kPhotoEffectsShaderSource];
+                const std::string effectsStdSource = metalEffectsCombinedShaderSource();
+                NSString* effectsSource = [NSString stringWithUTF8String:effectsStdSource.c_str()];
                 error = nil;
                 id<MTLLibrary> effectsLibrary = [context.device newLibraryWithSource:effectsSource options:options error:&error];
                 if (effectsLibrary && !error) context.effectsPipeline = makePipeline(context.device, effectsLibrary, @"photoEffects");
                 else NSLog(@"RawLab effects Metal compilation failed: %@", error);
-                NSString* dcpSource = [source stringByAppendingString:[NSString stringWithUTF8String:kDcpShaderSource]];
+                NSString* dcpSource = [source stringByAppendingString:[NSString stringWithUTF8String:sony2fuji::metalDcpShaderSource().c_str()]];
                 error = nil;
                 id<MTLLibrary> dcpLibrary = [context.device newLibraryWithSource:dcpSource options:options error:&error];
                 if (dcpLibrary && !error) context.baseDcpPipeline = makePipeline(context.device, dcpLibrary, @"baseAndDcp");
                 else NSLog(@"RawLab DCP Metal compilation failed: %@", error);
+            }
+            {
+                MTLCompileOptions* foOptions = [MTLCompileOptions new];
+                if (@available(macOS 15.0, iOS 18.0, *)) {
+                    foOptions.mathMode = MTLMathModeSafe;
+                }
+                const std::string foStdSource = std::string(sony2fuji::kMetalFilmOpticsKernelSource) +
+                    sony2fuji::kFilmOpticsSharedShaderBody + sony2fuji::kMetalFilmOpticsKernelsTail;
+                NSString* foSource = [NSString stringWithUTF8String:foStdSource.c_str()];
+                error = nil;
+                id<MTLLibrary> foLibrary = [context.device newLibraryWithSource:foSource options:foOptions error:&error];
+                if (foLibrary && !error) {
+                    context.filmOpticsDownsamplePipeline = makePipeline(context.device, foLibrary, @"filmOpticsDownsample");
+                    context.filmOpticsBlurHPipeline = makePipeline(context.device, foLibrary, @"filmOpticsBlurH");
+                    context.filmOpticsBlurVPipeline = makePipeline(context.device, foLibrary, @"filmOpticsBlurV");
+                    context.filmOpticsCompositePipeline = makePipeline(context.device, foLibrary, @"filmOpticsComposite");
+                    context.filmOpticsDummyBuffer = [context.device newBufferWithLength:sizeof(float) * 4u
+                                                                               options:MTLResourceStorageModeShared];
+                } else {
+                    NSLog(@"RawLab film optics Metal compilation failed: %@", error);
+                }
             }
         }
     });
@@ -998,7 +1195,8 @@ id<MTLComputeCommandEncoder> beginKernel(
     size_t count,
     const CachedDcp* dcp = nullptr,
     id<MTLBuffer> invalid = nil,
-    id<MTLBuffer> extraBuffer = nil
+    id<MTLBuffer> extraBuffer = nil,
+    id<MTLBuffer> extraBuffer2 = nil
 ) {
     id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
     if (!encoder || !pipeline || !params || !source || !destination || count == 0) {
@@ -1015,6 +1213,9 @@ id<MTLComputeCommandEncoder> beginKernel(
         [encoder setBuffer:invalid offset:0 atIndex:5];
     } else if (extraBuffer != nil) {
         [encoder setBuffer:extraBuffer offset:0 atIndex:3];
+        if (extraBuffer2 != nil) {
+            [encoder setBuffer:extraBuffer2 offset:0 atIndex:4];
+        }
     }
     const NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
     if (maxThreads == 0) {
@@ -1045,11 +1246,61 @@ bool encodeKernel(
     size_t count,
     const CachedDcp* dcp = nullptr,
     id<MTLBuffer> invalid = nil,
-    id<MTLBuffer> extraBuffer = nil
+    id<MTLBuffer> extraBuffer = nil,
+    id<MTLBuffer> extraBuffer2 = nil
 ) {
     return finishKernel(beginKernel(
-        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid, extraBuffer
+        commandBuffer, pipeline, params, source, destination, lut, count, dcp, invalid, extraBuffer, extraBuffer2
     ));
+}
+
+bool encodeSpatialKernel(
+    id<MTLCommandBuffer> commandBuffer,
+    id<MTLComputePipelineState> pipeline,
+    id<MTLDevice> device,
+    const sony2fuji::SpatialGpuParams& sp,
+    id<MTLBuffer> source,
+    id<MTLBuffer> destination,
+    id<MTLBuffer> auxBuffer,
+    id<MTLBuffer> fieldBuffer
+) {
+    const size_t count = size_t(sp.width) * size_t(sp.rows);
+    if (!pipeline || !source || !destination || !auxBuffer || !fieldBuffer || count == 0) {
+        return false;
+    }
+    id<MTLBuffer> spBuf = makeBuffer(device, sizeof(sp));
+    if (!spBuf) return false;
+    std::memcpy(spBuf.contents, &sp, sizeof(sp));
+    id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+    if (!encoder) return false;
+    [encoder setComputePipelineState:pipeline];
+    [encoder setBuffer:spBuf offset:0 atIndex:0];
+    [encoder setBuffer:source offset:0 atIndex:1];
+    [encoder setBuffer:destination offset:0 atIndex:2];
+    [encoder setBuffer:auxBuffer offset:0 atIndex:3];
+    [encoder setBuffer:fieldBuffer offset:0 atIndex:4];
+    const NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
+    if (maxThreads == 0) {
+        [encoder endEncoding];
+        return false;
+    }
+    const NSUInteger threadgroup = std::min<NSUInteger>(256, maxThreads);
+    [encoder dispatchThreads:MTLSizeMake(static_cast<NSUInteger>(count), 1, 1)
+        threadsPerThreadgroup:MTLSizeMake(threadgroup, 1, 1)];
+    [encoder endEncoding];
+    return true;
+}
+
+id<MTLBuffer> makeFloatBuffer(id<MTLDevice> device, const std::vector<float>& data, size_t maxBytes) {
+    const size_t bytes = std::max<size_t>(sizeof(float), data.size() * sizeof(float));
+    if (bytes > maxBytes) return nil;
+    id<MTLBuffer> buf = makeBuffer(device, bytes);
+    if (buf && !data.empty()) {
+        std::memcpy(buf.contents, data.data(), data.size() * sizeof(float));
+    } else if (buf) {
+        std::memset(buf.contents, 0, bytes);
+    }
+    return buf;
 }
 
 bool renderPhotoMetalImpl(
@@ -1097,6 +1348,13 @@ bool renderPhotoMetalImpl(
         return failWith(sony2fuji::GpuFailureKind::Unsupported,
             sony2fuji::GpuBackendFault::UnsupportedCapability,
             "Metal photo effects require macOS 15 or iOS 18");
+    }
+    const bool filmOpticsReady = context.filmOpticsDownsamplePipeline && context.filmOpticsBlurHPipeline &&
+        context.filmOpticsBlurVPipeline && context.filmOpticsCompositePipeline && context.filmOpticsDummyBuffer;
+    if (renderParams.filmOptics.active() && !filmOpticsReady) {
+        return failWith(sony2fuji::GpuFailureKind::Unsupported,
+            sony2fuji::GpuBackendFault::UnsupportedCapability,
+            "Metal film optics pipeline unavailable");
     }
 
     const float lutStrength = std::max(0.0f, std::min(2.0f, renderParams.lutStrength));
@@ -1189,11 +1447,27 @@ bool renderPhotoMetalImpl(
         std::memset(basicFieldBuffer.contents, 0, 2 * sizeof(float));
     }
 
+    const sony2fuji::ColorScienceGpuParams csValues = sony2fuji::colorScienceGpuParameters(renderParams);
+    id<MTLBuffer> colorScienceBuffer = makeBuffer(context.device, sizeof(csValues));
+    if (!colorScienceBuffer) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Failed to allocate Metal ColorScience buffer");
+    }
+    std::memcpy(colorScienceBuffer.contents, &csValues, sizeof(csValues));
+
+    const bool defringeActive = renderParams.defringe.active();
+    const bool dehazeActive = renderParams.atmosphere.dehaze != 0.0f;
+    const bool clarityActive = renderParams.atmosphere.clarity != 0.0f;
+    const bool textureActive = renderParams.atmosphere.texture != 0.0f;
+    const bool sharpenV2Active = renderParams.sharpening > 0.0f && renderParams.sharpenV2.luminanceV2;
+
     const uint32_t inputWidth = static_cast<uint32_t>(input.width);
     const uint32_t inputHeight = static_cast<uint32_t>(input.height);
     const bool earlyResize = renderParams.intent == sony2fuji::RenderIntent::Preview &&
         renderParams.sharpening <= 0.0f && renderParams.noiseReduction <= 0.0f &&
         !renderParams.effects.active() && renderParams.chromaDenoise == 0 &&
+        !renderParams.atmosphere.active() && !defringeActive &&
         !renderParams.preserveSourceResolution &&
         (targetWidth != inputWidth || targetHeight != inputHeight);
     const uint32_t processingWidth = earlyResize ? targetWidth : inputWidth;
@@ -1205,17 +1479,245 @@ bool renderPhotoMetalImpl(
             "Processing pixel count exceeds Metal 32-bit limit");
     }
 
+    const float texSigma = textureActive
+        ? sony2fuji::textureBlurSigma(static_cast<int>(processingWidth), static_cast<int>(processingHeight))
+        : 1.0f;
+    const uint32_t texRadius = textureActive
+        ? static_cast<uint32_t>(std::clamp(static_cast<int>(std::ceil(3.0f * texSigma)), 2, 12))
+        : 0u;
+    const float sharpSigma = std::clamp(renderParams.sharpenV2.radius, 0.5f, 3.0f);
+    const uint32_t sharpRadius = sharpenV2Active
+        ? static_cast<uint32_t>(std::clamp(static_cast<int>(std::ceil(3.0f * sharpSigma)), 1, 9))
+        : 0u;
+    const uint32_t sharpMaskRadius = (sharpenV2Active && renderParams.sharpenV2.masking > 0.0f)
+        ? static_cast<uint32_t>(std::clamp(static_cast<int>(std::ceil(3.0f * 0.5f * sharpSigma)), 1, 5))
+        : 0u;
+
     // 每个 GPU 缓冲区最多 16 MiB。主图只保留一份待提交结果；失败时调用方的
     // 原始 RAW 和输出均不改变，Auto 可从同一参数、同一源像素重新走 CPU。
     const size_t budget = std::min<size_t>(16u * 1024 * 1024, context.device.maxBufferLength);
+    auto makeFilmOpticsParamsBuf = [&](const sony2fuji::FilmOpticsGpuParams& fp) -> id<MTLBuffer> {
+        id<MTLBuffer> b = makeBuffer(context.device, sizeof(fp));
+        if (b) std::memcpy(b.contents, &fp, sizeof(fp));
+        return b;
+    };
+    auto buildMetalFilmOpticsGlow = [&](const ImageData& displaySrgb,
+                                        const sony2fuji::FilmOpticsOptions& opt,
+                                        __strong id<MTLBuffer>& outGlow,
+                                        sony2fuji::FilmOpticsGpuParams& outComp) -> bool {
+        outGlow = nil;
+        outComp = {};
+        if (!opt.active()) return true;
+        const uint32_t srcW = static_cast<uint32_t>(displaySrgb.width);
+        const uint32_t srcH = static_cast<uint32_t>(displaySrgb.height);
+        const size_t srcRowBytes = static_cast<size_t>(srcW) * sizeof(RGB);
+        const size_t maxSrcRows = budget / srcRowBytes;
+        if (maxSrcRows == 0) {
+            return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                sony2fuji::GpuBackendFault::UnsupportedCapability,
+                "Image row exceeds Metal buffer limit");
+        }
+        auto runProxy = [&](bool isBloom, float thresh, float radiusParam,
+                            uint32_t& outW, uint32_t& outH, __strong id<MTLBuffer>& outProxy) -> bool {
+            const auto geom = sony2fuji::computeFilmOpticsProxyGeometry(
+                displaySrgb.width, displaySrgb.height, radiusParam, isBloom, 1024);
+            outW = static_cast<uint32_t>(geom.proxyWidth);
+            outH = static_cast<uint32_t>(geom.proxyHeight);
+            const uint32_t ch = isBloom ? 3u : 1u;
+            const size_t totalPx = static_cast<size_t>(outW) * static_cast<size_t>(outH);
+            const size_t totalBytes = totalPx * ch * sizeof(float);
+            if (totalBytes > budget) {
+                return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                    sony2fuji::GpuBackendFault::UnsupportedCapability,
+                    "Film optics proxy buffer exceeds Metal buffer limit");
+            }
+            id<MTLBuffer> excess = makeBuffer(context.device, totalBytes);
+            id<MTLBuffer> tmp = makeBuffer(context.device, totalBytes);
+            id<MTLBuffer> core = makeBuffer(context.device, totalBytes);
+            id<MTLBuffer> tail = makeBuffer(context.device, totalBytes);
+            if (!excess || !tmp || !core || !tail) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Failed to allocate Metal film optics proxy buffers");
+            }
+            auto rowSpanForProxy = [&](uint32_t py) -> std::pair<uint32_t, uint32_t> {
+                const uint32_t iy0 = static_cast<uint32_t>((uint64_t(py) * srcH) / outH);
+                const uint32_t iy1 = std::min<uint32_t>(
+                    srcH,
+                    std::max<uint32_t>(iy0 + 1u, static_cast<uint32_t>((uint64_t(py + 1u) * srcH + outH - 1u) / outH)));
+                return {iy0, iy1};
+            };
+            id<MTLBuffer> bandSrc = nil;
+            size_t bandSrcCapacity = 0;
+            for (uint32_t pyStart = 0; pyStart < outH;) {
+                const auto firstSpan = rowSpanForProxy(pyStart);
+                const uint32_t batchSrcY0 = firstSpan.first;
+                uint32_t batchSrcY1 = firstSpan.second;
+                if (batchSrcY1 - batchSrcY0 > maxSrcRows) {
+                    return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                        sony2fuji::GpuBackendFault::UnsupportedCapability,
+                        "Film optics proxy row span exceeds Metal band budget");
+                }
+                uint32_t pyEnd = pyStart + 1u;
+                while (pyEnd < outH) {
+                    const auto nextSpan = rowSpanForProxy(pyEnd);
+                    if (nextSpan.second - batchSrcY0 > maxSrcRows) break;
+                    batchSrcY1 = nextSpan.second;
+                    ++pyEnd;
+                }
+                const uint32_t batchRows = pyEnd - pyStart;
+                const size_t srcSpanBytes = static_cast<size_t>(batchSrcY1 - batchSrcY0) * srcRowBytes;
+                if (!bandSrc || srcSpanBytes > bandSrcCapacity) {
+                    bandSrc = makeBuffer(context.device, srcSpanBytes);
+                    bandSrcCapacity = srcSpanBytes;
+                    if (!bandSrc) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to allocate Metal film optics downsample band buffer");
+                    }
+                }
+                std::memcpy(bandSrc.contents,
+                    displaySrgb.pixels.data() + static_cast<size_t>(batchSrcY0) * srcW,
+                    srcSpanBytes);
+                sony2fuji::FilmOpticsGpuParams dp{};
+                dp.width = srcW; dp.height = srcH;
+                dp.proxyWidth = outW; dp.proxyHeight = outH;
+                dp.rows = batchRows;
+                dp.channelCount = ch;
+                dp.srcRowOffset = batchSrcY0;
+                dp.dstProxyRowOffset = pyStart;
+                dp.halationThreshold = thresh;
+                dp.bloomThreshold = thresh;
+                id<MTLBuffer> dpBuf = makeFilmOpticsParamsBuf(dp);
+                id<MTLCommandBuffer> cmd = [context.queue commandBuffer];
+                if (!dpBuf || !cmd || !encodeKernel(cmd, context.filmOpticsDownsamplePipeline, dpBuf,
+                    bandSrc, excess, nil, static_cast<size_t>(outW) * batchRows)) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Failed to encode Metal film optics downsample pass");
+                }
+                [cmd commit];
+                [cmd waitUntilCompleted];
+                if (cmd.status != MTLCommandBufferStatusCompleted) {
+                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                        sony2fuji::GpuBackendFault::DeviceError,
+                        "Metal film optics downsample command failed");
+                }
+                pyStart = pyEnd;
+            }
+            auto makeBlurParams = [&](float sigma, int rad, uint32_t flags) {
+                sony2fuji::FilmOpticsGpuParams bp{};
+                bp.proxyWidth = outW; bp.proxyHeight = outH;
+                bp.blurRadiusPx = static_cast<uint32_t>(rad);
+                bp.channelCount = ch;
+                bp.passFlags = flags;
+                bp.proxySigma = sigma;
+                bp.coreWeight = 0.40f;
+                bp.tailWeight = 0.60f;
+                return makeFilmOpticsParamsBuf(bp);
+            };
+            id<MTLBuffer> p1 = makeBlurParams(geom.coreSigma, geom.coreRadiusPx, 0u);
+            id<MTLBuffer> p2 = makeBlurParams(geom.tailSigma, geom.tailRadiusPx, 1u);
+            id<MTLCommandBuffer> cmd = [context.queue commandBuffer];
+            if (!p1 || !p2 || !cmd ||
+                !encodeKernel(cmd, context.filmOpticsBlurHPipeline, p1, excess, tmp, nil, totalPx) ||
+                !encodeKernel(cmd, context.filmOpticsBlurVPipeline, p1, tmp, core, nil, totalPx, nullptr, nil, context.filmOpticsDummyBuffer) ||
+                !encodeKernel(cmd, context.filmOpticsBlurHPipeline, p2, core, tmp, nil, totalPx) ||
+                !encodeKernel(cmd, context.filmOpticsBlurVPipeline, p2, tmp, tail, nil, totalPx, nullptr, nil, core)) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Failed to encode Metal film optics blur passes");
+            }
+            [cmd commit];
+            [cmd waitUntilCompleted];
+            if (cmd.status != MTLCommandBufferStatusCompleted) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Metal film optics blur command failed");
+            }
+            outProxy = tail;
+            return true;
+        };
+
+        const bool hasHal = opt.halationAmount > 0.0f;
+        const bool hasBloom = opt.bloomAmount > 0.0f;
+        uint32_t halW = 0, halH = 0, bloomW = 0, bloomH = 0;
+        id<MTLBuffer> halBuf = nil, bloomBuf = nil;
+        if (hasHal && !runProxy(false, opt.halationThreshold, opt.halationRadius, halW, halH, halBuf)) return false;
+        if (hasBloom && !runProxy(true, opt.bloomThreshold, opt.bloomRadius, bloomW, bloomH, bloomBuf)) return false;
+
+        if (hasHal && hasBloom) {
+            const size_t halBytes = halBuf.length;
+            const size_t bloomBytes = bloomBuf.length;
+            if (halBytes + bloomBytes > budget) {
+                return failWith(sony2fuji::GpuFailureKind::Unsupported,
+                    sony2fuji::GpuBackendFault::UnsupportedCapability,
+                    "Combined Metal film optics glow buffer exceeds limit");
+            }
+            outGlow = makeBuffer(context.device, halBytes + bloomBytes);
+            if (!outGlow) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Failed to allocate Metal combined film optics glow buffer");
+            }
+            std::memcpy(outGlow.contents, halBuf.contents, halBytes);
+            std::memcpy(static_cast<uint8_t*>(outGlow.contents) + halBytes, bloomBuf.contents, bloomBytes);
+            outComp.bloomOffsetFloats = static_cast<uint32_t>(halBytes / sizeof(float));
+        } else if (hasHal) {
+            outGlow = halBuf;
+            outComp.bloomOffsetFloats = 0u;
+        } else if (hasBloom) {
+            outGlow = bloomBuf;
+            outComp.bloomOffsetFloats = 0u;
+        }
+        outComp.halProxyWidth = halW;
+        outComp.halProxyHeight = halH;
+        outComp.bloomProxyWidth = bloomW;
+        outComp.bloomProxyHeight = bloomH;
+        outComp.halationAmount = opt.halationAmount;
+        outComp.halationHue = opt.halationHue;
+        outComp.bloomAmount = opt.bloomAmount;
+        return true;
+    };
+    id<MTLBuffer> dummyFieldBuffer = makeFloatBuffer(context.device, std::vector<float>{0.0f}, budget);
+    if (!dummyFieldBuffer) {
+        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+            sony2fuji::GpuBackendFault::DeviceError,
+            "Failed to allocate Metal spatial dummy buffer");
+    }
+    id<MTLBuffer> dehazeFieldBuffer = dummyFieldBuffer;
+    sony2fuji::SpatialGpuParams dehazeParamsTemplate{};
+    id<MTLBuffer> clarityFieldBuffer = dummyFieldBuffer;
+    sony2fuji::SpatialGpuParams clarityParamsTemplate{};
+
+    enum MetalStageMask : uint32_t {
+        kStagePreLook = 1u << 0,
+        kStageDehaze = 1u << 1,
+        kStageTone = 1u << 2,
+        kStageNoise = 1u << 3,
+        kStageClarity = 1u << 4,
+        kStageTexture = 1u << 5,
+        kStageFilmOptics = 1u << 6,
+        kStagePostOptics = 1u << 7,
+        kStagePostClarity = kStageTexture | kStageFilmOptics | kStagePostOptics,
+    };
+
     auto runBands = [&](const ImageData& source, ImageData& destination, bool resizeFirst,
-                        bool beforeChroma, bool afterChroma, uint32_t resultWidth = 0, uint32_t resultHeight = 0) -> bool {
+                        uint32_t stages, uint32_t resultWidth = 0, uint32_t resultHeight = 0,
+                        id<MTLBuffer> filmOpticsGlow = nil, const sony2fuji::FilmOpticsGpuParams* filmOpticsComp = nullptr) -> bool {
         const uint32_t srcWidth = source.width, srcHeight = source.height;
         const uint32_t dstWidth = resultWidth ? resultWidth : destination.width;
         const uint32_t dstHeight = resultHeight ? resultHeight : destination.height;
         const uint32_t workWidth = resizeFirst ? dstWidth : srcWidth;
         const uint32_t workHeight = resizeFirst ? dstHeight : srcHeight;
-        const uint32_t halo = afterChroma ? uint32_t(renderParams.noiseReduction > 0) + uint32_t(renderParams.sharpening > 0) : 0;
+        uint32_t halo = 0;
+        if ((stages & kStagePreLook) && defringeActive) halo += 3u;
+        if ((stages & kStageNoise) && renderParams.noiseReduction > 0.0f) halo += 1u;
+        if ((stages & kStageTexture) && textureActive) halo += texRadius;
+        if (stages & kStagePostOptics) {
+            if (sharpenV2Active) halo += sharpMaskRadius + std::max(sharpRadius, 1u) + 1u;
+            else if (renderParams.sharpening > 0.0f) halo += 1u;
+        }
         const size_t srcRowBytes = size_t(srcWidth) * sizeof(RGB);
         const size_t workRowBytes = size_t(workWidth) * sizeof(RGB);
         const size_t dstRowBytes = size_t(dstWidth) * sizeof(RGB);
@@ -1243,12 +1745,17 @@ bool renderPhotoMetalImpl(
             return std::pair<uint32_t, uint32_t>{first > padding + 1 ? first - padding - 1 : 0,
                 std::min(src, last + padding + 3)};
         };
+        const bool needAux1 = ((stages & kStageTexture) && textureActive) ||
+            ((stages & kStagePostOptics) && sharpenV2Active);
+        const bool needAux2 = (stages & kStagePostOptics) && sharpenV2Active;
         // 复用少量缓冲区，避免驱动缓存每一带已释放的分配而累积驻留内存。
         id<MTLBuffer> uploaded = makeBuffer(context.device, std::min(budget, size_t(srcHeight) * srcRowBytes));
         id<MTLBuffer> a = makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes));
         id<MTLBuffer> b = resizeFirst ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : uploaded;
+        id<MTLBuffer> aux1 = needAux1 ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : nil;
+        id<MTLBuffer> aux2 = needAux2 ? makeBuffer(context.device, std::min(budget, size_t(workHeight) * workRowBytes)) : nil;
         id<MTLBuffer> final = makeBuffer(context.device, std::min(budget, size_t(dstHeight) * dstRowBytes));
-        if (!uploaded || !a || !b || !final) {
+        if (!uploaded || !a || !b || !final || (needAux1 && !aux1) || (needAux2 && !aux2)) {
             return failWith(sony2fuji::GpuFailureKind::ProcessingError,
                 sony2fuji::GpuBackendFault::DeviceError,
                 "Failed to allocate Metal working buffers");
@@ -1317,7 +1824,8 @@ bool renderPhotoMetalImpl(
                     }
                     current = a; next = b;
                 }
-                auto params = makeParams(workWidth, work.second - work.first, dstWidth, dstHeight,
+                const uint32_t bandRows = work.second - work.first;
+                auto params = makeParams(workWidth, bandRows, dstWidth, dstHeight,
                     toSRGB, toFGamut, renderParams, useLUT ? &cachedLUT : nullptr, lutStrength, true);
                 params.srcRowOffset = work.first;
                 params.fullWorkHeight = workHeight;
@@ -1328,33 +1836,184 @@ bool renderPhotoMetalImpl(
                         "Failed to allocate Metal parameter buffer");
                 }
                 auto run = [&](id<MTLComputePipelineState> pipeline, id<MTLTexture> texture,
-                               const CachedDcp* stages = nullptr, id<MTLBuffer> extraBuffer = nil) {
+                               const CachedDcp* stagesDcp = nullptr, id<MTLBuffer> extraBuffer = nil,
+                               id<MTLBuffer> extraBuffer2 = nil) {
                     if (!encodeKernel(command, pipeline, constants, current, next, texture,
-                        size_t(workWidth) * (work.second - work.first), stages, stages ? invalid : nil, extraBuffer)) return false;
+                        size_t(workWidth) * bandRows, stagesDcp, stagesDcp ? invalid : nil, extraBuffer, extraBuffer2)) return false;
                     std::swap(current, next);
                     return true;
                 };
-                if (beforeChroma && (!run(context.matrixExposurePipeline, nil, nullptr, basicFieldBuffer) ||
-                    !run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
-                        useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr) ||
-                    !run(context.tonePipeline, nil))) {
-                    return failWith(sony2fuji::GpuFailureKind::ProcessingError,
-                        sony2fuji::GpuBackendFault::DeviceError,
-                        "Failed to encode Metal color/tone pass");
-                }
-                if (afterChroma) {
-                    if ((renderParams.noiseReduction > 0 && !run(context.noisePipeline, nil)) ||
-                        (renderParams.sharpening > 0 && !run(context.sharpenPipeline, nil))) {
+                auto makeBaseSp = [&]() {
+                    sony2fuji::SpatialGpuParams sp{};
+                    sp.width = workWidth;
+                    sp.height = workHeight;
+                    sp.rowOffset = work.first;
+                    sp.rows = bandRows;
+                    sp.srcRowOffset = work.first;
+                    sp.auxRowOffset = work.first;
+                    sp.bandDims[0] = bandRows;
+                    sp.bandDims[1] = bandRows;
+                    return sp;
+                };
+                if (stages & kStagePreLook) {
+                    if (!run(context.matrixExposurePipeline, nil, nullptr, basicFieldBuffer, colorScienceBuffer)) {
                         return failWith(sony2fuji::GpuFailureKind::ProcessingError,
                             sony2fuji::GpuBackendFault::DeviceError,
-                            "Failed to encode Metal detail pass");
+                            "Failed to encode Metal matrix/exposure pass");
+                    }
+                    if (defringeActive) {
+                        auto sp = makeBaseSp();
+                        sp.defringePurpleAmount = renderParams.defringe.purpleAmount;
+                        sp.defringePurpleHue = renderParams.defringe.purpleHue;
+                        sp.defringeGreenAmount = renderParams.defringe.greenAmount;
+                        sp.defringeGreenHue = renderParams.defringe.greenHue;
+                        if (!encodeSpatialKernel(command, context.defringePipeline, context.device, sp,
+                                                 current, next, current, dummyFieldBuffer)) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal defringe pass");
+                        }
+                        std::swap(current, next);
+                    }
+                    if (!run(useDcp ? context.baseDcpPipeline : context.baseLutPipeline,
+                             useLUT ? cachedLUT.texture : nil, useDcp ? &cachedDcp : nullptr)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal look pass");
+                    }
+                }
+                if ((stages & kStageDehaze) && dehazeActive) {
+                    auto sp = dehazeParamsTemplate;
+                    sp.width = workWidth;
+                    sp.height = workHeight;
+                    sp.rowOffset = work.first;
+                    sp.rows = bandRows;
+                    sp.srcRowOffset = work.first;
+                    sp.auxRowOffset = work.first;
+                    sp.bandDims[0] = bandRows;
+                    sp.bandDims[1] = bandRows;
+                    sp.strength = renderParams.atmosphere.dehaze;
+                    if (!encodeSpatialKernel(command, context.dehazePipeline, context.device, sp,
+                                             current, next, current, dehazeFieldBuffer)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal dehaze pass");
+                    }
+                    std::swap(current, next);
+                }
+                if (stages & kStageTone) {
+                    if (!run(context.tonePipeline, nil, nullptr, colorScienceBuffer)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal tone pass");
+                    }
+                }
+                if ((stages & kStageNoise) && renderParams.noiseReduction > 0.0f) {
+                    if (!run(context.noisePipeline, nil)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal noise reduction pass");
+                    }
+                }
+                if ((stages & kStageClarity) && clarityActive) {
+                    auto sp = clarityParamsTemplate;
+                    sp.width = workWidth;
+                    sp.height = workHeight;
+                    sp.rowOffset = work.first;
+                    sp.rows = bandRows;
+                    sp.srcRowOffset = work.first;
+                    sp.auxRowOffset = work.first;
+                    sp.bandDims[0] = bandRows;
+                    sp.bandDims[1] = bandRows;
+                    sp.strength = renderParams.atmosphere.clarity;
+                    if (!encodeSpatialKernel(command, context.clarityPipeline, context.device, sp,
+                                             current, next, current, clarityFieldBuffer)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal clarity pass");
+                    }
+                    std::swap(current, next);
+                }
+                if ((stages & kStageTexture) && textureActive) {
+                    auto sp = makeBaseSp();
+                    sp.strength = renderParams.atmosphere.texture;
+                    sony2fuji::fillSpatialGaussianWeights(texSigma, 12, sp);
+                    if (!encodeSpatialKernel(command, context.textureBlurHPipeline, context.device, sp,
+                                             current, aux1, current, dummyFieldBuffer) ||
+                        !encodeSpatialKernel(command, context.textureApplyVPipeline, context.device, sp,
+                                             current, next, aux1, dummyFieldBuffer)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal texture pass");
+                    }
+                    std::swap(current, next);
+                }
+                if ((stages & kStageFilmOptics) && renderParams.filmOptics.active() &&
+                    filmOpticsGlow != nil && filmOpticsComp != nullptr) {
+                    auto comp = *filmOpticsComp;
+                    comp.width = workWidth;
+                    comp.height = workHeight;
+                    comp.rowOffset = work.first;
+                    comp.rows = bandRows;
+                    id<MTLBuffer> foConstants = makeFilmOpticsParamsBuf(comp);
+                    if (!foConstants || !encodeKernel(command, context.filmOpticsCompositePipeline, foConstants,
+                        current, next, nil, size_t(workWidth) * bandRows, nullptr, nil, filmOpticsGlow)) {
+                        return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                            sony2fuji::GpuBackendFault::DeviceError,
+                            "Failed to encode Metal film optics composite pass");
+                    }
+                    std::swap(current, next);
+                }
+                if (stages & kStagePostOptics) {
+                    if (sharpenV2Active) {
+                        auto spSharp = makeBaseSp();
+                        spSharp.strength = std::clamp(renderParams.sharpening, 0.0f, 2.0f);
+                        spSharp.sharpenDetail = renderParams.sharpenV2.detail;
+                        spSharp.sharpenMasking = renderParams.sharpenV2.masking;
+                        spSharp.sharpenRadius = sharpSigma;
+                        sony2fuji::fillSpatialGaussianWeights(sharpSigma, 9, spSharp);
+                        if (!encodeSpatialKernel(command, context.sharpenPrepHPipeline, context.device, spSharp,
+                                                 current, aux1, current, dummyFieldBuffer) ||
+                            !encodeSpatialKernel(command, context.sharpenPrepVPipeline, context.device, spSharp,
+                                                 aux1, aux2, aux1, dummyFieldBuffer)) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal sharpen v2 prep pass");
+                        }
+                        id<MTLBuffer> sharpenAux = aux2;
+                        auto spApply = spSharp;
+                        if (sharpMaskRadius > 0u) {
+                            auto spMask = spSharp;
+                            sony2fuji::fillSpatialGaussianWeights(0.5f * sharpSigma, 5, spMask);
+                            if (!encodeSpatialKernel(command, context.sharpenMaskHPipeline, context.device, spMask,
+                                                     aux2, aux1, aux2, dummyFieldBuffer)) {
+                                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                    sony2fuji::GpuBackendFault::DeviceError,
+                                    "Failed to encode Metal sharpen v2 mask pass");
+                            }
+                            sharpenAux = aux1;
+                            spApply = spMask;
+                        }
+                        if (!encodeSpatialKernel(command, context.sharpenApplyPipeline, context.device, spApply,
+                                                 current, next, sharpenAux, dummyFieldBuffer)) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal sharpen v2 apply pass");
+                        }
+                        std::swap(current, next);
+                    } else if (renderParams.sharpening > 0.0f) {
+                        if (!run(context.sharpenPipeline, nil)) {
+                            return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                                sony2fuji::GpuBackendFault::DeviceError,
+                                "Failed to encode Metal sharpen pass");
+                        }
                     }
                     if (renderParams.effects.active()) {
-                        const PhotoEffectsParams values{workWidth, workHeight, renderParams.effects, work.first, work.second - work.first};
+                        const PhotoEffectsParams values{workWidth, workHeight, renderParams.effects, work.first, bandRows};
                         id<MTLBuffer> effectConstants = [context.device newBufferWithBytes:&values
                             length:sizeof(values) options:MTLResourceStorageModeShared];
                         if (!effectConstants || !encodeKernel(command, context.effectsPipeline, effectConstants,
-                            current, next, nil, size_t(workWidth) * (work.second - work.first))) {
+                            current, next, nil, size_t(workWidth) * bandRows)) {
                             return failWith(sony2fuji::GpuFailureKind::ProcessingError,
                                 sony2fuji::GpuBackendFault::DeviceError,
                                 "Failed to encode Metal photo effects pass");
@@ -1365,7 +2024,7 @@ bool renderPhotoMetalImpl(
                 auto resize = makeParams(workWidth, workHeight, dstWidth, dstHeight,
                     toSRGB, toFGamut, renderParams, nullptr, lutStrength, false);
                 resize.srcRowOffset = work.first; resize.dstRowOffset = row;
-                resize.srcRows = work.second - work.first; resize.dstRows = rows;
+                resize.srcRows = bandRows; resize.dstRows = rows;
                 auto resizeConstants = makeParamsBuffer(context.device, resize);
                 if (!resizeConstants || !encodeKernel(command, context.resizePipeline, resizeConstants,
                     current, final, nil, size_t(dstWidth) * rows)) {
@@ -1390,38 +2049,104 @@ bool renderPhotoMetalImpl(
         destination.pixels.resize(size_t(dstWidth) * dstHeight);
         return true;
     };
+
+    const int diagSrcW = renderParams.atmosphereSourceWidth > 0 ? renderParams.atmosphereSourceWidth : static_cast<int>(processingWidth);
+    const int diagSrcH = renderParams.atmosphereSourceHeight > 0 ? renderParams.atmosphereSourceHeight : static_cast<int>(processingHeight);
+    const bool filmOpticsActive = renderParams.filmOptics.active();
     ImageData result;
-    if (renderParams.chromaDenoise != 0) {
-        ImageData display(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
-        if (!runBands(input, display, earlyResize, true, false)) return false;
-        // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
-        sony2fuji::lastGpuFilterOutcome() = {};
-        const auto chromaErr = sony2fuji::applyChromaDenoiseWorking(display, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force);
-        if (chromaErr != sony2fuji::ErrorCode::Success) {
-            const auto filterOutcome = sony2fuji::lastGpuFilterOutcome();
-            if (chromaErr == sony2fuji::ErrorCode::OutOfMemory || filterOutcome.failure == sony2fuji::GpuFailureKind::OutOfMemory) {
-                outcome = {sony2fuji::GpuFailureKind::OutOfMemory, sony2fuji::GpuBackendFault::FilterError,
-                    filterOutcome.message.empty() ? "Out of memory during Metal chroma denoise" : filterOutcome.message};
-            } else if (chromaErr == sony2fuji::ErrorCode::Unsupported || filterOutcome.failure == sony2fuji::GpuFailureKind::Unsupported) {
-                outcome = {sony2fuji::GpuFailureKind::Unsupported,
-                    filterOutcome.fault != sony2fuji::GpuBackendFault::None ? filterOutcome.fault : sony2fuji::GpuBackendFault::FilterError,
-                    filterOutcome.message.empty() ? "Metal chroma denoise unavailable" : filterOutcome.message};
-            } else {
-                outcome = {sony2fuji::GpuFailureKind::ProcessingError, sony2fuji::GpuBackendFault::FilterError,
-                    filterOutcome.message.empty() ? "Metal chroma denoise failed" : filterOutcome.message};
-            }
+    if (!dehazeActive && renderParams.chromaDenoise == 0 && !clarityActive && !filmOpticsActive) {
+        result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+        if (!runBands(input, result, earlyResize, kStagePreLook | kStageTone | kStageNoise | kStagePostClarity)) {
             return false;
         }
-        if (processingWidth >= targetWidth && processingHeight >= targetHeight) {
-            if (!runBands(display, display, false, false, true, targetWidth, targetHeight)) return false;
-            result = std::move(display);
-        } else {
-            result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
-            if (!runBands(display, result, false, false, true)) return false;
-        }
     } else {
+        ImageData work(static_cast<int>(processingWidth), static_cast<int>(processingHeight));
+        if (dehazeActive) {
+            if (!runBands(input, work, earlyResize, kStagePreLook)) return false;
+            const auto dehazeState = sony2fuji::buildDehazeAnalysis(work, diagSrcW, diagSrcH, renderParams.processingVersion);
+            std::vector<float> dehazeData;
+            sony2fuji::packDehazeAnalysisBuffer(dehazeState, dehazeData, dehazeParamsTemplate);
+            dehazeFieldBuffer = makeFloatBuffer(context.device, dehazeData, budget);
+            if (!dehazeFieldBuffer) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Failed to upload Metal dehaze field buffer");
+            }
+            if (renderParams.chromaDenoise == 0 && !clarityActive && !filmOpticsActive) {
+                result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+                if (!runBands(work, result, false, kStageDehaze | kStageTone | kStageNoise | kStagePostClarity)) return false;
+                output = std::move(result);
+                return true;
+            }
+            if (!runBands(work, work, false, kStageDehaze | kStageTone)) return false;
+        } else {
+            const uint32_t earlyStages = (renderParams.chromaDenoise == 0 && !clarityActive)
+                ? (kStagePreLook | kStageTone | kStageNoise | kStageTexture)
+                : (kStagePreLook | kStageTone);
+            if (!runBands(input, work, earlyResize, earlyStages)) return false;
+        }
+
+        if (renderParams.chromaDenoise != 0) {
+            // 全图噪声模型只估计一次，不能让分带改变颜色降噪的统计或边界。
+            sony2fuji::lastGpuFilterOutcome() = {};
+            const auto chromaErr = sony2fuji::applyChromaDenoiseWorking(work, renderParams.chromaDenoise, nullptr, sony2fuji::GpuMode::Force);
+            if (chromaErr != sony2fuji::ErrorCode::Success) {
+                const auto filterOutcome = sony2fuji::lastGpuFilterOutcome();
+                if (chromaErr == sony2fuji::ErrorCode::OutOfMemory || filterOutcome.failure == sony2fuji::GpuFailureKind::OutOfMemory) {
+                    outcome = {sony2fuji::GpuFailureKind::OutOfMemory, sony2fuji::GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? "Out of memory during Metal chroma denoise" : filterOutcome.message};
+                } else if (chromaErr == sony2fuji::ErrorCode::Unsupported || filterOutcome.failure == sony2fuji::GpuFailureKind::Unsupported) {
+                    outcome = {sony2fuji::GpuFailureKind::Unsupported,
+                        filterOutcome.fault != sony2fuji::GpuBackendFault::None ? filterOutcome.fault : sony2fuji::GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? "Metal chroma denoise unavailable" : filterOutcome.message};
+                } else {
+                    outcome = {sony2fuji::GpuFailureKind::ProcessingError, sony2fuji::GpuBackendFault::FilterError,
+                        filterOutcome.message.empty() ? "Metal chroma denoise failed" : filterOutcome.message};
+                }
+                return false;
+            }
+        }
+
+        if (clarityActive) {
+            if (renderParams.noiseReduction > 0.0f) {
+                if (!runBands(work, work, false, kStageNoise)) return false;
+            }
+            const auto clarityState = sony2fuji::buildClarityField(work, diagSrcW, diagSrcH, renderParams.processingVersion);
+            std::vector<float> clarityData;
+            sony2fuji::packClarityFieldBuffer(clarityState, clarityData, clarityParamsTemplate);
+            clarityFieldBuffer = makeFloatBuffer(context.device, clarityData, budget);
+            if (!clarityFieldBuffer) {
+                return failWith(sony2fuji::GpuFailureKind::ProcessingError,
+                    sony2fuji::GpuBackendFault::DeviceError,
+                    "Failed to upload Metal clarity field buffer");
+            }
+            if (!filmOpticsActive) {
+                result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+                if (!runBands(work, result, false, kStageClarity | kStagePostClarity)) return false;
+                output = std::move(result);
+                return true;
+            }
+            if (!runBands(work, work, false, kStageClarity | kStageTexture)) return false;
+        } else if (!filmOpticsActive) {
+            result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
+            if (!runBands(work, result, false, kStageNoise | kStagePostClarity)) return false;
+            output = std::move(result);
+            return true;
+        } else if (dehazeActive || renderParams.chromaDenoise != 0) {
+            if (renderParams.noiseReduction > 0.0f || textureActive) {
+                if (!runBands(work, work, false, kStageNoise | kStageTexture)) return false;
+            }
+        }
+
+        id<MTLBuffer> filmOpticsGlow = nil;
+        sony2fuji::FilmOpticsGpuParams filmOpticsComp{};
+        if (!buildMetalFilmOpticsGlow(work, renderParams.filmOptics, filmOpticsGlow, filmOpticsComp)) {
+            return false;
+        }
         result = ImageData(static_cast<int>(targetWidth), static_cast<int>(targetHeight));
-        if (!runBands(input, result, earlyResize, true, true)) return false;
+        if (!runBands(work, result, false, kStageFilmOptics | kStagePostOptics, 0, 0, filmOpticsGlow, &filmOpticsComp)) {
+            return false;
+        }
     }
     output = std::move(result);
     return true;
@@ -1509,6 +2234,11 @@ PhotoGpuCapabilities queryMetalPhotoCapabilities(uint32_t width, uint32_t height
         caps.ready = true;
         caps.supportsEffects = context.effectsPipeline != nil;
         caps.supportsDcp = context.baseDcpPipeline != nil;
+        caps.supportsFilmOptics = context.filmOpticsDownsamplePipeline != nil &&
+            context.filmOpticsBlurHPipeline != nil &&
+            context.filmOpticsBlurVPipeline != nil &&
+            context.filmOpticsCompositePipeline != nil &&
+            context.filmOpticsDummyBuffer != nil;
         size_t pixelCount = 0;
         if (!checkedCount(width, height, &pixelCount)) {
             caps.dimensionsSupported = false;

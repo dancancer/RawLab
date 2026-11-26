@@ -48,4 +48,7 @@ void applyDehaze(ImageData& image, float amount, DehazeAnalysis* cache = nullptr
 void applyClarity(ImageData& image, float amount, int sourceWidth = 0, int sourceHeight = 0,
     ProcessingVersion version = ProcessingVersion::Legacy);
 
+float textureBlurSigma(int width, int height);
+void applyTexture(ImageData& image, float amount, int sourceWidth = 0, int sourceHeight = 0);
+
 } // namespace sony2fuji

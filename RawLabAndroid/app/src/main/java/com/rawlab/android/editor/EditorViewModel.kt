@@ -3,9 +3,12 @@ package com.rawlab.android.editor
 import android.app.Application
 import android.content.ComponentCallbacks2
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.rawlab.android.adjustments.AdjustmentFieldSpec
+import kotlinx.coroutines.Job
 import com.rawlab.android.adjustments.AdjustmentHistoryTransaction
 import com.rawlab.android.adjustments.AdjustmentOutcome
 import com.rawlab.android.adjustments.AdjustmentPayload
@@ -14,6 +17,7 @@ import com.rawlab.android.adjustments.PreparedAdjustmentTransfer
 import com.rawlab.android.batch.BatchJob
 import com.rawlab.android.batch.CollectionExportReview
 import com.rawlab.android.editor.canvas.ViewportRoiRequest
+import com.rawlab.android.editor.inspection.InspectionBitmap
 import com.rawlab.android.editor.render.EditorRenderer
 import com.rawlab.android.editor.render.ViewportRenderEngine
 import com.rawlab.android.engine.NativeProcessor
@@ -28,10 +32,17 @@ import com.rawlab.android.presets.AdjustmentPresetStore
 import com.rawlab.android.settings.EditSettings
 import com.rawlab.android.settings.EditStore
 import com.rawlab.android.settings.HDRCameraDevelopmentSettings
+import com.rawlab.android.settings.PointColorSettings
+import com.rawlab.android.settings.PointColorSwatch
 import com.rawlab.android.settings.ToneCurveChannel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -57,10 +68,23 @@ class EditorViewModel internal constructor(
     @Volatile private var sourceRevision = 0L
     private var currentRevision = 0L
 
+    private val _sharpenMaskOverlay = MutableStateFlow<Bitmap?>(null)
+    val sharpenMaskOverlay: StateFlow<Bitmap?> = _sharpenMaskOverlay.asStateFlow()
+    private var sharpenMaskActive = false
+    private var sharpenMaskRadius = 1.0f
+    private var sharpenMaskMasking = 0f
+    private var sharpenMaskEpoch = 0L
+    private var sharpenMaskJob: Job? = null
+
     internal val session = EditorDocumentSession(
         dependencies = dependencies,
         scope = scope,
-        onSourceRevisionSynced = { sourceRevision = it },
+        onSourceRevisionSynced = {
+            sourceRevision = it
+            pointColorEyedropperState.value = false
+            selectedPointColorSwatchState.value = 0
+            clearSharpenMaskPreviewCache()
+        },
         onCurrentRevisionSynced = { currentRevision = it },
     )
     private val mutable = session.mutable
@@ -72,7 +96,10 @@ class EditorViewModel internal constructor(
 
     internal val viewport = ViewportRenderEngine(
         session = session,
-        onPreviewAccepted = { result -> previewCoordinator.accept(result) },
+        onPreviewAccepted = { result ->
+            previewCoordinator.accept(result)
+            if (sharpenMaskActive) refreshSharpenMaskPreview()
+        },
         onLateExportCompleted = { result -> exportHolder.onLateExportCompleted(result) },
         onRenderSubmittedHook = { work ->
             if (work !is com.rawlab.android.editor.render.Work.HslProbe && hslHolder.isWaiting) hslHolder.clear()
@@ -97,10 +124,16 @@ class EditorViewModel internal constructor(
     private val previewCoordinator: EditorPreviewCoordinator = EditorPreviewCoordinator(session, viewport)
 
     private val memoryCallbacks = object : ComponentCallbacks2 {
-        override fun onTrimMemory(level: Int) = viewport.reclaimMemory(level, keepLastRequest = true)
+        override fun onTrimMemory(level: Int) {
+            viewport.reclaimMemory(level, keepLastRequest = true)
+            clearSharpenMaskPreviewCache()
+        }
         override fun onConfigurationChanged(newConfig: Configuration) = Unit
         @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
-        override fun onLowMemory() = viewport.reclaimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, keepLastRequest = true)
+        override fun onLowMemory() {
+            viewport.reclaimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW, keepLastRequest = true)
+            clearSharpenMaskPreviewCache()
+        }
     }
 
     val adjustmentTransactions get() = adjustmentHistory.session?.transactions.orEmpty()
@@ -115,8 +148,15 @@ class EditorViewModel internal constructor(
     val batch = batchHolder.active
     val pendingBatch = batchHolder.pending
     val collectionExport = collectionHolder.export
+    private val pointColorEyedropperState = MutableStateFlow(false)
+    private val selectedPointColorSwatchState = MutableStateFlow(0)
+    private val selectedSelectiveColorBandState = MutableStateFlow(0)
+
     val hslTarget = hslHolder.state
     val wbProbe = wbHolder.state
+    val pointColorEyedropperEnabled: StateFlow<Boolean> = pointColorEyedropperState.asStateFlow()
+    val selectedPointColorSwatch: StateFlow<Int> = selectedPointColorSwatchState.asStateFlow()
+    val selectedSelectiveColorBand: StateFlow<Int> = selectedSelectiveColorBandState.asStateFlow()
 
     // Internal test seams for androidTest and JVM unit tests.
     internal val lookQueue get() = lookHolder.queue
@@ -251,10 +291,64 @@ class EditorViewModel internal constructor(
     fun setDetailNeedsBefore(needed: Boolean) = viewport.setCompareBefore(needed)
     fun updateDetailRequest(request: ViewportRoiRequest?) = viewport.updateViewport(request)
 
+    fun clearSharpenMaskPreviewCache() {
+        sharpenMaskEpoch += 1L
+        sharpenMaskActive = false
+        sharpenMaskJob?.cancel()
+        sharpenMaskJob = null
+        _sharpenMaskOverlay.value = null
+    }
+
+    fun setSharpenMaskPreview(active: Boolean, radius: Float, masking: Float) {
+        sharpenMaskRadius = radius
+        sharpenMaskMasking = masking
+        if (!active) {
+            clearSharpenMaskPreviewCache()
+            return
+        }
+        if (!sharpenMaskActive) {
+            sharpenMaskActive = true
+        }
+        refreshSharpenMaskPreview()
+    }
+
+    fun updateSharpenMaskSettings(radius: Float, masking: Float) {
+        sharpenMaskRadius = radius
+        sharpenMaskMasking = masking
+        if (sharpenMaskActive) refreshSharpenMaskPreview()
+    }
+
+    private fun refreshSharpenMaskPreview() {
+        val current = state.value
+        val sourceBitmap = current.preview?.result?.takeUnless { it.isRecycled }
+        if (!sharpenMaskActive || sourceBitmap == null || current.visibleEdits.isHDREditing || current.draft?.group == AdjustmentGroup.GEOMETRY) {
+            _sharpenMaskOverlay.value = null
+            return
+        }
+        val expectedSource = sourceRevision
+        val radius = sharpenMaskRadius
+        val masking = sharpenMaskMasking
+        val epoch = ++sharpenMaskEpoch
+        sharpenMaskJob?.cancel()
+        sharpenMaskJob = scope.launch {
+            val mask = withContext(Dispatchers.Default) {
+                runCatching {
+                    NativeProcessor.renderSharpenMaskPreview(sourceBitmap, radius, masking, null)
+                }.getOrNull()
+            }
+            if (sourceRevision == expectedSource && sharpenMaskEpoch == epoch && sharpenMaskActive) {
+                _sharpenMaskOverlay.value = mask
+            }
+        }
+    }
+
     fun receiveSystemPhotos(uris: List<Uri>, requestID: String = UUID.randomUUID().toString()) = systemPhotoHolder.receive(uris, requestID)
     fun consumeSystemPhotoRequest(request: SystemPhotoOpenRequest) = systemPhotoHolder.consume(request)
     fun setHslTargetEnabled(enabled: Boolean) {
-        if (enabled) wbHolder.setEnabled(false)
+        if (enabled) {
+            wbHolder.setEnabled(false)
+            pointColorEyedropperState.value = false
+        }
         hslHolder.setEnabled(enabled)
     }
     fun setHslTargetAxis(axis: Int) = hslHolder.setAxis(axis)
@@ -267,12 +361,74 @@ class EditorViewModel internal constructor(
     fun keyHslTarget(delta: Float) = hslHolder.key(delta)
 
     fun setWbProbeEnabled(enabled: Boolean) {
-        if (enabled) hslHolder.setEnabled(false)
+        if (enabled) {
+            hslHolder.setEnabled(false)
+            pointColorEyedropperState.value = false
+        }
         wbHolder.setEnabled(enabled)
     }
     fun beginWbProbe(x: Float, y: Float) = wbHolder.begin(x, y)
     fun cancelWbProbe() = wbHolder.cancel()
     fun rejectWbProbe() = wbHolder.reject()
+
+    fun setPointColorEyedropperEnabled(enabled: Boolean) {
+        if (enabled) {
+            hslHolder.setEnabled(false)
+            wbHolder.setEnabled(false)
+        }
+        pointColorEyedropperState.value = enabled
+    }
+    fun setSelectedPointColorSwatch(index: Int) {
+        selectedPointColorSwatchState.value = index.coerceAtLeast(0)
+    }
+    fun setSelectedSelectiveColorBand(index: Int) {
+        selectedSelectiveColorBandState.value = index.coerceIn(0, 8)
+    }
+    fun samplePointColor(x: Float, y: Float) {
+        val current = mutable.value
+        val photo = current.photo ?: return
+        if (!pointColorEyedropperState.value || !current.controlsEnabled || current.visibleEdits.isHDREditing) return
+        if (current.draft?.group != AdjustmentGroup.POINT_COLOR || current.preview == null) return
+        if (!x.isFinite() || !y.isFinite() || x !in 0f..1f || y !in 0f..1f) {
+            pointColorEyedropperState.value = false
+            return
+        }
+        val expectedSource = sourceRevision
+        val pair = current.preview
+        val tiles = current.detailTiles
+        val overlay = current.detail
+        scope.launch {
+            val sample = withContext(Dispatchers.Default) {
+                InspectionBitmap.samplePreview(pair.result, tiles, overlay, useNeutral = false, normX = x, normY = y, radiusPx = 1)
+            }
+            val latest = mutable.value
+            if (sample == null || sourceRevision != expectedSource || latest.photo != photo ||
+                latest.draft?.group != AdjustmentGroup.POINT_COLOR || !pointColorEyedropperState.value) {
+                pointColorEyedropperState.value = false
+                return@launch
+            }
+            val swatch = PointColorSwatch(
+                srcHue = sample.hueDeg.toFloat().coerceIn(0f, 359.999f),
+                srcSaturation = (sample.saturationPct / 100.0).toFloat().coerceIn(0f, 1f),
+                srcLuminance = (sample.brightnessPct / 100.0).toFloat().coerceIn(0f, 1f),
+            )
+            val maxSwatches = AdjustmentFieldSpec.SubFields.PointColor.maxSwatches
+            val currentList = latest.visibleEdits.pointColor.swatches.toMutableList()
+            if (currentList.size < maxSwatches) {
+                currentList.add(swatch)
+                selectedPointColorSwatchState.value = currentList.lastIndex
+            } else {
+                val targetIndex = selectedPointColorSwatchState.value.coerceIn(0, maxSwatches - 1)
+                currentList[targetIndex] = swatch
+                selectedPointColorSwatchState.value = targetIndex
+            }
+            draftHolder.changeDraft(latest.visibleEdits.copy(pointColor = PointColorSettings(currentList)), interactive = false)
+            pointColorEyedropperState.value = false
+        }
+    }
+    fun cancelPointColorEyedropper() {
+        pointColorEyedropperState.value = false
+    }
 
     fun importPhoto(uri: Uri?) = importRecoveryHolder.importPhoto(uri)
     fun importPhoto(uri: Uri?, completed: (Boolean) -> Unit) = importRecoveryHolder.importPhoto(uri, completed)
@@ -302,7 +458,10 @@ class EditorViewModel internal constructor(
     fun edit(requested: EditSettings, interactive: Boolean = false, clearProcessingMigration: Boolean = false) =
         previewCoordinator.edit(requested, interactive, clearProcessingMigration)
     fun updatePreviewSize(edge: Int) = draftHolder.updatePreviewSize(edge)
-    fun beginDraft(group: AdjustmentGroup) = draftHolder.beginDraft(group)
+    fun beginDraft(group: AdjustmentGroup) {
+        pointColorEyedropperState.value = false
+        draftHolder.beginDraft(group)
+    }
     fun changeDraft(edits: EditSettings, interactive: Boolean = false) = draftHolder.changeDraft(edits, interactive)
     fun undoDraft() = draftHolder.undoDraft()
     fun redoDraft() = draftHolder.redoDraft()
@@ -310,8 +469,14 @@ class EditorViewModel internal constructor(
     fun toggleGeometryLock() = draftHolder.toggleGeometryLock()
     fun swapGeometryRatio() = draftHolder.swapGeometryRatio()
     fun toggleGeometryGrid() = draftHolder.toggleGeometryGrid()
-    fun applyDraft(completed: (Boolean) -> Unit = {}) = draftHolder.applyDraft(completed)
-    fun discardDraft() = draftHolder.discardDraft()
+    fun applyDraft(completed: (Boolean) -> Unit = {}) {
+        pointColorEyedropperState.value = false
+        draftHolder.applyDraft(completed)
+    }
+    fun discardDraft() {
+        pointColorEyedropperState.value = false
+        draftHolder.discardDraft()
+    }
     fun retry() = previewCoordinator.retry()
     fun autoExposure() = previewCoordinator.autoExposure()
     fun retrySave(completed: (Boolean) -> Unit = {}) = previewCoordinator.retrySave(completed)
@@ -398,6 +563,7 @@ class EditorViewModel internal constructor(
 
     override fun onCleared() {
         appContext.unregisterComponentCallbacks(memoryCallbacks)
+        clearSharpenMaskPreviewCache()
         draftHolder.preserveEditorDraft()
         previewCache.setForegroundBusy(photoPreviewOwner, false)
         previewCache.close()

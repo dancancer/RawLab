@@ -3,6 +3,14 @@ using System.Runtime.InteropServices;
 
 namespace RawLab.Windows;
 
+internal readonly record struct PointColorSwatchPreview(
+    byte SrcR,
+    byte SrcG,
+    byte SrcB,
+    byte ShiftedR,
+    byte ShiftedG,
+    byte ShiftedB);
+
 internal static class InspectionNative
 {
     internal static Native.InspectionOverlayMode ToNative(InspectionOverlayMode mode) => mode switch
@@ -238,5 +246,36 @@ internal static class InspectionNative
         {
         }
         return null;
+    }
+
+    internal static PointColorSwatchPreview? PointColorPreviewSwatch(PointColorSwatch swatch)
+    {
+        var srcRgb = new float[3];
+        var shiftedRgb = new float[3];
+        if (Native.sony2fuji_point_color_preview_swatch(
+                (float)swatch.SrcHue,
+                (float)swatch.SrcSaturation,
+                (float)swatch.SrcLuminance,
+                (float)swatch.HueShift,
+                (float)swatch.SaturationShift,
+                (float)swatch.LuminanceShift,
+                srcRgb,
+                shiftedRgb) != Native.StatusOk)
+        {
+            return null;
+        }
+        static byte ToByte(float value) =>
+            (byte)Math.Clamp(Math.Round((float.IsFinite(value) ? value : 0f) * 255.0), 0, 255);
+        return new PointColorSwatchPreview(
+            ToByte(srcRgb[0]), ToByte(srcRgb[1]), ToByte(srcRgb[2]),
+            ToByte(shiftedRgb[0]), ToByte(shiftedRgb[1]), ToByte(shiftedRgb[2]));
+    }
+
+    internal static PointColorSwatch SwatchFromSample(InspectionColorSample sample)
+    {
+        var hue = double.IsFinite(sample.HueDeg) ? Math.Clamp(sample.HueDeg, 0.0, 359.999) : 0.0;
+        var sat = double.IsFinite(sample.SaturationPct) ? Math.Clamp(sample.SaturationPct / 100.0, 0.0, 1.0) : 0.0;
+        var lum = double.IsFinite(sample.BrightnessPct) ? Math.Clamp(sample.BrightnessPct / 100.0, 0.0, 1.0) : 0.0;
+        return new PointColorSwatch(SrcHue: hue, SrcSaturation: sat, SrcLuminance: lum);
     }
 }

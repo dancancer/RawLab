@@ -143,6 +143,47 @@ data class EditSettings(
         }
         return independent.copy(film = id, strength = strength)
     }
+
+    fun applySharpenV2Edit(
+        amount: Float? = null,
+        radius: Float? = null,
+        detail: Float? = null,
+        masking: Float? = null,
+        luminanceV2: Boolean? = null,
+    ): EditSettings {
+        if (isHDREditing) {
+            return if (amount != null && amount.isFinite()) {
+                withEditingSharpening(amount.coerceIn(0f, 2f))
+            } else this
+        }
+        var nextAmount = sharpening
+        var v2 = sharpenV2
+        if (amount != null && amount.isFinite()) {
+            val clamped = amount.coerceIn(0f, 2f).canonicalZero()
+            val preserveLegacy = sharpening > 0f && !v2.luminanceV2 && v2.isDefault
+            nextAmount = clamped
+            if (!preserveLegacy && clamped > 0f && !v2.luminanceV2) {
+                v2 = v2.copy(luminanceV2 = true)
+            }
+        }
+        if (luminanceV2 != null) {
+            v2 = v2.copy(luminanceV2 = luminanceV2)
+        }
+        val f = AdjustmentFieldSpec.Fields
+        if (radius != null && radius.isFinite()) {
+            val r = f.DETAIL_SHARPENING_RADIUS.androidModel.floatRange!!
+            v2 = v2.copy(radius = radius.coerceIn(r.start, r.endInclusive), luminanceV2 = true)
+        }
+        if (detail != null && detail.isFinite()) {
+            val r = f.DETAIL_SHARPENING_DETAIL.androidModel.floatRange!!
+            v2 = v2.copy(detail = detail.coerceIn(r.start, r.endInclusive).canonicalZero(), luminanceV2 = true)
+        }
+        if (masking != null && masking.isFinite()) {
+            val r = f.DETAIL_SHARPENING_MASKING.androidModel.floatRange!!
+            v2 = v2.copy(masking = masking.coerceIn(r.start, r.endInclusive).canonicalZero(), luminanceV2 = true)
+        }
+        return copy(sharpening = nextAmount, sharpenV2 = v2)
+    }
 }
 
 data class LensSettings(val distortion: Boolean = false, val tca: Boolean = false,
@@ -162,6 +203,12 @@ data class LensSettings(val distortion: Boolean = false, val tca: Boolean = fals
     val enabled: Boolean get() = distortion || tca || vignetting
     val hasDefringe: Boolean get() = defringePurpleAmount != 0f || defringePurpleHue != 50f ||
         defringeGreenAmount != 0f || defringeGreenHue != 50f
+    fun defringeOnly(): LensSettings = if (hasDefringe) LensSettings(
+        defringePurpleAmount = defringePurpleAmount,
+        defringePurpleHue = defringePurpleHue,
+        defringeGreenAmount = defringeGreenAmount,
+        defringeGreenHue = defringeGreenHue,
+    ) else LensSettings()
     val coreProfileId: String get() = if (manual) profileId ?: "__rawlab_manual_selection_required__" else ""
     fun encode(): String {
         val base = mutableListOf(if (distortion) "1" else "0", if (tca) "1" else "0",
@@ -276,6 +323,26 @@ data class PhotoEffectsSettings(
             PhotoEffectParameter.GRAIN_SIZE -> copy(grainSize = normalized)
             PhotoEffectParameter.GRAIN_ROUGHNESS -> copy(grainRoughness = normalized)
         }
+    }
+
+    fun applyGrainFormatPreset(preset: GrainFormatPreset): PhotoEffectsSettings = when (preset) {
+        GrainFormatPreset.CUSTOM -> copy(grainFormatPreset = preset)
+        GrainFormatPreset.FILM_135 -> copy(grainFormatPreset = preset, grainSize = 18f, grainRoughness = 65f)
+        GrainFormatPreset.FILM_120 -> copy(grainFormatPreset = preset, grainSize = 34f, grainRoughness = 22f)
+    }
+
+    fun withGrainEffect(parameter: PhotoEffectParameter, value: Float): PhotoEffectsSettings {
+        val next = withEffect(parameter, value)
+        if (next == this) return this
+        if (parameter != PhotoEffectParameter.GRAIN_SIZE && parameter != PhotoEffectParameter.GRAIN_ROUGHNESS) {
+            return next
+        }
+        val matchesPreset = when (next.grainFormatPreset) {
+            GrainFormatPreset.CUSTOM -> true
+            GrainFormatPreset.FILM_135 -> next.grainSize == 18f && next.grainRoughness == 65f
+            GrainFormatPreset.FILM_120 -> next.grainSize == 34f && next.grainRoughness == 22f
+        }
+        return if (matchesPreset) next else next.copy(grainFormatPreset = GrainFormatPreset.CUSTOM)
     }
 
     fun value(parameter: PhotoEffectParameter): Float = when (parameter) {

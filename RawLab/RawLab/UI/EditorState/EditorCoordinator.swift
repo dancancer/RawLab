@@ -215,6 +215,7 @@ final class EditorCoordinator: ObservableObject {
     @Published var selectedGroup = EditorAdjustmentGroup.looks
     @Published var selectedAdjustment: AdjustmentKind? = nil
     @Published var selectedHDRRenditionTool: EditorToolSelection? = nil
+    @Published var selectedColorScienceTool: EditorToolSelection? = nil
     @Published var lensSelected = false
     @Published var geometrySelected = false
     @Published var choosingMasterRecipe = false
@@ -254,6 +255,9 @@ final class EditorCoordinator: ObservableObject {
     @Published var wbEyedropperEnabled = false
     @Published var wbProbeSampling = false
     @Published var wbProbeNotice: WBProbeNotice?
+    @Published var pointColorEyedropperEnabled = false
+    @Published var selectedPointColorSwatchIndex = 0
+    @Published var selectedSelectiveColorBandIndex = 0
     @Published var gradingZone: ColorGradingZone = .shadows
     @Published var gradingGlobalSelected = false
     @Published var preparedReset: PreparedEditorReset?
@@ -419,7 +423,15 @@ final class EditorCoordinator: ObservableObject {
         if lensSelected { return .lens }
         if choosingMasterRecipe { return .recipe }
         if let selectedHDRRenditionTool { return selectedHDRRenditionTool }
+        if let selectedColorScienceTool { return selectedColorScienceTool }
         return selectedAdjustment.map(EditorToolSelection.adjustment) ?? .film
+    }
+
+    var pointColorEyedropperActive: Bool {
+        pointColorEyedropperEnabled && isEditorDraftActive &&
+            currentEditorTool == .pointColor && !editorBusy &&
+            adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented &&
+            !settings.isHDREditing
     }
 
     var hslTargetActive: Bool {
@@ -561,15 +573,23 @@ final class EditorCoordinator: ObservableObject {
         lensSelected = selection == .lens
         choosingMasterRecipe = selection == .recipe
         selectedGroup = EditorAdjustmentRules.groupFor(selection)
+        pointColorEyedropperEnabled = false
         if case .adjustment(let adjustment) = selection {
             selectedAdjustment = adjustment
             selectedHDRRenditionTool = nil
+            selectedColorScienceTool = nil
         } else if selection.hdrRenditionKeyPath != nil {
             selectedAdjustment = nil
             selectedHDRRenditionTool = selection
+            selectedColorScienceTool = nil
+        } else if selection == .pointColor || selection == .selectiveColor || selection == .bwMixer || selection == .cameraCalibration {
+            selectedAdjustment = nil
+            selectedHDRRenditionTool = nil
+            selectedColorScienceTool = selection
         } else {
             selectedAdjustment = nil
             selectedHDRRenditionTool = nil
+            selectedColorScienceTool = nil
         }
         if geometrySelected {
             geometryAspectPreset = .free
@@ -606,6 +626,7 @@ final class EditorCoordinator: ObservableObject {
         geometrySelected = false
         lensSelected = false
         choosingMasterRecipe = false
+        pointColorEyedropperEnabled = false
         geometryDraft = nil
         lensDraft = nil
         backend?.hasAdjustmentDraft = false
@@ -741,7 +762,16 @@ final class EditorCoordinator: ObservableObject {
     }
 
     func normalizeHDRNavigation(isHDREditing: Bool) {
-        guard !isHDREditing else { return }
+        if isHDREditing {
+            if selectedColorScienceTool != nil {
+                selectedColorScienceTool = nil
+                selectedAdjustment = .exposure
+                selectedGroup = .light
+                selectedHDRRenditionTool = nil
+                pointColorEyedropperEnabled = false
+            }
+            return
+        }
         if selectedGroup == .hdrRendition || selectedHDRRenditionTool != nil {
             selectedGroup = .light
             selectedHDRRenditionTool = nil
@@ -782,6 +812,9 @@ final class EditorCoordinator: ObservableObject {
         workspaceDraftID = UUID()
         geometrySelected = false
         lensSelected = false
+        selectedColorScienceTool = nil
+        pointColorEyedropperEnabled = false
+        selectedPointColorSwatchIndex = 0
         cancelHSLTarget()
         cancelCurveTarget()
         gradingZone = .shadows

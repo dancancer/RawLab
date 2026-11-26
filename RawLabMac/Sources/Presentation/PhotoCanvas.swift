@@ -32,6 +32,7 @@ struct PhotoCanvas: View {
     var inspectionPinMode: Bool = false
     var onInspectionHover: ((CGPoint?) -> Void)? = nil
     var onInspectionPin: ((CGPoint) -> Void)? = nil
+    var sharpenMaskOverlay: CGImage? = nil
     @Environment(\.displayScale) private var displayScale
     @State private var dragOrigin: CGPoint?
     @State private var labelRects: [CGRect] = []
@@ -78,7 +79,8 @@ struct PhotoCanvas: View {
                         }
                     }
                     .overlay {
-                        if clipping, let mask = frame.clipping { Image(decorative: mask, scale: 1).resizable().interpolation(.none) }
+                        if let sharpenMaskOverlay { Image(decorative: sharpenMaskOverlay, scale: 1).resizable() }
+                        else if clipping, let mask = frame.clipping { Image(decorative: mask, scale: 1).resizable().interpolation(.none) }
                     }.rotationEffect(.degrees(straighten.angle)).offset(x: displayPan.width, y: displayPan.height)
                 if let cropSettings {
                     MacCropOverlay(settings: cropSettings, imageBounds: imageBounds, canvasSize: straighten.safeCanvas,

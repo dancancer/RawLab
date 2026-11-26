@@ -42,11 +42,17 @@ struct PhotoEffectsControls: View {
                     .accessibilityIdentifier("effects.resetGroup.\(tool.rawValue)")
                     .disabled(model.settings.isEffectDefault(tool))
             }.frame(minHeight: 28)
+            if !isVignette && !model.settings.isHDREditing {
+                grainFilmPhysicsPickers
+            }
             ForEach(parameters) { parameter in
                 ParameterRow(title: parameter == .grainAmount ? L10n.text("颗粒强度") : parameter.title,
                              value: Binding(
                     get: { model.settings.editingEffectValue(parameter) },
-                    set: { model.settings.setEffect(parameter, to: $0) }
+                    set: { value in
+                        if isVignette { model.settings.setEffect(parameter, to: value) }
+                        else { model.settings.setGrainEffect(parameter, to: value) }
+                    }
                 ), range: parameter.range, defaultValue: parameter.defaultValue,
                 identifier: "effects.value.\(parameter.rawValue)", onEditingChanged: model.setInteracting)
                     .disabled(isDisabled(parameter))
@@ -58,6 +64,37 @@ struct PhotoEffectsControls: View {
             }
         }.frame(maxWidth: 720).padding(.horizontal, horizontalPadding)
 
+    }
+
+    private var grainFilmPhysicsPickers: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker(L10n.text("颗粒曲线"), selection: Binding(
+                get: { model.settings.effectSettings.grainToneCurve },
+                set: { curve in
+                    ParameterValueField.cancelPendingInputs()
+                    model.settings.applyGrainToneCurve(curve)
+                }
+            )) {
+                ForEach(GrainToneCurve.allCases) { curve in
+                    Text(curve.title).tag(curve)
+                }
+            }.pickerStyle(.menu).controlSize(.small)
+                .id(localizationLocale.identifier)
+                .accessibilityIdentifier("effects.grain.toneCurve")
+            Picker(L10n.text("颗粒画幅"), selection: Binding(
+                get: { model.settings.effectSettings.grainFormatPreset },
+                set: { preset in
+                    ParameterValueField.cancelPendingInputs()
+                    model.settings.applyGrainFormatPreset(preset)
+                }
+            )) {
+                ForEach(GrainFormatPreset.allCases) { preset in
+                    Text(preset.title).tag(preset)
+                }
+            }.pickerStyle(.menu).controlSize(.small)
+                .id(localizationLocale.identifier)
+                .accessibilityIdentifier("effects.grain.formatPreset")
+        }.font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .leading).padding(.bottom, 4)
     }
 
     private var disabledReason: String? {

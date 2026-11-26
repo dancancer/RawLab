@@ -476,6 +476,8 @@ extension ContentView {
                     coordinator.selectedGroup = .light
                     coordinator.selectedAdjustment = .exposure
                     coordinator.selectedHDRRenditionTool = nil
+                    coordinator.selectedColorScienceTool = nil
+                    coordinator.pointColorEyedropperEnabled = false
                 }
             }
             coordinator.selectedPhotoItem = nil
@@ -609,6 +611,8 @@ extension ContentView {
                         coordinator.selectedGroup = .light
                         coordinator.selectedAdjustment = .exposure
                         coordinator.selectedHDRRenditionTool = nil
+                        coordinator.selectedColorScienceTool = nil
+                        coordinator.pointColorEyedropperEnabled = false
                     }
                 }
             case .failure(let error):

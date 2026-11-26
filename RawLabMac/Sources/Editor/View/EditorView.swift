@@ -165,6 +165,8 @@ struct EditorView: View {
                         CurveTargetCanvasControls(channel: model.curveTargetChannel, onExit: exitCurveTarget).padding(8)
                     } else if !showInspector && model.wbProbeActive {
                         WBProbeCanvasControls(onExit: exitWBProbe).padding(8)
+                    } else if !showInspector && model.pointColorEyedropperActive {
+                        PointColorEyedropperCanvasControls(onExit: exitPointColorEyedropper).padding(8)
                     }
                     if model.hasActiveExternalReloadBanner {
                         HStack(spacing: 10) {
@@ -241,6 +243,7 @@ struct EditorView: View {
         .onChange(of: model.hslTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.curveTargetEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.wbEyedropperEnabled) { _, _ in viewing.hold(false, allowed: false) }
+        .onChange(of: model.pointColorEyedropperEnabled) { _, _ in viewing.hold(false, allowed: false) }
         .onChange(of: model.quickPresetsVisible) { _, visible in
             if visible { workspaceLayout.setMode(.editing); workspaceLayout.showInspector() }
         }
@@ -259,6 +262,7 @@ struct EditorView: View {
             model.cancelHSLTarget()
             model.cancelCurveTarget()
             model.cancelWBProbe()
+            model.cancelPointColorEyedropper()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -267,6 +271,7 @@ struct EditorView: View {
             model.cancelHSLTarget()
             model.cancelCurveTarget()
             model.cancelWBProbe()
+            model.cancelPointColorEyedropper()
             if [.colorGrading, .toneCurve].contains(model.adjustmentNavigation.tool) { model.cancelAdjustmentInteraction() }
             model.saveEdits()
         }
@@ -295,7 +300,7 @@ struct EditorView: View {
             else { AdjustmentTransferView(model: model, kind: kind, preset: model.adjustmentSheetPreset) }
         }
         .onExitCommand {
-            exitHSLTarget(); exitCurveTarget(); exitWBProbe(); model.cancelAdjustmentInteraction()
+            exitHSLTarget(); exitCurveTarget(); exitWBProbe(); exitPointColorEyedropper(); model.cancelAdjustmentInteraction()
         }
         .background(MacViewingKeyboard(canHold: canHoldBefore, onHold: { viewing.hold($0, allowed: canHoldBefore) },
             onInformation: { if showsPhotoWorkspace { infoMode = infoMode.next } },
@@ -312,8 +317,8 @@ struct EditorView: View {
             onEscape: {
                 if workspaceLayout.dismissDrawer() { return true }
                 if model.quickPresetsVisible { model.closeQuickPresets(); return true }
-                if model.hslTargetActive || model.curveTargetActive || model.wbProbeActive {
-                    exitHSLTarget(); exitCurveTarget(); exitWBProbe()
+                if model.hslTargetActive || model.curveTargetActive || model.wbProbeActive || model.pointColorEyedropperActive {
+                    exitHSLTarget(); exitCurveTarget(); exitWBProbe(); exitPointColorEyedropper()
                     model.cancelAdjustmentInteraction()
                     return true
                 }
@@ -777,6 +782,7 @@ struct EditorView: View {
             exitHSLTarget()
             exitCurveTarget()
             exitWBProbe()
+            exitPointColorEyedropper()
             model.inspection.pinModeEnabled = false
             viewing.hold(false, allowed: false)
             workspaceLayout.setMode(mode)
@@ -961,7 +967,9 @@ struct EditorView: View {
         if !viewport.pixelMode { viewport.focus = CGPoint(x: 0.5, y: 0.5) }
         if model.fullResolution != viewport.pixelMode { model.fullResolution = viewport.pixelMode }
     }
-    private var anyTargetActive: Bool { model.hslTargetActive || model.curveTargetActive || model.wbProbeActive }
+    private var anyTargetActive: Bool {
+        model.hslTargetActive || model.curveTargetActive || model.wbProbeActive || model.pointColorEyedropperActive
+    }
     private var canHoldBefore: Bool { showsPhotoWorkspace && !anyTargetActive && model.result != nil && model.neutral != nil && model.canComparePreview && !viewing.enabled }
 
     private var hslTargetInput: HSLTargetCanvasInput {
@@ -997,9 +1005,21 @@ struct EditorView: View {
             exit: exitWBProbe)
     }
 
+    private var pointColorEyedropperInput: HSLTargetCanvasInput {
+        let source = model.sourceRevision, hdr = model.settings.isHDREditing
+        func current() -> Bool { model.sourceRevision == source && model.settings.isHDREditing == hdr }
+        return HSLTargetCanvasInput(scope: "pointColor-\(source)-\(hdr)",
+            begin: { if current() { model.samplePointColor(atOutputPoint: $0) } },
+            change: { _ in },
+            end: {}, cancel: { if current() { model.cancelPointColorEyedropper() } },
+            key: { _ in }, reject: { if current() { model.cancelPointColorEyedropper() } },
+            exit: exitPointColorEyedropper)
+    }
+
     private func imagePane(_ frame: RenderedImage, title: String, showMask: Bool, wipe: Bool = false) -> some View {
         let activeTargetInput: HSLTargetCanvasInput? = {
             guard model.result?.image === frame.image else { return nil }
+            if model.pointColorEyedropperActive { return pointColorEyedropperInput }
             if model.wbProbeActive { return wbProbeInput }
             if model.hslTargetActive { return hslTargetInput }
             if model.curveTargetActive { return curveTargetInput }
@@ -1029,7 +1049,8 @@ struct EditorView: View {
                     inspectionAnchors: model.inspectionMarkerPoints(),
                     inspectionPinMode: model.geometryDraft == nil && model.inspection.pinModeEnabled,
                     onInspectionHover: { point in model.updateInspectionHover(point) },
-                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) })
+                    onInspectionPin: { point in _ = model.pinInspectionAnchor(atOutputPoint: point) },
+                    sharpenMaskOverlay: model.geometryDraft == nil ? model.sharpenMaskOverlay : nil)
             .accessibilityElement(children: .contain).accessibilityLabel(title)
             .accessibilityActions {
                 if canHoldBefore {
@@ -1052,6 +1073,10 @@ struct EditorView: View {
         model.cancelWBProbe(); model.wbEyedropperEnabled = false
     }
 
+    private func exitPointColorEyedropper() {
+        model.cancelPointColorEyedropper()
+    }
+
     private func toggleInspector() {
         if showInspector {
             ParameterValueField.cancelPendingInputs()
@@ -1059,6 +1084,7 @@ struct EditorView: View {
                 exitHSLTarget()
                 exitCurveTarget()
                 exitWBProbe()
+                exitPointColorEyedropper()
                 model.inspection.pinModeEnabled = false
                 model.closeQuickPresets()
                 workspaceLayout.toggleInspector()
@@ -1121,5 +1147,23 @@ private struct WBProbeCanvasControls: View {
         Button(L10n.text("退出白平衡吸管"), action: onExit)
             .buttonStyle(.bordered)
             .accessibilityIdentifier("wb.eyedropper.exit")
+    }
+}
+
+private struct PointColorEyedropperCanvasControls: View {
+    let onExit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(L10n.text("吸管取样"), systemImage: "eyedropper")
+                .font(.callout.weight(.semibold))
+            Button(L10n.text("取消"), action: onExit)
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("pointColor.eyedropper.exit")
+        }
+        .padding(10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pointColor.eyedropper.canvas")
     }
 }

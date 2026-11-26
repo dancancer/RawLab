@@ -10,6 +10,7 @@ struct LensControls: View {
 
     var body: some View {
         LensDraftWorkspace(settings: settings, info: info, previewIsCurrent: model.lensDraftPreviewIsCurrent,
+                           supportsProfileCorrection: model.canUseLensCorrection,
                            update: model.updateLensDraft, choose: { choosingProfile = true })
             .sheet(isPresented: $choosingProfile) {
                 LensProfileChooser(candidates: info?.candidates ?? [], settings: settings,
@@ -28,6 +29,7 @@ struct LensDraftWorkspace: View {
     let settings: LensCorrectionSettings
     let info: LensInfo?
     let previewIsCurrent: Bool
+    var supportsProfileCorrection = true
     let update: ((inout LensCorrectionSettings) -> Void) -> Void
     let choose: () -> Void
 
@@ -39,12 +41,56 @@ struct LensDraftWorkspace: View {
         let _ = localizationLocale
         VStack(alignment: .leading, spacing: 12) {
             LensWorkspaceLayout { identity; correctionOptions }
+                .disabled(!supportsProfileCorrection)
             Divider()
-            Text(presentation.correctionStatus)
+            defringeOptions
+            Divider()
+            Text(supportsProfileCorrection ? presentation.correctionStatus : L10n.text("仅 RAW 照片支持镜头校正。"))
                 .font(.system(size: 11)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("lens.status")
         }.frame(maxWidth: 980, alignment: .leading).padding(.horizontal, 16)
+    }
+
+    private var defringeOptions: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            defringeSlider(L10n.text("紫边数量"), value: defringeBinding(\.defringePurpleAmount),
+                           range: LensCorrectionSettings.defringeAmountRange, defaultValue: 0,
+                           identifier: "lens.defringePurpleAmount")
+            defringeSlider(L10n.text("紫边色相"), value: defringeBinding(\.defringePurpleHue),
+                           range: LensCorrectionSettings.defringeHueRange, defaultValue: 50,
+                           identifier: "lens.defringePurpleHue")
+            defringeSlider(L10n.text("绿边数量"), value: defringeBinding(\.defringeGreenAmount),
+                           range: LensCorrectionSettings.defringeAmountRange, defaultValue: 0,
+                           identifier: "lens.defringeGreenAmount")
+            defringeSlider(L10n.text("绿边色相"), value: defringeBinding(\.defringeGreenHue),
+                           range: LensCorrectionSettings.defringeHueRange, defaultValue: 50,
+                           identifier: "lens.defringeGreenHue")
+        }
+    }
+
+    private func defringeSlider(_ title: String, value: Binding<Double>,
+                                range: ClosedRange<Double>, defaultValue: Double,
+                                identifier: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 12))
+                .frame(width: 72, alignment: .leading)
+                .onTapGesture(count: 2) { value.wrappedValue = defaultValue }
+            Slider(value: value, in: range, step: 1)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(identifier)
+            Text(String(format: "%.0f", locale: L10n.locale, value.wrappedValue))
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 34, alignment: .trailing)
+        }
+    }
+
+    private func defringeBinding(_ keyPath: WritableKeyPath<LensCorrectionSettings, Double>) -> Binding<Double> {
+        Binding(get: { settings[keyPath: keyPath] }, set: { newValue in
+            update { $0[keyPath: keyPath] = newValue }
+        })
     }
 
     private var identity: some View {
