@@ -146,11 +146,34 @@ class HDRNativeInstrumentedTest {
             val original = file.readBytes()
             val output = File(root, "adjusted.jpg")
             assertThrows(CameraJPEGGainMapAdjustmentException::class.java) {
-                CameraJPEGProcessing.process(file, output, CameraJPEGOptions(adjust = true, longEdge = 32))
+                CameraJPEGProcessing.process(InstrumentationRegistry.getInstrumentation().targetContext,
+                    file, output, CameraJPEGOptions(adjust = true, longEdge = 32))
             }
             assertFalse(output.exists())
             assertArrayEquals(original, file.readBytes())
         }
+    }
+
+    /** 33 MP 相机 JPEG 缩到 4096 需约 176 MB 像素内存，超过 Java 堆增长上限的一半，但 Bitmap 像素在 native 堆。 */
+    @Test fun cameraJpegAdjustmentResizes33MegapixelSourceTo4096() {
+        val root = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "camera-jpeg-${UUID.randomUUID()}")
+        try {
+            root.mkdirs()
+            val source = File(root, "DSC00001.JPG")
+            val bitmap = Bitmap.createBitmap(7008, 4672, Bitmap.Config.ARGB_8888)
+            try {
+                bitmap.eraseColor(0xff808080.toInt())
+                source.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.JPEG, 80, it)) }
+            } finally { bitmap.recycle() }
+            val output = File(root, "adjusted.jpg")
+            val processed = CameraJPEGProcessing.process(InstrumentationRegistry.getInstrumentation().targetContext,
+                source, output, CameraJPEGOptions(adjust = true, longEdge = 4096))
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(output.path, bounds)
+            assertEquals(4096, bounds.outWidth)
+            assertEquals(2731, bounds.outHeight)
+            assertEquals(output.length(), processed.size)
+        } finally { root.deleteRecursively() }
     }
 
     @Test fun hdrToneUnitsProxyProtectionAndFinalExports() = withFixture("hdr-sample.jpg") { file, root ->

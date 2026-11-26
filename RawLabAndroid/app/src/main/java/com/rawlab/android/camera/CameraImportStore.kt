@@ -115,7 +115,8 @@ internal class CameraTransferPermit {
 
 internal class CameraImportStore(private val directory: File, private val temporary: File,
     private val media: MediaPhotoAccess, private val readCaptureDate: (File) -> CameraCaptureDate?) {
-    private var processJpeg: (File, File, CameraJPEGOptions) -> CameraProcessedFile = CameraJPEGProcessing::process
+    private var processJpeg: (File, File, CameraJPEGOptions) -> CameraProcessedFile =
+        { _, _, _ -> throw IOException("Camera JPEG processing is not configured") }
     private var verifyJpeg: (File) -> Unit = CameraJPEGProcessing::ensureAdjustmentSupported
 
     constructor(directory: File, temporary: File, media: MediaPhotoAccess,

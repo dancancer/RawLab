@@ -1,5 +1,7 @@
 package com.rawlab.android.camera
 
+import android.app.ActivityManager
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.exifinterface.media.ExifInterface
@@ -26,11 +28,11 @@ internal class CameraJPEGMemoryException(cause: Throwable? = null) :
 
 /** JPEG processing happens only after the source has been downloaded and hashed. */
 internal object CameraJPEGProcessing {
-    fun process(source: File, destination: File, options: CameraJPEGOptions): CameraProcessedFile =
-        processWithProbe(source, destination, options, ::nativeGainMapProbe)
+    fun process(context: Context, source: File, destination: File, options: CameraJPEGOptions): CameraProcessedFile =
+        processWithProbe(source, destination, options, ::nativeGainMapProbe) { systemBitmapBudget(context) }
 
     internal fun processWithProbe(source: File, destination: File, options: CameraJPEGOptions,
-        gainMapProbe: (File) -> HDRSourceInfo?): CameraProcessedFile {
+        gainMapProbe: (File) -> HDRSourceInfo?, memoryBudget: () -> Long = { Long.MAX_VALUE }): CameraProcessedFile {
         if (!options.isValid) throw IOException("Invalid incremental JPEG options")
         ensureAdjustmentSupported(source, gainMapProbe)
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -42,9 +44,9 @@ internal object CameraJPEGProcessing {
         val targetWidth = (bounds.outWidth * scale).roundToInt().coerceAtLeast(1)
         val targetHeight = (bounds.outHeight * scale).roundToInt().coerceAtLeast(1)
         val sample = sampleSize(bounds.outWidth, bounds.outHeight, requested)
-        val runtime = Runtime.getRuntime()
-        val available = runtime.maxMemory() - (runtime.totalMemory() - runtime.freeMemory())
-        if (requiredBitmapBytes(bounds.outWidth, bounds.outHeight, sample, targetWidth, targetHeight) > available / 2)
+        // minSdk 26+ 的 Bitmap 像素位于 native 堆，不计入 Java 堆上限（常见 256 MB）；按系统可用内存预检，
+        // 否则 33 MP 原图缩到 4096 需要的约 176 MB 会被误判为内存不足。
+        if (requiredBitmapBytes(bounds.outWidth, bounds.outHeight, sample, targetWidth, targetHeight) > memoryBudget())
             throw CameraJPEGMemoryException()
         val decode = BitmapFactory.Options().apply {
             // Avoid decoding needlessly large source bitmaps while keeping a final
@@ -70,6 +72,16 @@ internal object CameraJPEGProcessing {
                 } finally { if (bitmap !== decoded) bitmap.recycle() }
             } finally { if (!decoded.isRecycled) decoded.recycle() }
         } catch (error: OutOfMemoryError) { throw CameraJPEGMemoryException(error) }
+    }
+
+    /** 只占用低内存阈值之上一半的系统可用内存，给相册、预览与系统留出余量。 */
+    internal fun bitmapBudget(availableBytes: Long, thresholdBytes: Long, lowMemory: Boolean): Long =
+        if (lowMemory) 0L else (availableBytes - thresholdBytes).coerceAtLeast(0L) / 2
+
+    private fun systemBitmapBudget(context: Context): Long {
+        val manager = context.getSystemService(ActivityManager::class.java) ?: return 0L
+        val info = ActivityManager.MemoryInfo().also(manager::getMemoryInfo)
+        return bitmapBudget(info.availMem, info.threshold, info.lowMemory)
     }
 
     internal fun requiredBitmapBytes(width: Int, height: Int, sample: Int, targetWidth: Int, targetHeight: Int): Long {

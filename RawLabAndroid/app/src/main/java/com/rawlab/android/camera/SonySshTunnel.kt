@@ -543,6 +543,8 @@ internal class SonySshTunnel private constructor(
         const val DEFAULT_SSH_PORT = 22
         const val DEFAULT_FORWARD_PORT = 15740
         const val DEFAULT_TIMEOUT_MS = 10_000
+        const val DEFAULT_KEEPALIVE_MS = 15_000
+        private const val KEEPALIVE_COUNT_MAX = 3
         private const val FORWARD_TARGET_HOST = "localhost"
         private val IPV4_REGEX = Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b""")
         private val CHANNEL_SEQ = AtomicInteger(0)
@@ -564,6 +566,7 @@ internal class SonySshTunnel private constructor(
             port: Int = DEFAULT_SSH_PORT,
             rawSocketFactory: SocketFactory = SocketFactory.getDefault(),
             timeoutMs: Int = DEFAULT_TIMEOUT_MS,
+            keepAliveMs: Int = DEFAULT_KEEPALIVE_MS,
         ): SonySshTunnel {
             val expectedNormalized = normalizeSha256Fingerprint(expectedFingerprint)
                 ?: throw SshFingerprintMismatchException(expectedFingerprint, "", "unknown")
@@ -653,11 +656,12 @@ internal class SonySshTunnel private constructor(
                 throw SshFingerprintMismatchException(expectedNormalized, "", "unknown")
             }
 
-            // Clear connect/KEX socket timeout so idle PTP/IP event sockets (setSoTimeout(0)) stay open.
-            rawSocketHolder[0]?.let { raw ->
-                runCatching { raw.soTimeout = 0 }
+            // 连接/KEX 超时之后改为 SSH keepalive：空闲（PTP/IP 事件通道 setSoTimeout(0)）时每隔 keepAliveMs
+            // 发送 keepalive@openssh.com，避免相机端按空闲断开会话；连续 KEEPALIVE_COUNT_MAX 次无任何回应才判定断开。
+            runCatching {
+                session.serverAliveCountMax = KEEPALIVE_COUNT_MAX
+                session.setServerAliveInterval(keepAliveMs)
             }
-            runCatching { session.timeout = 0 }
             debugLog("SSH connect succeeded keyType=${probe.keyType}")
 
             return SonySshTunnel(address, port, session, rawSocketHolder[0], probe)

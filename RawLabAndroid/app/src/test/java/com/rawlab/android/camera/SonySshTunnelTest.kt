@@ -7,6 +7,7 @@ import org.apache.sshd.common.keyprovider.KeyPairProvider
 import org.apache.sshd.common.session.Session
 import org.apache.sshd.common.util.buffer.Buffer
 import org.apache.sshd.common.util.net.SshdSocketAddress
+import org.apache.sshd.core.CoreModuleProperties
 import org.apache.sshd.server.SshServer
 import org.apache.sshd.server.auth.UserAuth
 import org.apache.sshd.server.auth.UserAuthFactory
@@ -35,6 +36,7 @@ import java.nio.charset.StandardCharsets
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.spec.ECGenParameterSpec
+import java.time.Duration
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -57,6 +59,7 @@ class SonySshTunnelTest {
         twoStepEmptyChallenge: Boolean = false,
         authAttempts: AtomicInteger = AtomicInteger(0),
         forwardedHosts: CopyOnWriteArrayList<String> = CopyOnWriteArrayList(),
+        configure: (SshServer) -> Unit = {},
     ): Triple<SshServer, Int, String> {
         val server = SshServer.setUpDefaultServer()
         server.host = "127.0.0.1"
@@ -167,6 +170,7 @@ class SonySshTunnelTest {
                 null
             }
         }
+        configure(server)
         server.start()
         val fingerprint = KeyUtils.getFingerPrint(keyPair.public)
         return Triple(server, server.port, fingerprint)
@@ -352,6 +356,40 @@ class SonySshTunnelTest {
                 // Expected
             }
         } finally {
+            server.stop(true)
+        }
+    }
+
+    /** 相机 SSH 服务端按空闲时长断开会话；隧道必须在无业务流量时发送 keepalive 维持会话。 */
+    @Test
+    fun idleTunnelSendsKeepAliveSoServerIdleTimeoutDoesNotDropSession() {
+        val (server, sshPort, expectedFingerprint) = startTestSshServer(configure = {
+            CoreModuleProperties.IDLE_TIMEOUT.set(it, Duration.ofMillis(1_500))
+        })
+        val backend = ServerSocket(0, 1)
+        val worker = Thread {
+            runCatching { backend.accept().use { client -> client.getOutputStream().apply { write(42); flush() } } }
+        }.apply { start() }
+        try {
+            SonySshTunnel.connect(
+                address = InetAddress.getLoopbackAddress(),
+                username = "sonyuser",
+                password = "pass1234",
+                expectedFingerprint = expectedFingerprint,
+                port = sshPort,
+                timeoutMs = 3_000,
+                keepAliveMs = 300,
+            ).use { tunnel ->
+                Thread.sleep(4_000)
+                tunnel.socketFactory(setOf(backend.localPort)).createSocket().use { sock ->
+                    sock.connect(InetSocketAddress(InetAddress.getLoopbackAddress(), backend.localPort), 2_000)
+                    sock.soTimeout = 2_000
+                    assertEquals(42, sock.getInputStream().read())
+                }
+            }
+        } finally {
+            backend.close()
+            worker.join(3_000)
             server.stop(true)
         }
     }
