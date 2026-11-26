@@ -229,6 +229,7 @@ public sealed class EditWorkflowTests
                     case EditorAdjustmentTool.Lens: expected = expected with { Lens = new() }; break;
                     case EditorAdjustmentTool.Clarity: expected = expected with { Atmosphere = expected.Atmosphere! with { Clarity = 0 } }; break;
                     case EditorAdjustmentTool.Dehaze: expected = expected with { Atmosphere = expected.Atmosphere! with { Dehaze = 0 } }; break;
+                    case EditorAdjustmentTool.Texture: expected = expected with { Atmosphere = expected.Atmosphere! with { Texture = 0 } }; break;
                     case EditorAdjustmentTool.BlackPoint: expected = expected with { ToneControls = expected.ToneControls! with { BlackPoint = 0 } }; break;
                     case EditorAdjustmentTool.WhitePoint: expected = expected with { ToneControls = expected.ToneControls! with { WhitePoint = 0 } }; break;
                     case EditorAdjustmentTool.Vibrance: expected = expected with { ToneControls = expected.ToneControls! with { Vibrance = 0 } }; break;
