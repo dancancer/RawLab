@@ -295,6 +295,76 @@ class WindowsSchedulingTests(unittest.TestCase):
                 self.assertEqual(values["models"], "true")
 
 
+class DescriptionEditTests(unittest.TestCase):
+    """A title/body edit run is the newest run on the head, so it must restate the head's real verdict."""
+
+    @staticmethod
+    def workflow_run(run_id, status, *jobs):
+        return {"id": run_id, "status": status}, [{"name": name, "status": job_status, "conclusion": conclusion}
+                                                  for name, job_status, conclusion in jobs]
+
+    def reference(self, *runs, own_id=100):
+        jobs = {run["id"]: run_jobs for run, run_jobs in runs}
+        return selection.edit_reference([run for run, _ in runs], jobs.__getitem__, own_id)
+
+    SELECTED = (selection.SELECT_JOB, "completed", "success")
+    EDIT = (selection.EDIT_JOB, "completed", "success")
+
+    def test_only_title_and_body_edits_reuse_the_head_result(self):
+        self.assertTrue(selection.is_description_edit("pull_request", pull(action="edited", changes={"body": {"from": ""}})))
+        self.assertFalse(selection.is_description_edit(
+            "pull_request", pull(action="edited", changes={"base": {"ref": {"from": "development"}}})))
+        self.assertFalse(selection.is_description_edit("pull_request", pull(action="synchronize")))
+        self.assertFalse(selection.is_description_edit("push", {}))
+
+    def test_edit_after_a_passing_run_reports_that_result(self):
+        for conclusion in ("success", "failure", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                automatic = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", conclusion))
+                earlier_edit = self.workflow_run(11, "completed", self.EDIT, (selection.RESULT_JOB, "completed", "success"))
+                pre_change_edit = self.workflow_run(12, "completed", (selection.SELECT_JOB, "completed", "skipped"))
+                self.assertEqual(self.reference(automatic, earlier_edit, pre_change_edit), conclusion)
+
+    def test_edit_waits_while_the_automatic_run_is_unfinished(self):
+        not_started = self.workflow_run(10, "queued")
+        running = self.workflow_run(10, "in_progress", self.SELECTED, ("Android models", "in_progress", None))
+        for automatic in (not_started, running):
+            with self.subTest(jobs=len(automatic[1])):
+                self.assertIsNone(self.reference(automatic))
+
+    def test_newest_automatic_run_decides_even_after_an_older_pass(self):
+        older_pass = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        base_change = self.workflow_run(20, "in_progress", self.SELECTED)
+        self.assertIsNone(self.reference(older_pass, base_change))
+        failed = self.workflow_run(20, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "failure"))
+        self.assertEqual(self.reference(older_pass, failed), "failure")
+
+    def test_missing_or_never_reported_results_are_not_a_pass(self):
+        draft_run = self.workflow_run(10, "completed", self.SELECTED)
+        self.assertEqual(self.reference(draft_run), "missing")
+        self.assertEqual(self.reference(), "missing")
+        cancelled_before_start = self.workflow_run(11, "completed")
+        self.assertEqual(self.reference(cancelled_before_start), "missing")
+        later_run = self.workflow_run(150, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        self.assertEqual(self.reference(later_run), "missing")
+
+    def needs(self, reference, **results):
+        outputs = {platform: "false" for platform in selection.PLATFORMS}
+        outputs.update(mode="edit", contracts="false", reference=reference)
+        jobs = {"changes": "success", "contracts": "skipped", "windows-batch-selection": "skipped",
+                **{platform: "skipped" for platform in selection.PLATFORMS}, **results}
+        return {job: {"result": result, **({"outputs": outputs} if job == "changes" else {})}
+                for job, result in jobs.items()}
+
+    def test_edit_gate_passes_only_on_the_reused_success(self):
+        self.assertEqual(selection.verify(self.needs("success")), [])
+        for reference in ("failure", "cancelled", "missing", "still pending", ""):
+            with self.subTest(reference=reference):
+                self.assertTrue(selection.verify(self.needs(reference)))
+        self.assertTrue(selection.verify(self.needs("success", android="success")))
+        self.assertTrue(selection.verify(self.needs("success", changes="failure")))
+
+
 class VerifyTests(unittest.TestCase):
     def needs(self, selected, results, changes="success", contracts="success"):
         outputs = {platform: "true" if platform in selected else "false" for platform in selection.PLATFORMS}

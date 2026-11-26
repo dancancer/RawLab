@@ -35,13 +35,14 @@ env:
 
 jobs:
   changes:
-    name: Select affected platforms
-    if: github.event_name != 'pull_request' || github.event.action != 'edited' || github.event.changes.base != null
+    # A title/body edit run is the newest pull_request run on the head, which is what the
+    # required check reads, so it waits for the head's automatic CI result and reports it again.
+    name: ${{ github.event_name == 'pull_request' && github.event.action == 'edited' && github.event.changes.base == null && 'Reuse the CI result of this head' || 'Select affected platforms' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 180
     permissions:
       contents: read
-      # Pushes compare with the last successful push run.
+      # Pushes compare with the last successful push run; title/body edits read the head's automatic run.
       actions: read
     outputs:
       macos: ${{ steps.select.outputs.macos }}
@@ -59,6 +60,7 @@ jobs:
       build: ${{ steps.select.outputs.build }}
       native: ${{ steps.select.outputs.native }}
       macos_matrix: ${{ steps.select.outputs.macos_matrix }}
+      reference: ${{ steps.select.outputs.reference }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -1255,7 +1257,7 @@ jobs:
   result:
     name: ${{ github.event_name == 'workflow_dispatch' && format('Manual verification ({0}, {1})', inputs.platform, inputs.checks) || 'CI result' }}
     needs: [changes, contracts, macos, windows, windows-batch-selection, android, ios]
-    # Drafts and non-base PR edits defer/skip platform checks, so their result stays skipped instead of reporting a pass.
+    # Drafts defer platform checks, so their result stays skipped instead of reporting a pass.
     if: ${{ !cancelled() && needs.changes.result != 'skipped' && needs.changes.outputs.draft != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5

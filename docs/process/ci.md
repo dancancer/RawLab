@@ -36,6 +36,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 | --- | --- |
 | Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
+| PR title/body edit | No checks; **CI result** restates the head's latest automatic result (see [Safety and Results](#safety-and-results)) |
 | External fork PR | Contracts and affected-platform models on GitHub-hosted runners, including macOS/iOS; external branch names never request a full cold gate (see [External fork pull requests](#external-fork-pull-requests)) |
 | Release or hotfix PR | Every platform, complete non-UI coverage and cold native dependencies |
 | Manual run | Exactly the requested platform and check group; a separately named result |
@@ -359,8 +360,18 @@ manual runs include `inputs.platform` and `inputs.checks` in their concurrency
 group so concurrent manual runs for different targets/suites on the same branch
 do not cancel one another or automatic PR/push checks. Pull request `edited`
 events re-evaluate checks only when `base` changes; title/body edits use an
-isolated `-noop` concurrency group and skip job execution without cancelling
-active checks.
+isolated `-noop` concurrency group and do not cancel active checks.
+
+A title/body edit still creates a `pull_request` run on the same head. GitHub was
+observed (#691, #698) to read the required **CI result** from the newest such run,
+so an edit run without that check blocks a PR whose head already passed. An edit
+run therefore selects no checks; its selection job (named *Reuse the CI result of this head*) finds the
+newest earlier automatic run for this PR and head, waits up to 170 minutes for its
+**CI result**, and the edit run's **CI result** passes only if that one passed.
+A failed, cancelled, missing or still-unfinished result fails it, so an edit
+cannot turn an unverified head green; edits on drafts stay skipped. A newer push
+or base change supersedes the edit run. If the wait runs out, push again or edit
+again after the automatic run finishes.
 
 The separate [PR cache cleanup](../../.github/workflows/pr-cache-cleanup.yml)
 workflow runs when a same-repository PR closes (external fork PRs never save

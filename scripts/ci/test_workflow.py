@@ -14,7 +14,7 @@ import yaml
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from affected_platforms import PLATFORMS, macos_matrix, windows_runner
+from affected_platforms import EDIT_JOB, PLATFORMS, SELECT_JOB, macos_matrix, windows_runner
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -749,7 +749,11 @@ class WorkflowContractTests(unittest.TestCase):
         pr_cfg = self.workflow["on"]["pull_request"]
         self.assertIn("edited", pr_cfg["types"])
 
-        changes_if = _strip_expr(self.workflow["jobs"]["changes"]["if"])
+        # Title/body edits run the selection job, which reuses the head's automatic result
+        # under its own name instead of selecting checks (see affected_platforms.edit_reference).
+        self.assertNotIn("if", self.workflow["jobs"]["changes"])
+        changes_name = _strip_expr(self.workflow["jobs"]["changes"]["name"])
+        self.assertEqual(self.workflow["jobs"]["changes"]["outputs"]["reference"], "${{ steps.select.outputs.reference }}")
         result_if = _strip_expr(self.workflow["jobs"]["result"]["if"])
         group_tmpl = self.workflow["concurrency"]["group"]
 
@@ -799,11 +803,9 @@ class WorkflowContractTests(unittest.TestCase):
             "inputs": {"platform": "all", "checks": "models"},
         }
 
-        self.assertFalse(_gha_truthy(_eval_gha_expr(changes_if, title_edit_ctx)))
-        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, base_edit_ctx)))
-        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, sync_ctx)))
-        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, push_ctx)))
-        self.assertTrue(_gha_truthy(_eval_gha_expr(changes_if, dispatch_ctx)))
+        self.assertEqual(_eval_gha_expr(changes_name, title_edit_ctx), EDIT_JOB)
+        for ctx in (base_edit_ctx, sync_ctx, push_ctx, dispatch_ctx):
+            self.assertEqual(_eval_gha_expr(changes_name, ctx), SELECT_JOB)
 
         self.assertNotEqual(
             _eval_gha_template(group_tmpl, title_edit_ctx),
