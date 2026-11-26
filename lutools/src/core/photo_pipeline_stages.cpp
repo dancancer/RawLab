@@ -305,8 +305,7 @@ void applyPostLookStages(
     const ColorGradingOptions& colorGrading,
     const std::array<ToneCurve, 3>& channels,
     bool basicV3,
-    bool applyHslAndGrading,
-    const BwMixerOptions* repeatBwAfterBlackWhite
+    bool applyHslAndGrading
 ) {
     const auto& customCurve = params.customCurve;
     const ToneCurveParametric parametric(params.parametricCurve);
@@ -318,13 +317,12 @@ void applyPostLookStages(
     const BasicBlackWhiteV3Prepared bwV3(basicV3 ? toneControls : ToneControlsOptions{});
     const bool bwLegacyActive = !basicV3 && (toneControls.blackPoint != 0.0f || toneControls.whitePoint != 0.0f);
     const bool bwMixerActive = params.bw.active();
-    const bool repeatBwActive = repeatBwAfterBlackWhite && repeatBwAfterBlackWhite->active();
     const bool vibranceActive = toneControls.vibrance != 0.0f;
     const bool hslActive = applyHslAndGrading && hsl.active();
     const bool pointColorActive = applyHslAndGrading && params.pointColor.active();
     const bool selectiveColorActive = applyHslAndGrading && params.selectiveColor.active();
     const bool gradingActive = applyHslAndGrading && colorGrading.active();
-    if (!bwMixerActive && !bwV3.active && !bwLegacyActive && !repeatBwActive && !toneActive && !vibranceActive &&
+    if (!bwMixerActive && !bwV3.active && !bwLegacyActive && !toneActive && !vibranceActive &&
         !hslActive && !pointColorActive && !selectiveColorActive && !gradingActive) {
         return;
     }
@@ -403,7 +401,6 @@ void applyPostLookStages(
             } else if (bwLegacyActive) {
                 each([&](RGB& p) { p = applyBlackWhite(p, toneControls); });
             }
-            if (repeatBwActive) each([&](RGB& p) { p = applyBwMixerPixel(p, *repeatBwAfterBlackWhite); });
             if (toneActive) each(applyTone);
             if (vibranceActive) {
                 if (basicV3) each([&](RGB& p) { p = basicVibranceV3(p, toneControls.vibrance); });
@@ -528,7 +525,7 @@ RenderStatus runCpuStageChain(ImageData& image, RenderParams& params, const CpuS
     }
     if (guide && !guideNeedsPostLook) return RenderStatus::Ok;
     applyPostLookStages(image, params, params.toneControls, params.hsl, params.colorGrading,
-        params.channelCurves, pass.basicV3, !pass.stopBeforeHsl, pass.repeatBwAfterBlackWhite);
+        params.channelCurves, pass.basicV3, !pass.stopBeforeHsl);
     if (pass.stopBeforeHsl) return RenderStatus::Ok;
 
     if (!guide) {

@@ -1811,7 +1811,6 @@ RenderStatus Pipeline::processPreviewRoi(
     roiPass.lookConfig.mode = GpuMode::Off;
     roiPass.analysisWidth = canvasW;
     roiPass.analysisHeight = canvasH;
-    roiPass.repeatBwAfterBlackWhite = &local.bw;
     roiPass.basicField = &basicField;
     roiPass.dehaze = &dehazeState;
     roiPass.clarity = &clarityField;
@@ -1853,15 +1852,10 @@ RenderStatus Pipeline::processPreviewRoi(
             ColorConverter().convertImage(guideImage, gSpace, ColorSpace::sRGB);
         }
 
-        // 现状：引导图的主曲线、参数曲线、明度模式与第二次黑白混合取自调用方参数而非会话状态，
-        // 两者只在旧版 sony2fuji_process 入口下不同；保持 ROI 输出逐字节不变，是否统一待单独决定。
+        // 链条会改写传入的参数（Basic 影调后归零高光/阴影），引导图用副本运行。
         RenderParams guideParams = local;
-        guideParams.customCurve = params.customCurve;
-        guideParams.parametricCurve = params.parametricCurve;
-        guideParams.curveApplyToLuminosity = params.curveApplyToLuminosity;
         CpuStagePass guidePass = roiPass;
         guidePass.kind = CpuStagePass::Kind::RoiGuide;
-        guidePass.repeatBwAfterBlackWhite = &params.bw;
         guidePass.basicField = nullptr;
         guidePass.basicFieldOut = &basicField;
         status = runCpuStageChain(guideImage, guideParams, guidePass);
