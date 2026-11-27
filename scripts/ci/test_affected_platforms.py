@@ -790,6 +790,21 @@ class VerifyTests(unittest.TestCase):
                 needs["windows-batch-selection"]["result"] = result
                 self.assertTrue(selection.verify(needs))
 
+    def test_d3d11_build_requires_the_windows_job_to_succeed(self):
+        results = dict.fromkeys(selection.PLATFORMS, "skipped") | {"windows": "success"}
+        needs = self.needs({"windows"}, results)
+        needs["changes"]["outputs"]["d3d11_build"] = "true"
+        self.assertEqual(selection.verify(needs), [])
+        for result in ("failure", "cancelled", "skipped", None):
+            with self.subTest(result=result):
+                needs["windows"]["result"] = result
+                errors = selection.verify(needs)
+                self.assertTrue(any("D3D11 build was selected" in error for error in errors), errors)
+        needs["windows"]["result"] = "skipped"
+        needs["changes"]["outputs"]["windows"] = "false"
+        errors = selection.verify(needs)
+        self.assertTrue(any("D3D11 build was selected" in error for error in errors), errors)
+
     def test_unselected_batch_selection_cannot_report_success(self):
         needs = self.needs(set(), dict.fromkeys(selection.PLATFORMS, "skipped"))
         needs["windows-batch-selection"]["result"] = "success"
@@ -828,6 +843,68 @@ class VerifyTests(unittest.TestCase):
         needs["changes"]["outputs"]["windows"] = "true"
         needs["windows"]["result"] = "success"
         self.assertTrue(selection.verify(needs))
+
+
+class D3D11BuildSelectionTests(unittest.TestCase):
+    def outputs(self, event_name, event, changed=None, diff_error=None):
+        with tempfile.TemporaryDirectory() as directory:
+            event_path, output_path = Path(directory, "event.json"), Path(directory, "output")
+            event_path.write_text(json.dumps(event))
+            env = {"GITHUB_EVENT_NAME": event_name, "GITHUB_EVENT_PATH": str(event_path),
+                   "GITHUB_OUTPUT": str(output_path), "GITHUB_SHA": "m"}
+
+            def changed_files(base):
+                if diff_error:
+                    raise diff_error
+                return list(changed or [])
+
+            saved = {name: getattr(selection, name) for name in ("git_changed_files", "github_last_success")}
+            saved_env, argv = {key: os.environ.get(key) for key in env}, sys.argv
+            selection.git_changed_files, selection.github_last_success = changed_files, lambda event: "base"
+            sys.argv = ["affected_platforms.py", "select"]
+            os.environ.update(env)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(selection.main(), 0)
+            finally:
+                for name, value in saved.items():
+                    setattr(selection, name, value)
+                sys.argv = argv
+                for key, value in saved_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            return dict(line.split("=", 1) for line in output_path.read_text().splitlines())
+
+    def test_automatic_selection_tracks_only_standalone_d3d11_inputs(self):
+        inputs = {
+            "lutools/src/core/photo_effects.cpp": True,
+            "lutools/src/gpu/d3d11_photo.cpp": True,
+            "lutools/include/sony2fuji/common.h": True,
+            "lutools/third_party/nlohmann/json.hpp": True,
+            "lutools/tests/d3d11_shader_tests.cpp": True,
+            "RawLabWindows/tests/native/d3d11/CMakeLists.txt": True,
+            "RawLabWindows/tests/native/d3d11/run-regressions.ps1": True,
+            "RawLabWindows/src/Rendering/Renderer.cs": False,
+            "lutools/src/ai/directml_device.cpp": False,
+            "Shared/specs/adjustments.json": False,
+            "docs/process/ci.md": False,
+        }
+        for event_name, event in (("pull_request", pull(action="synchronize")), ("push", {})):
+            for path, expected in inputs.items():
+                with self.subTest(event=event_name, path=path):
+                    values = self.outputs(event_name, event, changed=[path])
+                    self.assertEqual(values["d3d11_build"], str(expected).lower())
+                    if expected:
+                        self.assertEqual(values["windows"], "true")
+
+    def test_diff_failure_builds_conservatively_and_manual_dispatch_does_not_add_a_build(self):
+        automatic = self.outputs("pull_request", pull(action="synchronize"),
+                                 diff_error=subprocess.CalledProcessError(1, "git"))
+        self.assertEqual((automatic["d3d11_build"], automatic["windows"]), ("true", "true"))
+        manual = self.outputs("workflow_dispatch", {"inputs": {"platform": "windows", "checks": "models"}})
+        self.assertEqual((manual["d3d11_build"], manual["windows"]), ("false", "true"))
 
 
 if __name__ == "__main__":
