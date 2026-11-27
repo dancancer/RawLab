@@ -57,6 +57,8 @@ SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".g
 # usage-SDK preparation). lutools/platform/ios/ is iOS framework glue; the iOS job covers it.
 CORE_INPUT_FILES = {
     "Shared/assets-manifest.json", "scripts/assets/prepare.py", "scripts/ci/test_abi_layout.py",
+    # hdr_display_mapping checks these Metal parity goldens bit-exact against the core.
+    "Shared/fixtures/hdr-display-goldens-v1.json",
     "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt", "scripts/ci/apple-sdk-env.sh",
     "scripts/ci/prepare-rust.sh", "scripts/ci/native_cache.py",
     "RawLabMac/build.sh", "RawLabMac/build-env.sh", "RawLabMac/release-config.sh",

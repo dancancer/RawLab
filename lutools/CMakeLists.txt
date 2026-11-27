@@ -808,6 +808,8 @@ if(BUILD_TESTING AND NOT IOS AND NOT ANDROID)
     rawlab_add_test(
         NAME hdr_display_mapping
         SOURCES tests/hdr_display_mapping_tests.cpp
+        INCLUDES third_party
+        DEFINES SONY2FUJI_HDR_DISPLAY_GOLDENS="${CMAKE_CURRENT_SOURCE_DIR}/../Shared/fixtures/hdr-display-goldens-v1.json"
         LIBRARIES sony2fuji_core
         LABELS hdr ci_macos_arm64 ci_macos_x86_64 ci_windows
     )

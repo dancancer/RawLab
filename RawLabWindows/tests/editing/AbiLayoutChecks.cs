@@ -242,6 +242,62 @@ internal static class AbiLayoutChecks
         "rawlab_thumbnail",
     };
 
+    // 整套镜像某个 C ABI 枚举的 C# 枚举：按名称双向核对 fixture 的 enums 段。
+    // C 取值名去掉 CPrefix 后转 PascalCase 即 C# 成员名（Renamed 记录例外）；
+    // fixture 新增取值而 C# 未跟上、C# 多出成员、取值不同都会报错。
+    // ClientOnly 是不来自核心的客户端成员。
+    private sealed record EnumTypeMirror(
+        string CEnum,
+        Type ClrType,
+        string CPrefix,
+        IReadOnlyDictionary<string, string>? Renamed = null,
+        IReadOnlyCollection<string>? ClientOnly = null);
+
+    // 只镜像部分取值的命名常量或映射：逐个核对 C 取值名存在于 fixture 且数值相同。
+    private sealed record ConstantMirror(string CName, long Value, string Source);
+
+    private static ConstantMirror Mirror(string cName, long value, [CallerArgumentExpression("value")] string source = "")
+        => new(cName, value, source);
+
+    private static readonly EnumTypeMirror[] EnumTypeMirrors =
+    {
+        new("sony2fuji_unsupported_reason", typeof(Native.UnsupportedReason), "SONY2FUJI_UNSUPPORTED_"),
+        new("sony2fuji_gpu_fallback_reason", typeof(Native.GpuFallbackReason), "SONY2FUJI_GPU_FALLBACK_"),
+        new("sony2fuji_wb_probe_availability", typeof(Native.WbProbeAvailability), "SONY2FUJI_WB_PROBE_"),
+        new("sony2fuji_inspection_overlay_mode", typeof(Native.InspectionOverlayMode), "SONY2FUJI_INSPECTION_OVERLAY_"),
+        new("sony2fuji_dcp_error", typeof(DcpErrorReason), "SONY2FUJI_DCP_ERROR_",
+            Renamed: new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["SONY2FUJI_DCP_ERROR_INVALID_TONE_CURVE"] = nameof(DcpErrorReason.InvalidTone),
+            }),
+        new("sony2fuji_hsl_probe_availability", typeof(HslTargetAvailability), "SONY2FUJI_HSL_PROBE_",
+            ClientOnly: new[] { nameof(HslTargetAvailability.Failed) }),
+        new("sony2fuji_look_format", typeof(LookFormat), "SONY2FUJI_LOOK_"),
+        new("sony2fuji_x3f_mode", typeof(X3fMode), "SONY2FUJI_X3F_"),
+        new("sony2fuji_curve_mode", typeof(ToneCurveMode), "SONY2FUJI_CURVE_"),
+        new("sony2fuji_intent", typeof(HDRIntent), "SONY2FUJI_INTENT_"),
+    };
+
+    private static readonly ConstantMirror[] ConstantMirrors =
+    {
+        Mirror("SONY2FUJI_STATUS_OK", Native.StatusOk),
+        Mirror("SONY2FUJI_STATUS_INVALID_ARGUMENT", Native.StatusInvalidArgument),
+        Mirror("SONY2FUJI_STATUS_UNSUPPORTED", Native.StatusUnsupported),
+        Mirror("SONY2FUJI_STATUS_IO_ERROR", Native.StatusIoError),
+        Mirror("SONY2FUJI_STATUS_OUT_OF_MEMORY", Native.StatusOutOfMemory),
+        Mirror("SONY2FUJI_STATUS_CANCELLED", Native.StatusCancelled),
+        Mirror("SONY2FUJI_STATUS_OK", HDRNative.StatusOk),
+        Mirror("SONY2FUJI_STATUS_UNSUPPORTED", HDRNative.StatusUnsupported),
+        Mirror("SONY2FUJI_STATUS_CANCELLED", HDRNative.StatusCancelled),
+        Mirror("SONY2FUJI_PIXEL_RGBA8", Native.PixelFormatRgba8),
+        Mirror("SONY2FUJI_PIXEL_BGRA8", Native.PixelFormatBgra8),
+        Mirror("SONY2FUJI_HDR_DISPLAY_FALSE_COLOR", HDRNative.DisplayFalseColor),
+        Mirror("SONY2FUJI_HDR_DISPLAY_BGRA8_SRGB", HDRNative.DisplayBgra8Srgb),
+        Mirror("SONY2FUJI_OUTPUT_JPEG", ExportFormat.Jpeg.NativeValue()),
+        Mirror("SONY2FUJI_OUTPUT_PNG", ExportFormat.Png.NativeValue()),
+        Mirror("SONY2FUJI_OUTPUT_DNG", ExportFormat.RenderedDng.NativeValue()),
+    };
+
     private static readonly Dictionary<string, StructMapping> Mappings = new(StringComparer.Ordinal)
     {
         ["sony2fuji_blob"] = new(
@@ -1445,6 +1501,7 @@ internal static class AbiLayoutChecks
         }
 
         var boundFunctionCount = ReconcileNativeBindings(root, errors);
+        var mirroredEnumValueCount = ReconcileEnumMirrors(root, errors);
 
         if (errors.Count > 0)
         {
@@ -1452,6 +1509,107 @@ internal static class AbiLayoutChecks
         }
 
         Console.WriteLine($"PASS: Windows Native.cs ABI layout matches {Mappings.Count} C struct definitions ({cSizes.Count} total in fixture) and {boundFunctionCount} [DllImport] bindings");
+        Console.WriteLine($"PASS: Windows mirrors of C ABI enums match the fixture ({EnumTypeMirrors.Length} C# enums, {ConstantMirrors.Length} constants, {mirroredEnumValueCount} values compared)");
+    }
+
+    private static string PascalCase(string upperSnake) => string.Concat(
+        upperSnake.Split('_', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part[..1] + part[1..].ToLowerInvariant()));
+
+    private static int ReconcileEnumMirrors(JsonElement root, List<string> errors)
+    {
+        var enumSizes = new Dictionary<string, int>(StringComparer.Ordinal);
+        var enumValues = new Dictionary<string, List<(string Name, long Value)>>(StringComparer.Ordinal);
+        var valueByName = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var entry in root.GetProperty("enums").EnumerateArray())
+        {
+            var cEnum = entry.GetProperty("enum").GetString()
+                ?? throw new InvalidDataException("Missing enum name in ABI layout fixture");
+            enumSizes[cEnum] = entry.GetProperty("size").GetInt32();
+            var values = new List<(string Name, long Value)>();
+            foreach (var item in entry.GetProperty("values").EnumerateArray())
+            {
+                var name = item.GetProperty("name").GetString()
+                    ?? throw new InvalidDataException($"Missing enumerator name in {cEnum}");
+                var value = item.GetProperty("value").GetInt64();
+                values.Add((name, value));
+                valueByName[name] = value;
+            }
+            enumValues[cEnum] = values;
+        }
+
+        var compared = 0;
+        foreach (var mirror in EnumTypeMirrors)
+        {
+            var label = $"{mirror.CEnum} -> {mirror.ClrType.Name}";
+            if (!enumValues.TryGetValue(mirror.CEnum, out var cValues))
+            {
+                errors.Add($"{label}: C enum absent from abi-layout-v1.json enums");
+                continue;
+            }
+            var underlyingSize = Marshal.SizeOf(Enum.GetUnderlyingType(mirror.ClrType));
+            if (underlyingSize != enumSizes[mirror.CEnum])
+            {
+                errors.Add($"{label}: C size={enumSizes[mirror.CEnum]}, C# underlying size={underlyingSize}");
+            }
+
+            var clrMembers = Enum.GetNames(mirror.ClrType).ToDictionary(
+                name => name,
+                name => Convert.ToInt64(Enum.Parse(mirror.ClrType, name)),
+                StringComparer.Ordinal);
+            var matched = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var (cName, cValue) in cValues)
+            {
+                if (!cName.StartsWith(mirror.CPrefix, StringComparison.Ordinal))
+                {
+                    errors.Add($"{label}: {cName} lacks the expected prefix {mirror.CPrefix}");
+                    continue;
+                }
+                var clrName = mirror.Renamed is { } renamed && renamed.TryGetValue(cName, out var alias)
+                    ? alias
+                    : PascalCase(cName[mirror.CPrefix.Length..]);
+                if (!clrMembers.TryGetValue(clrName, out var clrValue))
+                {
+                    errors.Add($"{label}: fixture value {cName}={cValue} has no C# member {mirror.ClrType.Name}.{clrName}");
+                    continue;
+                }
+                matched.Add(clrName);
+                compared++;
+                if (clrValue != cValue)
+                {
+                    errors.Add($"{label}: {cName}={cValue} but {mirror.ClrType.Name}.{clrName}={clrValue}");
+                }
+            }
+            var clientOnly = mirror.ClientOnly ?? Array.Empty<string>();
+            foreach (var (clrName, clrValue) in clrMembers)
+            {
+                if (matched.Contains(clrName)) continue;
+                if (clientOnly.Contains(clrName))
+                {
+                    if (cValues.Any(item => item.Value == clrValue))
+                    {
+                        errors.Add($"{label}: client-only member {mirror.ClrType.Name}.{clrName}={clrValue} collides with a fixture value");
+                    }
+                    continue;
+                }
+                errors.Add($"{label}: C# member {mirror.ClrType.Name}.{clrName}={clrValue} has no fixture counterpart");
+            }
+        }
+
+        foreach (var mirror in ConstantMirrors)
+        {
+            if (!valueByName.TryGetValue(mirror.CName, out var cValue))
+            {
+                errors.Add($"{mirror.Source}: mirrors {mirror.CName}, which is absent from abi-layout-v1.json enums");
+                continue;
+            }
+            compared++;
+            if (mirror.Value != cValue)
+            {
+                errors.Add($"{mirror.Source}={mirror.Value} but fixture {mirror.CName}={cValue}");
+            }
+        }
+        return compared;
     }
 
     private static int ReconcileNativeBindings(JsonElement root, List<string> errors)

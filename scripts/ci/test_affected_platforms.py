@@ -630,6 +630,7 @@ class CoreCtestSelectionTests(unittest.TestCase):
             "lutools/docs/edit-json-v3.schema.json", "lutools/x3f-bridge/Cargo.lock", "lutools/lutprep/dcp.py",
             "lutools/requirements-lutprep.txt", "lutools/third_party/lensfun/README.md",
             "Shared/BundledLooks/HDR/HDR Silver.cube", "Shared/assets-manifest.json", "scripts/assets/prepare.py",
+            "Shared/fixtures/hdr-display-goldens-v1.json",
             "scripts/ci/test_abi_layout.py", "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt",
             "scripts/ci/apple-sdk-env.sh", "scripts/ci/prepare-rust.sh", "scripts/ci/native_cache.py",
             "RawLabMac/build.sh", "RawLabMac/build-env.sh", "RawLabMac/release-config.sh",
