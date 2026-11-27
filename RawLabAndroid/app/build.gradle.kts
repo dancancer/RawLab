@@ -200,9 +200,6 @@ android {
     sourceSets["main"].assets.srcDir(generatedAssets)
     sourceSets["debug"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Debug"))
     sourceSets["release"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Release"))
-    // 依赖许可清单只进 APK 的 assets（debug 与 release 的许可对话框都显示），由下方 merge*Assets 依赖生成；
-    // JVM 单元测试不合并 assets，不会触发它的依赖与 POM 解析。
-    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/libraryNotices"))
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging {
         resources.excludes += listOf(
@@ -311,11 +308,19 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets) }
-// Native archives carry Rust and decoder notices; package the notices from the same ABI build,
-// plus the library list generated from the release runtime classpath.
+// Native archives carry Rust and decoder notices; package the notices from the same ABI build.
 for (variant in listOf("Debug", "Release")) {
     tasks.matching { it.name == "merge${variant}Assets" }.configureEach {
-        dependsOn("externalNativeBuild$variant", "generateLibraryNotices")
+        dependsOn("externalNativeBuild$variant")
+    }
+}
+// 依赖许可清单作为生成的 assets 源挂到每个应用变体：debug 与 release 的许可对话框都显示它，
+// 读 assets 源的任务（合并、lint）都由 AGP 带上对生成任务的依赖；JVM 单元测试不读 assets，不触发它。
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(tasks.named("generateLibraryNotices")) { task ->
+            task.extensions.getByName("outputDirectory") as DirectoryProperty
+        }
     }
 }
 tasks.matching {
