@@ -207,4 +207,14 @@ public partial class MainWindow
     internal void HandleExternalPresetsFileChangeForTests() => HandleExternalPresetsFileChange();
     internal void HandleExternalEditsFileChangeForTests() => HandleExternalEditsFileChange();
     internal EditedPhotoPreviews? PhotoPreviewsForTests() => PhotoPreviews();
+    internal bool CanRemoveDownloadedAIModelForTests => CanRemoveDownloadedAIModel;
+    internal bool TryRemoveDownloadedAIModelForTests() => RemoveDownloadedAIModelCore();
+    internal void SetAIModelManagerForTests(AIModelPackageManager manager)
+    {
+        DetachAIModelManager(aiModelManager);
+        aiModelManager.CancelDownload();
+        aiModelManager = manager;
+        AttachAIModelManager(aiModelManager);
+        RefreshControls();
+    }
 }

@@ -8,6 +8,7 @@ internal sealed class AIModelPackageManager
 {
     private readonly object gate = new();
     private readonly Func<bool> isRuntimeSupported;
+    private readonly Func<bool> isHardwareAvailable;
     private readonly Func<string?> overrideProvider;
     private readonly Func<string?> bundledProvider;
     private readonly Action<Action> dispatch;
@@ -29,12 +30,14 @@ internal sealed class AIModelPackageManager
     internal AIModelPackageManager(
         AIModelPackageStore store,
         Func<bool> isRuntimeSupported,
+        Func<bool>? isHardwareAvailable = null,
         Func<string?>? overrideProvider = null,
         Func<string?>? bundledProvider = null,
         Action<Action>? dispatch = null)
     {
         Store = store;
         this.isRuntimeSupported = isRuntimeSupported;
+        this.isHardwareAvailable = isHardwareAvailable ?? (() => true);
         this.overrideProvider = overrideProvider ?? (() => null);
         this.bundledProvider = bundledProvider ?? (() => null);
         this.dispatch = dispatch ?? (action => action());
@@ -59,24 +62,47 @@ internal sealed class AIModelPackageManager
     /// </summary>
     internal void StartDownload()
     {
-        AIModelPackageDescriptor descriptor;
-        CancellationTokenSource cancellation;
-        TaskCompletionSource completion;
-        bool wasInstalled;
-        AIModelPackageState initialState;
+        AIModelPackageDescriptor? maybeDescriptor = null;
+        CancellationTokenSource? maybeCancellation = null;
+        TaskCompletionSource? maybeCompletion = null;
+        var wasInstalled = false;
+        AIModelPackageState? initialState = null;
+        AIModelPackageState? rejectedState = null;
 
         lock (gate)
         {
             if (state.IsBusy || !isRuntimeSupported() || Store.Descriptor == null) return;
-            descriptor = Store.Descriptor;
-            wasInstalled = state.IsInstalled;
-            cancellation = new CancellationTokenSource();
-            completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            activeCancellation = cancellation;
-            activeCompletion = completion;
-            initialState = AIModelPackageState.Downloading(0, descriptor.ArchiveBytes, descriptor.UnpackedBytes);
-            state = initialState;
+            if (!isHardwareAvailable())
+            {
+                var refreshed = ComputeDiskStateLocked();
+                if (refreshed != state)
+                {
+                    state = refreshed;
+                    rejectedState = refreshed;
+                }
+            }
+            else
+            {
+                maybeDescriptor = Store.Descriptor;
+                wasInstalled = state.IsInstalled;
+                maybeCancellation = new CancellationTokenSource();
+                maybeCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                activeCancellation = maybeCancellation;
+                activeCompletion = maybeCompletion;
+                initialState = AIModelPackageState.Downloading(0, maybeDescriptor.ArchiveBytes, maybeDescriptor.UnpackedBytes);
+                state = initialState;
+            }
         }
+
+        if (rejectedState != null)
+        {
+            NotifyStateChanged(rejectedState);
+            return;
+        }
+        if (initialState == null || maybeDescriptor == null || maybeCancellation == null || maybeCompletion == null) return;
+        var descriptor = maybeDescriptor;
+        var cancellation = maybeCancellation;
+        var completion = maybeCompletion;
 
         NotifyStateChanged(initialState);
 
@@ -234,7 +260,7 @@ internal sealed class AIModelPackageManager
         var unpackedBytes = Store.Descriptor?.UnpackedBytes ?? 0;
         if (Store.ResolveModelDirectory(overrideProvider(), bundledProvider()) is { } source)
             return AIModelPackageState.Installed(source, unpackedBytes);
-        if (Store.Descriptor is not { } descriptor)
+        if (!isHardwareAvailable() || Store.Descriptor is not { } descriptor)
             return AIModelPackageState.Unavailable();
         return AIModelPackageState.NotInstalled(descriptor.ArchiveBytes, descriptor.UnpackedBytes);
     }

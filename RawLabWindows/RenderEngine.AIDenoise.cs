@@ -39,7 +39,7 @@ internal sealed partial class RenderEngine
             aiInputPath,aiNativeStatus,aiNativeDetails,diagnostics,GetAIDevices(true).JSON,aiModelDirectory,aiCacheDirectory));
     }
     internal static string BundledAIModel=>AIModelPackageStore.BundledModelDirectory;
-    internal static bool AIModelDownloadSupported=>AIAvailable && AIModelPackageStore.BundledDescriptor!=null;
+    internal static bool AIModelDownloadSupported=>AIAvailable && AIHardwareAvailable && AIModelPackageStore.BundledDescriptor!=null;
     internal static AIModelDirectorySource? ResolveAIModelSource(AppPaths? appPaths=null,AIModelPackageStore? store=null)=>
         (store ?? AIModelPackageStore.CreateForAppPaths(appPaths)).ResolveModelDirectory(AIModelPackageStore.ResolvedOverrideDirectory,BundledAIModel);
     internal static string? ResolveAIModelDirectory(AppPaths? appPaths=null,AIModelPackageStore? store=null)=>
@@ -55,9 +55,9 @@ internal sealed partial class RenderEngine
             throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         if(!PhotoInput.IsRaw(path))throw new AIDenoiseException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
         if(!AIAvailable)throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
+        if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         if(ResolveAIModelDirectory(appPaths,modelStore)==null)
             throw new AIDenoiseException(Loc.Text(AIModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"));
-        if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
         if(!GetAIDevices().IsAvailable(deviceID))throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
     }
     private void ConfigureAI(bool enabled)
@@ -65,10 +65,10 @@ internal sealed partial class RenderEngine
         if(enabled) {
             if(!AIAvailable)
                 throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
-            if(string.IsNullOrEmpty(aiModelDirectory) || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json")))
-                throw new AIDenoiseException(Loc.Text(AIModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"));
             if(!AIHardwareAvailable)
                 throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
+            if(string.IsNullOrEmpty(aiModelDirectory) || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json")))
+                throw new AIDenoiseException(Loc.Text(AIModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"));
         }
         var config=new Native.AIConfig {Version=1,StructSize=(uint)Marshal.SizeOf<Native.AIConfig>(),
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),

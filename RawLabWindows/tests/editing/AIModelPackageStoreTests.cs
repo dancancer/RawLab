@@ -656,6 +656,70 @@ public sealed class AIModelPackageStoreTests : IDisposable
         Assert.Equal(AIModelPackageStatus.Unavailable, unsupported.State.Status);
     }
 
+    [Fact]
+    public async Task HardwareUnavailableHidesDownloadRefusesStartDownloadAndAllowsRemovingInstalled()
+    {
+        var fixture = MakeSyntheticArchive("hw-gate");
+        using var server = new LoopbackHttpServer(ServerMode.File(fixture.ArchivePath));
+
+        var storage = Path.Combine(tempRoot, "store-hw-gate");
+        var desc = fixture.Descriptor(server.Url("/hw.tar.gz"));
+        var store = new AIModelPackageStore(
+            storage,
+            desc,
+            allowLoopbackHttp: true,
+            diskSpaceMarginBytes: 1024);
+
+        // 1. Hardware unavailable from launch: manager reports Unavailable (download hidden) and direct StartDownload sends 0 requests.
+        var hardwareAvailable = false;
+        var manager = new AIModelPackageManager(
+            store,
+            isRuntimeSupported: () => true,
+            isHardwareAvailable: () => hardwareAvailable);
+        Assert.Equal(AIModelPackageStatus.Unavailable, manager.State.Status);
+        manager.StartDownload();
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(AIModelPackageStatus.Unavailable, manager.State.Status);
+        Assert.Equal(0, server.RequestCount);
+
+        // 2. Hardware flips from available (NotInstalled) to unavailable before click: direct StartDownload refuses with 0 requests and transitions to Unavailable.
+        hardwareAvailable = true;
+        manager.Refresh();
+        Assert.Equal(AIModelPackageStatus.NotInstalled, manager.State.Status);
+        hardwareAvailable = false;
+        manager.StartDownload();
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(AIModelPackageStatus.Unavailable, manager.State.Status);
+        Assert.Equal(0, server.RequestCount);
+
+        // 3. Install while hardware is available, then lose GPU: installed models remain visible/removable; once removed, state returns to Unavailable and StartDownload still refuses.
+        hardwareAvailable = true;
+        manager.Refresh();
+        var installedTcs = new TaskCompletionSource<AIModelPackageState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.StateChanged += state =>
+        {
+            if (state.IsDownloadedInstalled) installedTcs.TrySetResult(state);
+        };
+        manager.StartDownload();
+        var installed = await installedTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.True(installed.IsDownloadedInstalled);
+        Assert.Equal(1, server.RequestCount);
+        Assert.NotNull(store.InstalledPackageDirectory());
+
+        hardwareAvailable = false;
+        manager.Refresh();
+        Assert.True(manager.State.IsDownloadedInstalled);
+
+        manager.RemoveDownloadedModel();
+        Assert.Null(store.InstalledPackageDirectory());
+        Assert.Equal(AIModelPackageStatus.Unavailable, manager.State.Status);
+
+        manager.StartDownload();
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(1, server.RequestCount);
+    }
+
     // MARK: - Helpers
 
     private async Task<AIModelPackageException> AssertHostileArchiveRejected(SyntheticArchive hostile, string storage)

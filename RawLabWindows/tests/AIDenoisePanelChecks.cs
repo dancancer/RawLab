@@ -1,8 +1,12 @@
+using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using RawLab.Windows;
 
 internal static class AIDenoisePanelChecks
@@ -183,13 +187,28 @@ internal static class AIDenoisePanelChecks
         removeBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(removeClicks == 1, "Clicking Remove dispatches remove confirmation request");
 
-        // 8. Installed (Bundled / Override) and Unavailable hide the download section
+        // 8. Installed (Bundled / Override) and Unavailable (including missing DirectML hardware) hide download management
         panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
             modelState: AIModelPackageState.Installed(new AIModelDirectorySource(AIModelDirectoryKind.Bundled, output), unpackedBytes));
         check(modelSection.Visibility == Visibility.Collapsed, "Bundled model hides download management section");
-        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
-            modelState: AIModelPackageState.Unavailable());
-        check(modelSection.Visibility == Visibility.Collapsed, "Unavailable model state hides download management section");
+        var hardwareHint = Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。");
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle), unavailableHint: hardwareHint,
+            modelState: AIModelPackageState.Unavailable(), canDownloadModel: false, canRemoveModel: false);
+        check(modelSection.Visibility == Visibility.Collapsed &&
+              downloadBtn.Visibility == Visibility.Collapsed &&
+              retryBtn.Visibility == Visibility.Collapsed &&
+              ((TextBlock)panel.FindName("AIStatus")).Text == hardwareHint,
+            "Unavailable DirectML hardware hides model download controls while keeping hardware notice");
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle), unavailableHint: hardwareHint,
+            modelState: AIModelPackageState.Installed(downloadedSource, unpackedBytes), canDownloadModel: false, canRemoveModel: true);
+        check(modelSection.Visibility == Visibility.Visible &&
+              removeBtn.Visibility == Visibility.Visible && removeBtn.IsEnabled &&
+              downloadBtn.Visibility == Visibility.Collapsed &&
+              ((TextBlock)panel.FindName("AIStatus")).Text == hardwareHint,
+            "Already-downloaded models stay removable when DirectML hardware becomes unavailable");
+
+        // 8b. Batch export effect inspection ("查看应用后的效果") blocks model removal via Busy/BusyChanged
+        VerifyBatchInspectGuardsModelRemoval(output, check);
 
         // 9. License text fallbacks when nothing is bundled
         var emptyDir = Path.Combine(output, "empty-license-probe-" + Guid.NewGuid().ToString("N"));
@@ -205,26 +224,30 @@ internal static class AIDenoisePanelChecks
             if (Directory.Exists(emptyDir)) Directory.Delete(emptyDir, true);
         }
 
-        // 10. Multi-language layout fit & state screenshots for model download states
+        // 10. Multi-language real child-control layout fit & state screenshots for all visible model states
         try {
+            const double panelWidth = 360;
             foreach (var language in new[] { "zh-Hans", "en", "de", "fr", "ja", "es" }) {
                 Loc.Initialize(language); foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
                 var modelStates = new (string Name, AIModelPackageState State, bool CanStart)[] {
                     ("notInstalled", AIModelPackageState.NotInstalled(archiveBytes, unpackedBytes), false),
                     ("downloading", AIModelPackageState.Downloading(147_062_537UL, archiveBytes, unpackedBytes), false),
+                    ("verifying", AIModelPackageState.Verifying(archiveBytes, unpackedBytes), false),
+                    ("installing", AIModelPackageState.Installing(archiveBytes, unpackedBytes), false),
+                    ("cancelled", AIModelPackageState.Cancelled(archiveBytes, unpackedBytes), false),
                     ("failed", AIModelPackageState.Failed(httpErr, archiveBytes, unpackedBytes), false),
                     ("installed", AIModelPackageState.Installed(downloadedSource, unpackedBytes), true),
                 };
                 foreach (var (name, mState, canStartAI) in modelStates) {
                     var statePanel = new DenoisePanel { FontSize = 14 }; statePanel.Refresh(DenoiseSettings.Clean);
                     statePanel.RefreshAI(true, false, canStartAI, new(AIDenoiseStatus.Idle), modelState: mState, canDownloadModel: true, canRemoveModel: true);
-                    var surface = new Border { Width = 360, Background = (Brush)app.FindResource("Surface"), Padding = new Thickness(12), Child = statePanel };
-                    surface.Measure(new Size(360, double.PositiveInfinity));
+                    var surface = new Border { Width = panelWidth, Background = (Brush)app.FindResource("Surface"), Padding = new Thickness(12), Child = statePanel };
+                    surface.Measure(new Size(panelWidth, double.PositiveInfinity));
                     var height = Math.Max(1, Math.Ceiling(surface.DesiredSize.Height));
-                    surface.Arrange(new Rect(0, 0, 360, height)); surface.UpdateLayout();
-                    check(surface.DesiredSize.Width <= 360, $"AI model panel ({name}) stays within available width: {language}");
-                    if (language is "zh-Hans" or "en") {
-                        var bitmap = new RenderTargetBitmap(360, (int)height, 96, 96, PixelFormats.Pbgra32);
+                    surface.Arrange(new Rect(0, 0, panelWidth, height)); surface.UpdateLayout();
+                    CheckAIModelSectionLayout(surface, statePanel, panelWidth, $"{language}/{name}", check);
+                    if (language is "zh-Hans" or "en" && name is "notInstalled" or "downloading" or "failed" or "installed") {
+                        var bitmap = new RenderTargetBitmap((int)panelWidth, (int)height, 96, 96, PixelFormats.Pbgra32);
                         bitmap.Render(surface);
                         Directory.CreateDirectory(output);
                         using var stream = File.Create(Path.Combine(output, $"ai-model-{language}-{name}.png"));
@@ -238,5 +261,220 @@ internal static class AIDenoisePanelChecks
         } finally {
             host.Close();
         }
+    }
+
+    private static void VerifyBatchInspectGuardsModelRemoval(string output, Action<bool, string> check)
+    {
+        var root = Path.Combine(output, "batch-inspect-remove-guard-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(root);
+        MainWindow? window = null;
+        try {
+            window = TestWindowState.CreateIsolatedWindow(root, width: 1200, height: 800);
+            var paths = window.Paths;
+            var manifestBytes = Encoding.UTF8.GetBytes("{\"version\":1}");
+            var manifestSha = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+            var descriptor = new AIModelPackageDescriptor(
+                SchemaVersion: 1,
+                Platform: "windows-x64",
+                Url: "https://example.invalid/test.tar.gz",
+                ArchiveName: "test.tar.gz",
+                ArchiveSha256: new string('a', 64),
+                ArchiveBytes: 64,
+                ManifestSha256: manifestSha,
+                UnpackedBytes: (ulong)manifestBytes.Length,
+                Entries: [new AIModelArchiveEntry("manifest.json", AIModelArchiveEntryKind.File, (ulong)manifestBytes.Length, manifestSha)]);
+            var installedDir = Path.Combine(paths.DualDnModelDirectory, manifestSha);
+            Directory.CreateDirectory(installedDir);
+            File.WriteAllBytes(Path.Combine(installedDir, "manifest.json"), manifestBytes);
+
+            var sampleImage = Path.Combine(root, "sample.png");
+            var sampleBitmap = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Bgr24, null, new byte[16 * 16 * 3], 16 * 3);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(sampleBitmap));
+            using (var fs = File.Create(sampleImage)) png.Save(fs);
+
+            window.Show();
+            var store = new AIModelPackageStore(paths.DualDnModelDirectory, descriptor, allowLoopbackHttp: false);
+            var manager = new AIModelPackageManager(
+                store,
+                isRuntimeSupported: () => true,
+                isHardwareAvailable: () => true,
+                dispatch: action => {
+                    if (window.Dispatcher.HasShutdownStarted) return;
+                    if (window.Dispatcher.CheckAccess()) action();
+                    else window.Dispatcher.BeginInvoke(action);
+                });
+            window.CurrentFile = sampleImage;
+            window.SetAIModelManagerForTests(manager);
+            window.SelectToolForTests(EditorAdjustmentTool.Denoise);
+            window.RefreshControlsForTests();
+            DrainDispatcher();
+
+            var removeBtn = (Button)window.DenoiseEditor.FindName("AIModelRemove");
+            check(window.ToolMode == EditorToolMode.Denoise &&
+                  removeBtn.Visibility == Visibility.Visible &&
+                  window.CanRemoveDownloadedAIModelForTests && removeBtn.IsEnabled,
+                "Before batch inspect, downloaded AI model removal is visible and enabled");
+
+            var job = BatchJob.Create(sampleImage, new Adjustments().Capture(), null, "Neutral");
+            job.Items.Add(BatchItem.Create(sampleImage) with { Selected = true });
+            window.BatchJournalInstance.Save(job);
+            window.ShowBatchForTests(job);
+            DrainDispatcher();
+
+            var batch = window.BatchWindowInstance!;
+            using var inspectEntered = new ManualResetEventSlim(false);
+            using var releaseInspect = new ManualResetEventSlim(false);
+            batch.BeforeInspectRenderForTests = () => {
+                inspectEntered.Set();
+                releaseInspect.Wait(TimeSpan.FromSeconds(10));
+            };
+
+            var inspectTask = batch.InspectRowAsync(batch.Rows[0], showPreviewWindow: false);
+            try {
+                check(inspectEntered.Wait(TimeSpan.FromSeconds(10)), "Batch inspect entered background render worker");
+                DrainDispatcher();
+                check(batch.Busy, "BatchExportWindow.Busy is true while effect inspection is running");
+                check(!window.CanRemoveDownloadedAIModelForTests && !removeBtn.IsEnabled,
+                    "AI model removal guard and button disable while batch effect inspection is active");
+                var removedWhileInspecting = window.TryRemoveDownloadedAIModelForTests();
+                check(!removedWhileInspecting && Directory.Exists(installedDir) && File.Exists(Path.Combine(installedDir, "manifest.json")),
+                    "AI model removal handler refuses to delete model files during active batch inspection");
+            } finally {
+                releaseInspect.Set();
+            }
+
+            WaitForTaskOnDispatcher(inspectTask, TimeSpan.FromSeconds(10));
+            DrainDispatcher();
+            check(!batch.Busy && window.CanRemoveDownloadedAIModelForTests && removeBtn.IsEnabled,
+                "AI model removal re-enables once batch effect inspection completes");
+            check(window.TryRemoveDownloadedAIModelForTests() && !Directory.Exists(installedDir),
+                "AI model removal succeeds after batch effect inspection finishes");
+
+            batch.Close();
+            DrainDispatcher();
+        } finally {
+            window?.Close();
+            DrainDispatcher();
+            if (Directory.Exists(root)) try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    private static void DrainDispatcher()
+    {
+        var frame = new DispatcherFrame();
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false));
+        Dispatcher.PushFrame(frame);
+    }
+
+    private static void WaitForTaskOnDispatcher(Task task, TimeSpan timeout)
+    {
+        if (task.IsCompleted) return;
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var frame = new DispatcherFrame();
+        var timer = new DispatcherTimer { Interval = timeout };
+        timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+        timer.Start();
+        _ = task.ContinueWith(_ => dispatcher.BeginInvoke(new Action(() => { timer.Stop(); frame.Continue = false; })), TaskScheduler.Default);
+        Dispatcher.PushFrame(frame);
+        timer.Stop();
+    }
+
+    private static void CheckAIModelSectionLayout(Border surface, DenoisePanel panel, double availableWidth, string context, Action<bool, string> check)
+    {
+        const double tolerance = 0.5;
+        var section = (StackPanel)panel.FindName("AIModelSection");
+        var dpi = VisualTreeHelper.GetDpi(surface).PixelsPerDip;
+        check(section.Visibility == Visibility.Visible && section.ActualWidth > 0 && section.ActualHeight > 0,
+            $"AI model section is visibly laid out ({context})");
+        var sectionBounds = section.TransformToAncestor(surface).TransformBounds(new Rect(0, 0, section.ActualWidth, section.ActualHeight));
+        check(sectionBounds.Left >= -tolerance && sectionBounds.Top >= -tolerance &&
+              sectionBounds.Right <= availableWidth + tolerance && sectionBounds.Bottom <= surface.ActualHeight + tolerance,
+            $"AI model section stays within {availableWidth:0}px host bounds ({context}: right={sectionBounds.Right:0.0})");
+
+        foreach (var textName in new[] { "AIModelStatus", "AIModelNotice" }) {
+            var tb = (TextBlock)panel.FindName(textName);
+            if (tb.Visibility != Visibility.Visible) continue;
+            var inSection = tb.TransformToAncestor(section).TransformBounds(new Rect(0, 0, tb.ActualWidth, tb.ActualHeight));
+            var inSurface = tb.TransformToAncestor(surface).TransformBounds(new Rect(0, 0, tb.ActualWidth, tb.ActualHeight));
+            var formatted = new FormattedText(
+                tb.Text,
+                CultureInfo.CurrentUICulture,
+                tb.FlowDirection,
+                new Typeface(tb.FontFamily, tb.FontStyle, tb.FontWeight, tb.FontStretch),
+                tb.FontSize,
+                Brushes.Black,
+                dpi) {
+                MaxTextWidth = Math.Max(1, tb.ActualWidth),
+            };
+            check(tb.TextWrapping == TextWrapping.Wrap && tb.TextTrimming == TextTrimming.None && !string.IsNullOrWhiteSpace(tb.Text),
+                $"{textName} wraps without trimming ({context})");
+            check(tb.ActualWidth > 0 && tb.ActualHeight > 0 &&
+                  inSection.Left >= -tolerance && inSection.Right <= section.ActualWidth + tolerance &&
+                  inSection.Bottom <= section.ActualHeight + tolerance &&
+                  inSurface.Right <= availableWidth + tolerance &&
+                  formatted.Width <= tb.ActualWidth + 1.0 &&
+                  formatted.Height <= tb.ActualHeight + 2.0,
+                $"{textName} fits wrapped without clipping ({context}: fmt={formatted.Width:0.0}x{formatted.Height:0.0}, actual={tb.ActualWidth:0.0}x{tb.ActualHeight:0.0})");
+        }
+
+        var progress = (ProgressBar)panel.FindName("AIModelProgress");
+        if (progress.Visibility == Visibility.Visible) {
+            var pBounds = progress.TransformToAncestor(section).TransformBounds(new Rect(0, 0, progress.ActualWidth, progress.ActualHeight));
+            check(progress.ActualWidth > 0 && progress.ActualHeight > 0 &&
+                  pBounds.Left >= -tolerance && pBounds.Right <= section.ActualWidth + tolerance,
+                $"AIModelProgress fits inside section ({context})");
+        }
+
+        var visibleButtons = new List<(string Name, Rect Bounds)>();
+        foreach (var buttonName in new[] { "AIModelDownload", "AIModelRetry", "AIModelCancel", "AIModelLicense", "AIModelRemove" }) {
+            var btn = (Button)panel.FindName(buttonName);
+            if (btn.Visibility != Visibility.Visible) continue;
+            var inSection = btn.TransformToAncestor(section).TransformBounds(new Rect(0, 0, btn.ActualWidth, btn.ActualHeight));
+            var inSurface = btn.TransformToAncestor(surface).TransformBounds(new Rect(0, 0, btn.ActualWidth, btn.ActualHeight));
+            var desiredWidth = Math.Max(0, btn.DesiredSize.Width - btn.Margin.Left - btn.Margin.Right);
+            var desiredHeight = Math.Max(0, btn.DesiredSize.Height - btn.Margin.Top - btn.Margin.Bottom);
+            var labelText = btn.Content as string ?? "";
+            var presenter = FindDescendant<ContentPresenter>(btn);
+            var labelFits = true;
+            if (presenter != null && labelText.Length > 0) {
+                var formattedLabel = new FormattedText(
+                    labelText,
+                    CultureInfo.CurrentUICulture,
+                    btn.FlowDirection,
+                    new Typeface(btn.FontFamily, btn.FontStyle, btn.FontWeight, btn.FontStretch),
+                    btn.FontSize,
+                    Brushes.Black,
+                    dpi);
+                labelFits = formattedLabel.Width <= presenter.ActualWidth + 1.5 && formattedLabel.Height <= presenter.ActualHeight + 2.0;
+            }
+            check(btn.ActualWidth > 0 && btn.ActualHeight > 0 &&
+                  inSection.Left >= -tolerance && inSection.Top >= -tolerance &&
+                  inSection.Right <= section.ActualWidth + tolerance &&
+                  inSection.Bottom <= section.ActualHeight + tolerance &&
+                  inSurface.Right <= availableWidth + tolerance &&
+                  desiredWidth <= btn.ActualWidth + tolerance &&
+                  desiredHeight <= btn.ActualHeight + tolerance &&
+                  labelFits,
+                $"{buttonName} fits without overflow or clipping ({context}: actual={btn.ActualWidth:0.0}x{btn.ActualHeight:0.0}, sectionW={section.ActualWidth:0.0}, right={inSurface.Right:0.0})");
+            visibleButtons.Add((buttonName, inSection));
+        }
+
+        for (var i = 0; i < visibleButtons.Count; i++) {
+            for (var j = i + 1; j < visibleButtons.Count; j++) {
+                var overlap = Rect.Intersect(visibleButtons[i].Bounds, visibleButtons[j].Bounds);
+                check(overlap.IsEmpty || overlap.Width <= tolerance || overlap.Height <= tolerance,
+                    $"Buttons {visibleButtons[i].Name} and {visibleButtons[j].Name} do not overlap ({context})");
+            }
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++) {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            if (FindDescendant<T>(child) is { } nested) return nested;
+        }
+        return null;
     }
 }

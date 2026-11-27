@@ -22,15 +22,17 @@ public partial class BatchExportWindow : Window
     private readonly BatchHDRPreparation? hdrPreparation;
     private readonly ObservableCollection<BatchRow> rows = [];
     private CancellationTokenSource cancellation = new();
-    private bool ready, refreshingSize, refreshingSharpening, editingCustomSize,preflighting,closed;
+    private bool ready, refreshingSize, refreshingSharpening, editingCustomSize, preflighting, closed, lastReportedBusy;
+    private int activeInspections;
     private volatile bool closeRequested;
     private Task? thumbnailLoading;
     private AIDenoiseState? aiProgress;
     internal ObservableCollection<BatchRow> Rows => rows;
     internal CancellationTokenSource Cancellation => cancellation;
     internal bool CloseRequested => closeRequested;
+    internal Action? BeforeInspectRenderForTests { get; set; }
     public bool Running { get; private set; }
-    public bool Busy=>Running || preflighting;
+    public bool Busy => Running || preflighting || activeInspections > 0;
     public bool UpdateJournalFailed { get; private set; }
     public bool PreserveOnUpdateExit { get; set; }
     public bool UpdateTasksRunning => Busy || thumbnailLoading is { IsCompleted:false };
@@ -43,7 +45,9 @@ public partial class BatchExportWindow : Window
 
     public BatchExportWindow(BatchJob job, BatchJournal journal) : this(job,journal,AppPaths.Default) { }
     internal BatchExportWindow(BatchJob job, BatchJournal journal, AppPaths appPaths)
-        : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID,appPaths:appPaths),new(appPaths.AiDiagnosticsDirectory),appPaths:appPaths) { }
+        : this(job,journal,new AIDiagnosticStore(appPaths.AiDiagnosticsDirectory),appPaths) { }
+    private BatchExportWindow(BatchJob job, BatchJournal journal, AIDiagnosticStore aiDiagnostics, AppPaths appPaths)
+        : this(job,journal,backend=>new RenderEngine(aiBackend:backend,aiDeviceID:job.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths),aiDiagnostics,appPaths:appPaths) { }
     internal BatchExportWindow(BatchJob job, BatchJournal journal, Func<int,RenderEngine> createEngine,
         AIDiagnosticStore? aiDiagnostics=null, BatchHDRPreparation? hdrPreparation=null, AppPaths? appPaths=null)
     {
@@ -66,11 +70,19 @@ public partial class BatchExportWindow : Window
             await LoadThumbnails();
         };
         Closing += (_, args) => {
-            if(Running || preflighting){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
+            if(Busy){args.Cancel=true;closeRequested=true;if(Running)CancelExecution();return;}
             if(!PreserveOnUpdateExit && !Frozen && !job.Started && !Discarded)try{journal.Discard(job);Discarded=true;CloseFailed=false;}catch(Exception error){args.Cancel=true;CloseFailed=true;closeRequested=false;job.Error=AdjustmentTransferPresentation.Detail(error);Refresh();_=LoadThumbnails();}
         };
         ready = true;
         RefreshLanguage();
+    }
+
+    private void NotifyBusyChanged()
+    {
+        var current = Busy;
+        if (current == lastReportedBusy) return;
+        lastReportedBusy = current;
+        BusyChanged?.Invoke(current);
     }
 
     private void RefreshLanguage()
@@ -169,7 +181,7 @@ public partial class BatchExportWindow : Window
     internal async Task AddInputs(IEnumerable<string> inputs)
     {
         if(Frozen || Running || job.Started || preflighting || closed)return;
-        CloseFailed=closeRequested=false;preflighting=true;BusyChanged?.Invoke(true);Refresh();var errors=new List<string>();
+        CloseFailed=closeRequested=false;preflighting=true;NotifyBusyChanged();Refresh();var errors=new List<string>();
         var snapshot=job.Copy();
         try
         {
@@ -189,7 +201,7 @@ public partial class BatchExportWindow : Window
             await LoadThumbnails();
         }
         catch(Exception error){if(!closed)job.Error=AdjustmentTransferPresentation.Detail(error);}
-        finally{preflighting=false;if(!closed){Refresh();if(closeRequested)Close();}BusyChanged?.Invoke(false);}
+        finally{preflighting=false;if(!closed){Refresh();if(closeRequested && !Busy)Close();}NotifyBusyChanged();}
     }
     private BatchItem ValidateInput(BatchJob snapshot, BatchItem item, RenderEngine validator)
     {
@@ -269,7 +281,7 @@ public partial class BatchExportWindow : Window
         }
         CloseFailed=closeRequested=false;
         preflighting=true;
-        BusyChanged?.Invoke(true);
+        NotifyBusyChanged();
         Refresh();
         var snapshot=job.Copy();
         snapshot.Format=format;
@@ -300,8 +312,8 @@ public partial class BatchExportWindow : Window
             }
         } finally {
             preflighting=false;
-            if (!closed) { Refresh(); if (closeRequested) Close(); }
-            BusyChanged?.Invoke(false);
+            if (!closed) { Refresh(); if (closeRequested && !Busy) Close(); }
+            NotifyBusyChanged();
         }
     }
     private void RefreshSizeControls()
@@ -404,7 +416,7 @@ public partial class BatchExportWindow : Window
         if(closed || closeRequested || preflighting || Running || Discarded)return false;
         if (job.SelectedCount == 0 || job.OutputDirectory == null) return false;
         if (!job.Started && editingCustomSize && !CommitCustomSize()) return false;
-        CloseFailed=closeRequested=false;Running = true; cancellation = new(); BusyChanged?.Invoke(true); Refresh();
+        CloseFailed=closeRequested=false;Running = true; cancellation = new(); NotifyBusyChanged(); Refresh();
         var before = job.Copy();
         var work = job.Copy(); var failuresOnly = job.Started && job.RemainingCount == 0;
         var runFailed = new HashSet<Guid>();
@@ -460,8 +472,8 @@ public partial class BatchExportWindow : Window
             Running = false; aiProgress=null;
             SetRunJob(work);
             RunCompleted?.Invoke(before, job.Copy(), runFailed.Count);
-            BusyChanged?.Invoke(false);
-            if (closeRequested && IsLoaded) Close();
+            NotifyBusyChanged();
+            if (closeRequested && !Busy && IsLoaded) Close();
         }
         return true;
     }
@@ -476,28 +488,54 @@ public partial class BatchExportWindow : Window
 
     private async void InspectClicked(object sender, RoutedEventArgs e)
     {
-        if (Running || sender is not FrameworkElement { DataContext: BatchRow row }) return;
-        var title = new TextBlock { Text = Loc.Text("正在生成本次导出效果…"), Margin = new Thickness(16) };
-        var image = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(16) };
-        var panel = new DockPanel(); DockPanel.SetDock(title, Dock.Top); panel.Children.Add(title); panel.Children.Add(image);
-        var preview = new Window { Title = Loc.Format("{0} · 本次导出效果", row.Name), Owner = this, Width = 820, Height = 620, Content = panel };
-        preview.Show();
+        if (Running || closed || closeRequested || sender is not FrameworkElement { DataContext: BatchRow row }) return;
+        await InspectRowAsync(row);
+    }
+
+    internal async Task InspectRowAsync(BatchRow row, bool showPreviewWindow = true)
+    {
+        if (Running || closed || closeRequested) return;
+        Window? preview = null;
+        TextBlock? title = null;
+        Image? image = null;
+        if (showPreviewWindow)
+        {
+            title = new TextBlock { Text = Loc.Text("正在生成本次导出效果…"), Margin = new Thickness(16) };
+            image = new Image { Stretch = Stretch.Uniform, Margin = new Thickness(16) };
+            var panel = new DockPanel(); DockPanel.SetDock(title, Dock.Top); panel.Children.Add(title); panel.Children.Add(image);
+            preview = new Window { Title = Loc.Format("{0} · 本次导出效果", row.Name), Owner = this, Width = 820, Height = 620, Content = panel };
+            preview.Show();
+        }
+        activeInspections++;
+        NotifyBusyChanged();
         var snapshot = job.Copy();
         try
         {
             var (frame, lookName) = await Task.Run(() => {
+                BeforeInspectRenderForTests?.Invoke();
                 if (!row.Item.Identity.SameFile(OriginalIdentity.Read(row.Input))) throw new InvalidOperationException(Loc.Text("原始文件已被替换，请重新选择照片。"));
                 var prepareHDR=BatchHDRPreparation.Required(snapshot);
                 var frozen=prepareHDR ? RequireHDRPreparation().Prepare(snapshot,row.Item) : snapshot.SnapshotFor(row.Item);
                 if(snapshot.Mode==BatchJob.PerTargetFrozen || prepareHDR)frozen.VerifyLook();
                 else if (frozen.Look != null && !File.Exists(frozen.Look)) throw new InvalidOperationException(Loc.Text("任务使用的外观文件不可用，请重新创建任务。"));
-                using var engine = new RenderEngine(aiBackend:snapshot.AIBackend,aiDeviceID:snapshot.AIDeviceID,aiDiagnostics:aiDiagnostics,appPaths:appPaths);
+                using var engine = createEngine(snapshot.AIBackend);
+                engine.SetAIDevice(snapshot.AIDeviceID);
                 var settings=frozen.Settings.Restore();
                 return (engine.Render(row.Input, settings, frozen.Look, 1600, statistics: false, clipping: false),frozen.LookName);
             });
-            if (preview.IsVisible) { image.Source = frame?.Image; title.Text = Loc.Format("{0} · 本次导出效果", lookName); }
+            if (preview?.IsVisible == true && image != null && title != null)
+            {
+                image.Source = frame?.Image;
+                title.Text = Loc.Format("{0} · 本次导出效果", lookName);
+            }
         }
-        catch (Exception error) { if (preview.IsVisible) title.Text = AdjustmentTransferPresentation.Detail(error); }
+        catch (Exception error) { if (preview?.IsVisible == true && title != null) title.Text = AdjustmentTransferPresentation.Detail(error); }
+        finally
+        {
+            activeInspections = Math.Max(0, activeInspections - 1);
+            NotifyBusyChanged();
+            if (closeRequested && !Busy && IsLoaded) Close();
+        }
     }
 }
 

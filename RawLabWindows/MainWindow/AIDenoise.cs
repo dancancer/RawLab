@@ -29,7 +29,8 @@ public partial class MainWindow
     {
         var manager=new AIModelPackageManager(
             AIModelPackageStore.CreateForAppPaths(paths),
-            isRuntimeSupported:()=>RenderEngine.AIModelDownloadSupported,
+            isRuntimeSupported:()=>RenderEngine.AIAvailable,
+            isHardwareAvailable:()=>RenderEngine.AIHardwareAvailable,
             overrideProvider:()=>AIModelPackageStore.ResolvedOverrideDirectory,
             bundledProvider:()=>RenderEngine.BundledAIModel,
             dispatch:action=>{
@@ -124,9 +125,14 @@ public partial class MainWindow
         var message=Loc.Format("删除后将释放约 {0} MB 磁盘空间，需要时可重新下载。",AIModelPackageException.FormatMegabytes(state.UnpackedBytes));
         if(MessageBox.Show(this,message,Loc.Text("确定删除已下载的 AI 降噪模型？"),MessageBoxButton.YesNo,MessageBoxImage.Warning,MessageBoxResult.No)!=MessageBoxResult.Yes)
             return;
-        if(!CanRemoveDownloadedAIModel)return;
+        RemoveDownloadedAIModelCore();
+    }
+    private bool RemoveDownloadedAIModelCore()
+    {
+        if(!CanRemoveDownloadedAIModel)return false;
         if(!scheduler.Busy && !exporting && engine!=null) { engine.Dispose(); engine=null; }
         aiModelManager.RemoveDownloadedModel();
+        return true;
     }
     private void RefreshAIControls()
     {
@@ -136,7 +142,7 @@ public partial class MainWindow
                 (!RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
                 !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),
             GpuMode.SelectedIndex==1,settings.AIDenoiseStrength,
-            aiModelManager.State,!exporting,CanRemoveDownloadedAIModel);
+            aiModelManager.State,!exporting && RenderEngine.AIModelDownloadSupported,CanRemoveDownloadedAIModel);
     }
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private bool HasPendingAIReset(EditorResetScope scope)=>EditorAdjustmentRules.ResetsAI(scope) && aiManuallyRequested;
