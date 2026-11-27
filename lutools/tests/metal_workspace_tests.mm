@@ -13,6 +13,7 @@
 #include <iostream>
 #include <limits>
 #include <unistd.h>
+#include <dlfcn.h>
 
 namespace sony2fuji {
 bool applyLutMetal(const LUT3D& lut, ImageData& image, size_t* completedPixels = nullptr);
@@ -41,8 +42,18 @@ id<MTLBuffer> throwingBytesBuffer(id, SEL, const void*, NSUInteger, MTLResourceO
     return nil;
 }
 NSUInteger boundedLimit(id device, SEL selector) { return std::min<size_t>(originalLimit(device, selector), budget); }
+// 只统计 RawLab 自己（静态链接进本测试可执行文件）对 status 的查询。虚拟化 GPU 的 Metal 驱动
+// 会在内部对同一个类调用 status（#695 中观测到 AppleParavirtGPUMetalIOGPUFamily 的
+// parseComputeInfo / updateStoreActions），把注入的失败打到驱动内部，生产代码反而收到成功。
+bool calledFromTestImage(const void* returnAddress) {
+    Dl_info caller{}, self{};
+    return dladdr(returnAddress, &caller) != 0 &&
+        dladdr(reinterpret_cast<const void*>(&calledFromTestImage), &self) != 0 &&
+        caller.dli_fbase == self.dli_fbase;
+}
 MTLCommandBufferStatus completionStatus(id command, SEL selector) {
     const auto status = originalStatus(command, selector);
+    if (!calledFromTestImage(__builtin_return_address(0))) return status;
     if (status == MTLCommandBufferStatusCompleted && ++completions == failCompletion)
         return MTLCommandBufferStatusError;
     return status;
