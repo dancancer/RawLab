@@ -48,7 +48,7 @@ def lint_apple_test_script(rel_path: str, text: str) -> list[str]:
             or '"$ROOT"/Shared/Native/*.swift' in text
         ):
             errors.append(f"{rel_path}: duplicated RawLabMac/Shared source glob outside lib/compile.sh")
-        if all(marker in text for marker in ("Engine.swift", "RenderError.swift", "Adjustments+Native.swift")):
+        if all(marker in text for marker in ("Engine.swift", "RenderError.swift", "AdjustmentsNative.swift")):
             errors.append(f"{rel_path}: duplicated render-engine source stack outside lib/compile.sh")
         if "clang++" in text and "RawLabMac/tests/lib/compile.sh" not in text:
             errors.append(f"{rel_path}: bare clang++ without compile.sh helper")
@@ -100,7 +100,7 @@ class AppleShellHygieneTests(unittest.TestCase):
             ("RawLabMac/tests/bad.sh", 'swiftc -target arm64-apple-macosx26.0 foo.swift\n'),
             ("RawLabMac/tests/bad.sh", 'OUT="$(mktemp -d /tmp/rawlab-leak.XXXXXX)"\n'),
             ("RawLabMac/tests/bad.sh", 'trap \'rm -r "$OUT"\' EXIT\n'),
-            ("RawLabMac/tests/bad.sh", 'Engine.swift RenderError.swift Adjustments+Native.swift\n'),
+            ("RawLabMac/tests/bad.sh", 'Engine.swift RenderError.swift AdjustmentsNative.swift\n'),
             ("RawLab/tests/bad.sh", 'rg --files "$ROOT/RawLab/RawLab/Core"\n'),
             ("RawLab/tests/bad.sh", 'xcrun --sdk iphonesimulator swiftc foo.swift\n'),
             ("RawLab/tests/bad.sh", 'clang++ -c "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm"\n'),

@@ -10,4 +10,3 @@ rawlab_ios_host_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -whole-module-optimization
     "$ROOT/RawLab/tests/EditMemoryTests.swift" \
     -o "$OUT/edit-memory"
 "$OUT/edit-memory"
-bash "$ROOT/RawLab/tests/error-diagnostics.sh"

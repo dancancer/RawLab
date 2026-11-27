@@ -61,7 +61,7 @@
 **Files:** `Shared/AdjustmentTransfer.swift`、`RawLabMac/Sources/Adjustments/MacAdjustmentTransfer.swift`、
 `MacAdjustmentTransferValues.swift`、`MacAdjustmentTransferWB.swift`、
 `Shared/HSLSettings.swift` 的精确值入口、`Adjustments.swift` 的窄校验/recipe 版本访问入口，
-`RawLabMac/tests/AdjustmentTransferTests.swift`、`RawLabMac/tests/adjustment-transfer.sh`。
+`tests/RawLabKitTests/MacAdjustmentTransferTests.swift`（`swift test --filter MacAdjustmentTransferTests`）。
 
 **Interfaces:** `AdjustmentTransferPayload`（版本/来源上下文/选中值）、`AdjustmentTransferScope`；
 `MacAdjustmentTransfer.capture(scope:snapshot:context:) throws -> AdjustmentTransferPayload`；

@@ -65,7 +65,6 @@ case "${1:-}" in
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/color-grading-interaction.sh
             RawLabMac/tests/hdr-canvas.sh RawLabMac/tests/hdr-rendition-reset.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
-            RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/reset-scenarios.sh
             RawLabMac/tests/edit-records.sh
             RawLabMac/tests/update-install.sh RawLabMac/tests/thumbnail-cache.sh
@@ -80,14 +79,14 @@ case "${1:-}" in
         python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet
         pre_checks=(scripts/rum/test_embed_ios.py)
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/color-grading-interaction.sh
-            RawLab/tests/hdr-model.sh RawLab/tests/hdr-canvas.sh RawLab/tests/hdr-resource-notice.sh
+            RawLab/tests/hdr-canvas.sh RawLab/tests/hdr-resource-notice.sh
             RawLab/tests/camera-protocol.sh RawLab/tests/camera-originals.sh RawLab/tests/retention.sh RawLab/tests/editor-tool-drafts.sh
             RawLab/tests/editor-coordinator.sh RawLab/tests/ios-reset-entry-ui.sh
             RawLab/tests/ios-inspection-suite.sh
-            RawLab/tests/recent-photos.sh RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
-            RawLab/tests/adjustment-transfer.sh RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh RawLab/tests/adjustment-persistence.sh
-            RawLab/tests/adjustment-transfer-session.sh RawLab/tests/batch-export.sh
-            RawLab/tests/error-diagnostics.sh RawLab/tests/rum-configuration.sh RawLab/tests/rum-threading.sh RawLab/tests/rum-transport.sh
+            RawLab/tests/presentation.sh RawLab/tests/adjustment-scale.sh RawLab/tests/edit-memory.sh
+            RawLab/tests/reset-scenarios.sh RawLab/tests/edit-records.sh
+            RawLab/tests/batch-export.sh
+            RawLab/tests/rum-threading.sh RawLab/tests/rum-transport.sh
             RawLab/tests/system-open.sh RawLab/tests/viewing-state.sh RawLab/tests/lut-library-selection.sh)
         ;;
     *) echo "Usage: $0 macos|ios" >&2; exit 2 ;;

@@ -1,6 +1,6 @@
 #!/bin/bash
 # P1 第③步：重置场景向量（Shared/fixtures/reset-scenarios-v1.json）macOS 消费入口。
-# 文件集与 adjustment-transfer.sh 相同（重置规则就在 Adjustments.swift / AdjustmentTypes.swift 内）。
+# 直接链接 RawLabKit（重置规则就在 Adjustments.swift / AdjustmentTypes.swift 内）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 source "$ROOT/RawLabMac/tests/lib/compile.sh"
