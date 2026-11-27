@@ -167,4 +167,22 @@ internal static class WindowsFileIdentity
             throw new Win32Exception(Marshal.GetLastWin32Error(), Loc.Text("无法读取文件身份。"));
         return new(information.VolumeSerialNumber, information.FileIndexHigh, information.FileIndexLow);
     }
+
+    internal static bool TryGetLinkCount(string path, out uint linkCount)
+    {
+        linkCount = 0;
+        if (!OperatingSystem.IsWindows()) return false;
+        try
+        {
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.None);
+            if (!GetFileInformationByHandle(stream.SafeFileHandle, out var information)) return false;
+            linkCount = information.NumberOfLinks;
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or Win32Exception)
+        {
+            return false;
+        }
+    }
 }

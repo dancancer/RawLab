@@ -6,7 +6,10 @@ internal sealed class AINotReadyException(string message) : InvalidOperationExce
 internal sealed class AIDenoiseException(string message) : InvalidOperationException(message);
 internal sealed partial class RenderEngine
 {
-    private readonly string aiModelDirectory,aiCacheDirectory;
+    private readonly string? aiModelDirectory;
+    private readonly string aiCacheDirectory;
+    internal string? CurrentAIModelDirectory => aiModelDirectory;
+    internal string CurrentAIDeviceID => aiDeviceID;
     private readonly int? aiBackendOverride;
     private string aiDeviceID,aiOperation="unknown";
     private string? aiInputPath,aiNativeDetails;
@@ -36,29 +39,41 @@ internal sealed partial class RenderEngine
         aiDiagnosticStore.Capture(error,new(aiOperation,aiDeviceID,aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
             aiInputPath,aiNativeStatus,aiNativeDetails,diagnostics,GetAIDevices(true).JSON,aiModelDirectory,aiCacheDirectory));
     }
-    internal static string BundledAIModel=>Path.Combine(AppContext.BaseDirectory,"AI","DualDn");
-    internal static bool HasBundledAIModel=>File.Exists(Path.Combine(BundledAIModel,"manifest.json"));
+    internal static string BundledAIModel=>AIModelPackageStore.BundledModelDirectory;
+    internal static bool AIModelDownloadSupported=>AIAvailable && AIHardwareAvailable && AIModelPackageStore.BundledDescriptor!=null;
+    internal static AIModelDirectorySource? ResolveAIModelSource(AppPaths? appPaths=null,AIModelPackageStore? store=null)=>
+        (store ?? AIModelPackageStore.CreateForAppPaths(appPaths)).ResolveModelDirectory(AIModelPackageStore.ResolvedOverrideDirectory,BundledAIModel);
+    internal static string? ResolveAIModelDirectory(AppPaths? appPaths=null,AIModelPackageStore? store=null)=>
+        ResolveAIModelSource(appPaths,store)?.DirectoryPath;
+    internal static bool HasAIModel(AppPaths? appPaths=null,AIModelPackageStore? store=null)=>
+        ResolveAIModelDirectory(appPaths,store)!=null;
     internal static int AIBackendForGpuMode(int mode)=>mode==2 ? 3 : 2;
     internal string LastAIBackend=>Marshal.PtrToStringUTF8(Native.sony2fuji_session_get_ai_backend(session)) ?? "";
     internal static void ValidateAIInput(string path)=>ValidateAIInput(path,"");
-    internal static void ValidateAIInput(string path,string deviceID,X3fMode x3fMode=X3fMode.Legacy)
+    internal static void ValidateAIInput(string path,string deviceID,X3fMode x3fMode=X3fMode.Legacy,AppPaths? appPaths=null,AIModelPackageStore? modelStore=null)
     {
         if(PhotoInput.IsX3f(path) && x3fMode==X3fMode.Normal)
             throw new AIDenoiseException(Loc.Text("此 X3F 显影模式不支持 AI 降噪。"));
         if(!PhotoInput.IsRaw(path))throw new AIDenoiseException(Loc.Text("AI 降噪仅支持 RAW 照片。"));
-        if(!AIAvailable || !HasBundledAIModel)throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
+        if(!AIAvailable)throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
         if(!AIHardwareAvailable)throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
+        if(ResolveAIModelDirectory(appPaths,modelStore)==null)
+            throw new AIDenoiseException(Loc.Text(AIModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"));
         if(!GetAIDevices().IsAvailable(deviceID))throw new AIDenoiseException(Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。"));
     }
     private void ConfigureAI(bool enabled)
     {
-        if(enabled && (!AIAvailable || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json"))))
-            throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
-        if(enabled && !AIHardwareAvailable)
-            throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
+        if(enabled) {
+            if(!AIAvailable)
+                throw new AIDenoiseException(Loc.Text("此构建未安装 AI 降噪模型。"));
+            if(!AIHardwareAvailable)
+                throw new AIDenoiseException(Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。"));
+            if(string.IsNullOrEmpty(aiModelDirectory) || !File.Exists(Path.Combine(aiModelDirectory,"manifest.json")))
+                throw new AIDenoiseException(Loc.Text(AIModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"));
+        }
         var config=new Native.AIConfig {Version=1,StructSize=(uint)Marshal.SizeOf<Native.AIConfig>(),
             Enabled=enabled ? 1 : 0,Backend=aiBackendOverride ?? AIBackendForGpuMode(gpuMode),
-            ModelDirectory=aiModelDirectory,CacheDirectory=aiCacheDirectory};
+            ModelDirectory=aiModelDirectory ?? "",CacheDirectory=aiCacheDirectory};
         CheckAI(Native.sony2fuji_session_set_ai_denoise(session,ref config));
         if(enabled)CheckAI(Native.sony2fuji_session_set_ai_device(session,aiDeviceID));
     }

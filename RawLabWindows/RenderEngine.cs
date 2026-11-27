@@ -32,6 +32,7 @@ internal sealed partial class RenderEngine : IDisposable
     private ((NeutralReferenceKey Reference, int GpuMode, int? ProRAWDecodeVersion) Key, RenderedImage Frame)? original;
     private readonly PreviewRevisionCache<(PreviewKey Key, int Edge), PreviewFrame> previewCache =
         new(256L * 1024 * 1024, FrameBytes, maximumEntries: 16);
+    internal int CurrentGpuMode => gpuMode;
     internal Native.Session Session => session;
     internal Native.CancellationCallback? CancellationCallback { get => cancellationCallback; set => cancellationCallback = value; }
     internal bool HasOriginal => original != null;
@@ -50,7 +51,7 @@ internal sealed partial class RenderEngine : IDisposable
         this.appPaths=appPaths ?? AppPaths.Default;
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
-        this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
+        this.aiModelDirectory=aiModelDirectory ?? ResolveAIModelDirectory(this.appPaths);
         this.aiCacheDirectory=aiCacheDirectory ?? this.appPaths.DualDnCacheDirectory;
         aiBackendOverride=aiBackend;
         this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? (appPaths != null ? new(this.appPaths.AiDiagnosticsDirectory) : AIDiagnosticStore.Default);

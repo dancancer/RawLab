@@ -157,7 +157,7 @@ public partial class MainWindow
     }
     private async void Export(ExportFormat format)
     {
-        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null)return;
         var suffix=format.Suffix();
         var dialog=new SaveFileDialog{Title=Loc.Text("导出"),Filter=format switch {
                 ExportFormat.Jpeg or ExportFormat.HdrJpeg or ExportFormat.SdrJpeg => format.Title()+"|*.jpg;*.jpeg",
@@ -179,9 +179,11 @@ public partial class MainWindow
     }
     internal async Task ExportPhoto(ExportFormat format,string destination)
     {
-        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || engine==null || closing)return;
+        if(AIBlocksOutput || !exactReady || scheduler.Busy || previewResize.IsEnabled || exporting || file==null || closing)return;
         if(Path.GetFullPath(destination).Equals(Path.GetFullPath(file),StringComparison.OrdinalIgnoreCase)){SetStatus(() => Loc.Text("不能覆盖原始文件。"),true);return;}
         var input=file;var adjustment=settings.Clone();var film=lut;
+        var gpuMode=RequestedGpuMode;var aiDevice=aiPreference.DeviceID;
+        var lastBackend=0;
         // Render to a sibling temporary file, then replace only after encoding succeeds.
         var temp=TempCleanup.CreateExportStagingPath(destination,format.Suffix());
         var stagingDirectory=exportStagingDirectory;
@@ -200,7 +202,9 @@ public partial class MainWindow
             await Task.Run(()=> {
                 TempCleanup.SweepExpiredExportStagingInDirectory(Path.GetDirectoryName(temp)!, DateTime.UtcNow, TempCleanup.DefaultRetention, stagingDirectory);
                 staging = TempCleanup.BeginExportStaging(temp, stagingDirectory);
-                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
+                var activeEngine = EnsureRenderEngine(gpuMode, aiDevice);
+                activeEngine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
+                lastBackend = activeEngine.LastBackend;
             });
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
@@ -216,10 +220,10 @@ public partial class MainWindow
                 new()
                 {
                     ["format"] = format.Suffix(),
-                    ["backend"] = engine.LastBackend.ToString(),
+                    ["backend"] = lastBackend.ToString(),
                 });
             lastExportedPath=destination;ExportRevealButton.Visibility=Visibility.Visible;
-            SetStatus(() => Loc.Format("已导出（{0}）：{1}", (engine.LastBackend==3 ? "Direct3D 11" : "CPU"), destination));
+            SetStatus(() => Loc.Format("已导出（{0}）：{1}", (lastBackend==3 ? "Direct3D 11" : "CPU"), destination));
         }
         catch(Exception ex){if(!HandleAIFailure(ex))Report(ex);}
         finally {staging?.Dispose();TempCleanup.TryDeleteExportStagingFile(temp); foregroundBusy=false;RefreshControls();if(closing)FinishClose();else ResumePreview();}
@@ -239,6 +243,7 @@ public partial class MainWindow
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();
+        aiModelManager.CancelDownload();
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
@@ -261,7 +266,7 @@ public partial class MainWindow
         // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出
         await usageAnalytics.CloseAsync(UsageAnalytics.ShutdownLimit);
         if(photoPreviews!=null) {
-            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
+            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;photoPreviews.AIPreparationChanged-=PhotoPreviewAIPreparationChanged;
             await photoPreviews.DisposeAsync();photoPreviews=null;
         }
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();

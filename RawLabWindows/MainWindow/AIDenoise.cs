@@ -1,9 +1,11 @@
 using System.IO;
+using System.Windows;
 
 namespace RawLab.Windows;
 public partial class MainWindow
 {
     private readonly AIDenoiseJob aiJob;
+    private AIModelPackageManager aiModelManager;
     private AIGpuPreferenceStore aiPreferenceStore;
     private AIDiagnosticStore aiDiagnostics;
     private AIGpuPreference aiPreference=new();
@@ -14,10 +16,72 @@ public partial class MainWindow
     private int RequestedAIBackend=>GpuMode.SelectedIndex==2 ? 3 : 2;
     private Adjustments AIWorkSettings { get { var snapshot=settings.Clone();snapshot.Lens=PreviewLens;return snapshot; } }
     private bool HDRCameraAICandidate=>file!=null && PhotoInput.IsHDRCameraAICandidate(hdrSource);
+    private string? ResolveAIModelDirectory()=>RenderEngine.ResolveAIModelDirectory(appPaths,aiModelManager?.Store);
+    private bool HasAIModel=>aiModelManager.State.IsInstalled || ResolveAIModelDirectory()!=null;
+    private bool CanRemoveDownloadedAIModel=>aiModelManager.State.IsDownloadedInstalled && !aiModelManager.State.IsBusy &&
+        !aiJob.State.IsRunning && aiJob.Completion.IsCompleted && !scheduler.Busy && !exporting && !autoExposing && !transferPreparing &&
+        !(photoPreviews?.IsPreparingAI==true) && !closing;
     private bool CanStartAI=>file!=null && (settings.IsHDREditing
         ? HDRCameraAICandidate && settings.HDR!.CameraSettings.AllowsAI && RequestedGpuMode!=2
         : !PhotoInput.IsNormalX3f(file,settings) && PhotoInput.IsRaw(file)) && RenderEngine.AIAvailable && RenderEngine.AIHardwareAvailable &&
-        RenderEngine.HasBundledAIModel && RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) && !exporting && !transform.Active && !closing;
+        HasAIModel && !aiModelManager.State.IsBusy && RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) && !exporting && !transform.Active && !closing;
+    private AIModelPackageManager CreateAIModelManager(AppPaths paths)
+    {
+        var manager=new AIModelPackageManager(
+            AIModelPackageStore.CreateForAppPaths(paths),
+            isRuntimeSupported:()=>RenderEngine.AIAvailable,
+            isHardwareAvailable:()=>RenderEngine.AIHardwareAvailable,
+            overrideProvider:()=>AIModelPackageStore.ResolvedOverrideDirectory,
+            bundledProvider:()=>RenderEngine.BundledAIModel,
+            dispatch:action=>{
+                if(Dispatcher.HasShutdownStarted)return;
+                if(Dispatcher.CheckAccess())action();
+                else Dispatcher.BeginInvoke(action);
+            });
+        AttachAIModelManager(manager);
+        return manager;
+    }
+    private void AttachAIModelManager(AIModelPackageManager manager)
+    {
+        manager.StateChanged+=OnAIModelStateChanged;
+        manager.InstallStateChanged+=OnAIModelInstallStateChanged;
+    }
+    private void DetachAIModelManager(AIModelPackageManager? manager)
+    {
+        if(manager==null)return;
+        manager.StateChanged-=OnAIModelStateChanged;
+        manager.InstallStateChanged-=OnAIModelInstallStateChanged;
+    }
+    private void RebindAIModelManagerForTests(AppPaths isolatedPaths)
+    {
+        DetachAIModelManager(aiModelManager);
+        aiModelManager.CancelDownload();
+        aiModelManager=CreateAIModelManager(isolatedPaths);
+        RefreshAIControls();
+    }
+    private void OnAIModelStateChanged(AIModelPackageState _)
+    {
+        if(!closing)RefreshControls();
+    }
+    private void OnAIModelInstallStateChanged()
+    {
+        if(closing)return;
+        var installed=HasAIModel;
+        if(!scheduler.Busy && !exporting && engine!=null &&
+            !string.Equals(engine.CurrentAIModelDirectory,ResolveAIModelDirectory(),StringComparison.OrdinalIgnoreCase)) {
+            engine.Dispose();engine=null;
+        }
+        photoPreviews?.RefreshAll();
+        if(installed) {
+            if(settings.ActiveAIDenoise && file!=null && aiJob.State.Status!=AIDenoiseStatus.Ready && !aiJob.State.IsRunning) {
+                aiJob.Reset();
+                Schedule();
+            }
+        } else {
+            if(!aiJob.State.IsRunning)aiJob.Reset();
+        }
+        RefreshControls();
+    }
     private bool AIResultReady
     {
         get {
@@ -34,7 +98,7 @@ public partial class MainWindow
     {
         aiJob.Changed+=()=>{
             if(Dispatcher.HasShutdownStarted)return;
-            Dispatcher.BeginInvoke(new Action(()=>{if(!closing)RefreshControls();}));
+            Dispatcher.BeginInvoke(new Action(()=>{if(closing)FinishClose();else RefreshControls();}));
         };
         DenoiseEditor.AIChanged+=SetAIEnabled;
         DenoiseEditor.AIStrengthChanged+=(value,dragging)=>{
@@ -44,6 +108,31 @@ public partial class MainWindow
         DenoiseEditor.AICancelRequested+=()=>{aiManuallyRequested=false;aiJob.Cancel();RefreshControls();Schedule();};
         DenoiseEditor.AIRetryRequested+=()=>RequestAI(true);
         DenoiseEditor.AIDiagnosticsRequested+=async()=>await ExportAIDiagnostics(this,aiJob.State.DiagnosticPath);
+        DenoiseEditor.AIModelDownloadRequested+=()=>aiModelManager.StartDownload();
+        DenoiseEditor.AIModelCancelRequested+=()=>aiModelManager.CancelDownload();
+        DenoiseEditor.AIModelLicenseRequested+=ShowAIModelLicenses;
+        DenoiseEditor.AIModelRemoveRequested+=ConfirmAndRemoveDownloadedAIModel;
+    }
+    private void ShowAIModelLicenses()
+    {
+        var dialog=new AIModelLicenseWindow(aiModelManager.Store.InstalledPackageDirectory()){Owner=this};
+        dialog.ShowDialog();
+    }
+    private void ConfirmAndRemoveDownloadedAIModel()
+    {
+        if(!CanRemoveDownloadedAIModel)return;
+        var state=aiModelManager.State;
+        var message=Loc.Format("删除后将释放约 {0} MB 磁盘空间，需要时可重新下载。",AIModelPackageException.FormatMegabytes(state.UnpackedBytes));
+        if(MessageBox.Show(this,message,Loc.Text("确定删除已下载的 AI 降噪模型？"),MessageBoxButton.YesNo,MessageBoxImage.Warning,MessageBoxResult.No)!=MessageBoxResult.Yes)
+            return;
+        RemoveDownloadedAIModelCore();
+    }
+    private bool RemoveDownloadedAIModelCore()
+    {
+        if(!CanRemoveDownloadedAIModel)return false;
+        if(!scheduler.Busy && !exporting && engine!=null) { engine.Dispose(); engine=null; }
+        aiModelManager.RemoveDownloadedModel();
+        return true;
     }
     private void RefreshAIControls()
     {
@@ -51,7 +140,9 @@ public partial class MainWindow
         DenoiseEditor.RefreshAI(visible,settings.ActiveAIDenoise,CanStartAI,aiJob.State,
             PhotoInput.HDRCameraAIUnavailableHint(settings.HDR,RequestedGpuMode) ??
                 (!RenderEngine.AIHardwareAvailable ? Loc.Text("AI 降噪需要支持 DirectML 的 D3D12 硬件显卡。") :
-                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),GpuMode.SelectedIndex==1,settings.AIDenoiseStrength);
+                !RenderEngine.GetAIDevices().IsAvailable(aiPreference.DeviceID) ? Loc.Text("所选 AI 显卡不可用，请在设置中重新选择。") : null),
+            GpuMode.SelectedIndex==1,settings.AIDenoiseStrength,
+            aiModelManager.State,!exporting && RenderEngine.AIModelDownloadSupported,CanRemoveDownloadedAIModel);
     }
     private void ResetAITask() { aiManuallyRequested=false;aiNotReadyIdentity=null;aiNotReadyAttempts=0;aiJob.Reset(); }
     private bool HasPendingAIReset(EditorResetScope scope)=>EditorAdjustmentRules.ResetsAI(scope) && aiManuallyRequested;

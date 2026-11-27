@@ -24,6 +24,18 @@
    <CheckBox x:Name="AIEnabledBox" Checked="AIEnabledChanged" Unchecked="AIEnabledChanged" AutomationProperties.Name="{DynamicResource 'AI 降噪（实验）'}">
     <TextBlock Text="{DynamicResource 'AI 降噪（实验）'}" TextWrapping="Wrap"/>
    </CheckBox>
+   <StackPanel x:Name="AIModelSection" Visibility="Collapsed" Margin="0,6,0,2">
+    <ProgressBar x:Name="AIModelProgress" Minimum="0" Maximum="1" Height="4" Margin="0,0,0,4" Visibility="Collapsed" AutomationProperties.Name="{DynamicResource '正在下载 AI 降噪模型…'}"/>
+    <TextBlock x:Name="AIModelStatus" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Visibility="Collapsed" AutomationProperties.AutomationId="denoise.ai.model.status" AutomationProperties.LiveSetting="Polite"/>
+    <TextBlock x:Name="AIModelNotice" Text="{DynamicResource '模型（DualDn、Restormer）仅限非商业用途。'}" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Margin="0,3,0,0" Visibility="Collapsed" AutomationProperties.AutomationId="denoise.ai.model.licenseNotice"/>
+    <WrapPanel x:Name="AIModelActions" Margin="0,4,0,0">
+     <Button x:Name="AIModelDownload" Content="{DynamicResource '下载模型'}" Click="AIModelDownloadClicked" Visibility="Collapsed" Margin="0,0,8,4" AutomationProperties.AutomationId="denoise.ai.model.download"/>
+     <Button x:Name="AIModelRetry" Content="{DynamicResource '重试'}" Click="AIModelDownloadClicked" Visibility="Collapsed" Margin="0,0,8,4" AutomationProperties.AutomationId="denoise.ai.model.retry"/>
+     <Button x:Name="AIModelCancel" Content="{DynamicResource '取消'}" Click="AIModelCancelClicked" Visibility="Collapsed" Margin="0,0,8,4" AutomationProperties.AutomationId="denoise.ai.model.cancel"/>
+     <Button x:Name="AIModelLicense" Content="{DynamicResource '查看许可'}" Click="AIModelLicenseClicked" Visibility="Collapsed" Margin="0,0,8,4" AutomationProperties.AutomationId="denoise.ai.model.license"/>
+     <Button x:Name="AIModelRemove" Content="{DynamicResource '删除已下载模型'}" Click="AIModelRemoveClicked" Visibility="Collapsed" Margin="0,0,0,4" AutomationProperties.AutomationId="denoise.ai.model.remove"/>
+    </WrapPanel>
+   </StackPanel>
    <StackPanel Margin="0,4,0,0">
     <Button x:Name="AICancel" Content="{DynamicResource '取消'}" Click="AICancelClicked" Visibility="Collapsed" HorizontalAlignment="Left"/>
     <Button x:Name="AIRetry" Content="{DynamicResource '重试'}" Click="AIRetryClicked" Visibility="Collapsed" HorizontalAlignment="Left"/>

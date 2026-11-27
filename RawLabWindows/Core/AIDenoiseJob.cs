@@ -52,9 +52,10 @@ internal sealed class AIDenoiseJob
     private long generation;
     private AIDenoiseState state=new(AIDenoiseStatus.Idle);
     private AIDenoiseIdentity? identity;
+    private Task completion=Task.CompletedTask;
     internal AIDenoiseState State { get { lock(gate)return state; } }
     internal AIDenoiseIdentity? Identity { get { lock(gate)return identity; } }
-    internal Task Completion { get; private set; }=Task.CompletedTask;
+    internal Task Completion { get { lock(gate)return completion; } }
     internal event Action? Changed;
     internal AIDenoiseJob(Action<AIDenoiseIdentity,Adjustments,AIPreparation> prepare,
         Func<Exception,AIDenoiseIdentity,string?>? captureFailure=null)
@@ -72,9 +73,14 @@ internal sealed class AIDenoiseJob
                 Changed?.Invoke();
             });
         }
-        Changed?.Invoke();
         var work=RunAsync(revision,next,settings.Clone(),progress);
-        Completion=Completion.IsCompleted ? work : Task.WhenAll(Completion,work);
+        Task tracked;
+        lock(gate) {
+            tracked=completion.IsCompleted ? work : Task.WhenAll(completion,work);
+            completion=tracked;
+        }
+        Changed?.Invoke();
+        _ = tracked.ContinueWith(_=>Changed?.Invoke(),TaskScheduler.Default);
         return work;
     }
     private async Task<bool> RunAsync(long revision,AIDenoiseIdentity current,Adjustments settings,AIPreparation progress)

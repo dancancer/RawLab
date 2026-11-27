@@ -19,6 +19,7 @@ internal sealed class AppPaths
     internal string HdrCameraProfilesDirectory => Path.Combine(Root, "HDRCameraProfiles");
     internal string UpdatesDirectory => Path.Combine(Root, "Updates");
     internal string EditedPhotoPreviewCacheDirectory => Path.Combine(Root, "Cache", "EditedPhotoPreviews");
+    internal string DualDnModelDirectory => Path.Combine(Root, "AI", "DualDn");
     internal string DualDnCacheDirectory => Path.Combine(Root, "Cache", "DualDn");
     internal string HdrCacheDirectory => Path.Combine(Root, "Cache", "HDR");
     internal string ExportStagingDirectory => Path.Combine(Root, "Cache", "ExportStaging");

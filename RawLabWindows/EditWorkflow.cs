@@ -27,7 +27,21 @@ public partial class MainWindow
     private BatchJob? CurrentBatch => batchWindow?.Job ?? previousBatch;
 
     private RenderEngine CreateRenderEngine(int gpuMode = 1, int? aiBackend = null, string aiDeviceID = "") =>
-        new(gpuMode: gpuMode, aiBackend: aiBackend, aiDeviceID: aiDeviceID, aiDiagnostics: aiDiagnostics, appPaths: appPaths);
+        new(gpuMode: gpuMode, aiModelDirectory: ResolveAIModelDirectory(), aiBackend: aiBackend, aiDeviceID: aiDeviceID, aiDiagnostics: aiDiagnostics, appPaths: appPaths);
+
+    private RenderEngine EnsureRenderEngine(int gpuMode, string aiDeviceID)
+    {
+        var resolvedModel = ResolveAIModelDirectory();
+        if (engine != null && !string.Equals(engine.CurrentAIModelDirectory, resolvedModel, StringComparison.OrdinalIgnoreCase))
+        {
+            engine.Dispose();
+            engine = null;
+        }
+        var active = engine ??= CreateRenderEngine(gpuMode: gpuMode, aiDeviceID: aiDeviceID);
+        active.SetGpuMode(gpuMode);
+        active.SetAIDevice(aiDeviceID);
+        return active;
+    }
 
     private void InitializeEditWorkflow()
     {
