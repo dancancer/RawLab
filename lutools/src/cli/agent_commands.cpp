@@ -335,7 +335,9 @@ Json recipeToTransferPayload(const EditRecipe& recipe) {
     if (recipe.hdr) {
         const auto& h = *recipe.hdr;
         const uint32_t hv = h.processingVersion;
-        Json values = {
+        // Every field the recipe can describe; the core's per-version table (the one the store
+        // validates against) decides which of them this hdr_processing_version may carry.
+        Json candidates = {
             {"light.exposure", recipe.exposureEv},
             {"light.contrast", recipe.contrast},
             {"light.highlights", recipe.highlights},
@@ -353,77 +355,66 @@ Json recipeToTransferPayload(const EditRecipe& recipe) {
             {"geometry.straighten_degrees", recipe.geometry.straighten_degrees},
             {"geometry.perspective.horizontal", recipe.perspective.horizontal},
             {"geometry.perspective.vertical", recipe.perspective.vertical},
+            {"tone.black_point", static_cast<double>(recipe.toneControls.black_point) * 100.0},
+            {"tone.white_point", static_cast<double>(recipe.toneControls.white_point) * 100.0},
+            {"light.s_curve", recipe.sCurve},
+            {"light.curve", buildCurve()},
+            {"color.vibrance", static_cast<double>(recipe.toneControls.vibrance) * 100.0},
+            {"hdr.peak_limit_ev", h.peakLimitEV},
+            {"hdr.sdr_exposure_ev", h.sdrExposureEV},
+            {"hdr.sdr_contrast", static_cast<double>(h.sdrContrast) * 100.0},
+            {"hdr.sdr_saturation", static_cast<double>(h.sdrSaturation) * 100.0},
+            {"effects.vignette.amount", recipe.effects.vignette_amount},
+            {"effects.vignette.midpoint", recipe.effects.vignette_midpoint},
+            {"effects.vignette.roundness", recipe.effects.vignette_roundness},
+            {"effects.vignette.feather", recipe.effects.vignette_feather},
+            {"effects.vignette.highlights", recipe.effects.vignette_highlights},
+            {"effects.grain.amount", recipe.effects.grain_amount},
+            {"effects.grain.size", recipe.effects.grain_size},
+            {"effects.grain.roughness", recipe.effects.grain_roughness},
+            {"detail.sharpening", h.sharpening},
+            {"effects.clarity", static_cast<double>(h.clarity) * 100.0},
+            {"effects.dehaze", static_cast<double>(h.dehaze) * 100.0},
+            {"detail.denoise.post_rgb", h.denoise},
+            {"light.curve.apply_to_luminosity", recipe.curveApplyToLuminosity},
+            {"light.curve.parametric", buildParametric()},
+            {"color.grading.blending", recipe.colorGradingV2.blending},
+            {"color.grading.balance", recipe.colorGradingV2.balance},
         };
-        if (hv >= 2) {
-            values["tone.black_point"] = static_cast<double>(recipe.toneControls.black_point) * 100.0;
-            values["tone.white_point"] = static_cast<double>(recipe.toneControls.white_point) * 100.0;
-            values["light.s_curve"] = recipe.sCurve;
-            values["light.curve"] = buildCurve();
+        for (size_t i = 0; i < SONY2FUJI_HSL_CHANNELS; ++i) {
+            candidates[std::string("color.hsl.hue.") + kHslNames[i]] = recipe.hsl.hue[i];
+            candidates[std::string("color.hsl.saturation.") + kHslNames[i]] = recipe.hsl.saturation[i];
+            candidates[std::string("color.hsl.lightness.") + kHslNames[i]] = recipe.hsl.lightness[i];
         }
-        if (hv >= 3) {
-            values["color.vibrance"] = static_cast<double>(recipe.toneControls.vibrance) * 100.0;
-            for (size_t i = 0; i < SONY2FUJI_HSL_CHANNELS; ++i) {
-                values[std::string("color.hsl.hue.") + kHslNames[i]] = recipe.hsl.hue[i];
-                values[std::string("color.hsl.saturation.") + kHslNames[i]] = recipe.hsl.saturation[i];
-                values[std::string("color.hsl.lightness.") + kHslNames[i]] = recipe.hsl.lightness[i];
-            }
-            const bool v2Lum = hv >= 9;
-            values["color.grading.shadows"] = gradingWheelToTransferJson(
-                recipe.colorGrading.shadows_hue, recipe.colorGrading.shadows_saturation,
-                recipe.colorGradingV2.shadows_luminance, v2Lum);
-            values["color.grading.midtones"] = gradingWheelToTransferJson(
-                recipe.colorGrading.midtones_hue, recipe.colorGrading.midtones_saturation,
-                recipe.colorGradingV2.midtones_luminance, v2Lum);
-            values["color.grading.highlights"] = gradingWheelToTransferJson(
-                recipe.colorGrading.highlights_hue, recipe.colorGrading.highlights_saturation,
-                recipe.colorGradingV2.highlights_luminance, v2Lum);
+        // Zone luminance is a value rule, not a field rule: the store rejects it below v9.
+        const bool v2Lum = hv >= 9;
+        candidates["color.grading.shadows"] = gradingWheelToTransferJson(
+            recipe.colorGrading.shadows_hue, recipe.colorGrading.shadows_saturation,
+            recipe.colorGradingV2.shadows_luminance, v2Lum);
+        candidates["color.grading.midtones"] = gradingWheelToTransferJson(
+            recipe.colorGrading.midtones_hue, recipe.colorGrading.midtones_saturation,
+            recipe.colorGradingV2.midtones_luminance, v2Lum);
+        candidates["color.grading.highlights"] = gradingWheelToTransferJson(
+            recipe.colorGrading.highlights_hue, recipe.colorGrading.highlights_saturation,
+            recipe.colorGradingV2.highlights_luminance, v2Lum);
+        candidates["color.grading.global"] = gradingWheelToTransferJson(
+            recipe.colorGradingV2.global_hue, recipe.colorGradingV2.global_saturation,
+            recipe.colorGradingV2.global_luminance, true);
+        if (!recipe.lookPath.empty() && h.lookSHA256.size() == 64) {
+            const auto fname = std::filesystem::u8path(recipe.lookPath).filename().u8string();
+            candidates["hdr.look"] = {
+                {"sha256", h.lookSHA256},
+                {"name", fname},
+                {"strength", recipe.lookStrength},
+            };
+        } else {
+            candidates["hdr.look"] = nullptr;
         }
-        if (hv >= 4) {
-            values["hdr.peak_limit_ev"] = h.peakLimitEV;
-            values["hdr.sdr_exposure_ev"] = h.sdrExposureEV;
-            values["hdr.sdr_contrast"] = static_cast<double>(h.sdrContrast) * 100.0;
-            values["hdr.sdr_saturation"] = static_cast<double>(h.sdrSaturation) * 100.0;
-        }
-        if (hv >= 5) {
-            values["effects.vignette.amount"] = recipe.effects.vignette_amount;
-            values["effects.vignette.midpoint"] = recipe.effects.vignette_midpoint;
-            values["effects.vignette.roundness"] = recipe.effects.vignette_roundness;
-            values["effects.vignette.feather"] = recipe.effects.vignette_feather;
-            values["effects.vignette.highlights"] = recipe.effects.vignette_highlights;
-            values["effects.grain.amount"] = recipe.effects.grain_amount;
-            values["effects.grain.size"] = recipe.effects.grain_size;
-            values["effects.grain.roughness"] = recipe.effects.grain_roughness;
-        }
-        if (hv >= 6) {
-            values["detail.sharpening"] = h.sharpening;
-            values["effects.clarity"] = static_cast<double>(h.clarity) * 100.0;
-            values["effects.dehaze"] = static_cast<double>(h.dehaze) * 100.0;
-            values["detail.denoise.post_rgb"] = h.denoise;
-        }
-        if (hv >= 7) {
-            if (!recipe.lookPath.empty() && h.lookSHA256.size() == 64) {
-                const auto fname = std::filesystem::u8path(recipe.lookPath).filename().u8string();
-                values["hdr.look"] = {
-                    {"sha256", h.lookSHA256},
-                    {"name", fname},
-                    {"strength", recipe.lookStrength},
-                };
-            } else {
-                values["hdr.look"] = nullptr;
-            }
-        }
-        if (hv >= 9) {
-            values["light.curve.apply_to_luminosity"] = recipe.curveApplyToLuminosity;
-            values["light.curve.parametric"] = buildParametric();
-            values["color.grading.global"] = gradingWheelToTransferJson(
-                recipe.colorGradingV2.global_hue, recipe.colorGradingV2.global_saturation,
-                recipe.colorGradingV2.global_luminance, true);
-            values["color.grading.blending"] = recipe.colorGradingV2.blending;
-            values["color.grading.balance"] = recipe.colorGradingV2.balance;
-        }
+        // Input-type rule, kept here because the version table does not know the source type:
+        // camera development settings only exist for RAW sources.
         if (h.inputType == "raw") {
             const auto& cd = h.cameraDevelopment;
-            values["hdr.camera_development"] = {
+            candidates["hdr.camera_development"] = {
                 {"version", 1},
                 {"white_balance_mode", cd.white_balance == SONY2FUJI_HDR_CAMERA_WB_TEMPERATURE ? "temperature" : "as_shot"},
                 {"temperature", cd.temperature},
@@ -431,6 +422,10 @@ Json recipeToTransferPayload(const EditRecipe& recipe) {
                 {"exposure_reference", cd.exposure_reference == SONY2FUJI_HDR_CAMERA_EXPOSURE_SENSOR ? "sensor" : "metadata"},
                 {"fbdd_level", cd.fbdd_level},
             };
+        }
+        Json values = Json::object();
+        for (auto& [field, value] : candidates.items()) {
+            if (gui_store::isHdrTransferFieldSupported(field, static_cast<int>(hv))) values[field] = std::move(value);
         }
         return {
             {"payload_version", 2},
