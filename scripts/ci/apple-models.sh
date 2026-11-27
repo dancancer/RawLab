@@ -42,7 +42,7 @@ fail_on_empty_swift_test() {
 }
 # XCTSkip 与 Swift Testing 的 .disabled 不会打印行首 SKIP，只体现在汇总行和逐条结果里。
 fail_on_skipped_swift_test() {
-    if grep -q -E 'with [1-9][0-9]* tests? skipped|^[^[:alnum:]]*Test .+ skipped(: |\.?$)' "$1"; then
+    if grep -q -E '^[[:space:]]*Executed [0-9]+ tests?, with [1-9][0-9]* tests? skipped |^[^[:alnum:]]*Test .+ skipped(: |\.?$)' "$1"; then
         printf 'error: %s reported skipped tests (forbidden by CI invariant 7)\n' "$2" >&2
         return 1
     fi

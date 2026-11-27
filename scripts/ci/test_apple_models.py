@@ -759,7 +759,9 @@ fi
 
     def test_swift_test_rejects_xctest_and_swift_testing_skips(self):
         root, runner, tools = self._parallel_probe_root()
-        (tools / "swift").write_text('#!/bin/bash\nprintf \'%s\\n\' "$SWIFT_OUT"\n')
+        (tools / "swift").write_text('''#!/bin/bash
+if [[ "$*" == *"-c release"* ]]; then printf '%s\\n' "${SWIFT_RELEASE_OUT:-$SWIFT_OUT}"; else printf '%s\\n' "$SWIFT_OUT"; fi
+''')
         (tools / "swift").chmod(0o755)
         child = tools / "bash"
         child.write_text('#!/bin/bash\nprintf "PASS: %s\\n" "$1"\n')
@@ -770,7 +772,8 @@ fi
             ("xctskip-plural", executed.format("12 tests skipped"), 1),
             ("swift-testing-disabled",
              executed.replace("with {} and ", "with ") + '\n\u279c Test disabledCase() skipped: "off"', 1),
-            ("none-skipped", executed.format("0 tests skipped") + "\nTest Case '-[T testSkippedFieldsSurvive]' passed (0.000 seconds).", 0),
+            ("none-skipped", executed.format("0 tests skipped") + "\nTest Case '-[T testSkippedFieldsSurvive]' passed (0.000 seconds)."
+             "\ndiagnostic: with 1 test skipped in the fixture", 0),
         )
         for name, output, expected in cases:
             for platform in ("macos", "ios"):
@@ -782,6 +785,14 @@ fi
                     self.assertEqual(res.returncode, expected, res.stdout + res.stderr)
                     if expected:
                         self.assertIn("swift test reported skipped tests (forbidden by CI invariant 7)", res.stderr)
+        release_only = self._run_parallel_probe(
+            root, runner, tools, "macos", "skip-release-only",
+            RAWLAB_CI_SWIFTPM_CACHE=".cache/skip-release-only",
+            SWIFT_OUT=executed.replace("with {} and ", "with "),
+            SWIFT_RELEASE_OUT=executed.format("1 test skipped"),
+        )
+        self.assertEqual(release_only.returncode, 1, release_only.stdout + release_only.stderr)
+        self.assertIn("swift test (release) reported skipped tests", release_only.stderr)
 
 
 if __name__ == "__main__":
