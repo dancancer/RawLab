@@ -10,7 +10,11 @@ internal static class AIDenoisePanelChecks
     internal static void Run(string output,Action<bool,string> check)
     {
         var app=Application.Current ?? TestWindowState.CreateApplication();
+        var previousLanguage=Loc.Preference;
         var panel=new DenoisePanel();panel.Refresh(DenoiseSettings.Clean);
+        var host=new Window { Width=440, Height=400, ShowInTaskbar=false, WindowStyle=WindowStyle.None, Opacity=0, Content=panel };
+        host.Show();
+        try {
         panel.RefreshAI(true,false,true,new(AIDenoiseStatus.Idle));
         var toggle=(CheckBox)panel.FindName("AIEnabledBox");var ordinary=(StackPanel)panel.FindName("OrdinaryDenoise");
         check(toggle.IsEnabled && toggle.IsChecked==false && ordinary.IsEnabled,"Idle AI preserves ordinary controls");
@@ -25,10 +29,11 @@ internal static class AIDenoisePanelChecks
         check(toggle.IsChecked==true && ((Button)panel.FindName("AIRetry")).Visibility==Visibility.Visible,
             "Cancelled rebuild preserves enabled appearance with explicit retry");
         ((Button)panel.FindName("AIRetry")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));check(retry,"Retry dispatches a new explicit request");
+        try {
         foreach(var language in new[]{"zh-Hans","en","de","fr","ja","es"}) {
             Loc.Initialize(language);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
             var localized=new DenoisePanel {FontSize=14};localized.Refresh(DenoiseSettings.Clean);
-            check(((CheckBox)localized.FindName("AIEnabledBox")).Content?.ToString()==Loc.Text("AI 降噪（实验）"),"AI toggle uses selected language: "+language);
+            check((((CheckBox)localized.FindName("AIEnabledBox")).Content as TextBlock)?.Text==Loc.Text("AI 降噪（实验）"),"AI toggle uses selected language: "+language);
             foreach (var (camera, gpu, message) in new[] {
                 (new HDRCameraDevelopmentSettings(FbddLevel: 1), 0, "请先关闭 FBDD，再使用 HDR AI 降噪。"),
                 (new HDRCameraDevelopmentSettings(FbddLevel: 2), 0, "请先关闭 FBDD，再使用 HDR AI 降噪。"),
@@ -52,6 +57,9 @@ internal static class AIDenoisePanelChecks
                 var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));encoder.Save(stream);
             }
         }
+        } finally {
+            Loc.Initialize(previousLanguage);foreach(var pair in Loc.Strings)app.Resources[pair.Key]=pair.Value;
+        }
         panel.RefreshAI(false,false,false,new(AIDenoiseStatus.Idle));
         check(((StackPanel)panel.FindName("AISurface")).Visibility==Visibility.Collapsed,"AI-off build hides unused experimental controls");
 
@@ -62,10 +70,13 @@ internal static class AIDenoisePanelChecks
         panel.RefreshAI(true, true, true, new(AIDenoiseStatus.Ready), aiStrength: 62.5);
         check(aiStrengthRow.Visibility == Visibility.Visible && aiStrengthRow.Number.Text == "62.5",
             "AI strength slider is visible in SDR when AI is enabled and shows current blend percentage");
-        aiStrengthRow.Slider.Value = 35;
+        aiStrengthRow.Slider.Value = 0.35;
         check(observedBlend == 35, "AI strength slider dispatches updated DualDn blend percentage");
         panel.Refresh(DenoiseSettings.Clean, hdrStrength: 0.4);
         check(((StackPanel)panel.FindName("AISurface")).Visibility == Visibility.Collapsed,
             "AI strength slider stays hidden inside HDR mode");
+        } finally {
+            host.Close();
+        }
     }
 }
