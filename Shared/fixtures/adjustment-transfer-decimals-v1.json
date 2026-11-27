@@ -697,6 +697,24 @@
           "effects.grain.amount": -0.25
         }
       }
+    },
+    {
+      "id": "raw-relative-white-balance-mode-is-invalid",
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "relative.ARW",
+          "is_raw": true,
+          "processing_version": 3
+        },
+        "values": {
+          "color.white_balance.mode": "relative",
+          "color.white_balance.temperature_kelvin": 5200.0,
+          "color.white_balance.tint": 8.0
+        }
+      },
+      "reason": "invalid_payload"
     }
   ]
 }
