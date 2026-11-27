@@ -285,8 +285,8 @@ inline const std::string kD3DSpatialShader = std::string(R"hlsl(
 cbuffer SpatialParamsBuffer : register(b0) {
     uint4 spDims;        // width, height, rowOffset, rows
     uint4 spBandInfo;    // srcRowOffset, auxRowOffset, radius, stage
-    float4 spSharpenCfg; // strength, sharpenDetail, sharpenMasking, sharpenRadius
-    float4 spDefringeCfg;// purpleAmount, purpleHue, greenAmount, greenHue
+    float4 spSharpenCfg; // strength (detailGain for sharpen v2), coring, maskLow, maskSpan
+    float4 spDefringeCfg;// purpleNorm, purpleCenter, greenNorm, greenCenter
     float4 spAirlight;
     uint4 spFlags;
     uint4 spBandDims;    // srcRows, auxRows, dstWidth, dstHeight
@@ -331,12 +331,13 @@ float spReadWeight(uint idx) {
 #define SP_HEIGHT spDims.y
 #define SP_RADIUS spBandInfo.z
 #define SP_STRENGTH spSharpenCfg.x
-#define SP_SHARPEN_DETAIL spSharpenCfg.y
-#define SP_SHARPEN_MASKING spSharpenCfg.z
-#define SP_PURPLE_AMT spDefringeCfg.x
-#define SP_PURPLE_HUE spDefringeCfg.y
-#define SP_GREEN_AMT spDefringeCfg.z
-#define SP_GREEN_HUE spDefringeCfg.w
+#define SP_SHARPEN_CORING spSharpenCfg.y
+#define SP_SHARPEN_MASK_LOW spSharpenCfg.z
+#define SP_SHARPEN_MASK_SPAN spSharpenCfg.w
+#define SP_PURPLE_NORM spDefringeCfg.x
+#define SP_PURPLE_CENTER spDefringeCfg.y
+#define SP_GREEN_NORM spDefringeCfg.z
+#define SP_GREEN_CENTER spDefringeCfg.w
 #define SP_AIRLIGHT spAirlight
 #define SP_FLAGS spFlags
 )hlsl") + photoSpatialShaderBody() + R"hlsl(
@@ -354,12 +355,13 @@ float spReadWeight(uint idx) {
 #undef SP_HEIGHT
 #undef SP_RADIUS
 #undef SP_STRENGTH
-#undef SP_SHARPEN_DETAIL
-#undef SP_SHARPEN_MASKING
-#undef SP_PURPLE_AMT
-#undef SP_PURPLE_HUE
-#undef SP_GREEN_AMT
-#undef SP_GREEN_HUE
+#undef SP_SHARPEN_CORING
+#undef SP_SHARPEN_MASK_LOW
+#undef SP_SHARPEN_MASK_SPAN
+#undef SP_PURPLE_NORM
+#undef SP_PURPLE_CENTER
+#undef SP_GREEN_NORM
+#undef SP_GREEN_CENTER
 #undef SP_AIRLIGHT
 #undef SP_FLAGS
 

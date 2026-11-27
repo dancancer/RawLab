@@ -693,13 +693,13 @@ struct SpatialParams {
     uint radius;
     uint stage;
     float strength;
-    float sharpenDetail;
-    float sharpenMasking;
-    float sharpenRadius;
-    float defringePurpleAmount;
-    float defringePurpleHue;
-    float defringeGreenAmount;
-    float defringeGreenHue;
+    float sharpenCoring;
+    float sharpenMaskLow;
+    float sharpenMaskSpan;
+    float defringePurpleNorm;
+    float defringePurpleCenter;
+    float defringeGreenNorm;
+    float defringeGreenCenter;
     float4 airlight;
     uint4 flags;
     uint4 bandDims;
@@ -734,12 +734,13 @@ inline float spReadWeight(constant SpatialParams& p, uint idx) {
 #define SP_HEIGHT sp.height
 #define SP_RADIUS sp.radius
 #define SP_STRENGTH sp.strength
-#define SP_SHARPEN_DETAIL sp.sharpenDetail
-#define SP_SHARPEN_MASKING sp.sharpenMasking
-#define SP_PURPLE_AMT sp.defringePurpleAmount
-#define SP_PURPLE_HUE sp.defringePurpleHue
-#define SP_GREEN_AMT sp.defringeGreenAmount
-#define SP_GREEN_HUE sp.defringeGreenHue
+#define SP_SHARPEN_CORING sp.sharpenCoring
+#define SP_SHARPEN_MASK_LOW sp.sharpenMaskLow
+#define SP_SHARPEN_MASK_SPAN sp.sharpenMaskSpan
+#define SP_PURPLE_NORM sp.defringePurpleNorm
+#define SP_PURPLE_CENTER sp.defringePurpleCenter
+#define SP_GREEN_NORM sp.defringeGreenNorm
+#define SP_GREEN_CENTER sp.defringeGreenCenter
 #define SP_AIRLIGHT sp.airlight
 #define SP_FLAGS sp.flags
 )metal") + sony2fuji::photoSpatialShaderBody() + R"metal(
@@ -757,12 +758,13 @@ inline float spReadWeight(constant SpatialParams& p, uint idx) {
 #undef SP_HEIGHT
 #undef SP_RADIUS
 #undef SP_STRENGTH
-#undef SP_SHARPEN_DETAIL
-#undef SP_SHARPEN_MASKING
-#undef SP_PURPLE_AMT
-#undef SP_PURPLE_HUE
-#undef SP_GREEN_AMT
-#undef SP_GREEN_HUE
+#undef SP_SHARPEN_CORING
+#undef SP_SHARPEN_MASK_LOW
+#undef SP_SHARPEN_MASK_SPAN
+#undef SP_PURPLE_NORM
+#undef SP_PURPLE_CENTER
+#undef SP_GREEN_NORM
+#undef SP_GREEN_CENTER
 #undef SP_AIRLIGHT
 #undef SP_FLAGS
 
@@ -1586,8 +1588,8 @@ bool renderPhotoMetalImpl(
                 dp.channelCount = ch;
                 dp.srcRowOffset = batchSrcY0;
                 dp.dstProxyRowOffset = pyStart;
-                dp.halationThreshold = thresh;
-                dp.bloomThreshold = thresh;
+                dp.halationThresholdNorm = thresh;
+                dp.bloomThresholdNorm = thresh;
                 id<MTLBuffer> dpBuf = makeFilmOpticsParamsBuf(dp);
                 id<MTLCommandBuffer> cmd = [context.queue commandBuffer];
                 if (!dpBuf || !cmd || !encodeKernel(cmd, context.filmOpticsDownsamplePipeline, dpBuf,
@@ -1643,8 +1645,8 @@ bool renderPhotoMetalImpl(
         const bool hasBloom = opt.bloomAmount > 0.0f;
         uint32_t halW = 0, halH = 0, bloomW = 0, bloomH = 0;
         id<MTLBuffer> halBuf = nil, bloomBuf = nil;
-        if (hasHal && !runProxy(false, opt.halationThreshold, opt.halationRadius, halW, halH, halBuf)) return false;
-        if (hasBloom && !runProxy(true, opt.bloomThreshold, opt.bloomRadius, bloomW, bloomH, bloomBuf)) return false;
+        if (hasHal && !runProxy(false, sony2fuji::filmOpticsThresholdNorm(opt.halationThreshold), opt.halationRadius, halW, halH, halBuf)) return false;
+        if (hasBloom && !runProxy(true, sony2fuji::filmOpticsThresholdNorm(opt.bloomThreshold), opt.bloomRadius, bloomW, bloomH, bloomBuf)) return false;
 
         if (hasHal && hasBloom) {
             const size_t halBytes = halBuf.length;
@@ -1674,9 +1676,9 @@ bool renderPhotoMetalImpl(
         outComp.halProxyHeight = halH;
         outComp.bloomProxyWidth = bloomW;
         outComp.bloomProxyHeight = bloomH;
-        outComp.halationAmount = opt.halationAmount;
-        outComp.halationHue = opt.halationHue;
-        outComp.bloomAmount = opt.bloomAmount;
+        outComp.halationAmountNorm = sony2fuji::filmOpticsAmountNorm(opt.halationAmount);
+        outComp.halationHueNorm = sony2fuji::filmOpticsHueNorm(opt.halationHue);
+        outComp.bloomAmountNorm = sony2fuji::filmOpticsAmountNorm(opt.bloomAmount);
         return true;
     };
     id<MTLBuffer> dummyFieldBuffer = makeFloatBuffer(context.device, std::vector<float>{0.0f}, budget);
@@ -1863,10 +1865,7 @@ bool renderPhotoMetalImpl(
                     }
                     if (defringeActive) {
                         auto sp = makeBaseSp();
-                        sp.defringePurpleAmount = renderParams.defringe.purpleAmount;
-                        sp.defringePurpleHue = renderParams.defringe.purpleHue;
-                        sp.defringeGreenAmount = renderParams.defringe.greenAmount;
-                        sp.defringeGreenHue = renderParams.defringe.greenHue;
+                        sony2fuji::fillSpatialDefringeParams(renderParams.defringe, sp);
                         if (!encodeSpatialKernel(command, context.defringePipeline, context.device, sp,
                                                  current, next, current, dummyFieldBuffer)) {
                             return failWith(sony2fuji::GpuFailureKind::ProcessingError,
@@ -1967,10 +1966,7 @@ bool renderPhotoMetalImpl(
                 if (stages & kStagePostOptics) {
                     if (sharpenV2Active) {
                         auto spSharp = makeBaseSp();
-                        spSharp.strength = std::clamp(renderParams.sharpening, 0.0f, 2.0f);
-                        spSharp.sharpenDetail = renderParams.sharpenV2.detail;
-                        spSharp.sharpenMasking = renderParams.sharpenV2.masking;
-                        spSharp.sharpenRadius = sharpSigma;
+                        sony2fuji::fillSpatialSharpenV2Params(renderParams.sharpening, renderParams.sharpenV2, spSharp);
                         sony2fuji::fillSpatialGaussianWeights(sharpSigma, 9, spSharp);
                         if (!encodeSpatialKernel(command, context.sharpenPrepHPipeline, context.device, spSharp,
                                                  current, aux1, current, dummyFieldBuffer) ||

@@ -34,7 +34,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 
 | Event or request | Automatic coverage |
 | --- | --- |
-| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites |
+| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites; a change to core inputs also runs the macOS arm64 core CTest row (see [Core CTest on ordinary runs](#core-ctest-on-ordinary-runs)) |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
 | PR title/body edit | No checks; **CI result** restates the head's latest automatic result (see [Safety and Results](#safety-and-results)) |
 | External fork PR | Contracts and affected-platform models on GitHub-hosted runners, including macOS/iOS; external branch names never request a full cold gate (see [External fork pull requests](#external-fork-pull-requests)) |
@@ -143,11 +143,11 @@ protocols, resource validity, and build/test failure propagation.
 | --- | --- | --- |
 | Select affected platforms | Ubuntu 24.04 | Selects platforms, groups, matrix and cold/warm mode |
 | Contracts and CI policy | Ubuntu 24.04 | Static source/contracts, localization, LUT and MCP protocol checks |
-| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64. `build` runs once per architecture. `native` uses arm64 all plus Intel core/agent/render shards; the cold `full` gate uses arm64 all plus one Intel job that builds once and runs core, agent and render |
+| macOS | GitHub-hosted `macos-26` arm64 and `macos-26-intel` x86_64 | Models run once on arm64; a core change in an automatic models run adds the arm64 `ctest` row. `build` runs once per architecture. `native` uses arm64 all plus Intel core/agent/render shards; the cold `full` gate uses arm64 all plus one Intel job that builds once and runs core, agent and render |
 | Windows | GitHub-hosted `windows-2022` for every group | Managed model projects and runner checks; separate automatic WPF batch-selection job / self-contained package, CTest, DCP and RAW/raster CLI parity |
 | Android | GitHub-hosted `ubuntu-24.04` / JDK 17 | JVM unit tests / lint, debug/instrumentation + unsigned minified release APK builds, both native ABIs, DEX JNI class verification and alignment/cache checks |
 | iOS | GitHub-hosted arm64 `xcode-27`, selected Xcode 27.1 | Standalone settings/viewing/persistence models / all framework slices, unsigned simulator app and UI-test compilation, simulator look-import integration |
-| CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped |
+| CI result | Ubuntu 24.04 | Automatic gate: every selected job succeeds and every unselected job is skipped; after a core change the macOS job must include the core CTest row and succeed |
 | Manual verification (platform, group) | Ubuntu 24.04 | Checks the requested scope without presenting it as the automatic PR gate |
 
 Desktop updater model checks include persisted failure/installation state, admission,
@@ -183,6 +183,8 @@ Preview paths with `git diff --name-only origin/development... | python3 scripts
 - `docs/` except packaged licensing, `.impeccable/`, AGENTS/CLAUDE files
   and root README/CHANGELOG/DESIGN/PRODUCT/.gitignore select no platform.
 - Shared core/resources, CI/tooling, licensing and unknown paths select all platforms.
+- Core inputs additionally request the macOS core CTest row; see
+  [Core CTest on ordinary runs](#core-ctest-on-ordinary-runs).
 
 PRs compare the test merge against its base. Pushes compare with the last
 successful `development` push run, so a cancelled run cannot conceal unverified
@@ -439,6 +441,30 @@ hosted runner. The native dependency key includes workspace, host, image
 and compiler identities, and product outputs and test results are always
 rebuilt.
 
+### Core CTest on ordinary runs
+
+The `models` group never builds the core, so an automatic models run (PR or `development`
+push) whose changes touch core inputs adds one `macOS models (arm64, ctest)` row to the macOS
+job. Core inputs are every `lutools/` path except documentation and the iOS framework glue
+under `lutools/platform/ios/`, plus what the core tests read or run outside `lutools/`
+(`Shared/BundledLooks/`, `Shared/assets-manifest.json`, `scripts/assets/prepare.py`, the
+CTest drivers and requirements under `scripts/ci/`), the row's Rust and dependency-cache
+helpers, and the scripts `RawLabMac/build.sh` runs up to the core build.
+`affected_platforms.py` owns the list. An unavailable diff runs the row. Drafts,
+release/hotfix `full` gates (which already run native CTest on both architectures) and manual
+groups never add it.
+
+The row reuses the macOS job: it restores the arm64 dependency cache, builds the core and its
+tests with `RAWLAB_CORE_ONLY=1 RawLabMac/build.sh` (no app, Sparkle or usage SDK; refused
+together with `RAWLAB_RELEASE=1`), checks the CTest inventory and runs the complete
+`ci_macos_arm64` label set with the same command as the native `core` group; no test is
+filtered. **CI result** fails when core inputs changed and the row is missing,
+failed, cancelled or skipped. Intel CTest stays in the native and full gates.
+
+A successful row saves the shared arm64 dependency key, so a core change pushed to
+`development` warms it for later PRs. The row occupies one hosted macOS runner for roughly
+half as long as a native macOS job, plus any queueing for a macOS slot.
+
 ## GitHub-Hosted Apple Runners
 
 The active macOS matrix uses `macos-26` arm64 (two build workers) and the existing
@@ -494,7 +520,8 @@ still fail the job rather than being hidden by the timing wrapper.
 
 ## Native Dependency Caches
 
-Model-only checks do not configure or restore native caches. Explicit warm build
+Model-only checks do not configure or restore native caches; the macOS core CTest row is the only
+native step of a models run. Explicit warm build
 and native groups use an exact dependency key. **Cold builds never restore native
 caches**: manual full runs and release/hotfix PRs build dependencies from source. They
 look up the exact key without downloading its contents and skip saving when that

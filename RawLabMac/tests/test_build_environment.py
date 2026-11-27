@@ -53,6 +53,24 @@ class BuildEnvironmentTests(unittest.TestCase):
                     self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                     self.assertNotIn("BrokenPipeError", result.stdout + result.stderr)
 
+    def test_core_only_build_refuses_release_before_any_work(self):
+        # A release build must produce the app; the CI core-only switch can never silently drop it.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            tools, calls = root / "tools", root / "calls"
+            tools.mkdir()
+            for name in ("cmake", "curl", "python3", "pkg-config", "swift", "swiftc", "xcrun", "git"):
+                (tools / name).write_text(f'#!/bin/sh\necho {name} >> "{calls}"\n')
+                (tools / name).chmod(0o755)
+            env = {**os.environ, "PATH": f"{tools}:{os.environ['PATH']}", "RAWLAB_CORE_ONLY": "1",
+                   "RAWLAB_RELEASE": "1", "RAWLAB_ARCH": "arm64"}
+            result = subprocess.run(["bash", str(ROOT / "RawLabMac/build.sh")], env=env,
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("RAWLAB_CORE_ONLY=1 builds no app and cannot be combined with RAWLAB_RELEASE=1",
+                          result.stderr)
+            self.assertFalse(calls.exists(), "nothing may be prepared or built before the refusal")
+
     def test_lens_minimum_os_check_consumes_large_tool_output(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
