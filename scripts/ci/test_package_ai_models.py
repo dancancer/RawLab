@@ -368,8 +368,45 @@ pkg.create_model_archive(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
             _gzip_tar(original + extra),
             [_entry("manifest.json", b"{}")],
         )
-        with self.assertRaisesRegex(ValueError, "canonical builder serialization"):
+        with self.assertRaisesRegex(ValueError, "exceeds the described member limits"):
             PACKAGE.verify_model_archive(archive, description)
+
+    def test_verify_accepts_builder_output_at_every_record_padding(self) -> None:
+        # tarfile 在两个结束块之后再补齐到 10240 字节，补齐量随内容长度变化；逐个 512 字节块走一遍整条记录。
+        tree = self.root / "padding-tree"
+        tree.mkdir()
+        for blocks in range(1, 2 * tarfile.RECORDSIZE // 512 + 2):
+            with self.subTest(manifest_bytes=blocks * 512 - 7):
+                (tree / "manifest.json").write_bytes(b"{" + b" " * (blocks * 512 - 9) + b"}")
+                output = self.root / f"padding-{blocks}"
+                output.mkdir()
+                candidate = PACKAGE.create_model_archive(tree, output / "candidate.tar.gz")
+                digest, _ = PACKAGE._sha256_file(candidate)
+                archive = output / f"rawlab-ai-windows-x64-{digest[:12]}.tar.gz"
+                os.replace(candidate, archive)
+                PACKAGE.verify_model_archive(archive, PACKAGE.describe_model_archive(archive, "windows-x64"))
+
+    def test_platform_packages_must_be_complete(self) -> None:
+        mac_tree = self._prepare("macos-arm64")
+        PACKAGE.validate_model_tree(mac_tree, "macos-arm64")
+        with self.assertRaisesRegex(ValueError, "windows-x64 package must not contain Core ML model"):
+            PACKAGE.validate_model_tree(mac_tree, "windows-x64")
+        windows_tree = self._prepare("windows-x64")
+        PACKAGE.validate_model_tree(windows_tree, "windows-x64")
+        with self.assertRaisesRegex(ValueError, "macos-arm64 package is missing Core ML model"):
+            PACKAGE.validate_model_tree(windows_tree, "macos-arm64")
+        # 已裁成 Windows 形态的目录不能再当作 Mac 包的来源。
+        with self.assertRaisesRegex(ValueError, "macos-arm64 package is missing Core ML model"):
+            PACKAGE.prepare_model_tree(windows_tree, "macos-arm64", self.root / "mac-from-windows")
+
+        self.manifest.pop("blind_rgb")
+        (self.source / "blind_rgb.onnx").unlink()
+        shutil.rmtree(self.source / "blind_rgb.mlmodelc", ignore_errors=True)
+        (self.source / "manifest.json").write_text(json.dumps(self.manifest, separators=(",", ":")) + "\n")
+        for platform in PACKAGE.PLATFORMS:
+            with self.subTest(platform=platform):
+                with self.assertRaisesRegex(ValueError, f"{platform} package is missing blind_rgb.onnx"):
+                    PACKAGE.prepare_model_tree(self.source, platform, self.root / f"no-blind-{platform}")
 
     def test_rejects_gnu_long_name_and_pax_header(self) -> None:
         long_name = "a" * 120 + "/f"
@@ -503,15 +540,16 @@ pkg.create_model_archive(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]))
 
     def test_main_build_then_verify_and_tampered_verify_returns_nonzero(self) -> None:
         output = self.root / "cli-output"
-        stdout = io.StringIO()
-        with contextlib.redirect_stdout(stdout):
+        stdout, build_stderr = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(build_stderr):
             self.assertEqual(
                 PACKAGE.main(
                     ["build", "--source", str(self.source), "--output-dir", str(output), "--platform", "windows-x64"]
                 ),
                 0,
             )
-        self.assertIn("dualdn_probe semantic validation not run", stdout.getvalue())
+        self.assertIn("dualdn_probe semantic validation not run", build_stderr.getvalue())
+        self.assertEqual(json.loads(stdout.getvalue())[0]["platform"], "windows-x64")
         archive = next(output.glob("*.tar.gz"))
         description = Path(f"{archive}.json")
         with contextlib.redirect_stdout(io.StringIO()):

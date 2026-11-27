@@ -39,6 +39,10 @@ _PREPARE_SPEC.loader.exec_module(_PREPARE)
 
 PLATFORMS = ("macos-arm64", "windows-x64")
 LICENSE_FILES = ("DualDn-LICENSE.txt", "Restormer-LICENSE.txt")
+# 平台包完整性是发布规则，不是核心协议：核心把 Core ML 和通用 RGB 模型当作可选项，
+# 缺了它们的包能通过核心校验，却不能在对应平台上运行 AI 降噪。
+ONNX_FILES = ("raw.onnx", "isp.onnx", "rgb.onnx", "blind_rgb.onnx")
+COREML_BUNDLES = ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc")
 SOURCE_ONLY_TEST_TENSORS = frozenset("""
     blind_rgb-encoded_rgb.f32 blind_rgb-expected.f32 isp-camera_to_xyz.f32 isp-expected.f32
     isp-mosaic.f32 isp-wb.f32 raw-b.f32 raw-expected.f32 raw-k.f32 raw-packed_raw.f32
@@ -118,7 +122,7 @@ def _manifest_file_records(manifest: dict) -> dict[str, tuple[int, str]]:
                 for entry in entries:
                     if not isinstance(entry, dict):
                         raise ValueError(f"Invalid file entry in {directory}")
-                    add(entry["path"], entry, directory)
+                    add(entry.get("path"), entry, directory)
             for key, child in value.items():
                 if key != "files" and isinstance(child, (dict, list)):
                     visit(child)
@@ -180,6 +184,20 @@ def _walk_model_tree(root: Path) -> tuple[dict[str, Path], set[str]]:
     return files, directories
 
 
+def _check_platform_files(platform: str, files) -> None:
+    present = set(files)
+    for name in ONNX_FILES:
+        if name not in present:
+            raise ValueError(f"{platform} package is missing {name}")
+    bundles = {path.split("/", 1)[0] for path in present if "/" in path and path.split("/", 1)[0].endswith(".mlmodelc")}
+    if platform == "macos-arm64":
+        for name in COREML_BUNDLES:
+            if name not in bundles:
+                raise ValueError(f"{platform} package is missing Core ML model {name}")
+    elif bundles:
+        raise ValueError(f"{platform} package must not contain Core ML model {sorted(bundles)[0]}")
+
+
 def validate_model_tree(root: Path | str, platform: str, *, source_package: bool = False) -> dict:
     """Check the manifest file set, file records, licences, and plain-file tree shape.
 
@@ -210,6 +228,8 @@ def validate_model_tree(root: Path | str, platform: str, *, source_package: bool
     for relative in LICENSE_FILES:
         if files[relative].stat().st_size == 0:
             raise ValueError(f"Required licence is empty: {relative}")
+    if not source_package:
+        _check_platform_files(platform, files)
     return manifest
 
 
@@ -242,6 +262,7 @@ def prepare_model_tree(source: Path | str, platform: str, destination: Path | st
     all_source_files, _ = _walk_model_tree(source_path)
     output_manifest = strip_coreml_fields(manifest) if platform == "windows-x64" else manifest
     expected_files = {"manifest.json", *(_manifest_file_records(output_manifest)), *LICENSE_FILES}
+    _check_platform_files(platform, expected_files)
     if destination_path.exists() or destination_path.is_symlink():
         raise ValueError(f"Destination already exists: {destination_path}")
     try:
@@ -366,8 +387,22 @@ class _SingleGzipReader:
         return bytes(result)
 
 
-def _description_tar_limit(unpacked_bytes: int, member_count: int) -> int:
-    return unpacked_bytes + member_count * 1024 + tarfile.RECORDSIZE + 1
+def _canonical_tar_bytes(entries: list) -> int:
+    """Exact length of the builder's tar for these entries.
+
+    One 512-byte header per member, file data padded to 512, then two zero blocks, the whole padded
+    to the tar record size. An estimate is not enough here: tarfile pads after the end blocks, so
+    the padding can exceed one record minus the end blocks.
+    """
+    body = 0
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("kind") not in ("file", "directory"):
+            raise ValueError("Description has an invalid member entry")
+        size = entry.get("bytes")
+        if type(size) is not int or size < 0:
+            raise ValueError("Description has an invalid member size")
+        body += 512 + (-(-size // 512) * 512 if entry["kind"] == "file" else 0)
+    return -(-(body + 1024) // tarfile.RECORDSIZE) * tarfile.RECORDSIZE
 
 
 class _TarCompareWriter:
@@ -576,7 +611,7 @@ def verify_model_archive(archive_path: Path | str, description: dict) -> None:
         archive,
         expected_unpacked_bytes=expected_unpacked,
         expected_member_count=len(expected_entries),
-        max_tar_bytes=_description_tar_limit(expected_unpacked, len(expected_entries)),
+        max_tar_bytes=_canonical_tar_bytes(expected_entries),
     )
     if actual_manifest_sha != manifest_sha:
         raise ValueError(f"Manifest SHA-256 mismatch: expected {manifest_sha}, got {actual_manifest_sha}")
@@ -628,7 +663,7 @@ def _command_build(args: argparse.Namespace) -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
     platforms = PLATFORMS if args.platform == "all" else (args.platform,)
     if args.probe is None:
-        print("dualdn_probe semantic validation not run (--probe not supplied)")
+        print("dualdn_probe semantic validation not run (--probe not supplied)", file=sys.stderr)
     descriptions = [_build_one(source, platform, output_dir, args.probe) for platform in platforms]
     print(json.dumps(descriptions, ensure_ascii=False, indent=2))
     return 0
