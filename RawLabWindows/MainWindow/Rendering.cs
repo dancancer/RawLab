@@ -211,26 +211,26 @@ public partial class MainWindow
                     ticket.Id != scheduler.Revision ||
                     openRevision != w.OpenRevision;
                 if(w.Probe is {} probe) {
-                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
-                    hslSample=engine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
+                    var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    hslSample=activeEngine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
                 if(w.WbProbe is {} wbProbe) {
-                    engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
-                    wbSample=engine.SampleWhiteBalance(w.File,w.Settings,w.Lut,w.Edge,wbProbe.Point.X,wbProbe.Point.Y);
+                    var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    wbSample=activeEngine.SampleWhiteBalance(w.File,w.Settings,w.Lut,w.Edge,wbProbe.Point.X,wbProbe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
                 beforeRenderSource = ViewSourceState.TryReadIdentity(w.File);
                 workerLookAvailable = LookAvailabilityTracker.ProbeExists(w.Settings.IsHDREditing, w.Lut);
                 try
                 {
-                    try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice,appPaths.HdrLooksDirectory,appPaths.HdrCameraProfilesDirectory);}catch { }
+                    try {thumbnailResources=EditedPhotoPreviewKey.ResourceFingerprint(w.Settings.Capture(),w.Lut,thumbnailAIBackend,thumbnailAIDevice,appPaths.HdrLooksDirectory,appPaths.HdrCameraProfilesDirectory,ResolveAIModelDirectory());}catch { }
                     PreviewFrame frame;
                     if (RenderPreviewHook != null)
                         frame=RenderPreviewHook(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,renderStarted);
                     else {
-                        engine ??= CreateRenderEngine(); engine.SetGpuMode(w.GpuMode);engine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
-                        frame=engine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted,shouldCancel:shouldCancel);
+                        var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                        frame=activeEngine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted,shouldCancel:shouldCancel);
                     }
                     return(frame.Neutral,frame.Result);
                 }

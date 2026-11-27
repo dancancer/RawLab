@@ -29,6 +29,17 @@ public partial class MainWindow
     private RenderEngine CreateRenderEngine(int gpuMode = 1, int? aiBackend = null, string aiDeviceID = "") =>
         new(gpuMode: gpuMode, aiBackend: aiBackend, aiDeviceID: aiDeviceID, aiDiagnostics: aiDiagnostics, appPaths: appPaths);
 
+    private RenderEngine EnsureRenderEngine()
+    {
+        var resolvedModel = ResolveAIModelDirectory();
+        if (engine != null && !string.Equals(engine.CurrentAIModelDirectory, resolvedModel, StringComparison.OrdinalIgnoreCase))
+        {
+            engine.Dispose();
+            engine = null;
+        }
+        return engine ??= CreateRenderEngine();
+    }
+
     private void InitializeEditWorkflow()
     {
         editSaveTimer.Tick += (_, _) => { editSaveTimer.Stop(); EnqueueSaveEdits(); };

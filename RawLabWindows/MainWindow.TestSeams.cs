@@ -184,6 +184,7 @@ public partial class MainWindow
         exportStagingDirectory = isolatedPaths.ExportStagingDirectory;
         aiPreferenceStore = new AIGpuPreferenceStore(isolatedPaths.AiGpuPreferencesPath);
         aiDiagnostics = new AIDiagnosticStore(isolatedPaths.AiDiagnosticsDirectory);
+        RebindAIModelManagerForTests(isolatedPaths);
         diagnosticSession = new DiagnosticSessionStore(isolatedPaths.DiagnosticsDirectory);
         aiPreference = new AIGpuPreference();
         library.SettingsPath = isolatedPaths.FoldersPath;
@@ -192,6 +193,7 @@ public partial class MainWindow
         {
             photoPreviews.Store.Changed -= PhotoEditChanged;
             photoPreviews.Ready -= PhotoPreviewReady;
+            photoPreviews.AIPreparationChanged -= PhotoPreviewAIPreparationChanged;
             _ = photoPreviews.DisposeAsync();
             photoPreviews = null;
         }

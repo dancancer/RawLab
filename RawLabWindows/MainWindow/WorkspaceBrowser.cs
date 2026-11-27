@@ -38,14 +38,20 @@ public partial class MainWindow
         if(editStore==null)return null;
         if(photoPreviews!=null && ReferenceEquals(photoPreviews.Store,editStore))return photoPreviews;
         if(photoPreviews!=null) {
-            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
+            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;photoPreviews.AIPreparationChanged-=PhotoPreviewAIPreparationChanged;
             _=photoPreviews.DisposeAsync();
         }
         photoPreviews=new(editStore,photoPreviewCacheDirectory,appPaths);
         photoPreviews.Store.Changed+=PhotoEditChanged;
         photoPreviews.Ready+=PhotoPreviewReady;
+        photoPreviews.AIPreparationChanged+=PhotoPreviewAIPreparationChanged;
         photoPreviews.SetPaused(scheduler.Busy || exporting || aiJob.State.IsRunning);
         return photoPreviews;
+    }
+    private void PhotoPreviewAIPreparationChanged(bool _)
+    {
+        if(Dispatcher.HasShutdownStarted)return;
+        Dispatcher.BeginInvoke(new Action(()=>{if(!closing)RefreshAIControls();}));
     }
     private void PhotoEditChanged(PhotoEditState state)=>PhotoPreviewReady(state.Identity.Path);
     private void PhotoPreviewReady(string path)

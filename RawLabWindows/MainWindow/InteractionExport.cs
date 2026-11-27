@@ -200,7 +200,7 @@ public partial class MainWindow
             await Task.Run(()=> {
                 TempCleanup.SweepExpiredExportStagingInDirectory(Path.GetDirectoryName(temp)!, DateTime.UtcNow, TempCleanup.DefaultRetention, stagingDirectory);
                 staging = TempCleanup.BeginExportStaging(temp, stagingDirectory);
-                engine.Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
+                EnsureRenderEngine().Render(input,adjustment,film,0,false,temp,longEdge:size,formatOverride:format,outputSharpening:sharpening);
             });
             if (WindowsFileIdentity.IsSameFile(sourceLock, destination))
             {
@@ -239,6 +239,7 @@ public partial class MainWindow
         photoFolderWatch?.Dispose();photoFolderWatch=null;photoFolderRefresh.Stop();
         CancelProcessingMigration();
         ResetAITask();
+        aiModelManager.CancelDownload();
         previewResize.Stop();
         if(batchWindow is {} batch)
         {
@@ -261,7 +262,7 @@ public partial class MainWindow
         // 离线时 SDK 关闭可能一直等网络：最多等 ShutdownLimit，之后照常退出
         await usageAnalytics.CloseAsync(UsageAnalytics.ShutdownLimit);
         if(photoPreviews!=null) {
-            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;
+            photoPreviews.Store.Changed-=PhotoEditChanged;photoPreviews.Ready-=PhotoPreviewReady;photoPreviews.AIPreparationChanged-=PhotoPreviewAIPreparationChanged;
             await photoPreviews.DisposeAsync();photoPreviews=null;
         }
         closeFinished=true;engine?.Dispose();engine=null;Closing-=WindowClosing;Close();

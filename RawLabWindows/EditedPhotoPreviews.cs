@@ -17,7 +17,10 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     private AIDenoiseJob? preparing;
     private PhotoPreviewResourceWatch? resourceWatch;
     internal event Action<string>? Ready;
+    internal event Action<bool>? AIPreparationChanged;
     internal bool Paused { get { lock(gate)return resume!=null; } }
+    internal bool IsPreparingAI { get { lock(gate)return preparing!=null; } }
+    internal void RefreshAll()=>Ready?.Invoke("");
 
     internal void SetPaused(bool paused)
     {
@@ -43,7 +46,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
         record=EditedPhotoPreviewKey.PrepareState(record);
         if(record.Edit is {} edit) {
             resourceWatch ??=new PhotoPreviewResourceWatch(()=>Ready?.Invoke(""));
-            resourceWatch.Watch(EditedPhotoPreviewKey.ResourcePaths(edit.Settings,look,resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory));
+            resourceWatch.Watch(EditedPhotoPreviewKey.ResourcePaths(edit.Settings,look,resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory,RenderEngine.ResolveAIModelDirectory(resolvedPaths)));
         }
         var task=RenderAsync(record,look,aiBackend,aiDevice,cancellation);
         Track(task);return task;
@@ -57,8 +60,9 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
             await WaitForEditor(token).ConfigureAwait(false);
             return await Task.Run(async()=> {
                 token.ThrowIfCancellationRequested();
+                var aiModelDirectory=RenderEngine.ResolveAIModelDirectory(resolvedPaths);
                 var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice,
-                    hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory);
+                    hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory,aiModelDirectory:aiModelDirectory);
                 RequireCurrent(record,look,key,aiBackend,aiDevice);
                 BitmapSource? cached=null;
                 try {if(cache.Read(key) is {} bytes)cached=Decode(bytes);}
@@ -75,7 +79,7 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
                 var settings=edit.Settings.Restore();
                 settings.RepairLegacyNormalX3f(record.Identity.Path);
                 if(settings.ActiveAIDenoise) {
-                    RenderEngine.ValidateAIInput(record.Identity.Path,aiDevice,settings.X3fMode);
+                    RenderEngine.ValidateAIInput(record.Identity.Path,aiDevice,settings.X3fMode,resolvedPaths);
                     var job=new AIDenoiseJob((identity,snapshot,progress)=>engine.PrepareAI(identity.Source.Path,snapshot,progress));
                     using var cancel=token.Register(job.Cancel);
                     Task<bool> preparation;
@@ -84,9 +88,14 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
                         preparing=job;
                         preparation=job.StartAsync(AIDenoiseIdentity.Read(record.Identity.Path,settings,aiBackend,aiDevice),settings);
                     }
+                    AIPreparationChanged?.Invoke(true);
                     bool ready;
                     try {ready=await preparation.ConfigureAwait(false);}
-                    finally {lock(gate)if(ReferenceEquals(preparing,job))preparing=null;}
+                    finally {
+                        var cleared=false;
+                        lock(gate){if(ReferenceEquals(preparing,job)){preparing=null;cleared=true;}}
+                        if(cleared)AIPreparationChanged?.Invoke(false);
+                    }
                     token.ThrowIfCancellationRequested();
                     if(!ready && job.State.Status==AIDenoiseStatus.Cancelled)throw new OperationCanceledException();
                     if(!ready)throw new InvalidOperationException(job.State.Error ?? Loc.Text("预览未更新"));
@@ -114,11 +123,12 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     {
         var task=Task.Run(()=> {
             lifetime.Token.ThrowIfCancellationRequested();
+            var aiModelDirectory=RenderEngine.ResolveAIModelDirectory(resolvedPaths);
             if(!EditedPhotoPreviewKey.IsEdited(record) ||
                 EditedPhotoPreviewKey.ResourceFingerprint(record.Edit!.Settings,look,aiBackend,aiDevice,
-                    resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory)!=expectedResources)return;
+                    resolvedPaths.HdrLooksDirectory,resolvedPaths.HdrCameraProfilesDirectory,aiModelDirectory)!=expectedResources)return;
             var key=EditedPhotoPreviewKey.Create(record,look,aiBackend:aiBackend,aiDevice:aiDevice,
-                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory);
+                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory,aiModelDirectory:aiModelDirectory);
             RequireCurrent(record,look,key,aiBackend,aiDevice);
             var encoded=Encode(image);
             RequireCurrent(record,look,key,aiBackend,aiDevice);
@@ -131,7 +141,8 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     {
         if(!record.SameAs(EditedPhotoPreviewKey.ReadState(Store,record.Identity.Path)) ||
             key!=EditedPhotoPreviewKey.Create(record,look,aiBackend:backend,aiDevice:device,
-                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory))throw new AdjustmentOperationExpiredException();
+                hdrLookDirectory:resolvedPaths.HdrLooksDirectory,hdrCameraProfileDirectory:resolvedPaths.HdrCameraProfilesDirectory,
+                aiModelDirectory:RenderEngine.ResolveAIModelDirectory(resolvedPaths)))throw new AdjustmentOperationExpiredException();
     }
     internal static byte[] Encode(BitmapSource image)
     {

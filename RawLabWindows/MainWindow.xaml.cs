@@ -115,11 +115,12 @@ public partial class MainWindow : Window
         exportStagingDirectory = appPaths.ExportStagingDirectory;
         aiPreference = this.aiPreferenceStore.Read();
         this.desktopUpdates = desktopUpdates ?? new(new UnavailableUpdateAdapter("configuration"), new(), new(appPaths.UpdatesDirectory), typeof(App).Assembly.GetName().Version?.ToString(3) ?? "unknown", "");
+        this.aiModelManager = CreateAIModelManager(appPaths);
         this.aiJob = aiJob ?? new((identity,snapshot,progress)=>{
             using var worker = CreateRenderEngine(gpuMode:0, aiBackend:identity.Backend, aiDeviceID:identity.DeviceID);
             worker.PrepareAI(identity.Source.Path,snapshot,progress);
         },(error,identity)=>this.aiDiagnostics.Capture(error,new("prepare",identity.DeviceID,identity.Backend,
-            identity.Source.Path,Devices:RenderEngine.GetAIDevices().JSON,ModelDirectory:RenderEngine.BundledAIModel)));
+            identity.Source.Path,Devices:RenderEngine.GetAIDevices().JSON,ModelDirectory:ResolveAIModelDirectory())));
         InitializeComponent();
         InitializeAI();
         if (!LookLibrary.TryLoad(lookLibraryDirectory ?? appPaths.LooksDirectory, out lookLibrary, out lookLibraryLoadError))

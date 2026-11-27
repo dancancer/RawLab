@@ -50,7 +50,7 @@ internal sealed partial class RenderEngine : IDisposable
         this.appPaths=appPaths ?? AppPaths.Default;
         this.statisticsAnalyzer=statisticsAnalyzer ?? AnalyzeStatistics;
         this.lensDatabase = lensDatabase ?? Path.Combine(AppContext.BaseDirectory,"Lensfun");
-        this.aiModelDirectory=aiModelDirectory ?? BundledAIModel;
+        this.aiModelDirectory=aiModelDirectory ?? ResolveAIModelDirectory(this.appPaths);
         this.aiCacheDirectory=aiCacheDirectory ?? this.appPaths.DualDnCacheDirectory;
         aiBackendOverride=aiBackend;
         this.aiDeviceID=aiDeviceID;aiDiagnosticStore=aiDiagnostics ?? (appPaths != null ? new(this.appPaths.AiDiagnosticsDirectory) : AIDiagnosticStore.Default);

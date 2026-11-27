@@ -201,7 +201,7 @@ public partial class BatchExportWindow : Window
             if (prepared == null && effective.IsHDREditing)
                 BatchSelectionExport.ValidateHDRFormat(item.Input,effective.Capture(),ExportFormat.SdrJpeg);
             if (effective.ActiveAIDenoise)
-                RenderEngine.ValidateAIInput(item.Input,snapshot.AIDeviceID,effective.X3fMode);
+                RenderEngine.ValidateAIInput(item.Input,snapshot.AIDeviceID,effective.X3fMode,appPaths);
             else
                 validator.Render(item.Input,effective,prepared == null ? snapshot.Look : prepared.Look,64,statistics:false,clipping:false,viewportPreview:true);
             return ApplyFormatValidation(item with {ValidationError=null,HDRJpegIncompatible=!effective.IsHDREditing},snapshot.Format);
@@ -451,7 +451,7 @@ public partial class BatchExportWindow : Window
         catch (Exception error)
         {
             if(work.Settings.ActiveAIDenoise || work.Items.Any(item=>item.Selected && item.Frozen?.Settings.ActiveAIDenoise==true))
-                aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON));
+                aiDiagnostics.Capture(error,new("batch",work.AIDeviceID,work.AIBackend,Devices:RenderEngine.GetAIDevices().JSON,ModelDirectory:RenderEngine.ResolveAIModelDirectory(appPaths)));
             work.Error = AdjustmentTransferPresentation.Detail(error); work.Interrupted = true;
             try { journal.Save(work); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
