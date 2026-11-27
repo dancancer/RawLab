@@ -3,9 +3,13 @@
 The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
 Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
 
-OpenCV 4.12.0 (core/imgproc) and wavelib are statically linked for linear-light
-wavelet denoising. OpenCV uses Apache 2.0; wavelib uses BSD 3-Clause. See the
-included `OpenCV-LICENSE` and `wavelib-COPYRIGHT`.
+OpenCV 4.12.0 (core, imgproc, and ximgproc from opencv_contrib 4.12.0, with their
+calib3d, features2d, flann, imgcodecs and video dependencies) and wavelib are
+statically linked for linear-light wavelet and chroma denoising. OpenCV uses
+Apache 2.0; wavelib uses BSD 3-Clause. See the included `OpenCV-LICENSE` and
+`wavelib-COPYRIGHT`. Third-party code compiled into these modules keeps its own
+notices in `OpenCV/`: SoftFloat, the MSCR chi table, the opencv_contrib license
+and the guided filter's BSD notice.
 Sources: https://github.com/opencv/opencv/tree/4.12.0 and
 https://github.com/rafat/wavelib. Exact revisions and archive hashes are pinned
 in `lutools/cmake/denoise-dependencies.cmake`. Local stationary-wavelet column
@@ -64,8 +68,7 @@ The SDK validator and XMP editing are disabled. The local adapter adds missing
 This product includes DNG technology under license by Adobe.
 
 The white-balance temperature model includes Adobe DNG SDK-derived code;
-see Adobe-DNG-SDK-LICENSE.txt. Embedded stb image decoding/encoding uses its
-MIT license option; see stb-MIT-LICENSE.txt. System zlib,
+see Adobe-DNG-SDK-LICENSE.txt. System zlib,
 Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JasPer or
 commercial Nikon/TicoRAW SDK is linked into LibRaw in this build.
 
@@ -75,3 +78,19 @@ are enabled; see LibRaw-X3F-BSD.txt. Sony ARW6 decoding and A7 V metadata are
 backported from LibRaw e419de0; A1 II, R50 V and PowerShot V1 metadata come
 from upstream PRs 775/846, 784 and 856. These backports retain LibRaw LGPL/CDDL
 terms. Source pins and boundaries: docs/reference/raw-format-support.md.
+
+Gain-map HDR JPEG support statically links libultrahdr 2.0.2 (Apache-2.0 OR MIT):
+https://github.com/google/libultrahdr/tree/v2.0.2. Its LICENSE, LICENSE-APACHE
+and LICENSE-MIT are in Licenses/libultrahdr/, together with the licenses of its
+bundled image_io (Apache-2.0, image_io-LICENSE) and modp_b64 (BSD 3-Clause,
+modp_b64-LICENSE) and its Adobe notice: This product includes Gain Map technology
+under license by Adobe. 16-bit PNG export statically links
+libspng 0.7.4 (BSD-2-Clause AND libpng-2.0): https://github.com/randy408/libspng/tree/v0.7.4;
+see libspng-LICENSE.txt. Archive pins: lutools/cmake/hdr-codec-dependencies.json
+and lutools/cmake/raw-png.cmake.
+
+The normal X3F renderer statically links x3fuse-core / x3f-tools at commit
+00f9ef206a2d629bca35ceead4b3951833b85d3d (https://github.com/sagwaco/x3fuse-core),
+its locked Rust crates and the Rust standard library. Their notices are in
+X3F-Dependencies.txt (Apache-2.0 and upstream BSD notices) and x3f-rust/.
+Pins: lutools/x3f-bridge/Cargo.toml and Cargo.lock.

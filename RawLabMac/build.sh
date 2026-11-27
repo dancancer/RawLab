@@ -84,7 +84,8 @@ if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
     if ! pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
-    if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
+    if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4 ||
+        { [ "$ARCH" = arm64 ] && [ ! -f "$CHROMA_PREFIX/share/licenses/opencv4/carotene-LICENSE" ]; }; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
     fi
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
@@ -156,6 +157,8 @@ cp -R "$LENS_PREFIX/licenses/lensfun/." "$APP/Contents/Resources/Licenses/Lensfu
 OPENCV_PREFIX="$(pkg-config --variable=prefix opencv4)"
 mkdir -p "$APP/Contents/Resources/Licenses/OpenCV"
 cp -R "$OPENCV_PREFIX/share/licenses/opencv4/." "$APP/Contents/Resources/Licenses/OpenCV/"
+# OpenCV 安装时总会登记 ade（G-API）与 flatbuffers（dnn）的许可；这两个模块不在 BUILD_LIST 里，不随应用发布。
+rm -f "$APP/Contents/Resources/Licenses/OpenCV/ade-LICENSE" "$APP/Contents/Resources/Licenses/OpenCV/flatbuffers-LICENSE.txt"
 cp "$CHROMA_PREFIX/share/licenses/wavelib/COPYRIGHT" "$APP/Contents/Resources/Licenses/wavelib-COPYRIGHT"
 cp "$CHROMA_PREFIX/share/licenses/libtiff/LICENSE.md" "$APP/Contents/Resources/Licenses/libtiff-LICENSE.md"
 mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"

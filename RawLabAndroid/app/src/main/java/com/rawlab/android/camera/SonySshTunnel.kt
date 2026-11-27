@@ -582,7 +582,12 @@ internal class SonySshTunnel private constructor(
             val kbAttempts = AtomicInteger(0)
 
             val session = jsch.getSession(trimmedUser, address.hostAddress ?: address.hostName, port).apply {
-                timeout = timeoutMs
+                // 必须在 connect 之前设置：握手读超时由 connect(timeoutMs) 控制，认证后 JSch 先把这里的间隔装到
+                // socket 上再启动读线程，首个空闲读就会按 keepAliveMs 发送 keepalive@openssh.com。connect 返回后
+                // 再设置会与读线程竞态：它可能已带着旧超时阻塞在首次 read 中，首个 keepalive 被推迟，相机端按空闲断开。
+                // 连续 KEEPALIVE_COUNT_MAX 次无任何回应才判定断开。
+                serverAliveCountMax = KEEPALIVE_COUNT_MAX
+                setServerAliveInterval(keepAliveMs)
                 setPassword(password)
                 setConfig("StrictHostKeyChecking", "yes")
                 setConfig("PreferredAuthentications", "keyboard-interactive,password")
@@ -656,12 +661,6 @@ internal class SonySshTunnel private constructor(
                 throw SshFingerprintMismatchException(expectedNormalized, "", "unknown")
             }
 
-            // 连接/KEX 超时之后改为 SSH keepalive：空闲（PTP/IP 事件通道 setSoTimeout(0)）时每隔 keepAliveMs
-            // 发送 keepalive@openssh.com，避免相机端按空闲断开会话；连续 KEEPALIVE_COUNT_MAX 次无任何回应才判定断开。
-            runCatching {
-                session.serverAliveCountMax = KEEPALIVE_COUNT_MAX
-                session.setServerAliveInterval(keepAliveMs)
-            }
             debugLog("SSH connect succeeded keyType=${probe.keyType}")
 
             return SonySshTunnel(address, port, session, rawSocketHolder[0], probe)

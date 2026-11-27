@@ -248,6 +248,7 @@ identity rules are in [the DualDn contract](../../docs/architecture/dualdn-inlin
 1. Decode RAW to linear RGB with the selected exposure baseline, or inverse-sRGB-decode an explicitly tagged raster buffer. Buffer inputs receive neither RAW metadata nor the +0.7 baseline.
 2. Run optional linear-sRGB wavelet denoising, then apply relative white balance and `2^exposure_ev * brightness` in linear sRGB. Custom RAW WB multipliers are applied once, during decode.
    Processing v3 then applies its local highlight/shadow gain in scene-linear RGB, before the neutral or film look. It preserves channel ratios and super-white headroom; v1/v2 keep their display-domain tone stage. This versioned SDR path does not replace the separate HDR renderer.
+   Camera calibration runs between exposure/WB and this gain. For RAW and linear buffer inputs the gain's smoothed analysis field is measured from the pixels after the matrix and exposure/WB but before camera calibration, on every path: export with or without geometry or wavelet, previews, the 1:1 viewport ROI, CPU and Metal/GLES/D3D11. Calibration changes the pixels the gain multiplies, not where it falls. Display-referred buffers render only on the CPU and measure the field after calibration on every path.
 3. Generate the neutral reference with a fixed log-logistic display curve, then sRGB encode. For positive x the linear display value is `1 / (1 + ((1-g)/g) * (g/x)^1.5)`, with `g=0.1845`; black is 0 and highlights approach 1 smoothly. This independently implemented mathematical subset follows the same curve family as darktable sigmoid, but does not reproduce its primaries adjustment, hue-preservation or full default pipeline.
 4. For a film CUBE: start from the un-tonemapped linear input, transform to its declared F-Gamut or F-Gamut C and encode F-Log, F-Log2 or F-Log2C, then interpolate the CUBE. Named display outputs bypass the neutral curve. Explicit Log outputs are decoded back to linear BT.709/sRGB, then rendered with the neutral display curve. A compiled DCP `.rlook` instead evaluates its preserved matrix/HSV/tone stages directly from common linear sRGB, without F-Log2, an RGB CUBE or an extra neutral curve. Log encoding itself never normalizes exposure, and there is no linear clamp at 1 before it.
 5. Blend neutral and film outputs in the same display-encoded RGB convention. Strength 0 is continuous with the no-LUT rendering. Optional Dehaze precedes black/white endpoint controls and the tone/curve/contrast/saturation sequence. The curve slot selects either the unchanged legacy S scalar or the [custom PCHIP curve](tone-curve-v1.md), with custom identity bypassing all arithmetic; optional vibrance follows it, then HSL, color grading, optional display-chroma and legacy detail denoising, Clarity, sharpening, vignette and grain, optional geometry, and final resizing. Each new zero control bypasses arithmetic and clamping exactly. Versioned formulas and quality admission are in [tone controls v1](tone-controls-v1.md) and [atmosphere v1](atmosphere-v1.md). Active Clarity/Dehaze uses CPU; FINAL/export and previews without viewport reduction use the complete source. Viewport PREVIEW+BUFFER may compute on a reduced source with the full-source analysis scale, as described below. GPU Auto falls back for the whole path and Force returns unsupported. CPU parallel execution preserves output bytes for the same input and preview policy at any thread count.
@@ -976,3 +977,22 @@ An old snapshot is not made current by reusing its labels. A gesture freezes its
 logical before-HSL values, axis and sample weights once, computes all deltas
 from that before-state, and commits once or rolls back without history. Only
 the resulting existing 24 HSL values persist; sampling never adds recipe fields.
+
+### Byte Reproducibility on Apple Platforms
+
+A RAW source is expected to render byte-identically across processes for the same
+file, recipe, build and machine, HDR JPEG export included, also under concurrent
+load. Use RAW inputs for byte-level regression comparisons.
+
+Two Apple paths are reproducible only to within about 2 RGB8 levels on a few
+dozen pixels. Core Image switches internal render paths during the first renders
+of a process at a load-dependent moment and exposes no option that pins it (#693):
+
+- HDR raster sources read through Core Image on macOS and iOS
+  (`hdr_image_apple.mm`, observed with Ultra HDR JPEG), and everything rendered
+  from them, SDR output included;
+- HDR HEIF export, which is encoded through Core Image.
+
+Compare such outputs after decoding with a tolerance, not by hash. Android,
+Windows and Linux decode Ultra HDR JPEG with libultrahdr and libjpeg and HEIF
+with the core reader, and do not use this path.

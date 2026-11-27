@@ -69,3 +69,40 @@ endif()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/licenses")
 configure_file("${rawlab_opencv_SOURCE_DIR}/LICENSE" "${CMAKE_BINARY_DIR}/licenses/OpenCV-LICENSE" COPYONLY)
 configure_file("${rawlab_wavelib_SOURCE_DIR}/COPYRIGHT" "${CMAKE_BINARY_DIR}/licenses/wavelib-COPYRIGHT" COPYONLY)
+
+# OpenCV 把部分第三方代码编进所链接的模块；与 Mac 安装目录 share/licenses/opencv4 用同样的文件名，
+# 只放本配置实际编译并链接的部分（BUILD_LIST 及其依赖 calib3d/features2d/flann/imgcodecs/video）。
+function(rawlab_copy_license_header source destination)
+    file(READ "${source}" content)
+    string(FIND "${content}" "*/" header_end)
+    if(header_end LESS 0)
+        message(FATAL_ERROR "No license header comment in ${source}")
+    endif()
+    math(EXPR header_end "${header_end} + 2")
+    string(SUBSTRING "${content}" 0 ${header_end} header)
+    file(WRITE "${destination}" "${header}\n")
+endfunction()
+set(opencv_notices "${CMAKE_BINARY_DIR}/licenses/OpenCV")
+file(MAKE_DIRECTORY "${opencv_notices}")
+configure_file("${rawlab_opencv_SOURCE_DIR}/modules/core/3rdparty/SoftFloat/COPYING.txt"
+    "${opencv_notices}/SoftFloat-COPYING.txt" COPYONLY)
+if(TARGET opencv_features2d)
+    configure_file("${rawlab_opencv_SOURCE_DIR}/modules/features2d/3rdparty/mscr/chi_table_LICENSE.txt"
+        "${opencv_notices}/mscr-chi_table_LICENSE.txt" COPYONLY)
+endif()
+if(TARGET libcpufeatures)
+    configure_file("${rawlab_opencv_SOURCE_DIR}/3rdparty/cpufeatures/LICENSE"
+        "${opencv_notices}/cpufeatures-LICENSE" COPYONLY)
+    configure_file("${rawlab_opencv_SOURCE_DIR}/3rdparty/cpufeatures/README.md"
+        "${opencv_notices}/cpufeatures-README.md" COPYONLY)
+endif()
+if(TARGET tegra_hal)
+    # Carotene（NVIDIA，3-clause BSD）在 ARM 上作为 HAL 编进 core/imgproc；上游只在源码头部给出许可。
+    rawlab_copy_license_header("${rawlab_opencv_SOURCE_DIR}/hal/carotene/src/add.cpp"
+        "${opencv_notices}/carotene-LICENSE")
+endif()
+if(SONY2FUJI_ENABLE_CHROMA_DENOISE)
+    configure_file("${rawlab_opencv_contrib_SOURCE_DIR}/LICENSE" "${opencv_notices}/contrib-LICENSE" COPYONLY)
+    rawlab_copy_license_header("${rawlab_opencv_contrib_SOURCE_DIR}/modules/ximgproc/src/guided_filter.cpp"
+        "${opencv_notices}/guided-filter-LICENSE")
+endif()

@@ -9,6 +9,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
+import urllib.parse
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -494,6 +496,87 @@ class EditPollingTests(unittest.TestCase):
 def urllib_error():
     import urllib.error
     return urllib.error.URLError("transient")
+
+
+class EditPollingDefaultTransportTests(unittest.TestCase):
+    """github_edit_reference with its production GitHub client; only urlopen is stubbed, no network."""
+
+    PULL = EditPollingTests.PULL
+    TOKEN = "fake-token-for-tests"
+    ENV = {"GITHUB_API_URL": "https://ghe.example.test/api/v3", "GITHUB_REPOSITORY": "o/r", "GITHUB_TOKEN": TOKEN}
+
+    def poll(self, urlopen, env=None):
+        now = [0.0]
+        stdout = io.StringIO()
+        # clear=True: the client may only see what this test puts in the environment.
+        with mock.patch.dict(os.environ, env or self.ENV, clear=True), \
+                mock.patch.object(selection.urllib.request, "urlopen", urlopen), \
+                contextlib.redirect_stdout(stdout):
+            result = selection.github_edit_reference(
+                self.PULL, 100, "ci.yml", clock=lambda: now[0],
+                sleep=lambda seconds: now.__setitem__(0, now[0] + seconds), limit_minutes=10)
+        self.assertNotIn(self.TOKEN, stdout.getvalue())
+        return result
+
+    def api(self, jobs_result="failure"):
+        requests = []
+        def urlopen(request, timeout=None):
+            requests.append((request, timeout))
+            path = urllib.parse.urlsplit(request.full_url).path
+            if path.endswith("/jobs"):
+                payload = {"jobs": EditPollingTests.jobs(jobs_result)}
+            else:
+                payload = {"workflow_runs": [EditPollingTests.workflow_run(10)]}
+            return io.BytesIO(json.dumps(payload).encode())
+        return urlopen, requests
+
+    def test_default_client_calls_the_repository_actions_api_with_the_environment_token(self):
+        urlopen, requests = self.api("failure")
+        # The verdict comes only from the decoded JSON bodies, so "failure" proves they were parsed.
+        self.assertEqual(self.poll(urlopen), "failure")
+        self.assertEqual(len(requests), 2)
+        for request, timeout in requests:
+            self.assertEqual(request.get_method(), "GET")
+            self.assertEqual(request.get_header("Authorization"), f"Bearer {self.TOKEN}")
+            self.assertEqual(request.get_header("Accept"), "application/vnd.github+json")
+            self.assertTrue(timeout and timeout > 0, "a GitHub request must not wait forever")
+        runs, jobs = (urllib.parse.urlsplit(request.full_url) for request, _ in requests)
+        self.assertEqual((runs.scheme, runs.netloc, runs.path),
+                         ("https", "ghe.example.test", "/api/v3/repos/o/r/actions/workflows/ci.yml/runs"))
+        self.assertEqual(urllib.parse.parse_qs(runs.query),
+                         {"head_sha": ["abc"], "event": ["pull_request"], "per_page": ["100"]})
+        self.assertEqual((jobs.netloc, jobs.path), ("ghe.example.test", "/api/v3/repos/o/r/actions/runs/10/jobs"))
+        self.assertEqual(urllib.parse.parse_qs(jobs.query), {"per_page": ["100"]})
+
+    def test_default_client_uses_the_public_api_without_an_override(self):
+        urlopen, requests = self.api("success")
+        env = {key: value for key, value in self.ENV.items() if key != "GITHUB_API_URL"}
+        self.assertEqual(self.poll(urlopen, env), "success")
+        self.assertEqual({urllib.parse.urlsplit(request.full_url)[:2] for request, _ in requests},
+                         {("https", "api.github.com")})
+        self.assertTrue(all(urllib.parse.urlsplit(request.full_url).path.startswith("/repos/o/r/actions/")
+                            for request, _ in requests))
+
+    def test_http_transport_and_decoding_errors_fail_closed(self):
+        import urllib.error
+        url = "https://ghe.example.test/api/v3/repos/o/r/actions/workflows/ci.yml/runs"
+        failures = {
+            "http 401": urllib.error.HTTPError(url, 401, "Bad credentials", {}, None),
+            "http 503": urllib.error.HTTPError(url, 503, "Service Unavailable", {}, None),
+            "transport": urllib.error.URLError("connection refused"),
+            "timeout": TimeoutError("timed out"),
+        }
+        for label, error in failures.items():
+            with self.subTest(label):
+                calls = []
+                def urlopen(request, timeout=None, error=error):
+                    calls.append(request)
+                    raise error
+                self.assertEqual(self.poll(urlopen), "still pending")
+                self.assertGreater(len(calls), 1, "a failed lookup is retried until the deadline")
+        with self.subTest("not json"):
+            self.assertEqual(self.poll(lambda request, timeout=None: io.BytesIO(b"<html>rate limited</html>")),
+                             "still pending")
 
 
 class EditSelectionOutputTests(unittest.TestCase):

@@ -2,6 +2,7 @@
 #include "sony2fuji/edit_recipe.h"
 #include "sony2fuji/ffi/sony2fuji_c.h"
 #include "nlohmann/json.hpp"
+#include "metal_validation_support.h"
 
 #include <algorithm>
 #include <array>
@@ -515,6 +516,7 @@ int main(int argc, char** argv) {
     try {
         const std::filesystem::path fixtureDir(TEST_FIXTURE_DIR);
         if (argc == 2 && std::string(argv[1]) == "--metal") {
+            rawlabtest::waiveShaderValidationOnParavirtualDevice(argv);
             return runMetalTests(fixtureDir);
         }
         if (argc == 1) {
