@@ -11,9 +11,9 @@ and code signatures. LibRaw also includes the source patches described below.
 | x3fuse-core / x3f-tools | 00f9ef206a2d629bca35ceead4b3951833b85d3d | https://github.com/sagwaco/x3fuse-core | X3F-Dependencies.txt (Apache-2.0 and upstream BSD notices) |
 | Rust standard library and locked crates | Actual build toolchain / Cargo.lock | https://github.com/rust-lang/rust | x3f-rust-licenses/ and X3F-Dependencies.txt |
 | Sparkle | 2.10.0 | https://github.com/sparkle-project/Sparkle/tree/2.10.0 | Sparkle-LICENSE.txt (MIT) |
-| Restormer real denoising | Upstream pretrained checkpoint | https://github.com/swz30/Restormer | DualDn/Restormer-LICENSE.txt (Academic Public License, noncommercial) |
+| Restormer real denoising | Upstream pretrained checkpoint (external on-demand download; not distributed in release packages) | https://github.com/swz30/Restormer | Restormer-LICENSE.txt shipped inside the downloaded model package (Academic Public License, noncommercial); bundled under DualDn/ only in opt-in non-release builds |
 | JSON for Modern C++ | Vendored header | https://github.com/nlohmann/json | nlohmann-JSON-MIT.txt |
-| DualDn Big | 7ec5f6a21c04321beb0d3297d6e9ac5f50635555 | https://github.com/OpenImagingLab/DualDn | DualDn/LICENSE (CC BY-NC 4.0, OpenImagingLab 2024) |
+| DualDn Big | 7ec5f6a21c04321beb0d3297d6e9ac5f50635555 (external on-demand download; not distributed in release packages) | https://github.com/OpenImagingLab/DualDn | DualDn-LICENSE.txt shipped inside the downloaded model package (CC BY-NC 4.0, OpenImagingLab 2024); bundled under DualDn/ only in opt-in non-release builds |
 | ONNX Runtime | 1.23.2 | https://github.com/microsoft/onnxruntime/tree/v1.23.2 | DualDn/ONNX-Runtime-LICENSE, DualDn/ONNX-Runtime-ThirdPartyNotices.txt |
 | LibRaw | 0.22.2 | https://github.com/LibRaw/LibRaw/tree/0.22.2 | LibRaw-LICENSE.CDDL, LibRaw-LICENSE.LGPL, LibRaw-COPYRIGHT |
 | Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
@@ -69,12 +69,17 @@ This product includes Gain Map technology under license by Adobe.
 
 This software is based in part on the work of the Independent JPEG Group.
 
-The optional DualDn package retains the original trained weights. Local changes
-split the model into fixed-size RAW, ISP and RGB ONNX graphs and add tiled execution
-and a scene-linear bridge in RawLab. The model manifest records source and weight
-checksums. DualDn and its converted model retain their upstream license; they are
-not relicensed under RawLab's license. Apple Silicon release builds bundle these
-components; development and Intel release builds do not.
+The optional DualDn and Restormer model packages retain the original trained
+weights. Local changes split DualDn into fixed-size RAW, ISP and RGB ONNX/Core ML
+graphs and add tiled execution and a scene-linear bridge in RawLab. The model
+manifest records source and weight checksums. DualDn and Restormer retain their
+upstream noncommercial licenses; they are not relicensed under RawLab's license.
+Apple Silicon release builds ship ONNX Runtime 1.23.2 (with its notices under
+`DualDn/`) and `ai-model-catalog.json`, and do not distribute the DualDn or
+Restormer model weights; users trigger an explicit in-app download on demand,
+and the downloaded package includes its upstream license texts. Intel release
+builds include neither the AI runtime nor models. Non-release development and CI
+builds may opt in to bundling a local model package.
 
 This product includes DNG technology under license by Adobe.
 JPEG XL DNG decoding uses the DNG SDK only for the JPEG XL decoder path.

@@ -10,7 +10,7 @@
 
 1. **环境变量配置**：`"$HOME/.config/rawlab/release-env.sh"`
    - 发布启动时直接执行 `source "$HOME/.config/rawlab/release-env.sh"` 加载（仅导出路径与公开身份/SHA-256 指纹，不含私钥或口令明文）。
-   - 涵盖标准变量：`RAWLAB_CODESIGN_IDENTITY`、`RAWLAB_CODESIGN_KEYCHAIN`、`RAWLAB_CODESIGN_KEYCHAIN_PW_FILE`、`RAWLAB_UPDATE_CERTIFICATE_SHA256`、`RAWLAB_SPARKLE_PUBLIC_KEY`、`RAWLAB_SPARKLE_CACHE`、`SPARKLE_BIN`、`SPARKLE_PRIVATE_KEY_FILE`、`RAWLAB_DUALDN_MANIFEST_SHA256`、`RAWLAB_DUALDN_MODEL_DIR`、`RAWLAB_ONNXRUNTIME_ROOT`、`RAWLAB_RELEASE_KEYSTORE`、`RAWLAB_RELEASE_PASSWORD_FILE`、`RAWLAB_RELEASE_KEY_ALIAS`、`RAWLAB_ANDROID_CERT_SHA256`、`WINDOWS_TRUST_JSON`、`WINDOWS_PRIVATE_PEM`。
+   - 涵盖标准变量：`RAWLAB_CODESIGN_IDENTITY`、`RAWLAB_CODESIGN_KEYCHAIN`、`RAWLAB_CODESIGN_KEYCHAIN_PW_FILE`、`RAWLAB_UPDATE_CERTIFICATE_SHA256`、`RAWLAB_SPARKLE_PUBLIC_KEY`、`RAWLAB_SPARKLE_CACHE`、`SPARKLE_BIN`、`SPARKLE_PRIVATE_KEY_FILE`、`RAWLAB_ONNXRUNTIME_ROOT`、`RAWLAB_RELEASE_KEYSTORE`、`RAWLAB_RELEASE_PASSWORD_FILE`、`RAWLAB_RELEASE_KEY_ALIAS`、`RAWLAB_ANDROID_CERT_SHA256`、`WINDOWS_TRUST_JSON`、`WINDOWS_PRIVATE_PEM`（若仍导出 `RAWLAB_DUALDN_MODEL_DIR` / `RAWLAB_DUALDN_MANIFEST_SHA256`，正式发布构建不再要求模型输入，仅在提供 `RAWLAB_DUALDN_MODEL_DIR` 时做构建期校验且不打包进正式产物；Windows GPU 冒烟脚本继续从包外传入外部模型目录）。
 2. **远端主机与设备指南**：`"$HOME/.config/rawlab/release-hosts.md"`
    - 记录 Windows 打包/签名机（`Paul-dev`）、Windows 物理独显测试机（`DESKTOP-216`）、macOS 二机验签机（`Mac-mini.lan`）、完整 Xcode `DEVELOPER_DIR`、Android AVD/物理设备与局域网缓存绕行细节。
 
@@ -27,11 +27,11 @@
 
 | 序号 | 文件名 | 说明 |
 | :---: | :--- | :--- |
-| 1 | `RawLab-Mac-<version>-arm64.zip` | Apple Silicon macOS 应用包（启用 DualDn Core ML + RUM + Sparkle） |
+| 1 | `RawLab-Mac-<version>-arm64.zip` | Apple Silicon macOS 应用包（启用 DualDn Core ML 运行时 + RUM + Sparkle，不含内置 AI 模型，首次使用按需下载） |
 | 2 | `RawLab-Mac-<version>-x86_64.zip` | Intel macOS 应用包（禁用 AI + 含 RUM + Sparkle） |
-| 3 | `RawLab.Desktop-stable-Setup.exe` | Windows x64 当前用户安装器（支持自动更新） |
+| 3 | `RawLab.Desktop-stable-Setup.exe` | Windows x64 当前用户安装器（含 DirectML 运行时与自动更新，不含内置 AI 模型，首次使用按需下载） |
 | 4 | `RawLab.Desktop-<version>-stable-full.nupkg` | Velopack 更新包（供 `windows-stable.json` 校验与增量拉取） |
-| 5 | `RawLab-Windows-<version>-x64.zip` | Windows x64 免安装手动压缩包 |
+| 5 | `RawLab-Windows-<version>-x64.zip` | Windows x64 免安装手动压缩包（含 DirectML 运行时，不含内置 AI 模型） |
 | 6 | `RawLab-Android-<version>.apk` | Android 正式签名 APK（`arm64-v8a` + `x86_64`，16 KiB 对齐，含 RUM） |
 | 7 | `RawLab-iOS-<version>-unsigned.ipa` | iOS 未签名正式包（内含 `sony2fuji.framework` 与 RUM SDK） |
 | 8 | `RawLab-<version>-source.tar.gz` | 对应正式 Tag 提交的纯净源码归档（`git archive`） |
@@ -41,6 +41,8 @@
 | 12 | `BUILD-PROVENANCE.json` | 完整构建来源、SHA-256、CI 记录与验证边界证明 |
 | 13 | `SHA256SUMS.txt` | 涵盖上述 1–12 共 12 个文件的 `shasum -a 256` 清单（不含自身） |
 
+> **外置 AI 模型说明**：桌面端正式发布包均**不包含** DualDn / Restormer 模型权重，仅随包提供推理运行时（ONNX Runtime / DirectML）与 `ai-model-catalog.json`。首次使用 AI 降噪时需由用户在应用内手动触发一次下载；从早期内置模型版本升级的用户同样需要执行一次应用内下载。Intel macOS 包不含 AI 运行时与模型。
+>
 > **禁止上传的文件**：Velopack 附带生成的 `RawLab.Desktop-stable-Portable.zip`、`RELEASES-stable`、`releases.stable.json`、`assets.stable.json` 严禁上传至 GitHub Release；仅在确认仅更新部分平台的热修复发布中，按 [桌面端发布 SOP](desktop-release.md#acceptance-and-publication) 完整保留并校验 `appcast-arm64.xml`、`appcast-x86_64.xml` 与 `windows-stable.json`。
 
 ---
@@ -79,13 +81,14 @@
 详细架构与签名细节见 [桌面端发布 SOP](desktop-release.md#macos) 与 [macOS 文档](../../RawLabMac/README.md)。
 1. 在 `set +x` 下加载 `"$HOME/.config/rawlab/release-env.sh"`，解锁 `$RAWLAB_CODESIGN_KEYCHAIN` 并将其加入当前用户钥匙串搜索列表。
 2. **构建 `arm64`**（独立 `RAWLAB_BUILD_DIR`）：
-   - 设置 `RAWLAB_RELEASE=1 RAWLAB_ARCH=arm64 RAWLAB_DUALDN=1 RAWLAB_RELEASE_ZIP="$DIST/RawLab-Mac-$VERSION-arm64.zip"`，执行 `bash RawLabMac/build.sh`。
+   - 设置 `RAWLAB_RELEASE=1 RAWLAB_ARCH=arm64 RAWLAB_DUALDN=1 RAWLAB_ONNXRUNTIME_ROOT=... RAWLAB_RELEASE_ZIP="$DIST/RawLab-Mac-$VERSION-arm64.zip"`，执行 `bash RawLabMac/build.sh`（不再要求 `RAWLAB_DUALDN_MODEL_DIR` / `RAWLAB_DUALDN_MANIFEST_SHA256`；若 `release-env.sh` 仍导出了 `RAWLAB_DUALDN_MODEL_DIR`，仅做构建期 `dualdn_probe --validate` 校验，不向应用包复制任何模型文件，且打包前会硬性校验 `Contents/Resources/AI/DualDn` 不存在、`Contents/Resources/ai-model-catalog.json` 存在）。
    - 运行 `python3 scripts/release/macos_appcast.py` 生成 `$DIST/appcast-arm64.xml`，随后用 `swift scripts/release/verify-sparkle.swift "$RAWLAB_SPARKLE_PUBLIC_KEY" "$DIST/appcast-arm64.xml" feed` 验签。
 3. **构建 `x86_64`**（独立 `RAWLAB_BUILD_DIR`，**必须显式清除 AI 环境变量**）：
    - 使用 `env -u RAWLAB_DUALDN_MODEL_DIR -u RAWLAB_DUALDN_MANIFEST_SHA256 -u RAWLAB_ONNXRUNTIME_ROOT RAWLAB_RELEASE=1 RAWLAB_ARCH=x86_64 RAWLAB_DUALDN=0` 执行 `bash RawLabMac/build.sh`。
    - 生成并验签 `$DIST/appcast-x86_64.xml`。
 4. **验收**：
    - 本机运行 `RawLabMac/tests/smoke.sh`（双架构）、`RawLabMac/tests/update-trust.sh`、`RawLabMac/tests/sparkle-adapter.sh`。
+   - 对 Apple Silicon 正式应用包执行**真实启动冒烟**：启动应用确认不含内置模型，在界面中触发一次应用内模型下载，下载完成后在 Apple Silicon 硬件 GPU（Core ML）上跑通一次 AI 降噪。Intel 正式包不含 AI 功能，只需完成常规启动与更新验收。
    - 传输至 `release-hosts.md` 中的二机验签 Mac mini 执行 `codesign --verify --deep --strict --all-architectures` 及 `DYLD_PRINT_LIBRARIES=1 "<app>/Contents/MacOS/RawLabMac" --smoke missing.raw /tmp/dyld-smoke` 检查动态库闭包（注意：**不要传 `--help`**，GUI 主程序不会退出）。
 
 ### 4.2 Windows（`x64`）与 `windows-stable.json`
@@ -101,15 +104,16 @@
      ```
      `-OnnxRuntimeRoot` 直接传 `E:\RawLabCI\cache\onnxruntime\windows-directml-1.23.0\installed`。
    - 清理源码树前先用 `cmd /c rmdir "$src\.cache\shared"` 只删除联接本身；**不要**对联接执行 `Remove-Item -Recurse`（Windows PowerShell 5.1 会顺着联接删掉共享缓存内容）。
-2. 调用 `RawLabWindows/build.ps1 -ReleasePackage`（传入 `-DotNet`、`-UpdateTrustFile`、`-DualDnModel`、`-DualDnManifestSha256`、`-OnnxRuntimeRoot`、`-ReleaseOutput`）。
-3. 校验 `out\publish\RawLab.exe` 的 `FileVersion` / `ProductVersion` 与 `Shared/version.json` 一致，并从构建树运行 `dualdn_probe.exe --validate out\publish\AI\DualDn`。
+2. 调用 `RawLabWindows/build.ps1 -ReleasePackage`（传入 `-DotNet`、`-UpdateTrustFile`、`-OnnxRuntimeRoot`、`-ReleaseOutput`；不再需要 `-DualDnModel` 与 `-DualDnManifestSha256`，即使传入 `-DualDnModel` 也仅用于构建期校验，不会进入产物）。
+3. 校验 `out\publish\RawLab.exe` 的 `FileVersion` / `ProductVersion` 与 `Shared/version.json` 一致，并确认 `out\publish\AI\DualDn` 不存在且 `out\publish\ai-model-catalog.json` 存在（`build.ps1` 在调用 `vpk.exe` 前也会硬性校验）。
 4. 在 Windows 上签名并校验 `windows-stable.json`（因 `UpdatePackageVerifier` 需读取 PE `FileVersionInfo`，必须在 Windows 主机执行）：
    - 仅在签名命令的 `try { ... } finally { Remove-Item ... -Force }` 内临时传入 `$WINDOWS_PRIVATE_PEM`，有效期设 `365` 天、`MinimumVersion` 按兼容基线设置（当前 `0.9.0`）；完成后核实 `Test-Path` 为 `False`，再运行 `update-manifest verify`。
 5. 仅将 `Setup.exe`、`*-full.nupkg`、`RawLab-Windows-$VERSION-x64.zip` 与 `windows-stable.json` 传回本机 `$DIST/`，同时取回构建树的 `dualdn_probe.exe` 供下一步使用（不放进 `$DIST/`）。
 6. **物理独显冒烟（`DESKTOP-216`）**：用 `scripts/release/smoke-windows-gpu.ps1` 对正式 ZIP 做无损冒烟，脚本头部注释给出完整的上传与调用命令：
    - 必须经原生 Windows OpenSSH 端口 `2222` 连接（`ssh -p 2222` / `scp -P 2222`）；端口 `22` 进入 WSL2，进程带 `PreferSystem32Images` 限制会加载 `System32\onnxruntime.dll`，脚本检测到即拒绝运行；
-   - 依次核对：打包 `AI\DualDn` 的 `dualdn_probe --validate`、强制 DirectML 的 `pipeline` 探针（`producer` 须含 DirectML 且无回退）、`sony2fuji.exe` CLI 出图、ExifTool 版本、子进程加载 `sony2fuji.dll` 的 `sony2fuji_ai_available=1` 与 `sony2fuji_ai_hardware_available=1`（且运行库来自安装包目录）；
+   - 需通过 `-ModelDir` 从包外传入已校验的模型目录；脚本依次核对：正式 ZIP 内**不含** `AI\DualDn` 且包含 `ai-model-catalog.json` 与 DirectML 运行库、用包内运行库对外部 `-ModelDir` 执行 `dualdn_probe --validate` 与强制 DirectML 的 `pipeline` 探针（`producer` 须含 DirectML 且无回退）、`sony2fuji.exe` CLI 出图、ExifTool 版本、子进程加载 `sony2fuji.dll` 的 `sony2fuji_ai_available=1` 与 `sony2fuji_ai_hardware_available=1`（且运行库来自安装包目录）；
    - 调用时加 `-NonInteractive`，漏传参数直接报错而不是在 ssh 会话里等待输入；前置守卫失败同样会清理；工作目录与 `-StagingDir` 在 `finally` 中删除并核实 `Test-Path` 为 `False`；`%LOCALAPPDATA%\RawLab` 前后指纹不一致即判失败；不启动 GUI。输出的 `SUMMARY:` 行可直接写入 `BUILD-PROVENANCE.json`。
+7. **Windows 真实启动与按需下载冒烟**：在带硬件 DirectML 独显的 Windows 主机上启动正式包，确认初始无内置模型，手动触发一次应用内模型下载，随后在硬件 GPU 上完成一次 AI 降噪。
 
 ### 4.3 Android（`.apk`）
 1. 在打包 worktree 执行 `bash RawLabAndroid/scripts/fetch-rum-sdk.sh` 拉取并校验 RUM AAR。

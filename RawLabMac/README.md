@@ -6,11 +6,11 @@ A native SwiftUI/AppKit desktop editor sharing the C++ pipeline with the CLI and
 
 ## 功能预览 / Preview
 
-Apple Silicon 正式发布构建要求打包 DualDn 与 Restormer，并只使用 GPU AI 后端；Intel 发布构建不含 AI；开发构建默认关闭。
+Apple Silicon 正式发布构建启用 GPU AI 推理运行时（Core ML / ONNX Runtime），但不内置 DualDn 与 Restormer 模型权重，首次使用时由用户在应用内按需下载（从早期内置模型版本升级也需下载一次）；Intel 发布构建不含 AI；开发构建默认关闭 AI，传入 `RAWLAB_DUALDN_MODEL_DIR` 时仍可按需随包复制供测试。
 适用 RAW、模型准备、后台处理、缓存和已知限制见 [DualDn 构建与使用说明](../lutools/tools/dualdn/README.md)，
 签名与发布配置见[桌面发布流程](../docs/process/desktop-release.md)。
-Apple Silicon release builds require packaged DualDn/Restormer models and a GPU AI backend; Intel release builds exclude AI.
-Development builds keep AI optional. The linked guides cover inputs, packaging and validation limits.
+Apple Silicon release builds ship the GPU AI inference runtime (Core ML / ONNX Runtime) and `ai-model-catalog.json` without bundling DualDn/Restormer model weights; users trigger a one-time in-app download when they enable AI denoise (including when upgrading from a release that bundled models). Intel release builds exclude AI.
+Development builds keep AI optional (and still bundle a supplied `RAWLAB_DUALDN_MODEL_DIR` when requested). The linked guides cover inputs, packaging and validation limits.
 
 单张及批量导出新增“DNG · 渲染型”。完整渲染当前外观、白平衡、曝光、明暗、HSL、
 降噪、锐化、暗角和颗粒后，以输出参考的线性 sRGB 16 位整数 RGB 写入 DNG 1.4。

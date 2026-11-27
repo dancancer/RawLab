@@ -166,12 +166,6 @@ Windows 的原片摘要缓存同时使用文件身份和 RH oplock 变更通知�
 模型权重、RAW 样片、校准原片、缓存、测量输出和本机路径不入库；可复现的导出工具、
 协议、回归测试及必要的标量配置可以入库。产品资源需保留上游来源和许可。
 DualDn 转换模型保留上游 CC BY-NC 4.0；通用 RGB 的 Restormer 保留 Academic Public License（非商业）。两者不随 RawLab 项目代码改为 GPL。
-项目负责人已于 2026-10-26 确认本项目为非商业使用，并要求 Mac、Windows 发布包
-包含 DualDn 模型与运行库、启用 AI 降噪。随包保留作者与来源、原许可及模型转换说明；
-该决定不赋予模型商业使用权，也不授权上传发布包或签名。
+自模型外置化后，Apple Silicon Mac 与 Windows 正式发布包仅包含推理运行库（Mac 为 ONNX Runtime 1.23.2 / Core ML，Windows 为 ONNX Runtime DirectML 1.23.0 / DirectML 1.15.4）与 `ai-model-catalog.json`，**不再随安装包打包模型权重**；用户在需要使用 AI 降噪时手动触发一次应用内下载（从早期内置模型版本升级也需下载一次）。外置模型包保留作者与来源、原许可及模型转换说明；这不赋予模型商业使用权，也不授权上传发布包或签名。
 
-发布构建必须校验模型 manifest、逐文件 SHA-256 和固定运行库版本，缺失输入时失败。
-Mac 包含原生 `raw.mlmodelc`、`rgb.mlmodelc`、`blind_rgb.mlmodelc` 与 ONNX Runtime 1.23.2；Windows
-包含 ONNX 模型与 ONNX Runtime DirectML 1.23.0。模型与依赖仅存于按版本和校验值
-区分的共享缓存，不能用占位模型或未验证的本机路径声明已启用。系统、硬件、首次计算
-耗时和包体积以实际发布产物的验收结果为准。
+发布构建校验固定运行库版本与哈希，并在打包前硬性校验产物不含内置 `AI/DualDn` 且包含 `ai-model-catalog.json`；外置模型压缩包及其解包成员的 SHA-256 固定在 `Shared/ai-models/catalog.json` 中，下载后逐文件校验。非发布构建仍可按需传入本地模型目录随包复制供测试与 CI 使用。系统、硬件、首次计算耗时和包体积以实际发布产物的验收结果为准。

@@ -4,14 +4,20 @@
   https://github.com/velopack/velopack; original notice: `Licenses/Velopack-MIT.txt`.
   The net8.0 dependency graph has no additional NuGet dependencies.
 
-- AI denoise in release packages: DualDn by OpenImagingLab
-  (https://github.com/OpenImagingLab/DualDn), CC BY-NC 4.0, OpenImagingLab 2024. The exported package
-  carries the upstream license and model/checkpoint provenance. ONNX Runtime
-  DirectML 1.23.0 is MIT-licensed; DirectML 1.15.4 is distributed under Microsoft's
-  package license. AI-enabled builds include their original notices under
-  `Licenses/DualDn`; development builds may omit these components. Restormer real denoising
-  (https://github.com/swz30/Restormer) retains its upstream Academic Public License for noncommercial use
-  in `Licenses/DualDn/Restormer-LICENSE.txt`.
+- AI denoise runtime and external on-demand models: Windows release packages ship
+  ONNX Runtime DirectML 1.23.0 (MIT) and DirectML 1.15.4 (Microsoft's package
+  license), with their original notices under `Licenses/DualDn`, plus
+  `ai-model-catalog.json`. Release packages do not distribute the DualDn or
+  Restormer model weights; users trigger an explicit one-time in-app download
+  when they enable AI denoise. The externally downloaded model package contains
+  DualDn by OpenImagingLab (https://github.com/OpenImagingLab/DualDn, CC BY-NC
+  4.0, OpenImagingLab 2024) and Restormer real denoising
+  (https://github.com/swz30/Restormer, Academic Public License for noncommercial
+  use) together with their upstream license texts (`DualDn-LICENSE.txt`,
+  `Restormer-LICENSE.txt`) and model/checkpoint provenance. Non-release builds
+  that opt in to `-DualDnModel` bundle those models and place their notices under
+  `Licenses/DualDn`; development builds without `-AIDenoise` or `-DualDnModel`
+  omit the AI runtime as well.
 
 - Lens correction: Lensfun 0.3.4 (LGPL-3.0-or-later), GLib 2.84.4
   (LGPL-2.1-or-later), PCRE2 10.44 (BSD), proxy-libintl (LGPL-2.0-or-later)
