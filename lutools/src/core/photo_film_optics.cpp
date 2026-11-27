@@ -31,8 +31,9 @@ inline float linLuminance(const RGB& px) {
     return std::max(0.0f, 0.2126f * px.r + 0.7152f * px.g + 0.0722f * px.b);
 }
 
-inline float highlightExcess(float sig, float thresholdPct) {
-    const float tn = std::clamp(thresholdPct / 100.0f, 0.0f, 1.0f) * 0.96f;
+// thresholdNorm 来自 filmOpticsThresholdNorm()。
+inline float highlightExcess(float sig, float thresholdNorm) {
+    const float tn = thresholdNorm;
     const float linThresh = srgbToLin(tn);
     const float knee = std::min(0.06f, 0.5f * linThresh);
     if (sig <= linThresh - knee) return 0.0f;
@@ -208,8 +209,9 @@ inline RGB sampleProxy3(const float* buf, int width, int height, float fx, float
     };
 }
 
-inline RGB halationTint(float huePct) {
-    const float h = std::clamp(huePct / 100.0f, -1.0f, 1.0f);
+// hueNorm 来自 filmOpticsHueNorm()。
+inline RGB halationTint(float hueNorm) {
+    const float h = hueNorm;
     const float gW = h < 0.0f ? (0.24f + 0.16f * h) : (0.24f + 0.20f * h);
     const float bW = 0.03f + 0.005f * (h + 1.0f);
     return {1.0f, gW, bW};
@@ -236,6 +238,7 @@ FilmOpticsField buildFilmOpticsField(
     const int maxGuideLongEdge = std::max(guideW, guideH);
 
     if (options.halationAmount > 0.0f) {
+        const float halationThresholdNorm = filmOpticsThresholdNorm(options.halationThreshold);
         const auto geom = computeFilmOpticsProxyGeometry(
             sourceWidth, sourceHeight, options.halationRadius, /*isBloom=*/false,
             sourceWidth == guideW ? 1024 : maxGuideLongEdge);
@@ -263,7 +266,7 @@ FilmOpticsField buildFilmOpticsField(
                             const float lum = linLuminance(lin);
                             const float maxCh = std::max(lin.r, std::max(lin.g, lin.b));
                             const float sig = std::max(lum, maxCh * 0.55f);
-                            sum += highlightExcess(sig, options.halationThreshold);
+                            sum += highlightExcess(sig, halationThresholdNorm);
                             ++count;
                         }
                     }
@@ -279,6 +282,7 @@ FilmOpticsField buildFilmOpticsField(
     }
 
     if (options.bloomAmount > 0.0f) {
+        const float bloomThresholdNorm = filmOpticsThresholdNorm(options.bloomThreshold);
         const auto geom = computeFilmOpticsProxyGeometry(
             sourceWidth, sourceHeight, options.bloomRadius, /*isBloom=*/true,
             sourceWidth == guideW ? 1024 : maxGuideLongEdge);
@@ -304,7 +308,7 @@ FilmOpticsField buildFilmOpticsField(
                         for (int sx = ix0; sx < ix1; sx += stepX) {
                             const RGB lin = srgbToLin(row[sx]);
                             const float lum = linLuminance(lin);
-                            const float ex = highlightExcess(lum, options.bloomThreshold);
+                            const float ex = highlightExcess(lum, bloomThresholdNorm);
                             const float ratio = lum > 1e-6f ? (ex / lum) : 0.0f;
                             sr += lin.r * ratio;
                             sg += lin.g * ratio;
@@ -349,7 +353,7 @@ void applyFilmOpticsWithField(
     const double fullH = useRoi ? double(roiMap.fullHeight) : double(H);
     const bool hasHal = options.halationAmount > 0.0f && field.halWidth > 0 && field.halHeight > 0 && !field.halGlow.empty();
     const bool hasBloom = options.bloomAmount > 0.0f && field.bloomWidth > 0 && field.bloomHeight > 0 && !field.bloomGlow.empty();
-    const RGB halTint = halationTint(options.halationHue);
+    const RGB halTint = halationTint(filmOpticsHueNorm(options.halationHue));
     const float halGain = (options.halationAmount / 100.0f) * 1.15f;
     const float bloomGain = (options.bloomAmount / 100.0f) * 1.20f;
 
