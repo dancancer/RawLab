@@ -21,6 +21,7 @@ rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
 rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
     "$ROOT/Shared/Native/HDRCanvas.swift" \
+    "$ROOT/Shared/tests/HDRDisplayGoldens.swift" \
     "$ROOT/RawLab/tests/HDRCanvasTests.swift" \
     -framework SwiftUI -framework UIKit -framework Metal -framework MetalKit -framework Combine \
     -o "$OUT/HDRCanvasTests.app/hdr-canvas-tests"

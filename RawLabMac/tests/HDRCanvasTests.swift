@@ -373,55 +373,19 @@ private func halfBitsToFloat(_ bits: UInt16) -> Float {
         try check(waitUntil { !state.displayFailed && !mtk.isHidden && mtk.drawCallCount >= 1 },
                   "Replacing failed presentation clears isHidden and resumes rendering")
 
-        // 4. Metal compute shader vs shared-core golden pixel parity
+        // 4. Metal compute shader vs shared-core golden pixel parity. Pixels and goldens come from
+        // Shared/fixtures/hdr-display-goldens-v1.json, which the core test checks bit-exact.
         let device = MTLCreateSystemDefaultDevice()!
-        let testPixels: [(SIMD3<Float>, SIMD3<Float>)] = [
-            (SIMD3(0.002, 0.005, 0.001), SIMD3(0.002, 0.005, 0.001)), // dark (y <= 0.01)
-            (SIMD3(0.5, 0.4, 0.3), SIMD3(0.5, 0.4, 0.3)),             // midtone (0.01 < y <= 1)
-            (SIMD3(1.5, 1.4, 1.2), SIMD3(1.0, 0.9, 0.8)),             // HDR highlight (1 < y <= h)
-            (SIMD3(6.0, 5.0, 4.0), SIMD3(1.0, 1.0, 1.0)),             // shoulder (y > h)
-            (SIMD3(12.0, 9.0, 7.0), SIMD3(1.0, 1.0, 1.0)),            // peak highlight
-            (SIMD3(0.0, 1.2, 0.3), SIMD3(0.0, 1.0, 0.3))              // saturated green
-        ]
-        var hdrFlat: [Float] = []
-        var sdrFlat: [Float] = []
-        for (h, s) in testPixels {
-            hdrFlat.append(contentsOf: [h.x, h.y, h.z])
-            sdrFlat.append(contentsOf: [s.x, s.y, s.z])
-        }
-        // 期望值由 sony2fuji_hdr_display_into（P3 | CLAMP_SDR，SDR/假色按模式）生成；内容峰值为
-        // sony2fuji_hdr_analyze_luminance 对这六个像素的结果。核心逻辑变化时须同步重新生成。
-        let parityImage = try TestLinearHDRImage(width: testPixels.count, height: 1, hdrValues: hdrFlat, sdrValues: sdrFlat,
-                                                 contentHeadroom: Float(bitPattern: 0x4117_e4f7))
-        let parityCases: [(HDRDisplayParameters, [UInt16])] = [
-            (HDRDisplayParameters(headroom: 1.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3bdc, 0x3b3a, 0x3a7c,
-              0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x31ae, 0x3bbc, 0x3587]),
-            (HDRDisplayParameters(headroom: 1.005, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c3c, 0x3c03, 0x3af8,
-              0x3c8e, 0x3bdf, 0x3a6c, 0x3cdb, 0x3bb5, 0x3a20, 0x32d1, 0x3ca4, 0x35c3]),
-            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3d7a, 0x3d2f, 0x3c81,
-              0x4048, 0x3f67, 0x3e0a, 0x40d5, 0x3fab, 0x3e18, 0x32d1, 0x3ca4, 0x35c3]),
-            (HDRDisplayParameters(headroom: 4.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3dca, 0x3d7b, 0x3cc4,
-              0x4339, 0x423e, 0x4118, 0x44d5, 0x43ab, 0x4218, 0x32d1, 0x3ca4, 0x35c3]),
-            (HDRDisplayParameters(headroom: 8.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3de9, 0x3d99, 0x3cdd,
-              0x4561, 0x44a7, 0x4397, 0x48d5, 0x47ab, 0x4618, 0x32d1, 0x3ca4, 0x35c3]),
-            (HDRDisplayParameters(headroom: 4.0, mode: .sdr, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3bdc, 0x3b3a, 0x3a7c,
-              0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x3c00, 0x31ae, 0x3bbc, 0x3587]),
-            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: true),
-             [0x251f, 0x30cd, 0x399a, 0x359a, 0x359a, 0x359a, 0x3c00, 0x38cd, 0x0000,
-              0x3c00, 0x0000, 0x359a, 0x3c00, 0x0000, 0x359a, 0x359a, 0x359a, 0x359a])
-        ]
+        let goldens = try HDRDisplayGoldenSet.load("mac")
+        let parityImage = try TestLinearHDRImage(width: goldens.pixelCount, height: 1, hdrValues: goldens.hdr,
+                                                 sdrValues: goldens.sdr, contentHeadroom: goldens.contentHeadroom)
+        let parityCases = goldens.cases.map { ($0.parameters, $0.halves) }
         for (params, expected) in parityCases {
             let gpuData = try HDRCanvasRenderer.metalRGBA16F(linear: parityImage, parameters: params, device: device)
-            try check(gpuData.count == testPixels.count * 8, "Metal compute output byte count matches RGBA16F")
+            try check(gpuData.count == goldens.pixelCount * 8, "Metal compute output byte count matches RGBA16F")
             try gpuData.withUnsafeBytes { raw in
                 let gpuWords = raw.bindMemory(to: UInt16.self)
-                for i in 0..<testPixels.count {
+                for i in 0..<goldens.pixelCount {
                     let expectedBits = expected[(i * 3)..<(i * 3 + 3)].map { $0 }
                     let gpuAlpha = gpuWords[i * 4 + 3]
                     try check(gpuAlpha == 0x3c00, "Metal compute alpha channel is 1.0h")

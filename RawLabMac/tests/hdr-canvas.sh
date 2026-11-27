@@ -8,6 +8,7 @@ rawlabkit_flags link "$OUT/swiftpm" macos 0
 rawlab_mac_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" \
     -module-cache-path "${RAWLAB_TRANSFER_MODULE_CACHE:-$OUT/module-cache}" \
     "$ROOT/Shared/Native/HDRCanvas.swift" \
+    "$ROOT/Shared/tests/HDRDisplayGoldens.swift" \
     "$ROOT/RawLabMac/tests/HDRCanvasTests.swift" \
     -framework SwiftUI -framework AppKit -framework Metal -framework MetalKit -framework Combine \
     -o "$OUT/test"

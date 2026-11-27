@@ -323,38 +323,18 @@ private final class SlowRGBA16FSpy: HDRDisplayImage {
             return spy.callSnapshot.count > callsBeforeJitter && mtk.drawCallCount >= 1
         }, "iOS UIScreen.brightnessDidChangeNotification with headroom change triggers re-prepare and redraw")
 
-        // Metal compute parity on iOS
+        // Metal compute parity on iOS. Pixels and goldens come from
+        // Shared/fixtures/hdr-display-goldens-v1.json, which the core test checks bit-exact.
         let device = MTLCreateSystemDefaultDevice()!
-        let testPixels: [(SIMD3<Float>, SIMD3<Float>)] = [
-            (SIMD3(0.002, 0.005, 0.001), SIMD3(0.002, 0.005, 0.001)),
-            (SIMD3(0.5, 0.4, 0.3), SIMD3(0.5, 0.4, 0.3)),
-            (SIMD3(6.0, 5.0, 4.0), SIMD3(1.0, 1.0, 1.0))
-        ]
-        var hdrFlat: [Float] = []
-        var sdrFlat: [Float] = []
-        for (h, s) in testPixels {
-            hdrFlat.append(contentsOf: [h.x, h.y, h.z])
-            sdrFlat.append(contentsOf: [s.x, s.y, s.z])
-        }
-        // 期望值由 sony2fuji_hdr_display_into（P3 | CLAMP_SDR，SDR/假色按模式）生成；内容峰值为
-        // sony2fuji_hdr_analyze_luminance 对这三个像素的结果。核心逻辑变化时须同步重新生成。
-        let parityImage = try TestLinearHDRImage(width: testPixels.count, height: 1, hdrValues: hdrFlat, sdrValues: sdrFlat,
-                                                 contentHeadroom: Float(bitPattern: 0x40a4_7e28))
-        let parityCases: [(HDRDisplayParameters, [UInt16])] = [
-            (HDRDisplayParameters(headroom: 1.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00]),
-            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x4088, 0x3fd5, 0x3e64]),
-            (HDRDisplayParameters(headroom: 4.0, mode: .sdr, falseColor: false),
-             [0x1930, 0x1d05, 0x155a, 0x37b7, 0x3674, 0x34f8, 0x3c00, 0x3c00, 0x3c00]),
-            (HDRDisplayParameters(headroom: 2.0, mode: .automatic, falseColor: true),
-             [0x251f, 0x30cd, 0x399a, 0x359a, 0x359a, 0x359a, 0x3c00, 0x0000, 0x359a])
-        ]
+        let goldens = try HDRDisplayGoldenSet.load("ios")
+        let parityImage = try TestLinearHDRImage(width: goldens.pixelCount, height: 1, hdrValues: goldens.hdr,
+                                                 sdrValues: goldens.sdr, contentHeadroom: goldens.contentHeadroom)
+        let parityCases = goldens.cases.map { ($0.parameters, $0.halves) }
         for (params, expected) in parityCases {
             let gpuData = try HDRCanvasRenderer.metalRGBA16F(linear: parityImage, parameters: params, device: device)
             try gpuData.withUnsafeBytes { raw in
                 let gpuWords = raw.bindMemory(to: UInt16.self)
-                for i in 0..<testPixels.count {
+                for i in 0..<goldens.pixelCount {
                     let expectedBits = expected[(i * 3)..<(i * 3 + 3)].map { $0 }
                     for c in 0..<3 {
                         let gVal = Float(Float16(bitPattern: gpuWords[i * 4 + c]))
