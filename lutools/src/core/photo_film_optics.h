@@ -42,6 +42,17 @@ struct FilmOpticsOptions {
     }
 };
 
+// 阈值、色相滑块换算成着色器直接读取的值。CPU 参考路径和三个 GPU 后端都调用这两个函数，
+// 着色器不再对 uniform 做“先缩放再夹紧”：在托管 macOS x86_64 runner 的虚拟化 Intel GPU
+// （Apple Paravirtualized Graphics Device）上观测到这类表达式被错误折叠（#695）。
+inline float filmOpticsThresholdNorm(float thresholdPct) {
+    return std::clamp(thresholdPct / 100.0f, 0.0f, 1.0f) * 0.96f;
+}
+
+inline float filmOpticsHueNorm(float huePct) {
+    return std::clamp(huePct / 100.0f, -1.0f, 1.0f);
+}
+
 struct FilmOpticsProxyGeometry {
     int proxyWidth = 1;
     int proxyHeight = 1;

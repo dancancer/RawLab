@@ -1588,8 +1588,8 @@ bool renderPhotoMetalImpl(
                 dp.channelCount = ch;
                 dp.srcRowOffset = batchSrcY0;
                 dp.dstProxyRowOffset = pyStart;
-                dp.halationThreshold = thresh;
-                dp.bloomThreshold = thresh;
+                dp.halationThresholdNorm = thresh;
+                dp.bloomThresholdNorm = thresh;
                 id<MTLBuffer> dpBuf = makeFilmOpticsParamsBuf(dp);
                 id<MTLCommandBuffer> cmd = [context.queue commandBuffer];
                 if (!dpBuf || !cmd || !encodeKernel(cmd, context.filmOpticsDownsamplePipeline, dpBuf,
@@ -1645,8 +1645,8 @@ bool renderPhotoMetalImpl(
         const bool hasBloom = opt.bloomAmount > 0.0f;
         uint32_t halW = 0, halH = 0, bloomW = 0, bloomH = 0;
         id<MTLBuffer> halBuf = nil, bloomBuf = nil;
-        if (hasHal && !runProxy(false, opt.halationThreshold, opt.halationRadius, halW, halH, halBuf)) return false;
-        if (hasBloom && !runProxy(true, opt.bloomThreshold, opt.bloomRadius, bloomW, bloomH, bloomBuf)) return false;
+        if (hasHal && !runProxy(false, sony2fuji::filmOpticsThresholdNorm(opt.halationThreshold), opt.halationRadius, halW, halH, halBuf)) return false;
+        if (hasBloom && !runProxy(true, sony2fuji::filmOpticsThresholdNorm(opt.bloomThreshold), opt.bloomRadius, bloomW, bloomH, bloomBuf)) return false;
 
         if (hasHal && hasBloom) {
             const size_t halBytes = halBuf.length;
@@ -1677,7 +1677,7 @@ bool renderPhotoMetalImpl(
         outComp.bloomProxyWidth = bloomW;
         outComp.bloomProxyHeight = bloomH;
         outComp.halationAmount = opt.halationAmount;
-        outComp.halationHue = opt.halationHue;
+        outComp.halationHueNorm = sony2fuji::filmOpticsHueNorm(opt.halationHue);
         outComp.bloomAmount = opt.bloomAmount;
         return true;
     };

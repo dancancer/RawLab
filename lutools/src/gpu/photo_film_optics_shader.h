@@ -25,10 +25,11 @@ struct FilmOpticsGpuParams {
     uint32_t dstProxyRowOffset = 0;
     float proxySigma = 1.0f;
     float halationAmount = 0.0f;
-    float halationThreshold = 75.0f;
-    float halationHue = 0.0f;
+    // 阈值与色相由宿主经 filmOpticsThresholdNorm / filmOpticsHueNorm 换算后填入，着色器只读取。
+    float halationThresholdNorm = 0.72f;
+    float halationHueNorm = 0.0f;
     float bloomAmount = 0.0f;
-    float bloomThreshold = 70.0f;
+    float bloomThresholdNorm = 0.672f;
     float coreWeight = 0.40f;
     float tailWeight = 0.60f;
 };
@@ -82,8 +83,7 @@ float foLuminance3(V3 linPx) {
     return max(0.0, 0.2126 * linPx.x + 0.7152 * linPx.y + 0.0722 * linPx.z);
 }
 
-float foHighlightExcess(float sig, float threshPct) {
-    float tn = clamp(threshPct / 100.0, 0.0, 1.0) * 0.96;
+float foHighlightExcess(float sig, float tn) {
     float linThresh = foSrgbToLin1(tn);
     float knee = min(0.06, 0.5 * linThresh);
     if (sig <= linThresh - knee) return 0.0;
@@ -92,8 +92,7 @@ float foHighlightExcess(float sig, float threshPct) {
     return (rq * rq) / (4.0 * knee);
 }
 
-V3 foHalationTint(float huePct) {
-    float h = clamp(huePct / 100.0, -1.0, 1.0);
+V3 foHalationTint(float h) {
     float gW = h < 0.0 ? (0.24 + 0.16 * h) : (0.24 + 0.20 * h);
     float bW = 0.03 + 0.005 * (h + 1.0);
     return V3(1.0, gW, bW);
@@ -143,10 +142,10 @@ struct FilmOpticsParams {
     uint dstProxyRowOffset;
     float proxySigma;
     float halationAmount;
-    float halationThreshold;
-    float halationHue;
+    float halationThresholdNorm;
+    float halationHueNorm;
     float bloomAmount;
-    float bloomThreshold;
+    float bloomThresholdNorm;
     float coreWeight;
     float tailWeight;
 };
@@ -206,7 +205,7 @@ kernel void filmOpticsDownsample(
     int stepX = max(1, (ix1 - ix0 + 15) / 16);
     int stepY = max(1, (iy1 - iy0 + 15) / 16);
     bool isBloom = p.channelCount == 3u;
-    float thresh = isBloom ? p.bloomThreshold : p.halationThreshold;
+    float thresh = isBloom ? p.bloomThresholdNorm : p.halationThresholdNorm;
     float3 sum = float3(0.0f);
     float count = 0.0f;
     for (int sy = iy0; sy < iy1; sy += stepY) {
@@ -351,7 +350,7 @@ kernel void filmOpticsComposite(
         float by = (float(y) + 0.5f) * (float(p.bloomProxyHeight) / float(p.height)) - 0.5f;
         bloomGlow = foSampleProxy3(glowBuffer, p.bloomOffsetFloats, p.bloomProxyWidth, p.bloomProxyHeight, bx, by);
     }
-    destination[gid] = packed_float3(foApplyOpticsBlend(pixel, halGlow, bloomGlow, p.halationAmount, p.halationHue, p.bloomAmount));
+    destination[gid] = packed_float3(foApplyOpticsBlend(pixel, halGlow, bloomGlow, p.halationAmount, p.halationHueNorm, p.bloomAmount));
 }
 )metal";
 
