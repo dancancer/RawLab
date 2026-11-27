@@ -26,12 +26,14 @@ extension EditorModel {
         let before = settings
         let source = sourceRevision
         let isRaster = RenderEngine.isRasterInput(work.file)
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [weak self] in
+            defer { readerLease.end() }
             guard let self else { return }
             let outcome: Result<RenderEngine.WBProbeSample, Error>
             do {
-                if self.engine == nil { self.engine = try RenderEngine() }
-                let sample = try self.engine!.sampleWBProbe(work.file, settings: work.settings,
+                let activeEngine = try self.ensureEngine()
+                let sample = try activeEngine.sampleWBProbe(work.file, settings: work.settings,
                     lut: work.lut, edge: work.edge, interactive: work.pass == .interactive, point: point)
                 outcome = .success(sample)
             } catch {

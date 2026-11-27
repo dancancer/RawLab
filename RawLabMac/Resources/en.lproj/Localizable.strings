@@ -29,6 +29,7 @@
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "AI denoising cannot be copied yet. Choose Custom to copy other adjustments.";
 "AI 降噪模型许可" = "AI Denoise Model Licenses";
 "AI 降噪结果连续未就绪，请重试。" = "AI denoise results are still unavailable. Please retry.";
+"AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。" = "AI denoising requires an Apple Silicon GPU and macOS 14.4 or newer.";
 "AI 降噪（实验）" = "AI denoise (experimental)";
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Agent recipes do not support AI denoise. Turn off AI denoise first.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "The DCP uses a three-illuminant HueSatMap, which is not supported for conversion yet.";

@@ -1,4 +1,5 @@
 """Deployment targets must not reuse higher-minimum dependency binaries."""
+import base64
 import os
 from pathlib import Path
 import plistlib
@@ -605,6 +606,299 @@ class BuildEnvironmentTests(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertEqual(res_rel.returncode, 2, res_rel.stdout + res_rel.stderr)
+
+    def _prepare_fake_mac_build_workspace(self, root: Path):
+        """Construct a minimal fake RawLabMac workspace for exercising build.sh with stubs."""
+        scripts = root / "RawLabMac"
+        scripts.mkdir(parents=True)
+        (root / "scripts/ci").mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/ci/apple-sdk-env.sh", root / "scripts/ci/apple-sdk-env.sh")
+        (root / "scripts/version").mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/version/generate.py", root / "scripts/version/generate.py")
+        (root / "scripts/release").mkdir(parents=True)
+        shutil.copy2(ROOT / "scripts/release/macos_config.py", root / "scripts/release/macos_config.py")
+        for name in ("build.sh", "build-env.sh", "release-config.sh", "Info.plist"):
+            shutil.copy2(ROOT / "RawLabMac" / name, scripts / name)
+        (scripts / "Sources").mkdir()
+        (scripts / "Sources/Main.swift").write_text('print("ok")\n')
+        (scripts / "Resources/Licenses").mkdir(parents=True)
+        (scripts / "Resources/Licenses/local.txt").write_text("ok\n")
+        (scripts / "Resources/ThirdPartyNotices.md").write_text("notices\n")
+        (scripts / "Resources/en.lproj").mkdir(parents=True)
+        (scripts / "Resources/en.lproj/Localizable.strings").write_text('"ok" = "ok";\n')
+        (scripts / "Resources/MasterRecipeIcons").mkdir(parents=True)
+        (scripts / "Resources/MasterRecipeIcons/icon.png").write_text("png")
+        (scripts / "Resources/FilmIcons").mkdir(parents=True)
+        (scripts / "Resources/FilmIcons/ektar.png").write_text("png")
+        (scripts / "tests").mkdir()
+        (scripts / "tests/bundle.sh").write_text("#!/bin/bash\nexit 0\n")
+
+        sparkle_root = root / "sparkle-cache/unpacked/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+        (sparkle_root / "Versions/B").mkdir(parents=True)
+        (sparkle_root.parent.parent.parent / "LICENSE").write_text("MIT\n")
+        (scripts / "prepare-sparkle.sh").write_text(f"#!/bin/bash\nprintf '%s\\n' '{sparkle_root}'\n")
+        (scripts / "build-lens-dependency.sh").write_text("#!/bin/bash\nexit 0\n")
+        (scripts / "build-icon.sh").write_text('#!/bin/bash\ntouch "$1"\n')
+        (scripts / "sign-bundle.sh").write_text("#!/bin/bash\nexit 0\n")
+
+        libraw_dir = root / "lutools/cmake/libraw"
+        libraw_dir.mkdir(parents=True)
+        for name in ("manifest.json", "manifest.py"):
+            shutil.copy2(ROOT / "lutools/cmake/libraw" / name, libraw_dir / name)
+        (root / "Shared").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "Shared/version.json", root / "Shared/version.json")
+        for p in (
+            "LICENSE",
+            "LICENSE-ALIYUN-RUM-EXCEPTION",
+            "docs/reference/licensing.md",
+            "lutools/third_party/Adobe-DNG-SDK-LICENSE.txt",
+            "lutools/third_party/nlohmann/LICENSE.MIT",
+            "lutools/third_party/nikon_he/README.md",
+            "lutools/third_party/nikon_he/LICENSE.LGPL-2.1",
+            "lutools/third_party/lensfun/version_1/slr.xml",
+            "lutools/third_party/lensfun/license.txt",
+            "lutools/third_party/lensfun/license.md",
+            "lutools/flog-2-new/test.cube",
+            "Shared/master-recipes.json",
+            "Shared/ai-models/catalog.json",
+            "Shared/BundledLooks/catalog.json",
+            "Shared/BundledLooks/NOTICE.md",
+            "Shared/BundledLooks/look.cube",
+            "Shared/BundledLooks/HDR/hdr.cube",
+            "Shared/BundledLooks/Artwork/art.png",
+        ):
+            target = root / p
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("fixture\n")
+        (root / "scripts/assets").mkdir(parents=True)
+        (root / "scripts/assets/prepare.py").write_text("import sys\n")
+
+        build_dir = root / "lutools/build-macos"
+        (build_dir / "licenses/libultrahdr").mkdir(parents=True)
+        (build_dir / "licenses/libjpeg-turbo").mkdir(parents=True)
+        (build_dir / "licenses/libspng").mkdir(parents=True)
+        (build_dir / "CMakeCache.txt").write_text("SONY2FUJI_ENABLE_X3F:BOOL=OFF\n")
+        (build_dir / "dng_jxl_tests").write_text("#!/bin/sh\nexit 0\n")
+        (build_dir / "dng_jxl_tests").chmod(0o755)
+        probe_log = root / "dualdn-probe.log"
+        (build_dir / "dualdn_probe").write_text(f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{probe_log}"\n')
+        (build_dir / "dualdn_probe").chmod(0o755)
+        (build_dir / "hdr-codec/lib").mkdir(parents=True)
+        (build_dir / "raw-jpeg/install/lib").mkdir(parents=True)
+
+        ort_root = root / "ort-1.23.2"
+        (ort_root / "lib").mkdir(parents=True)
+        (ort_root / "VERSION_NUMBER").write_text("1.23.2\n")
+        (ort_root / "LICENSE").write_text("MIT ORT\n")
+        (ort_root / "ThirdPartyNotices.txt").write_text("ORT notices\n")
+        (ort_root / "lib/libonnxruntime.1.23.2.dylib").write_text("fake-ort-dylib\n")
+
+        model_dir = root / "model-package"
+        model_dir.mkdir(parents=True)
+        for fname in ("manifest.json", "raw.onnx", "isp.onnx", "rgb.onnx", "blind_rgb.onnx",
+                      "DualDn-LICENSE.txt", "Restormer-LICENSE.txt"):
+            (model_dir / fname).write_text(f"{fname}\n")
+        for dname in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
+            (model_dir / dname).mkdir()
+            (model_dir / dname / "model.mil").write_text("mlmodel\n")
+
+        opencv_prefix = root / "deps/opencv"
+        (opencv_prefix / "share/licenses/opencv4").mkdir(parents=True)
+        (opencv_prefix / "share/licenses/opencv4/LICENSE").write_text("ok")
+        chroma_prefix = root / "build/macos-deps/14.0/arm64/install"
+        (chroma_prefix / "share/licenses/wavelib").mkdir(parents=True)
+        (chroma_prefix / "share/licenses/wavelib/COPYRIGHT").write_text("ok")
+        (chroma_prefix / "share/licenses/libtiff").mkdir(parents=True)
+        (chroma_prefix / "share/licenses/libtiff/LICENSE.md").write_text("ok")
+        (chroma_prefix / "share/licenses/rawlab-dng-sdk").mkdir(parents=True)
+        (chroma_prefix / "share/licenses/rawlab-dng-sdk/LICENSE.txt").write_text("ok")
+        lens_prefix = root / "build/lensfun/14.0/arm64/install"
+        (lens_prefix / "licenses/lensfun").mkdir(parents=True)
+        (lens_prefix / "licenses/lensfun/COPYING").write_text("ok")
+
+        cmake_log = root / "cmake.log"
+        tools = root / "tools"
+        tools.mkdir()
+        tool_scripts = {
+            "pkg-config": f"#!/bin/bash\nif [[ \"${{1:-}}\" == --variable=prefix ]]; then echo '{opencv_prefix}'; fi\nexit 0\n",
+            "cmake": f'#!/bin/bash\nprintf "%s\\n" "$*" >> "{cmake_log}"\nexit 0\n',
+            "shasum": (
+                "#!/bin/bash\n"
+                "if [[ \"${3:-}\" == - ]]; then cat >/dev/null; exit 0; fi\n"
+                "echo '0000000000000000000000000000000000000000000000000000000000000000  archive'\n"
+            ),
+            "ditto": (
+                "#!/bin/bash\n"
+                "if [[ \"${1:-}\" == -c ]]; then touch \"$5\"; exit 0; fi\n"
+                "mkdir -p \"$2\" && cp -R \"$1/.\" \"$2/\"\n"
+            ),
+            "swift": (
+                "#!/bin/bash\n"
+                "scratch=''\nshow_bin=0\n"
+                "while [ $# -gt 0 ]; do\n"
+                "  case \"$1\" in --scratch-path) scratch=\"$2\"; shift 2 ;; --show-bin-path) show_bin=1; shift ;; *) shift ;; esac\n"
+                "done\n"
+                "bin=\"$scratch/bin\"\n"
+                "if [ \"$show_bin\" = 1 ]; then echo \"$bin\"; exit 0; fi\n"
+                "mkdir -p \"$bin/Modules\"\n"
+                "touch \"$bin/Modules/RawLabKit.swiftmodule\" \"$bin/libRawLabKit.a\" "
+                "\"$bin/Modules/RawLabNativeTypes.swiftmodule\" \"$bin/libRawLabNativeTypes.a\" "
+                "\"$bin/Modules/RawLabInspectionNative.swiftmodule\" \"$bin/libRawLabInspectionNative.a\" "
+                "\"$bin/Modules/RawLabNative.swiftmodule\" \"$bin/libRawLabNative.a\"\n"
+            ),
+            "swiftc": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in -o) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\nmkdir -p \"$(dirname \"$out\")\"\ntouch \"$out\"\nchmod +x \"$out\"\n",
+            "sips": "#!/bin/bash\nout=''\nwhile [ $# -gt 0 ]; do case \"$1\" in --out) out=\"$2\"; shift 2 ;; *) shift ;; esac; done\ntouch \"$out\"\n",
+            "otool": "#!/bin/sh\nexit 0\n",
+            "codesign": "#!/bin/sh\nexit 0\n",
+        }
+        for name, content in tool_scripts.items():
+            p = tools / name
+            p.write_text(content)
+            p.chmod(0o755)
+
+        env = {key: value for key, value in os.environ.items()
+               if not key.startswith("RAWLAB_") and key != "MACOSX_DEPLOYMENT_TARGET"}
+        env.update({
+            "PATH": f"{tools}:{os.environ['PATH']}",
+            "RAWLAB_ARCH": "arm64",
+            "RAWLAB_CI_CACHE_HIT": "true",
+            "RAWLAB_RUM": "0",
+            "RAWLAB_RUM_LOCAL": "0",
+            "SDKROOT": "/unused/sdk",
+        })
+        return scripts, ort_root, model_dir, cmake_log, probe_log, env
+
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(), "macOS plist tooling is required")
+    def test_ai_runtime_build_without_model_and_non_release_opt_in_bundling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts, ort_root, model_dir, cmake_log, probe_log, base_env = self._prepare_fake_mac_build_workspace(root)
+
+            # 1) RAWLAB_DUALDN=1 without RAWLAB_DUALDN_MODEL_DIR compiles runtime and ships no model files.
+            app_no_model = root / "out/no-model.app"
+            res = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**base_env, "RAWLAB_DUALDN": "1", "RAWLAB_ONNXRUNTIME_ROOT": str(ort_root),
+                     "RAWLAB_APP_PATH": str(app_no_model)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            cmake_configure_args = cmake_log.read_text().splitlines()[0].split()
+            self.assertIn("-DSONY2FUJI_ENABLE_AI_DENOISE=ON", cmake_configure_args)
+            self.assertIn("-DRAWLAB_DUALDN_TEST_PACKAGE=", cmake_configure_args)
+            self.assertFalse(probe_log.exists(), "dualdn_probe should not run without a model dir")
+            self.assertFalse((app_no_model / "Contents/Resources/AI/DualDn").exists())
+            self.assertTrue((app_no_model / "Contents/Resources/ai-model-catalog.json").is_file())
+            self.assertTrue((app_no_model / "Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE").is_file())
+            self.assertTrue((app_no_model / "Contents/Resources/Licenses/DualDn/ONNX-Runtime-ThirdPartyNotices.txt").is_file())
+            self.assertFalse((app_no_model / "Contents/Resources/Licenses/DualDn/LICENSE").exists())
+            self.assertFalse((app_no_model / "Contents/Resources/Licenses/DualDn/Restormer-LICENSE.txt").exists())
+
+            # 2) Non-release build given RAWLAB_DUALDN_MODEL_DIR still bundles the model and its licences.
+            app_bundled = root / "out/bundled.app"
+            res_bundled = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**base_env, "RAWLAB_DUALDN": "1", "RAWLAB_ONNXRUNTIME_ROOT": str(ort_root),
+                     "RAWLAB_DUALDN_MODEL_DIR": str(model_dir), "RAWLAB_APP_PATH": str(app_bundled)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_bundled.returncode, 0, res_bundled.stdout + res_bundled.stderr)
+            self.assertTrue((app_bundled / "Contents/Resources/AI/DualDn/manifest.json").is_file())
+            self.assertTrue((app_bundled / "Contents/Resources/AI/DualDn/raw.mlmodelc").is_dir())
+            self.assertTrue((app_bundled / "Contents/Resources/Licenses/DualDn/LICENSE").is_file())
+            self.assertTrue((app_bundled / "Contents/Resources/Licenses/DualDn/Restormer-LICENSE.txt").is_file())
+            self.assertTrue((app_bundled / "Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE").is_file())
+            probe_calls = probe_log.read_text().splitlines()
+            self.assertIn(f"--validate {model_dir}", probe_calls)
+            self.assertIn(f"--validate {app_bundled / 'Contents/Resources/AI/DualDn'}", probe_calls)
+
+    @unittest.skipUnless(Path("/usr/libexec/PlistBuddy").exists(), "macOS plist tooling is required")
+    def test_release_arm64_omits_models_and_rejects_bundled_model_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            scripts, ort_root, model_dir, cmake_log, probe_log, base_env = self._prepare_fake_mac_build_workspace(root)
+            rel_env = {
+                **base_env,
+                "RAWLAB_RELEASE": "1",
+                "RAWLAB_CODESIGN_IDENTITY": "fake-release-cert",
+                "RAWLAB_SPARKLE_PUBLIC_KEY": base64.b64encode(bytes(32)).decode(),
+                "RAWLAB_UPDATE_CERTIFICATE_SHA256": "a" * 64,
+                "RAWLAB_ONNXRUNTIME_ROOT": str(ort_root),
+            }
+
+            # 1) Release arm64 succeeds without RAWLAB_DUALDN_MODEL_DIR.
+            app_no_model = root / "release-no-model/RawLab Mac.app"
+            zip_no_model = root / "release-no-model/out.zip"
+            res = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**rel_env, "RAWLAB_APP_PATH": str(app_no_model), "RAWLAB_RELEASE_ZIP": str(zip_no_model)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+            self.assertTrue(zip_no_model.is_file())
+            self.assertFalse((app_no_model / "Contents/Resources/AI/DualDn").exists())
+            self.assertTrue((app_no_model / "Contents/Resources/ai-model-catalog.json").is_file())
+            self.assertTrue((app_no_model / "Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE").is_file())
+            self.assertFalse((app_no_model / "Contents/Resources/Licenses/DualDn/LICENSE").exists())
+
+            # 2) Release arm64 with RAWLAB_DUALDN_MODEL_DIR validates source only and copies nothing into the app.
+            app_with_input = root / "release-with-model-env/RawLab Mac.app"
+            zip_with_input = root / "release-with-model-env/out.zip"
+            res_with_input = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**rel_env, "RAWLAB_DUALDN_MODEL_DIR": str(model_dir),
+                     "RAWLAB_APP_PATH": str(app_with_input), "RAWLAB_RELEASE_ZIP": str(zip_with_input)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_with_input.returncode, 0, res_with_input.stdout + res_with_input.stderr)
+            self.assertTrue(zip_with_input.is_file())
+            self.assertEqual(probe_log.read_text().splitlines(), [f"--validate {model_dir}"])
+            self.assertFalse((app_with_input / "Contents/Resources/AI/DualDn").exists())
+            self.assertFalse((app_with_input / "Contents/Resources/Licenses/DualDn/LICENSE").exists())
+            self.assertFalse((app_with_input / "Contents/Resources/Licenses/DualDn/Restormer-LICENSE.txt").exists())
+            self.assertTrue((app_with_input / "Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE").is_file())
+
+            # 3) Hard check rejects a release app that somehow contains Contents/Resources/AI/DualDn.
+            (scripts / "sign-bundle.sh").write_text(
+                '#!/bin/bash\nmkdir -p "$1/Contents/Resources/AI/DualDn"\ntouch "$1/Contents/Resources/AI/DualDn/manifest.json"\n'
+            )
+            app_poisoned = root / "release-poisoned/RawLab Mac.app"
+            zip_poisoned = root / "release-poisoned/out.zip"
+            res_poisoned = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**rel_env, "RAWLAB_APP_PATH": str(app_poisoned), "RAWLAB_RELEASE_ZIP": str(zip_poisoned)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_poisoned.returncode, 2, res_poisoned.stdout + res_poisoned.stderr)
+            self.assertIn("must not contain bundled AI models", res_poisoned.stderr)
+            self.assertFalse(zip_poisoned.exists(), "refused release build must not produce a zip")
+
+            # 4) Hard check rejects a release app missing ai-model-catalog.json.
+            (scripts / "sign-bundle.sh").write_text(
+                '#!/bin/bash\nrm -f "$1/Contents/Resources/ai-model-catalog.json"\n'
+            )
+            app_no_catalog = root / "release-no-catalog/RawLab Mac.app"
+            zip_no_catalog = root / "release-no-catalog/out.zip"
+            res_no_catalog = subprocess.run(
+                ["bash", str(scripts / "build.sh")], cwd=root,
+                env={**rel_env, "RAWLAB_APP_PATH": str(app_no_catalog), "RAWLAB_RELEASE_ZIP": str(zip_no_catalog)},
+                capture_output=True, text=True,
+            )
+            self.assertEqual(res_no_catalog.returncode, 2, res_no_catalog.stdout + res_no_catalog.stderr)
+            self.assertIn("ai-model-catalog.json", res_no_catalog.stderr)
+            self.assertFalse(zip_no_catalog.exists())
+
+            # 5) bundle.sh with RAWLAB_RELEASE=1 directly rejects an app containing Contents/Resources/AI/DualDn.
+            shutil.copy2(ROOT / "RawLabMac/tests/bundle.sh", scripts / "tests/bundle.sh")
+            (app_no_model / "Contents/Resources/AI/DualDn").mkdir(parents=True)
+            res_bundle = subprocess.run(
+                ["bash", str(scripts / "tests/bundle.sh"), str(app_no_model)],
+                cwd=root,
+                env={**base_env, "RAWLAB_RELEASE": "1"},
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(res_bundle.returncode, 0, res_bundle.stdout + res_bundle.stderr)
+            self.assertIn("must not bundle AI models", res_bundle.stderr)
 
 
 if __name__ == "__main__":

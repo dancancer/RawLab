@@ -12,16 +12,22 @@ parity), and keep ordinary development builds on their existing defaults.
 
 ## Shared model input
 
-Apple Silicon macOS and Windows release packages contain DualDn and Restormer,
-with GPU neural inference only. Intel macOS packages contain no AI component.
-DualDn retains CC BY-NC 4.0; Restormer retains its Academic Public License for
-noncommercial use. Keep their notices, model provenance and conversion records.
-The deterministic ISP can use CPU; there is no CPU neural-inference fallback.
+Apple Silicon macOS and Windows release packages ship the AI inference runtimes
+and the download catalog (`ai-model-catalog.json`), with GPU neural inference
+only. **Release packages do not bundle DualDn or Restormer model weights.**
+When a user enables AI denoise, the application prompts for an explicit,
+one-time in-app download; users updating from an earlier release that bundled
+the models also need to download once. Intel macOS packages contain no AI
+runtime or models. DualDn retains CC BY-NC 4.0; Restormer retains its Academic
+Public License for noncommercial use. Keep their notices, model provenance and
+conversion records. The deterministic ISP can use CPU; there is no CPU
+neural-inference fallback.
 
-The complete production package includes `raw.onnx`, `isp.onnx`, `rgb.onnx`,
-`blind_rgb.onnx`, the upstream notices, and the three native Core ML model
-directories for macOS. `dualdn_probe --validate` checks every declared resource
-before and after app packaging. No model weights or replay tensors enter Git.
+The external production model package includes `raw.onnx`, `isp.onnx`,
+`rgb.onnx`, `blind_rgb.onnx`, the upstream notices, and (for macOS) the three
+native Core ML model directories. When a local model directory is supplied for
+build-time validation or opt-in non-release/CI bundling, `dualdn_probe --validate`
+checks every declared resource. No model weights or replay tensors enter Git.
 
 The current complete model manifest SHA-256 is
 `38cbd6884bb181db859ffc668cf754a55331be732592e0d4cdf9a2d41a19486a`.
@@ -31,13 +37,16 @@ Runtime versions are ONNX Runtime 1.23.2 on macOS and ONNX Runtime DirectML
 1.23.0 / DirectML 1.15.4 on Windows. Runtime archives and libraries have checksum
 pins in `scripts/ci/ai-inputs.py` and `RawLabWindows/build.ps1`.
 
-For CI, provision the licensed complete package once at
-`$RAWLAB_AI_SHARED_CACHE/ai-models/<manifest-sha256>/complete`, or explicitly set
-`RAWLAB_DUALDN_MODEL_DIR`. Within the macOS matrix, only the Apple Silicon full job provisions AI inputs; its default cache
-root is `~/.cache/rawlab-ci`. The Intel full job still builds and runs its native
-suites without AI models or CPU neural inference. Windows uses its runner's shared cache root. Provisioning is an administrator action, not an unverified public download.
-A missing model fails AI-enabled Apple Silicon macOS and Windows full checks.
-Intel full checks do not require these models. CI never reads signing private keys.
+For CI, non-release builds can still opt in to bundling a provisioned model
+package once cached at `$RAWLAB_AI_SHARED_CACHE/ai-models/<manifest-sha256>/complete`,
+or by explicitly setting `RAWLAB_DUALDN_MODEL_DIR` / `-DualDnModel`. Within the
+macOS matrix, only the Apple Silicon full job provisions AI inputs; its default
+cache root is `~/.cache/rawlab-ci`. The Intel full job still builds and runs its
+native suites without AI models or CPU neural inference. Windows uses its
+runner's shared cache root. Provisioning is an administrator action, not an
+unverified public download. A missing model fails AI-enabled Apple Silicon macOS
+and Windows full checks. Intel full checks do not require these models. CI never
+reads signing private keys.
 
 ## macOS
 
@@ -52,16 +61,20 @@ Set these inputs before invoking `RAWLAB_RELEASE=1 bash RawLabMac/build.sh`:
 - `RAWLAB_CODESIGN_IDENTITY`; optionally `RAWLAB_CODESIGN_KEYCHAIN` for an isolated keychain.
 - `RAWLAB_UPDATE_CERTIFICATE_SHA256` for the fixed self-signed leaf certificate.
 - `RAWLAB_SPARKLE_PUBLIC_KEY`, the base64 EdDSA public key.
-- For `arm64` only: `RAWLAB_DUALDN_MODEL_DIR`, `RAWLAB_DUALDN_MANIFEST_SHA256`,
-  `RAWLAB_ONNXRUNTIME_ROOT`.
+- For `arm64` only: `RAWLAB_ONNXRUNTIME_ROOT` (and optionally
+  `RAWLAB_DUALDN_MODEL_DIR` for build-time validation only; nothing from it
+  enters the release app).
 - `RAWLAB_ARCH=arm64` or `x86_64`, as appropriate for the requested package.
 
-Apple Silicon release mode requires the complete model package and enables AI
-compilation; the runtime exposes AI when a Core ML GPU is available. Intel has no
-supported GPU backend, so an `x86_64` release build disables AI compilation and
-omits the models, ONNX Runtime and AI controls; it rejects `RAWLAB_DUALDN=1`.
-Intel application and updater acceptance remains separate from Apple Silicon GPU
-validation.
+Apple Silicon release mode enables AI compilation (ONNX Runtime 1.23.2 and Core
+ML) without requiring or bundling the model package; the build fails after
+packaging if `Contents/Resources/AI/DualDn` exists or if
+`Contents/Resources/ai-model-catalog.json` is missing. The runtime exposes AI
+when a Core ML GPU is available, and users trigger a one-time in-app download
+when they use AI denoise. Intel has no supported GPU backend, so an `x86_64`
+release build disables AI compilation and omits ONNX Runtime and AI controls; it
+rejects `RAWLAB_DUALDN=1`. Intel application and updater acceptance remains
+separate from Apple Silicon GPU validation.
 
 The script builds into a fresh version/build directory, sets the public update
 configuration, signs Mach-O files and nested bundles from inside out, verifies
@@ -110,19 +123,23 @@ prepared before packaging.
 
 ```powershell
 ./RawLabWindows/build.ps1 -ReleasePackage `
-  -UpdateTrustFile $PublicTrustJson -DualDnModel $CompleteModel `
-  -DualDnManifestSha256 $ManifestSha256 -ReleaseOutput $NewOutputDirectory
+  -UpdateTrustFile $PublicTrustJson -ReleaseOutput $NewOutputDirectory
 ```
 
+Optionally pass `-OnnxRuntimeRoot` to reuse a pre-verified ONNX Runtime DirectML
+cache, and optionally `-DualDnModel` for build-time validation only (nothing from
+`-DualDnModel` enters the release output).
+
 The script defaults `-ReleaseVersion` and `-ReleaseBuild` from
-`Shared/version.json` (and rejects overrides that differ), requires all
-inputs, publishes a fresh self-contained x64 app,
-copies models/runtimes/licenses, validates the packaged model, and only then
-runs pinned vpk 1.2.161 for `RawLab.Desktop` / `stable`. Keep the generated
-current-user Setup, full nupkg and manual-install ZIP
-(`RawLab-Windows-<version>-x64.zip`). ZIP is not eligible for automatic
-installation. `-NoRumSdk` explicitly selects an offline validation build and
-must be recorded when used.
+`Shared/version.json` (and rejects overrides that differ), enables the DirectML
+AI runtime without requiring or bundling model weights, publishes a fresh
+self-contained x64 app, copies the AI runtimes and runtime licenses (never model
+files or model licenses from a model directory), verifies that `AI\DualDn` is
+absent and `ai-model-catalog.json` is present, and only then runs pinned vpk
+1.2.161 for `RawLab.Desktop` / `stable`. Keep the generated current-user Setup,
+full nupkg and manual-install ZIP (`RawLab-Windows-<version>-x64.zip`). ZIP is
+not eligible for automatic installation. `-NoRumSdk` explicitly selects an offline
+validation build and must be recorded when used.
 
 Velopack also writes `RawLab.Desktop-stable-Portable.zip`, `RELEASES-stable`,
 `releases.stable.json` and `assets.stable.json`. Do not upload them: the

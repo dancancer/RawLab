@@ -120,18 +120,21 @@ extension EditorModel {
             finish(request, neutral: cached.neutral, result: cached.result, failure: nil)
             return
         }
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [weak self] in
+            defer { readerLease.end() }
             guard let self else { return }
             do {
+                let sourceReplaced: Bool
                 if let previous = self.originalCache?.key.source,
                    previous.url == work.source.url, previous != work.source {
                     // The core RAW cache omits inode. A same-path replacement must
                     // cross a client session boundary even when size/mtime agree.
-                    self.engine = try RenderEngine()
+                    sourceReplaced = true
+                } else {
+                    sourceReplaced = false
                 }
-                if self.engine == nil || self.engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
-                    self.engine = try RenderEngine()
-                }
+                let activeEngine = try self.ensureEngine(forceRecreate: sourceReplaced)
                 if work.settings.isHDREditing {
                     self.originalCache = nil
                     let neutralSettings = work.settings.neutralGeometrySettings
@@ -141,12 +144,12 @@ extension EditorModel {
                     if let cached = self.geometryReferenceCache, cached.key == key, cached.frame.hdr != nil {
                         neutral = cached.frame
                     } else {
-                        neutral = try self.engine!.render(work.file, settings: neutralSettings, lut: nil, edge: neutralEdge)
+                        neutral = try activeEngine.render(work.file, settings: neutralSettings, lut: nil, edge: neutralEdge)
                         self.geometryReferenceCache = neutral.map { (key, $0) }
                     }
                     var preview = work.settings
                     preview.hdr = work.settings.hdr?.previewSettings()
-                    let result=try self.engine!.render(work.file,settings:preview,lut:nil,edge:work.edge,
+                    let result=try activeEngine.render(work.file,settings:preview,lut:nil,edge:work.edge,
                         interactive:work.pass == .interactive)
                     DispatchQueue.main.async { self.finish(request,neutral:neutral,result:result,failure:nil) }
                     return
@@ -156,7 +159,7 @@ extension EditorModel {
                 if self.originalCache?.key != originalKey || self.originalCache?.frame.histogram.count != 3 {
                     self.originalCache = nil
                     self.geometryReferenceCache = nil
-                    if let original = try self.engine!.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil,
+                    if let original = try activeEngine.render(work.file, settings: work.settings.neutralSettings, lut: nil, edge: nil,
                                                               referenceLongEdge: MacReferenceFramePolicy.longEdgeCap) {
                         self.originalCache = (originalKey, original)
                     }
@@ -173,12 +176,12 @@ extension EditorModel {
                     neutral = cached.frame
                     self.geometryReferenceCache = (key, cached.frame)
                 } else {
-                    neutral = try self.engine!.render(work.file, settings: work.settings.neutralGeometrySettings,
+                    neutral = try activeEngine.render(work.file, settings: work.settings.neutralGeometrySettings,
                                                       lut: nil, edge: nil,
                                                       referenceLongEdge: MacReferenceFramePolicy.longEdgeCap)
                     if let neutral { self.geometryReferenceCache = (key, neutral) }
                 }
-                let result = try self.engine!.render(work.file, settings: work.settings, lut: work.lut,
+                let result = try activeEngine.render(work.file, settings: work.settings, lut: work.lut,
                                                      edge: work.edge, output: nil,
                                                      interactive: work.pass == .interactive,
                                                      viewportPreview: work.edge != nil)

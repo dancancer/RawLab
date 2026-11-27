@@ -20,12 +20,14 @@ extension EditorModel {
         let token = hslTargetInteraction.begin(before: before.editingHSLSettings, axis: axis, revision: revision)
         hslTargetPoint = point; hslTargetNotice = nil
         if let keyDelta { hslTargetInteraction.move(delta: keyDelta); hslTargetInteraction.end() }
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [weak self] in
+            defer { readerLease.end() }
             guard let self else { return }
             let sample: HSLTargetSample
             do {
-                if self.engine == nil { self.engine = try RenderEngine() }
-                sample = try self.engine!.sampleHSL(work.file, settings: work.settings, lut: work.lut,
+                let activeEngine = try self.ensureEngine()
+                sample = try activeEngine.sampleHSL(work.file, settings: work.settings, lut: work.lut,
                     edge: work.edge, interactive: work.pass == .interactive, revision: revision, point: point)
             } catch {
                 sample = HSLTargetSample(revision: revision, availability: .failed, rgb: [], weights: [], preview: true)
@@ -99,12 +101,14 @@ extension EditorModel {
         )
         curveTargetPoint = point; curveTargetNotice = nil
         if let keyDelta { curveTargetInteraction.move(delta: keyDelta); curveTargetInteraction.end() }
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [weak self] in
+            defer { readerLease.end() }
             guard let self else { return }
             let sample: HSLTargetSample
             do {
-                if self.engine == nil { self.engine = try RenderEngine() }
-                sample = try self.engine!.sampleHSL(work.file, settings: work.settings, lut: work.lut,
+                let activeEngine = try self.ensureEngine()
+                sample = try activeEngine.sampleHSL(work.file, settings: work.settings, lut: work.lut,
                     edge: work.edge, interactive: work.pass == .interactive, revision: revision, point: point)
             } catch {
                 sample = HSLTargetSample(revision: revision, availability: .failed, rgb: [], weights: [], preview: true)

@@ -463,7 +463,7 @@ extension EditorModel {
         let x3fResolver = editStore.map {
             MacBatchExportJob.x3fModeResolver(store: $0, defaultMode: RenderEngine.x3fDefaultMode(for:))
         } ?? MacBatchExportJob.x3fModeResolver(directory: editDirectory, defaultMode: RenderEngine.x3fDefaultMode(for:))
-        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,resolveX3fMode:x3fResolver,onUsage: onUsage)
+        let model = BatchExportModel(job: job, journal: batchJournal,hdrPreparation:preparer,probeHDRSource:probeHDRSource,resolveX3fMode:x3fResolver,aiModelAccessTracker: aiModelAccessTracker,onUsage: onUsage)
         model.sourceEditingGeometry = geometryDraft != nil
         model.onActivity = { [weak self] active in self?.exporting = active }
         model.onDiscard = { [weak self] in self?.batch = nil }
@@ -907,15 +907,15 @@ extension EditorModel {
         let resolvedFormat = format ?? ExportFormat.forOutput(output)
         let sharpening: OutputSharpening = resolvedFormat == .renderedDNG ? .off : exportOutputSharpening
         let generation = aiGeneration
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [weak self] in
+            defer { readerLease.end() }
             guard let self else { return }
             do {
-                if self.engine == nil || self.engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
-                    self.engine = try RenderEngine()
-                }
-                _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
-                                             interactive: false, exportLongEdge: longEdge, exportFormat: format,
-                                             outputSharpening: sharpening)
+                let activeEngine = try self.ensureEngine()
+                _ = try activeEngine.render(file, settings: settings, lut: lut, edge: nil, output: output,
+                                            interactive: false, exportLongEdge: longEdge, exportFormat: format,
+                                            outputSharpening: sharpening)
                 DispatchQueue.main.async {
                     DiagnosticCenter.recordBreadcrumb(
                         category: "export",

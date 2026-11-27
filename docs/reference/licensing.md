@@ -99,22 +99,27 @@ CLI installations include its MIT license; native clients do not link this adapt
 
 ## DualDn Models and Desktop Inference Runtimes
 
-The next Apple Silicon macOS and Windows release packages include DualDn/Restormer models
-and the corresponding inference runtimes. The project owner confirmed the
-noncommercial use and model packaging decision on 26 October 2026. The original
-DualDn weights and converted ONNX/Core ML resources retain
+Apple Silicon macOS and Windows release packages include the inference runtimes
+(ONNX Runtime 1.23.2 on macOS; ONNX Runtime DirectML 1.23.0 and DirectML 1.15.4
+on Windows) and `ai-model-catalog.json`, but **do not distribute DualDn or
+Restormer model weights**. Intel macOS packages contain no AI runtime or models.
+Users who enable AI denoise trigger an explicit on-demand in-app download
+(including users updating from an earlier version that bundled the models). The
+original DualDn weights and converted ONNX/Core ML resources retain
 [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). The separate
 Restormer generic RGB model retains its upstream Academic Public License for
-noncommercial use. Neither becomes GPL-licensed when bundled with RawLab. Redistribution must preserve the supplied
+noncommercial use. Neither becomes GPL-licensed when downloaded for or used with
+RawLab. Redistribution of the external model packages must preserve the supplied
 attribution, license link, source and conversion notices, and remain within the
 model license's noncommercial terms. Free availability of RawLab does not grant
 commercial model rights to downstream users.
 
 Model revision, original weight SHA-256, conversion protocol and packaging
 boundaries are recorded in [the DualDn contract](../architecture/dualdn-inline-denoise.md).
-Each release must identify the exact converted package checksum and retain its
-license files. ONNX Runtime, DirectML, Restormer source, Sparkle and Velopack keep
-their separate component licenses in the desktop dependency notices.
+The catalog pins the exact converted package checksums, and each downloadable
+model archive retains its upstream license files. ONNX Runtime, DirectML,
+Restormer source, Sparkle and Velopack keep their separate component licenses in
+the desktop dependency notices.
 
 ## Historical MIT Notice
 

@@ -110,10 +110,12 @@ final class BatchExportModel: ObservableObject {
     }
 
     private let prepareAIOperation: (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void
+    private let aiModelAccessTracker: AIModelAccessTracker
     private let onUsage: (UsageEvent) -> Void
     private let hdrPreparation: MacHDRBatchPreparation?
     private let probeHDRSource: HDRSourceInfo.Probe
     private let resolveX3fMode: MacBatchExportJob.X3fModeResolver
+    private var pendingRevalidateAfterAIModelInstall = false
     @Published private(set) var x3fProbeStates: [UUID: X3fProbeState] = [:]
     private var activeProbeToken: ProbeToken?
     var isProbingX3fNotices: Bool { x3fProbeStates.values.contains(.pending) }
@@ -126,9 +128,11 @@ final class BatchExportModel: ObservableObject {
          prepareAI: @escaping (RenderEngine, URL, Adjustments, AIPreparation) throws -> Void = {
              try $0.prepareAI($1, settings: $2, progress: $3)
          },
+         aiModelAccessTracker: AIModelAccessTracker = .shared,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.job = job
         self.journal = journal
+        self.aiModelAccessTracker = aiModelAccessTracker
         self.onUsage = onUsage
         self.hdrPreparation=hdrPreparation
         self.probeHDRSource = probeHDRSource
@@ -265,10 +269,26 @@ final class BatchExportModel: ObservableObject {
         saveDraft()
         if !failures.isEmpty { error = failures.joined(separator: "\n") }
         guard !added.isEmpty else { return }
+        validateDraftItems(added)
+    }
+
+    func revalidateAfterAIModelInstall() {
+        guard job.mode == .uniformFrozen, !running, !job.started else { return }
+        if validating {
+            pendingRevalidateAfterAIModelInstall = true
+            return
+        }
+        let failedItems = job.items.filter { $0.validationError != nil }
+        guard !failedItems.isEmpty else { return }
+        validateDraftItems(failedItems)
+    }
+
+    private func validateDraftItems(_ candidates: [MacBatchExportItem]) {
         validating = true
-        let candidates = added
         let validationJob = job
+        let readerLease = aiModelAccessTracker.beginReader()
         validationQueue.async { [self] in
+            defer { readerLease.end() }
             var engine: RenderEngine?
             for item in candidates {
                 var failure: String?
@@ -284,8 +304,8 @@ final class BatchExportModel: ObservableObject {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
                         if engine == nil || engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
-                    engine = try RenderEngine()
-                }
+                            engine = try RenderEngine()
+                        }
                         _ = try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 180, interactive: true)
                     }
                 } catch { failure = error.localizedDescription }
@@ -302,11 +322,21 @@ final class BatchExportModel: ObservableObject {
                         if let message {
                             self.job.items[index].validationError = message
                             self.job.items[index].selected = false
+                        } else {
+                            self.job.items[index].validationError = nil
+                            self.job.items[index].selected = true
                         }
                     }
                 }
             }
-            DispatchQueue.main.async { self.validating = false; self.saveDraft(preserveNotice: true) }
+            DispatchQueue.main.async {
+                self.validating = false
+                self.saveDraft(preserveNotice: true)
+                if self.pendingRevalidateAfterAIModelInstall {
+                    self.pendingRevalidateAfterAIModelInstall = false
+                    self.revalidateAfterAIModelInstall()
+                }
+            }
         }
     }
 
@@ -404,7 +434,9 @@ final class BatchExportModel: ObservableObject {
         error = nil; running = true; stopping = false
         onActivity(true)
         let snapshot = job
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [self] in
+            defer { readerLease.end() }
             var work = snapshot
             var failure: String?
             var quarantineNotice: String?
@@ -544,7 +576,9 @@ final class BatchExportModel: ObservableObject {
         let revision = UUID()
         previewRevision = revision; previewFile = item.input; preview = nil; previewing = true; error = nil
         let frozenJob = job
+        let readerLease = aiModelAccessTracker.beginReader()
         queue.async { [self] in
+            defer { readerLease.end() }
             guard !cancellation.cancelled else { return }
             let result = Result { () -> RenderedImage? in
                 try frozenJob.validate()

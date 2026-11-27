@@ -170,7 +170,7 @@ extension EditorModel {
         let activeRaw = rawHDRSource, activeHDR = sourceIsHDR
         let activeDraft = geometryDraft != nil || dirty || hasPendingEditCommits
         let looks = availableAdjustmentLooks, photos = batchSelectionPhotos
-        let store = editStore, probeHDRSource = probeHDRSource
+        let store = editStore, probeHDRSource = probeHDRSource, tracker = aiModelAccessTracker
         // 主线程只冻结模型状态；逐张 RAW 探测随 prepare 在后台执行。
         return { [weak self] shouldCancel in
             var targets = [AdjustmentTransferTarget]()
@@ -193,7 +193,9 @@ extension EditorModel {
                         guard try HDRSourceInfo.probeRAW(url)?.isCameraRAW == true else {
                             throw AdjustmentTransferError.incompatible("hdr.camera_development")
                         }
-                        _ = try RenderEngine().render(url, settings: candidate, lut: nil, edge: 256)
+                        _ = try tracker.withReader {
+                            try RenderEngine().render(url, settings: candidate, lut: nil, edge: 256)
+                        }
                     }
                 }
                 // 校验实际 native 请求；自动匹配结果只用于目标预检，不进入 payload。
@@ -201,7 +203,9 @@ extension EditorModel {
                     guard lens.distortion || lens.tca || lens.vignetting else { return }
                     var request = try store?.state(for: url)?.settings ?? RenderEngine.defaultSettings(for: url, sourceIsHDR: sourceIsHDR.get())
                     request.lensCorrection = lens
-                    let frame = try RenderEngine().render(url, settings: request, lut: nil, edge: 256)
+                    let frame = try tracker.withReader {
+                        try RenderEngine().render(url, settings: request, lut: nil, edge: 256)
+                    }
                     guard let info = frame?.lensInfo,
                           !lens.distortion || info.appliedDistortion,
                           !lens.tca || info.appliedTCA, !lens.vignetting || info.appliedVignetting else { throw AdjustmentTransferError.incompatible("lens calibration") }

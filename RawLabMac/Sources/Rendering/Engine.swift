@@ -177,13 +177,16 @@ final class RenderEngine {
     private let aiBackend: sony2fuji_ai_backend
     var currentAIModelDirectory: URL? { aiModelDirectory }
     static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
+    static var aiHardwareAvailableProvider: () -> Bool = { sony2fuji_ai_hardware_available() != 0 }
+    static var aiHardwareAvailable: Bool { aiHardwareAvailableProvider() }
     static var hdrCameraAIAvailable: Bool { sony2fuji_hdr_camera_ai_available() != 0 }
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
+    static let aiModelAvailabilityDidChangeNotification = Notification.Name("RawLabMac.RenderEngine.aiModelAvailabilityDidChange")
     static var aiModelOverrideDirectory: URL? = nil
     static var aiModelStore: AIModelPackageStore = .shared
     static var aiModelDownloadSupported: Bool {
         #if arch(arm64)
-        return aiAvailable && aiModelStore.descriptor != nil
+        return aiAvailable && aiHardwareAvailable && aiModelStore.descriptor != nil
         #else
         return false
         #endif
@@ -276,6 +279,10 @@ final class RenderEngine {
         try resetSession()
     }
 
+    func recreateSession() throws {
+        try resetSession()
+    }
+
     private func resetSession() throws {
         sony2fuji_session_destroy(session)
         session = nil
@@ -365,6 +372,9 @@ final class RenderEngine {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
         guard aiAvailable else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+        guard aiHardwareAvailable else {
+            throw RenderError.aiFailed(L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"))
+        }
         guard resolvedAIModelDirectory != nil else {
             throw RenderError.aiFailed(L10n.text(aiModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"))
         }
@@ -379,6 +389,9 @@ final class RenderEngine {
         if enabled {
             if !Self.aiAvailable {
                 throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
+            }
+            if !Self.aiHardwareAvailable {
+                throw RenderError.aiFailed(L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"))
             }
             if aiModelDirectory == nil {
                 throw RenderError.aiFailed(L10n.text(Self.aiModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"))

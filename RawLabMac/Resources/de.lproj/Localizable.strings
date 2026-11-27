@@ -29,6 +29,7 @@
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "KI-Entrauschen kann noch nicht kopiert werden. Wähle Benutzerdefiniert, um andere Anpassungen zu kopieren.";
 "AI 降噪模型许可" = "Lizenzen für KI-Entrauschungsmodelle";
 "AI 降噪结果连续未就绪，请重试。" = "Das KI-Entrauschungsergebnis ist weiterhin nicht verfügbar. Bitte erneut versuchen.";
+"AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。" = "KI-Entrauschen erfordert eine Apple-Silicon-GPU und macOS 14.4 oder neuer.";
 "AI 降噪（实验）" = "KI-Entrauschen (experimentell)";
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Agent-Rezepte unterstützen keine KI-Entrauschung. Deaktivieren Sie diese zuerst.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Das DCP verwendet eine HueSatMap mit drei Lichtquellen, die für die Konvertierung noch nicht unterstützt wird.";

@@ -9,6 +9,9 @@ for name in README.md LICENSE.LGPL-2.1; do
 done
 cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
 cmp "$ROOT/Shared/ai-models/catalog.json" "$APP/Contents/Resources/ai-model-catalog.json"
+if [ "${RAWLAB_RELEASE:-0}" = 1 ] && [ -e "$APP/Contents/Resources/AI/DualDn" ]; then
+    echo "FAIL: release app must not bundle AI models: $APP/Contents/Resources/AI/DualDn" >&2; exit 1
+fi
 for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
     cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"
 done

@@ -35,7 +35,8 @@ import time
 import zipfile
 
 SOURCE_PATHS = ['RawLabWindows', 'lutools', 'RawLabMac/Resources', 'Shared', 'LICENSE',
-                'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/reference/licensing.md', 'scripts/ci', 'scripts/assets']
+                'LICENSE-ALIYUN-RUM-EXCEPTION', 'docs/reference/licensing.md', 'scripts/ci', 'scripts/assets',
+                'scripts/release/smoke-windows-gpu.ps1']
 RAW_SUFFIXES = {'.arw', '.nef', '.cr2', '.cr3', '.raf', '.rw2', '.orf', '.3fr', '.dng', '.pef', '.x3f'}
 SYNTHETIC_RAW_FIXTURES = {
     'lutools/tests/fixtures/' + name for name in
@@ -358,7 +359,7 @@ function Get-RawLabState {
 """
 
 
-def verify_script(settings, incoming, models, ctest_filter, v08_suite, raw_name):
+def verify_script(settings, incoming, models, ctest_filter, v08_suite, raw_name, ai_denoise=False):
     """PowerShell for --verify: incremental sync, isolated app data, requested checks, cleanup."""
     phases = []
     if models:
@@ -369,9 +370,10 @@ def verify_script(settings, incoming, models, ctest_filter, v08_suite, raw_name)
     if (-not $? -or $LASTEXITCODE) { throw 'Windows models failed.' }""")
     if ctest_filter or v08_suite:
         python_arg = '-Python $python' if settings['python'] else ''
+        ai_arg = '-AIDenoise' if ai_denoise else ''
         phases.append(rf"""
     Write-Output 'PHASE build'
-    & "$workspace/RawLabWindows/build.ps1" -SelfContained -NoRumSdk @dotnetArgs {python_arg}
+    & "$workspace/RawLabWindows/build.ps1" -SelfContained -NoRumSdk @dotnetArgs {python_arg} {ai_arg}
     if ($LASTEXITCODE -ne 0) {{ throw 'Windows build failed.' }}""")
     if ctest_filter:
         phases.append(rf"""
@@ -436,9 +438,10 @@ Write-Output ("PASS: remote verification in {{0:N0}} s; temporary directory remo
 """
 
 
-def build_script(settings, incoming, rum_args, test_args):
+def build_script(settings, incoming, rum_args, test_args, ai_denoise=False):
     """PowerShell for the default build: incremental sync, build.ps1, package the app for download."""
     python_arg = '-Python $python' if settings['python'] else ''
+    ai_arg = '-AIDenoise' if ai_denoise else ''
     return f"""
 $ErrorActionPreference = 'Stop'
 {environment_block(settings)}
@@ -448,7 +451,7 @@ $workspaceLock = $null
 try {{
 {LOCK_BLOCK}
 {SYNC_BLOCK}
-& "$workspace/RawLabWindows/build.ps1" -SelfContained @dotnetArgs {python_arg} {rum_args} {test_args}
+& "$workspace/RawLabWindows/build.ps1" -SelfContained @dotnetArgs {python_arg} {ai_arg} {rum_args} {test_args}
 if ($LASTEXITCODE -ne 0) {{ throw 'Windows build failed.' }}
 Compress-Archive -Path "$workspace/build/RawLab-Windows/*" -DestinationPath "$incoming/RawLab-Windows.zip"
 Write-Output 'PASS: Windows build and artifact packaging'
@@ -519,6 +522,8 @@ def build_parser():
     parser.add_argument('--raw', type=Path, help='RAW fixture for --test, --v08-only or RAW-dependent --ctest-filter tests')
     parser.add_argument('--rum-sdk-zip', type=Path, help='Vendor AlibabaCloud_RUM_Windows_0.4.4.zip (default: shared cache)')
     parser.add_argument('--no-rum-sdk', action='store_true', help='Offline package without usage analytics')
+    parser.add_argument('--ai-denoise', action='store_true',
+                        help='Pass -AIDenoise to build.ps1 (compile AI runtime without bundling models)')
     return parser
 
 
@@ -601,7 +606,8 @@ def main(argv=None):
             if args.raw is not None:
                 raw_name = 'fixture' + args.raw.suffix.lower()
                 subprocess.run(scp_command(settings, args.raw.resolve(), f'{destination}/{raw_name}'), check=True)
-            script = verify_script(settings, incoming, args.models, args.ctest_filter, args.v08_only, raw_name)
+            script = verify_script(settings, incoming, args.models, args.ctest_filter, args.v08_only, raw_name,
+                                   ai_denoise=args.ai_denoise)
         else:
             rum_args, rum_archive = rum_build_args(args.no_rum_sdk, args.rum_sdk_zip or rum_sdk_cache(root), incoming)
             if rum_archive:
@@ -611,7 +617,7 @@ def main(argv=None):
                 fixture = f'fixture{args.raw.suffix.lower()}'
                 subprocess.run(scp_command(settings, args.raw.resolve(), f'{destination}/{fixture}'), check=True)
                 test_args = f"-Test -RawPath '{incoming}/{fixture}'"
-            script = build_script(settings, incoming, rum_args, test_args)
+            script = build_script(settings, incoming, rum_args, test_args, ai_denoise=args.ai_denoise)
         status = run_remote(settings, script, output / 'remote.log', incoming)
         if status:
             raise SystemExit(f'Remote operation failed ({status})' + ('' if args.verify else f'; logs: {output}'))

@@ -132,10 +132,11 @@ internal sealed class AIModelLicenseWindow : Window
 
     internal static string? ResolveLicenseDirectory(string? installedDirectory, string? baseDirectory = null)
     {
+        // 去内置模型发布包中 Licenses/DualDn 只含运行时许可；优先打开已安装模型目录，再回退到应用内目录。
+        if (!string.IsNullOrWhiteSpace(installedDirectory) && Directory.Exists(installedDirectory)) return installedDirectory;
         var appBase = baseDirectory ?? AppContext.BaseDirectory;
         var bundledDualDnLicenses = Path.Combine(appBase, "Licenses", "DualDn");
         if (Directory.Exists(bundledDualDnLicenses)) return bundledDualDnLicenses;
-        if (!string.IsNullOrWhiteSpace(installedDirectory) && Directory.Exists(installedDirectory)) return installedDirectory;
         var bundledLicenses = Path.Combine(appBase, "Licenses");
         if (Directory.Exists(bundledLicenses)) return bundledLicenses;
         return null;

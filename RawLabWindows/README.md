@@ -83,16 +83,19 @@ AI 降噪与 Mac 共用 float32 模型、640 分块、颜色桥接和缓存协�
 DualDn，噪声参数来自匹配标定或当前 RAW 的通用估计；X-Trans、线性/Stage3 DNG 及
 不能可靠进入 DualDn 的输入使用 Restormer RGB 路径。支持范围依赖原生全尺寸解码，
 预算上限为 128 MP，不等于所有机型均完成画质认证。
-开发构建可不包含模型；正式发布开关要求完整模型和更新配置，见[桌面发布流程](../docs/process/desktop-release.md)。本地 GPU 验证使用
+开发构建默认不含 AI，可用 `-AIDenoise` 仅编译运行时（不内置模型），或用 `-DualDnModel` 随包复制模型做本地/CI 验证；正式发布包（`-ReleasePackage`）内置 DirectML 运行时与 `ai-model-catalog.json`、不打包模型权重（首次使用由用户在应用内按需下载，从早期内置模型版本升级也需下载一次），见[桌面发布流程](../docs/process/desktop-release.md)。本地 GPU 验证使用
 [模型导出工具](../lutools/tools/dualdn/README.md)生成基础 ONNX 包后构建：
 
 ```powershell
+# 仅编译 AI 运行时（不内置模型，与正式发布包结构一致）：
+./RawLabWindows/build.ps1 -SelfContained -AIDenoise
+# 本地/CI 随包携带模型做验证：
 ./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn'
 # 已准备好固定版本运行库时，可避免重新下载：
 ./RawLabWindows/build.ps1 -SelfContained -DualDnModel 'C:/Models/DualDn' -OnnxRuntimeRoot 'C:/SDK/onnxruntime-directml'
 ```
 
-脚本校验模型与运行库，随包复制模型、运行库及许可证。Windows 使用 ONNX Runtime
+脚本校验运行库（并在传入 `-DualDnModel` 时校验模型）；非发布构建随包复制模型、运行库及许可证，正式发布构建只复制运行库及运行库许可证并硬性校验不含 `AI\DualDn`。Windows 使用 ONNX Runtime
 DirectML 1.23.0、DirectML 1.15.4；依赖下载和校验在 `build-ai-dependencies.ps1`。
 模型源目录可以包含 Apple Core ML 资源；Windows 打包时移除相应 manifest 字段，
 只交付 ONNX 图。可加 `-NoRumSdk` 构建离线测试包。

@@ -327,6 +327,12 @@ class VerifyModeTest(unittest.TestCase):
         v08 = self.script(v08_suite='batch-selection', raw_name='fixture.dng')
         self.assertIn('run-v08.ps1" -RawPath "$incoming/fixture.dng"', v08)
         self.assertIn("-Only 'batch-selection'", v08)
+        self.assertNotIn('-AIDenoise', v08)
+        v08_ai = self.module.verify_script(self.settings, 'C:/RawLabBuild/incoming/1', False, None,
+                                           'ai-panel,editor-shell', 'fixture.arw', ai_denoise=True)
+        self.assertIn('-AIDenoise', v08_ai)
+        build_ai = self.module.build_script(self.settings, 'C:/RawLabBuild/incoming/1', '-NoRumSdk', '', ai_denoise=True)
+        self.assertIn('-AIDenoise', build_ai)
 
     def test_argument_combinations_are_validated(self):
         parser = self.module.build_parser()

@@ -692,6 +692,227 @@ final class AIModelPackageStoreTests: XCTestCase {
         XCTAssertEqual(unsupported.state, .unavailable)
     }
 
+    @MainActor
+    func testHardwareUnavailableHidesDownloadButKeepsInstalledRemovable() async throws {
+        let fixture = try makeSyntheticArchive(label: "hw-gate")
+        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-hw-gate", isDirectory: true)
+        let desc = fixture.descriptor(url: server.url(path: "/m.tar.gz"))
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: desc,
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024
+        )
+
+        // 无硬件运行时且未安装 -> .unavailable，startDownload 拒绝且不发起任何网络请求
+        let noHardware = AIModelPackageManager(
+            store: store,
+            isRuntimeSupported: { true },
+            isHardwareAvailable: { false }
+        )
+        XCTAssertEqual(noHardware.state, .unavailable)
+        noHardware.startDownload()
+        XCTAssertEqual(noHardware.state, .unavailable)
+        XCTAssertEqual(server.requestCount, 0)
+
+        // 先正常安装模型包，再模拟环境无硬件运行时 -> 保持 .installed 以便用户删除，且 startDownload 仍拒绝
+        let installed = try await store.downloadAndInstall()
+        XCTAssertEqual(server.requestCount, 1)
+
+        var hardwareAvailable = false
+        let installedNoHardware = AIModelPackageManager(
+            store: store,
+            isRuntimeSupported: { true },
+            isHardwareAvailable: { hardwareAvailable }
+        )
+        XCTAssertEqual(
+            installedNoHardware.state,
+            .installed(.downloaded(installed), unpackedBytes: desc.unpackedBytes, removeError: nil)
+        )
+        installedNoHardware.startDownload()
+        XCTAssertEqual(server.requestCount, 1, "startDownload must refuse when already installed")
+
+        // 删除后退回 .unavailable（而非 .notInstalled）
+        installedNoHardware.removeDownloadedModel()
+        XCTAssertEqual(installedNoHardware.state, .unavailable)
+        XCTAssertNil(store.installedPackageURL())
+
+        // 硬件变为可用后 refresh() 显示 .notInstalled
+        hardwareAvailable = true
+        installedNoHardware.refresh()
+        XCTAssertEqual(
+            installedNoHardware.state,
+            .notInstalled(downloadBytes: desc.archiveBytes, unpackedBytes: desc.unpackedBytes)
+        )
+    }
+
+    func testRemoveInstalledPackagesRenamesAtomicallyBeforeDeletingAndSweepsRemovingDirs() async throws {
+        let fixture = try makeSyntheticArchive(label: "atomic-remove")
+        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-atomic-remove", isDirectory: true)
+        let desc = fixture.descriptor(url: server.url(path: "/m.tar.gz"))
+        let installStore = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: desc,
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024
+        )
+        let installed = try await installStore.downloadAndInstall()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: installed.path))
+
+        // 在 storageRoot 放入指向外部目录的符号链接，确保删除时只移除链接本身、不跟随删穿目标。
+        let externalTarget = tempRoot.appendingPathComponent("symlink-target", isDirectory: true)
+        try FileManager.default.createDirectory(at: externalTarget, withIntermediateDirectories: true)
+        let sentinelFile = externalTarget.appendingPathComponent("keep.txt")
+        try Data("keep".utf8).write(to: sentinelFile)
+        let straySymlink = storage.appendingPathComponent("stray-link")
+        try FileManager.default.createSymbolicLink(at: straySymlink, withDestinationURL: externalTarget)
+
+        var removedPaths: [URL] = []
+        let failingDeleteStore = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: desc,
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024,
+            removeItemHandler: { url in
+                removedPaths.append(url)
+                if url.lastPathComponent.hasPrefix(".removing-") {
+                    // 改名必须先于实际删除完成：此时正式安装目录已不可见。
+                    XCTAssertFalse(FileManager.default.fileExists(atPath: installed.path))
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(EBUSY), userInfo: [NSLocalizedDescriptionKey: "Simulated busy"])
+                }
+                try FileManager.default.removeItem(at: url)
+            }
+        )
+
+        XCTAssertThrowsError(try failingDeleteStore.removeInstalledPackages()) { error in
+            guard case AIModelPackageError.removeFailed = error else {
+                return XCTFail("Expected removeFailed, got \(error)")
+            }
+        }
+        XCTAssertTrue(removedPaths.contains { $0.lastPathComponent.hasPrefix(".removing-") },
+                      "Installed directory must be atomically renamed to .removing-* before deletion")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: installed.path),
+                       "Installed path must already be gone even if deleting .removing-* fails")
+        XCTAssertNil(failingDeleteStore.installedPackageURL())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinelFile.path),
+                      "Symlink removal must never delete through to external target")
+
+        // 下次清理（或重新安装）会清扫遗留的 .removing-* 目录
+        let leftoverBefore = try FileManager.default.contentsOfDirectory(at: storage, includingPropertiesForKeys: nil)
+        XCTAssertTrue(leftoverBefore.contains { $0.lastPathComponent.hasPrefix(".removing-") })
+        installStore.cleanupStaleTempItems()
+        let leftoverAfter = try FileManager.default.contentsOfDirectory(at: storage, includingPropertiesForKeys: nil)
+        XCTAssertFalse(leftoverAfter.contains { $0.lastPathComponent.hasPrefix(".removing-") })
+    }
+
+    @MainActor
+    func testFailedRemovalPreservesInstalledStateAndRefusesDownload() async throws {
+        let fixture = try makeSyntheticArchive(label: "remove-failed")
+        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-remove-failed", isDirectory: true)
+        let desc = fixture.descriptor(url: server.url(path: "/m.tar.gz"))
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: desc,
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024
+        )
+        let installed = try await store.downloadAndInstall()
+        XCTAssertEqual(server.requestCount, 1)
+
+        let manager = AIModelPackageManager(store: store, isRuntimeSupported: { true })
+        var changeCallbacks = 0
+        manager.onInstallStateChanged = { changeCallbacks += 1 }
+        XCTAssertEqual(
+            manager.state,
+            .installed(.downloaded(installed), unpackedBytes: desc.unpackedBytes, removeError: nil)
+        )
+
+        // 把 storageRoot 设为只读，使 Darwin.rename 失败且已安装包保持完好
+        XCTAssertEqual(Darwin.chmod(storage.path, 0o555), 0)
+        defer { _ = Darwin.chmod(storage.path, 0o755) }
+
+        manager.removeDownloadedModel()
+        guard case .installed(.downloaded(let stillInstalled), let bytes, let removeError) = manager.state else {
+            return XCTFail("Failed removal must keep .installed state with removeError, got \(manager.state)")
+        }
+        XCTAssertEqual(stillInstalled.standardizedFileURL, installed.standardizedFileURL)
+        XCTAssertEqual(bytes, desc.unpackedBytes)
+        if case .removeFailed = removeError {
+            // expected
+        } else {
+            XCTFail("Expected .removeFailed error on installed state, got \(String(describing: removeError))")
+        }
+        XCTAssertEqual(changeCallbacks, 0, "Failed removal with package still on disk must not notify install change")
+        XCTAssertEqual(store.installedPackageURL()?.standardizedFileURL, installed.standardizedFileURL)
+
+        // 已安装状态下调用 startDownload 必须被拒绝，不发起任何网络请求
+        manager.startDownload()
+        XCTAssertEqual(server.requestCount, 1, "startDownload must not download when package is still installed")
+
+        // 恢复目录权限后再次删除应当成功并通知监听方
+        XCTAssertEqual(Darwin.chmod(storage.path, 0o755), 0)
+        manager.removeDownloadedModel()
+        XCTAssertEqual(manager.state, .notInstalled(downloadBytes: desc.archiveBytes, unpackedBytes: desc.unpackedBytes))
+        XCTAssertEqual(changeCallbacks, 1)
+        XCTAssertNil(store.installedPackageURL())
+    }
+
+    func testAccessTrackerRefCountsReadersAndPublishesTransitions() {
+        let tracker = AIModelAccessTracker()
+        var notifications = 0
+        let cancellable = tracker.didChange.sink { notifications += 1 }
+        defer { cancellable.cancel() }
+
+        XCTAssertFalse(tracker.hasActiveReaders)
+        let first = tracker.beginReader()
+        XCTAssertTrue(tracker.hasActiveReaders)
+        XCTAssertEqual(tracker.activeReaderCount, 1)
+        XCTAssertEqual(notifications, 1)
+
+        let second = tracker.beginReader()
+        XCTAssertEqual(tracker.activeReaderCount, 2)
+        XCTAssertEqual(notifications, 1, "Only 0->1 and 1->0 transitions need to notify UI")
+
+        first.end()
+        first.end() // idempotent
+        XCTAssertTrue(tracker.hasActiveReaders)
+        XCTAssertEqual(tracker.activeReaderCount, 1)
+        XCTAssertEqual(notifications, 1)
+
+        second.end()
+        XCTAssertFalse(tracker.hasActiveReaders)
+        XCTAssertEqual(tracker.activeReaderCount, 0)
+        XCTAssertEqual(notifications, 2)
+    }
+
+    func testCancellationTerminatesAlreadyRunningProcessAttachedAfterCancel() throws {
+        let cancellation = AIModelInstallCancellation()
+        cancellation.cancel()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["10"]
+        try process.run()
+        let started = Date()
+        // 模拟 runTar 窗口：取消发生在 process.run() 之前，attach 在 process.run() 之后调用。
+        cancellation.attach(process: process)
+        defer { cancellation.attach(process: nil) }
+        process.waitUntilExit()
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3.0,
+                          "Process attached after cancel() must be terminated immediately")
+        XCTAssertNotEqual(process.terminationStatus, 0)
+    }
+
     // MARK: - Helpers
 
     @discardableResult

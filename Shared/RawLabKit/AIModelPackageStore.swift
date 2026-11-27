@@ -320,7 +320,7 @@ public enum AIModelPackageState: Equatable, Sendable {
     case installing
     case cancelled(downloadBytes: UInt64, unpackedBytes: UInt64)
     case failed(AIModelPackageError, downloadBytes: UInt64, unpackedBytes: UInt64)
-    case installed(AIModelDirectorySource, unpackedBytes: UInt64)
+    case installed(AIModelDirectorySource, unpackedBytes: UInt64, removeError: AIModelPackageError? = nil)
 
     public var isBusy: Bool {
         switch self {
@@ -335,8 +335,96 @@ public enum AIModelPackageState: Equatable, Sendable {
     }
 
     public var isDownloadedInstalled: Bool {
-        if case .installed(.downloaded, _) = self { return true }
+        if case .installed(.downloaded, _, _) = self { return true }
         return false
+    }
+}
+
+// MARK: - Model-Layer Active Reader Guard
+
+/// 模型层活跃读取守卫：追踪所有可能读取已下载模型目录的后台原生操作，
+/// 确保在取消/关闭预览或后台线程真正退出原生调用前禁止删除模型，不依赖 SwiftUI 视图绑定。
+public final class AIModelAccessTracker: @unchecked Sendable {
+    public static let shared = AIModelAccessTracker()
+
+    public final class ReaderLease: @unchecked Sendable {
+        private let lock = NSLock()
+        private weak var tracker: AIModelAccessTracker?
+        private var ended = false
+
+        fileprivate init(tracker: AIModelAccessTracker) {
+            self.tracker = tracker
+        }
+
+        public func end() {
+            lock.lock()
+            if ended {
+                lock.unlock()
+                return
+            }
+            ended = true
+            let owner = tracker
+            tracker = nil
+            lock.unlock()
+            owner?.endReader()
+        }
+
+        deinit {
+            end()
+        }
+    }
+
+    private let lock = NSLock()
+    private var count = 0
+    public let didChange = PassthroughSubject<Void, Never>()
+
+    public init() {}
+
+    public var activeReaderCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    public var hasActiveReaders: Bool {
+        activeReaderCount > 0
+    }
+
+    public func beginReader() -> ReaderLease {
+        lock.lock()
+        let becameActive = count == 0
+        count += 1
+        lock.unlock()
+        if becameActive {
+            notifyChanged()
+        }
+        return ReaderLease(tracker: self)
+    }
+
+    public func withReader<T>(_ body: () throws -> T) rethrows -> T {
+        let lease = beginReader()
+        defer { lease.end() }
+        return try body()
+    }
+
+    private func endReader() {
+        lock.lock()
+        count = max(0, count - 1)
+        let becameIdle = count == 0
+        lock.unlock()
+        if becameIdle {
+            notifyChanged()
+        }
+    }
+
+    private func notifyChanged() {
+        if Thread.isMainThread {
+            didChange.send()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.didChange.send()
+            }
+        }
     }
 }
 
@@ -411,6 +499,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
     private let availableSpaceProvider: (URL) throws -> UInt64
     private let onBeforeUnpack: (() -> Void)?
     private let onBeforeCommit: (() -> Void)?
+    private let removeItemHandler: (URL) throws -> Void
 
     public init(
         storageRoot: URL = AIModelPackageStore.defaultStorageRoot,
@@ -419,7 +508,8 @@ public final class AIModelPackageStore: @unchecked Sendable {
         diskSpaceMarginBytes: UInt64 = AIModelPackageStore.defaultDiskSpaceMarginBytes,
         availableSpaceProvider: ((URL) throws -> UInt64)? = nil,
         onBeforeUnpack: (() -> Void)? = nil,
-        onBeforeCommit: (() -> Void)? = nil
+        onBeforeCommit: (() -> Void)? = nil,
+        removeItemHandler: ((URL) throws -> Void)? = nil
     ) {
         self.storageRoot = storageRoot
         self.descriptor = descriptor
@@ -428,6 +518,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
         self.availableSpaceProvider = availableSpaceProvider ?? Self.volumeAvailableBytes(at:)
         self.onBeforeUnpack = onBeforeUnpack
         self.onBeforeCommit = onBeforeCommit
+        self.removeItemHandler = removeItemHandler ?? { try FileManager.default.removeItem(at: $0) }
     }
 
     public var installedDirectoryURL: URL? {
@@ -560,14 +651,39 @@ public final class AIModelPackageStore: @unchecked Sendable {
         }
         for item in items {
             let name = item.lastPathComponent
-            if name.hasPrefix(".download-") || name.hasPrefix(".staging-") || name.hasPrefix(".replacing-") {
+            if name.hasPrefix(".download-")
+                || name.hasPrefix(".staging-")
+                || name.hasPrefix(".replacing-")
+                || name.hasPrefix(".removing-") {
                 continue
             }
             do {
-                try FileManager.default.removeItem(at: item)
+                try removeItemAtomically(at: item)
+            } catch let error as AIModelPackageError {
+                throw error
             } catch {
                 throw AIModelPackageError.removeFailed(error.localizedDescription)
             }
+        }
+    }
+
+    private func removeItemAtomically(at item: URL) throws {
+        var st = stat()
+        guard Darwin.lstat(item.path, &st) == 0 else {
+            if errno == ENOENT { return }
+            throw AIModelPackageError.removeFailed(String(cString: strerror(errno)))
+        }
+        let fileType = st.st_mode & S_IFMT
+        if fileType == S_IFDIR {
+            // 先原子改名到同级 .removing-<uuid> 再删除：避免并发读取或中途失败在正式路径留下半删损坏包。
+            let removingURL = storageRoot.appendingPathComponent(".removing-\(UUID().uuidString.lowercased())", isDirectory: true)
+            guard Darwin.rename(item.path, removingURL.path) == 0 else {
+                throw AIModelPackageError.removeFailed(String(cString: strerror(errno)))
+            }
+            try removeItemHandler(removingURL)
+        } else {
+            // 符号链接与普通文件直接移除条目本身，不跟随符号链接目标。
+            try removeItemHandler(item)
         }
     }
 
@@ -743,13 +859,16 @@ public final class AIModelPackageStore: @unchecked Sendable {
         }
     }
 
-    private func cleanupStaleTempItems() {
+    func cleanupStaleTempItems() {
         guard let items = try? FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil) else {
             return
         }
         for item in items {
             let name = item.lastPathComponent
-            if name.hasPrefix(".download-") || name.hasPrefix(".staging-") || name.hasPrefix(".replacing-") {
+            if name.hasPrefix(".download-")
+                || name.hasPrefix(".staging-")
+                || name.hasPrefix(".replacing-")
+                || name.hasPrefix(".removing-") {
                 try? FileManager.default.removeItem(at: item)
             }
         }
@@ -832,7 +951,6 @@ public final class AIModelPackageStore: @unchecked Sendable {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrPipe
 
-        cancellation.attach(process: process)
         defer { cancellation.attach(process: nil) }
 
         do {
@@ -840,6 +958,8 @@ public final class AIModelPackageStore: @unchecked Sendable {
         } catch {
             throw AIModelPackageError.fileSystemError(error.localizedDescription)
         }
+        // 在子进程真正启动后挂载取消句柄：无论取消发生在 run() 之前还是之后，都能立即 terminate 运行中的 tar。
+        cancellation.attach(process: process)
 
         let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
@@ -1200,6 +1320,7 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
 
     public let store: AIModelPackageStore
     private let isRuntimeSupported: () -> Bool
+    private let isHardwareAvailable: () -> Bool
     private let overrideProvider: () -> URL?
     private let bundledProvider: () -> URL?
     public var onInstallStateChanged: (() -> Void)?
@@ -1210,11 +1331,13 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
     public init(
         store: AIModelPackageStore,
         isRuntimeSupported: @escaping () -> Bool,
+        isHardwareAvailable: @escaping () -> Bool = { true },
         overrideProvider: @escaping () -> URL? = { nil },
         bundledProvider: @escaping () -> URL? = { nil }
     ) {
         self.store = store
         self.isRuntimeSupported = isRuntimeSupported
+        self.isHardwareAvailable = isHardwareAvailable
         self.overrideProvider = overrideProvider
         self.bundledProvider = bundledProvider
         refresh()
@@ -1226,27 +1349,37 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
         applyDiskState()
     }
 
-    private func applyDiskState() {
+    private func computeDiskState() -> AIModelPackageState {
         guard isRuntimeSupported() else {
-            state = .unavailable
-            return
+            return .unavailable
         }
         let unpackedBytes = store.descriptor?.unpackedBytes ?? 0
         if let source = store.resolveModelDirectory(override: overrideProvider(), bundled: bundledProvider()) {
-            state = .installed(source, unpackedBytes: unpackedBytes)
-            return
+            return .installed(source, unpackedBytes: unpackedBytes)
         }
-        guard let descriptor = store.descriptor else {
-            state = .unavailable
-            return
+        guard isHardwareAvailable(), let descriptor = store.descriptor else {
+            return .unavailable
         }
-        state = .notInstalled(downloadBytes: descriptor.archiveBytes, unpackedBytes: descriptor.unpackedBytes)
+        return .notInstalled(downloadBytes: descriptor.archiveBytes, unpackedBytes: descriptor.unpackedBytes)
+    }
+
+    private func applyDiskState() {
+        state = computeDiskState()
+    }
+
+    private static func installedSource(for state: AIModelPackageState) -> AIModelDirectorySource? {
+        if case .installed(let source, _, _) = state { return source }
+        return nil
     }
 
     /// 仅由用户显式点击“下载模型”或“重试”触发。
     public func startDownload() {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard !state.isBusy, isRuntimeSupported(), let descriptor = store.descriptor else { return }
+        guard !state.isBusy, !state.isInstalled, isRuntimeSupported(), let descriptor = store.descriptor else { return }
+        guard isHardwareAvailable() else {
+            applyDiskState()
+            return
+        }
         let wasInstalled = state.isInstalled
         let cancellation = AIModelInstallCancellation()
         activeCancellation = cancellation
@@ -1328,21 +1461,29 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
     public func removeDownloadedModel() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard !state.isBusy else { return }
+        let previousSource = Self.installedSource(for: state)
         do {
             try store.removeInstalledPackages()
             applyDiskState()
-            onInstallStateChanged?()
-        } catch let error as AIModelPackageError {
-            if let descriptor = store.descriptor {
-                state = .failed(error, downloadBytes: descriptor.archiveBytes, unpackedBytes: descriptor.unpackedBytes)
+            if Self.installedSource(for: state) != previousSource || previousSource != nil {
+                onInstallStateChanged?()
             }
         } catch {
-            if let descriptor = store.descriptor {
-                state = .failed(
-                    .removeFailed(error.localizedDescription),
-                    downloadBytes: descriptor.archiveBytes,
-                    unpackedBytes: descriptor.unpackedBytes
-                )
+            let mapped: AIModelPackageError = (error as? AIModelPackageError) ?? .removeFailed(error.localizedDescription)
+            let diskState = computeDiskState()
+            if case .installed(let source, let unpackedBytes, _) = diskState {
+                // 模型包仍在磁盘上：保留已安装状态以继续提供删除入口，不把“重试”接到重新下载，也不误报已卸载。
+                state = .installed(source, unpackedBytes: unpackedBytes, removeError: mapped)
+            } else if let descriptor = store.descriptor, isRuntimeSupported(), isHardwareAvailable() {
+                state = .failed(mapped, downloadBytes: descriptor.archiveBytes, unpackedBytes: descriptor.unpackedBytes)
+                if previousSource != nil {
+                    onInstallStateChanged?()
+                }
+            } else {
+                state = diskState
+                if previousSource != nil {
+                    onInstallStateChanged?()
+                }
             }
         }
     }

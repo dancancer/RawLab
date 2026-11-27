@@ -29,6 +29,7 @@
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "Le débruitage IA ne peut pas encore être copié. Choisissez Personnalisé pour copier les autres réglages.";
 "AI 降噪模型许可" = "Licences des modèles de débruitage IA";
 "AI 降噪结果连续未就绪，请重试。" = "Le résultat de la réduction du bruit par IA reste indisponible. Réessayez.";
+"AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。" = "Le débruitage IA nécessite un GPU Apple Silicon et macOS 14.4 ou ultérieur.";
 "AI 降噪（实验）" = "Débruitage IA (expérimental)";
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Les recettes Agent ne prennent pas en charge la réduction du bruit par IA. Désactivez-la d’abord.";
 "DCP 使用三光源 HueSatMap，暂不支持转换。" = "Le DCP utilise une HueSatMap à trois illuminants, qui n’est pas encore prise en charge pour la conversion.";

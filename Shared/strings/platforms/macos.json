@@ -5251,6 +5251,10 @@
     "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。": {
       "formats": [],
       "source": "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。"
+    },
+    "AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。": {
+      "formats": [],
+      "source": "AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"
     }
   },
   "overrides": {},
@@ -6590,6 +6594,14 @@
       "fr": "Diagnostic…",
       "ja": "診断…",
       "zh-Hans": "故障诊断…"
+    },
+    "AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。": {
+      "de": "KI-Entrauschen erfordert eine Apple-Silicon-GPU und macOS 14.4 oder neuer.",
+      "en": "AI denoising requires an Apple Silicon GPU and macOS 14.4 or newer.",
+      "es": "La reducción de ruido con IA requiere una GPU Apple Silicon y macOS 14.4 o posterior.",
+      "fr": "Le débruitage IA nécessite un GPU Apple Silicon et macOS 14.4 ou ultérieur.",
+      "ja": "AI ノイズ除去には Apple Silicon GPU と macOS 14.4 以降が必要です。",
+      "zh-Hans": "AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"
     }
   }
 }

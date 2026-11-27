@@ -1,5 +1,4 @@
 import base64
-import hashlib
 import importlib.util
 import os
 from pathlib import Path
@@ -15,29 +14,20 @@ config = importlib.util.module_from_spec(SPEC); SPEC.loader.exec_module(config)
 
 
 class ReleaseInputs(unittest.TestCase):
-    def test_missing_model_pin_and_conflicting_signers_fail_closed(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            model = Path(temporary)
-            (model / "manifest.json").write_text("{}")
-            for name in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
-                (model / name).mkdir()
-            env = dict(RAWLAB_RELEASE_VERSION="0.9.1", RAWLAB_RELEASE_BUILD="19",
-                       RAWLAB_SPARKLE_PUBLIC_KEY=base64.b64encode(bytes(32)).decode(),
-                       RAWLAB_UPDATE_CERTIFICATE_SHA256="a" * 64, RAWLAB_DUALDN_MODEL_DIR=str(model),
-                       RAWLAB_DUALDN_MANIFEST_SHA256=hashlib.sha256(b"{}").hexdigest())
-            self.assertEqual("19", config.configuration(env)["CFBundleVersion"])
-            with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_TEAM_ID": "123456789A"})
-            with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_DUALDN_MANIFEST_SHA256": "b" * 64})
-            with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_CERTIFICATE_SHA256": ""})
-            (model / "blind_rgb.mlmodelc").rmdir()
-            with self.assertRaises(ValueError): config.configuration(env)
+    def test_arm64_release_needs_no_model_and_conflicting_signers_fail_closed(self):
+        env = dict(RAWLAB_RELEASE_VERSION="0.9.1", RAWLAB_RELEASE_BUILD="19",
+                   RAWLAB_SPARKLE_PUBLIC_KEY=base64.b64encode(bytes(32)).decode(),
+                   RAWLAB_UPDATE_CERTIFICATE_SHA256="a" * 64)
+        self.assertEqual("19", config.configuration(env, "arm64")["CFBundleVersion"])
+        with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_TEAM_ID": "123456789A"})
+        with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_CERTIFICATE_SHA256": ""})
+        with self.assertRaises(ValueError): config.configuration(env, "universal")
 
     def test_intel_release_needs_no_model_but_keeps_signing_checks(self):
         env = dict(RAWLAB_RELEASE_VERSION="0.9.1", RAWLAB_RELEASE_BUILD="19",
                    RAWLAB_SPARKLE_PUBLIC_KEY=base64.b64encode(bytes(32)).decode(),
                    RAWLAB_UPDATE_CERTIFICATE_SHA256="a" * 64)
         self.assertEqual("0.9.1", config.configuration(env, "x86_64")["CFBundleShortVersionString"])
-        with self.assertRaises(ValueError): config.configuration(env)
         with self.assertRaises(ValueError): config.configuration(env | {"RAWLAB_UPDATE_CERTIFICATE_SHA256": ""}, "x86_64")
         with self.assertRaises(ValueError): config.configuration(env, "universal")
 
