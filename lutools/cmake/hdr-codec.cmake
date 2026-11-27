@@ -82,6 +82,16 @@ function(rawlab_add_hdr_codec)
         configure_file("${rawlab_ultrahdr_SOURCE_DIR}/${name}"
             "${CMAKE_BINARY_DIR}/licenses/libultrahdr/${name}" COPYONLY)
     endforeach()
+    # uhdr 静态链接其 third_party/image_io（含 BSD 许可的 modp_b64）；Adobe 增益图声明是上游对整个库的署名要求。
+    foreach(pair "third_party/image_io/LICENSE|image_io-LICENSE"
+            "third_party/image_io/src/modp_b64/LICENSE|modp_b64-LICENSE"
+            "adobe-hdr-gain-map-license/NOTICE|adobe-hdr-gain-map-NOTICE")
+        string(REPLACE "|" ";" pair "${pair}")
+        list(GET pair 0 source)
+        list(GET pair 1 name)
+        configure_file("${rawlab_ultrahdr_SOURCE_DIR}/${source}"
+            "${CMAKE_BINARY_DIR}/licenses/libultrahdr/${name}" COPYONLY)
+    endforeach()
 endfunction()
 
 rawlab_add_hdr_codec()

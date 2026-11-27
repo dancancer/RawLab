@@ -363,6 +363,12 @@ def _ctest_invocations(run_script):
     return invocations
 
 
+# Native build steps run only in build tiers; on macOS also in the arm64 core CTest row that an
+# automatic models run adds when core code changed (affected_platforms.wants_core_ctest).
+NATIVE_BUILD_IF = {platform: "needs.changes.outputs.build == 'true'" for platform in PLATFORMS}
+NATIVE_BUILD_IF["macos"] = "needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'"
+
+
 class WorkflowContractTests(unittest.TestCase):
     def setUp(self):
         self.assertTrue(WORKFLOW.is_file(), "Hosted CI workflow is missing")
@@ -520,7 +526,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertEqual(len(native_saves), 1)
                 save = native_saves[0]
 
-                self.assertEqual(_strip_expr(restore["if"]), "needs.changes.outputs.build == 'true'")
+                self.assertEqual(_strip_expr(restore["if"]), NATIVE_BUILD_IF[name])
                 self.assertEqual(restore.get("continue-on-error"), "true")
                 self.assertEqual(_norm(restore["with"].get("lookup-only")),
                                  "${{ needs.changes.outputs.cold == 'true' }}")
@@ -531,7 +537,7 @@ class WorkflowContractTests(unittest.TestCase):
                 self.assertIn("steps.native-cache.outcome == 'success'", save_if)
                 self.assertIn("steps.native-cache.outputs.cache-hit != 'true'", save_if)
 
-                builds = [s for s in steps if "run" in s and _strip_expr(s.get("if", "")) == "needs.changes.outputs.build == 'true'"
+                builds = [s for s in steps if "run" in s and _strip_expr(s.get("if", "")) == NATIVE_BUILD_IF[name]
                           and "RAWLAB_CI_CACHE_HIT" in s.get("env", {})]
                 self.assertEqual(len(builds), 1)
                 build = builds[0]
@@ -568,7 +574,7 @@ class WorkflowContractTests(unittest.TestCase):
                     self.assertIn("apple-models.sh", model_run)
                 for step in steps:
                     if step.get("id") in ("native-key", "native-cache") or "RAWLAB_CI_CACHE_HIT" in step.get("env", {}):
-                        self.assertEqual(_strip_expr(step.get("if", "")), "needs.changes.outputs.build == 'true'")
+                        self.assertEqual(_strip_expr(step.get("if", "")), NATIVE_BUILD_IF[platform])
 
     def test_builds_are_not_feature_reduced_and_ui_stays_local(self):
         self.assertNotRegex(self.text, r"SONY2FUJI_ENABLE_\w+=OFF")
@@ -1242,6 +1248,95 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "build-only runs must not enter native suites")
         self.assertEqual(len([r for r in macos_matrix("full") if r["arch"] == "x86_64"]), 1,
                          "the cold full gate must build x86_64 once")
+
+    def _models_ctx(self, row, event_name="pull_request"):
+        outputs = {"checks": "models", "models": "true", "build": "false", "native": "false", "cold": "false"}
+        github = {"repository": "dancancer/RawLab", "event_name": event_name,
+                  "event": {"pull_request": {"head": {"repo": {"full_name": "dancancer/RawLab"}}}}}
+        return {"_success": True, "github": github, "needs": {"changes": {"outputs": outputs}}, "matrix": row}
+
+    def _runs(self, step, ctx):
+        return "if" not in step or _gha_truthy(_eval_gha_expr(_strip_expr(step["if"]), ctx))
+
+    @staticmethod
+    def _is_native_step(step):
+        return (step.get("id") in ("native-key", "native-cache", "cargo-cache", "source-archives-cache")
+                or "RAWLAB_CI_CACHE_HIT" in step.get("env", {})
+                or any(marker in step.get("run", "") for marker in NATIVE_BUILD_MARKERS)
+                or step.get("name") in ("Prepare X3F Rust renderer toolchain", "Install offline GLES shader validator"))
+
+    def test_models_runs_build_natively_only_in_the_core_ctest_row(self):
+        self.assertEqual(self.workflow["jobs"]["changes"]["outputs"]["core_ctest"], "${{ steps.select.outputs.core_ctest }}")
+        for name in PLATFORMS:
+            rows = macos_matrix("models") if name == "macos" else [{}]
+            for row in rows:
+                for step in self.workflow["jobs"][name]["steps"]:
+                    if self._is_native_step(step):
+                        with self.subTest(job=name, row=row.get("suite"), step=step.get("name")):
+                            self.assertFalse(self._runs(step, self._models_ctx(row)),
+                                             "a models run without core changes must not build natively")
+        steps = self.workflow["jobs"]["macos"]["steps"]
+        arm, ctest = macos_matrix("models", core_ctest=True)
+        native = [step for step in steps if self._is_native_step(step)]
+        self.assertGreaterEqual(len(native), 7)
+        for step in native:
+            with self.subTest(step=step.get("name")):
+                self.assertTrue(self._runs(step, self._models_ctx(ctest)))
+                self.assertFalse(self._runs(step, self._models_ctx(arm)))
+        models = next(step for step in steps if "apple-models.sh" in step.get("run", ""))
+        swiftpm = next(step for step in steps if step.get("id") == "swiftpm-cache")
+        for step in (models, swiftpm):
+            self.assertTrue(self._runs(step, self._models_ctx(arm)))
+            self.assertFalse(self._runs(step, self._models_ctx(ctest)), "the ctest row runs no models and no SwiftPM")
+        save = next(step for step in steps if step.get("uses", "").startswith("actions/cache/save@")
+                    and step["with"]["key"] == "${{ steps.native-key.outputs.key }}")
+        for event_name in ("push", "pull_request"):
+            ctx = {**self._models_ctx(ctest, event_name),
+                   "steps": {"native-cache": {"outcome": "success", "outputs": {"cache-hit": "false"}}}}
+            self.assertTrue(self._runs(save, ctx), "a successful ctest row saves the shared arm64 dependency cache")
+        self.assertEqual({k: v for k, v in ctest.items() if k != "suite"},
+                         {k: v for k, v in macos_matrix("full")[0].items() if k != "suite"},
+                         "the ctest row must share the arm64 native dependency key")
+
+    def _run_mac_build(self, suite, native, arch="arm64"):
+        step = next(s for s in self.workflow["jobs"]["macos"]["steps"] if "RawLabMac/build.sh" in s.get("run", ""))
+        stubs = "".join(f'{name}() {{ printf "%s\\n" "{name} $*" >> "$CALLS"; }}\n'
+                        for name in ("git", "sw_vers", "xcodebuild", "sysctl", "python", "bash", "env", "swift", "ctest"))
+        stubs += 'xcode-select() { echo /dev; }\nxcrun() { echo /sdk; }\n'
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory, "calls")
+            subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", stubs + step["run"]], cwd=directory,
+                           check=True, capture_output=True, text=True,
+                           env={**os.environ, "CALLS": str(calls), "RAWLAB_MAC_SUITE": suite,
+                                "RAWLAB_CI_NATIVE": native, "RAWLAB_ARCH": arch})
+            return calls.read_text().splitlines()
+
+    def test_ctest_row_builds_only_the_core_and_runs_the_whole_label_set(self):
+        calls = self._run_mac_build("ctest", "false")
+        self.assertIn("env RAWLAB_CORE_ONLY=1 bash RawLabMac/build.sh", calls)
+        self.assertNotIn("bash RawLabMac/build.sh", calls, "the ctest row must not build the app")
+        self.assertEqual([c for c in calls if c.startswith(("swift ", "bash RawLabMac/tests/"))], [],
+                         "the ctest row runs no SwiftPM, model, agent or render suites")
+        ctests = [c for c in calls if c.startswith("ctest ")]
+        self.assertEqual(len(ctests), 1)
+        args = ctests[0].split()
+        self.assertEqual(args[args.index("-L") + 1], "^ci_macos_arm64$")
+        self.assertIn("--no-tests=error", args)
+        for narrowing in ("-R", "-E", "-LE", "-I", "-U", "--tests-regex", "--exclude-regex", "--label-exclude",
+                          "--tests-information", "--rerun-failed", "--exclude-fixture"):
+            self.assertNotIn(narrowing, args)
+        inventory = next(i for i, c in enumerate(calls) if "check_ctest_inventory.py" in c)
+        self.assertIn("--ci-label ci_macos_arm64", calls[inventory])
+        self.assertLess(inventory, calls.index(ctests[0]))
+        # Existing native rows keep the app build and run core CTest exactly once.
+        for suite, arch in (("all", "arm64"), ("core", "x86_64"), ("intel", "x86_64")):
+            with self.subTest(suite=suite):
+                native = self._run_mac_build(suite, "true", arch)
+                self.assertIn("bash RawLabMac/build.sh", native)
+                self.assertNotIn("env RAWLAB_CORE_ONLY=1 bash RawLabMac/build.sh", native)
+                self.assertEqual(len([c for c in native if c.startswith("ctest ")]), 1)
+        build_only = self._run_mac_build("all", "false")
+        self.assertEqual([c for c in build_only if c.startswith("ctest ")], [])
 
     def test_build_jobs_cache_cargo_and_source_archives_around_the_native_build(self):
         build_markers = {"macos": "RawLabMac/build.sh", "windows": "build.ps1", "android": "assembleRelease",

@@ -254,7 +254,7 @@ lutools/
 ## 致谢
 
 - **libraw**: RAW 文件处理
-- **stb_image**: 图像编解码
+- **stb_image / stb_image_write**: 测试中的参考解码与编码（仅在 `tests/`，不进入发布产物）
 - **LUTCalc**: LUT 算法参考
 - **Fujifilm**: F-Log2 LUT
 

@@ -33,6 +33,15 @@ cmp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLa
 for notice in GLib-COPYING PCRE2-LICENCE proxy-libintl-COPYING zlib-LICENSE; do
     test -f "$APP/Contents/Resources/Licenses/Lensfun/$notice"
 done
+# 静态链接进应用的第三方代码：libultrahdr 自带的 image_io/modp_b64 与 Adobe 署名，OpenCV 编入的第三方代码
+for notice in libultrahdr/image_io-LICENSE libultrahdr/modp_b64-LICENSE libultrahdr/adobe-hdr-gain-map-NOTICE \
+        libspng-LICENSE.txt OpenCV/SoftFloat-COPYING.txt OpenCV/mscr-chi_table_LICENSE.txt OpenCV/zlib-LICENSE \
+        OpenCV/contrib-LICENSE OpenCV/guided-filter-LICENSE; do
+    test -f "$APP/Contents/Resources/Licenses/$notice"
+done
+if [ "${RAWLAB_ARCH:-}" = arm64 ]; then
+    test -f "$APP/Contents/Resources/Licenses/OpenCV/carotene-LICENSE"
+fi
 for notice in Adobe-DNG-SDK-LICENSE.txt JPEG-XL-LICENSE.txt Brotli-LICENSE.txt \
         Highway-LICENSE.txt Highway-LICENSE-BSD3.txt skcms-LICENSE.txt; do
     test -f "$APP/Contents/Resources/Licenses/dng-sdk/$notice"

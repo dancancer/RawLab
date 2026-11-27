@@ -34,3 +34,8 @@ cp "$SOURCES/opencv-4.12.0/LICENSE" "$PREFIX/share/licenses/opencv4/OpenCV-LICEN
 cp "$SOURCES/opencv_contrib-4.12.0/LICENSE" "$PREFIX/share/licenses/opencv4/contrib-LICENSE"
 sed -n '1,35p' "$SOURCES/opencv_contrib-4.12.0/modules/ximgproc/src/guided_filter.cpp" \
     > "$PREFIX/share/licenses/opencv4/guided-filter-LICENSE"
+# arm64 上 OpenCV 把 NVIDIA Carotene（3-clause BSD）作为 HAL 编进 core/imgproc；上游只在源码头部给出许可。
+if [ "$ARCH" = arm64 ]; then
+    awk '{ print } /\*\// { exit }' "$SOURCES/opencv-4.12.0/hal/carotene/src/add.cpp" \
+        > "$PREFIX/share/licenses/opencv4/carotene-LICENSE"
+fi

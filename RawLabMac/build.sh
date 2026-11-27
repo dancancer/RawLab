@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# RAWLAB_CORE_ONLY=1 只构建核心与测试（CI 的核心 CTest 行）；正式构建必须产出应用。
+CORE_ONLY="${RAWLAB_CORE_ONLY:-0}"
+if [ "$CORE_ONLY" = 1 ] && [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
+    echo "RAWLAB_CORE_ONLY=1 builds no app and cannot be combined with RAWLAB_RELEASE=1." >&2; exit 2
+fi
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Library/Developer/CommandLineTools}"
 source "$ROOT/RawLabMac/build-env.sh"
 # 对齐 RawLabWindows/build.ps1：在任何下载或编译之前解析并向 CMake 透传解释器绝对路径，
@@ -24,7 +29,9 @@ if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
     APP="${RAWLAB_APP_PATH:-$ROOT/build/release-$RAWLAB_RELEASE_VERSION-$RAWLAB_RELEASE_BUILD-$ARCH/RawLab Mac.app}"
     test ! -e "$APP" || { echo "Release app output already exists: $APP" >&2; exit 2; }
 fi
-SPARKLE_FRAMEWORK="$(bash "$ROOT/RawLabMac/prepare-sparkle.sh")"
+# Sparkle 与使用统计 SDK 只用于应用链接，不影响核心的 CMake 配置和依赖前缀。
+SPARKLE_FRAMEWORK=""
+if [ "$CORE_ONLY" != 1 ]; then SPARKLE_FRAMEWORK="$(bash "$ROOT/RawLabMac/prepare-sparkle.sh")"; fi
 DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET"
 AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=OFF)
 AI_LINK_FLAGS=()
@@ -61,7 +68,7 @@ if [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
     esac
     RUM_FLAGS+=(-D RAWLAB_RUM_LOCAL)
 fi
-if [ "${RAWLAB_RUM:-1}" = 1 ] || [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; then
+if [ "$CORE_ONLY" != 1 ] && { [ "${RAWLAB_RUM:-1}" = 1 ] || [ "${RAWLAB_RUM_LOCAL:-0}" = 1 ]; }; then
     RUM_BUILD="$BUILD/rum-sdk"
     bash "$ROOT/scripts/rum/prepare-macos.sh" "$RUM_BUILD"
     RUM_LIB="$RUM_BUILD/AlibabaCloud_RUM_macOS_0.4.4/lib/$ARCH/Release"
@@ -77,7 +84,8 @@ if [ "${RAWLAB_CI_CACHE_HIT:-}" != true ]; then
     if ! pkg-config --exists "libraw_r >= $RAWLAB_LIBRAW_VERSION" 'rawlab-dng-sdk >= 1.7.1' || ! rawlab_libraw_patch_current; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-dependencies.sh"
     fi
-    if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4; then
+    if [ ! -f "$CHROMA_PREFIX/lib/pkgconfig/opencv4.pc" ] || ! pkg-config --exact-version=4.12.0 opencv4 ||
+        { [ "$ARCH" = arm64 ] && [ ! -f "$CHROMA_PREFIX/share/licenses/opencv4/carotene-LICENSE" ]; }; then
         RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-chroma-dependency.sh"
     fi
     RAWLAB_ARCH="$ARCH" bash "$ROOT/RawLabMac/build-wavelet-dependency.sh"
@@ -94,6 +102,8 @@ if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
     X3F_LINK_FLAGS=("$BUILD/x3f-rust/$X3F_TARGET/release/librawlab_x3f.a" -liconv)
 fi
 "$BUILD/dng_jxl_tests"
+# CI 的核心 CTest 行只需要上面构建出的核心与测试；应用、打包和签名留给其他构建。
+if [ "$CORE_ONLY" = 1 ]; then exit 0; fi
 if [ "${RAWLAB_RELEASE:-0}" != 1 ]; then
     test -n "$APP" && test "$APP" != "/"
     rm -rf "$APP"
@@ -147,6 +157,8 @@ cp -R "$LENS_PREFIX/licenses/lensfun/." "$APP/Contents/Resources/Licenses/Lensfu
 OPENCV_PREFIX="$(pkg-config --variable=prefix opencv4)"
 mkdir -p "$APP/Contents/Resources/Licenses/OpenCV"
 cp -R "$OPENCV_PREFIX/share/licenses/opencv4/." "$APP/Contents/Resources/Licenses/OpenCV/"
+# OpenCV 安装时总会登记 ade（G-API）与 flatbuffers（dnn）的许可；这两个模块不在 BUILD_LIST 里，不随应用发布。
+rm -f "$APP/Contents/Resources/Licenses/OpenCV/ade-LICENSE" "$APP/Contents/Resources/Licenses/OpenCV/flatbuffers-LICENSE.txt"
 cp "$CHROMA_PREFIX/share/licenses/wavelib/COPYRIGHT" "$APP/Contents/Resources/Licenses/wavelib-COPYRIGHT"
 cp "$CHROMA_PREFIX/share/licenses/libtiff/LICENSE.md" "$APP/Contents/Resources/Licenses/libtiff-LICENSE.md"
 mkdir -p "$APP/Contents/Resources/Licenses/dng-sdk"

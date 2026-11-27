@@ -45,6 +45,14 @@ add_custom_target(rawlab_android_x3f_notices
     DEPENDS rawlab_x3f_build
     VERBATIM)
 add_dependencies(rawlab-jni rawlab_android_x3f_notices)
+# OpenCV 编进 JNI 库的第三方代码许可（lutools/cmake/denoise-dependencies.cmake 生成），按 ABI 分开：
+# Carotene 只在 arm64 编入。复用上面这个随 ABI 构建打包的资产目录。
+set(opencv_packaged_notices "${CMAKE_CURRENT_LIST_DIR}/../../../build/generated/x3fNotices/${CMAKE_BUILD_TYPE}/licenses/OpenCV/${ANDROID_ABI}")
+add_custom_target(rawlab_android_opencv_notices
+    COMMAND "${CMAKE_COMMAND}" -E rm -rf "${opencv_packaged_notices}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_directory "${CMAKE_BINARY_DIR}/licenses/OpenCV" "${opencv_packaged_notices}"
+    VERBATIM)
+add_dependencies(rawlab-jni rawlab_android_opencv_notices)
 
 add_executable(rawlab_gpu_tests EXCLUDE_FROM_ALL "${REPO}/RawLabAndroid/tests/gpu_smoke.cpp")
 target_include_directories(rawlab_gpu_tests PRIVATE "${REPO}/lutools/include" "${REPO}/lutools/src" "${REPO}/lutools/tests")
