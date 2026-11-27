@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -63,6 +64,15 @@ inline void waiveShaderValidationOnParavirtualDevice(char** argv) {
     _NSGetExecutablePath(nullptr, &size);
     std::vector<char> path(size + 1, '\0');
     if (_NSGetExecutablePath(path.data(), &size) != 0) return;
+    // 绿色的托管运行不会显示测试输出（ctest --output-on-failure），所以把降级写进 job summary。
+    if (const char* summary = std::getenv("GITHUB_STEP_SUMMARY")) {
+        if (FILE* file = std::fopen(summary, "a")) {
+            std::fprintf(file, "- :warning: `%s`: Metal shader validation not exercised on \"%s\" "
+                               "(paravirtual GPU false positive, #695); pixel and behaviour assertions still ran.\n",
+                         std::strrchr(path.data(), '/') ? std::strrchr(path.data(), '/') + 1 : path.data(), name.c_str());
+            std::fclose(file);
+        }
+    }
     unsetenv("MTL_SHADER_VALIDATION");
     unsetenv("MTL_SHADER_VALIDATION_REPORT_TO_STDERR");
     unsetenv("MTL_SHADER_VALIDATION_ABORT_ON_FAULT");
