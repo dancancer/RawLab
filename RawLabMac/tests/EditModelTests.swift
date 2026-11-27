@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNative
 import AppKit
 
 private struct Failure: Error { let message: String }
@@ -442,6 +443,143 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         print("PASS: EditorModel raster open, oriented dimensions, metadata isolation, persistence and rejection")
     }
 
+    static func memoryPressureReclaimChecks(root: URL, lut: URL) throws {
+        let fixtureRoot = root.appendingPathComponent("memory-pressure-reclaim")
+        try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
+        let width = 32, height = 24
+        var bytes = [UInt8](repeating: 0, count: width * height * 3)
+        for y in 0..<height {
+            for x in 0..<width {
+                let offset = (y * width + x) * 3
+                bytes[offset] = UInt8((x * 255) / max(1, width - 1))
+                bytes[offset + 1] = UInt8((y * 255) / max(1, height - 1))
+                bytes[offset + 2] = UInt8(((x + y) * 255) / max(1, width + height - 2))
+            }
+        }
+        let gradient = CGImage(
+            width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 24,
+            bytesPerRow: width * 3, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+            provider: CGDataProvider(data: Data(bytes) as CFData)!, decode: nil,
+            shouldInterpolate: false, intent: .defaultIntent
+        )!
+        let photo = fixtureRoot.appendingPathComponent("reclaim.png")
+        try writeRasterFixture(gradient, to: photo, type: "public.png" as CFString)
+
+        let model = makeRasterModel(root: fixtureRoot, lut: lut)
+        model.open(photo)
+        try waitForRender(model, "memory-pressure initial open")
+        model.selectFilm(lut.path)
+        model.settings.exposure = 0.35
+        model.settings.contrast = 1.2
+        model.settings.rotateGeometry(clockwise: true)
+        try check(model.saveEdits(), "memory-pressure edits save to history")
+        try waitForRender(model, "memory-pressure edited exact render")
+
+        // Populate every rebuildable cache: exactPreviewCache, inspection sampler/overlay,
+        // sharpen mask, completedEditPreview, originalCache, geometryReferenceCache, engine.displayCache.
+        let sample = model.sampleInspectionAfter(atOutputPoint: CGPoint(x: 0.5, y: 0.5))
+        try check(sample != nil, "inspection sampler produces a color sample before reclaim")
+        let overlay = InspectionOverlayRenderer.shared.render(model.result!.image, mode: .sketchLuminance)
+        try check(overlay != nil, "inspection overlay renders before reclaim")
+        model.setSharpenMaskPreview(true)
+        let maskDeadline = Date().addingTimeInterval(30)
+        while (model.sharpenMaskOverlay == nil || model.sharpenMaskCacheBytes == 0) && Date() < maskDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+
+        let beforeQueue = model.queue.sync {
+            (hasOriginal: model.originalCache != nil,
+             hasGeometryRef: model.geometryReferenceCache != nil,
+             hasEngine: model.engine != nil,
+             rasterBytes: model.engine?.cachedRasterBytes ?? 0)
+        }
+        try check(model.exactPreviewCache.totalBytes > 0, "exactPreviewCache is populated before reclaim")
+        try check(model.completedEditPreview != nil, "completedEditPreview is populated before reclaim")
+        try check(InspectionSamplerCache.shared.entryCount > 0, "InspectionSamplerCache is populated before reclaim")
+        try check(InspectionOverlayRenderer.shared.entryCount > 0, "InspectionOverlayRenderer is populated before reclaim")
+        try check(model.sharpenMaskOverlay != nil && model.sharpenMaskCacheBytes > 0,
+                  "sharpen-mask cache is populated before reclaim")
+        try check(beforeQueue.hasOriginal && beforeQueue.hasGeometryRef && beforeQueue.hasEngine && beforeQueue.rasterBytes > 0,
+                  "render-queue caches (original, geometry reference, engine display buffer) are populated before reclaim")
+
+        let beforeResult = model.result!
+        let beforeNeutral = model.neutral!
+        let beforeResultPixels = pixels(beforeResult.image)
+        let beforeNeutralPixels = pixels(beforeNeutral.image)
+        let beforeHistogram = beforeResult.histogram
+        let beforeSettings = model.settings
+        let beforeFilmID = model.selectedFilmID
+        let beforeFile = model.file
+        let beforeSourceRevision = model.sourceRevision
+        let beforeCommittedEdit = model.committedEdit
+        let beforeCanUndo = model.canUndoAdjustment
+        let beforeHistoryRevision = model.adjustmentHistoryRevision
+        try check(beforeCanUndo, "saved edit establishes undoable adjustment history")
+
+        model.reclaimPreviewCaches()
+        let afterQueue = model.queue.sync {
+            (hasOriginal: model.originalCache != nil,
+             hasGeometryRef: model.geometryReferenceCache != nil,
+             hasEngine: model.engine != nil)
+        }
+        try check(model.exactPreviewCache.totalBytes == 0, "reclaim clears exactPreviewCache")
+        try check(model.completedEditPreview == nil, "reclaim clears completedEditPreview")
+        try check(InspectionSamplerCache.shared.entryCount == 0, "reclaim clears InspectionSamplerCache")
+        try check(InspectionOverlayRenderer.shared.entryCount == 0, "reclaim clears InspectionOverlayRenderer")
+        try check(model.sharpenMaskOverlay == nil && !model.sharpenMaskPreviewActive && model.sharpenMaskCacheBytes == 0,
+                  "reclaim clears sharpen-mask preview cache")
+        try check(!afterQueue.hasOriginal && !afterQueue.hasGeometryRef && !afterQueue.hasEngine,
+                  "reclaim clears render-queue caches and releases RenderEngine on the render queue")
+        try check(HDRSourceCache.shared.bytes == 0, "reclaim clears shared HDRSourceCache")
+
+        try check(model.result?.image === beforeResult.image && model.neutral?.image === beforeNeutral.image,
+                  "reclaim preserves currently displayed result and neutral frames")
+        try check(model.settings == beforeSettings && model.selectedFilmID == beforeFilmID &&
+                  model.file == beforeFile && model.sourceRevision == beforeSourceRevision &&
+                  model.committedEdit == beforeCommittedEdit &&
+                  model.canUndoAdjustment == beforeCanUndo &&
+                  model.adjustmentHistoryRevision == beforeHistoryRevision &&
+                  model.error == nil,
+                  "reclaim preserves edit settings, history and file identity")
+
+        model.schedule(forceExact: true)
+        try waitForRender(model, "post-reclaim exact re-render")
+        let rebuiltQueue = model.queue.sync {
+            (hasOriginal: model.originalCache != nil,
+             hasGeometryRef: model.geometryReferenceCache != nil,
+             hasEngine: model.engine != nil)
+        }
+        try check(rebuiltQueue.hasOriginal && rebuiltQueue.hasGeometryRef && rebuiltQueue.hasEngine &&
+                  model.exactPreviewCache.totalBytes > 0,
+                  "following exact render rebuilds preview and engine caches")
+        try check(pixels(model.result!.image) == beforeResultPixels &&
+                  pixels(model.neutral!.image) == beforeNeutralPixels &&
+                  model.result!.histogram == beforeHistogram,
+                  "following exact render matches pre-reclaim pixels and histogram")
+
+        // In-flight safety: reclaim queued while a render is actively running on the serial render queue
+        // must not crash, publish a blank/stale frame, or leave caches populated after the queue drains.
+        model.settings.exposure = 0.65
+        model.launchNextRender()
+        try check(model.workerActive, "in-flight safety check starts a real render on the render queue")
+        model.reclaimPreviewCaches()
+        try waitForRender(model, "in-flight render during memory-pressure reclaim")
+        let postInFlightQueue = model.queue.sync {
+            (hasOriginal: model.originalCache != nil,
+             hasGeometryRef: model.geometryReferenceCache != nil,
+             hasEngine: model.engine != nil)
+        }
+        let expectedInFlight = try RenderEngine().render(photo, settings: model.settings, lut: lut,
+                                                         edge: model.renderPreviewLongEdge, viewportPreview: true)!
+        try check(pixels(model.result!.image) == pixels(expectedInFlight.image),
+                  "in-flight render during reclaim publishes the exact updated pixels without blanking")
+        try check(model.exactPreviewCache.totalBytes == 0 &&
+                  !postInFlightQueue.hasOriginal && !postInFlightQueue.hasGeometryRef && !postInFlightQueue.hasEngine,
+                  "reclaim queued behind an in-flight render still clears caches once the render finishes")
+        print("PASS: Memory-pressure reclaim clears rebuildable caches, preserves displayed/edit state and reproduces exact pixels")
+    }
+
     static func resetTransactionChecks(root: URL, source: URL, otherSource: URL) throws {
         let model = EditorModel(lookDirectory: root.appendingPathComponent("reset-looks"),
                                 editDirectory: root.appendingPathComponent("reset-edits"),
@@ -836,6 +974,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(FileManager.default.isReadableFile(atPath: rasterLUT.path),
                   "raster EditorModel integration has a real PROVIA LUT")
         try rasterEditorChecks(root: root, lut: rasterLUT)
+        try memoryPressureReclaimChecks(root: root, lut: rasterLUT)
         try unusableRecordOpenRecoveryChecks(root: root)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         try referenceFrameCapChecks(root: root)
