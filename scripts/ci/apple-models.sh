@@ -31,6 +31,15 @@ fail_on_logged_skip() {
         return 1
     fi
 }
+fail_on_empty_swift_test() {
+    local log="$1" label="$2"
+    if [ ! -s "$log" ] \
+        || grep -q -E 'Executed 0 tests\b|warning: No matching test cases were run' "$log" \
+        || { grep -q -E 'Test run with 0 tests\b' "$log" && ! grep -q -E 'Executed [1-9][0-9]* tests?' "$log"; }; then
+        printf 'error: %s executed 0 tests (forbidden empty test run)\n' "$label" >&2
+        return 1
+    fi
+}
 # 供 apple_models_scheduler.py 回调：对单个已结束套件的日志执行不变量 7 判定，规则只在本文件维护。
 # 放在 xcrun 之前：判定只读日志，工具链偶发失败不应被记成 SKIP。
 if [ "${1:-}" = --check-skip ]; then
@@ -144,9 +153,11 @@ if [[ -n "${RAWLAB_CI_SWIFTPM_CACHE:-}" ]]; then
     mkdir -p "$_ci_swiftpm_cache/deps" "$_ci_swiftpm_cache/tests"
     export RAWLAB_SWIFTPM_CACHE="$_ci_swiftpm_cache/deps"
     SWIFTPM_TEST_SCRATCH="$_ci_swiftpm_cache/tests"
+    SWIFTPM_RELEASE_TEST_SCRATCH="$_ci_swiftpm_cache/tests-release"
 else
     export RAWLAB_SWIFTPM_CACHE="$MODEL_CACHE/swiftpm"
     SWIFTPM_TEST_SCRATCH="$MODEL_CACHE/swiftpm-tests"
+    SWIFTPM_RELEASE_TEST_SCRATCH="$MODEL_CACHE/swiftpm-tests-release"
 fi
 
 for pre in ${pre_checks[@]+"${pre_checks[@]}"}; do
@@ -159,6 +170,17 @@ printf '[spm] swift test (RawLabKitTests)\n'
 spm_log="$MODEL_CACHE/swift-test.log"
 swift test --package-path "$ROOT" --scratch-path "$SWIFTPM_TEST_SCRATCH" 2>&1 | tee "$spm_log"
 fail_on_logged_skip "$spm_log" "swift test"
+fail_on_empty_swift_test "$spm_log" "swift test"
+
+if [[ "$1" == macos ]]; then
+    mkdir -p "$SWIFTPM_RELEASE_TEST_SCRATCH"
+    printf '[spm] swift test release (RawLabKitTests)\n'
+    spm_release_log="$MODEL_CACHE/swift-test-release.log"
+    swift test --package-path "$ROOT" -c release -Xswiftc -enable-testing \
+        --scratch-path "$SWIFTPM_RELEASE_TEST_SCRATCH" 2>&1 | tee "$spm_release_log"
+    fail_on_logged_skip "$spm_release_log" "swift test (release)"
+    fail_on_empty_swift_test "$spm_release_log" "swift test (release)"
+fi
 
 if [[ -f "$ROOT/scripts/ci/swiftpm-rawlabkit.sh" ]]; then
     printf '[spm] prewarm RawLabNative/RawLabKit (%s)\n' "$1"

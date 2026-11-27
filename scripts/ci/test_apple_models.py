@@ -694,6 +694,69 @@ printf 'PASS: %s\\n' "$suite"
         self.assertTrue((root / ".cache/rel-swiftpm/tests").is_dir())
         self.assertIn(f"--scratch-path {root / '.cache/rel-swiftpm/tests'}", swift_log.read_text())
 
+    def test_macos_release_swift_test_uses_isolated_scratch_and_rejects_skip_or_empty_runs(self):
+        root, runner, tools = self._parallel_probe_root()
+        swift_log = root / "swift_release_calls.log"
+        tools_swift = tools / "swift"
+        tools_swift.write_text('''#!/bin/bash
+printf '%s\\n' "$*" >> "$SWIFT_LOG"
+if [[ "$*" == *"-c release"* ]]; then
+    if [[ "${RELEASE_EMPTY_OUT:-0}" == "1" ]]; then
+        exit 0
+    fi
+    printf '%s\\n' "${RELEASE_OUT:-Executed 141 tests, with 0 failures (0 unexpected) in 6.500 (6.500) seconds}"
+else
+    printf 'Executed 141 tests, with 0 failures (0 unexpected) in 20.000 (20.000) seconds\\n'
+fi
+''')
+        tools_swift.chmod(0o755)
+        child = tools / "bash"
+        child.write_text('#!/bin/bash\nprintf "PASS: %s\\n" "$1"\n')
+        child.chmod(0o755)
+
+        def run_case(platform, tag, **extra):
+            swift_log.unlink(missing_ok=True)
+            return self._run_parallel_probe(
+                root, runner, tools, platform, tag,
+                RAWLAB_CI_SWIFTPM_CACHE=f".cache/rel-{tag}",
+                SWIFT_LOG=str(swift_log),
+                **extra,
+            )
+
+        mac_ok = run_case("macos", "release-ok")
+        self.assertEqual(mac_ok.returncode, 0, mac_ok.stdout + mac_ok.stderr)
+        calls = swift_log.read_text().splitlines()
+        self.assertEqual(len(calls), 2, f"macOS route must invoke Debug and Release swift test: {calls}")
+        self.assertIn(f"--scratch-path {root / '.cache/rel-release-ok/tests'}", calls[0])
+        self.assertNotIn("-c release", calls[0])
+        self.assertIn("-c release", calls[1])
+        self.assertIn("-Xswiftc -enable-testing", calls[1])
+        self.assertIn(f"--scratch-path {root / '.cache/rel-release-ok/tests-release'}", calls[1])
+        self.assertTrue((root / ".cache/rel-release-ok/tests-release").is_dir())
+
+        ios_ok = run_case("ios", "ios-no-release")
+        self.assertEqual(ios_ok.returncode, 0, ios_ok.stdout + ios_ok.stderr)
+        ios_calls = swift_log.read_text().splitlines()
+        self.assertEqual(len(ios_calls), 1, f"iOS route must keep only Debug swift test: {ios_calls}")
+        self.assertNotIn("-c release", ios_calls[0])
+        self.assertFalse((root / ".cache/rel-ios-no-release/tests-release").exists())
+
+        skip_res = run_case("macos", "release-skip", RELEASE_OUT="SKIP: simulated release skip")
+        self.assertEqual(skip_res.returncode, 1, skip_res.stdout + skip_res.stderr)
+        self.assertIn("swift test (release) logged SKIP (forbidden by CI invariant 7)", skip_res.stderr)
+
+        empty_cases = (
+            ("zero-xctest", {"RELEASE_OUT": "Executed 0 tests, with 0 failures (0 unexpected) in 0.000 (0.001) seconds"}),
+            ("no-matching", {"RELEASE_OUT": "warning: No matching test cases were run"}),
+            ("zero-swift-testing", {"RELEASE_OUT": "Test run with 0 tests in 0 suites passed after 0.001 seconds."}),
+            ("empty-stdout", {"RELEASE_EMPTY_OUT": "1"}),
+        )
+        for name, extra in empty_cases:
+            with self.subTest(empty_case=name):
+                res = run_case("macos", f"empty-{name}", **extra)
+                self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+                self.assertIn("swift test (release) executed 0 tests", res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

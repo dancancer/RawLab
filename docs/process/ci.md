@@ -244,6 +244,10 @@ gate's honest skip pair otherwise.
   The Mac chroma, wavelet, geometry, localization, RUM configuration, HDR model,
   and adjustment transfer/preset model checks run inside `RawLabKitTests` via
   `swift test`, needing only the Swift models and no native libraries.
+  The `macos` models route runs `RawLabKitTests` in both Debug and Release
+  (`swift test -c release -Xswiftc -enable-testing`) using separate scratch
+  directories so release-configuration coverage is preserved without affecting
+  the non-testable release prewarm linked by the remaining shell suites.
 - iOS Files/LUT UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/document-import-ui.sh <build-for-testing-products> <new-output-directory>`.
   The runner stages generated PNG/CUBE fixtures in a test app copy and executes
   picker opening, selection, cancellation and reopening. Run on each required
