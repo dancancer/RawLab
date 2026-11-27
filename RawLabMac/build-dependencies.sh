@@ -20,8 +20,6 @@ fetch() {
 
 fetch libjpeg-turbo-3.1.3.tar.gz 3a13a5ba767dc8264bc40b185e41368a80d5d5f945944d1dbaa4b2fb0099f4e5 \
     https://github.com/libjpeg-turbo/libjpeg-turbo/archive/refs/tags/3.1.3.tar.gz libjpeg-turbo-3.1.3
-fetch jasper-4.2.8.tar.gz 987e8c8b4afcff87553833b6f0fa255b5556a0ecc617b45ee1882e10c1b5ec14 \
-    https://github.com/jasper-software/jasper/archive/refs/tags/version-4.2.8.tar.gz jasper-version-4.2.8
 fetch lcms2.17.tar.gz 6e6f6411db50e85ae8ff7777f01b2da0614aac13b7b9fcbea66dc56a1bc71418 \
     https://github.com/mm2/Little-CMS/archive/refs/tags/lcms2.17.tar.gz Little-CMS-lcms2.17
 fetch openmp-21.1.8.src.tar.xz 856b023748b41ac7b2c83fd8e9f765ff48a4df2fe6777d2811ef7c7ed8f2f977 \
@@ -50,12 +48,6 @@ cmake -S "$SOURCES/libjpeg-turbo-3.1.3" -B "$BUILD/jpeg" "${COMMON[@]}" \
     -DENABLE_STATIC=OFF -DWITH_TURBOJPEG=OFF -DWITH_JPEG8=ON
 cmake --build "$BUILD/jpeg" -j "$JOBS"
 cmake --install "$BUILD/jpeg"
-
-cmake -S "$SOURCES/jasper-version-4.2.8" -B "$BUILD/jasper" "${COMMON[@]}" \
-    -DJAS_ENABLE_PROGRAMS=OFF -DJAS_ENABLE_DOC=OFF -DJAS_ENABLE_OPENGL=OFF \
-    -DJAS_ENABLE_LIBHEIF=OFF -DJAS_ENABLE_SHARED=ON
-cmake --build "$BUILD/jasper" -j "$JOBS"
-cmake --install "$BUILD/jasper"
 
 cmake -S "$SOURCES/openmp-21.1.8.src" -B "$BUILD/openmp" "${COMMON[@]}" \
     -DOPENMP_ENABLE_LIBOMPTARGET=OFF -DOPENMP_ENABLE_OMPT_TOOLS=OFF
