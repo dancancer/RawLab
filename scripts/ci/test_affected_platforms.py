@@ -1,9 +1,12 @@
 """Platform selection and result-gate regressions."""
 import importlib.util
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -154,11 +157,8 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual((platforms, draft), (set(), True))
 
     def test_edited_pull_request_reselects_only_when_base_changed(self):
-        title_edit = pull(action="edited", changes={"title": {"from": "old"}})
-        self.assertEqual(
-            selection.select("pull_request", title_edit, "s", unavailable, unavailable)[:3],
-            (set(), False, True),
-        )
+        # Title/body edits never reach select(); main() routes them (EditSelectionOutputTests).
+        self.assertTrue(selection.is_description_edit("pull_request", pull(action="edited", changes={"title": {"from": "old"}})))
 
         to_main = pull(base="main", action="edited", changes={"base": {"ref": {"from": "development"}}})
         self.assertEqual(
@@ -293,6 +293,250 @@ class WindowsSchedulingTests(unittest.TestCase):
                 self.assertEqual(values["checks"], config["checks"])
                 self.assertEqual(values["build"], "false" if config["checks"] == "models" else "true")
                 self.assertEqual(values["models"], "true")
+
+
+class DescriptionEditTests(unittest.TestCase):
+    """A title/body edit run is the newest run on the head, so it must restate the head's real verdict."""
+
+    @staticmethod
+    def workflow_run(run_id, status, *jobs, conclusion=None):
+        return ({"id": run_id, "status": status, "conclusion": conclusion},
+                [{"name": name, "status": job_status, "conclusion": job_conclusion}
+                 for name, job_status, job_conclusion in jobs])
+
+    def reference(self, *runs, own_id=100):
+        jobs = {run["id"]: run_jobs for run, run_jobs in runs}
+        return selection.edit_reference([run for run, _ in runs], lambda run: jobs[run["id"]], own_id)
+
+    SELECTED = (selection.SELECT_JOB, "completed", "success")
+    EDIT = (selection.EDIT_JOB, "completed", "success")
+
+    def test_only_title_and_body_edits_reuse_the_head_result(self):
+        self.assertTrue(selection.is_description_edit("pull_request", pull(action="edited", changes={"body": {"from": ""}})))
+        self.assertFalse(selection.is_description_edit(
+            "pull_request", pull(action="edited", changes={"base": {"ref": {"from": "development"}}})))
+        self.assertFalse(selection.is_description_edit("pull_request", pull(action="synchronize")))
+        self.assertFalse(selection.is_description_edit("push", {}))
+
+    def test_edit_after_a_passing_run_reports_that_result(self):
+        for conclusion in ("success", "failure", "cancelled"):
+            with self.subTest(conclusion=conclusion):
+                automatic = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", conclusion))
+                earlier_edit = self.workflow_run(11, "completed", self.EDIT, (selection.RESULT_JOB, "completed", "success"))
+                pre_change_edit = self.workflow_run(12, "completed", (selection.SELECT_JOB, "completed", "skipped"))
+                self.assertEqual(self.reference(automatic, earlier_edit, pre_change_edit), conclusion)
+
+    def test_edit_waits_while_the_automatic_run_is_unfinished(self):
+        not_started = self.workflow_run(10, "queued")
+        running = self.workflow_run(10, "in_progress", self.SELECTED, ("Android models", "in_progress", None))
+        for automatic in (not_started, running):
+            with self.subTest(jobs=len(automatic[1])):
+                self.assertIsNone(self.reference(automatic))
+
+    def test_newest_automatic_run_decides_even_after_an_older_pass(self):
+        older_pass = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        base_change = self.workflow_run(20, "in_progress", self.SELECTED)
+        self.assertIsNone(self.reference(older_pass, base_change))
+        failed = self.workflow_run(20, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "failure"))
+        self.assertEqual(self.reference(older_pass, failed), "failure")
+
+    def test_missing_or_never_reported_results_are_not_a_pass(self):
+        draft_run = self.workflow_run(10, "completed", self.SELECTED)
+        self.assertEqual(self.reference(draft_run), "missing")
+        self.assertEqual(self.reference(), "missing")
+        cancelled_before_start = self.workflow_run(11, "completed", conclusion="cancelled")
+        self.assertEqual(self.reference(cancelled_before_start), "missing")
+        later_run = self.workflow_run(150, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        self.assertEqual(self.reference(later_run), "missing")
+
+    # The selection job's name is an expression; a run cancelled before it was named lists it unexpanded.
+    UNNAMED = ("${{ github.event_name == 'pull_request' && 'x' || 'y' }}", "completed", "cancelled")
+
+    def test_superseded_runs_cancelled_before_start_are_passed_over(self):
+        older_pass = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        for jobs in ((), (self.UNNAMED,)):
+            with self.subTest(jobs=len(jobs)):
+                cancelled = self.workflow_run(20, "completed", *jobs, conclusion="cancelled")
+                self.assertEqual(self.reference(older_pass, cancelled), "success")
+
+    def test_runs_that_never_started_otherwise_fail_closed(self):
+        # A fork PR retargeted to main waits for approval (action_required, no jobs); an
+        # approved edit run must not restate the older pass on the previous base.
+        older_pass = self.workflow_run(10, "completed", self.SELECTED, (selection.RESULT_JOB, "completed", "success"))
+        for conclusion, expected in (("action_required", "not started (action_required)"),
+                                     ("startup_failure", "not started (startup_failure)"),
+                                     ("stale", "not started (stale)"), (None, "not started (None)"),
+                                     ("success", "not started (success)")):
+            for jobs in ((), (self.UNNAMED[:2] + (conclusion,),)):
+                with self.subTest(conclusion=conclusion, jobs=len(jobs)):
+                    never_ran = self.workflow_run(20, "completed", *jobs, conclusion=conclusion)
+                    self.assertEqual(self.reference(older_pass, never_ran), expected)
+        unnamed_running = self.workflow_run(20, "in_progress", (self.UNNAMED[0], "queued", None))
+        self.assertIsNone(self.reference(older_pass, unnamed_running))
+
+    def needs(self, reference, **results):
+        outputs = {platform: "false" for platform in selection.PLATFORMS}
+        outputs.update(mode="edit", contracts="false", reference=reference)
+        jobs = {"changes": "success", "contracts": "skipped", "windows-batch-selection": "skipped",
+                **{platform: "skipped" for platform in selection.PLATFORMS}, **results}
+        return {job: {"result": result, **({"outputs": outputs} if job == "changes" else {})}
+                for job, result in jobs.items()}
+
+    def test_edit_gate_passes_only_on_the_reused_success(self):
+        self.assertEqual(selection.verify(self.needs("success")), [])
+        for reference in ("failure", "cancelled", "missing", "still pending", ""):
+            with self.subTest(reference=reference):
+                self.assertTrue(selection.verify(self.needs(reference)))
+        self.assertTrue(selection.verify(self.needs("success", android="success")))
+        self.assertTrue(selection.verify(self.needs("success", changes="failure")))
+
+
+class EditPollingTests(unittest.TestCase):
+    """github_edit_reference against a scripted API and clock; no network."""
+
+    PULL = {"number": 42, "head": {"sha": "abc", "ref": "feature/x"}}
+
+    def api(self, runs, jobs, error=None):
+        calls = []
+        def get(path):
+            calls.append(path)
+            if error:
+                raise error
+            if "/jobs" in path:
+                run_id = int(path.split("actions/runs/")[1].split("/")[0])
+                return {"jobs": jobs(run_id) if callable(jobs) else jobs[run_id]}
+            return {"workflow_runs": runs() if callable(runs) else runs}
+        return get, calls
+
+    def clock(self):
+        now = [0.0]
+        return (lambda: now[0]), (lambda seconds: now.__setitem__(0, now[0] + seconds))
+
+    def poll(self, get, limit_minutes=10):
+        clock, sleep = self.clock()
+        with contextlib.redirect_stdout(io.StringIO()):
+            return selection.github_edit_reference(self.PULL, 100, "ci.yml", get=get, clock=clock, sleep=sleep,
+                                                   limit_minutes=limit_minutes)
+
+    @staticmethod
+    def workflow_run(run_id, status="completed", conclusion="success", pulls=(42,), branch="feature/x", attempt=1):
+        return {"id": run_id, "status": status, "conclusion": conclusion, "run_attempt": attempt,
+                "pull_requests": [{"number": number} for number in pulls], "head_branch": branch}
+
+    @staticmethod
+    def jobs(result):
+        return [{"name": selection.SELECT_JOB, "status": "completed", "conclusion": "success"},
+                {"name": selection.RESULT_JOB, "status": "completed", "conclusion": result}]
+
+    def test_only_runs_of_this_pull_request_count(self):
+        runs = [self.workflow_run(10), self.workflow_run(20, pulls=(7,)), self.workflow_run(30, pulls=(), branch="contributor:other")]
+        jobs = {10: self.jobs("failure"), 20: self.jobs("success"), 30: self.jobs("success")}
+        self.assertEqual(self.poll(self.api(runs, jobs)[0]), "failure")
+        fork_run = [self.workflow_run(10), self.workflow_run(30, pulls=())]
+        self.assertEqual(self.poll(self.api(fork_run, {10: self.jobs("failure"), 30: self.jobs("success")})[0]), "success")
+
+    def test_lookup_errors_and_timeouts_never_pass(self):
+        import urllib.error
+        failing, calls = self.api([], {}, error=urllib.error.URLError("unreachable"))
+        self.assertEqual(self.poll(failing), "still pending")
+        self.assertGreater(len(calls), 1)
+        running = [self.workflow_run(10, status="in_progress", conclusion=None)]
+        pending, _ = self.api(running, {10: [{"name": selection.SELECT_JOB, "status": "completed", "conclusion": "success"}]})
+        self.assertEqual(self.poll(pending), "still pending")
+
+    def test_a_transient_error_is_retried(self):
+        outcomes = [urllib_error(), None]
+        def get(path):
+            if outcomes and outcomes.pop(0):
+                raise urllib_error()
+            if "/jobs" in path:
+                return {"jobs": self.jobs("success")}
+            return {"workflow_runs": [self.workflow_run(10)]}
+        self.assertEqual(self.poll(get), "success")
+
+    def test_a_rerun_attempt_is_fetched_again(self):
+        # Run 11 is first cancelled before start (skipped, its empty job list cached); a rerun
+        # makes attempt 2 the newest automatic result, which must be fetched rather than reused.
+        rounds = []
+        def runs():
+            rounds.append(None)
+            rerun = len(rounds) > 2
+            return [self.workflow_run(10, status="in_progress", conclusion=None),
+                    self.workflow_run(11, conclusion="success" if rerun else "cancelled", attempt=2 if rerun else 1)]
+        def jobs(run_id):
+            if run_id == 10:
+                return self.jobs("failure")[:1]
+            return self.jobs("success") if len(rounds) > 2 else []
+        get, calls = self.api(runs, jobs)
+        self.assertEqual(self.poll(get), "success")
+        self.assertEqual(len([path for path in calls if "runs/11/jobs" in path]), 2)
+
+    def test_requests_do_not_grow_with_earlier_edits(self):
+        edits = 7
+        rounds = []
+        def runs():
+            rounds.append(None)
+            done = len(rounds) > 20
+            automatic = self.workflow_run(10, status="completed" if done else "in_progress", conclusion="success" if done else None)
+            return [automatic] + [self.workflow_run(11 + index, conclusion="cancelled") for index in range(edits)]
+        def jobs(run_id):
+            if run_id != 10:
+                return [{"name": selection.EDIT_JOB, "status": "completed", "conclusion": "cancelled"}]
+            return self.jobs("success") if len(rounds) > 20 else self.jobs("success")[:1]
+        get, calls = self.api(runs, jobs)
+        self.assertEqual(self.poll(get, limit_minutes=60), "success")
+        job_calls = [path for path in calls if "/jobs" in path]
+        # Each earlier edit run's jobs are fetched once; afterwards a round costs one runs and one jobs request.
+        self.assertEqual(len(job_calls), edits + len(rounds))
+        self.assertEqual(len(calls), edits + 2 * len(rounds))
+
+
+def urllib_error():
+    import urllib.error
+    return urllib.error.URLError("transient")
+
+
+class EditSelectionOutputTests(unittest.TestCase):
+    """The edit path of `select` mode: no checks are selected; only the reused result is reported."""
+
+    def outputs(self, event, reference="success"):
+        with tempfile.TemporaryDirectory() as directory:
+            event_path, output_path = Path(directory, "event.json"), Path(directory, "output")
+            event_path.write_text(json.dumps(event))
+            env = {"GITHUB_EVENT_NAME": "pull_request", "GITHUB_EVENT_PATH": str(event_path),
+                   "GITHUB_OUTPUT": str(output_path), "GITHUB_RUN_ID": "100", "GITHUB_SHA": "m",
+                   "GITHUB_WORKFLOW_REF": "o/r/.github/workflows/ci.yml@refs/pull/1/merge"}
+            calls = []
+            def lookup(pull, own_id, workflow):
+                calls.append((own_id, workflow))
+                return reference
+            original, argv, saved = selection.github_edit_reference, sys.argv, {k: os.environ.get(k) for k in env}
+            selection.github_edit_reference, sys.argv = lookup, ["affected_platforms.py", "select"]
+            os.environ.update(env)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(selection.main(), 0)
+            finally:
+                selection.github_edit_reference, sys.argv = original, argv
+                for key, value in saved.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            values = dict(line.split("=", 1) for line in output_path.read_text().splitlines())
+            return values, calls
+
+    def test_title_or_body_edit_selects_no_checks(self):
+        values, calls = self.outputs(pull(action="edited", changes={"title": {"from": "old"}}))
+        self.assertEqual(calls, [(100, "ci.yml")])
+        self.assertEqual({key: values[key] for key in (*selection.PLATFORMS, "contracts", "draft", "mode", "reference")},
+                         {**{platform: "false" for platform in selection.PLATFORMS}, "contracts": "false",
+                          "draft": "false", "mode": "edit", "reference": "success"})
+
+    def test_draft_edit_stays_skipped_without_a_lookup(self):
+        values, calls = self.outputs(pull(draft=True, action="edited", changes={"body": {"from": ""}}))
+        self.assertEqual(calls, [])
+        self.assertEqual((values["draft"], values["reference"], values["mode"]), ("true", "draft", "edit"))
 
 
 class VerifyTests(unittest.TestCase):

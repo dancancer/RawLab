@@ -4,6 +4,8 @@ import json
 import os
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -49,6 +51,11 @@ CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
 CLIENT_FILES = {"global.json": "windows"}
 SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
 SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".github/actionlint.yaml"}
+# Job names in ci.yml. A description-edit run names its selection job EDIT_JOB, so a later
+# edit run can tell automatic runs (which select checks) from earlier edit runs.
+SELECT_JOB = "Select affected platforms"
+EDIT_JOB = "Reuse the CI result of this head"
+RESULT_JOB = "CI result"
 
 
 def _is_lutools_doc(path):
@@ -156,8 +163,6 @@ def select(event_name, event, sha, changed_files, last_success):
         return platforms, config["checks"] == "full", False, f"manual {config['platform']}/{config['checks']}; separate from CI result"
     if event_name == "pull_request":
         pull = event["pull_request"]
-        if event.get("action") == "edited" and not (event.get("changes") or {}).get("base"):
-            return set(), False, True, "pull request edit did not change base branch: keeping prior checks"
         if pull.get("draft"):
             return set(), False, True, "draft pull request: platform checks wait for ready for review"
         if is_cold_pull_request(pull):
@@ -188,24 +193,108 @@ def git_changed_files(base):
     return [line for line in output.splitlines() if line]
 
 
-def github_last_success(event):
-    workflow = os.environ["GITHUB_WORKFLOW_REF"].split("@", 1)[0].rsplit("/", 1)[-1]
-    query = urllib.parse.urlencode({"branch": os.environ["GITHUB_REF_NAME"], "event": event,
-                                    "status": "success", "per_page": 1})
-    url = (f"{os.environ.get('GITHUB_API_URL', 'https://api.github.com')}/repos/"
-           f"{os.environ['GITHUB_REPOSITORY']}/actions/workflows/{workflow}/runs?{query}")
+def _github_get(path):
+    url = f"{os.environ.get('GITHUB_API_URL', 'https://api.github.com')}/repos/{os.environ['GITHUB_REPOSITORY']}/{path}"
     request = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28",
         "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}"})
     with urllib.request.urlopen(request, timeout=30) as response:
-        runs = json.load(response)["workflow_runs"]
+        return json.load(response)
+
+
+def _workflow_file():
+    return os.environ["GITHUB_WORKFLOW_REF"].split("@", 1)[0].rsplit("/", 1)[-1]
+
+
+def github_last_success(event):
+    query = urllib.parse.urlencode({"branch": os.environ["GITHUB_REF_NAME"], "event": event,
+                                    "status": "success", "per_page": 1})
+    runs = _github_get(f"actions/workflows/{_workflow_file()}/runs?{query}")["workflow_runs"]
     return runs[0]["head_sha"] if runs else None
+
+
+def is_description_edit(event_name, event):
+    return event_name == "pull_request" and event.get("action") == "edited" and not (event.get("changes") or {}).get("base")
+
+
+def edit_reference(runs, jobs_of, own_id):
+    """Return the CI result conclusion of the newest automatic run created before this edit run.
+
+    GitHub evaluates the newest pull_request run of the workflow on the head, so a title/body
+    edit run must report the head's existing verdict itself. None means that run has not
+    reported yet; a missing, skipped or cancelled result is not a pass. Earlier edit runs are
+    passed over, and so is a run cancelled before its selection job was named (normally an edit
+    run superseded by the next edit). Any other completed run without a selection job, such as
+    one awaiting fork approval (action_required) or a startup_failure, fails closed instead of
+    falling back to an older run that may have tested another base.
+    """
+    for run in sorted((run for run in runs if run["id"] < own_id), key=lambda run: run["id"], reverse=True):
+        jobs = {job["name"]: job for job in jobs_of(run)}
+        if EDIT_JOB in jobs:
+            continue
+        selection = jobs.get(SELECT_JOB)
+        if selection is None:
+            if run["status"] != "completed":
+                return None
+            if run.get("conclusion") == "cancelled":
+                continue
+            # Never pass through the run's own conclusion: without a CI result job it proves nothing.
+            return f"not started ({run.get('conclusion')})"
+        if selection["conclusion"] == "skipped":
+            continue
+        result = jobs.get(RESULT_JOB)
+        if result and result["status"] == "completed":
+            return result["conclusion"]
+        return "missing" if run["status"] == "completed" else None
+    return "missing"
+
+
+def github_edit_reference(pull, own_id, workflow, get=None, clock=time.monotonic, sleep=time.sleep,
+                          poll_seconds=60, limit_minutes=170):
+    """Wait for the head's automatic CI result; stays inside the selection job's timeout.
+
+    Jobs of a completed run attempt are fetched once, so each round costs one runs request plus
+    one per unfinished run, however many earlier edits the head has.
+    """
+    get = get or _github_get
+    query = urllib.parse.urlencode({"head_sha": pull["head"]["sha"], "event": "pull_request", "per_page": 100})
+    finished_jobs = {}
+
+    def runs():
+        found = get(f"actions/workflows/{workflow}/runs?{query}")["workflow_runs"]
+        return [run for run in found
+                if any(item["number"] == pull["number"] for item in run.get("pull_requests") or [])
+                or (not run.get("pull_requests") and run.get("head_branch") == pull["head"]["ref"])]
+
+    def jobs_of(run):
+        key = (run["id"], run.get("run_attempt"))
+        if key in finished_jobs:
+            return finished_jobs[key]
+        jobs = get(f"actions/runs/{run['id']}/jobs?per_page=100")["jobs"]
+        if run["status"] == "completed":
+            finished_jobs[key] = jobs
+        return jobs
+
+    deadline = clock() + limit_minutes * 60
+    while True:
+        try:
+            conclusion = edit_reference(runs(), jobs_of, own_id)
+        except (OSError, urllib.error.URLError, ValueError, KeyError) as error:
+            print(f"::warning::Run lookup failed, retrying: {error}", flush=True)
+            conclusion = None
+        if conclusion is not None:
+            return conclusion
+        if clock() >= deadline:
+            return "still pending"
+        sleep(poll_seconds)
 
 
 def verify(needs):
     """List every way the run differs from 'selected checks passed, unselected checks skipped'."""
     outputs = needs.get("changes", {}).get("outputs", {})
     mode = outputs.get("mode")
+    if mode == "edit":
+        return _verify_edit(needs, outputs)
     checks = outputs.get("checks")
     scope = outputs.get("scope")
     errors = [] if mode in ("automatic", "manual") else [f"Unknown verification mode: {mode}"]
@@ -247,12 +336,24 @@ def verify(needs):
     return errors
 
 
+def _verify_edit(needs, outputs):
+    reference = outputs.get("reference") or "missing"
+    errors = [] if reference == "success" else [f"The automatic CI result for this head is {reference}, not success"]
+    if outputs.get("contracts") != "false" or any(outputs.get(platform) != "false" for platform in PLATFORMS):
+        errors.append("A description edit must not select checks")
+    expected = {"changes": "success", "contracts": "skipped", "windows-batch-selection": "skipped",
+                **{platform: "skipped" for platform in PLATFORMS}}
+    errors += [f"{job} finished as {needs.get(job, {}).get('result')}, expected {result}"
+               for job, result in expected.items() if needs.get(job, {}).get("result") != result]
+    return errors
+
+
 def windows_runner(event_name, cold, checks="full"):
     """Run every Windows group on an isolated GitHub-hosted runner."""
     return "windows-2022"
 
 
-def write_selection(platforms, cold, draft, reason, event_name, config):
+def write_selection(platforms, cold, draft, reason, event_name, config, extra=()):
     checks = config["checks"]
     flags = {**{platform: platform in platforms for platform in PLATFORMS}, "cold": cold, "draft": draft,
              "contracts": config["contracts"], "models": checks in ("models", "full"),
@@ -260,6 +361,7 @@ def write_selection(platforms, cold, draft, reason, event_name, config):
     lines = [f"{name}={'true' if value else 'false'}" for name, value in flags.items()]
     lines.append("windows_runner=" + json.dumps(windows_runner(event_name, cold, checks)))
     lines += ["mode=" + config["mode"], "scope=" + config["platform"], "checks=" + checks, "macos_matrix=" + json.dumps(macos_matrix(checks))]
+    lines += [f"{name}={value}" for name, value in extra]
     print(reason)
     print("\n".join(lines))
     if os.environ.get("GITHUB_OUTPUT"):
@@ -290,6 +392,15 @@ def main():
     event_name = os.environ["GITHUB_EVENT_NAME"]
     with open(os.environ["GITHUB_EVENT_PATH"]) as stream:
         event = json.load(stream)
+    if is_description_edit(event_name, event):
+        pull = event["pull_request"]
+        reference = "draft" if pull.get("draft") else github_edit_reference(
+            pull, int(os.environ["GITHUB_RUN_ID"]), _workflow_file())
+        config = {"mode": "edit", "platform": "none", "checks": "models", "contracts": False}
+        write_selection(set(), False, bool(pull.get("draft")),
+                        f"title/body edit: CI result reuses this head's automatic result ({reference})",
+                        event_name, config, [("reference", reference)])
+        return 0
     write_selection(*select(event_name, event, os.environ["GITHUB_SHA"],
                             git_changed_files, github_last_success), event_name, configuration(event_name, event))
     return 0
