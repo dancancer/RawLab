@@ -976,3 +976,22 @@ An old snapshot is not made current by reusing its labels. A gesture freezes its
 logical before-HSL values, axis and sample weights once, computes all deltas
 from that before-state, and commits once or rolls back without history. Only
 the resulting existing 24 HSL values persist; sampling never adds recipe fields.
+
+### Byte Reproducibility on Apple Platforms
+
+A RAW source is expected to render byte-identically across processes for the same
+file, recipe, build and machine, HDR JPEG export included, also under concurrent
+load. Use RAW inputs for byte-level regression comparisons.
+
+Two Apple paths are reproducible only to within about 2 RGB8 levels on a few
+dozen pixels. Core Image switches internal render paths during the first renders
+of a process at a load-dependent moment and exposes no option that pins it (#693):
+
+- HDR raster sources read through Core Image on macOS and iOS
+  (`hdr_image_apple.mm`, observed with Ultra HDR JPEG), and everything rendered
+  from them, SDR output included;
+- HDR HEIF export, which is encoded through Core Image.
+
+Compare such outputs after decoding with a tolerance, not by hash. Android,
+Windows and Linux decode Ultra HDR JPEG with libultrahdr and libjpeg and HEIF
+with the core reader, and do not use this path.
