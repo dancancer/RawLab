@@ -24,11 +24,11 @@ struct FilmOpticsGpuParams {
     uint32_t srcRowOffset = 0;
     uint32_t dstProxyRowOffset = 0;
     float proxySigma = 1.0f;
-    float halationAmount = 0.0f;
+    float halationAmountNorm = 0.0f;  // filmOpticsAmountNorm()
     // 阈值与色相由宿主经 filmOpticsThresholdNorm / filmOpticsHueNorm 换算后填入，着色器只读取。
     float halationThresholdNorm = 0.72f;
     float halationHueNorm = 0.0f;
-    float bloomAmount = 0.0f;
+    float bloomAmountNorm = 0.0f;
     float bloomThresholdNorm = 0.672f;
     float coreWeight = 0.40f;
     float tailWeight = 0.60f;
@@ -99,6 +99,7 @@ V3 foHalationTint(float h) {
 }
 
 V3 foApplyOpticsBlend(V3 srgbPx, float halGlow, V3 bloomGlow, float halAmt, float halHue, float bloomAmt) {
+    // halAmt / bloomAmt 已由宿主换算为 [0,1]（filmOpticsAmountNorm），这里不再除以 100。
     bool hasHal = halAmt > 0.0 && halGlow > 0.0;
     bool hasBloom = bloomAmt > 0.0 && (bloomGlow.x > 0.0 || bloomGlow.y > 0.0 || bloomGlow.z > 0.0);
     if (!hasHal && !hasBloom) {
@@ -107,11 +108,11 @@ V3 foApplyOpticsBlend(V3 srgbPx, float halGlow, V3 bloomGlow, float halAmt, floa
     V3 baseLin = foSrgbToLin3(srgbPx);
     V3 accLin = baseLin;
     if (hasHal) {
-        V3 halRgb = foHalationTint(halHue) * (halGlow * (halAmt / 100.0) * 1.15);
+        V3 halRgb = foHalationTint(halHue) * (halGlow * halAmt * 1.15);
         accLin += halRgb / (V3(1.0, 1.0, 1.0) + 1.5 * max(baseLin, V3(0.0, 0.0, 0.0)));
     }
     if (hasBloom) {
-        V3 bRgb = max(bloomGlow, V3(0.0, 0.0, 0.0)) * ((bloomAmt / 100.0) * 1.20);
+        V3 bRgb = max(bloomGlow, V3(0.0, 0.0, 0.0)) * (bloomAmt * 1.20);
         accLin += bRgb / (V3(1.0, 1.0, 1.0) + 1.2 * max(baseLin, V3(0.0, 0.0, 0.0)));
     }
     return foLinToSrgb3(accLin);
@@ -141,10 +142,10 @@ struct FilmOpticsParams {
     uint srcRowOffset;
     uint dstProxyRowOffset;
     float proxySigma;
-    float halationAmount;
+    float halationAmountNorm;
     float halationThresholdNorm;
     float halationHueNorm;
-    float bloomAmount;
+    float bloomAmountNorm;
     float bloomThresholdNorm;
     float coreWeight;
     float tailWeight;
@@ -339,18 +340,18 @@ kernel void filmOpticsComposite(
     uint y = gid / p.width + p.rowOffset;
     float3 pixel = float3(source[gid]);
     float halGlow = 0.0f;
-    if (p.halationAmount > 0.0f && p.halProxyWidth > 0u && p.halProxyHeight > 0u) {
+    if (p.halationAmountNorm > 0.0f && p.halProxyWidth > 0u && p.halProxyHeight > 0u) {
         float hx = (float(x) + 0.5f) * (float(p.halProxyWidth) / float(p.width)) - 0.5f;
         float hy = (float(y) + 0.5f) * (float(p.halProxyHeight) / float(p.height)) - 0.5f;
         halGlow = foSampleProxy1(glowBuffer, 0u, p.halProxyWidth, p.halProxyHeight, hx, hy);
     }
     float3 bloomGlow = float3(0.0f);
-    if (p.bloomAmount > 0.0f && p.bloomProxyWidth > 0u && p.bloomProxyHeight > 0u) {
+    if (p.bloomAmountNorm > 0.0f && p.bloomProxyWidth > 0u && p.bloomProxyHeight > 0u) {
         float bx = (float(x) + 0.5f) * (float(p.bloomProxyWidth) / float(p.width)) - 0.5f;
         float by = (float(y) + 0.5f) * (float(p.bloomProxyHeight) / float(p.height)) - 0.5f;
         bloomGlow = foSampleProxy3(glowBuffer, p.bloomOffsetFloats, p.bloomProxyWidth, p.bloomProxyHeight, bx, by);
     }
-    destination[gid] = packed_float3(foApplyOpticsBlend(pixel, halGlow, bloomGlow, p.halationAmount, p.halationHueNorm, p.bloomAmount));
+    destination[gid] = packed_float3(foApplyOpticsBlend(pixel, halGlow, bloomGlow, p.halationAmountNorm, p.halationHueNorm, p.bloomAmountNorm));
 }
 )metal";
 

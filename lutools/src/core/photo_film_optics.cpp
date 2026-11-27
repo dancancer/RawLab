@@ -354,8 +354,8 @@ void applyFilmOpticsWithField(
     const bool hasHal = options.halationAmount > 0.0f && field.halWidth > 0 && field.halHeight > 0 && !field.halGlow.empty();
     const bool hasBloom = options.bloomAmount > 0.0f && field.bloomWidth > 0 && field.bloomHeight > 0 && !field.bloomGlow.empty();
     const RGB halTint = halationTint(filmOpticsHueNorm(options.halationHue));
-    const float halGain = (options.halationAmount / 100.0f) * 1.15f;
-    const float bloomGain = (options.bloomAmount / 100.0f) * 1.20f;
+    const float halGain = filmOpticsAmountNorm(options.halationAmount) * 1.15f;
+    const float bloomGain = filmOpticsAmountNorm(options.bloomAmount) * 1.20f;
 
     parallelRowRanges(H, W, [&](int firstRow, int lastRow) {
         for (int y = firstRow; y < lastRow; ++y) {

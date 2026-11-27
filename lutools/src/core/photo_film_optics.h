@@ -53,6 +53,12 @@ inline float filmOpticsHueNorm(float huePct) {
     return std::clamp(huePct / 100.0f, -1.0f, 1.0f);
 }
 
+// 光晕/泛光强度 [0,100] 换算成 [0,1]。同一设备上 Metal 合成核在 SIMD 分支发散时把
+// halAmt / 100 算成了 0.01（等效强度 1），因此也改由宿主换算（#695）。
+inline float filmOpticsAmountNorm(float amountPct) {
+    return amountPct / 100.0f;
+}
+
 struct FilmOpticsProxyGeometry {
     int proxyWidth = 1;
     int proxyHeight = 1;

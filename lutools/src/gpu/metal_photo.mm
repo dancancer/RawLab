@@ -1676,9 +1676,9 @@ bool renderPhotoMetalImpl(
         outComp.halProxyHeight = halH;
         outComp.bloomProxyWidth = bloomW;
         outComp.bloomProxyHeight = bloomH;
-        outComp.halationAmount = opt.halationAmount;
+        outComp.halationAmountNorm = sony2fuji::filmOpticsAmountNorm(opt.halationAmount);
         outComp.halationHueNorm = sony2fuji::filmOpticsHueNorm(opt.halationHue);
-        outComp.bloomAmount = opt.bloomAmount;
+        outComp.bloomAmountNorm = sony2fuji::filmOpticsAmountNorm(opt.bloomAmount);
         return true;
     };
     id<MTLBuffer> dummyFieldBuffer = makeFloatBuffer(context.device, std::vector<float>{0.0f}, budget);

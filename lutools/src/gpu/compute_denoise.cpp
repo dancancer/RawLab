@@ -329,9 +329,9 @@ bool computeFilmOptics(FilterDevice& device, ImageData& image, const FilmOpticsO
     comp.step = halW; comp.level = halH;
     comp.channels = bloomOffsetFloats;
     comp.direction = bloomW; comp.firmThreshold = bloomH;
-    comp.strength = options.halationAmount;
+    comp.strength = filmOpticsAmountNorm(options.halationAmount);
     comp.epsilon = filmOpticsHueNorm(options.halationHue);
-    comp.vignette[0] = options.bloomAmount;
+    comp.vignette[0] = filmOpticsAmountNorm(options.bloomAmount);
     comp.vignette[1] = hasHal ? 1.0f : 0.0f;
     comp.vignette[2] = hasBloom ? 1.0f : 0.0f;
 
