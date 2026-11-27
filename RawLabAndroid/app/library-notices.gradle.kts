@@ -4,21 +4,18 @@
 import groovy.xml.XmlSlurper
 import groovy.xml.slurpersupport.GPathResult
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
-import org.gradle.api.artifacts.result.ResolvedArtifactResult
-import org.gradle.maven.MavenModule
-import org.gradle.maven.MavenPomArtifact
 
 // POM 里的许可名称 -> SPDX 标识。只收录已审核、许可原文已随应用打包的许可。
-val allowedPomLicenses = mapOf(
+val allowedLicenseNames = mapOf(
     "The Apache Software License, Version 2.0" to "Apache-2.0",
     "The Apache License, Version 2.0" to "Apache-2.0",
     "Apache License, Version 2.0" to "Apache-2.0",
     "Apache-2.0" to "Apache-2.0",
 )
 // 通用许可的原文位置（assets/licenses 下）。
-val licenseTexts = mapOf("Apache-2.0" to "OpenCV-LICENSE.txt")
+val licenseTextFiles = mapOf("Apache-2.0" to "OpenCV-LICENSE.txt")
 // 个别依赖的许可组合不通用，逐个审核：坐标 -> (POM 许可名称集合, 清单里的许可说明)。
-val reviewedModules = mapOf(
+val reviewedLicenseCombinations = mapOf(
     "com.github.mwiede:jsch" to (setOf("Revised BSD", "ISC") to
         "BSD-3-Clause AND ISC (JSch with bundled JZlib and jBCrypt; license text: jsch-LICENSE.txt)"),
 )
@@ -53,44 +50,58 @@ val releaseModules = provider {
         .distinct()
 }
 
-fun pomFile(coordinate: String): File {
-    val (group, module, version) = coordinate.split(":")
-    val result = dependencies.createArtifactResolutionQuery()
-        .forModule(group, module, version)
-        .withArtifacts(MavenModule::class.java, MavenPomArtifact::class.java)
-        .execute()
-    return result.resolvedComponents.flatMap { it.getArtifacts(MavenPomArtifact::class.java) }
-        .filterIsInstance<ResolvedArtifactResult>().singleOrNull()?.file
-        ?: throw GradleException("Cannot resolve the Maven POM of $coordinate for the library notices")
+// 用普通依赖解析取 POM 文件本身（artifact-only 记法 `@pom`，不传递），与运行时依赖走同一套仓库和缓存；
+// 任何一个取不到都按 Gradle 的解析错误失败，不会悄悄漏掉某个库。
+fun resolvePoms(coordinates: Collection<String>): Map<String, File> {
+    if (coordinates.isEmpty()) return emptyMap()
+    val configuration = configurations.detachedConfiguration(
+        *coordinates.map { dependencies.create("$it@pom") }.toTypedArray(),
+    ).apply { isTransitive = false }
+    val poms = configuration.incoming.artifacts.artifacts.associate { artifact ->
+        val id = artifact.id.componentIdentifier as ModuleComponentIdentifier
+        "${id.group}:${id.module}:${id.version}" to artifact.file
+    }
+    val missing = coordinates.filterNot(poms::containsKey)
+    if (missing.isNotEmpty()) throw GradleException("No Maven POM resolved for: ${missing.joinToString()}")
+    return poms
 }
 
 val generateLibraryNotices by tasks.registering {
     description = "Lists the release APK's Java/Kotlin libraries with versions and POM licences."
-    val output = layout.buildDirectory.file("generated/libraryNotices/ThirdPartyLibraries.txt")
+    val outputDirectory = layout.buildDirectory.dir("generated/libraryNotices")
     inputs.property("modules", releaseModules)
-    inputs.property("allowedPomLicenses", allowedPomLicenses)
-    inputs.property("licenseTexts", licenseTexts)
-    inputs.property("reviewedModules", reviewedModules.mapValues { (_, value) -> value.first.sorted() + value.second })
-    outputs.file(output)
+    inputs.property("allowedLicenseNames", allowedLicenseNames)
+    inputs.property("licenseTextFiles", licenseTextFiles)
+    inputs.property("reviewedLicenseCombinations",
+        reviewedLicenseCombinations.mapValues { (_, value) -> value.first.sorted() + value.second })
+    outputs.dir(outputDirectory)
     doLast {
+        val modules = releaseModules.get()
         val poms = mutableMapOf<String, PomInfo>()
-        fun pom(coordinate: String) = poms.getOrPut(coordinate) { readPom(pomFile(coordinate)) }
-        fun licensesOf(coordinate: String, depth: Int = 0): List<String> {
-            val info = pom(coordinate)
-            if (info.licenses.isNotEmpty() || info.parent == null || depth > 8) return info.licenses
-            return licensesOf(info.parent, depth + 1)
+        // 按层批量解析：先是所有库，再是自身没有声明许可的那些 POM 的 parent。
+        var pending = modules.toSet()
+        var depth = 0
+        while (pending.isNotEmpty() && depth++ < 8) {
+            resolvePoms(pending - poms.keys).forEach { (coordinate, file) -> poms[coordinate] = readPom(file) }
+            pending = pending.mapNotNull { poms.getValue(it).takeIf { info -> info.licenses.isEmpty() }?.parent }.toSet()
+        }
+        fun licensesOf(coordinate: String): List<String> {
+            var info = poms.getValue(coordinate)
+            while (info.licenses.isEmpty()) info = poms[info.parent ?: break] ?: break
+            return info.licenses
         }
         val groups = sortedMapOf<String, MutableList<String>>()
         val problems = mutableListOf<String>()
-        for (coordinate in releaseModules.get()) {
+        for (coordinate in modules) {
             val (group, module, version) = coordinate.split(":")
             val names = licensesOf(coordinate)
-            val reviewed = reviewedModules["$group:$module"]
+            val review = reviewedLicenseCombinations["$group:$module"]
             val heading = when {
-                reviewed != null && names.toSet() == reviewed.first -> reviewed.second
+                review != null && names.toSet() == review.first -> review.second
                 names.isEmpty() -> { problems += "$coordinate: no license in its POM or parent POMs"; continue }
-                names.all { it in allowedPomLicenses } -> names.map { allowedPomLicenses.getValue(it) }.distinct()
-                    .joinToString(" AND ").let { spdx -> "$spdx (license text: ${spdx.split(" AND ").joinToString { licenseTexts.getValue(it) }})" }
+                names.all { it in allowedLicenseNames } -> names.map { allowedLicenseNames.getValue(it) }.distinct()
+                    .joinToString(" AND ")
+                    .let { spdx -> "$spdx (license text: ${spdx.split(" AND ").joinToString { licenseTextFiles.getValue(it) }})" }
                 else -> { problems += "$coordinate: license not on the reviewed list: ${names.joinToString(" | ")}"; continue }
             }
             groups.getOrPut(heading) { mutableListOf() } += "- $group:$module $version"
@@ -111,6 +122,7 @@ val generateLibraryNotices by tasks.registering {
                 lines.forEach(::appendLine)
             }
         }
-        output.get().asFile.apply { parentFile.mkdirs() }.writeText(text)
+        outputDirectory.get().file("licenses/ThirdPartyLibraries.txt").asFile
+            .apply { parentFile.mkdirs() }.writeText(text)
     }
 }

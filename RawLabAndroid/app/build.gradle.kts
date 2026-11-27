@@ -104,7 +104,6 @@ apply(from = "library-notices.gradle.kts")
 val prepareAssets by tasks.registering(Sync::class) {
     dependsOn(prepareExternalLuts)
     into(generatedAssets)
-    from(tasks.named("generateLibraryNotices")) { into("licenses") }
     from(repo.resolve("lutools/flog-2-new")) {
         into("films")
         include("*.cube")
@@ -201,6 +200,9 @@ android {
     sourceSets["main"].assets.srcDir(generatedAssets)
     sourceSets["debug"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Debug"))
     sourceSets["release"].assets.srcDir(layout.buildDirectory.dir("generated/x3fNotices/Release"))
+    // 依赖许可清单只进 APK 的 assets（debug 与 release 的许可对话框都显示），由下方 merge*Assets 依赖生成；
+    // JVM 单元测试不合并 assets，不会触发它的依赖与 POM 解析。
+    sourceSets["main"].assets.srcDir(layout.buildDirectory.dir("generated/libraryNotices"))
     sourceSets["androidTest"].assets.srcDir(testAssets)
     packaging {
         resources.excludes += listOf(
@@ -309,10 +311,11 @@ tasks.withType<Test>().configureEach {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareAssets) }
-// Native archives carry Rust and decoder notices; package the notices from the same ABI build.
+// Native archives carry Rust and decoder notices; package the notices from the same ABI build,
+// plus the library list generated from the release runtime classpath.
 for (variant in listOf("Debug", "Release")) {
     tasks.matching { it.name == "merge${variant}Assets" }.configureEach {
-        dependsOn("externalNativeBuild$variant")
+        dependsOn("externalNativeBuild$variant", "generateLibraryNotices")
     }
 }
 tasks.matching {
