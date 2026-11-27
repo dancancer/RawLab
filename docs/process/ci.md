@@ -460,9 +460,10 @@ no test is filtered. **CI result** fails when core inputs changed and the row is
 failed, cancelled or skipped. Intel CTest stays in the native and full gates.
 
 A successful row saves the shared arm64 dependency key, so a core change pushed to
-`development` warms it for later PRs. From the 2026-11-27 native run, a cold row spends about
-12 minutes on dependencies, 6 on the core build and 8 on CTest; a warm row skips the
-dependency build.
+`development` warms it for later PRs. In the 2026-11-27 verification runs a row took about
+25 minutes of runner time. A cold cache added an 11-minute dependency build; the core build
+took 5–10 minutes and CTest 8–13 minutes, depending on the hosted VM. Queueing for a hosted
+macOS slot comes on top of that.
 
 ## GitHub-Hosted Apple Runners
 
