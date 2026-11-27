@@ -30,9 +30,9 @@ internal fun canRetainBitmap(
     return abs(prevAspect - nextAspect) <= 0.02 * maxOf(prevAspect, nextAspect)
 }
 
-// sony2fuji_hdr.h 中 sony2fuji_hdr_display_flag 的取值。
-private const val SONY2FUJI_HDR_DISPLAY_SDR = 1
-private const val SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2
+// sony2fuji_hdr.h 中 sony2fuji_hdr_display_flag 的取值；AbiEnumMirrorTest 对照 ABI fixture 核对。
+internal const val SONY2FUJI_HDR_DISPLAY_SDR = 1
+internal const val SONY2FUJI_HDR_DISPLAY_FALSE_COLOR = 2
 private const val DISPLAY_ROW_BAND = 16
 
 /** Packs the float pair into an extended-range bitmap; it never labels ARGB_8888 as HDR. */
