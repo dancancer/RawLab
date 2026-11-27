@@ -129,7 +129,9 @@ extension EditorModel {
                     // cross a client session boundary even when size/mtime agree.
                     self.engine = try RenderEngine()
                 }
-                if self.engine == nil { self.engine = try RenderEngine() }
+                if self.engine == nil || self.engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
+                    self.engine = try RenderEngine()
+                }
                 if work.settings.isHDREditing {
                     self.originalCache = nil
                     let neutralSettings = work.settings.neutralGeometrySettings

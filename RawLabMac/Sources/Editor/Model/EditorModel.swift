@@ -1,6 +1,7 @@
 import RawLabKit
 import RawLabNative
 import AppKit
+import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -260,7 +261,12 @@ final class EditorModel: ObservableObject {
         if collectionExportPreparing { cancelCollectionExportPreparation() }
     } }
     @Published var exporting = false
+    @Published var previewThumbnailAIRunning = false
     @Published var aiState = AIDenoiseState.idle
+    @Published var aiModelPackageState: AIModelPackageState = .unavailable
+    let aiModelManager: AIModelPackageManager
+    private var aiModelStateCancellable: AnyCancellable?
+    private var batchStateCancellable: AnyCancellable?
     var aiIdentity: AIWorkIdentity?
     var aiGeneration = UUID()
     var aiPreparation: AIPreparation?
@@ -269,25 +275,37 @@ final class EditorModel: ObservableObject {
     var aiRequiresExplicitRetry = false
     // 全窗口串行化，避免多个整图推理同时争用内存。
     static let aiQueue = DispatchQueue(label: "rawlab.ai.prepare", qos: .utility)
+    static let sharedAIModelManager = AIModelPackageManager(
+        store: RenderEngine.aiModelStore,
+        isRuntimeSupported: { RenderEngine.aiModelDownloadSupported },
+        overrideProvider: { RenderEngine.resolvedAIModelOverride },
+        bundledProvider: { RenderEngine.bundledAIModel }
+    )
     var prepareAIOperation: (URL, Adjustments, AIPreparation) throws -> Void = {
         try RenderEngine().prepareAI($0, settings: $1, progress: $2)
     }
+    var aiModelDownloadVisible: Bool {
+        aiModelPackageState != .unavailable
+    }
+    var hasAIModel: Bool {
+        aiModelPackageState.isInstalled || RenderEngine.resolvedAIModelDirectory != nil
+    }
     var aiControlsVisible: Bool {
         if settings.isHDREditing {
-            return settings.hdrCameraAIEnabled || (RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
+            return settings.hdrCameraAIEnabled || (RenderEngine.hdrCameraAIAvailable && (hasAIModel || aiModelDownloadVisible) &&
                 RenderEngine.isHDRCameraAICandidate(info: rawHDRSource, settings: settings))
         }
         return RenderEngine.aiAvailable || settings.aiDenoiseEnabled
     }
     var canStartAI: Bool {
         if settings.isHDREditing {
-            return RenderEngine.hdrCameraAIAvailable && RenderEngine.bundledAIModel != nil &&
+            return RenderEngine.hdrCameraAIAvailable && hasAIModel &&
                 RenderEngine.isHDRCameraAICandidate(info: rawHDRSource, settings: settings) &&
-                !exporting && geometryDraft == nil
+                !exporting && geometryDraft == nil && !aiModelPackageState.isBusy
         }
         return file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
             !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
-            RenderEngine.bundledAIModel != nil && !exporting && geometryDraft == nil
+            hasAIModel && !exporting && geometryDraft == nil && !aiModelPackageState.isBusy
     }
     @Published var unreadableLooks: [LookLibrary.UnreadableLook] = []
     @Published var lookLibraryBusy = false
@@ -318,7 +336,17 @@ final class EditorModel: ObservableObject {
     var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
-    @Published var batch: BatchExportModel?
+    @Published var batch: BatchExportModel? {
+        didSet {
+            batchStateCancellable?.cancel()
+            batchStateCancellable = batch.map { model in
+                model.$running
+                    .combineLatest(model.$previewing, model.$validating)
+                    .dropFirst()
+                    .sink { [weak self] _, _, _ in self?.objectWillChange.send() }
+            }
+        }
+    }
     @Published var batchSelection = BatchSelectionSession<String>()
     @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
     @Published var collectionExportPreparing = false
@@ -448,7 +476,10 @@ final class EditorModel: ObservableObject {
          editDirectory: URL = MacEditPersistence.defaultDirectory,
          batchDirectory: URL = MacBatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
+         aiModelManager: AIModelPackageManager = EditorModel.sharedAIModelManager,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
+        self.aiModelManager = aiModelManager
+        aiModelPackageState = aiModelManager.state
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
         self.editDirectory = editDirectory
@@ -490,8 +521,20 @@ final class EditorModel: ObservableObject {
         pressureSource.setEventHandler { [weak self] in self?.reclaimPreviewCaches() }
         pressureSource.resume()
         memoryPressureSource = pressureSource
+        aiModelManager.refresh()
+        aiModelPackageState = aiModelManager.state
+        aiModelStateCancellable = aiModelManager.$state.dropFirst().sink { [weak self] newState in
+            guard let self else { return }
+            let wasInstalled = self.aiModelPackageState.isInstalled
+            self.aiModelPackageState = newState
+            if wasInstalled != newState.isInstalled {
+                self.handleAIModelAvailabilityChanged(installed: newState.isInstalled)
+            }
+        }
     }
     deinit {
+        aiModelStateCancellable?.cancel()
+        batchStateCancellable?.cancel()
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel()
@@ -576,6 +619,48 @@ extension EditorModel {
 }
 
 extension EditorModel {
+    func downloadAIModel() {
+        aiModelManager.startDownload()
+    }
+
+    func cancelAIModelDownload() {
+        aiModelManager.cancelDownload()
+    }
+
+    var canRemoveDownloadedAIModel: Bool {
+        !aiState.isRunning
+            && !busy
+            && !exporting
+            && !importing
+            && !autoExposing
+            && !wbProbeSampling
+            && !hslTargetInteraction.isWaiting
+            && !curveTargetInteraction.isWaiting
+            && !collectionExportPreparing
+            && !previewThumbnailAIRunning
+            && batch?.running != true
+            && batch?.previewing != true
+            && batch?.validating != true
+    }
+
+    func removeDownloadedAIModel() {
+        guard canRemoveDownloadedAIModel else { return }
+        aiModelManager.removeDownloadedModel()
+    }
+
+    private func handleAIModelAvailabilityChanged(installed: Bool) {
+        queue.async { [weak self] in
+            self?.engine = nil
+        }
+        if installed {
+            if settings.activeAIDenoise && file != nil && (aiRequiresExplicitRetry || aiState != .ready) && !aiState.isRunning {
+                requestAIDenoise()
+            }
+        } else {
+            aiIdentity = nil
+        }
+    }
+
     func handleAIFailure(_ failure: Error) {
         guard settings.activeAIDenoise else { return }
         if case RenderError.aiNotReady = failure {

@@ -498,6 +498,7 @@ class BuildEnvironmentTests(unittest.TestCase):
                 "lutools/third_party/lensfun/license.md",
                 "lutools/flog-2-new/test.cube",
                 "Shared/master-recipes.json",
+                "Shared/ai-models/catalog.json",
                 "Shared/BundledLooks/catalog.json",
                 "Shared/BundledLooks/NOTICE.md",
                 "Shared/BundledLooks/look.cube",
@@ -592,6 +593,7 @@ class BuildEnvironmentTests(unittest.TestCase):
                 self.assertFalse(sp.exists(), f"Stale artifact survived non-release build: {sp}")
             self.assertTrue((app / "Contents/MacOS/RawLabMac").is_file())
             self.assertTrue((app / "Contents/Resources/bundled-looks.json").is_file())
+            self.assertTrue((app / "Contents/Resources/ai-model-catalog.json").is_file())
             self.assertTrue((app / "Contents/Frameworks/Sparkle.framework").is_dir())
 
             # Release build must still refuse pre-existing release output

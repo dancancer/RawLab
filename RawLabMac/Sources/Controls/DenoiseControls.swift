@@ -118,6 +118,8 @@ struct DenoiseControls: View {
 struct MacAIDenoiseControls: View {
     @Environment(\.locale) private var localizationLocale
     @ObservedObject var model: EditorModel
+    @State private var showingLicenses = false
+    @State private var confirmingRemoveModel = false
 
     var body: some View {
         let _ = localizationLocale
@@ -126,6 +128,9 @@ struct MacAIDenoiseControls: View {
                 HStack(spacing: 8) { toggle.fixedSize(); Spacer(minLength: 0); action }
                 VStack(alignment: .leading, spacing: 4) { toggle; action }
             }.font(.system(size: 12))
+            if model.aiModelDownloadVisible {
+                modelPackageSection
+            }
             switch model.aiState {
             case .running(_, let done, let total):
                 if total > 0 { ProgressView(value: Double(done), total: Double(total)).controlSize(.small) }
@@ -141,8 +146,11 @@ struct MacAIDenoiseControls: View {
                 Text(L10n.text("已应用 AI 降噪；曝光和外观调整复用结果。"))
                     .accessibilityIdentifier("denoise.ai.ready")
             case .idle:
-                if !model.canStartAI { Text(L10n.text("此照片或构建尚不能使用 AI 降噪。")) }
-                else if !model.settings.isHDREditing {
+                if !model.canStartAI {
+                    if !model.aiModelDownloadVisible || model.hasAIModel {
+                        Text(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
+                    }
+                } else if !model.settings.isHDREditing {
                     Text(L10n.text("支持多种 RAW 格式。首次处理时间取决于设备，完成后可复用结果。"))
                 }
             }
@@ -164,6 +172,146 @@ struct MacAIDenoiseControls: View {
             }
         }.font(.system(size: 11)).foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .sheet(isPresented: $showingLicenses) {
+                MacAIModelLicenseSheet(installedDirectory: model.aiModelManager.store.installedPackageURL())
+                    .environment(\.locale, localizationLocale)
+            }
+            .alert(L10n.text("确定删除已下载的 AI 降噪模型？"), isPresented: $confirmingRemoveModel) {
+                Button(L10n.text("删除"), role: .destructive) { model.removeDownloadedAIModel() }
+                Button(L10n.text("取消"), role: .cancel) {}
+            } message: {
+                if case .installed(_, let unpackedBytes) = model.aiModelPackageState {
+                    Text(L10n.format("删除后将释放约 %@ MB 磁盘空间，需要时可重新下载。",
+                                     AIModelPackageError.formatMegabytes(unpackedBytes)))
+                }
+            }
+    }
+
+    @ViewBuilder private var modelPackageSection: some View {
+        switch model.aiModelPackageState {
+        case .notInstalled(let downloadBytes, _):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.format("尚未下载 AI 降噪模型（约 %@ MB）。",
+                                 AIModelPackageError.formatMegabytes(downloadBytes)))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("denoise.ai.model.notInstalled")
+                Text(L10n.text("模型（DualDn、Restormer）仅限非商业用途。"))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("denoise.ai.model.licenseNotice")
+                HStack(spacing: 8) {
+                    Button(L10n.text("下载模型")) { model.downloadAIModel() }
+                        .controlSize(.small)
+                        .disabled(model.exporting)
+                        .accessibilityIdentifier("denoise.ai.model.download")
+                    Button(L10n.text("查看许可")) { showingLicenses = true }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("denoise.ai.model.license")
+                }
+            }
+        case .downloading(let completed, let total):
+            VStack(alignment: .leading, spacing: 4) {
+                if total > 0 {
+                    ProgressView(value: Double(completed), total: Double(total)).controlSize(.small)
+                } else {
+                    ProgressView().controlSize(.small)
+                }
+                HStack(spacing: 8) {
+                    Text(total > 0
+                         ? L10n.format("正在下载 AI 降噪模型… %@ / %@ MB",
+                                       AIModelPackageError.formatProgressMegabytes(completed),
+                                       AIModelPackageError.formatMegabytes(total))
+                         : L10n.text("正在下载 AI 降噪模型…"))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("denoise.ai.model.progress")
+                    Spacer(minLength: 0)
+                    Button(L10n.text("取消")) { model.cancelAIModelDownload() }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("denoise.ai.model.cancel")
+                }
+            }
+        case .verifying:
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView().controlSize(.small)
+                HStack(spacing: 8) {
+                    Text(L10n.text("正在校验 AI 降噪模型…"))
+                        .accessibilityIdentifier("denoise.ai.model.verifying")
+                    Spacer(minLength: 0)
+                    Button(L10n.text("取消")) { model.cancelAIModelDownload() }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("denoise.ai.model.cancel")
+                }
+            }
+        case .installing:
+            VStack(alignment: .leading, spacing: 4) {
+                ProgressView().controlSize(.small)
+                HStack(spacing: 8) {
+                    Text(L10n.text("正在安装 AI 降噪模型…"))
+                        .accessibilityIdentifier("denoise.ai.model.installing")
+                    Spacer(minLength: 0)
+                    Button(L10n.text("取消")) { model.cancelAIModelDownload() }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("denoise.ai.model.cancel")
+                }
+            }
+        case .cancelled(let downloadBytes, _):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.text("已取消下载 AI 降噪模型。"))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("denoise.ai.model.cancelled")
+                Text(L10n.format("尚未下载 AI 降噪模型（约 %@ MB）。",
+                                 AIModelPackageError.formatMegabytes(downloadBytes)))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(L10n.text("模型（DualDn、Restormer）仅限非商业用途。"))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button(L10n.text("下载模型")) { model.downloadAIModel() }
+                        .controlSize(.small)
+                        .disabled(model.exporting)
+                        .accessibilityIdentifier("denoise.ai.model.download")
+                    Button(L10n.text("查看许可")) { showingLicenses = true }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("denoise.ai.model.license")
+                }
+            }
+        case .failed(let error, _, _):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(error.macLocalizedMessage)
+                    .foregroundStyle(.red)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("denoise.ai.model.error")
+                Text(L10n.text("模型（DualDn、Restormer）仅限非商业用途。"))
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button(L10n.text("重试")) { model.downloadAIModel() }
+                        .controlSize(.small)
+                        .disabled(model.exporting)
+                        .accessibilityIdentifier("denoise.ai.model.retry")
+                    Button(L10n.text("查看许可")) { showingLicenses = true }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("denoise.ai.model.license")
+                }
+            }
+        case .installed(.downloaded, let unpackedBytes):
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L10n.format("已下载 AI 降噪模型（约 %@ MB）。",
+                                 AIModelPackageError.formatMegabytes(unpackedBytes)))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("denoise.ai.model.installed")
+                HStack(spacing: 8) {
+                    Button(L10n.text("查看许可")) { showingLicenses = true }
+                        .buttonStyle(.link)
+                        .accessibilityIdentifier("denoise.ai.model.license")
+                    Spacer(minLength: 0)
+                    Button(L10n.text("删除已下载模型")) { confirmingRemoveModel = true }
+                        .buttonStyle(.borderless)
+                        .disabled(!model.canRemoveDownloadedAIModel)
+                        .accessibilityIdentifier("denoise.ai.model.remove")
+                }
+            }
+        case .installed(.bundled, _), .installed(.override, _), .unavailable:
+            EmptyView()
+        }
     }
 
     private var toggle: some View {
@@ -185,6 +333,149 @@ struct MacAIDenoiseControls: View {
                 .accessibilityIdentifier("denoise.ai.retry")
         default:
             EmptyView()
+        }
+    }
+}
+
+private struct MacAIModelLicenseSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let installedDirectory: URL?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(L10n.text("AI 降噪模型许可")).font(.headline)
+            Text(L10n.text("以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    licenseBlock(
+                        title: "DualDn (CC BY-NC 4.0)",
+                        text: dualDnLicenseText,
+                        url: URL(string: "https://creativecommons.org/licenses/by-nc/4.0/")!
+                    )
+                    licenseBlock(
+                        title: "Restormer (Academic Public License)",
+                        text: restormerLicenseText,
+                        url: URL(string: "https://github.com/swz30/Restormer")!
+                    )
+                }
+            }
+            .frame(height: 300)
+            HStack(spacing: 10) {
+                if let folder = licenseDirectoryURL {
+                    Button(L10n.text("打开许可文件夹")) {
+                        NSWorkspace.shared.open(folder)
+                    }
+                }
+                Spacer()
+                Button(L10n.text("关闭")) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 540)
+    }
+
+    private func licenseBlock(title: String, text: String, url: URL) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(title).font(.subheadline.weight(.semibold))
+                Spacer()
+                Link(url.absoluteString, destination: url).font(.caption)
+            }
+            Text(text)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .background(Color.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6))
+        }
+    }
+
+    private var licenseDirectoryURL: URL? {
+        if let dir = Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "Licenses"),
+           FileManager.default.fileExists(atPath: dir.path) {
+            return dir
+        }
+        if let installedDirectory, FileManager.default.fileExists(atPath: installedDirectory.path) {
+            return installedDirectory
+        }
+        if let licenses = Bundle.main.url(forResource: "Licenses", withExtension: nil),
+           FileManager.default.fileExists(atPath: licenses.path) {
+            return licenses
+        }
+        return nil
+    }
+
+    private var dualDnLicenseText: String {
+        let candidates: [URL?] = [
+            installedDirectory?.appendingPathComponent("DualDn-LICENSE.txt"),
+            Bundle.main.url(forResource: "LICENSE", withExtension: nil, subdirectory: "Licenses/DualDn"),
+            Bundle.main.url(forResource: "DualDn-LICENSE", withExtension: "txt", subdirectory: "AI/DualDn"),
+        ]
+        for case let url? in candidates {
+            if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+                return text
+            }
+        }
+        return """
+        Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
+        Copyright (c) 2024 OpenImagingLab
+        NonCommercial — You may not use the model weights or converted artifacts for commercial purposes.
+        Full license: https://creativecommons.org/licenses/by-nc/4.0/
+        """
+    }
+
+    private var restormerLicenseText: String {
+        let candidates: [URL?] = [
+            installedDirectory?.appendingPathComponent("Restormer-LICENSE.txt"),
+            Bundle.main.url(forResource: "Restormer-LICENSE", withExtension: "txt", subdirectory: "Licenses/DualDn"),
+            Bundle.main.url(forResource: "Restormer-LICENSE", withExtension: "txt", subdirectory: "AI/DualDn"),
+        ]
+        for case let url? in candidates {
+            if let text = try? String(contentsOf: url, encoding: .utf8), !text.isEmpty {
+                return text
+            }
+        }
+        return """
+        Restormer Academic Public License
+        Free for non-commercial, research, academic, and personal use only. Commercial use is not permitted without upstream authorization.
+        Source: https://github.com/swz30/Restormer
+        """
+    }
+}
+
+extension AIModelPackageError {
+    var macLocalizedMessage: String {
+        switch self {
+        case .networkUnavailable:
+            return L10n.text("无法连接网络，请检查网络后重试。")
+        case .networkTimeout:
+            return L10n.text("下载超时，请检查网络后重试。")
+        case .httpNotFound:
+            return L10n.text("服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。")
+        case .httpStatus(let code):
+            return L10n.format("下载失败（HTTP %@），请稍后重试。", String(code))
+        case .insufficientDiskSpace(let requiredBytes, _):
+            return L10n.format("磁盘可用空间不足，至少需要约 %@ MB。", Self.formatMegabytes(requiredBytes))
+        case .diskFull:
+            return L10n.text("磁盘可用空间不足，请清理空间后重试。")
+        case .archiveSizeMismatch:
+            return L10n.text("下载的模型文件大小与校验信息不符，已清除临时文件，请重试。")
+        case .archiveDigestMismatch:
+            return L10n.text("下载的模型文件校验失败，已清除临时文件，请重试。")
+        case .memberVerificationFailed, .archiveExtractionFailed:
+            return L10n.text("模型压缩包校验失败，已清除临时文件，请重试。")
+        case .insecureURL:
+            return L10n.text("模型下载地址不安全，已阻止下载。")
+        case .cancelled:
+            return L10n.text("已取消下载 AI 降噪模型。")
+        case .removeFailed:
+            return L10n.text("无法删除已下载的模型文件，请重试。")
+        case .invalidCatalog, .networkError, .fileSystemError:
+            return L10n.text("下载或安装模型失败，请重试。")
         }
     }
 }

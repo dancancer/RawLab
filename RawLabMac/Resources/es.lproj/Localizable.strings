@@ -27,6 +27,7 @@
 "AI 降噪已取消。" = "Reducción de ruido con IA cancelada.";
 "AI 降噪强度" = "Intensidad de reducción de ruido IA";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "La reducción de ruido con IA aún no se puede copiar. Elige Personalizado para copiar otros ajustes.";
+"AI 降噪模型许可" = "Licencias de los modelos de reducción de ruido por IA";
 "AI 降噪结果连续未就绪，请重试。" = "El resultado de la reducción de ruido con IA sigue sin estar disponible. Inténtalo de nuevo.";
 "AI 降噪（实验）" = "Reducción de ruido con IA (experimental)";
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Las recetas de Agent no admiten la reducción de ruido con IA. Desactívala primero.";
@@ -99,6 +100,12 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "El último look usado no está disponible. Vuelve a elegir o importar un look.";
 "上次批量任务尚未完成" = "La última exportación por lotes aún no ha terminado";
 "下次退出时安装" = "Instalar al salir la próxima vez";
+"下载失败（HTTP %@），请稍后重试。" = "Error en la descarga (HTTP %@). Inténtalo de nuevo más tarde.";
+"下载或安装模型失败，请重试。" = "Error al descargar o instalar los modelos. Inténtalo de nuevo.";
+"下载模型" = "Descargar modelos";
+"下载的模型文件大小与校验信息不符，已清除临时文件，请重试。" = "El tamaño del archivo del modelo descargado no coincide. Se eliminaron los archivos temporales; inténtalo de nuevo.";
+"下载的模型文件校验失败，已清除临时文件，请重试。" = "La verificación del archivo del modelo descargado falló. Se eliminaron los archivos temporales; inténtalo de nuevo.";
+"下载超时，请检查网络后重试。" = "Se agotó el tiempo de espera de la descarga. Comprueba tu conexión e inténtalo de nuevo.";
 "不可读外观" = "Looks ilegibles";
 "不支持此 HDR 格式或颜色描述。" = "Este formato HDR o descripción de color no es compatible.";
 "不支持此 X3F 显影模式。" = "Este modo de revelado X3F no es compatible.";
@@ -139,6 +146,7 @@
 "从列表移除" = "Eliminar de la lista";
 "从照片库选择" = "Elegir de la biblioteca de fotos";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Estos son valores lógicos de la receta; la intensidad es %@. Algunos campos se escalan con esta intensidad.";
+"以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。" = "Estos modelos son solo para uso no comercial. Cada uno conserva la licencia de sus autores originales y no está cubierto por la licencia GPL de RawLab.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "La operación de historial no se ha completado para estas fotos. Comprueba el motivo y vuelve a intentarlo.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Usa el revelado guardado como base, con ajustes relativos del balance de blancos.";
 "任务使用的外观文件不可用，请重新创建任务。" = "El archivo de look que usa la tarea no está disponible. Vuelve a crear la tarea.";
@@ -227,6 +235,8 @@
 "切换到 S 曲线将移除当前控制点，可撤销此操作。" = "Al cambiar a la curva S se eliminan los puntos actuales. Puedes deshacer este cambio.";
 "切换曲线模式" = "Cambiar el modo de curva";
 "删除" = "Eliminar";
+"删除后将释放约 %@ MB 磁盘空间，需要时可重新下载。" = "Esto liberará unos %@ MB de espacio en disco. Puedes volver a descargarlos cuando los necesites.";
+"删除已下载模型" = "Eliminar modelos descargados";
 "删除控制点" = "Eliminar punto";
 "删除预设？" = "¿Eliminar el ajuste?";
 "前往下载 %@" = "Descargar %@";
@@ -369,6 +379,8 @@
 "尚无已修改的调整。" = "Aún no hay ajustes modificados.";
 "尚无用户预设" = "Aún no hay ajustes propios";
 "尚有未保存的调整" = "Ajustes sin guardar";
+"尚未下载 AI 降噪模型。" = "Los modelos de reducción de ruido por IA aún no se han descargado.";
+"尚未下载 AI 降噪模型（约 %@ MB）。" = "Los modelos de reducción de ruido por IA aún no se han descargado (aprox. %@ MB).";
 "尚未发现可安装的更新" = "No se encontró ninguna actualización instalable";
 "尚未复制调整。请先从一张照片复制所需范围。" = "Aún no se han copiado ajustes. Copia primero los ajustes deseados de una foto.";
 "尚未检查更新" = "Aún no se han buscado actualizaciones";
@@ -383,6 +395,7 @@
 "展开调整栏" = "Expandir ajustes";
 "工作区" = "Espacio de trabajo";
 "左右拖动刻度尺拉直；方向键每次调整 0.1°" = "Arrastra la regla para enderezar; las flechas ajustan 0,1° por paso.";
+"已下载 AI 降噪模型（约 %@ MB）。" = "Modelos de reducción de ruido por IA descargados (aprox. %@ MB).";
 "已保存" = "Guardado";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Guardadas %@ · Sin cambios %@ · Omitidas %@ · Deshechas %@ · Pendientes %@";
 "已停用" = "Desactivado";
@@ -392,6 +405,7 @@
 "已匹配配置" = "Perfil identificado";
 "已匹配配置 · 校正尚未开启" = "Perfil identificado · Corrección desactivada";
 "已匹配镜头" = "Lente identificada";
+"已取消下载 AI 降噪模型。" = "Descarga de modelos de reducción de ruido por IA cancelada.";
 "已启用" = "Activado";
 "已回退，保留旧版本。" = "Restaurado. Se mantendrá la versión anterior.";
 "已复制" = "Copiada";
@@ -487,6 +501,7 @@
 "打开其他 RAW…" = "Abrir otro RAW…";
 "打开文件夹" = "Abrir carpeta";
 "打开照片" = "Abrir foto";
+"打开许可文件夹" = "Abrir carpeta de licencias";
 "批量任务记录尚未安全保存" = "El registro de la tarea por lotes aún no se ha guardado de forma segura";
 "批量导出" = "Exportación por lotes";
 "批量编辑" = "Edición por lotes";
@@ -582,6 +597,7 @@
 "无法写入输出目录，请检查访问权限和剩余空间。" = "No se puede escribir en la carpeta de salida. Comprueba los permisos de acceso y el espacio disponible.";
 "无法创建处理会话" = "No se puede crear una sesión de procesamiento";
 "无法创建新的预设标识，请重试。" = "No se pudo crear un identificador para el ajuste. Inténtalo de nuevo.";
+"无法删除已下载的模型文件，请重试。" = "No se pudieron eliminar los archivos de modelos descargados. Inténtalo de nuevo.";
 "无法导出诊断包。" = "No se pudo exportar el paquete de diagnóstico.";
 "无法恢复调整：%@" = "No se pueden restaurar los ajustes: %@";
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
@@ -607,6 +623,7 @@
 "无法读取调整记录：%@" = "No se puede leer el registro de ajuste: %@";
 "无法读取镜头校正状态" = "No se pudo leer el estado de la corrección del objetivo";
 "无法读取镜头配置列表" = "No se pudieron leer los perfiles de lente";
+"无法连接网络，请检查网络后重试。" = "No se puede conectar a la red. Comprueba tu conexión e inténtalo de nuevo.";
 "无法重置调整" = "No se pueden restablecer los ajustes";
 "无照片" = "No hay fotos";
 "无配方" = "Sin receta";
@@ -661,6 +678,7 @@
 "最近使用" = "Recientes";
 "有可用更新" = "Actualización disponible";
 "有多个匹配镜头，请手动选择" = "Varias lentes coinciden; elige una manualmente";
+"服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。" = "No se encontró el archivo del modelo en el servidor (HTTP 404). Inténtalo más tarde o actualiza la app.";
 "未包含几何与镜头。" = "La geometría y el objetivo no están incluidos.";
 "未匹配镜头" = "No hay lente coincidente";
 "未匹配镜头，请手动选择" = "No hay lente coincidente; elige una manualmente";
@@ -696,6 +714,7 @@
 "查看更新前的数据备份" = "Ver la copia de seguridad de los datos anterior a la actualización";
 "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。" = "Consultar estas instrucciones no activa la instalación automática. Tras un fallo, conserva la aplicación y los datos existentes, usa un instalador oficial de confianza para recuperarlos y no sobrescribas los registros de edición de una versión nueva con una antigua.";
 "查看目标" = "Revisar destinos";
+"查看许可" = "Ver licencias";
 "查看调整前" = "Ver antes";
 "查看调整范围" = "Ver alcance de los ajustes";
 "标准" = "Estándar";
@@ -713,12 +732,17 @@
 "检查目标…" = "Comprobar fotos de destino…";
 "检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Se detectaron registros de diagnóstico de la sesión anterior listos para guardar o subir.";
 "检测到外部调色方案更新" = "Actualización externa de ajustes detectada";
+"模型下载地址不安全，已阻止下载。" = "Se bloqueó la descarga desde una URL de modelo no segura.";
+"模型压缩包校验失败，已清除临时文件，请重试。" = "La verificación del archivo comprimido del modelo falló. Se eliminaron los archivos temporales; inténtalo de nuevo.";
+"模型（DualDn、Restormer）仅限非商业用途。" = "Los modelos (DualDn, Restormer) son solo para uso no comercial.";
 "横向色差" = "Aberración cromática lateral";
 "横向色差未应用" = "Aberración cromática lateral no corregida";
 "横向色差标定" = "Calibración de aberración cromática lateral";
 "横向色差标定不可用" = "Calibración de aberración cromática lateral no disponible";
 "橙" = "Naranja";
 "正在上传…" = "Subiendo…";
+"正在下载 AI 降噪模型…" = "Descargando modelos de reducción de ruido por IA…";
+"正在下载 AI 降噪模型… %@ / %@ MB" = "Descargando modelos de reducción de ruido por IA… %@ / %@ MB";
 "正在下载更新…" = "Descargando actualización…";
 "正在保存" = "Guardando";
 "正在保存 AI 结果" = "Guardando resultado de IA";
@@ -731,12 +755,14 @@
 "正在处理 RAW 噪声" = "Procesando ruido RAW";
 "正在处理更新，编辑暂不可用。" = "Se está procesando una actualización. La edición no está disponible temporalmente.";
 "正在处理颜色噪声" = "Procesando ruido de color";
+"正在安装 AI 降噪模型…" = "Instalando modelos de reducción de ruido por IA…";
 "正在安装更新…" = "Instalando actualización…";
 "正在导出" = "Exportando";
 "正在导出…" = "Exportando…";
 "正在恢复更新前的数据…" = "Restaurando los datos anteriores a la actualización…";
 "正在显影" = "Revelando";
 "正在显影…" = "Revelando…";
+"正在校验 AI 降噪模型…" = "Verificando modelos de reducción de ruido por IA…";
 "正在校验并准备更新…" = "Verificando y preparando la actualización…";
 "正在检查 RAW 照片…" = "Comprobando fotos RAW...";
 "正在检查启动状态…" = "Comprobando el estado de inicio…";
@@ -863,8 +889,11 @@
 "相机白平衡（按目标照片）" = "Balance de blancos de cámara (por foto de destino)";
 "省略自动黑位" = "Omitir el ajuste automático del negro";
 "确定" = "Aceptar";
+"确定删除已下载的 AI 降噪模型？" = "¿Eliminar los modelos de reducción de ruido por IA descargados?";
 "确认兼容导入" = "Importar con estos ajustes";
 "确认并冻结任务" = "Confirmar y fijar tarea";
+"磁盘可用空间不足，至少需要约 %@ MB。" = "Espacio libre en disco insuficiente. Se necesitan al menos unos %@ MB.";
+"磁盘可用空间不足，请清理空间后重试。" = "Espacio libre en disco insuficiente. Libera espacio e inténtalo de nuevo.";
 "移除" = "Quitar";
 "移除 %@" = "Eliminar %@";
 "移除“%@”？" = "¿Eliminar \"%@\"?";

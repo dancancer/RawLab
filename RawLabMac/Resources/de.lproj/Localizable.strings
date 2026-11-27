@@ -27,6 +27,7 @@
 "AI 降噪已取消。" = "KI-Entrauschen abgebrochen.";
 "AI 降噪强度" = "KI-Entrauschungsstärke";
 "AI 降噪暂不支持复制。请选择自定义范围，只复制其他调整。" = "KI-Entrauschen kann noch nicht kopiert werden. Wähle Benutzerdefiniert, um andere Anpassungen zu kopieren.";
+"AI 降噪模型许可" = "Lizenzen für KI-Entrauschungsmodelle";
 "AI 降噪结果连续未就绪，请重试。" = "Das KI-Entrauschungsergebnis ist weiterhin nicht verfügbar. Bitte erneut versuchen.";
 "AI 降噪（实验）" = "KI-Entrauschen (experimentell)";
 "Agent 配方不支持 AI 降噪，请先关闭 AI 降噪。" = "Agent-Rezepte unterstützen keine KI-Entrauschung. Deaktivieren Sie diese zuerst.";
@@ -99,6 +100,12 @@
 "上次使用的外观不可用，请重新选择或导入外观。" = "Der zuletzt verwendete Look ist nicht verfügbar. Bitte wählen oder importieren Sie erneut einen Look.";
 "上次批量任务尚未完成" = "Der letzte Stapel-Export ist noch nicht abgeschlossen";
 "下次退出时安装" = "Beim nächsten Beenden installieren";
+"下载失败（HTTP %@），请稍后重试。" = "Download fehlgeschlagen (HTTP %@). Bitte versuche es später erneut.";
+"下载或安装模型失败，请重试。" = "Download oder Installation der Modelle fehlgeschlagen. Bitte erneut versuchen.";
+"下载模型" = "Modelle laden";
+"下载的模型文件大小与校验信息不符，已清除临时文件，请重试。" = "Die Größe der heruntergeladenen Modelldatei stimmt nicht überein. Temporäre Dateien wurden entfernt; bitte erneut versuchen.";
+"下载的模型文件校验失败，已清除临时文件，请重试。" = "Die Überprüfung der heruntergeladenen Modelldatei ist fehlgeschlagen. Temporäre Dateien wurden entfernt; bitte erneut versuchen.";
+"下载超时，请检查网络后重试。" = "Zeitüberschreitung beim Download. Prüfe deine Verbindung und versuche es erneut.";
 "不可读外观" = "Nicht lesbare Looks";
 "不支持此 HDR 格式或颜色描述。" = "Dieses HDR-Format oder diese Farbbeschreibung wird nicht unterstützt.";
 "不支持此 X3F 显影模式。" = "Dieser X3F-Entwicklungsmodus wird nicht unterstützt.";
@@ -139,6 +146,7 @@
 "从列表移除" = "Aus Liste entfernen";
 "从照片库选择" = "Aus der Fotobibliothek wählen";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Dies sind logische Rezeptwerte; die Stärke beträgt %@. Einige Bereiche werden mit dieser Stärke skaliert.";
+"以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。" = "Diese Modelle sind nur für nicht-kommerzielle Zwecke bestimmt. Jedes behält die Lizenz seiner ursprünglichen Autoren und unterliegt nicht der GPL-Lizenz von RawLab.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "Der Verlaufsschritt ist für diese Fotos unvollständig. Prüfe den Grund und versuche es erneut.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Die gespeicherte Entwicklung ist die Basis; der Weißabgleich wird relativ angepasst.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Die vom Auftrag verwendete Look-Datei ist nicht verfügbar. Bitte erstellen Sie den Auftrag neu.";
@@ -227,6 +235,8 @@
 "切换到 S 曲线将移除当前控制点，可撤销此操作。" = "Beim Wechsel zur S-Kurve werden die aktuellen Kontrollpunkte entfernt. Dies lässt sich rückgängig machen.";
 "切换曲线模式" = "Kurvenmodus wechseln";
 "删除" = "Löschen";
+"删除后将释放约 %@ MB 磁盘空间，需要时可重新下载。" = "Dadurch werden ca. %@ MB Speicherplatz frei. Du kannst sie jederzeit erneut laden.";
+"删除已下载模型" = "Geladene Modelle entfernen";
 "删除控制点" = "Punkt löschen";
 "删除预设？" = "Vorgabe löschen?";
 "前往下载 %@" = "%@ herunterladen";
@@ -369,6 +379,8 @@
 "尚无已修改的调整。" = "Noch keine geänderten Anpassungen.";
 "尚无用户预设" = "Noch keine eigenen Vorgaben";
 "尚有未保存的调整" = "Ungespeicherte Anpassungen";
+"尚未下载 AI 降噪模型。" = "KI-Entrauschungsmodelle wurden noch nicht heruntergeladen.";
+"尚未下载 AI 降噪模型（约 %@ MB）。" = "KI-Entrauschungsmodelle sind noch nicht heruntergeladen (ca. %@ MB).";
 "尚未发现可安装的更新" = "Kein installierbares Update gefunden";
 "尚未复制调整。请先从一张照片复制所需范围。" = "Noch keine Anpassungen kopiert. Kopieren Sie zuerst die gewünschten Einstellungen eines Fotos.";
 "尚未检查更新" = "Noch nicht nach Updates gesucht";
@@ -383,6 +395,7 @@
 "展开调整栏" = "Anpassungsbereich ausklappen";
 "工作区" = "Arbeitsbereich";
 "左右拖动刻度尺拉直；方向键每次调整 0.1°" = "Zum Begradigen das Lineal nach links oder rechts ziehen; Pfeiltasten ändern den Winkel um 0,1°.";
+"已下载 AI 降噪模型（约 %@ MB）。" = "KI-Entrauschungsmodelle heruntergeladen (ca. %@ MB).";
 "已保存" = "Gespeichert";
 "已保存 %@ 张 · 未变化 %@ 张 · 已跳过 %@ 张 · 已撤销 %@ 张 · 未完成 %@ 张" = "Gespeichert %@ · Unverändert %@ · Übersprungen %@ · Rückgängig %@ · Offen %@";
 "已停用" = "Deaktiviert";
@@ -392,6 +405,7 @@
 "已匹配配置" = "Profil zugeordnet";
 "已匹配配置 · 校正尚未开启" = "Profil zugeordnet · Korrektur aus";
 "已匹配镜头" = "Objektiv zugeordnet";
+"已取消下载 AI 降噪模型。" = "Download der KI-Entrauschungsmodelle abgebrochen.";
 "已启用" = "Aktiviert";
 "已回退，保留旧版本。" = "Wiederhergestellt. Die bisherige Version bleibt erhalten.";
 "已复制" = "Kopiert";
@@ -487,6 +501,7 @@
 "打开其他 RAW…" = "Anderes RAW öffnen…";
 "打开文件夹" = "Ordner öffnen";
 "打开照片" = "Foto öffnen";
+"打开许可文件夹" = "Lizenzordner öffnen";
 "批量任务记录尚未安全保存" = "Der Batch-Aufgabenverlauf wurde noch nicht sicher gespeichert";
 "批量导出" = "Stapel-Export";
 "批量编辑" = "Stapelbearbeitung";
@@ -582,6 +597,7 @@
 "无法写入输出目录，请检查访问权限和剩余空间。" = "In den Ausgabeordner kann nicht geschrieben werden. Bitte überprüfen Sie die Zugriffsrechte und den freien Speicherplatz.";
 "无法创建处理会话" = "Verarbeitungssitzung konnte nicht erstellt werden";
 "无法创建新的预设标识，请重试。" = "Es konnte keine neue Vorgabenkennung erstellt werden. Versuchen Sie es erneut.";
+"无法删除已下载的模型文件，请重试。" = "Die heruntergeladenen Modelldateien konnten nicht entfernt werden. Bitte erneut versuchen.";
 "无法导出诊断包。" = "Das Diagnosepaket konnte nicht exportiert werden.";
 "无法恢复调整：%@" = "Anpassungen können nicht wiederhergestellt werden: %@";
 "无法显示处理结果" = "Verarbeitungsergebnisse können nicht angezeigt werden";
@@ -607,6 +623,7 @@
 "无法读取调整记录：%@" = "Anpassungsdatensatz konnte nicht gelesen werden: %@";
 "无法读取镜头校正状态" = "Status der Objektivkorrektur konnte nicht gelesen werden";
 "无法读取镜头配置列表" = "Objektivprofile konnten nicht gelesen werden";
+"无法连接网络，请检查网络后重试。" = "Keine Netzwerkverbindung. Prüfe deine Verbindung und versuche es erneut.";
 "无法重置调整" = "Anpassungen können nicht zurückgesetzt werden";
 "无照片" = "Keine Fotos";
 "无配方" = "Kein Rezept";
@@ -661,6 +678,7 @@
 "最近使用" = "Zuletzt verwendet";
 "有可用更新" = "Update verfügbar";
 "有多个匹配镜头，请手动选择" = "Mehrere passende Objektive; bitte manuell auswählen";
+"服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。" = "Die Modelldatei wurde auf dem Server nicht gefunden (HTTP 404). Versuche es später erneut oder aktualisiere die App.";
 "未包含几何与镜头。" = "Geometrie und Objektiv sind nicht enthalten.";
 "未匹配镜头" = "Kein passendes Objektiv";
 "未匹配镜头，请手动选择" = "Kein passendes Objektiv; bitte manuell auswählen";
@@ -696,6 +714,7 @@
 "查看更新前的数据备份" = "Datensicherung vor dem Update anzeigen";
 "查看此说明不会启用自动安装。失败后请保留现有应用和数据，使用官方可信安装包恢复；不要用旧版覆盖新版编辑记录。" = "Das Anzeigen dieser Anleitung aktiviert die automatische Installation nicht. Bewahren Sie nach einem Fehler die vorhandene App und Daten auf, stellen Sie sie mit einem vertrauenswürdigen offiziellen Installationsprogramm wieder her und überschreiben Sie Bearbeitungen einer neueren Version nicht mit einer älteren.";
 "查看目标" = "Zielfotos ansehen";
+"查看许可" = "Lizenzen anzeigen";
 "查看调整前" = "Vorher anzeigen";
 "查看调整范围" = "Anpassungsumfang anzeigen";
 "标准" = "Standard";
@@ -713,12 +732,17 @@
 "检查目标…" = "Zielfotos prüfen…";
 "检测到上次录制的诊断日志，可直接保存到设备或一键上传。" = "Diagnoseprotokolle aus der vorherigen Sitzung stehen zum Speichern oder Hochladen bereit.";
 "检测到外部调色方案更新" = "Externes Update der Farbabstimmung erkannt";
+"模型下载地址不安全，已阻止下载。" = "Download von einer unsicheren Modell-URL blockiert.";
+"模型压缩包校验失败，已清除临时文件，请重试。" = "Die Überprüfung des Modellarchivs ist fehlgeschlagen. Temporäre Dateien wurden entfernt; bitte erneut versuchen.";
+"模型（DualDn、Restormer）仅限非商业用途。" = "Die Modelle (DualDn, Restormer) sind nur für nicht-kommerzielle Zwecke lizenziert.";
 "横向色差" = "Laterale chromatische Aberration";
 "横向色差未应用" = "Laterale chromatische Aberration nicht korrigiert";
 "横向色差标定" = "Kalibrierung der lateralen chromatischen Aberration";
 "横向色差标定不可用" = "Kalibrierung der lateralen chromatischen Aberration nicht verfügbar";
 "橙" = "Orange";
 "正在上传…" = "Wird hochgeladen…";
+"正在下载 AI 降噪模型…" = "KI-Entrauschungsmodelle werden geladen…";
+"正在下载 AI 降噪模型… %@ / %@ MB" = "KI-Entrauschungsmodelle werden geladen… %@ / %@ MB";
 "正在下载更新…" = "Update wird geladen…";
 "正在保存" = "Wird gespeichert";
 "正在保存 AI 结果" = "KI-Ergebnis wird gespeichert";
@@ -731,12 +755,14 @@
 "正在处理 RAW 噪声" = "RAW-Rauschen wird verarbeitet";
 "正在处理更新，编辑暂不可用。" = "Ein Update wird verarbeitet. Die Bearbeitung ist vorübergehend nicht verfügbar.";
 "正在处理颜色噪声" = "Farbrauschen wird verarbeitet";
+"正在安装 AI 降噪模型…" = "KI-Entrauschungsmodelle werden installiert…";
 "正在安装更新…" = "Update wird installiert…";
 "正在导出" = "Wird exportiert";
 "正在导出…" = "Wird exportiert…";
 "正在恢复更新前的数据…" = "Daten vom Stand vor dem Update werden wiederhergestellt…";
 "正在显影" = "Wird entwickelt";
 "正在显影…" = "Wird entwickelt…";
+"正在校验 AI 降噪模型…" = "KI-Entrauschungsmodelle werden überprüft…";
 "正在校验并准备更新…" = "Update wird überprüft und vorbereitet…";
 "正在检查 RAW 照片…" = "RAW-Fotos prüfen…";
 "正在检查启动状态…" = "Startstatus wird geprüft…";
@@ -863,8 +889,11 @@
 "相机白平衡（按目标照片）" = "Kamera-Weißabgleich (pro Zielfoto)";
 "省略自动黑位" = "Automatische Schwarzwertkorrektur auslassen";
 "确定" = "OK";
+"确定删除已下载的 AI 降噪模型？" = "Heruntergeladene KI-Entrauschungsmodelle entfernen?";
 "确认兼容导入" = "Mit diesen Einstellungen importieren";
 "确认并冻结任务" = "Bestätigen und Aufgabe festschreiben";
+"磁盘可用空间不足，至少需要约 %@ MB。" = "Nicht genügend freier Speicherplatz. Mindestens ca. %@ MB erforderlich.";
+"磁盘可用空间不足，请清理空间后重试。" = "Nicht genügend freier Speicherplatz. Gib Speicherplatz frei und versuche es erneut.";
 "移除" = "Entfernen";
 "移除 %@" = "%@ entfernen";
 "移除“%@”？" = "„%@“ entfernen?";

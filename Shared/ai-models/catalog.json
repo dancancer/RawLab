@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "platforms": {
+    "macos-arm64": {
+      "schemaVersion": 1,
+      "platform": "macos-arm64",
+      "url": "https://github.com/dancancer/RawLab/releases/download/assets-v1/rawlab-ai-macos-arm64-049e6acf5d19.tar.gz",
+      "archiveName": "rawlab-ai-macos-arm64-049e6acf5d19.tar.gz",
+      "archiveSha256": "049e6acf5d19ec6959052fa24870eb7fdc87d8e406298c24555d001933160c56",
+      "archiveBytes": 588218971,
+      "manifestSha256": "38cbd6884bb181db859ffc668cf754a55331be732592e0d4cdf9a2d41a19486a",
+      "unpackedBytes": 652138326,
+      "entries": [
+        {
+          "path": "DualDn-LICENSE.txt",
+          "kind": "file",
+          "bytes": 1537,
+          "sha256": "566b84c659cfed1d2e6ca015e86c0db07e68b70a607161885fcccbad8ae27a5f"
+        },
+        {
+          "path": "Restormer-LICENSE.txt",
+          "kind": "file",
+          "bytes": 1349,
+          "sha256": "50fdf21f3caa7c42c51e0145d6cdb70a4f0d456955797d1f94de14c640a2c702"
+        },
+        {
+          "path": "blind_rgb.mlmodelc",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "blind_rgb.mlmodelc/analytics",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "blind_rgb.mlmodelc/analytics/coremldata.bin",
+          "kind": "file",
+          "bytes": 243,
+          "sha256": "d2424b8e5cc6ea7f0b2f437a949b2896e1001ee851704f104d36d14fa83f15c2"
+        },
+        {
+          "path": "blind_rgb.mlmodelc/coremldata.bin",
+          "kind": "file",
+          "bytes": 165,
+          "sha256": "5effb8207b905be0ed27f36780c4237762533da3fddfd50eab011a269fa40985"
+        },
+        {
+          "path": "blind_rgb.mlmodelc/model.mil",
+          "kind": "file",
+          "bytes": 909707,
+          "sha256": "1237c6d7253a3b4754592eac74b1351032ac8a9a2073d57feb4c1d4159764dfb"
+        },
+        {
+          "path": "blind_rgb.mlmodelc/weights",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "blind_rgb.mlmodelc/weights/weight.bin",
+          "kind": "file",
+          "bytes": 104469888,
+          "sha256": "27afa92ad985004f8f9e1afc38f5b5232d2ef19614d340e683f4f9087a5a43a5"
+        },
+        {
+          "path": "blind_rgb.onnx",
+          "kind": "file",
+          "bytes": 105453667,
+          "sha256": "0f4d73f779abae52796507d5bd3386c2e08d030277dc62530f4495b91e9c7768"
+        },
+        {
+          "path": "isp.onnx",
+          "kind": "file",
+          "bytes": 14787523,
+          "sha256": "a4484516b8b6fba56d0838a9ab1f800445f1ad8dcea41a6fbfa37d0ce45fd07c"
+        },
+        {
+          "path": "manifest.json",
+          "kind": "file",
+          "bytes": 8193,
+          "sha256": "38cbd6884bb181db859ffc668cf754a55331be732592e0d4cdf9a2d41a19486a"
+        },
+        {
+          "path": "raw.mlmodelc",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "raw.mlmodelc/analytics",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "raw.mlmodelc/analytics/coremldata.bin",
+          "kind": "file",
+          "bytes": 243,
+          "sha256": "47ff37d9f3ed74eab8e8a34f12f5cf5bdb99139131953ecefff30d9a6d787429"
+        },
+        {
+          "path": "raw.mlmodelc/coremldata.bin",
+          "kind": "file",
+          "bytes": 199,
+          "sha256": "cf3d8949ffdbcdeb30b5ca84af20a1587de05890579838e2c2c68b4783ecdca8"
+        },
+        {
+          "path": "raw.mlmodelc/model.mil",
+          "kind": "file",
+          "bytes": 468066,
+          "sha256": "372e14aacd0355278ad9fe49afb04a3a00f94b684b459b8331f6b9fddb8733fb"
+        },
+        {
+          "path": "raw.mlmodelc/weights",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "raw.mlmodelc/weights/weight.bin",
+          "kind": "file",
+          "bytes": 106107392,
+          "sha256": "3fb957af75c27a6b6b943ca0495bbeecc80e3da828052a5c50a1ea48149d9169"
+        },
+        {
+          "path": "raw.onnx",
+          "kind": "file",
+          "bytes": 106678694,
+          "sha256": "10b0890a383a933bb3f48f53e0ce9407861a230349e779b6ba86993d432191e4"
+        },
+        {
+          "path": "rgb.mlmodelc",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "rgb.mlmodelc/analytics",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "rgb.mlmodelc/analytics/coremldata.bin",
+          "kind": "file",
+          "bytes": 243,
+          "sha256": "20786e9244c40e39833870c39beda86fc65674150b99275476a67c5e72bd14d2"
+        },
+        {
+          "path": "rgb.mlmodelc/coremldata.bin",
+          "kind": "file",
+          "bytes": 191,
+          "sha256": "6f5407701ee1d5e54e944ad5208f2f465884461d4f8f2007cc56f283b7ab09df"
+        },
+        {
+          "path": "rgb.mlmodelc/model.mil",
+          "kind": "file",
+          "bytes": 466913,
+          "sha256": "dfad2a74af5874881c81cf2b79d7bb5b53a319455239a77a0c0c51dadd0ae8a1"
+        },
+        {
+          "path": "rgb.mlmodelc/weights",
+          "kind": "directory",
+          "bytes": 0
+        },
+        {
+          "path": "rgb.mlmodelc/weights/weight.bin",
+          "kind": "file",
+          "bytes": 106106624,
+          "sha256": "89fefcd9e29be1b0359904693d0caf3fe4735ece4b41e618c44cd4d072a30cdb"
+        },
+        {
+          "path": "rgb.onnx",
+          "kind": "file",
+          "bytes": 106677489,
+          "sha256": "e9f7b95787e7e7495fbc6ff82dbb36790eac30f4504ca600291eb5f823796616"
+        }
+      ]
+    },
+    "windows-x64": {
+      "schemaVersion": 1,
+      "platform": "windows-x64",
+      "url": "https://github.com/dancancer/RawLab/releases/download/assets-v1/rawlab-ai-windows-x64-86fb75845dc5.tar.gz",
+      "archiveName": "rawlab-ai-windows-x64-86fb75845dc5.tar.gz",
+      "archiveSha256": "86fb75845dc5f270c3aac4d53d2c75413eba5049ecdc87e11c09e3f068291748",
+      "archiveBytes": 294125075,
+      "manifestSha256": "7bfabad6667ee02aad9722493b2cec9dd9dc0d2db3f8fef5b86e8432fbd6e890",
+      "unpackedBytes": 333603381,
+      "entries": [
+        {
+          "path": "DualDn-LICENSE.txt",
+          "kind": "file",
+          "bytes": 1537,
+          "sha256": "566b84c659cfed1d2e6ca015e86c0db07e68b70a607161885fcccbad8ae27a5f"
+        },
+        {
+          "path": "Restormer-LICENSE.txt",
+          "kind": "file",
+          "bytes": 1349,
+          "sha256": "50fdf21f3caa7c42c51e0145d6cdb70a4f0d456955797d1f94de14c640a2c702"
+        },
+        {
+          "path": "blind_rgb.onnx",
+          "kind": "file",
+          "bytes": 105453667,
+          "sha256": "0f4d73f779abae52796507d5bd3386c2e08d030277dc62530f4495b91e9c7768"
+        },
+        {
+          "path": "isp.onnx",
+          "kind": "file",
+          "bytes": 14787523,
+          "sha256": "a4484516b8b6fba56d0838a9ab1f800445f1ad8dcea41a6fbfa37d0ce45fd07c"
+        },
+        {
+          "path": "manifest.json",
+          "kind": "file",
+          "bytes": 3122,
+          "sha256": "7bfabad6667ee02aad9722493b2cec9dd9dc0d2db3f8fef5b86e8432fbd6e890"
+        },
+        {
+          "path": "raw.onnx",
+          "kind": "file",
+          "bytes": 106678694,
+          "sha256": "10b0890a383a933bb3f48f53e0ce9407861a230349e779b6ba86993d432191e4"
+        },
+        {
+          "path": "rgb.onnx",
+          "kind": "file",
+          "bytes": 106677489,
+          "sha256": "e9f7b95787e7e7495fbc6ff82dbb36790eac30f4504ca600291eb5f823796616"
+        }
+      ]
+    }
+  }
+}

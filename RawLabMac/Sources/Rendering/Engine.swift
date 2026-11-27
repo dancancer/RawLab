@@ -175,9 +175,30 @@ final class RenderEngine {
     private let aiModelDirectory: URL?
     private let aiCacheDirectory: URL
     private let aiBackend: sony2fuji_ai_backend
+    var currentAIModelDirectory: URL? { aiModelDirectory }
     static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
     static var hdrCameraAIAvailable: Bool { sony2fuji_hdr_camera_ai_available() != 0 }
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
+    static var aiModelOverrideDirectory: URL? = nil
+    static var aiModelStore: AIModelPackageStore = .shared
+    static var aiModelDownloadSupported: Bool {
+        #if arch(arm64)
+        return aiAvailable && aiModelStore.descriptor != nil
+        #else
+        return false
+        #endif
+    }
+    static var resolvedAIModelOverride: URL? {
+        if let explicit = aiModelOverrideDirectory { return explicit }
+        if let env = ProcessInfo.processInfo.environment["RAWLAB_AI_MODEL_OVERRIDE"], !env.isEmpty {
+            return URL(fileURLWithPath: env, isDirectory: true)
+        }
+        return nil
+    }
+    static var resolvedAIModelSource: AIModelDirectorySource? {
+        aiModelStore.resolveModelDirectory(override: resolvedAIModelOverride, bundled: bundledAIModel)
+    }
+    static var resolvedAIModelDirectory: URL? { resolvedAIModelSource?.url }
     private let gpuMode: sony2fuji_gpu_mode
     private let statisticsProvider: (inout sony2fuji_buffer) -> PreviewStatistics?
     static var x3fAvailable: Bool { sony2fuji_x3f_available() != 0 }
@@ -242,7 +263,7 @@ final class RenderEngine {
     }
     init(gpuMode: sony2fuji_gpu_mode = SONY2FUJI_GPU_AUTO, lensDatabaseURL: URL? = nil,
          statisticsProvider: @escaping (inout sony2fuji_buffer) -> PreviewStatistics? = PreviewStatistics.analyze,
-         aiModelDirectory: URL? = RenderEngine.bundledAIModel, aiCacheDirectory: URL? = nil,
+         aiModelDirectory: URL? = RenderEngine.resolvedAIModelDirectory, aiCacheDirectory: URL? = nil,
          aiBackend: sony2fuji_ai_backend = SONY2FUJI_AI_AUTO) throws {
         self.gpuMode = gpuMode
         self.statisticsProvider = statisticsProvider
@@ -330,9 +351,12 @@ final class RenderEngine {
 
     static func validateAIInput(_ url: URL, settings: Adjustments) throws {
         if settings.isHDREditing {
-            guard hdrCameraAIAvailable, bundledAIModel != nil,
+            guard hdrCameraAIAvailable,
                   isHDRCameraAICandidate(info: try HDRSourceInfo.probeRAW(url), settings: settings) else {
                 throw RenderError.aiFailed(L10n.text("此照片或构建尚不能使用 AI 降噪。"))
+            }
+            guard resolvedAIModelDirectory != nil else {
+                throw RenderError.aiFailed(L10n.text(aiModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"))
             }
             return
         }
@@ -340,7 +364,10 @@ final class RenderEngine {
         guard !isNormalX3f(url, settings: settings) else {
             throw RenderError.failed(L10n.text("此 X3F 显影模式不支持 AI 降噪。"))
         }
-        guard aiAvailable, bundledAIModel != nil else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+        guard aiAvailable else { throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。")) }
+        guard resolvedAIModelDirectory != nil else {
+            throw RenderError.aiFailed(L10n.text(aiModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"))
+        }
     }
 
     static func isHDRCameraAICandidate(info: HDRSourceInfo?, settings: Adjustments) -> Bool {
@@ -349,8 +376,13 @@ final class RenderEngine {
     }
 
     private func configureAI(enabled: Bool) throws {
-        if enabled && (!Self.aiAvailable || aiModelDirectory == nil) {
-            throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
+        if enabled {
+            if !Self.aiAvailable {
+                throw RenderError.aiFailed(L10n.text("此构建未安装 AI 降噪模型。"))
+            }
+            if aiModelDirectory == nil {
+                throw RenderError.aiFailed(L10n.text(Self.aiModelDownloadSupported ? "尚未下载 AI 降噪模型。" : "此构建未安装 AI 降噪模型。"))
+            }
         }
         var config = sony2fuji_ai_denoise_config()
         config.version = SONY2FUJI_AI_DENOISE_CONFIG_VERSION

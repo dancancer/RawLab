@@ -8,6 +8,7 @@ for name in README.md LICENSE.LGPL-2.1; do
     cmp "$ROOT/lutools/third_party/nikon_he/$name" "$APP/Contents/Resources/Licenses/nikon-he/$name"
 done
 cmp "$ROOT/Shared/BundledLooks/catalog.json" "$APP/Contents/Resources/bundled-looks.json"
+cmp "$ROOT/Shared/ai-models/catalog.json" "$APP/Contents/Resources/ai-model-catalog.json"
 for asset in "$ROOT"/Shared/BundledLooks/*.cube; do
     cmp "$asset" "$APP/Contents/Resources/LUTs/$(basename "$asset")"
 done

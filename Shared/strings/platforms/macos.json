@@ -5122,6 +5122,135 @@
     "120 中画幅": {
       "formats": [],
       "source": "120 中画幅"
+    },
+    "尚未下载 AI 降噪模型。": {
+      "formats": [],
+      "source": "尚未下载 AI 降噪模型。"
+    },
+    "尚未下载 AI 降噪模型（约 %@ MB）。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "尚未下载 AI 降噪模型（约 {0} MB）。"
+    },
+    "模型（DualDn、Restormer）仅限非商业用途。": {
+      "formats": [],
+      "source": "模型（DualDn、Restormer）仅限非商业用途。"
+    },
+    "查看许可": {
+      "formats": [],
+      "source": "查看许可"
+    },
+    "下载模型": {
+      "formats": [],
+      "source": "下载模型"
+    },
+    "正在下载 AI 降噪模型… %@ / %@ MB": {
+      "formats": [
+        "%@",
+        "%@"
+      ],
+      "source": "正在下载 AI 降噪模型… {0} / {1} MB"
+    },
+    "正在下载 AI 降噪模型…": {
+      "formats": [],
+      "source": "正在下载 AI 降噪模型…"
+    },
+    "正在校验 AI 降噪模型…": {
+      "formats": [],
+      "source": "正在校验 AI 降噪模型…"
+    },
+    "正在安装 AI 降噪模型…": {
+      "formats": [],
+      "source": "正在安装 AI 降噪模型…"
+    },
+    "已取消下载 AI 降噪模型。": {
+      "formats": [],
+      "source": "已取消下载 AI 降噪模型。"
+    },
+    "已下载 AI 降噪模型（约 %@ MB）。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "已下载 AI 降噪模型（约 {0} MB）。"
+    },
+    "删除已下载模型": {
+      "formats": [],
+      "source": "删除已下载模型"
+    },
+    "确定删除已下载的 AI 降噪模型？": {
+      "formats": [],
+      "source": "确定删除已下载的 AI 降噪模型？"
+    },
+    "删除后将释放约 %@ MB 磁盘空间，需要时可重新下载。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "删除后将释放约 {0} MB 磁盘空间，需要时可重新下载。"
+    },
+    "AI 降噪模型许可": {
+      "formats": [],
+      "source": "AI 降噪模型许可"
+    },
+    "打开许可文件夹": {
+      "formats": [],
+      "source": "打开许可文件夹"
+    },
+    "无法连接网络，请检查网络后重试。": {
+      "formats": [],
+      "source": "无法连接网络，请检查网络后重试。"
+    },
+    "下载超时，请检查网络后重试。": {
+      "formats": [],
+      "source": "下载超时，请检查网络后重试。"
+    },
+    "服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。": {
+      "formats": [],
+      "source": "服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。"
+    },
+    "下载失败（HTTP %@），请稍后重试。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "下载失败（HTTP {0}），请稍后重试。"
+    },
+    "磁盘可用空间不足，至少需要约 %@ MB。": {
+      "formats": [
+        "%@"
+      ],
+      "source": "磁盘可用空间不足，至少需要约 {0} MB。"
+    },
+    "磁盘可用空间不足，请清理空间后重试。": {
+      "formats": [],
+      "source": "磁盘可用空间不足，请清理空间后重试。"
+    },
+    "下载的模型文件大小与校验信息不符，已清除临时文件，请重试。": {
+      "formats": [],
+      "source": "下载的模型文件大小与校验信息不符，已清除临时文件，请重试。"
+    },
+    "下载的模型文件校验失败，已清除临时文件，请重试。": {
+      "formats": [],
+      "source": "下载的模型文件校验失败，已清除临时文件，请重试。"
+    },
+    "模型压缩包校验失败，已清除临时文件，请重试。": {
+      "formats": [],
+      "source": "模型压缩包校验失败，已清除临时文件，请重试。"
+    },
+    "模型下载地址不安全，已阻止下载。": {
+      "formats": [],
+      "source": "模型下载地址不安全，已阻止下载。"
+    },
+    "下载或安装模型失败，请重试。": {
+      "formats": [],
+      "source": "下载或安装模型失败，请重试。"
+    },
+    "无法删除已下载的模型文件，请重试。": {
+      "formats": [],
+      "source": "无法删除已下载的模型文件，请重试。"
+    },
+    "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。": {
+      "formats": [],
+      "source": "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。"
     }
   },
   "overrides": {},
@@ -6461,6 +6590,238 @@
       "fr": "Diagnostic…",
       "ja": "診断…",
       "zh-Hans": "故障诊断…"
+    },
+    "尚未下载 AI 降噪模型。": {
+      "zh-Hans": "尚未下载 AI 降噪模型。",
+      "en": "AI denoise models are not downloaded yet.",
+      "de": "KI-Entrauschungsmodelle wurden noch nicht heruntergeladen.",
+      "fr": "Les modèles de débruitage IA ne sont pas encore téléchargés.",
+      "ja": "AI ノイズ除去モデルはまだダウンロードされていません。",
+      "es": "Los modelos de reducción de ruido por IA aún no se han descargado."
+    },
+    "尚未下载 AI 降噪模型（约 {0} MB）。": {
+      "zh-Hans": "尚未下载 AI 降噪模型（约 {0} MB）。",
+      "en": "AI denoise models are not downloaded yet (about {0} MB).",
+      "de": "KI-Entrauschungsmodelle sind noch nicht heruntergeladen (ca. {0} MB).",
+      "fr": "Les modèles de débruitage IA ne sont pas encore téléchargés (environ {0} Mo).",
+      "ja": "AI ノイズ除去モデルはまだダウンロードされていません（約 {0} MB）。",
+      "es": "Los modelos de reducción de ruido por IA aún no se han descargado (aprox. {0} MB)."
+    },
+    "模型（DualDn、Restormer）仅限非商业用途。": {
+      "zh-Hans": "模型（DualDn、Restormer）仅限非商业用途。",
+      "en": "Models (DualDn, Restormer) are licensed for noncommercial use only.",
+      "de": "Die Modelle (DualDn, Restormer) sind nur für nicht-kommerzielle Zwecke lizenziert.",
+      "fr": "Les modèles (DualDn, Restormer) sont réservés à un usage non commercial.",
+      "ja": "モデル（DualDn、Restormer）は非商用利用のみに許諾されています。",
+      "es": "Los modelos (DualDn, Restormer) son solo para uso no comercial."
+    },
+    "查看许可": {
+      "zh-Hans": "查看许可",
+      "en": "View Licenses",
+      "de": "Lizenzen anzeigen",
+      "fr": "Voir les licences",
+      "ja": "ライセンスを表示",
+      "es": "Ver licencias"
+    },
+    "下载模型": {
+      "zh-Hans": "下载模型",
+      "en": "Download Models",
+      "de": "Modelle laden",
+      "fr": "Télécharger les modèles",
+      "ja": "モデルをダウンロード",
+      "es": "Descargar modelos"
+    },
+    "正在下载 AI 降噪模型… {0} / {1} MB": {
+      "zh-Hans": "正在下载 AI 降噪模型… {0} / {1} MB",
+      "en": "Downloading AI denoise models… {0} / {1} MB",
+      "de": "KI-Entrauschungsmodelle werden geladen… {0} / {1} MB",
+      "fr": "Téléchargement des modèles de débruitage IA… {0} / {1} Mo",
+      "ja": "AI ノイズ除去モデルをダウンロード中… {0} / {1} MB",
+      "es": "Descargando modelos de reducción de ruido por IA… {0} / {1} MB"
+    },
+    "正在下载 AI 降噪模型…": {
+      "zh-Hans": "正在下载 AI 降噪模型…",
+      "en": "Downloading AI denoise models…",
+      "de": "KI-Entrauschungsmodelle werden geladen…",
+      "fr": "Téléchargement des modèles de débruitage IA…",
+      "ja": "AI ノイズ除去モデルをダウンロード中…",
+      "es": "Descargando modelos de reducción de ruido por IA…"
+    },
+    "正在校验 AI 降噪模型…": {
+      "zh-Hans": "正在校验 AI 降噪模型…",
+      "en": "Verifying AI denoise models…",
+      "de": "KI-Entrauschungsmodelle werden überprüft…",
+      "fr": "Vérification des modèles de débruitage IA…",
+      "ja": "AI ノイズ除去モデルを検証中…",
+      "es": "Verificando modelos de reducción de ruido por IA…"
+    },
+    "正在安装 AI 降噪模型…": {
+      "zh-Hans": "正在安装 AI 降噪模型…",
+      "en": "Installing AI denoise models…",
+      "de": "KI-Entrauschungsmodelle werden installiert…",
+      "fr": "Installation des modèles de débruitage IA…",
+      "ja": "AI ノイズ除去モデルをインストール中…",
+      "es": "Instalando modelos de reducción de ruido por IA…"
+    },
+    "已取消下载 AI 降噪模型。": {
+      "zh-Hans": "已取消下载 AI 降噪模型。",
+      "en": "AI denoise model download cancelled.",
+      "de": "Download der KI-Entrauschungsmodelle abgebrochen.",
+      "fr": "Téléchargement des modèles de débruitage IA annulé.",
+      "ja": "AI ノイズ除去モデルのダウンロードをキャンセルしました。",
+      "es": "Descarga de modelos de reducción de ruido por IA cancelada."
+    },
+    "已下载 AI 降噪模型（约 {0} MB）。": {
+      "zh-Hans": "已下载 AI 降噪模型（约 {0} MB）。",
+      "en": "AI denoise models downloaded (about {0} MB).",
+      "de": "KI-Entrauschungsmodelle heruntergeladen (ca. {0} MB).",
+      "fr": "Modèles de débruitage IA téléchargés (environ {0} Mo).",
+      "ja": "AI ノイズ除去モデルをダウンロード済み（約 {0} MB）。",
+      "es": "Modelos de reducción de ruido por IA descargados (aprox. {0} MB)."
+    },
+    "删除已下载模型": {
+      "zh-Hans": "删除已下载模型",
+      "en": "Remove Downloaded Models",
+      "de": "Geladene Modelle entfernen",
+      "fr": "Supprimer les modèles téléchargés",
+      "ja": "ダウンロード済みモデルを削除",
+      "es": "Eliminar modelos descargados"
+    },
+    "确定删除已下载的 AI 降噪模型？": {
+      "zh-Hans": "确定删除已下载的 AI 降噪模型？",
+      "en": "Remove downloaded AI denoise models?",
+      "de": "Heruntergeladene KI-Entrauschungsmodelle entfernen?",
+      "fr": "Supprimer les modèles de débruitage IA téléchargés ?",
+      "ja": "ダウンロード済みの AI ノイズ除去モデルを削除しますか？",
+      "es": "¿Eliminar los modelos de reducción de ruido por IA descargados?"
+    },
+    "删除后将释放约 {0} MB 磁盘空间，需要时可重新下载。": {
+      "zh-Hans": "删除后将释放约 {0} MB 磁盘空间，需要时可重新下载。",
+      "en": "This frees about {0} MB of disk space. You can download them again anytime.",
+      "de": "Dadurch werden ca. {0} MB Speicherplatz frei. Du kannst sie jederzeit erneut laden.",
+      "fr": "Cela libérera environ {0} Mo d’espace disque. Vous pourrez les retélécharger à tout moment.",
+      "ja": "約 {0} MB のディスク空き容量が回復します。必要なときに再ダウンロードできます。",
+      "es": "Esto liberará unos {0} MB de espacio en disco. Puedes volver a descargarlos cuando los necesites."
+    },
+    "AI 降噪模型许可": {
+      "zh-Hans": "AI 降噪模型许可",
+      "en": "AI Denoise Model Licenses",
+      "de": "Lizenzen für KI-Entrauschungsmodelle",
+      "fr": "Licences des modèles de débruitage IA",
+      "ja": "AI ノイズ除去モデルのライセンス",
+      "es": "Licencias de los modelos de reducción de ruido por IA"
+    },
+    "打开许可文件夹": {
+      "zh-Hans": "打开许可文件夹",
+      "en": "Open Licenses Folder",
+      "de": "Lizenzordner öffnen",
+      "fr": "Ouvrir le dossier des licences",
+      "ja": "ライセンスフォルダを開く",
+      "es": "Abrir carpeta de licencias"
+    },
+    "无法连接网络，请检查网络后重试。": {
+      "zh-Hans": "无法连接网络，请检查网络后重试。",
+      "en": "Cannot connect to the network. Check your connection and try again.",
+      "de": "Keine Netzwerkverbindung. Prüfe deine Verbindung und versuche es erneut.",
+      "fr": "Impossible de se connecter au réseau. Vérifiez votre connexion et réessayez.",
+      "ja": "ネットワークに接続できません。接続を確認して再試行してください。",
+      "es": "No se puede conectar a la red. Comprueba tu conexión e inténtalo de nuevo."
+    },
+    "下载超时，请检查网络后重试。": {
+      "zh-Hans": "下载超时，请检查网络后重试。",
+      "en": "The download timed out. Check your connection and try again.",
+      "de": "Zeitüberschreitung beim Download. Prüfe deine Verbindung und versuche es erneut.",
+      "fr": "Le téléchargement a expiré. Vérifiez votre connexion et réessayez.",
+      "ja": "ダウンロードがタイムアウトしました。接続を確認して再試行してください。",
+      "es": "Se agotó el tiempo de espera de la descarga. Comprueba tu conexión e inténtalo de nuevo."
+    },
+    "服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。": {
+      "zh-Hans": "服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。",
+      "en": "The model archive was not found on the server (HTTP 404). Try again later or update the app.",
+      "de": "Die Modelldatei wurde auf dem Server nicht gefunden (HTTP 404). Versuche es später erneut oder aktualisiere die App.",
+      "fr": "Le fichier du modèle est introuvable sur le serveur (HTTP 404). Réessayez plus tard ou mettez à jour l’app.",
+      "ja": "サーバー上にモデルファイルが見つかりませんでした（HTTP 404）。後で再試行するかアプリを更新してください。",
+      "es": "No se encontró el archivo del modelo en el servidor (HTTP 404). Inténtalo más tarde o actualiza la app."
+    },
+    "下载失败（HTTP {0}），请稍后重试。": {
+      "zh-Hans": "下载失败（HTTP {0}），请稍后重试。",
+      "en": "Download failed (HTTP {0}). Please try again later.",
+      "de": "Download fehlgeschlagen (HTTP {0}). Bitte versuche es später erneut.",
+      "fr": "Échec du téléchargement (HTTP {0}). Veuillez réessayer plus tard.",
+      "ja": "ダウンロードに失敗しました（HTTP {0}）。後で再試行してください。",
+      "es": "Error en la descarga (HTTP {0}). Inténtalo de nuevo más tarde."
+    },
+    "磁盘可用空间不足，至少需要约 {0} MB。": {
+      "zh-Hans": "磁盘可用空间不足，至少需要约 {0} MB。",
+      "en": "Not enough free disk space. At least about {0} MB is required.",
+      "de": "Nicht genügend freier Speicherplatz. Mindestens ca. {0} MB erforderlich.",
+      "fr": "Espace disque insuffisant. Environ {0} Mo minimum sont nécessaires.",
+      "ja": "ディスクの空き容量が不足しています。少なくとも約 {0} MB 必要です。",
+      "es": "Espacio libre en disco insuficiente. Se necesitan al menos unos {0} MB."
+    },
+    "磁盘可用空间不足，请清理空间后重试。": {
+      "zh-Hans": "磁盘可用空间不足，请清理空间后重试。",
+      "en": "Not enough free disk space. Free up space and try again.",
+      "de": "Nicht genügend freier Speicherplatz. Gib Speicherplatz frei und versuche es erneut.",
+      "fr": "Espace disque insuffisant. Libérez de l’espace et réessayez.",
+      "ja": "ディスクの空き容量が不足しています。空き容量を確保して再試行してください。",
+      "es": "Espacio libre en disco insuficiente. Libera espacio e inténtalo de nuevo."
+    },
+    "下载的模型文件大小与校验信息不符，已清除临时文件，请重试。": {
+      "zh-Hans": "下载的模型文件大小与校验信息不符，已清除临时文件，请重试。",
+      "en": "The downloaded model file size did not match. Temporary files were removed; please retry.",
+      "de": "Die Größe der heruntergeladenen Modelldatei stimmt nicht überein. Temporäre Dateien wurden entfernt; bitte erneut versuchen.",
+      "fr": "La taille du fichier modèle téléchargé ne correspond pas. Les fichiers temporaires ont été supprimés ; veuillez réessayer.",
+      "ja": "ダウンロードしたモデルファイルのサイズが一致しませんでした。一時ファイルを削除しました。再試行してください。",
+      "es": "El tamaño del archivo del modelo descargado no coincide. Se eliminaron los archivos temporales; inténtalo de nuevo."
+    },
+    "下载的模型文件校验失败，已清除临时文件，请重试。": {
+      "zh-Hans": "下载的模型文件校验失败，已清除临时文件，请重试。",
+      "en": "The downloaded model file failed verification. Temporary files were removed; please retry.",
+      "de": "Die Überprüfung der heruntergeladenen Modelldatei ist fehlgeschlagen. Temporäre Dateien wurden entfernt; bitte erneut versuchen.",
+      "fr": "La vérification du fichier modèle téléchargé a échoué. Les fichiers temporaires ont été supprimés ; veuillez réessayer.",
+      "ja": "ダウンロードしたモデルファイルの検証に失敗しました。一時ファイルを削除しました。再試行してください。",
+      "es": "La verificación del archivo del modelo descargado falló. Se eliminaron los archivos temporales; inténtalo de nuevo."
+    },
+    "模型压缩包校验失败，已清除临时文件，请重试。": {
+      "zh-Hans": "模型压缩包校验失败，已清除临时文件，请重试。",
+      "en": "The model archive failed verification. Temporary files were removed; please retry.",
+      "de": "Die Überprüfung des Modellarchivs ist fehlgeschlagen. Temporäre Dateien wurden entfernt; bitte erneut versuchen.",
+      "fr": "La vérification de l’archive du modèle a échoué. Les fichiers temporaires ont été supprimés ; veuillez réessayer.",
+      "ja": "モデルアーカイブの検証に失敗しました。一時ファイルを削除しました。再試行してください。",
+      "es": "La verificación del archivo comprimido del modelo falló. Se eliminaron los archivos temporales; inténtalo de nuevo."
+    },
+    "模型下载地址不安全，已阻止下载。": {
+      "zh-Hans": "模型下载地址不安全，已阻止下载。",
+      "en": "Blocked download from an insecure model URL.",
+      "de": "Download von einer unsicheren Modell-URL blockiert.",
+      "fr": "Téléchargement bloqué depuis une URL de modèle non sécurisée.",
+      "ja": "安全でないモデル URL からのダウンロードをブロックしました。",
+      "es": "Se bloqueó la descarga desde una URL de modelo no segura."
+    },
+    "下载或安装模型失败，请重试。": {
+      "zh-Hans": "下载或安装模型失败，请重试。",
+      "en": "Failed to download or install the models. Please retry.",
+      "de": "Download oder Installation der Modelle fehlgeschlagen. Bitte erneut versuchen.",
+      "fr": "Échec du téléchargement ou de l’installation des modèles. Veuillez réessayer.",
+      "ja": "モデルのダウンロードまたはインストールに失敗しました。再試行してください。",
+      "es": "Error al descargar o instalar los modelos. Inténtalo de nuevo."
+    },
+    "无法删除已下载的模型文件，请重试。": {
+      "zh-Hans": "无法删除已下载的模型文件，请重试。",
+      "en": "Could not remove the downloaded model files. Please retry.",
+      "de": "Die heruntergeladenen Modelldateien konnten nicht entfernt werden. Bitte erneut versuchen.",
+      "fr": "Impossible de supprimer les fichiers de modèles téléchargés. Veuillez réessayer.",
+      "ja": "ダウンロード済みモデルファイルを削除できませんでした。再試行してください。",
+      "es": "No se pudieron eliminar los archivos de modelos descargados. Inténtalo de nuevo."
+    },
+    "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。": {
+      "zh-Hans": "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。",
+      "en": "These models are for noncommercial use only. Each keeps its original authors’ license and is not covered by RawLab’s GPL license.",
+      "de": "Diese Modelle sind nur für nicht-kommerzielle Zwecke bestimmt. Jedes behält die Lizenz seiner ursprünglichen Autoren und unterliegt nicht der GPL-Lizenz von RawLab.",
+      "fr": "Ces modèles sont réservés à un usage non commercial. Chacun conserve la licence de ses auteurs d’origine et n’est pas soumis à la licence GPL de RawLab.",
+      "ja": "以下のモデルは非商用利用のみに許諾されています。それぞれ原作者のライセンスが適用され、RawLab の GPL ライセンスは適用されません。",
+      "es": "Estos modelos son solo para uso no comercial. Cada uno conserva la licencia de sus autores originales y no está cubierto por la licencia GPL de RawLab."
     }
   }
 }
