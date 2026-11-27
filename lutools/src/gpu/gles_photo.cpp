@@ -465,10 +465,7 @@ struct GlesPhotoRenderer::Impl {
         const uint32_t h = static_cast<uint32_t>(input.height);
         const float radius = std::clamp(opts.radius, 0.5f, 3.0f);
         SpatialGpuParams spSharp{};
-        spSharp.strength = std::clamp(amount, 0.0f, 2.0f);
-        spSharp.sharpenDetail = opts.detail;
-        spSharp.sharpenMasking = opts.masking;
-        spSharp.sharpenRadius = radius;
+        fillSpatialSharpenV2Params(amount, opts, spSharp);
         fillSpatialGaussianWeights(radius, 9, spSharp);
         const uint32_t rMask = opts.masking > 0.0f
             ? static_cast<uint32_t>(std::clamp(static_cast<int>(std::ceil(3.0f * 0.5f * radius)), 1, 5))
@@ -666,10 +663,7 @@ bool GlesPhotoRenderer::renderImpl(const ImageData& input, ColorSpace inputSpace
                 context.bands(input, pw, ph, 2, &native, 1);
                 SpatialGpuParams spDefringe{};
                 spDefringe.stage = static_cast<uint32_t>(SpatialKernel::Defringe);
-                spDefringe.defringePurpleAmount = params.defringe.purpleAmount;
-                spDefringe.defringePurpleHue = params.defringe.purpleHue;
-                spDefringe.defringeGreenAmount = params.defringe.greenAmount;
-                spDefringe.defringeGreenHue = params.defringe.greenHue;
+                fillSpatialDefringeParams(params.defringe, spDefringe);
                 ImageData defringed(pw, ph);
                 context.spatialBands(native, defringed, spDefringe, 3u, nullptr);
                 context.setAuxAndDcp(params, useDcp);

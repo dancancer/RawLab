@@ -23,6 +23,18 @@ struct DefringeOptions {
     }
 };
 
+// 由滑块值派生的逐像素常量。CPU 与三个 GPU 后端共用这一份推导，着色器只读取结果：
+// 在托管 macOS x86_64 runner 的虚拟化 Intel GPU（Apple Paravirtualized Graphics Device）上，
+// 观测到着色器里的 clamp(x / 20, 0, 1) 被错误折叠成 clamp(x, 0, 1) / 20（#695）。
+struct DefringeWeights {
+    float purpleNorm = 0.0f;
+    float purpleCenter = 290.0f;
+    float greenNorm = 0.0f;
+    float greenCenter = 120.0f;
+};
+
+DefringeWeights defringeWeights(const DefringeOptions& options);
+
 void applyDefringe(ImageData& image, const DefringeOptions& options);
 
 } // namespace sony2fuji
