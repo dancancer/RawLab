@@ -146,6 +146,8 @@ protocol EditorCoordinatorBackend: AnyObject {
     var hasActiveAdjustmentInteraction: Bool { get }
     var sourceRevision: UUID { get }
     var isRawSource: Bool { get }
+    var isRasterSource: Bool { get }
+    var isX3fSource: Bool { get }
     var sourceIdentity: PhotoIdentity? { get }
     var statusMessage: String? { get set }
     var cameraWhiteBalance: (temperature: Double, tint: Double, isCalibrated: Bool)? { get }
@@ -446,8 +448,16 @@ final class EditorCoordinator: ObservableObject {
             adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented
     }
 
+    var canUseWBProbe: Bool {
+        guard let backend, !workingSettings.isHDREditing else { return false }
+        if backend.isRasterSource { return workingSettings.masterRecipeID == nil }
+        guard backend.isRawSource else { return false }
+        if backend.isX3fSource && workingSettings.x3fMode == .normal { return false }
+        return backend.cameraWhiteBalance != nil
+    }
+
     var wbProbeActive: Bool {
-        wbEyedropperEnabled && (selectedAdjustment == .temperature || selectedAdjustment == .tint) &&
+        wbEyedropperEnabled && canUseWBProbe && (selectedAdjustment == .temperature || selectedAdjustment == .tint) &&
             isEditorDraftActive &&
             (currentEditorTool == .adjustment(.temperature) || currentEditorTool == .adjustment(.tint)) &&
             !editorBusy && adjustmentSheet == nil && !draftExitPresented && !resetConfirmationPresented &&
@@ -919,6 +929,10 @@ final class EditorCoordinator: ObservableObject {
 
     func handleSettingsChange(_ newValue: RawSettings) {
         normalizeHDRNavigation(isHDREditing: newValue.isHDREditing)
+        if !canUseWBProbe {
+            wbEyedropperEnabled = false
+            wbProbeNotice = nil
+        }
         settingsRevision = UUID()
         backend?.committedPreviewSettings = newValue
         if backend?.consumeRestoredSettings(newValue) == true { return }

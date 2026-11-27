@@ -7,6 +7,8 @@ extension RawEditorViewModel: EditorCoordinatorBackend {
     var quickPresetStateIsPreparing: Bool { quickPresetState.isPreparing }
     var hasActiveAdjustmentInteraction: Bool { adjustmentInteraction != nil }
     var isRawSource: Bool { sourceKind == .raw }
+    var isRasterSource: Bool { sourceKind == .raster }
+    var isX3fSource: Bool { sourceIsX3f }
 
     var cameraWhiteBalance: (temperature: Double, tint: Double, isCalibrated: Bool)? {
         guard let rawWhiteBalance else { return nil }

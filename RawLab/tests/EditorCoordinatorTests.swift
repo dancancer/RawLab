@@ -55,6 +55,8 @@ private final class MockCoordinatorBackend: EditorCoordinatorBackend {
     var hasActiveAdjustmentInteraction = false
     var sourceRevision = UUID()
     var isRawSource = true
+    var isRasterSource = false
+    var isX3fSource = false
     var sourceIdentity: PhotoIdentity? = PhotoIdentity(resourceIdentifier: "coord-test-photo", contentIdentifier: "coord-bytes")
     var statusMessage: String?
     var cameraWhiteBalance: (temperature: Double, tint: Double, isCalibrated: Bool)? = (5500, 0, true)
@@ -272,6 +274,7 @@ struct EditorCoordinatorTests {
         testImportExportAndSceneLifecycle()
         testDraftPersistenceRoundTrip()
         testLoadingPresentationAndProgressMath()
+        testWBProbeAvailability()
         print("PASS: all EditorCoordinator unit tests passed")
     }
 
@@ -797,5 +800,88 @@ struct EditorCoordinatorTests {
 
         let batch = resolveLoading(hasImage: true, isBatchExportRunning: true)
         check(batch.showsTopProgressLine, "running batch export activates top progress bar")
+    }
+
+    static func testWBProbeAvailability() {
+        let backend = MockCoordinatorBackend()
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("coord-wb-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let coordinator = EditorCoordinator(backend: backend, draftStoreProvider: { EditorToolDraftStore(directory: tempDir) })
+
+        // 1. Normal-mode X3F disables WB eyedropper even when rawWhiteBalance reports 6500K/0
+        backend.isRawSource = true
+        backend.isRasterSource = false
+        backend.isX3fSource = true
+        backend.cameraWhiteBalance = (6500, 0, true)
+        coordinator.settings.x3fMode = .normal
+        coordinator.selectEditorTool(.adjustment(.temperature))
+        coordinator.wbEyedropperEnabled = true
+        check(!coordinator.canUseWBProbe && !coordinator.wbProbeActive,
+              "normal-mode X3F disables WB probe entry and active probe even with 6500K/0 rawWhiteBalance")
+
+        // 2. Switching X3F to legacy mode immediately re-enables WB eyedropper when raw WB is present
+        coordinator.settings.x3fMode = .legacy
+        check(coordinator.canUseWBProbe && coordinator.wbProbeActive,
+              "legacy-mode X3F enables WB probe entry and active probe when rawWhiteBalance is present")
+
+        // Switching back to normal mode via handleSettingsChange disables entry and clears active eyedropper
+        coordinator.wbProbeNotice = .outside
+        coordinator.settings.x3fMode = .normal
+        coordinator.handleSettingsChange(coordinator.settings)
+        check(!coordinator.canUseWBProbe && !coordinator.wbProbeActive &&
+              !coordinator.wbEyedropperEnabled && coordinator.wbProbeNotice == nil,
+              "switching X3F back to normal mode disables WB probe and clears active eyedropper state")
+
+        // Legacy-mode X3F still requires rawWhiteBalance
+        coordinator.settings.x3fMode = .legacy
+        backend.cameraWhiteBalance = nil
+        check(!coordinator.canUseWBProbe,
+              "legacy-mode X3F without rawWhiteBalance disables WB probe")
+
+        // 3. Other RAW with rawWhiteBalance stays available even with default x3fMode (.normal)
+        backend.isX3fSource = false
+        backend.cameraWhiteBalance = (5500, 0, true)
+        coordinator.settings.x3fMode = .normal
+        check(coordinator.canUseWBProbe,
+              "non-X3F RAW with rawWhiteBalance keeps WB probe enabled")
+
+        backend.cameraWhiteBalance = nil
+        check(!coordinator.canUseWBProbe,
+              "non-X3F RAW without rawWhiteBalance disables WB probe")
+
+        // 4. Raster without locked master recipe stays available; locked recipe disables it (including in draft)
+        backend.isRawSource = false
+        backend.isRasterSource = true
+        backend.cameraWhiteBalance = nil
+        coordinator.finishEditorTool()
+        coordinator.settings.masterRecipeID = nil
+        check(coordinator.canUseWBProbe,
+              "raster without master recipe keeps WB probe enabled")
+
+        coordinator.selectEditorTool(.recipe)
+        coordinator.workingSettings.masterRecipeID = "classic-chrome"
+        check(!coordinator.canUseWBProbe,
+              "raster with locked master recipe in workingSettings disables WB probe")
+        coordinator.cancelEditorDraft()
+
+        // 5. Never available in HDR editing (both raster and RAW)
+        coordinator.settings.hdr = HDRSettings()
+        check(coordinator.workingSettings.isHDREditing && !coordinator.canUseWBProbe,
+              "HDR editing on raster disables WB probe")
+        backend.isRasterSource = false
+        backend.isRawSource = true
+        backend.cameraWhiteBalance = (5500, 0, true)
+        check(coordinator.workingSettings.isHDREditing && !coordinator.canUseWBProbe,
+              "HDR editing on RAW disables WB probe")
+
+        // 6. Unavailable with no source or detached backend
+        coordinator.settings.hdr = nil
+        backend.isRawSource = false
+        backend.isRasterSource = false
+        check(!coordinator.canUseWBProbe,
+              "no active source kind disables WB probe")
+        let detached = EditorCoordinator(backend: nil, draftStoreProvider: { EditorToolDraftStore(directory: tempDir) })
+        check(!detached.canUseWBProbe,
+              "detached coordinator without backend disables WB probe")
     }
 }
