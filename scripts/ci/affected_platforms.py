@@ -51,6 +51,21 @@ CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
 CLIENT_FILES = {"global.json": "windows"}
 SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
 SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".github/actionlint.yaml"}
+# Inputs of the core CTest row outside lutools/: looks and externalized assets the tests read,
+# CTest drivers and their Python requirements, the row's Rust and dependency-cache helpers, and
+# the scripts RawLabMac/build.sh runs up to the core build (RAWLAB_CORE_ONLY skips the Sparkle and
+# usage-SDK preparation). lutools/platform/ios/ is iOS framework glue; the iOS job covers it.
+CORE_INPUT_FILES = {
+    "Shared/assets-manifest.json", "scripts/assets/prepare.py", "scripts/ci/test_abi_layout.py",
+    "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt", "scripts/ci/apple-sdk-env.sh",
+    "scripts/ci/prepare-rust.sh", "scripts/ci/native_cache.py",
+    "RawLabMac/build.sh", "RawLabMac/build-env.sh", "RawLabMac/release-config.sh",
+    "RawLabMac/build-dependencies.sh", "RawLabMac/build-chroma-dependency.sh",
+    "RawLabMac/build-wavelet-dependency.sh", "RawLabMac/build-tiff-dependency.sh",
+    "RawLabMac/build-lens-dependency.sh",
+}
+CORE_INPUT_PREFIXES = ("Shared/BundledLooks/",)
+CORE_EXCLUDED_PREFIXES = ("lutools/platform/ios/",)
 # Job names in ci.yml. A description-edit run names its selection job EDIT_JOB, so a later
 # edit run can tell automatic runs (which select checks) from earlier edit runs.
 SELECT_JOB = "Select affected platforms"
@@ -100,6 +115,25 @@ def platforms_for(path):
     return set()
 
 
+def is_core_path(path):
+    """Whether a changed path can change the result of the macOS core CTest build."""
+    if path.startswith("lutools/"):
+        return not (path.startswith(CORE_EXCLUDED_PREFIXES) or _is_lutools_doc(path)
+                    or path.rsplit("/", 1)[-1] in DOC_NAMES)
+    return path in CORE_INPUT_FILES or path.startswith(CORE_INPUT_PREFIXES)
+
+
+def wants_core_ctest(config, platforms, draft, paths):
+    """Automatic models runs add the arm64 core CTest row when core inputs changed.
+
+    `paths` is None when the diff was unavailable; that runs it rather than guessing. Release and
+    hotfix full gates and manual groups keep their own native coverage.
+    """
+    if config["mode"] != "automatic" or config["checks"] != "models" or draft or "macos" not in platforms:
+        return False
+    return paths is None or any(is_core_path(path) for path in paths)
+
+
 def affected(paths):
     selected = set()
     for path in paths:
@@ -134,11 +168,14 @@ def configuration(event_name, event):
     return {"mode": "automatic", "platform": "affected", "checks": checks, "contracts": True}
 
 
-def macos_matrix(checks):
+def macos_matrix(checks, core_ctest=False):
     arm = {"runner": "macos-26", "arch": "arm64", "jobs": "2", "suite": "all"}
     intel = {"runner": "macos-26-intel", "arch": "x86_64", "jobs": "4"}
+    if core_ctest and checks != "models":
+        raise ValueError("The core CTest row belongs to automatic models runs")
     if checks in ("contracts", "models"):
-        return [arm]
+        # The ctest row reuses the arm64 dependency cache (its key ignores the suite).
+        return [arm, {**arm, "suite": "ctest"}] if core_ctest else [arm]
     if checks == "build":
         return [arm, {**intel, "suite": "build"}]
     # full is a cold build: every shard would rebuild every dependency, lutools and the app
@@ -328,11 +365,33 @@ def verify(needs):
         result = needs.get(platform, {}).get("result")
         if result != expected:
             errors.append(f"{platform} finished as {result}, expected {expected}")
+    errors += _verify_core_ctest(needs, outputs, mode, checks)
     batch_selection = mode == "automatic" and checks == "models" and outputs.get("windows") == "true"
     expected = "success" if batch_selection else "skipped"
     result = needs.get("windows-batch-selection", {}).get("result")
     if result != expected:
         errors.append(f"windows-batch-selection finished as {result}, expected {expected}")
+    return errors
+
+
+def _verify_core_ctest(needs, outputs, mode, checks):
+    """A core change is only verified by a successful arm64 core CTest row in the macOS job."""
+    flag = outputs.get("core_ctest", "false")
+    try:
+        rows = json.loads(outputs.get("macos_matrix") or "[]")
+    except ValueError:
+        return ["Unreadable macOS matrix"]
+    ctest_rows = [row for row in rows if row.get("suite") == "ctest"]
+    if flag == "false":
+        return ["A core CTest row was scheduled without a core change"] if ctest_rows else []
+    if flag != "true":
+        return [f"Invalid core_ctest flag: {flag}"]
+    errors = [] if mode == "automatic" and checks == "models" else ["Core CTest belongs to automatic models runs"]
+    if ctest_rows != macos_matrix("models", core_ctest=True)[1:]:
+        errors.append("Core code changed but the macOS matrix has no core CTest row")
+    result = needs.get("macos", {}).get("result")
+    if outputs.get("macos") != "true" or result != "success":
+        errors.append(f"Core code changed but the macOS core CTest job finished as {result}, expected success")
     return errors
 
 
@@ -353,14 +412,16 @@ def windows_runner(event_name, cold, checks="full"):
     return "windows-2022"
 
 
-def write_selection(platforms, cold, draft, reason, event_name, config, extra=()):
+def write_selection(platforms, cold, draft, reason, event_name, config, extra=(), core_ctest=False):
     checks = config["checks"]
     flags = {**{platform: platform in platforms for platform in PLATFORMS}, "cold": cold, "draft": draft,
              "contracts": config["contracts"], "models": checks in ("models", "full"),
-             "build": checks in ("build", "native", "full"), "native": checks in ("native", "full")}
+             "build": checks in ("build", "native", "full"), "native": checks in ("native", "full"),
+             "core_ctest": core_ctest}
     lines = [f"{name}={'true' if value else 'false'}" for name, value in flags.items()]
     lines.append("windows_runner=" + json.dumps(windows_runner(event_name, cold, checks)))
-    lines += ["mode=" + config["mode"], "scope=" + config["platform"], "checks=" + checks, "macos_matrix=" + json.dumps(macos_matrix(checks))]
+    lines += ["mode=" + config["mode"], "scope=" + config["platform"], "checks=" + checks,
+              "macos_matrix=" + json.dumps(macos_matrix(checks, core_ctest))]
     lines += [f"{name}={value}" for name, value in extra]
     print(reason)
     print("\n".join(lines))
@@ -401,8 +462,17 @@ def main():
                         f"title/body edit: CI result reuses this head's automatic result ({reference})",
                         event_name, config, [("reference", reference)])
         return 0
-    write_selection(*select(event_name, event, os.environ["GITHUB_SHA"],
-                            git_changed_files, github_last_success), event_name, configuration(event_name, event))
+    diffs = []
+    def changed_files(base):
+        diffs.append(git_changed_files(base))
+        return diffs[-1]
+    platforms, cold, draft, reason = select(event_name, event, os.environ["GITHUB_SHA"],
+                                            changed_files, github_last_success)
+    config = configuration(event_name, event)
+    core_ctest = wants_core_ctest(config, platforms, draft, diffs[-1] if diffs else None)
+    if core_ctest:
+        reason += "; core inputs changed: macOS arm64 core CTest row added"
+    write_selection(platforms, cold, draft, reason, event_name, config, core_ctest=core_ctest)
     return 0
 
 
