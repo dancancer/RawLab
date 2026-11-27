@@ -283,7 +283,9 @@ final class BatchExportModel: ObservableObject {
                     if snapshot.settings.activeAIDenoise {
                         try RenderEngine.validateAIInput(item.input, settings: snapshot.settings)
                     } else {
-                        if engine == nil { engine = try RenderEngine() }
+                        if engine == nil || engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
+                    engine = try RenderEngine()
+                }
                         _ = try engine!.render(item.input, settings: snapshot.settings, lut: snapshot.look, edge: 180, interactive: true)
                     }
                 } catch { failure = error.localizedDescription }
@@ -421,7 +423,9 @@ final class BatchExportModel: ObservableObject {
                 }, onQuarantine: recordQuarantine) { input, frozen, output in
                     let settings = frozen.settings
                     let look = frozen.look
-                    if self.engine == nil { self.engine = try RenderEngine() }
+                    if self.engine == nil || self.engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
+                        self.engine = try RenderEngine()
+                    }
                     if settings.activeAIDenoise {
                         let progress = AIPreparation { phase, done, total in
                             DispatchQueue.main.async { self.aiProgress = (phase, done, total) }
@@ -556,7 +560,9 @@ final class BatchExportModel: ObservableObject {
                     try snapshot.verifyLook()
                 }
                 if cancellation.cancelled { throw RenderError.aiCancelled }
-                if engine == nil { engine = try RenderEngine() }
+                if engine == nil || engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
+                    engine = try RenderEngine()
+                }
                 if snapshot.settings.activeAIDenoise {
                     let progress = AIPreparation { _, _, _ in }
                     cancellation.attach(progress)

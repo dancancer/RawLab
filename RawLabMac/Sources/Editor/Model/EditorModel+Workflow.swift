@@ -910,7 +910,9 @@ extension EditorModel {
         queue.async { [weak self] in
             guard let self else { return }
             do {
-                if self.engine == nil { self.engine = try RenderEngine() }
+                if self.engine == nil || self.engine?.currentAIModelDirectory != RenderEngine.resolvedAIModelDirectory {
+                    self.engine = try RenderEngine()
+                }
                 _ = try self.engine!.render(file, settings: settings, lut: lut, edge: nil, output: output,
                                              interactive: false, exportLongEdge: longEdge, exportFormat: format,
                                              outputSharpening: sharpening)
