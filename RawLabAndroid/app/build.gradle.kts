@@ -100,6 +100,7 @@ val prepareExternalLuts by tasks.registering {
         }
     }
 }
+apply(from = "library-notices.gradle.kts")
 val prepareAssets by tasks.registering(Sync::class) {
     dependsOn(prepareExternalLuts)
     into(generatedAssets)
@@ -311,6 +312,15 @@ tasks.named("preBuild").configure { dependsOn(prepareAssets) }
 for (variant in listOf("Debug", "Release")) {
     tasks.matching { it.name == "merge${variant}Assets" }.configureEach {
         dependsOn("externalNativeBuild$variant")
+    }
+}
+// 依赖许可清单作为生成的 assets 源挂到每个应用变体：debug 与 release 的许可对话框都显示它，
+// AGP 把它接到合并 assets 的任务上并带上对生成任务的依赖（lint 不读生成的 assets）；JVM 单元测试不触发它。
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(tasks.named("generateLibraryNotices")) { task ->
+            task.extensions.getByName("outputDirectory") as DirectoryProperty
+        }
     }
 }
 tasks.matching {
