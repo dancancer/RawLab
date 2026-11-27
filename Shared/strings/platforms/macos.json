@@ -5192,10 +5192,6 @@
       "formats": [],
       "source": "AI 降噪模型许可"
     },
-    "以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。": {
-      "formats": [],
-      "source": "以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。"
-    },
     "打开许可文件夹": {
       "formats": [],
       "source": "打开许可文件夹"
@@ -5251,6 +5247,10 @@
     "无法删除已下载的模型文件，请重试。": {
       "formats": [],
       "source": "无法删除已下载的模型文件，请重试。"
+    },
+    "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。": {
+      "formats": [],
+      "source": "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。"
     }
   },
   "overrides": {},
@@ -6711,14 +6711,6 @@
       "ja": "AI ノイズ除去モデルのライセンス",
       "es": "Licencias de los modelos de reducción de ruido por IA"
     },
-    "以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。": {
-      "zh-Hans": "以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。",
-      "en": "These models are for noncommercial use only and retain their upstream licenses; they are not relicensed under GPL.",
-      "de": "Diese Modelle sind nur für nicht-kommerzielle Zwecke bestimmt und behalten ihre ursprünglichen Lizenzen; sie stehen nicht unter der GPL.",
-      "fr": "Ces modèles sont réservés à un usage non commercial et conservent leurs licences d’origine ; ils ne passent pas sous GPL.",
-      "ja": "以下のモデルは非商用利用のみに許諾され、各アップストリームのライセンスを保持します（GPL には変更されません）。",
-      "es": "Estos modelos son solo para uso no comercial y conservan sus licencias originales; no pasan a GPL."
-    },
     "打开许可文件夹": {
       "zh-Hans": "打开许可文件夹",
       "en": "Open Licenses Folder",
@@ -6822,6 +6814,14 @@
       "fr": "Impossible de supprimer les fichiers de modèles téléchargés. Veuillez réessayer.",
       "ja": "ダウンロード済みモデルファイルを削除できませんでした。再試行してください。",
       "es": "No se pudieron eliminar los archivos de modelos descargados. Inténtalo de nuevo."
+    },
+    "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。": {
+      "zh-Hans": "以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。",
+      "en": "These models are for noncommercial use only. Each keeps its original authors’ license and is not covered by RawLab’s GPL license.",
+      "de": "Diese Modelle sind nur für nicht-kommerzielle Zwecke bestimmt. Jedes behält die Lizenz seiner ursprünglichen Autoren und unterliegt nicht der GPL-Lizenz von RawLab.",
+      "fr": "Ces modèles sont réservés à un usage non commercial. Chacun conserve la licence de ses auteurs d’origine et n’est pas soumis à la licence GPL de RawLab.",
+      "ja": "以下のモデルは非商用利用のみに許諾されています。それぞれ原作者のライセンスが適用され、RawLab の GPL ライセンスは適用されません。",
+      "es": "Estos modelos son solo para uso no comercial. Cada uno conserva la licencia de sus autores originales y no está cubierto por la licencia GPL de RawLab."
     }
   }
 }

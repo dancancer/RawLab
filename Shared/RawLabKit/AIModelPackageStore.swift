@@ -258,7 +258,6 @@ public enum AIModelPackageError: Error, Equatable, Sendable, LocalizedError {
     case diskFull
     case archiveSizeMismatch(expected: UInt64, actual: UInt64)
     case archiveDigestMismatch(expected: String, actual: String)
-    case unsafeArchive(String)
     case memberVerificationFailed(String)
     case archiveExtractionFailed(Int32)
     case cancelled
@@ -283,8 +282,6 @@ public enum AIModelPackageError: Error, Equatable, Sendable, LocalizedError {
             return "Archive size mismatch (\(actual) != \(expected))"
         case .archiveDigestMismatch:
             return "Archive SHA-256 mismatch"
-        case .unsafeArchive(let detail):
-            return "Unsafe archive: \(detail)"
         case .memberVerificationFailed(let detail):
             return "Archive member verification failed: \(detail)"
         case .archiveExtractionFailed(let status):
@@ -413,6 +410,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
     private let allowLoopbackHTTP: Bool
     private let availableSpaceProvider: (URL) throws -> UInt64
     private let onBeforeUnpack: (() -> Void)?
+    private let onBeforeCommit: (() -> Void)?
 
     public init(
         storageRoot: URL = AIModelPackageStore.defaultStorageRoot,
@@ -420,7 +418,8 @@ public final class AIModelPackageStore: @unchecked Sendable {
         allowLoopbackHTTP: Bool = false,
         diskSpaceMarginBytes: UInt64 = AIModelPackageStore.defaultDiskSpaceMarginBytes,
         availableSpaceProvider: ((URL) throws -> UInt64)? = nil,
-        onBeforeUnpack: (() -> Void)? = nil
+        onBeforeUnpack: (() -> Void)? = nil,
+        onBeforeCommit: (() -> Void)? = nil
     ) {
         self.storageRoot = storageRoot
         self.descriptor = descriptor
@@ -428,6 +427,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
         self.diskSpaceMarginBytes = diskSpaceMarginBytes
         self.availableSpaceProvider = availableSpaceProvider ?? Self.volumeAvailableBytes(at:)
         self.onBeforeUnpack = onBeforeUnpack
+        self.onBeforeCommit = onBeforeCommit
     }
 
     public var installedDirectoryURL: URL? {
@@ -505,6 +505,9 @@ public final class AIModelPackageStore: @unchecked Sendable {
             throw Self.mapFileSystemError(error)
         }
 
+        // 清理上次异常退出或强杀遗留的临时下载/暂存目录。
+        cleanupStaleTempItems()
+
         let token = UUID().uuidString.lowercased()
         let partURL = storageRoot.appendingPathComponent(".download-\(token).part", isDirectory: false)
         let stagingURL = storageRoot.appendingPathComponent(".staging-\(token)", isDirectory: true)
@@ -534,16 +537,13 @@ public final class AIModelPackageStore: @unchecked Sendable {
 
         onBeforeUnpack?()
 
-        // 预检归档成员清单，拒绝路径穿越、绝对路径、链接、额外成员与大小不符。
-        try inspectArchiveMembers(at: partURL, descriptor: descriptor, cancellation: cancellation)
-
-        if cancellation.isCancelled { throw AIModelPackageError.cancelled }
         try extractArchive(at: partURL, to: stagingURL, cancellation: cancellation)
 
         if cancellation.isCancelled { throw AIModelPackageError.cancelled }
         try verifyAndNormalizeStagingTree(at: stagingURL, descriptor: descriptor, cancellation: cancellation)
 
         if cancellation.isCancelled { throw AIModelPackageError.cancelled }
+        onBeforeCommit?()
         let destination = storageRoot.appendingPathComponent(descriptor.manifestSha256, isDirectory: true)
         try commitStagingDirectory(stagingURL, to: destination)
         cleanupOlderPackages(keeping: descriptor.manifestSha256)
@@ -592,98 +592,6 @@ public final class AIModelPackageStore: @unchecked Sendable {
         }
     }
 
-    func inspectArchiveMembers(
-        at archiveURL: URL,
-        descriptor: AIModelPackageDescriptor,
-        cancellation: AIModelInstallCancellation
-    ) throws {
-        let pathsOutput = try runTar(arguments: ["-tzf", archiveURL.path], cancellation: cancellation)
-        let verboseOutput = try runTar(arguments: ["-tvzf", archiveURL.path], cancellation: cancellation)
-
-        let rawPaths = pathsOutput
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-            .filter { !$0.isEmpty }
-        let verboseLines = verboseOutput
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map(String.init)
-            .filter { !$0.isEmpty }
-
-        guard rawPaths.count == verboseLines.count else {
-            throw AIModelPackageError.unsafeArchive("Archive listing line count mismatch")
-        }
-
-        let expectedByPath = Dictionary(uniqueKeysWithValues: descriptor.entries.map { ($0.path, $0) })
-        var seenExact = Set<String>()
-        var seenCaseInsensitive = Set<String>()
-
-        for (rawPath, verboseLine) in zip(rawPaths, verboseLines) {
-            if cancellation.isCancelled { throw AIModelPackageError.cancelled }
-            guard let typeChar = verboseLine.first else {
-                throw AIModelPackageError.unsafeArchive("Empty verbose tar entry")
-            }
-            let entryKind: AIModelArchiveEntry.Kind
-            switch typeChar {
-            case "-":
-                entryKind = .file
-            case "d":
-                entryKind = .directory
-            case "l":
-                throw AIModelPackageError.unsafeArchive("Archive contains symbolic link: \(rawPath)")
-            case "h":
-                throw AIModelPackageError.unsafeArchive("Archive contains hard link: \(rawPath)")
-            default:
-                throw AIModelPackageError.unsafeArchive("Archive contains unsupported member type '\(typeChar)': \(rawPath)")
-            }
-
-            if rawPath.hasPrefix("/") {
-                throw AIModelPackageError.unsafeArchive("Archive contains absolute path: \(rawPath)")
-            }
-            if rawPath.contains("\\") {
-                throw AIModelPackageError.unsafeArchive("Archive contains backslash path: \(rawPath)")
-            }
-
-            let normalizedPath: String
-            if entryKind == .directory && rawPath.hasSuffix("/") {
-                normalizedPath = String(rawPath.dropLast())
-            } else {
-                normalizedPath = rawPath
-            }
-            guard AIModelPackageDescriptor.isSafeRelativePath(normalizedPath) else {
-                throw AIModelPackageError.unsafeArchive("Archive contains unsafe path: \(rawPath)")
-            }
-            guard seenExact.insert(normalizedPath).inserted else {
-                throw AIModelPackageError.unsafeArchive("Archive contains duplicate path: \(normalizedPath)")
-            }
-            guard seenCaseInsensitive.insert(normalizedPath.lowercased()).inserted else {
-                throw AIModelPackageError.unsafeArchive("Archive contains case-colliding path: \(normalizedPath)")
-            }
-            guard let expected = expectedByPath[normalizedPath] else {
-                throw AIModelPackageError.unsafeArchive("Archive contains unexpected member: \(normalizedPath)")
-            }
-            guard expected.kind == entryKind else {
-                throw AIModelPackageError.unsafeArchive("Archive member kind mismatch for \(normalizedPath)")
-            }
-
-            // 预检文件大小（bsdtar -tvzf 的第 5 列），在解压前拦截与目录清单不符的成员体积。
-            if entryKind == .file {
-                let tokens = verboseLine.split(whereSeparator: { $0 == " " || $0 == "\t" })
-                guard tokens.count >= 8, let listedBytes = UInt64(tokens[4]) else {
-                    throw AIModelPackageError.unsafeArchive("Unable to parse archive member size for \(normalizedPath)")
-                }
-                guard listedBytes == expected.bytes else {
-                    throw AIModelPackageError.memberVerificationFailed(
-                        "Archive member size mismatch for \(normalizedPath): \(listedBytes) != \(expected.bytes)"
-                    )
-                }
-            }
-        }
-
-        guard seenExact.count == expectedByPath.count else {
-            throw AIModelPackageError.unsafeArchive("Archive is missing expected members")
-        }
-    }
-
     func extractArchive(
         at archiveURL: URL,
         to stagingURL: URL,
@@ -699,7 +607,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
             throw Self.mapFileSystemError(error)
         }
 
-        _ = try runTar(
+        try runTar(
             arguments: [
                 "-xzf", archiveURL.path,
                 "-C", stagingURL.path,
@@ -835,6 +743,18 @@ public final class AIModelPackageStore: @unchecked Sendable {
         }
     }
 
+    private func cleanupStaleTempItems() {
+        guard let items = try? FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil) else {
+            return
+        }
+        for item in items {
+            let name = item.lastPathComponent
+            if name.hasPrefix(".download-") || name.hasPrefix(".staging-") || name.hasPrefix(".replacing-") {
+                try? FileManager.default.removeItem(at: item)
+            }
+        }
+    }
+
     private func cleanupOlderPackages(keeping currentDigest: String) {
         guard let items = try? FileManager.default.contentsOfDirectory(at: storageRoot, includingPropertiesForKeys: nil) else {
             return
@@ -896,7 +816,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
     private func runTar(
         arguments: [String],
         cancellation: AIModelInstallCancellation
-    ) throws -> String {
+    ) throws {
         if cancellation.isCancelled { throw AIModelPackageError.cancelled }
 
         let process = Process()
@@ -908,9 +828,8 @@ public final class AIModelPackageStore: @unchecked Sendable {
             "TZ": "UTC",
             "PATH": "/usr/bin:/bin",
         ]
-        let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
+        process.standardOutput = FileHandle.nullDevice
         process.standardError = stderrPipe
 
         cancellation.attach(process: process)
@@ -922,16 +841,7 @@ public final class AIModelPackageStore: @unchecked Sendable {
             throw AIModelPackageError.fileSystemError(error.localizedDescription)
         }
 
-        var stderrData = Data()
-        let stderrGroup = DispatchGroup()
-        stderrGroup.enter()
-        DispatchQueue.global(qos: .utility).async {
-            stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-            stderrGroup.leave()
-        }
-
-        let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        stderrGroup.wait()
+        let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         if cancellation.isCancelled {
@@ -945,10 +855,6 @@ public final class AIModelPackageStore: @unchecked Sendable {
             }
             throw AIModelPackageError.archiveExtractionFailed(process.terminationStatus)
         }
-        guard let output = String(data: stdoutData, encoding: .utf8) else {
-            throw AIModelPackageError.unsafeArchive("Non-UTF-8 tar listing")
-        }
-        return output
     }
 
     static func sha256File(at url: URL, cancellation: AIModelInstallCancellation) throws -> String {
@@ -1210,7 +1116,8 @@ private final class StreamingDownloadDelegate: NSObject, URLSessionDataDelegate,
         var shouldReport = false
         lock.lock()
         receivedBytes = nextTotal
-        if nextTotal == expectedBytes
+        if lastReportedBytes == 0
+            || nextTotal == expectedBytes
             || nextTotal &- lastReportedBytes >= 256 * 1024
             || now - lastReportTime >= 0.1 {
             lastReportedBytes = nextTotal
@@ -1314,8 +1221,12 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
     }
 
     public func refresh() {
-        assertMainThreadIfPossible()
+        dispatchPrecondition(condition: .onQueue(.main))
         guard !state.isBusy else { return }
+        applyDiskState()
+    }
+
+    private func applyDiskState() {
         guard isRuntimeSupported() else {
             state = .unavailable
             return
@@ -1334,8 +1245,9 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
 
     /// 仅由用户显式点击“下载模型”或“重试”触发。
     public func startDownload() {
-        assertMainThreadIfPossible()
+        dispatchPrecondition(condition: .onQueue(.main))
         guard !state.isBusy, isRuntimeSupported(), let descriptor = store.descriptor else { return }
+        let wasInstalled = state.isInstalled
         let cancellation = AIModelInstallCancellation()
         activeCancellation = cancellation
         state = .downloading(completedBytes: 0, totalBytes: descriptor.archiveBytes)
@@ -1343,9 +1255,9 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
         activeTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                let installedURL = try await self.store.downloadAndInstall(cancellation: cancellation) { [weak self] phase in
+                _ = try await self.store.downloadAndInstall(cancellation: cancellation) { [weak self] phase in
                     DispatchQueue.main.async {
-                        guard let self, self.activeCancellation === cancellation else { return }
+                        guard let self, self.activeCancellation === cancellation, !cancellation.isCancelled else { return }
                         switch phase {
                         case .downloading(let done, let total):
                             self.state = .downloading(completedBytes: done, totalBytes: total)
@@ -1360,12 +1272,10 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
                     guard self.activeCancellation === cancellation else { return }
                     self.activeCancellation = nil
                     self.activeTask = nil
-                    let resolved = self.store.resolveModelDirectory(
-                        override: self.overrideProvider(),
-                        bundled: self.bundledProvider()
-                    ) ?? .downloaded(installedURL)
-                    self.state = .installed(resolved, unpackedBytes: descriptor.unpackedBytes)
-                    self.onInstallStateChanged?()
+                    self.applyDiskState()
+                    if self.state.isInstalled != wasInstalled || self.state.isInstalled {
+                        self.onInstallStateChanged?()
+                    }
                 }
             } catch {
                 let mapped: AIModelPackageError
@@ -1380,11 +1290,22 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
                     guard self.activeCancellation === cancellation else { return }
                     self.activeCancellation = nil
                     self.activeTask = nil
-                    if mapped == .cancelled {
-                        self.state = .cancelled(
-                            downloadBytes: descriptor.archiveBytes,
-                            unpackedBytes: descriptor.unpackedBytes
-                        )
+                    if mapped == .cancelled || cancellation.isCancelled {
+                        // 取消若发生在最终原子改名窗口内，以磁盘真实结果为准，不误报已取消。
+                        if let resolved = self.store.resolveModelDirectory(
+                            override: self.overrideProvider(),
+                            bundled: self.bundledProvider()
+                        ) {
+                            self.state = .installed(resolved, unpackedBytes: descriptor.unpackedBytes)
+                            if !wasInstalled {
+                                self.onInstallStateChanged?()
+                            }
+                        } else {
+                            self.state = .cancelled(
+                                downloadBytes: descriptor.archiveBytes,
+                                unpackedBytes: descriptor.unpackedBytes
+                            )
+                        }
                     } else {
                         self.state = .failed(
                             mapped,
@@ -1398,23 +1319,18 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
     }
 
     public func cancelDownload() {
-        assertMainThreadIfPossible()
+        dispatchPrecondition(condition: .onQueue(.main))
         guard let cancellation = activeCancellation else { return }
         cancellation.cancel()
         activeTask?.cancel()
-        if let descriptor = store.descriptor {
-            state = .cancelled(downloadBytes: descriptor.archiveBytes, unpackedBytes: descriptor.unpackedBytes)
-        }
-        activeCancellation = nil
-        activeTask = nil
     }
 
     public func removeDownloadedModel() {
-        assertMainThreadIfPossible()
+        dispatchPrecondition(condition: .onQueue(.main))
         guard !state.isBusy else { return }
         do {
             try store.removeInstalledPackages()
-            refresh()
+            applyDiskState()
             onInstallStateChanged?()
         } catch let error as AIModelPackageError {
             if let descriptor = store.descriptor {
@@ -1429,10 +1345,6 @@ public final class AIModelPackageManager: ObservableObject, @unchecked Sendable 
                 )
             }
         }
-    }
-
-    private func assertMainThreadIfPossible() {
-        // 状态机只在主线程更新；测试可在主线程 RunLoop 或 MainActor 下驱动。
     }
 }
 #endif

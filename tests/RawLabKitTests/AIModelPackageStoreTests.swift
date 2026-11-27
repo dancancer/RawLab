@@ -1,4 +1,5 @@
 #if os(macOS)
+import Combine
 import CryptoKit
 import Darwin
 import Foundation
@@ -63,7 +64,7 @@ final class AIModelPackageStoreTests: XCTestCase {
         }
     }
 
-    // MARK: - Download, Install, Restart, Replace, Remove
+    // MARK: - Download, Install, Restart, Replace, Remove, Stale Cleanup
 
     func testDownloadInstallRestartAndRemove() async throws {
         let fixture = try makeSyntheticArchive(label: "valid-v1")
@@ -122,6 +123,32 @@ final class AIModelPackageStoreTests: XCTestCase {
         try restartedStore.removeInstalledPackages()
         XCTAssertNil(restartedStore.installedPackageURL())
         XCTAssertFalse(FileManager.default.fileExists(atPath: installed.path))
+    }
+
+    func testStaleCrashTempFilesCleanedUpAtStartOfInstall() async throws {
+        let fixture = try makeSyntheticArchive(label: "stale-cleanup")
+        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-stale", isDirectory: true)
+        try FileManager.default.createDirectory(at: storage, withIntermediateDirectories: true)
+        let stalePart = storage.appendingPathComponent(".download-crashed.part")
+        let staleStaging = storage.appendingPathComponent(".staging-crashed", isDirectory: true)
+        try Data("leftover".utf8).write(to: stalePart)
+        try FileManager.default.createDirectory(at: staleStaging, withIntermediateDirectories: true)
+        try Data("leftover".utf8).write(to: staleStaging.appendingPathComponent("junk.bin"))
+
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: fixture.descriptor(url: server.url(path: "/m.tar.gz")),
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024
+        )
+        let installed = try await store.downloadAndInstall()
+        XCTAssertEqual(store.installedPackageURL()?.standardizedFileURL, installed.standardizedFileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stalePart.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staleStaging.path))
+        try assertNoStrayTempFiles(in: storage)
     }
 
     func testSecondDigestCountsAsNotInstalledAndRemovesOlderAfterInstall() async throws {
@@ -226,13 +253,80 @@ final class AIModelPackageStoreTests: XCTestCase {
             }
         }
         XCTAssertFalse(unpackCalled, "Must not decompress or parse when archive size is wrong")
-        XCTAssertNil(store.installedPackageURL())
-        try assertNoStrayTempFiles(in: storage)
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
+    }
+
+    func testDeclaredContentLengthMatchingButShortBodyFailsCleanly() async throws {
+        let fixture = try makeSyntheticArchive(label: "short-body")
+        let original = try Data(contentsOf: fixture.archiveURL)
+        let shortBody = original.prefix(max(1, original.count / 2))
+
+        // Declares Content-Length == described archiveBytes, but sends fewer bytes and closes
+        let server = try LoopbackHTTPServer(mode: .customResponse(
+            declaredLength: Int(fixture.archiveBytes),
+            body: Data(shortBody)
+        ))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-short-body", isDirectory: true)
+        var unpackCalled = false
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: fixture.descriptor(url: server.url(path: "/m.tar.gz")),
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024,
+            onBeforeUnpack: { unpackCalled = true }
+        )
+
+        do {
+            _ = try await store.downloadAndInstall()
+            XCTFail("Expected failure when body is shorter than declared Content-Length")
+        } catch is AIModelPackageError {
+            // expected (.archiveSizeMismatch or .networkUnavailable when socket closes early)
+        }
+        XCTAssertFalse(unpackCalled, "Must not unpack a short body")
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
+    }
+
+    func testBodyLongerThanDescribedFailsCleanly() async throws {
+        let fixture = try makeSyntheticArchive(label: "long-body")
+        let original = try Data(contentsOf: fixture.archiveURL)
+        var longerBody = original
+        longerBody.append(Data(repeating: 0xEE, count: 256))
+
+        // Omits Content-Length so URLSession streams the full oversized body past expectedBytes
+        let server = try LoopbackHTTPServer(mode: .customResponse(
+            declaredLength: nil,
+            body: longerBody
+        ))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-long-body", isDirectory: true)
+        var unpackCalled = false
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: fixture.descriptor(url: server.url(path: "/m.tar.gz")),
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024,
+            onBeforeUnpack: { unpackCalled = true }
+        )
+
+        do {
+            _ = try await store.downloadAndInstall()
+            XCTFail("Expected archiveSizeMismatch when streamed body exceeds described size")
+        } catch let error as AIModelPackageError {
+            if case .archiveSizeMismatch = error {
+                // expected
+            } else {
+                XCTFail("Unexpected error: \(error)")
+            }
+        }
+        XCTAssertFalse(unpackCalled, "Must not unpack an oversized body")
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
     }
 
     func testWrongArchiveDigestRejectedWithoutParsing() async throws {
         let fixture = try makeSyntheticArchive(label: "wrong-digest")
-        // Non-tar random/garbage bytes with the exact same byte length as the archive
         let garbage = tempRoot.appendingPathComponent("garbage.bin")
         try Data(repeating: 0x5A, count: Int(fixture.archiveBytes)).write(to: garbage)
 
@@ -260,44 +354,69 @@ final class AIModelPackageStoreTests: XCTestCase {
             }
         }
         XCTAssertFalse(unpackCalled, "Must not decompress or parse when archive SHA-256 is wrong")
-        XCTAssertNil(store.installedPackageURL())
-        try assertNoStrayTempFiles(in: storage)
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
     }
 
     // MARK: - Hostile Archives (Catalog Digest Matches the Hostile Archive)
 
     func testHostileArchivePathTraversalBlocked() async throws {
-        let escapeTarget = tempRoot.appendingPathComponent("escaped-traversal.txt")
+        let storageParent = tempRoot.appendingPathComponent("traversal-parent", isDirectory: true)
+        try FileManager.default.createDirectory(at: storageParent, withIntermediateDirectories: true)
+        let storage = storageParent.appendingPathComponent("store", isDirectory: true)
+        let escapeOneLevel = storage.appendingPathComponent("escaped-traversal.txt")
+        let escapeTwoLevels = storageParent.appendingPathComponent("escaped-traversal.txt")
+
         let hostile = try makeHostileArchive(kind: .pathTraversal("../escaped-traversal.txt"))
-        try await assertHostileArchiveRejected(hostile, expectedKind: .unsafe)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: escapeTarget.path))
+        try await assertHostileArchiveRejected(hostile, storage: storage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: escapeOneLevel.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: escapeTwoLevels.path))
     }
 
     func testHostileArchiveAbsolutePathBlocked() async throws {
+        let storage = tempRoot.appendingPathComponent("store-abs", isDirectory: true)
         let absTarget = tempRoot.appendingPathComponent("escaped-absolute.txt")
         let hostile = try makeHostileArchive(kind: .absolutePath(absTarget.path))
-        try await assertHostileArchiveRejected(hostile, expectedKind: .unsafe)
+        try await assertHostileArchiveRejected(hostile, storage: storage)
         XCTAssertFalse(FileManager.default.fileExists(atPath: absTarget.path))
     }
 
     func testHostileArchiveSymlinkBlocked() async throws {
-        let hostile = try makeHostileArchive(kind: .symlink)
-        try await assertHostileArchiveRejected(hostile, expectedKind: .unsafe)
+        let storage = tempRoot.appendingPathComponent("store-symlink", isDirectory: true)
+        let hostile = try makeHostileArchive(kind: .symlinkAtDescribedPath)
+        try await assertHostileArchiveRejected(hostile, storage: storage)
     }
 
-    func testHostileArchiveHardLinkBlocked() async throws {
-        let hostile = try makeHostileArchive(kind: .hardLink)
-        try await assertHostileArchiveRejected(hostile, expectedKind: .unsafe)
+    func testHostileArchiveSymlinkWriteThroughBlocked() async throws {
+        let storage = tempRoot.appendingPathComponent("store-sym-escape", isDirectory: true)
+        let escapeTarget = tempRoot.appendingPathComponent("sym-escaped.txt")
+        let hostile = try makeHostileArchive(kind: .symlinkWriteThrough(targetDir: tempRoot.path, fileName: "sym-escaped.txt"))
+        try await assertHostileArchiveRejected(hostile, storage: storage)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: escapeTarget.path))
+    }
+
+    func testHostileArchiveHardLinkAtDescribedPathBlocked() async throws {
+        let storage = tempRoot.appendingPathComponent("store-hardlink", isDirectory: true)
+        // Hard-linked member sits at "DualDn-LICENSE.txt" which IS in the description
+        // with the exact same bytes/SHA-256 as "manifest.json", so only st_nlink != 1 rejects it.
+        let hostile = try makeHostileArchive(kind: .hardLinkAtDescribedPath)
+        let error = try await assertHostileArchiveRejected(hostile, storage: storage)
+        if case .memberVerificationFailed(let detail) = error {
+            XCTAssertTrue(detail.contains("hard link"), "Expected hard link rejection, got: \(detail)")
+        } else {
+            XCTFail("Expected memberVerificationFailed for hard link, got: \(error)")
+        }
     }
 
     func testHostileArchiveExtraMemberBlocked() async throws {
+        let storage = tempRoot.appendingPathComponent("store-extra", isDirectory: true)
         let hostile = try makeHostileArchive(kind: .extraMember)
-        try await assertHostileArchiveRejected(hostile, expectedKind: .unsafe)
+        try await assertHostileArchiveRejected(hostile, storage: storage)
     }
 
     func testHostileArchiveWrongMemberSizeBlocked() async throws {
+        let storage = tempRoot.appendingPathComponent("store-wrong-member-size", isDirectory: true)
         let hostile = try makeHostileArchive(kind: .wrongMemberSize)
-        try await assertHostileArchiveRejected(hostile, expectedKind: .memberVerification)
+        try await assertHostileArchiveRejected(hostile, storage: storage)
     }
 
     func testStagingTreeVerificationDefenseInDepth() throws {
@@ -314,30 +433,25 @@ final class AIModelPackageStoreTests: XCTestCase {
             return dir
         }
 
-        // Clean staging succeeds
         let clean = try makeCleanStaging()
         XCTAssertNoThrow(try store.verifyAndNormalizeStagingTree(at: clean, descriptor: desc, cancellation: AIModelInstallCancellation()))
 
-        // Extra file rejected
         let extra = try makeCleanStaging()
         try Data("surprise".utf8).write(to: extra.appendingPathComponent("extra.txt"))
         XCTAssertThrowsError(try store.verifyAndNormalizeStagingTree(at: extra, descriptor: desc, cancellation: AIModelInstallCancellation()))
 
-        // Symlink rejected
         let symlinked = try makeCleanStaging()
         let lic = symlinked.appendingPathComponent("DualDn-LICENSE.txt")
         try FileManager.default.removeItem(at: lic)
         try FileManager.default.createSymbolicLink(at: lic, withDestinationURL: symlinked.appendingPathComponent("manifest.json"))
         XCTAssertThrowsError(try store.verifyAndNormalizeStagingTree(at: symlinked, descriptor: desc, cancellation: AIModelInstallCancellation()))
 
-        // Hard link rejected
         let hardlinked = try makeCleanStaging()
         let target = hardlinked.appendingPathComponent("DualDn-LICENSE.txt")
         let externalLink = tempRoot.appendingPathComponent("external-hardlink-\(UUID().uuidString)")
         try FileManager.default.linkItem(at: target, to: externalLink)
         XCTAssertThrowsError(try store.verifyAndNormalizeStagingTree(at: hardlinked, descriptor: desc, cancellation: AIModelInstallCancellation()))
 
-        // Wrong member content (same size, wrong SHA-256) rejected
         let tampered = try makeCleanStaging()
         let manifestURL = tampered.appendingPathComponent("manifest.json")
         var bytes = try Data(contentsOf: manifestURL)
@@ -346,14 +460,11 @@ final class AIModelPackageStoreTests: XCTestCase {
         XCTAssertThrowsError(try store.verifyAndNormalizeStagingTree(at: tampered, descriptor: desc, cancellation: AIModelInstallCancellation()))
     }
 
-    // MARK: - Cancel, Disk Space, HTTP 404, Redirect Downgrade
+    // MARK: - Cancel, Disk Space, HTTP 404, Redirect Downgrade, State Machine
 
     func testCancelMidDownloadLeavesNoPartialOrTempFiles() async throws {
         let fixture = try makeSyntheticArchive(label: "cancel")
-        let firstChunkSent = DispatchSemaphore(value: 0)
-        let server = try LoopbackHTTPServer(mode: .stalledFile(fixture.archiveURL, onFirstChunkSent: {
-            firstChunkSent.signal()
-        }))
+        let server = try LoopbackHTTPServer(mode: .stalledFile(fixture.archiveURL))
         defer { server.stop() }
 
         let storage = tempRoot.appendingPathComponent("store-cancel", isDirectory: true)
@@ -365,11 +476,35 @@ final class AIModelPackageStoreTests: XCTestCase {
         )
 
         let cancellation = AIModelInstallCancellation()
+        final class WriteSignal: @unchecked Sendable {
+            private let lock = NSLock()
+            private var signaled = false
+            private var writtenBytes: UInt64 = 0
+            let semaphore = DispatchSemaphore(value: 0)
+            func record(_ bytes: UInt64) {
+                guard bytes > 0 else { return }
+                lock.lock()
+                writtenBytes = max(writtenBytes, bytes)
+                let shouldSignal = !signaled
+                signaled = true
+                lock.unlock()
+                if shouldSignal { semaphore.signal() }
+            }
+            var maxWritten: UInt64 { lock.lock(); defer { lock.unlock() }; return writtenBytes }
+        }
+        let signal = WriteSignal()
+
         let task = Task {
-            try await store.downloadAndInstall(cancellation: cancellation)
+            try await store.downloadAndInstall(cancellation: cancellation) { phase in
+                if case .downloading(let completed, _) = phase {
+                    signal.record(completed)
+                }
+            }
         }
 
-        XCTAssertEqual(firstChunkSent.wait(timeout: .now() + 5), .success, "Server should send first chunk")
+        // Wait until the client has actually written non-zero bytes to .part before cancelling
+        XCTAssertEqual(signal.semaphore.wait(timeout: .now() + 5), .success, "Client should write non-zero bytes before cancel")
+        XCTAssertGreaterThan(signal.maxWritten, 0)
         cancellation.cancel()
 
         do {
@@ -378,7 +513,55 @@ final class AIModelPackageStoreTests: XCTestCase {
         } catch let error as AIModelPackageError {
             XCTAssertEqual(error, .cancelled)
         }
-        XCTAssertNil(store.installedPackageURL())
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
+    }
+
+    func testCancelDuringFinalCommitShowsTruthfulInstalledState() throws {
+        let fixture = try makeSyntheticArchive(label: "cancel-commit")
+        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        defer { server.stop() }
+
+        let storage = tempRoot.appendingPathComponent("store-cancel-commit", isDirectory: true)
+        let desc = fixture.descriptor(url: server.url(path: "/m.tar.gz"))
+
+        final class ManagerBox: @unchecked Sendable {
+            var manager: AIModelPackageManager?
+        }
+        let box = ManagerBox()
+
+        let store = AIModelPackageStore(
+            storageRoot: storage,
+            descriptor: desc,
+            allowLoopbackHTTP: true,
+            diskSpaceMarginBytes: 1024,
+            onBeforeCommit: {
+                // Simulate user pressing Cancel right as the atomic rename is about to execute
+                DispatchQueue.main.sync {
+                    box.manager?.cancelDownload()
+                }
+            }
+        )
+
+        let manager = AIModelPackageManager(store: store, isRuntimeSupported: { true })
+        box.manager = manager
+
+        var changeCallbacks = 0
+        let settled = expectation(description: "Manager settles on truthful installed state after commit-window cancel")
+        var cancellable: AnyCancellable?
+        manager.onInstallStateChanged = { changeCallbacks += 1 }
+        cancellable = manager.$state.dropFirst().sink { state in
+            if state.isDownloadedInstalled {
+                settled.fulfill()
+            }
+        }
+        defer { cancellable?.cancel() }
+
+        manager.startDownload()
+        wait(for: [settled], timeout: 5)
+
+        XCTAssertTrue(manager.state.isDownloadedInstalled)
+        XCTAssertNotNil(store.installedPackageURL())
+        XCTAssertEqual(changeCallbacks, 1, "Install listeners must be notified exactly once")
         try assertNoStrayTempFiles(in: storage)
     }
 
@@ -393,7 +576,7 @@ final class AIModelPackageStoreTests: XCTestCase {
             descriptor: fixture.descriptor(url: server.url(path: "/m.tar.gz")),
             allowLoopbackHTTP: true,
             diskSpaceMarginBytes: 1024,
-            availableSpaceProvider: { _ in 100 } // Far smaller than required
+            availableSpaceProvider: { _ in 100 }
         )
 
         do {
@@ -414,7 +597,6 @@ final class AIModelPackageStoreTests: XCTestCase {
     func testHTTP404AndInsecureRedirectHandledCleanly() async throws {
         let fixture = try makeSyntheticArchive(label: "http-errors")
 
-        // 404
         let server404 = try LoopbackHTTPServer(mode: .status(404))
         defer { server404.stop() }
         let storage = tempRoot.appendingPathComponent("store-404", isDirectory: true)
@@ -433,7 +615,6 @@ final class AIModelPackageStoreTests: XCTestCase {
         }
         try assertNoStrayTempFiles(in: storage)
 
-        // Redirect downgrade to non-loopback HTTP
         let serverRedirect = try LoopbackHTTPServer(mode: .redirect("http://example.com/downgrade.tar.gz"))
         defer { serverRedirect.stop() }
         let storeRedirect = AIModelPackageStore(
@@ -471,12 +652,18 @@ final class AIModelPackageStoreTests: XCTestCase {
 
         var changeCallbacks = 0
         manager.onInstallStateChanged = { changeCallbacks += 1 }
-        manager.startDownload()
 
-        let installedDeadline = Date().addingTimeInterval(10)
-        while !manager.state.isInstalled && Date() < installedDeadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        let installedExp = expectation(description: "Manager reaches installed state")
+        let cancellable = manager.$state.dropFirst().sink { state in
+            if state.isDownloadedInstalled {
+                installedExp.fulfill()
+            }
         }
+        defer { cancellable.cancel() }
+
+        manager.startDownload()
+        wait(for: [installedExp], timeout: 5)
+
         XCTAssertTrue(manager.state.isDownloadedInstalled, "Expected downloaded installed state, got \(manager.state)")
         XCTAssertEqual(changeCallbacks, 1)
 
@@ -491,39 +678,38 @@ final class AIModelPackageStoreTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private enum ExpectedHostileError {
-        case unsafe
-        case memberVerification
-    }
-
+    @discardableResult
     private func assertHostileArchiveRejected(
         _ hostile: SyntheticArchive,
-        expectedKind: ExpectedHostileError
-    ) async throws {
+        storage: URL
+    ) async throws -> AIModelPackageError {
         let server = try LoopbackHTTPServer(mode: .file(hostile.archiveURL))
         defer { server.stop() }
-        let storage = tempRoot.appendingPathComponent("store-hostile-\(UUID().uuidString)", isDirectory: true)
         let store = AIModelPackageStore(
             storageRoot: storage,
             descriptor: hostile.descriptor(url: server.url(path: "/hostile.tar.gz")),
             allowLoopbackHTTP: true,
             diskSpaceMarginBytes: 1024
         )
+        let caught: AIModelPackageError
         do {
             _ = try await store.downloadAndInstall()
             XCTFail("Hostile archive unexpectedly succeeded")
+            return .cancelled
         } catch let error as AIModelPackageError {
-            switch (expectedKind, error) {
-            case (.unsafe, .unsafeArchive):
-                break
-            case (.memberVerification, .memberVerificationFailed):
-                break
-            default:
-                XCTFail("Unexpected error for hostile archive: \(error)")
-            }
+            caught = error
         }
+        try assertNothingInstalledOrLeftOver(store: store, in: storage)
+        return caught
+    }
+
+    private func assertNothingInstalledOrLeftOver(store: AIModelPackageStore, in storage: URL) throws {
         XCTAssertNil(store.installedPackageURL())
         try assertNoStrayTempFiles(in: storage)
+        if FileManager.default.fileExists(atPath: storage.path) {
+            let items = try FileManager.default.contentsOfDirectory(at: storage, includingPropertiesForKeys: nil)
+            XCTAssertEqual(items, [], "Nothing should remain under storageRoot after failed install: \(items)")
+        }
     }
 
     private func assertNoStrayTempFiles(in directory: URL) throws {
@@ -564,8 +750,9 @@ final class AIModelPackageStoreTests: XCTestCase {
     private enum HostileKind {
         case pathTraversal(String)
         case absolutePath(String)
-        case symlink
-        case hardLink
+        case symlinkAtDescribedPath
+        case symlinkWriteThrough(targetDir: String, fileName: String)
+        case hardLinkAtDescribedPath
         case extraMember
         case wrongMemberSize
     }
@@ -597,10 +784,19 @@ final class AIModelPackageStoreTests: XCTestCase {
     }
 
     private func makeHostileArchive(kind: HostileKind) throws -> SyntheticArchive {
+        let manifestData = Data("{\"version\":1,\"hostile\":true}\n".utf8)
+        let dualDnLicenseData: Data
+        if case .hardLinkAtDescribedPath = kind {
+            // Exact same content as manifest.json so size and SHA-256 match the description;
+            // only st_nlink != 1 rejects the hard-linked DualDn-LICENSE.txt.
+            dualDnLicenseData = manifestData
+        } else {
+            dualDnLicenseData = Data("CC BY-NC 4.0 license text\n".utf8)
+        }
         let files: [String: Data] = [
-            "DualDn-LICENSE.txt": Data("CC BY-NC 4.0 license text\n".utf8),
+            "DualDn-LICENSE.txt": dualDnLicenseData,
             "Restormer-LICENSE.txt": Data("Academic Public License text\n".utf8),
-            "manifest.json": Data("{\"version\":1,\"hostile\":true}\n".utf8),
+            "manifest.json": manifestData,
             "raw.mlmodelc/weights/weight.bin": Data(repeating: 0x3B, count: 512),
         ]
         let dirs = ["raw.mlmodelc", "raw.mlmodelc/weights"]
@@ -616,7 +812,7 @@ final class AIModelPackageStoreTests: XCTestCase {
             archiveName: archiveName,
             archiveBytes: UInt64(archiveData.count),
             archiveSha256: sha256Hex(archiveData),
-            manifestSha256: sha256Hex(files["manifest.json"]!),
+            manifestSha256: sha256Hex(manifestData),
             unpackedBytes: entries.reduce(0) { $0 + $1.bytes },
             entries: entries,
             fileContents: files
@@ -646,10 +842,12 @@ final class AIModelPackageStoreTests: XCTestCase {
                 spec["hostile"] = ["kind": "extra_path", "path": path]
             case .absolutePath(let path):
                 spec["hostile"] = ["kind": "extra_path", "path": path]
-            case .symlink:
-                spec["hostile"] = ["kind": "symlink", "path": "evil-link", "target": "/etc/hosts"]
-            case .hardLink:
-                spec["hostile"] = ["kind": "hardlink", "path": "evil-hardlink", "target": "manifest.json"]
+            case .symlinkAtDescribedPath:
+                spec["hostile"] = ["kind": "replace_with_symlink", "path": "DualDn-LICENSE.txt", "target": "/etc/hosts"]
+            case .symlinkWriteThrough(let targetDir, let fileName):
+                spec["hostile"] = ["kind": "symlink_write_through", "targetDir": targetDir, "fileName": fileName]
+            case .hardLinkAtDescribedPath:
+                spec["hostile"] = ["kind": "replace_with_hardlink", "path": "DualDn-LICENSE.txt", "target": "manifest.json"]
             case .extraMember:
                 spec["hostile"] = ["kind": "extra_path", "path": "extra.txt"]
             case .wrongMemberSize:
@@ -665,6 +863,10 @@ final class AIModelPackageStoreTests: XCTestCase {
         hostile = spec.get("hostile")
         if hostile and hostile["kind"] == "wrong_size":
             files[hostile["path"]] = files[hostile["path"]] + b"EXTRA_BYTES"
+        replaced_path = None
+        if hostile and hostile["kind"] in ("replace_with_symlink", "replace_with_hardlink"):
+            replaced_path = hostile["path"]
+            files.pop(replaced_path, None)
         with tarfile.open(spec["output"], "w:gz") as tf:
             for d in sorted(dirs):
                 ti = tarfile.TarInfo(d)
@@ -690,18 +892,31 @@ final class AIModelPackageStoreTests: XCTestCase {
                     ti.mode = 0o644
                     ti.mtime = 0
                     tf.addfile(ti, io.BytesIO(payload))
-                elif kind == "symlink":
+                elif kind == "replace_with_symlink":
                     ti = tarfile.TarInfo(hostile["path"])
                     ti.type = tarfile.SYMTYPE
                     ti.linkname = hostile["target"]
                     ti.mtime = 0
                     tf.addfile(ti)
-                elif kind == "hardlink":
+                elif kind == "replace_with_hardlink":
                     ti = tarfile.TarInfo(hostile["path"])
                     ti.type = tarfile.LNKTYPE
                     ti.linkname = hostile["target"]
                     ti.mtime = 0
                     tf.addfile(ti)
+                elif kind == "symlink_write_through":
+                    ti = tarfile.TarInfo("escape_dir")
+                    ti.type = tarfile.SYMTYPE
+                    ti.linkname = hostile["targetDir"]
+                    ti.mtime = 0
+                    tf.addfile(ti)
+                    payload = b"escaped-via-symlink"
+                    ti2 = tarfile.TarInfo("escape_dir/" + hostile["fileName"])
+                    ti2.type = tarfile.REGTYPE
+                    ti2.size = len(payload)
+                    ti2.mode = 0o644
+                    ti2.mtime = 0
+                    tf.addfile(ti2, io.BytesIO(payload))
         """
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
@@ -731,7 +946,8 @@ final class AIModelPackageStoreTests: XCTestCase {
 private final class LoopbackHTTPServer: @unchecked Sendable {
     enum Mode {
         case file(URL)
-        case stalledFile(URL, onFirstChunkSent: () -> Void)
+        case stalledFile(URL)
+        case customResponse(declaredLength: Int?, body: Data)
         case status(Int)
         case redirect(String)
     }
@@ -740,6 +956,7 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
     let port: UInt16
     private let mode: Mode
     private let lock = NSLock()
+    private let stopSignal = DispatchSemaphore(value: 0)
     private var stopped = false
     private var _requestCount = 0
     private var thread: Thread?
@@ -806,6 +1023,7 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
         }
         stopped = true
         lock.unlock()
+        stopSignal.signal()
         Darwin.shutdown(listenFD, SHUT_RDWR)
         Darwin.close(listenFD)
     }
@@ -855,17 +1073,21 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
             let header = "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: \(data.count)\r\nConnection: close\r\n\r\n"
             sendAll(fd, Data(header.utf8))
             sendAll(fd, data)
-        case .stalledFile(let url, let onFirstChunkSent):
+        case .customResponse(let declaredLength, let body):
+            var header = "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\n"
+            if let declaredLength {
+                header += "Content-Length: \(declaredLength)\r\n"
+            }
+            header += "Connection: close\r\n\r\n"
+            sendAll(fd, Data(header.utf8))
+            sendAll(fd, body)
+        case .stalledFile(let url):
             guard let data = try? Data(contentsOf: url) else { return }
             let header = "HTTP/1.1 200 OK\r\nContent-Type: application/gzip\r\nContent-Length: \(data.count)\r\nConnection: close\r\n\r\n"
             sendAll(fd, Data(header.utf8))
             let firstLen = max(1, min(64, data.count / 2))
             sendAll(fd, data.prefix(firstLen))
-            onFirstChunkSent()
-            let deadline = Date().addingTimeInterval(5)
-            while !isStopped() && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
-            }
+            _ = stopSignal.wait(timeout: .now() + 5)
         }
     }
 

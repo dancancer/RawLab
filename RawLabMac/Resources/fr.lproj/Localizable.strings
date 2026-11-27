@@ -146,7 +146,7 @@
 "从列表移除" = "Supprimer de la liste";
 "从照片库选择" = "Choisir dans la photothèque";
 "以下为配方逻辑值；强度为 %@。部分范围会按此强度换算。" = "Voici les valeurs logiques de la recette ; l’intensité est de %@. Certains champs sont mis à l’échelle selon cette intensité.";
-"以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。" = "Ces modèles sont réservés à un usage non commercial et conservent leurs licences d’origine ; ils ne passent pas sous GPL.";
+"以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。" = "Ces modèles sont réservés à un usage non commercial. Chacun conserve la licence de ses auteurs d’origine et n’est pas soumis à la licence GPL de RawLab.";
 "以下目标尚未完成本次历史操作，请检查原因后重试。" = "L’opération d’historique est incomplète pour ces photos. Vérifiez la cause et réessayez.";
 "以文件保存的显影为基准，白平衡作相对调整。" = "Utilise le développement enregistré comme référence, avec des ajustements relatifs de la balance des blancs.";
 "任务使用的外观文件不可用，请重新创建任务。" = "Le fichier de look utilisé par la tâche n’est pas disponible. Recréez la tâche.";

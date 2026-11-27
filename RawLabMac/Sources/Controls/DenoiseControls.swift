@@ -305,7 +305,7 @@ struct MacAIDenoiseControls: View {
                     Spacer(minLength: 0)
                     Button(L10n.text("删除已下载模型")) { confirmingRemoveModel = true }
                         .buttonStyle(.borderless)
-                        .disabled(model.aiState.isRunning || model.exporting || model.batch?.running == true)
+                        .disabled(!model.canRemoveDownloadedAIModel)
                         .accessibilityIdentifier("denoise.ai.model.remove")
                 }
             }
@@ -344,7 +344,7 @@ private struct MacAIModelLicenseSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(L10n.text("AI 降噪模型许可")).font(.headline)
-            Text(L10n.text("以下模型仅限非商业用途，保留各自上游许可条款，不随 RawLab 改为 GPL。"))
+            Text(L10n.text("以下模型仅限非商业用途，各自沿用原作者的许可，不适用 RawLab 的 GPL 许可。"))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -466,7 +466,7 @@ extension AIModelPackageError {
             return L10n.text("下载的模型文件大小与校验信息不符，已清除临时文件，请重试。")
         case .archiveDigestMismatch:
             return L10n.text("下载的模型文件校验失败，已清除临时文件，请重试。")
-        case .unsafeArchive, .memberVerificationFailed, .archiveExtractionFailed:
+        case .memberVerificationFailed, .archiveExtractionFailed:
             return L10n.text("模型压缩包校验失败，已清除临时文件，请重试。")
         case .insecureURL:
             return L10n.text("模型下载地址不安全，已阻止下载。")

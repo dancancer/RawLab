@@ -261,10 +261,12 @@ final class EditorModel: ObservableObject {
         if collectionExportPreparing { cancelCollectionExportPreparation() }
     } }
     @Published var exporting = false
+    @Published var previewThumbnailAIRunning = false
     @Published var aiState = AIDenoiseState.idle
     @Published var aiModelPackageState: AIModelPackageState = .unavailable
     let aiModelManager: AIModelPackageManager
     private var aiModelStateCancellable: AnyCancellable?
+    private var batchStateCancellable: AnyCancellable?
     var aiIdentity: AIWorkIdentity?
     var aiGeneration = UUID()
     var aiPreparation: AIPreparation?
@@ -334,7 +336,17 @@ final class EditorModel: ObservableObject {
     var probeHDRSource: HDRSourceInfo.Probe = { try HDRSourceInfo.probe($0, onSDRFallback: $1) }
     var saveStatus: String { L10n.text(saveStatusKey) }
     @Published var saveError: String?
-    @Published var batch: BatchExportModel?
+    @Published var batch: BatchExportModel? {
+        didSet {
+            batchStateCancellable?.cancel()
+            batchStateCancellable = batch.map { model in
+                model.$running
+                    .combineLatest(model.$previewing, model.$validating)
+                    .dropFirst()
+                    .sink { [weak self] _, _, _ in self?.objectWillChange.send() }
+            }
+        }
+    }
     @Published var batchSelection = BatchSelectionSession<String>()
     @Published var batchSelectionPhotos: [String: MacCollectionPhoto] = [:]
     @Published var collectionExportPreparing = false
@@ -522,6 +534,7 @@ final class EditorModel: ObservableObject {
     }
     deinit {
         aiModelStateCancellable?.cancel()
+        batchStateCancellable?.cancel()
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
         externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel()
@@ -614,8 +627,24 @@ extension EditorModel {
         aiModelManager.cancelDownload()
     }
 
+    var canRemoveDownloadedAIModel: Bool {
+        !aiState.isRunning
+            && !busy
+            && !exporting
+            && !importing
+            && !autoExposing
+            && !wbProbeSampling
+            && !hslTargetInteraction.isWaiting
+            && !curveTargetInteraction.isWaiting
+            && !collectionExportPreparing
+            && !previewThumbnailAIRunning
+            && batch?.running != true
+            && batch?.previewing != true
+            && batch?.validating != true
+    }
+
     func removeDownloadedAIModel() {
-        guard !aiState.isRunning, !exporting, batch?.running != true else { return }
+        guard canRemoveDownloadedAIModel else { return }
         aiModelManager.removeDownloadedModel()
     }
 
