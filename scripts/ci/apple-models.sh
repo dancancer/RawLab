@@ -40,6 +40,13 @@ fail_on_empty_swift_test() {
         return 1
     fi
 }
+# XCTSkip 与 Swift Testing 的 .disabled 不会打印行首 SKIP，只体现在汇总行和逐条结果里。
+fail_on_skipped_swift_test() {
+    if grep -q -E 'with [1-9][0-9]* tests? skipped|^[^[:alnum:]]*Test .+ skipped(: |\.?$)' "$1"; then
+        printf 'error: %s reported skipped tests (forbidden by CI invariant 7)\n' "$2" >&2
+        return 1
+    fi
+}
 # 供 apple_models_scheduler.py 回调：对单个已结束套件的日志执行不变量 7 判定，规则只在本文件维护。
 # 放在 xcrun 之前：判定只读日志，工具链偶发失败不应被记成 SKIP。
 if [ "${1:-}" = --check-skip ]; then
@@ -171,6 +178,7 @@ spm_log="$MODEL_CACHE/swift-test.log"
 swift test --package-path "$ROOT" --scratch-path "$SWIFTPM_TEST_SCRATCH" 2>&1 | tee "$spm_log"
 fail_on_logged_skip "$spm_log" "swift test"
 fail_on_empty_swift_test "$spm_log" "swift test"
+fail_on_skipped_swift_test "$spm_log" "swift test"
 
 if [[ "$1" == macos ]]; then
     mkdir -p "$SWIFTPM_RELEASE_TEST_SCRATCH"
@@ -180,6 +188,7 @@ if [[ "$1" == macos ]]; then
         --scratch-path "$SWIFTPM_RELEASE_TEST_SCRATCH" 2>&1 | tee "$spm_release_log"
     fail_on_logged_skip "$spm_release_log" "swift test (release)"
     fail_on_empty_swift_test "$spm_release_log" "swift test (release)"
+    fail_on_skipped_swift_test "$spm_release_log" "swift test (release)"
 fi
 
 if [[ -f "$ROOT/scripts/ci/swiftpm-rawlabkit.sh" ]]; then

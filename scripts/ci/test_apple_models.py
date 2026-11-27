@@ -757,6 +757,32 @@ fi
                 self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
                 self.assertIn("swift test (release) executed 0 tests", res.stderr)
 
+    def test_swift_test_rejects_xctest_and_swift_testing_skips(self):
+        root, runner, tools = self._parallel_probe_root()
+        (tools / "swift").write_text('#!/bin/bash\nprintf \'%s\\n\' "$SWIFT_OUT"\n')
+        (tools / "swift").chmod(0o755)
+        child = tools / "bash"
+        child.write_text('#!/bin/bash\nprintf "PASS: %s\\n" "$1"\n')
+        child.chmod(0o755)
+        executed = "\t Executed 2 tests, with {} and 0 failures (0 unexpected) in 0.001 (0.002) seconds"
+        cases = (
+            ("xctskip", executed.format("1 test skipped"), 1),
+            ("xctskip-plural", executed.format("12 tests skipped"), 1),
+            ("swift-testing-disabled",
+             executed.replace("with {} and ", "with ") + '\n\u279c Test disabledCase() skipped: "off"', 1),
+            ("none-skipped", executed.format("0 tests skipped") + "\nTest Case '-[T testSkippedFieldsSurvive]' passed (0.000 seconds).", 0),
+        )
+        for name, output, expected in cases:
+            for platform in ("macos", "ios"):
+                with self.subTest(case=name, platform=platform):
+                    res = self._run_parallel_probe(
+                        root, runner, tools, platform, f"skip-{name}-{platform}",
+                        RAWLAB_CI_SWIFTPM_CACHE=f".cache/skip-{name}-{platform}", SWIFT_OUT=output,
+                    )
+                    self.assertEqual(res.returncode, expected, res.stdout + res.stderr)
+                    if expected:
+                        self.assertIn("swift test reported skipped tests (forbidden by CI invariant 7)", res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
