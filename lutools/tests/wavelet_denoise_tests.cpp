@@ -1,5 +1,6 @@
 #include "core/wavelet_denoise.h"
 #include "core/wavelet_tile.h"
+#include "gpu/denoise.h"
 #include "sony2fuji/color_converter.h"
 #include <cassert>
 #include <cmath>
@@ -360,12 +361,16 @@ void checkImmutableSourceReload(ProcessingVersion version) {
     assert(std::memcmp(image.pixels.data(),converted.pixels.data(),converted.pixels.size()*sizeof(RGB))==0);
 #if defined(TEST_WAVELET_GPU_DISABLED)
     // 无 GPU 构建可确定触发 Force 失败，覆盖 Auto 重新载入工作图的重试路径。
+    // 没有编译后端属于能力缺失：Force 返回 Unsupported 并记录 GpuDisabled，而不是处理错误。
     const WaveletDenoiseOptions legacy{true,10,72,100,ProcessingVersion::Legacy};
     WaveletDenoiseAnalysisCache retryCache;
     WaveletDenoiseDiagnostics info;
     image=converted;
     assert(applyWaveletDenoise(image,legacy,&info,GpuMode::Force,&retryCache,"retry-a",&source,
-        ColorSpace::AdobeRGB)==ErrorCode::ProcessingError);
+        ColorSpace::AdobeRGB)==ErrorCode::Unsupported);
+    assert(info.outcome==WaveletDenoiseOutcome::GpuFailure &&
+        lastGpuFilterOutcome().failure==GpuFailureKind::Unsupported &&
+        lastGpuFilterOutcome().fault==GpuBackendFault::GpuDisabled);
     assert(image.pixels.empty());
     assert(applyWaveletDenoise(image,legacy,&info,GpuMode::Off,&retryCache,"retry-a",&source,
         ColorSpace::AdobeRGB)==ErrorCode::Success);

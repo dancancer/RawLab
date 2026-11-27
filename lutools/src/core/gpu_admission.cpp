@@ -41,9 +41,7 @@ GpuAdmission admitGpuBeforeLook(const GpuAdmissionFacts& facts) noexcept {
         return rejectForceGpu(admission);
     }
     if (facts.roiActive && force) {
-        if (admission.fallbackReason == GpuFallbackReason::None) {
-            admission.fallbackReason = GpuFallbackReason::UnsupportedCapability;
-        }
+        admission.fallbackReason = GpuFallbackReason::UnsupportedCapability;
         return rejectForceGpu(admission);
     }
 

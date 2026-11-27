@@ -117,6 +117,7 @@ int main() {
     {
         sony2fuji_tone_controls_config tc{SONY2FUJI_TONE_CONTROLS_CONFIG_VERSION, sizeof(tc), 0.4f, 0.f, 0.f};
         assert(sony2fuji_session_set_tone_controls(session, &tc) == SONY2FUJI_STATUS_OK);
+#if defined(SONY2FUJI_ENABLE_METAL) || defined(SONY2FUJI_ENABLE_GLES) || defined(SONY2FUJI_ENABLE_D3D11)
         setGpuMode(session, SONY2FUJI_GPU_AUTO);
         sony2fuji_buffer out{};
         assert(sony2fuji_process(session, &bufferReq, &out) == SONY2FUJI_STATUS_OK);
@@ -134,6 +135,13 @@ int main() {
             assert(reason == SONY2FUJI_GPU_FALLBACK_GPU_DISABLED ||
                    reason == SONY2FUJI_GPU_FALLBACK_NO_ADAPTER);
         }
+#else
+        // 无 GPU 后端时 BasicV3 控件把整条链留在 CPU，回退原因报告具体算子而不是 GPU_DISABLED。
+        expectFallback(session, bufferReq,
+                       SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS,
+                       SONY2FUJI_GPU_FALLBACK_BASIC_V3_CONTROLS,
+                       "basic_v3_controls");
+#endif
     }
 
     // 3. Atmosphere (clarity/dehaze) runs on GPU when a native backend is available.
