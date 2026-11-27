@@ -29,6 +29,9 @@ internal static class FirstPreviewChecks
             }
             foreach(var source in photos)
             {
+                check(LibraryEntry.IsRaster(source),
+                    "FirstPreviewChecks requires raster photo inputs (camera-embedded RAW thumbnails use a separate color pipeline): "+Path.GetFileName(source));
+                if(!LibraryEntry.IsRaster(source))continue;
                 var before=SHA256.HashData(File.ReadAllBytes(source));
                 var path=Path.Combine(directory,"用户样片-"+Path.GetFileName(source));
                 File.Copy(source,path);

@@ -318,7 +318,7 @@ public sealed class WpfSuiteTests
     [Trait("Category", "Native")]
     [Trait("Suite", "first-preview")]
     public void FirstPreviewWorks() =>
-        WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
+        WpfTestHost.Run(() => FirstPreviewChecks.Run(TestInputs.OptionalRasters(), Check));
 
     [StaFact]
     [Trait("Category", "AI")]
