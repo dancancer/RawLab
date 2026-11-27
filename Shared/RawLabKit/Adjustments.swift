@@ -145,7 +145,8 @@ public struct Adjustments: Equatable, Codable {
     public var denoise: WaveletDenoiseSettings { get { waveletNoiseReduction } set { waveletNoiseReduction = newValue } }
     public var displayChromaDenoise: Int { get { chromaNoiseReduction } set { chromaNoiseReduction = min(2, max(0, newValue)) } }
     public var hasLook: Bool { !isHDREditing && (lutID != nil || masterRecipeID != nil) }
-    public var recipeScale: Double { masterRecipeID == nil ? 1 : Double(clampedLUTStrength) }
+    // 配方缩放按 Double 计算、到渲染请求才转 Float，与 Windows 一致；先收窄成 Float 再乘，请求值会差一档。
+    public var recipeScale: Double { masterRecipeID == nil ? 1 : min(max(strength, Self.lutStrengthRange.lowerBound), Self.lutStrengthRange.upperBound) }
     public var usesCustomWhiteBalance: Bool { whiteBalanceMode == .custom }
 
     public init() {}

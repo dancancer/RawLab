@@ -180,6 +180,10 @@ Windows 同样比较实际 Float request，保留可准确表达的原始逻辑�
 完整 legacy HSL 配方按本端当前 renderer 反算，再次复制报告当前版本。原生预检为每个
 RAW 读取目标校准，镜头请求检查实际畸变/TCA 应用结果；任一目标失败仍保留为独立结果。
 
+配方强度的缩放精度：Mac、iOS 与 Windows 用 Double 强度相乘，到渲染请求才转 Float；Android
+的强度本身存为 Float，按 Float 相乘。强度不是 Float 精确值（例如 30%）时，Android 的请求
+可与其余三端相差一个 Float 最小单位。各端仍只按本端实际请求做精确校验，不用容差抹平。
+
 ## 保存、重试和历史
 
 每次操作有独立 ID、冻结 payload/目标/候选。全部目标先 prepare，存在阻挡时默认不写；
