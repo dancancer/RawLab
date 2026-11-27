@@ -135,8 +135,7 @@ val prepareAssets by tasks.registering(Sync::class) {
     }
     from(repo.resolve("RawLabMac/Resources/Licenses")) {
         into("licenses"); include("LibRaw-COPYRIGHT", "LibRaw-LICENSE.*", "LibRaw-X3F-BSD.txt",
-            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "libspng-LICENSE.txt",
-            "stb-MIT-LICENSE.txt")
+            "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "libspng-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
     from(hdrCodecSources.map { it[0] }) { into("licenses/libultrahdr"); include("LICENSE", "LICENSE_*") }

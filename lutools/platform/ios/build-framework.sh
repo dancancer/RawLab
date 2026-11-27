@@ -88,7 +88,6 @@ build_slice() {
     cp "$ROOT/third_party/rawspeed-camera-calibration.inc" "$framework/Licenses/"
     cp "$ROOT/third_party/Adobe-DNG-SDK-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/third_party/nlohmann/LICENSE.MIT" "$framework/Licenses/nlohmann-JSON-MIT.txt"
-    cp "$ROOT/../RawLabMac/Resources/Licenses/stb-MIT-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/../RawLabMac/Resources/Licenses/libspng-LICENSE.txt" "$framework/Licenses/"
     cp "$ROOT/../RawLabMac/Resources/Licenses/LibRaw-X3F-BSD.txt" "$framework/Licenses/"
     cp "$core/x3f-licenses.txt" "$framework/Licenses/X3F-Dependencies.txt"

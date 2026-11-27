@@ -73,8 +73,7 @@ https://github.com/LibRaw/LibRaw/issues/821; the parser reuses LibRaw v12 offset
 This local correction does not imply upstream R6 III support.
 
 The core's temperature/xy calculation includes Adobe DNG SDK-derived code;
-its notice is provided as Adobe-DNG-SDK-LICENSE.txt. Embedded JPEG reading and
-JPEG output use bundled stb headers; their notices are included separately.
+its notice is provided as Adobe-DNG-SDK-LICENSE.txt.
 zlib is provided by the Android system, not bundled as a separate library.
 libc++_shared.so is supplied by Android NDK 27.2.12479018; its license is
 included as NDK-libcxx-NOTICE in the generated APK assets.

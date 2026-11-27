@@ -64,8 +64,7 @@ The SDK validator and XMP editing are disabled. The local adapter adds missing
 This product includes DNG technology under license by Adobe.
 
 The white-balance temperature model includes Adobe DNG SDK-derived code;
-see Adobe-DNG-SDK-LICENSE.txt. Embedded stb image decoding/encoding uses its
-MIT license option; see stb-MIT-LICENSE.txt. System zlib,
+see Adobe-DNG-SDK-LICENSE.txt. System zlib,
 Metal and Foundation are supplied by iOS. No OpenMP, LCMS, JasPer or
 commercial Nikon/TicoRAW SDK is linked into LibRaw in this build.
 

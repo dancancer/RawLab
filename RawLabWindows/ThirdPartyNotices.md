@@ -74,7 +74,6 @@
   `ExifTool/exiftool_files/`, including `LICENSE` and `Licenses_Strawberry_Perl.zip`.
   The Windows launcher is CC0; see `readme_windows.txt` in that directory.
   Archive URL and SHA-256 are pinned in `build-exiftool.ps1`.
-- stb image and image write: MIT option; license in `Licenses/stb-MIT-LICENSE.txt`.
 - Adobe DNG SDK temperature conversion: retained notice in
   `Licenses/Adobe-DNG-SDK-LICENSE.txt`.
 - Adobe DNG SDK 1.7.1 Build 2724 and its bundled JPEG XL, Brotli, Highway and

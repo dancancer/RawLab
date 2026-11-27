@@ -108,9 +108,7 @@ Changes are extraction into LibRaw table syntax; black/white levels remain
 metadata-driven. No RawSpeed decoder code is included.
 
 RawLab's white-balance implementation incorporates the Adobe DNG SDK's
-temperature conversion model; see Adobe-DNG-SDK-LICENSE.txt. The embedded stb
-image decoder/writer use their MIT option; see stb-MIT-LICENSE.txt. Their original
-dual-license notices remain in the source headers under lutools/src/core.
+temperature conversion model; see Adobe-DNG-SDK-LICENSE.txt.
 
 Fujifilm LUT data and film simulation names are attributed to their respective
 rights holders; no ownership of these assets or official affiliation is claimed.
