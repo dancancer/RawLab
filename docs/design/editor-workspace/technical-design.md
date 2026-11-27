@@ -54,7 +54,7 @@ flowchart LR
 ### 2.2 必须保持的参数边界
 
 - [Shared/RawLabKit/HSLSettings.swift](../../../Shared/RawLabKit/HSLSettings.swift) 与 [C 头文件](../../../lutools/include/sony2fuji/ffi/sony2fuji_c.h) 已定义三轴八通道，顺序为 R/O/Y/G/Aqua/B/P/M；均为 `[-100,100]`，全零 identity。Hue 满量程对应约 ±30°，不是 UI 直接传角度。
-- Swift 共享 `set` 会把用户值取整；[MacHSLPrecision](../../../RawLabMac/Sources/Controls/MacHSLPrecision.swift) 为桌面保留 0.1。Android `NumericControl` 的 HSL 步进为 1，Windows `NumericRange` 为 0.1。数据加载、配方缩放和快照不能因为控件显示而取整；`scaled(by:)` 的合法小数必须保留。
+- Swift 共享 `set` 会把用户值取整；[MacHSLPrecision](../../../Shared/RawLabKit/MacHSLPrecision.swift) 为桌面保留 0.1。Android `NumericControl` 的 HSL 步进为 1，Windows `NumericRange` 为 0.1。数据加载、配方缩放和快照不能因为控件显示而取整；`scaled(by:)` 的合法小数必须保留。
 - [iOS AdjustmentScale](../../../RawLab/RawLab/UI/Adjustments/AdjustmentScale.swift)、[Mac AdjustmentTypes](../../../Shared/RawLabKit/AdjustmentTypes.swift)、[Android AdjustmentControls](../../../RawLabAndroid/app/src/main/java/com/rawlab/android/editor/controls/AdjustmentControls.kt)、Windows `ParameterSpec` 继续拥有合法范围、步进、单位与温度映射。原型曝光/强度/透视单位不直接成为平台存储单位。
 - 原有百分比到 core multiplier、highlights 正负方向、recipe strength 缩放、RAW WB 与几何顺序保持不变；不要在新参数行或 JNI 中再次换算。普通图片仍按已有 `effectiveFor(input)` 等路径禁用 RAW 专属项。
 

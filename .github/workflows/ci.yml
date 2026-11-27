@@ -337,7 +337,6 @@ jobs:
             ci_timed adjustment-history-model bash RawLabMac/tests/adjustment-history-model.sh
             ci_timed presentation bash RawLabMac/tests/presentation.sh --models-only
             ci_timed usage-model bash RawLabMac/tests/usage-model.sh
-            ci_timed usage-termination bash RawLabMac/tests/usage-termination.sh
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
       - name: Exercise real-package DualDn C API on Core ML

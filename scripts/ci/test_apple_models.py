@@ -220,6 +220,10 @@ exit 0
         script = (ROOT / "scripts/ci/apple-models.sh").read_text(encoding="utf-8")
         self.assertIn("RawLabMac/tests/thumbnail-cache.sh", script)
 
+    def test_apple_models_includes_usage_termination_suite(self):
+        script = (ROOT / "scripts/ci/apple-models.sh").read_text(encoding="utf-8")
+        self.assertIn("RawLabMac/tests/usage-termination.sh", script)
+
     def _parallel_probe_root(self):
         directory = tempfile.TemporaryDirectory(prefix="rawlab parallel models ")
         self.addCleanup(directory.cleanup)

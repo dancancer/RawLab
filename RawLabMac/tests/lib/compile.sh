@@ -109,7 +109,6 @@ rawlab_mac_editor_model_sources() {
         "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift"
         "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift"
         "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift"
-        "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"
         "$ROOT/Shared/HSLTargetNative.swift"
@@ -155,7 +154,6 @@ rawlab_mac_render_engine_sources() {
         "$ROOT/RawLabMac/Sources/Rendering/RenderScheduling.swift"
         "$ROOT/RawLabMac/Sources/Looks/MacFilm.swift"
         "$ROOT/RawLabMac/Sources/Inputs/ParameterPrecision.swift"
-        "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
         "$ROOT/Shared/Native/ProcessingMigrationNative.swift"
         "${HDR_SWIFT_SOURCES[@]}"
         "$ROOT/Shared/HSLTargetNative.swift"
@@ -168,7 +166,7 @@ rawlab_mac_adjustment_native_sources() {
     local out_var="${1:?Pass output array variable name}"
     _rawlab_mac_validate_ident "$out_var"
     local _sources=(
-        "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift"
+        "$ROOT/Shared/RawLabNativeTypes/AdjustmentsNative.swift"
     )
     RAWLAB_MAC_BRIDGING_HEADER="$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h"
     _rawlab_mac_assign_array "$out_var" "${_sources[@]}"

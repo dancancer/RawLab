@@ -1,36 +1,11 @@
 import Accelerate
 import RawLabKit
+import RawLabNativeTypes
 import CoreGraphics
 import Foundation
 import ImageIO
 import UIKit
 import UniformTypeIdentifiers
-
-extension ProcessingIdentity {
-    var core: sony2fuji_processing_version {
-        switch version {
-        case 1: return SONY2FUJI_PROCESSING_LEGACY
-        case 2: return SONY2FUJI_PROCESSING_C5_V2
-        default: return SONY2FUJI_PROCESSING_BASIC_V3
-        }
-    }
-}
-
-extension X3fMode {
-    var core: sony2fuji_x3f_mode {
-        self == .normal ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY
-    }
-}
-
-extension RawExposureMode {
-    var core: sony2fuji_raw_exposure_mode {
-        switch self {
-        case .scene: return SONY2FUJI_EXPOSURE_SCENE
-        case .preview: return SONY2FUJI_EXPOSURE_PREVIEW
-        case .sensor: return SONY2FUJI_EXPOSURE_SENSOR
-        }
-    }
-}
 
 extension Sony2FujiProcessor {
     func semanticInputType(for buffer: Buffer) -> sony2fuji_input_type {
