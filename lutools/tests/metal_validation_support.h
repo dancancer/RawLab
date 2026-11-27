@@ -6,7 +6,7 @@
 // 这类设备上去掉 shader validation 环境变量后重新执行本进程，像素与行为断言照常全部运行；
 // 真实 GPU 上什么都不改。设备判断看 Metal 设备本身，不看是否在 CI。
 
-#if defined(__APPLE__) && defined(SONY2FUJI_ENABLE_METAL)
+#if defined(__APPLE__) && defined(SONY2FUJI_ENABLE_METAL)  // gpu-portability: metal-only shader validation is a Metal facility; D3D11/GLES builds have nothing to waive
 #include <mach-o/dyld.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
