@@ -106,11 +106,16 @@ try{
     Check ($result.Code -ne 0 -and $result.Text -match 'Selected suites did not run: hdr-workflow') 'Explicit hdr-workflow selection fails without an HDR container fixture'
     $result=Run 'hdr-workflow' '' 'fixture.jpg'
     Check ($result.Code -eq 0 -and 'hdr-workflow' -in $result.Rows.name) 'HDR JPEG fixture enables explicit hdr-workflow suite'
+    foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')){[IO.File]::WriteAllText((Join-Path $native $name),'private AI runtime artifact')}
+    $result=Run 'ai-panel' ''
+    $destination=Join-Path $env:RAWLAB_RUNNER_TARGET 'main'
+    Check ($result.Code -eq 0 -and (Test-Path (Join-Path $destination 'DirectML.dll')) -and !(Test-Path (Join-Path $destination 'AI/DualDn/manifest.json'))) 'AI runtime DLLs reach the test output even without a bundled model'
+    $result=Run 'ai-window' ''
+    Check ($result.Code -ne 0 -and $result.Text -match 'Selected suites did not run: ai-window') 'Runtime DLLs alone still keep ai-window gated on a model'
     $model=Join-Path $native 'AI/DualDn';New-Item -ItemType Directory -Force $model | Out-Null
-    foreach($name in @('AI/DualDn/manifest.json','onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')){[IO.File]::WriteAllText((Join-Path $native $name),'private AI test artifact')}
+    [IO.File]::WriteAllText((Join-Path $native 'AI/DualDn/manifest.json'),'private AI test artifact')
     $result=Run 'ai-window' ''
     Check ($result.Code -eq 0 -and 'ai-window' -in $result.Rows.name -and ((ConvertFrom-Json $result.Calls[-1]) -contains 'Suite=ai-window')) 'Installed model enables the explicitly selected AI window suite'
-    $destination=Join-Path $env:RAWLAB_RUNNER_TARGET 'main'
     Check ((Test-Path (Join-Path $destination 'AI/DualDn/manifest.json')) -and (Test-Path (Join-Path $destination 'DirectML.dll'))) 'AI model and runtime reach the test output'
     foreach($failure in @('build','msbuild','about','zero-tests','missing-trx','log','missing-command','missing-artifacts','timeout','msbuild-timeout')){
         $result=Run 'about,profile-isolation' $failure

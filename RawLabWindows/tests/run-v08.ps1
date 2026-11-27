@@ -94,9 +94,13 @@ try{
         Where-Object {$_.Name -match '^(vcruntime|msvcp|vcomp|concrt)'} |
         Copy-Item -Destination $target -Force
     Copy-Item (Join-Path $NativeArtifacts 'ExifTool') -Destination $target -Recurse -Force
+    # AI-enabled builds without bundled models still link ONNX Runtime / DirectML DLLs into sony2fuji.dll.
+    foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) {
+        $dll=Join-Path $NativeArtifacts $name
+        if(Test-Path -LiteralPath $dll -PathType Leaf){Copy-Item -LiteralPath $dll -Destination $target -Force}
+    }
     $hasAiModel=Test-Path (Join-Path $NativeArtifacts 'AI/DualDn/manifest.json')
     if($hasAiModel) {
-        foreach($name in @('onnxruntime.dll','onnxruntime_providers_shared.dll','DirectML.dll')) { Copy-Item (Join-Path $NativeArtifacts $name) $target -Force }
         Copy-Item (Join-Path $NativeArtifacts 'AI') $target -Recurse -Force
     }
     if([string]::IsNullOrWhiteSpace($env:RAWLAB_APPDATA_ROOT)){

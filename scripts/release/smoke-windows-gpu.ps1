@@ -8,12 +8,14 @@
     1. guard  : this process does not run with the PreferSystem32Images image-load mitigation
                 (set when entering through WSL on port 22), which would load
                 System32\onnxruntime.dll instead of the packaged runtime;
-    2. dualdn : dualdn_probe.exe --validate on the packaged AI\DualDn model, then a forced
-                DirectML pipeline run whose pipeline.json must report a DirectML producer and
-                no fallback;
-    3. cli    : packaged sony2fuji.exe renders a RAW to a non-empty JPEG;
-    4. exif   : packaged ExifTool reports the pinned version;
-    5. c-abi  : in a child process, the packaged sony2fuji.dll exports
+    2. layout : the extracted release package has no bundled AI\DualDn directory and ships
+                ai-model-catalog.json along with the DirectML runtime DLLs;
+    3. dualdn : dualdn_probe.exe --validate on the external -ModelDir, then a forced
+                DirectML pipeline run (with dualdn_probe placed beside the packaged runtime DLLs)
+                whose pipeline.json must report a DirectML producer and no fallback;
+    4. cli    : packaged sony2fuji.exe renders a RAW to a non-empty JPEG;
+    5. exif   : packaged ExifTool reports the pinned version;
+    6. c-abi  : in a child process, the packaged sony2fuji.dll exports
                 sony2fuji_ai_available()=1 and sony2fuji_ai_hardware_available()=1, and any
                 loaded onnxruntime.dll / DirectML.dll comes from the package, not System32.
   The work directory (and -StagingDir when given) is removed in finally and must be gone
@@ -28,12 +30,14 @@
         .cache/shared/assets/.../lutools/examples/DJI_20250602164503_0444_D.DNG "$H:$S/"
     ssh -p 2222 -i $K $H "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $S/smoke-windows-gpu.ps1 \
         -PackageZip $S/RawLab-Windows-$VERSION-x64.zip -DualDnProbe $S/dualdn_probe.exe \
-        -ProbeRaw $S/bayer-demosaic.dng -CliRaw $S/DJI_20250602164503_0444_D.DNG -StagingDir $S"
+        -ModelDir <external-model-dir> -ProbeRaw $S/bayer-demosaic.dng \
+        -CliRaw $S/DJI_20250602164503_0444_D.DNG -StagingDir $S"
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$PackageZip,
     [Parameter(Mandatory)][string]$DualDnProbe,
+    [Parameter(Mandatory)][string]$ModelDir,
     [Parameter(Mandatory)][string]$ProbeRaw,
     [Parameter(Mandatory)][string]$CliRaw,
     [string]$ExpectedExifTool = '13.59',
@@ -112,6 +116,11 @@ try {
     foreach ($required in @($PackageZip, $DualDnProbe, $ProbeRaw, $CliRaw)) {
         if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Input not found: $required" }
     }
+    if (-not (Test-Path -LiteralPath $ModelDir -PathType Container) -or
+        -not (Test-Path -LiteralPath (Join-Path $ModelDir 'manifest.json') -PathType Leaf)) {
+        throw "External model directory is missing manifest.json: $ModelDir"
+    }
+    $model = (Resolve-Path -LiteralPath $ModelDir).Path
     if (-not [Environment]::Is64BitProcess) { throw 'Run the smoke from 64-bit PowerShell.' }
     if ([RawLabSmokeMitigation]::PreferSystem32Images()) {
         throw 'PreferSystem32Images is active (WSL entry on port 22); System32\onnxruntime.dll would shadow the packaged runtime. Reconnect with ssh -p 2222.'
@@ -124,11 +133,14 @@ try {
     $app = Get-ChildItem -LiteralPath $package -Recurse -Filter 'RawLab.exe' | Select-Object -First 1
     if (-not $app) { throw 'RawLab.exe not found in the release ZIP.' }
     $package = $app.DirectoryName
-    $model = Join-Path $package 'AI\DualDn'
-    foreach ($name in @('sony2fuji.dll', 'sony2fuji.exe', 'onnxruntime.dll', 'DirectML.dll', 'ExifTool\ExifTool.exe', 'AI\DualDn\manifest.json')) {
+    # Release packages must never bundle AI model weights and must ship ai-model-catalog.json.
+    if (Test-Path -LiteralPath (Join-Path $package 'AI\DualDn')) {
+        throw 'Release package must not contain bundled AI\DualDn models.'
+    }
+    foreach ($name in @('sony2fuji.dll', 'sony2fuji.exe', 'onnxruntime.dll', 'DirectML.dll', 'ExifTool\ExifTool.exe', 'ai-model-catalog.json')) {
         if (-not (Test-Path -LiteralPath (Join-Path $package $name))) { throw "Package is missing $name" }
     }
-    Pass "extracted $(Split-Path -Leaf $PackageZip)"
+    Pass "extracted $(Split-Path -Leaf $PackageZip) (no bundled AI\DualDn, ai-model-catalog.json present)"
 
     # The probe must sit next to the packaged runtime DLLs: Windows searches the system
     # directory before PATH, so a probe elsewhere could bind a different onnxruntime.dll.
@@ -136,7 +148,7 @@ try {
     Copy-Item -LiteralPath $DualDnProbe -Destination $probe -Force
     $validated = Invoke-Native $probe ('--validate "{0}"' -f $model) 'dualdn_probe --validate'
     if ($validated -notmatch 'Validated DualDn package') { throw "Unexpected validate output: $validated" }
-    Pass 'dualdn_probe --validate on packaged AI\DualDn'
+    Pass 'dualdn_probe --validate on external ModelDir'
 
     $probeOut = Join-Path $WorkRoot 'dualdn-pipeline'
     Invoke-Native $probe ('"{0}" "{1}" "{2}" pipeline directml' -f $ProbeRaw, $model, $probeOut) 'dualdn_probe pipeline directml' | Out-Null
