@@ -328,8 +328,8 @@ layout(std430, binding = 3) readonly buffer SpatialField { float spField[]; };
 layout(std140, binding = 0) uniform SpatialParams {
     uvec4 dims;       // width, height, rowOffset, rows
     uvec4 bandInfo;   // srcRowOffset, auxRowOffset, radius, stage
-    vec4 sharpenCfg;  // strength, sharpenDetail, sharpenMasking, sharpenRadius
-    vec4 defringeCfg; // purpleAmount, purpleHue, greenAmount, greenHue
+    vec4 sharpenCfg;  // strength (detailGain for sharpen v2), coring, maskLow, maskSpan
+    vec4 defringeCfg; // purpleNorm, purpleCenter, greenNorm, greenCenter
     vec4 spAirlight;  // r, g, b, minTransmission
     uvec4 spFlags;    // basicV3, fieldWidth, fieldHeight, fieldOffset
     uvec4 spBandDims; // srcRows, auxRows, dstWidth, dstHeight
@@ -372,12 +372,13 @@ float spReadWeight(uint idx) {
 #define SP_HEIGHT dims.y
 #define SP_RADIUS bandInfo.z
 #define SP_STRENGTH sharpenCfg.x
-#define SP_SHARPEN_DETAIL sharpenCfg.y
-#define SP_SHARPEN_MASKING sharpenCfg.z
-#define SP_PURPLE_AMT defringeCfg.x
-#define SP_PURPLE_HUE defringeCfg.y
-#define SP_GREEN_AMT defringeCfg.z
-#define SP_GREEN_HUE defringeCfg.w
+#define SP_SHARPEN_CORING sharpenCfg.y
+#define SP_SHARPEN_MASK_LOW sharpenCfg.z
+#define SP_SHARPEN_MASK_SPAN sharpenCfg.w
+#define SP_PURPLE_NORM defringeCfg.x
+#define SP_PURPLE_CENTER defringeCfg.y
+#define SP_GREEN_NORM defringeCfg.z
+#define SP_GREEN_CENTER defringeCfg.w
 #define SP_AIRLIGHT spAirlight
 #define SP_FLAGS spFlags
 )glsl") + photoSpatialShaderBody() + R"glsl(
@@ -395,12 +396,13 @@ float spReadWeight(uint idx) {
 #undef SP_HEIGHT
 #undef SP_RADIUS
 #undef SP_STRENGTH
-#undef SP_SHARPEN_DETAIL
-#undef SP_SHARPEN_MASKING
-#undef SP_PURPLE_AMT
-#undef SP_PURPLE_HUE
-#undef SP_GREEN_AMT
-#undef SP_GREEN_HUE
+#undef SP_SHARPEN_CORING
+#undef SP_SHARPEN_MASK_LOW
+#undef SP_SHARPEN_MASK_SPAN
+#undef SP_PURPLE_NORM
+#undef SP_PURPLE_CENTER
+#undef SP_GREEN_NORM
+#undef SP_GREEN_CENTER
 #undef SP_AIRLIGHT
 #undef SP_FLAGS
 

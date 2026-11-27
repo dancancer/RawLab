@@ -302,10 +302,10 @@ bool computeFilmOptics(FilterDevice& device, ImageData& image, const FilmOpticsO
     const bool hasBloom = options.bloomAmount > 0.0f;
     uint32_t halW = 0, halH = 0, bloomW = 0, bloomH = 0;
     std::vector<float> halGlow, bloomGlow;
-    if (hasHal && !buildGlowProxy(false, options.halationThreshold, options.halationRadius, halW, halH, halGlow)) {
+    if (hasHal && !buildGlowProxy(false, filmOpticsThresholdNorm(options.halationThreshold), options.halationRadius, halW, halH, halGlow)) {
         return false;
     }
-    if (hasBloom && !buildGlowProxy(true, options.bloomThreshold, options.bloomRadius, bloomW, bloomH, bloomGlow)) {
+    if (hasBloom && !buildGlowProxy(true, filmOpticsThresholdNorm(options.bloomThreshold), options.bloomRadius, bloomW, bloomH, bloomGlow)) {
         return false;
     }
 
@@ -329,9 +329,9 @@ bool computeFilmOptics(FilterDevice& device, ImageData& image, const FilmOpticsO
     comp.step = halW; comp.level = halH;
     comp.channels = bloomOffsetFloats;
     comp.direction = bloomW; comp.firmThreshold = bloomH;
-    comp.strength = options.halationAmount;
-    comp.epsilon = options.halationHue;
-    comp.vignette[0] = options.bloomAmount;
+    comp.strength = filmOpticsAmountNorm(options.halationAmount);
+    comp.epsilon = filmOpticsHueNorm(options.halationHue);
+    comp.vignette[0] = filmOpticsAmountNorm(options.bloomAmount);
     comp.vignette[1] = hasHal ? 1.0f : 0.0f;
     comp.vignette[2] = hasBloom ? 1.0f : 0.0f;
 
