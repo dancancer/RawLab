@@ -34,7 +34,9 @@ add_library(d3d11_test_backend STATIC
     "${core}/src/core/photo_calibration.cpp" "${core}/src/core/photo_point_color.cpp"
     "${core}/src/core/photo_selective_color.cpp" "${core}/src/core/photo_bw_mixer.cpp"
     "${core}/src/core/photo_sharpen_v2.cpp" "${core}/src/core/photo_defringe.cpp"
-    "${core}/src/core/photo_film_optics.cpp")
+    "${core}/src/core/photo_film_optics.cpp"
+    # d3d11_shader_cache.h 经 AtomicOutputTransaction 写入着色器缓存。
+    "${core}/src/core/atomic_output_transaction.cpp")
 target_compile_features(d3d11_test_backend PUBLIC cxx_std_17)
 target_include_directories(d3d11_test_backend PUBLIC "${core}/src" "${core}/src/gpu" "${core}/include" "${CMAKE_CURRENT_LIST_DIR}")
 target_compile_definitions(d3d11_test_backend PUBLIC NOMINMAX SONY2FUJI_ENABLE_D3D11 RAWLAB_D3D11_TESTING)
