@@ -43,6 +43,26 @@ DNG uses statically linked libjpeg-turbo 3.1.3 (JPEG8 ABI), with IJG/BSD/zlib no
 in libjpeg-turbo-LICENSE.md and libjpeg-turbo-README.ijg. Optional LCMS, JasPer and
 RawSpeed integrations are not compiled into LibRaw here.
 
+The core statically links these codecs into librawlab-jni.so; archive URLs and
+SHA-256 are pinned in lutools/cmake/hdr-codec-dependencies.json and
+lutools/cmake/raw-png.cmake:
+libultrahdr 2.0.2 (gain-map HDR JPEG): https://github.com/google/libultrahdr/tree/v2.0.2
+Apache-2.0 OR MIT; see licenses/libultrahdr/.
+libheif 1.23.7 (HDR HEIF input, plugins and encoders disabled):
+https://github.com/strukturag/libheif/tree/v1.23.7, LGPL-3.0-or-later; see licenses/libheif/COPYING.
+libde265 1.1.3 (HEVC decoder used by libheif): https://github.com/strukturag/libde265/tree/v1.1.3
+LGPL-3.0-or-later; see licenses/libde265/COPYING.
+Little CMS 2.19.1 (ICC color conversion): https://github.com/mm2/Little-CMS/tree/lcms2.19.1
+MIT; see licenses/lcms2/LICENSE. This is separate from LibRaw, which is built without LCMS.
+libspng 0.7.4 (16-bit PNG): https://github.com/randy408/libspng/tree/v0.7.4
+BSD-2-Clause AND libpng-2.0; see libspng-LICENSE.txt.
+
+The normal X3F renderer statically links x3fuse-core / x3f-tools at commit
+00f9ef206a2d629bca35ceead4b3951833b85d3d (https://github.com/sagwaco/x3fuse-core),
+its locked Rust crates and the Rust standard library. Pins: lutools/x3f-bridge/Cargo.toml
+and Cargo.lock. Notices (Apache-2.0 and upstream BSD): licenses/x3f/<ABI>/Dependencies.txt
+and licenses/x3f/<ABI>/rust/.
+
 The patched LibRaw is used under its LGPL 2.1 option. The Nikon HE decoder is
 a local C++ adaptation of Nicolai Buchwitz's dnglab commit
 0f044c2c30d78c4ed5fcede6ab4e8db893d566f6 and Dmitri Sotnikov's LibRaw PR 826,

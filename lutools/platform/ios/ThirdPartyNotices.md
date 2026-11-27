@@ -74,3 +74,16 @@ are enabled; see LibRaw-X3F-BSD.txt. Sony ARW6 decoding and A7 V metadata are
 backported from LibRaw e419de0; A1 II, R50 V and PowerShot V1 metadata come
 from upstream PRs 775/846, 784 and 856. These backports retain LibRaw LGPL/CDDL
 terms. Source pins and boundaries: docs/reference/raw-format-support.md.
+
+Gain-map HDR JPEG support statically links libultrahdr 2.0.2 (Apache-2.0 OR MIT):
+https://github.com/google/libultrahdr/tree/v2.0.2. Its LICENSE, LICENSE-APACHE
+and LICENSE-MIT are in Licenses/libultrahdr/. 16-bit PNG export statically links
+libspng 0.7.4 (BSD-2-Clause AND libpng-2.0): https://github.com/randy408/libspng/tree/v0.7.4;
+see libspng-LICENSE.txt. Archive pins: lutools/cmake/hdr-codec-dependencies.json
+and lutools/cmake/raw-png.cmake.
+
+The normal X3F renderer statically links x3fuse-core / x3f-tools at commit
+00f9ef206a2d629bca35ceead4b3951833b85d3d (https://github.com/sagwaco/x3fuse-core),
+its locked Rust crates and the Rust standard library. Their notices are in
+X3F-Dependencies.txt (Apache-2.0 and upstream BSD notices) and x3f-rust/.
+Pins: lutools/x3f-bridge/Cargo.toml and Cargo.lock.

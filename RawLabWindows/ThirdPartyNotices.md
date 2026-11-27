@@ -54,6 +54,23 @@
   are included in `Licenses/libjpeg-turbo/`.
 - LibRaw's Sigma X3F tools are enabled; Roland Karlsson's BSD-style notice is
   included in `Licenses/LibRaw-X3F-BSD.txt`.
+- x3fuse-core / x3f-tools: https://github.com/sagwaco/x3fuse-core, commit
+  00f9ef206a2d629bca35ceead4b3951833b85d3d, with its locked Rust crates and the Rust
+  standard library. Statically linked into sony2fuji.dll for normal X3F rendering;
+  pins in `lutools/x3f-bridge/Cargo.toml` and `Cargo.lock`. Notices (Apache-2.0 and
+  upstream BSD) are in `Licenses/X3F-Dependencies.txt` and `Licenses/x3f-rust/`.
+- libultrahdr 2.0.2: https://github.com/google/libultrahdr/tree/v2.0.2, Apache-2.0 OR MIT.
+  Statically linked for gain-map HDR JPEG. Licenses in `Licenses/libultrahdr/`.
+- libheif 1.23.7: https://github.com/strukturag/libheif/tree/v1.23.7, LGPL-3.0-or-later,
+  with libde265 1.1.3: https://github.com/strukturag/libde265/tree/v1.1.3, LGPL-3.0-or-later.
+  Statically linked into sony2fuji.dll for HDR HEIF input; plugins and encoders are disabled.
+  Full license texts are in `Licenses/libheif/COPYING` and `Licenses/libde265/COPYING`.
+- Little CMS 2.19.1: https://github.com/mm2/Little-CMS/tree/lcms2.19.1, MIT.
+  Statically linked for ICC color conversion; license in `Licenses/lcms2/LICENSE`.
+  Archive URLs and SHA-256 for these three are pinned in `lutools/cmake/hdr-codec-dependencies.json`.
+- libspng 0.7.4: https://github.com/randy408/libspng/tree/v0.7.4, BSD-2-Clause AND libpng-2.0.
+  Statically linked for 16-bit PNG export; archive pinned in `lutools/cmake/raw-png.cmake`.
+  See `Licenses/libspng-LICENSE.txt`.
 - OpenCV 4.12.0: https://github.com/opencv/opencv/tree/4.12.0, Apache 2.0.
   Static core/imgproc libraries support linear-light wavelet denoising.
   See `Licenses/OpenCV-LICENSE`.

@@ -19,6 +19,8 @@ and code signatures. LibRaw also includes the source patches described below.
 | Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |
+| libultrahdr (gain-map HDR JPEG, statically linked) | 2.0.2 | https://github.com/google/libultrahdr/tree/v2.0.2 | libultrahdr/LICENSE, libultrahdr/LICENSE-APACHE, libultrahdr/LICENSE-MIT (Apache-2.0 OR MIT) |
+| libspng (16-bit PNG export, statically linked) | 0.7.4 | https://github.com/randy408/libspng/tree/v0.7.4 | libspng-LICENSE.txt, libspng/LICENSE (BSD-2-Clause AND libpng-2.0) |
 | Little CMS | 2.17 | https://github.com/mm2/Little-CMS/tree/lcms2.17 | Little-CMS-LICENSE |
 | Adobe DNG SDK | 1.7.1 Build 2724 | https://www.adobe.com/go/dng_sdk | dng-sdk/Adobe-DNG-SDK-LICENSE.txt |
 | JPEG XL, Brotli, Highway, skcms | Sources bundled with the pinned DNG SDK | https://download.adobe.com/pub/adobe/dng/dng_sdk_1_7_1_2724_20260908.zip | dng-sdk/ directory |
