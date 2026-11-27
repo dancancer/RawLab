@@ -1,4 +1,5 @@
 import RawLabKit
+import RawLabNativeTypes
 import CoreGraphics
 import Foundation
 import ImageIO

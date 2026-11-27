@@ -20,8 +20,8 @@ HARNESS="$OUT/GeometryProcessingTests.app"
 rawlab_ios_prepare_sim_app "$HARNESS" com.rawlab.tests.geometry-processing geometry-processing "$FRAMEWORK"
 rawlab_ios_compile_metadata_bridge "$OUT/bridge.o" "$ROOT/RawLab/RawLab/Support/RawMetadataBridge.mm" "$OUT/module-cache"
 rawlab_ios_processor_export_sources SOURCES hdr
-rawlabkit_flags link "$OUT/swiftpm" iphonesimulator 0
-rawlab_ios_sim_swiftc "${RAWLABKIT_SWIFTC_FLAGS[@]}" -O \
+rawlabnative_flags link "$OUT/swiftpm" iphonesimulator 0 types_only
+rawlab_ios_sim_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -O \
     -module-cache-path "$OUT/module-cache" \
     -import-objc-header "$ROOT/RawLab/RawLab/Support/RawLab-Bridging-Header.h" \
     -Xcc -I"$ROOT/lutools/include" \

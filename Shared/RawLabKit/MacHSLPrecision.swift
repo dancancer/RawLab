@@ -1,9 +1,8 @@
-import RawLabKit
 import Foundation
 
 /// Desktop editing uses tenths while the shared mobile setter keeps its integer contract.
-enum MacHSLPrecision {
-    static func setting(_ value: Double, axis: HSLAxis, channel: Int, in settings: HSLSettings) -> HSLSettings {
+public enum MacHSLPrecision {
+    public static func setting(_ value: Double, axis: HSLAxis, channel: Int, in settings: HSLSettings) -> HSLSettings {
         guard settings.isValid, (0..<8).contains(channel), value.isFinite else { return settings }
         let rounded = (min(100, max(-100, value)) * 10).rounded() / 10
         let value = rounded == 0 ? 0 : rounded

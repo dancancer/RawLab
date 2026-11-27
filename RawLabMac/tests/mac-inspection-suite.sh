@@ -13,7 +13,6 @@ rawlabnative_flags link "$OUT/swiftpm" macos 0 inspection
 rawlab_mac_swiftc "${RAWLABNATIVE_SWIFTC_FLAGS[@]}" -parse-as-library -whole-module-optimization \
     -DRAWLAB_INSPECTION_NATIVE_ONLY \
     -import-objc-header "$ROOT/lutools/include/sony2fuji/ffi/sony2fuji_c.h" \
-    "$ROOT/RawLabMac/Sources/Adjustments/Adjustments+Native.swift" \
     "$ROOT/RawLabMac/Sources/Presentation/MacViewingState.swift" \
     "$ROOT/RawLabMac/Sources/Presentation/MacPhotoViewport.swift" \
     "$ROOT/RawLabMac/Sources/Presentation/MacNeutralReference.swift" \

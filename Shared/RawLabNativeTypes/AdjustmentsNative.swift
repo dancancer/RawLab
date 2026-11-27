@@ -1,11 +1,12 @@
+@_exported import CSony2Fuji
 import RawLabKit
 import Foundation
 
-extension X3fMode {
+public extension X3fMode {
     var core: sony2fuji_x3f_mode { self == .normal ? SONY2FUJI_X3F_NORMAL : SONY2FUJI_X3F_LEGACY }
 }
 
-extension ProcessingIdentity {
+public extension ProcessingIdentity {
     var core: sony2fuji_processing_version {
         switch version {
         case 1: return SONY2FUJI_PROCESSING_LEGACY
@@ -15,7 +16,7 @@ extension ProcessingIdentity {
     }
 }
 
-extension ExposureMode {
+public extension ExposureMode {
     var core: sony2fuji_raw_exposure_mode {
         switch self {
         case .scene: return SONY2FUJI_EXPOSURE_SCENE
@@ -25,7 +26,7 @@ extension ExposureMode {
     }
 }
 
-extension LensMatchState {
+public extension LensMatchState {
     init(native state: sony2fuji_lens_state) {
         switch state {
         case SONY2FUJI_LENS_OFF: self = .off
@@ -42,10 +43,10 @@ extension LensMatchState {
     }
 }
 
-extension LensInfo {
-    init(state: sony2fuji_lens_state, detectedLens: String, selectedLens: String, focalLength: Float,
+public extension LensInfo {
+    init(state: sony2fuji_lens_state, detectedLens: String, selectedLens: String, focalLength: Float = 0,
          appliedDistortion: Bool, appliedTCA: Bool, cropScale: Float,
-         candidates: [LensCandidate], appliedVignetting: Bool = false) {
+         candidates: [LensCandidate], appliedVignetting: Bool = false, sourceMetadata: DisplayLensMetadata? = nil) {
         self.init(
             state: LensMatchState(native: state),
             detectedLens: detectedLens,
@@ -55,27 +56,39 @@ extension LensInfo {
             appliedTCA: appliedTCA,
             cropScale: cropScale,
             candidates: candidates,
-            appliedVignetting: appliedVignetting
+            appliedVignetting: appliedVignetting,
+            sourceMetadata: sourceMetadata
         )
     }
 }
 
-struct ResolvedNativeWhiteBalance: Equatable {
-    let wbMode: sony2fuji_wb_mode
-    let temperature: Float
-    let tint: Float
+public struct ResolvedNativeWhiteBalance: Equatable {
+    public let wbMode: sony2fuji_wb_mode
+    public let temperature: Float
+    public let tint: Float
+
+    public init(wbMode: sony2fuji_wb_mode, temperature: Float, tint: Float) {
+        self.wbMode = wbMode
+        self.temperature = temperature
+        self.tint = tint
+    }
 }
 
-struct ResolvedRenderSettings {
-    let settings: Adjustments
-    let whiteBalance: ResolvedNativeWhiteBalance?
+public struct ResolvedRenderSettings {
+    public let settings: Adjustments
+    public let whiteBalance: ResolvedNativeWhiteBalance?
 
-    func apply(to request: inout sony2fuji_request) {
+    public init(settings: Adjustments, whiteBalance: ResolvedNativeWhiteBalance?) {
+        self.settings = settings
+        self.whiteBalance = whiteBalance
+    }
+
+    public func apply(to request: inout sony2fuji_request) {
         settings.apply(to: &request, resolvedWhiteBalance: whiteBalance)
     }
 }
 
-extension Adjustments {
+public extension Adjustments {
     var photoEffectsConfig: sony2fuji_photo_effects_config {
         let state = effectSettings
         return sony2fuji_photo_effects_config(

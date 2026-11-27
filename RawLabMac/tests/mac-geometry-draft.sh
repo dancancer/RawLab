@@ -15,7 +15,7 @@ RAW="${1:-${RAWLAB_TEST_RAW:-$ROOT/lutools/examples/DJI_20250602164503_0444_D.DN
 test -f "$RAW" || { echo 'Set RAWLAB_TEST_RAW or pass an existing RAW path' >&2; exit 1; }
 test -f "$BUILD/libsony2fuji_core.a" || { echo 'Build the Mac core first: bash RawLabMac/build.sh' >&2; exit 1; }
 SOURCES=()
-for name in MacNeutralReference RenderScheduling MacFilm ParameterPrecision Engine RenderError Adjustments+Native BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget EditorModel+WBProbe EditorModel+Inspection EditorModel+PointColor FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField AdjustmentRow MacStraightenPreview MacCropInteraction; do
+for name in MacNeutralReference RenderScheduling MacFilm ParameterPrecision Engine RenderError BatchSelection EditorModel+BatchSelection EditorModel EditorModel+Geometry EditorModel+HDR EditorModel+ProcessingMigration EditorModel+Workflow EditorModel+Rendering EditorModel+HSLTarget EditorModel+WBProbe EditorModel+Inspection EditorModel+PointColor FileLibrary BatchExportModel ExportSizePicker MacGeometryWindowGuard DesktopUpdateController UpdateAdapter UpdateState UpdateStore UpdateInstallGate LUTCompatibilityDialog FileBrowser GeometryControls ParameterValueField AdjustmentRow MacStraightenPreview MacCropInteraction; do
     source="$(find "$ROOT/RawLabMac/Sources" -name "$name.swift" -print -quit)"
     test -n "$source" || { echo "Missing Mac source: $name" >&2; exit 1; }
     SOURCES+=("$source")

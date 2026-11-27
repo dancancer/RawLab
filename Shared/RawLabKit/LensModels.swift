@@ -239,21 +239,25 @@ public struct LensInfo: Equatable, Sendable {
     }
 
     public var message: String {
+        message(bundle: .main)
+    }
+
+    public func message(bundle: Bundle) -> String {
         switch state {
-        case .off: return L10n.text("镜头校正已关闭")
+        case .off: return L10n.text("镜头校正已关闭", bundle: bundle)
         case .matched:
-            let applied = [appliedDistortion ? L10n.text("畸变") : nil,
-                           appliedTCA ? L10n.text("横向色差") : nil,
-                           appliedVignetting ? L10n.text("暗角校正") : nil].compactMap { $0 }
-            return applied.isEmpty ? L10n.text("已匹配镜头") : L10n.format("已校正%@", applied.joined(separator: " / "))
-        case .noDatabase: return L10n.text("镜头数据库不可用")
-        case .noCamera: return L10n.text("未找到机身或传感器尺寸信息")
-        case .ambiguous: return L10n.text("有多个匹配镜头，请手动选择")
-        case .noCalibration: return L10n.text("此镜头没有所选校正的标定数据")
-        case .missingFocalLength: return L10n.text("照片缺少有效焦距，未应用校正")
-        case .embeddedGeometry: return L10n.text("DNG 已执行内嵌 Stage3 处理，未叠加校正")
-        case .unsupportedInput: return L10n.text("此输入不支持镜头校正")
-        case .unmatched: return L10n.text("未匹配镜头，请手动选择")
+            let applied = [appliedDistortion ? L10n.text("畸变", bundle: bundle) : nil,
+                           appliedTCA ? L10n.text("横向色差", bundle: bundle) : nil,
+                           appliedVignetting ? L10n.text("暗角校正", bundle: bundle) : nil].compactMap { $0 }
+            return applied.isEmpty ? L10n.text("已匹配镜头", bundle: bundle) : L10n.format("已校正%@", bundle: bundle, applied.joined(separator: " / "))
+        case .noDatabase: return L10n.text("镜头数据库不可用", bundle: bundle)
+        case .noCamera: return L10n.text("未找到机身或传感器尺寸信息", bundle: bundle)
+        case .ambiguous: return L10n.text("有多个匹配镜头，请手动选择", bundle: bundle)
+        case .noCalibration: return L10n.text("此镜头没有所选校正的标定数据", bundle: bundle)
+        case .missingFocalLength: return L10n.text("照片缺少有效焦距，未应用校正", bundle: bundle)
+        case .embeddedGeometry: return L10n.text("DNG 已执行内嵌 Stage3 处理，未叠加校正", bundle: bundle)
+        case .unsupportedInput: return L10n.text("此输入不支持镜头校正", bundle: bundle)
+        case .unmatched: return L10n.text("未匹配镜头，请手动选择", bundle: bundle)
         }
     }
 }

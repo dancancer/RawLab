@@ -1,41 +1,7 @@
 import RawLabKit
+import RawLabNativeTypes
 import Foundation
 import ImageIO
-
-extension LensMatchState {
-    init(native state: sony2fuji_lens_state) {
-        switch state {
-        case SONY2FUJI_LENS_OFF: self = .off
-        case SONY2FUJI_LENS_MATCHED: self = .matched
-        case SONY2FUJI_LENS_NO_DATABASE: self = .noDatabase
-        case SONY2FUJI_LENS_NO_CAMERA: self = .noCamera
-        case SONY2FUJI_LENS_AMBIGUOUS: self = .ambiguous
-        case SONY2FUJI_LENS_NO_CALIBRATION: self = .noCalibration
-        case SONY2FUJI_LENS_MISSING_FOCAL_LENGTH: self = .missingFocalLength
-        case SONY2FUJI_LENS_EMBEDDED_GEOMETRY: self = .embeddedGeometry
-        case SONY2FUJI_LENS_UNSUPPORTED_INPUT: self = .unsupportedInput
-        default: self = .unmatched
-        }
-    }
-}
-
-extension LensInfo {
-    init(state: sony2fuji_lens_state, detectedLens: String, selectedLens: String,
-         appliedDistortion: Bool, appliedTCA: Bool, cropScale: Float,
-         candidates: [LensCandidate], appliedVignetting: Bool = false, sourceMetadata: DisplayLensMetadata? = nil) {
-        self.init(
-            state: LensMatchState(native: state),
-            detectedLens: detectedLens,
-            selectedLens: selectedLens,
-            appliedDistortion: appliedDistortion,
-            appliedTCA: appliedTCA,
-            cropScale: cropScale,
-            candidates: candidates,
-            appliedVignetting: appliedVignetting,
-            sourceMetadata: sourceMetadata
-        )
-    }
-}
 
 extension DisplayLensMetadata {
     func overriding(_ settings: LensCorrectionSettings) throws -> DisplayLensMetadata {

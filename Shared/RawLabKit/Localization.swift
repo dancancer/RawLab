@@ -54,4 +54,8 @@ public enum L10n {
     public static func format(_ key: String, _ arguments: CVarArg...) -> String {
         String(format: text(key), locale: locale, arguments: arguments)
     }
+
+    public static func format(_ key: String, bundle: Bundle, _ arguments: CVarArg...) -> String {
+        String(format: text(key, bundle: bundle), locale: locale, arguments: arguments)
+    }
 }
