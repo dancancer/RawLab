@@ -798,6 +798,51 @@ public sealed class AIModelPackageStoreTests : IDisposable
         AssertNoStrayTempFiles(storage);
     }
 
+    [Fact]
+    public async Task RemoveSucceedsWhileThumbnailResourceWatcherObservesInstalledDirectory()
+    {
+        var fixture = MakeSyntheticArchive("watched-remove");
+        using var server = new LoopbackHttpServer(ServerMode.File(fixture.ArchivePath));
+
+        var storage = Path.Combine(tempRoot, "store-watched-remove");
+        var desc = fixture.Descriptor(server.Url("/watched.tar.gz"));
+        var store = new AIModelPackageStore(
+            storage,
+            desc,
+            allowLoopbackHttp: true,
+            diskSpaceMarginBytes: 1024);
+
+        var manager = new AIModelPackageManager(
+            store,
+            isRuntimeSupported: () => true,
+            isHardwareAvailable: () => true);
+
+        var installedTcs = new TaskCompletionSource<AIModelPackageState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.StateChanged += state =>
+        {
+            if (state.IsDownloadedInstalled) installedTcs.TrySetResult(state);
+        };
+        manager.StartDownload();
+        _ = await installedTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var installedDir = store.InstalledPackageDirectory();
+        Assert.NotNull(installedDir);
+
+        // Edited-photo thumbnails with AI denoise keep a watcher on the installed package directory for the whole session
+        // (PhotoPreviewResourceWatch). Removal renames that directory first, so the watcher must not make it fail.
+        using var watch = new PhotoPreviewResourceWatch(() => { });
+        watch.Watch(new[] { Path.Combine(installedDir!, "manifest.json") });
+        Assert.True(watch.IsWatchingDirectory(Path.Combine(installedDir!, "manifest.json")));
+
+        manager.RemoveDownloadedModel();
+        Assert.Null(manager.State.Error);
+        Assert.Equal(AIModelPackageState.NotInstalled(desc.ArchiveBytes, desc.UnpackedBytes), manager.State);
+        Assert.Null(store.InstalledPackageDirectory());
+        Assert.False(Directory.Exists(installedDir));
+        AssertNoStrayTempFiles(storage);
+    }
+
     // MARK: - Helpers
 
     private async Task<AIModelPackageException> AssertHostileArchiveRejected(SyntheticArchive hostile, string storage)
