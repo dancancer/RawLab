@@ -23,12 +23,20 @@ struct SharpenV2Options {
     }
 };
 
-// 由滑块值派生的逐像素常量。CPU 与三个 GPU 后端共用这一份推导，GPU 只读取结果，
-// 避免 Intel 宿主 Metal 编译器错误折叠着色器里的 clamp(x / 100, 0, 1)（#695）。
+// 由滑块值派生的逐像素常量。CPU 与三个 GPU 后端共用这一份推导，着色器只读取结果：
+// 在托管 macOS x86_64 runner 的虚拟化 Intel GPU（Apple Paravirtualized Graphics Device）上，
+// 观测到着色器里的 clamp(x / 100, 0, 1) 被错误折叠成 clamp(x, 0, 1) / 100（#695）。
+struct SharpenMaskRange {
+    float low = 0.0f;   // 边缘遮罩 smoothstep 起点
+    float span = 0.0f;  // 0 表示不启用遮罩
+};
+
+SharpenMaskRange sharpenMaskRange(float masking);
+
 struct SharpenV2Coefficients {
     float coring = 0.0f;      // |diff| 低于此值时细节权重平滑衰减
-    float detailGain = 0.0f;  // clamp(amount, 0, 2) * (0.7 + 1.2 * detail/100)
-    float maskLow = 0.0f;     // 边缘遮罩 smoothstep 起点；maskSpan == 0 表示不启用遮罩
+    float detailGain = 0.0f;  // GPU 锐化 v2 各 pass 用参数块的 strength 槽传递它
+    float maskLow = 0.0f;
     float maskSpan = 0.0f;
 };
 
