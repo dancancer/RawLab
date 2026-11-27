@@ -93,6 +93,9 @@ try {
             '"' + $a + '"'
         }) -join ' '
         $psi.UseShellExecute = $false
+        # Hosted CI runs this file under PowerShell 7, whose PSModulePath makes the child Windows PowerShell 5.1
+        # load the PowerShell 7 Archive module (Expand-Archive then fails on .NET Framework). Let the child rebuild its own.
+        $psi.EnvironmentVariables.Remove('PSModulePath')
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $p = [System.Diagnostics.Process]::Start($psi)
