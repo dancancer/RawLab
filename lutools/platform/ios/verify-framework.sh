@@ -36,7 +36,9 @@ for slice in ios-arm64 ios-arm64_x86_64-simulator; do
     for notice in LibRaw-COPYRIGHT LibRaw-LICENSE.CDDL LibRaw-LICENSE.LGPL \
         rawspeed-camera-calibration.inc Adobe-DNG-SDK-LICENSE.txt nlohmann-JSON-MIT.txt libtiff-LICENSE.md ThirdPartyNotices.md \
         RawLab-GPL-3.0.txt RawLab-Aliyun-RUM-Exception.txt RawLab-Licensing.md \
-        LibRaw-X3F-BSD.txt X3F-Dependencies.txt x3f-rust/COPYRIGHT-library.html libjpeg-turbo/LICENSE.md libjpeg-turbo/README.ijg; do
+        LibRaw-X3F-BSD.txt X3F-Dependencies.txt x3f-rust/COPYRIGHT-library.html libjpeg-turbo/LICENSE.md libjpeg-turbo/README.ijg \
+        libultrahdr/image_io-LICENSE libultrahdr/modp_b64-LICENSE libultrahdr/adobe-hdr-gain-map-NOTICE libspng-LICENSE.txt \
+        OpenCV/SoftFloat-COPYING.txt OpenCV/mscr-chi_table_LICENSE.txt OpenCV/contrib-LICENSE OpenCV/guided-filter-LICENSE; do
         test -f "$(dirname "$binary")/Licenses/$notice"
     done
     cmp "$ROOT/../LICENSE-ALIYUN-RUM-EXCEPTION" "$(dirname "$binary")/Licenses/RawLab-Aliyun-RUM-Exception.txt"

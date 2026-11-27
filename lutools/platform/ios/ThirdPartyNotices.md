@@ -3,9 +3,13 @@
 The shared DCP compiler uses JSON for Modern C++ (Niels Lohmann), under MIT.
 Its original notice is included as `Licenses/nlohmann-JSON-MIT.txt`.
 
-OpenCV 4.12.0 (core/imgproc) and wavelib are statically linked for linear-light
-wavelet denoising. OpenCV uses Apache 2.0; wavelib uses BSD 3-Clause. See the
-included `OpenCV-LICENSE` and `wavelib-COPYRIGHT`.
+OpenCV 4.12.0 (core, imgproc, and ximgproc from opencv_contrib 4.12.0, with their
+calib3d, features2d, flann, imgcodecs and video dependencies) and wavelib are
+statically linked for linear-light wavelet and chroma denoising. OpenCV uses
+Apache 2.0; wavelib uses BSD 3-Clause. See the included `OpenCV-LICENSE` and
+`wavelib-COPYRIGHT`. Third-party code compiled into these modules keeps its own
+notices in `OpenCV/`: SoftFloat, the MSCR chi table, the opencv_contrib license
+and the guided filter's BSD notice.
 Sources: https://github.com/opencv/opencv/tree/4.12.0 and
 https://github.com/rafat/wavelib. Exact revisions and archive hashes are pinned
 in `lutools/cmake/denoise-dependencies.cmake`. Local stationary-wavelet column
@@ -77,7 +81,10 @@ terms. Source pins and boundaries: docs/reference/raw-format-support.md.
 
 Gain-map HDR JPEG support statically links libultrahdr 2.0.2 (Apache-2.0 OR MIT):
 https://github.com/google/libultrahdr/tree/v2.0.2. Its LICENSE, LICENSE-APACHE
-and LICENSE-MIT are in Licenses/libultrahdr/. 16-bit PNG export statically links
+and LICENSE-MIT are in Licenses/libultrahdr/, together with the licenses of its
+bundled image_io (Apache-2.0, image_io-LICENSE) and modp_b64 (BSD 3-Clause,
+modp_b64-LICENSE) and its Adobe notice: This product includes Gain Map technology
+under license by Adobe. 16-bit PNG export statically links
 libspng 0.7.4 (BSD-2-Clause AND libpng-2.0): https://github.com/randy408/libspng/tree/v0.7.4;
 see libspng-LICENSE.txt. Archive pins: lutools/cmake/hdr-codec-dependencies.json
 and lutools/cmake/raw-png.cmake.

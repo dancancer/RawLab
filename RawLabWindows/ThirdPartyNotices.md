@@ -60,7 +60,9 @@
   pins in `lutools/x3f-bridge/Cargo.toml` and `Cargo.lock`. Notices (Apache-2.0 and
   upstream BSD) are in `Licenses/X3F-Dependencies.txt` and `Licenses/x3f-rust/`.
 - libultrahdr 2.0.2: https://github.com/google/libultrahdr/tree/v2.0.2, Apache-2.0 OR MIT.
-  Statically linked for gain-map HDR JPEG. Licenses in `Licenses/libultrahdr/`.
+  Statically linked for gain-map HDR JPEG. Licenses in `Licenses/libultrahdr/`, including
+  its bundled image_io (Apache-2.0, `image_io-LICENSE`) and modp_b64 (BSD 3-Clause,
+  `modp_b64-LICENSE`). This product includes Gain Map technology under license by Adobe.
 - libheif 1.23.7: https://github.com/strukturag/libheif/tree/v1.23.7, LGPL-3.0-or-later,
   with libde265 1.1.3: https://github.com/strukturag/libde265/tree/v1.1.3, LGPL-3.0-or-later.
   Statically linked into sony2fuji.dll for HDR HEIF input; plugins and encoders are disabled.
@@ -72,8 +74,11 @@
   Statically linked for 16-bit PNG export; archive pinned in `lutools/cmake/raw-png.cmake`.
   See `Licenses/libspng-LICENSE.txt`.
 - OpenCV 4.12.0: https://github.com/opencv/opencv/tree/4.12.0, Apache 2.0.
-  Static core/imgproc libraries support linear-light wavelet denoising.
-  See `Licenses/OpenCV-LICENSE`.
+  Static core, imgproc and ximgproc (opencv_contrib 4.12.0) libraries, with their
+  calib3d, features2d, flann, imgcodecs and video dependencies, support wavelet and
+  chroma denoising. See `Licenses/OpenCV-LICENSE`; notices of the third-party code
+  compiled into these modules (SoftFloat, MSCR chi table, opencv_contrib, guided filter)
+  are in `Licenses/OpenCV/`.
 - libtiff 4.7.1: https://gitlab.com/libtiff/libtiff, libtiff license.
   The static Windows build is used only by the rendered-DNG writer. The exact
   source archive and SHA-256 are pinned in `lutools/cmake/tiff-dependencies.cmake`;

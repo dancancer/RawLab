@@ -138,7 +138,15 @@ val prepareAssets by tasks.registering(Sync::class) {
             "libjpeg-turbo-LICENSE.md", "libjpeg-turbo-README.ijg", "libspng-LICENSE.txt")
     }
     from("src/main/notices") { into("licenses") }
-    from(hdrCodecSources.map { it[0] }) { into("licenses/libultrahdr"); include("LICENSE", "LICENSE_*") }
+    from(hdrCodecSources.map { it[0] }) { into("licenses/libultrahdr"); include("LICENSE", "LICENSE-*") }
+    // uhdr 静态链接其 third_party/image_io（含 BSD 许可的 modp_b64）；文件名与 lutools/cmake/hdr-codec.cmake 一致
+    for ((source, name) in listOf(
+        "third_party/image_io/LICENSE" to "image_io-LICENSE",
+        "third_party/image_io/src/modp_b64/LICENSE" to "modp_b64-LICENSE",
+        "adobe-hdr-gain-map-license/NOTICE" to "adobe-hdr-gain-map-NOTICE",
+    )) {
+        from(hdrCodecSources.map { it[0].resolve(source) }) { into("licenses/libultrahdr"); rename { name } }
+    }
     from(hdrCodecSources.map { it[2].resolve("COPYING") }) { into("licenses/libheif") }
     from(hdrCodecSources.map { it[3].resolve("COPYING") }) { into("licenses/libde265") }
     from(hdrCodecSources.map { it[4].resolve("LICENSE") }) { into("licenses/lcms2") }

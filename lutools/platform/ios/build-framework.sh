@@ -101,6 +101,7 @@ build_slice() {
     mkdir -p "$framework/Licenses/nikon-he"
     cp "$ROOT/third_party/nikon_he/README.md" "$ROOT/third_party/nikon_he/LICENSE.LGPL-2.1" "$framework/Licenses/nikon-he/"
     cp "$core/licenses/OpenCV-LICENSE" "$core/licenses/wavelib-COPYRIGHT" "$framework/Licenses/"
+    cp -R "$core/licenses/OpenCV" "$framework/Licenses/"
     cp -R "$core/licenses/lensfun" "$framework/Licenses/"
     rm -rf "$framework/Lensfun"
     mkdir -p "$framework/Lensfun"
