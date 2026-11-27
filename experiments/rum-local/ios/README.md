@@ -5,7 +5,7 @@ This directory is only for the explicit `RAWLAB_RUM_LOCAL` simulator build. Sinc
 Run the configuration and default-transport checks without a vendor framework:
 
 ```bash
-bash RawLab/tests/rum-configuration.sh
+swift test --filter RUMConfigurationTests
 bash RawLab/tests/rum-transport.sh
 ```
 

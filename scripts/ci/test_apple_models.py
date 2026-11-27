@@ -292,7 +292,7 @@ printf 'PASS: %s line 2\n' "$suite"
                 result = subprocess.run(["/bin/bash", str(runner), "ios"], env=env, capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 lines = records.read_text().splitlines()
-                self.assertEqual(len(lines), 30)
+                self.assertEqual(len(lines), 23)
                 tmpdirs = [line.split("|")[1] for line in lines]
                 rawlab_tmps = [line.split("|")[2] for line in lines]
                 self.assertEqual(len(set(tmpdirs)), len(lines), "Each suite must get an isolated TMPDIR")
@@ -371,20 +371,20 @@ printf 'PASS: %s line 2\n' "$suite"
         with self.subTest(case="jobs=1 failure"):
             result = self._run_parallel_probe(
                 root, runner, tools, "ios", "serial", RAWLAB_APPLE_MODELS_JOBS="1",
-                FAIL_SUITES="RawLab/tests/hdr-model.sh=42")
+                FAIL_SUITES="Shared/tests/color-grading-interaction.sh=42")
             self.assertEqual(result.returncode, 42, result.stdout + result.stderr)
-            self.assertIn("error: RawLab/tests/hdr-model.sh failed with exit code 42", result.stderr)
+            self.assertIn("error: Shared/tests/color-grading-interaction.sh failed with exit code 42", result.stderr)
             self.assertIn("error: apple models (ios): 1 failure(s)", result.stderr)
-            self.assertIn("error:   RawLab/tests/hdr-model.sh (exit 42)", result.stderr)
+            self.assertIn("error:   Shared/tests/color-grading-interaction.sh (exit 42)", result.stderr)
             self.assertRegex(result.stderr, r"error:   \d+ queued suite\(s\) were not started after the first failure")
             self.assertNotIn("[model] RawLab/tests/hdr-canvas.sh", result.stdout,
                              "later suites must not start after a serial failure")
         with self.subTest(case="logged skip"):
             result = self._run_parallel_probe(
                 root, runner, tools, "ios", "skip", RAWLAB_APPLE_MODELS_JOBS="1",
-                SKIP_SUITES="RawLab/tests/hdr-model.sh")
+                SKIP_SUITES="Shared/tests/color-grading-interaction.sh")
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-            self.assertIn("error:   RawLab/tests/hdr-model.sh (logged SKIP)", result.stderr)
+            self.assertIn("error:   Shared/tests/color-grading-interaction.sh (logged SKIP)", result.stderr)
         with self.subTest(case="all green"):
             result = self._run_parallel_probe(root, runner, tools, "ios", "green")
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -394,7 +394,7 @@ printf 'PASS: %s line 2\n' "$suite"
         root, runner, tools = self._parallel_probe_root()
         for idx, (skip_suites, expected_rc) in enumerate((
             ("RawLab/tests/ios-reset-entry-ui.sh", 0),
-            ("RawLab/tests/ios-reset-entry-ui.sh,RawLab/tests/hdr-model.sh", 1),
+            ("RawLab/tests/ios-reset-entry-ui.sh,Shared/tests/color-grading-interaction.sh", 1),
         )):
             with self.subTest(skip_suites=skip_suites):
                 active = root / f"active-{idx}"
@@ -418,7 +418,7 @@ printf 'PASS: %s line 2\n' "$suite"
                 if expected_rc == 0:
                     self.assertIn("::warning::SKIP: accessibility is not trusted here", result.stdout)
                 else:
-                    self.assertIn("error: RawLab/tests/hdr-model.sh logged SKIP (forbidden by CI invariant 7)", result.stderr)
+                    self.assertIn("error: Shared/tests/color-grading-interaction.sh logged SKIP (forbidden by CI invariant 7)", result.stderr)
 
     def test_high_concurrency_replay_survives_signals_and_nonblocking_stdout_on_a_full_pipe(self):
         # The runner's stdout is a pipe drained slowly (like `| tee` in CI), so replay keeps it
@@ -477,7 +477,7 @@ for i in $(seq 1 200); do printf 'PASS: %s line %04d %s\\n' "$suite" "$i" "$(pri
                 self.assertEqual(process.returncode, 0, stderr[-2000:])
                 lines = stdout.splitlines()
                 headers = [i for i, line in enumerate(lines) if line.startswith("[model] ")]
-                self.assertEqual(len(headers), 30)
+                self.assertEqual(len(headers), 23)
                 for index in headers:
                     suite = lines[index].split(" ", 1)[1]
                     body = lines[index + 1:index + 201]

@@ -24,9 +24,19 @@ D05_EFFECT_FIELDS = {
     "effects.grain.size",
     "effects.grain.roughness",
 }
+# 小数夹具的读取、场景执行与拒绝用例解码必须都在 testDecimalFixtures 的方法体内
+# （以 4 空格缩进的右花括号为方法结尾），搬进没人调用的辅助函数不算数。
+_SWIFT_METHOD_BODY = r"(?:(?!\n    \}}\n).)*?"
+APPLE_DECIMAL_BODY = (
+    r"func\s+testDecimalFixtures\s*\(\s*\)\s*throws\s*\{{"
+    + _SWIFT_METHOD_BODY + r"adjustment-transfer-decimals-v1\.json"
+    + _SWIFT_METHOD_BODY + r"try\s+{call}\s*\(\s*at:\s*path\s*\)"
+    + _SWIFT_METHOD_BODY + r'root\["rejected_payloads"\]'
+    + _SWIFT_METHOD_BODY + r"JSONDecoder\(\)\.decode\(\s*AdjustmentTransferPayload\.self"
+)
 PLATFORM_CONSUMERS = (
-    ROOT / "RawLab" / "tests" / "AdjustmentTransferTests.swift",
-    ROOT / "RawLabMac" / "tests" / "AdjustmentTransferTests.swift",
+    ROOT / "tests" / "RawLabKitTests" / "IOSAdjustmentTransferTests.swift",
+    ROOT / "tests" / "RawLabKitTests" / "MacAdjustmentTransferTests.swift",
     ROOT / "RawLabAndroid" / "app" / "src" / "test" / "java" / "com" / "rawlab" / "android" / "adjustments" / "AdjustmentTransferTest.kt",
     ROOT / "RawLabWindows" / "tests" / "editing" / "AdjustmentTransferChecks.cs",
 )
@@ -141,14 +151,14 @@ class DecimalTransferVectorContracts(unittest.TestCase):
         fixture_name = "adjustment-transfer-decimals-v1.json"
         active_checks = {
             PLATFORM_CONSUMERS[0]: [  # iOS
-                r"try\s+decimalFixtures\(\)",
-                r"static\s+func\s+decimalFixtures\s*\([^)]*\).*?adjustment-transfer-decimals-v1\.json",
+                r"final\s+class\s+IOSAdjustmentTransferTests\s*:\s*XCTestCase\b.*?func\s+testDecimalFixtures\s*\(\s*\)\s*throws\b",
+                APPLE_DECIMAL_BODY.format(call="scenarioFixtures"),
                 r"try\s+scenarioFixtures\s*\(\s*at:\s*path\s*\)",
                 r'root\["rejected_payloads"\].*?JSONDecoder\(\)\.decode\(\s*AdjustmentTransferPayload\.self',
             ],
             PLATFORM_CONSUMERS[1]: [  # macOS
-                r"try\s+decimalFixtures\(\)",
-                r"static\s+func\s+decimalFixtures\s*\([^)]*\).*?adjustment-transfer-decimals-v1\.json",
+                r"final\s+class\s+MacAdjustmentTransferTests\s*:\s*XCTestCase\b.*?func\s+testDecimalFixtures\s*\(\s*\)\s*throws\b",
+                APPLE_DECIMAL_BODY.format(call="sharedScenarioFixtures"),
                 r"try\s+sharedScenarioFixtures\s*\(\s*at:\s*path\s*\)",
                 r'root\["rejected_payloads"\].*?JSONDecoder\(\)\.decode\(\s*AdjustmentTransferPayload\.self',
             ],

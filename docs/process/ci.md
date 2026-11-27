@@ -253,9 +253,11 @@ gate's honest skip pair otherwise.
   Each invocation shares one temporary compiler-module cache between the adjustment
   transfer suites, then removes it on success or failure. Test executables and
   results are always rebuilt; no compiled product or test result is reused.
-  The Mac chroma, wavelet, geometry, localization, lens localization, RUM configuration, HDR model,
-  control groups, master recipe, and adjustment transfer/preset model checks run inside `RawLabKitTests` via
-  `swift test`, needing only the Swift models/native bridge types and no native libraries.
+  The Mac and iOS zero-dependency model checks (chroma, wavelet, geometry, localization, lens
+  localization, RUM configuration, error diagnostics, recent photos, adjustment persistence, HDR
+  model, control groups, master recipe, and adjustment transfer/session/preset suites) run inside
+  `RawLabKitTests` via `swift test`, needing only the Swift models/native bridge types and no native
+  libraries.
   The `macos` models route runs `RawLabKitTests` in both Debug and Release
   (`swift test -c release -Xswiftc -enable-testing`) using separate scratch
   directories so release-configuration coverage is preserved without affecting

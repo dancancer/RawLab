@@ -155,7 +155,7 @@ CPU 参考通过才允许后续 GPU 优化；Auto/Force 行为按方案，不把
   `hdr_recipe_roundtrip` 与 `hdr_recipe_native_parity` 验证同 request 输出。更新 MCP 的 schema 透传与能力检查，
   Windows parser/旧版本回归保持；不新增移动 Agent。
 - [ ] **Step 5：验证。** 运行 `ctest --test-dir lutools/build-macos -R '^hdr_recipe_' --output-on-failure`，
-  `swift test --filter MacHDRModelTests` 与 `bash RawLab/tests/hdr-model.sh`，以及下表中的 history/batch/Agent runner；补跑既有 edit-memory/batch 模型和 payload fixture。
+  `swift test --filter '^(RawLabKitTests\.)?(Mac|IOS)HDRModelTests\b'`，以及下表中的 history/batch/Agent runner；补跑既有 edit-memory/batch 模型和 payload fixture。
   CTest 只注册 C++ 用例，Swift 用例由各 model runner 执行，不把未接线测试名算作完成。
 
 ## HDR-03：Apple 导入、画布与监看
@@ -263,7 +263,7 @@ libultrahdr 的 arm64 P3 数值回归要求关闭其 intrinsics；产品与独�
 | --- | --- |
 | A02～04、A10、A13 核心与协议 | 产品 CTest `hdr_render_*`、`hdr_api_validation`、`hdr_image_decode`、`hdr_recipe_*`；C11 头布局检查随构建执行 |
 | A01、A08、A09 格式与数值 | `lutools/tests/hdr_codec/run.py`；`hdr_image_decode` 内的 `numeric_acceptance.h` 检查 sRGB/P3 × ISO/XMP/双描述六条路径；`public_fixtures.py` 检查公开 Android 原片与只读身份 |
-| A05、A13 记录和传递 | `Shared/tests/hdr-settings.sh`、`hdr-transfer.sh`、`hdr-native-request.sh`；`RawLabKitTests`（`MacHDRModelTests`）与 iOS `RawLab/tests/hdr-model.sh`、两端 `hdr-history.sh`；既有 history/edit-memory/transfer 回归 |
+| A05、A13 记录和传递 | `Shared/tests/hdr-settings.sh`、`hdr-transfer.sh`、`hdr-native-request.sh`；`RawLabKitTests`（`MacHDRModelTests`、`IOSHDRModelTests`）、两端 `hdr-history.sh`；既有 history/edit-memory/transfer 回归 |
 | A04、A06、A11 桥与显示 | `Shared/tests/hdr-display.sh`、Mac `tests/hdr-bridge.sh`、iOS `tests/hdr-processing.sh`；源缓存为每进程共享 128 MiB 上限，当前画布所有者另计总任务内存 |
 | A05、A09、A10 保存和批量 | 两端 `tests/hdr-batch.sh`、Mac `tests/hdr-agent.sh`；原生逐目标冻结、失败隔离、HDR/SDR 输出与重新探测 |
 | A12 交互 | iOS `tests/hdr-ui.sh <Build/Products> <task-output>`，需 `IOS_SIMULATOR_UDID` 指向专用模拟器；Mac 在隔离目录执行真实原生界面操作并保存任务截图；无 Mac `hdr-ui.sh` |
