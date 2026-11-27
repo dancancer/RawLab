@@ -68,6 +68,16 @@ CORE_INPUT_FILES = {
 }
 CORE_INPUT_PREFIXES = ("Shared/BundledLooks/",)
 CORE_EXCLUDED_PREFIXES = ("lutools/platform/ios/",)
+# Trees that RawLabWindows/tests/native/d3d11/CMakeLists.txt compiles or includes from, plus the
+# project's own directory. Deliberately whole trees: a file list would go stale with every include.
+D3D11_BUILD_INPUT_PREFIXES = (
+    "RawLabWindows/tests/native/d3d11/",
+    "lutools/src/core/",
+    "lutools/src/gpu/",
+    "lutools/include/",
+    "lutools/third_party/nlohmann/",
+)
+D3D11_BUILD_INPUT_FILES = {"lutools/tests/d3d11_shader_tests.cpp"}
 # Job names in ci.yml. A description-edit run names its selection job EDIT_JOB, so a later
 # edit run can tell automatic runs (which select checks) from earlier edit runs.
 SELECT_JOB = "Select affected platforms"
@@ -123,6 +133,25 @@ def is_core_path(path):
         return not (path.startswith(CORE_EXCLUDED_PREFIXES) or _is_lutools_doc(path)
                     or path.rsplit("/", 1)[-1] in DOC_NAMES)
     return path in CORE_INPUT_FILES or path.startswith(CORE_INPUT_PREFIXES)
+
+
+def is_d3d11_build_input(path):
+    """Whether a changed path is compiled into the standalone D3D11 test project."""
+    if path.rsplit("/", 1)[-1] in DOC_NAMES or (path.startswith("lutools/") and _is_lutools_doc(path)):
+        return False
+    return path in D3D11_BUILD_INPUT_FILES or path.startswith(D3D11_BUILD_INPUT_PREFIXES)
+
+
+def wants_d3d11_build(config, platforms, draft, paths):
+    """Automatic models runs configure and build the standalone D3D11 project when its inputs changed.
+
+    Build only: the WARP regressions and mutation checks stay on the explicit Windows request.
+    `paths` is None when the diff was unavailable; that builds it rather than guessing. The build
+    runs inside the Windows job, so it is never selected without that job.
+    """
+    if config["mode"] != "automatic" or config["checks"] != "models" or draft or "windows" not in platforms:
+        return False
+    return paths is None or any(is_d3d11_build_input(path) for path in paths)
 
 
 def wants_core_ctest(config, platforms, draft, paths):
@@ -368,6 +397,7 @@ def verify(needs):
         if result != expected:
             errors.append(f"{platform} finished as {result}, expected {expected}")
     errors += _verify_core_ctest(needs, outputs, mode, checks)
+    errors += _verify_d3d11_build(needs, outputs, mode)
     batch_selection = mode == "automatic" and checks == "models" and outputs.get("windows") == "true"
     expected = "success" if batch_selection else "skipped"
     result = needs.get("windows-batch-selection", {}).get("result")
@@ -397,6 +427,20 @@ def _verify_core_ctest(needs, outputs, mode, checks):
     return errors
 
 
+def _verify_d3d11_build(needs, outputs, mode):
+    """A selected standalone D3D11 build is covered by the Windows job result."""
+    flag = outputs.get("d3d11_build", "false")
+    if flag == "false":
+        return []
+    if flag != "true":
+        return [f"Invalid d3d11_build flag: {flag}"]
+    errors = [] if mode == "automatic" else ["D3D11 build belongs to automatic changes"]
+    result = needs.get("windows", {}).get("result")
+    if outputs.get("windows") != "true" or result != "success":
+        errors.append(f"D3D11 build was selected but Windows job finished as {result}, expected success")
+    return errors
+
+
 def _verify_edit(needs, outputs):
     reference = outputs.get("reference") or "missing"
     errors = [] if reference == "success" else [f"The automatic CI result for this head is {reference}, not success"]
@@ -414,12 +458,13 @@ def windows_runner(event_name, cold, checks="full"):
     return "windows-2022"
 
 
-def write_selection(platforms, cold, draft, reason, event_name, config, extra=(), core_ctest=False):
+def write_selection(platforms, cold, draft, reason, event_name, config, extra=(), core_ctest=False,
+                    d3d11_build=False):
     checks = config["checks"]
     flags = {**{platform: platform in platforms for platform in PLATFORMS}, "cold": cold, "draft": draft,
              "contracts": config["contracts"], "models": checks in ("models", "full"),
              "build": checks in ("build", "native", "full"), "native": checks in ("native", "full"),
-             "core_ctest": core_ctest}
+             "core_ctest": core_ctest, "d3d11_build": d3d11_build}
     lines = [f"{name}={'true' if value else 'false'}" for name, value in flags.items()]
     lines.append("windows_runner=" + json.dumps(windows_runner(event_name, cold, checks)))
     lines += ["mode=" + config["mode"], "scope=" + config["platform"], "checks=" + checks,
@@ -472,9 +517,13 @@ def main():
                                             changed_files, github_last_success)
     config = configuration(event_name, event)
     core_ctest = wants_core_ctest(config, platforms, draft, diffs[-1] if diffs else None)
+    d3d11_build = wants_d3d11_build(config, platforms, draft, diffs[-1] if diffs else None)
     if core_ctest:
         reason += "; core inputs changed: macOS arm64 core CTest row added"
-    write_selection(platforms, cold, draft, reason, event_name, config, core_ctest=core_ctest)
+    if d3d11_build:
+        reason += "; D3D11 test project inputs changed: Windows configure/build added"
+    write_selection(platforms, cold, draft, reason, event_name, config, core_ctest=core_ctest,
+                    d3d11_build=d3d11_build)
     return 0
 
 

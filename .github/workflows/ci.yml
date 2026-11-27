@@ -61,6 +61,7 @@ jobs:
       native: ${{ steps.select.outputs.native }}
       macos_matrix: ${{ steps.select.outputs.macos_matrix }}
       core_ctest: ${{ steps.select.outputs.core_ctest }}
+      d3d11_build: ${{ steps.select.outputs.d3d11_build }}
       reference: ${{ steps.select.outputs.reference }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -565,6 +566,15 @@ jobs:
           ctest --test-dir build/d3d11-warp -C Release --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { throw 'D3D11 WARP regressions failed.' }
           & ./RawLabWindows/tests/native/d3d11/check-mutations.ps1
+      - name: Build affected standalone D3D11 test project
+        if: needs.changes.outputs.d3d11_build == 'true'
+        shell: pwsh
+        run: |
+          git rev-parse HEAD
+          cmake -S RawLabWindows/tests/native/d3d11 -B build/d3d11-warp -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test configure failed.' }
+          cmake --build build/d3d11-warp --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
       - name: Run standalone Windows models and runner checks
         if: needs.changes.outputs.models == 'true'
         shell: pwsh

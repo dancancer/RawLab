@@ -624,6 +624,27 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("--no-tests=error", step["run"])
         self.assertIn("$LASTEXITCODE", step["run"])
 
+    def test_automatic_d3d11_step_only_builds_and_follows_the_selection(self):
+        self.assertEqual(self.workflow["jobs"]["changes"]["outputs"]["d3d11_build"],
+                         "${{ steps.select.outputs.d3d11_build }}")
+        self.assertIn("windows", _needs_set(self.workflow["jobs"]["result"]))
+        steps = self.workflow["jobs"]["windows"]["steps"]
+        builds = [step for step in steps if "cmake -S RawLabWindows/tests/native/d3d11" in step.get("run", "")]
+        self.assertEqual(len(builds), 2, "one build-only automatic step and the existing manual regression step")
+        automatic = next(step for step in builds if "check-mutations.ps1" not in step["run"])
+        self.assertEqual(_strip_expr(automatic["if"]), "needs.changes.outputs.d3d11_build == 'true'")
+        self.assertIn("cmake --build build/d3d11-warp", automatic["run"])
+        self.assertNotIn("ctest", automatic["run"])
+        self.assertNotIn("check-mutations.ps1", automatic["run"])
+        self.assertNotIn("continue-on-error", automatic)
+        self.assertIn("$LASTEXITCODE", automatic["run"])
+        # 自动步骤只构建：除手动 WARP 步骤外，Windows job 里没有别的步骤（含包装脚本）跑这个工程的回归。
+        d3d11_dir = ROOT / "RawLabWindows/tests/native/d3d11"
+        self.assertEqual(sorted(path.name for path in d3d11_dir.glob("*.ps1")), ["check-mutations.ps1"])
+        for step in steps:
+            if step is not automatic and "check-mutations.ps1" not in step.get("run", ""):
+                self.assertNotIn("d3d11-warp", step.get("run", ""), step.get("name"))
+
     def test_gpu_ai_inputs_are_gated_to_arm64_full_checks(self):
         mac_steps = [step for step in self.workflow["jobs"]["macos"]["steps"]
                      if "ai-inputs.py" in step.get("run", "")]

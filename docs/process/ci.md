@@ -34,7 +34,7 @@ The supported camera/settings boundary remains the [X3F contract](../../lutools/
 
 | Event or request | Automatic coverage |
 | --- | --- |
-| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites; a change to core inputs also runs the macOS arm64 core CTest row (see [Core CTest on ordinary runs](#core-ctest-on-ordinary-runs)) |
+| Ordinary PR / `development` push | Static contracts plus fast models for affected platforms; affected Windows also runs the isolated `batch-selection` WPF suite with its native prerequisites; core changes add the macOS core CTest row, and changes to the standalone D3D11 test project's inputs add its Windows configure/build (see [Core CTest on ordinary runs](#core-ctest-on-ordinary-runs) and [Automatic D3D11 build](#automatic-d3d11-build)) |
 | Draft PR | Contracts only; platform checks and aggregate result stay skipped |
 | PR title/body edit | No checks; **CI result** restates the head's latest automatic result (see [Safety and Results](#safety-and-results)) |
 | External fork PR | Contracts and affected-platform models on GitHub-hosted runners, including macOS/iOS; external branch names never request a full cold gate (see [External fork pull requests](#external-fork-pull-requests)) |
@@ -72,15 +72,27 @@ this is not reuse of an unverified product binary.
 An explicitly requested `platform=windows`, `checks=models` run also builds and
 runs the isolated WARP regressions under `RawLabWindows/tests/native/d3d11` on
 hosted Windows. This narrow native exception exercises production renderer/filter
-sources with a compile-time test device factory and software adapter. Ordinary
-PR model checks retain their existing scope. WARP does not establish hardware GPU
-behavior; production builds continue to reject software adapters.
+sources with a compile-time test device factory and software adapter. Ordinary PR
+model checks do not run the WARP tests or mutation checks. WARP does not establish
+hardware GPU behavior; production builds continue to reject software adapters.
 The same run uses `RawLabWindows/tests/native/d3d11/check-mutations.ps1`
 (tracked in the manual WARP script inventory) to check test sensitivity by removing
 buffer reuse and idle trimming
 in generated test-only source copies. Each mutation must fail at its corresponding
 resource assertion; compile errors or unrelated test failures are rejected. The
 normal backend is restored and the reuse test must pass again before the step ends.
+
+### Automatic D3D11 build
+
+An ordinary PR or `development` push that selects Windows also configures and builds
+the standalone D3D11 test project, inside the existing Windows job, when changed files
+can affect it: the project's own directory, the `lutools/src/core/`, `lutools/src/gpu/`,
+`lutools/include/` and `lutools/third_party/nlohmann/` trees its CMake source list and
+includes draw from, and `lutools/tests/d3d11_shader_tests.cpp`. This is a build gate
+only, so that a compile or link break in the project is caught when it is introduced;
+the WARP regressions and mutation checks still run only on the explicit `windows` +
+`models` request above. If the changed-file diff is unavailable the build is included.
+Directory guidance files, drafts, release/hotfix full gates and manual runs do not add it.
 
 ## Execution Procedure
 
@@ -520,8 +532,9 @@ still fail the job rather than being hidden by the timing wrapper.
 
 ## Native Dependency Caches
 
-Model-only checks do not configure or restore native caches; the macOS core CTest row is the only
-native step of a models run. Explicit warm build
+Model-only checks do not configure or restore native caches; the macOS core CTest row and the
+Windows D3D11 test project build (which needs no dependency cache) are the only native steps of a
+models run. Explicit warm build
 and native groups use an exact dependency key. **Cold builds never restore native
 caches**: manual full runs and release/hotfix PRs build dependencies from source. They
 look up the exact key without downloading its contents and skip saving when that
