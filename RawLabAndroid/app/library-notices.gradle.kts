@@ -69,7 +69,7 @@ fun resolvePoms(coordinates: Collection<String>): Map<String, File> {
 val generateLibraryNotices by tasks.registering {
     description = "Lists the release APK's Java/Kotlin libraries with versions and POM licences."
     // 输出目录交给 AGP 的变体 API 挂到 assets 源（build.gradle.kts），由它决定位置并把任务依赖传给
-    // 所有读 assets 源的任务（合并、lint 等）。
+    // 合并 assets 的任务。
     val outputDirectory = objects.directoryProperty().convention(layout.buildDirectory.dir("generated/libraryNotices"))
     extensions.add("outputDirectory", outputDirectory)
     inputs.property("modules", releaseModules)

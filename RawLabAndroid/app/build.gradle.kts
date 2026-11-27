@@ -315,7 +315,7 @@ for (variant in listOf("Debug", "Release")) {
     }
 }
 // 依赖许可清单作为生成的 assets 源挂到每个应用变体：debug 与 release 的许可对话框都显示它，
-// 读 assets 源的任务（合并、lint）都由 AGP 带上对生成任务的依赖；JVM 单元测试不读 assets，不触发它。
+// AGP 把它接到合并 assets 的任务上并带上对生成任务的依赖（lint 不读生成的 assets）；JVM 单元测试不触发它。
 androidComponents {
     onVariants { variant ->
         variant.sources.assets?.addGeneratedSourceDirectory(tasks.named("generateLibraryNotices")) { task ->
