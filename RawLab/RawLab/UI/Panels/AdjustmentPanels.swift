@@ -397,8 +397,7 @@ extension ContentView {
     var whiteBalancePanel: some View {
         let isRaster = viewModel.sourceKind == .raster && !workingSettings.isHDREditing
         let rasterRecipeLocked = isRaster && workingSettings.masterRecipeID != nil
-        let canUseEyedropper = !workingSettings.isHDREditing &&
-            ((isRaster && !rasterRecipeLocked) || (viewModel.sourceKind == .raw && viewModel.rawWhiteBalance != nil))
+        let canUseEyedropper = coordinator.canUseWBProbe
         return VStack(alignment: .leading, spacing: 12) {
             if workingSettings.isHDREditing || isRaster {
                 Text(L10n.text("相对白平衡")).font(.caption).foregroundStyle(.secondary)
