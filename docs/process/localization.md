@@ -62,7 +62,7 @@ translated; localize them only at display sites.
 
 ```bash
 python3 -m unittest discover -s tests -p test_localization.py
-bash RawLabMac/tests/localization.sh
+swift test --filter LocalizationBundleTests
 build/tools/dotnet/dotnet test RawLabWindows/tests/RawLabWindows.Tests.csproj -c Release --filter "Suite=localization"
 ```
 

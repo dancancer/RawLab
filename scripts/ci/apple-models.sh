@@ -47,18 +47,15 @@ case "${1:-}" in
         # HDR 渲染重置按钮契约由不依赖辅助功能授权的 hdr-rendition-reset.sh 覆盖；
         # 依赖 AXUIElement 的 hdr-rendition-ui.sh 保留为本地/发布前手工检查，CI 不执行。
         suites=(Shared/tests/hdr-native-typecheck.sh Shared/tests/hdr-native-request.sh Shared/tests/hdr-source-probe.sh Shared/tests/color-grading-interaction.sh
-            RawLabMac/tests/hdr-model.sh RawLabMac/tests/hdr-canvas.sh RawLabMac/tests/hdr-rendition-reset.sh
+            RawLabMac/tests/hdr-canvas.sh RawLabMac/tests/hdr-rendition-reset.sh
             RawLabMac/tests/horizontal-picker.sh RawLabMac/tests/mac-viewing.sh
             RawLabMac/tests/control-groups.sh RawLabMac/tests/adjustment-transfer.sh
             RawLabMac/tests/reset-scenarios.sh
             RawLabMac/tests/edit-records.sh
-            RawLabMac/tests/adjustment-transfer-session.sh
-            RawLabMac/tests/adjustment-preset-application.sh RawLabMac/tests/rum-configuration.sh
-            RawLabMac/tests/localization.sh
             RawLabMac/tests/update-install.sh RawLabMac/tests/thumbnail-cache.sh
-            RawLabMac/tests/geometry-settings.sh RawLabMac/tests/master-recipe.sh
-            RawLabMac/tests/lens-localization.sh RawLabMac/tests/chroma-settings.sh
-            RawLabMac/tests/wavelet-settings.sh RawLabMac/tests/workspace-browser.sh
+            RawLabMac/tests/master-recipe.sh
+            RawLabMac/tests/lens-localization.sh
+            RawLabMac/tests/workspace-browser.sh
             RawLabMac/tests/workspace-layout.sh RawLabMac/tests/render-scheduling.sh
             RawLabMac/tests/histogram.sh RawLabMac/tests/mac-crop-interaction.sh
             RawLabMac/tests/mac-inspection-suite.sh

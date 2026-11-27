@@ -241,8 +241,9 @@ gate's honest skip pair otherwise.
   Each invocation shares one temporary compiler-module cache between the adjustment
   transfer suites, then removes it on success or failure. Test executables and
   results are always rebuilt; no compiled product or test result is reused.
-  The standalone `RawLabMac/tests/chroma-settings.sh` and `wavelet-settings.sh`
-  likewise need only the Swift models and C ABI declarations, not native libraries.
+  The Mac chroma, wavelet, geometry, localization, RUM configuration, HDR model,
+  and adjustment transfer/preset model checks run inside `RawLabKitTests` via
+  `swift test`, needing only the Swift models and no native libraries.
 - iOS Files/LUT UI: `IOS_SIMULATOR_UDID=<dedicated-device> bash RawLab/tests/document-import-ui.sh <build-for-testing-products> <new-output-directory>`.
   The runner stages generated PNG/CUBE fixtures in a test app copy and executes
   picker opening, selection, cancellation and reopening. Run on each required

@@ -120,7 +120,7 @@ Android 单张和批量将取消传入原生解码/导出，并在 MediaStore/SA
 - Android `-PrawlabTestProRAW=/path/to/source.dng` 只将原片复制进测试 APK；
   `ProRAWNativeInstrumentedTest` 和 `HDRWorkflowTest` 覆盖原生预览、分块导出、取消恢复、
   模式持久化及实际相册回读。
-- 两端 `hdr-model.sh` 覆盖 ProRAW 能力、模式保留与相对白平衡拒绝规则。
+- `RawLabKitTests`（`MacHDRModelTests`）与 iOS `RawLab/tests/hdr-model.sh` 覆盖 ProRAW 能力、模式保留与相对白平衡拒绝规则。
 - Mac 的 `hdr-batch.sh` 可设置 `RAWLAB_TEST_PRORAW`；iOS 的 `hdr-batch.sh` 使用专用
   模拟器和已构建的模拟器应用，通过 `SIMCTL_CHILD_RAWLAB_TEST_PRORAW` 传入同一原片路径。
   该可选分支检查新目标保持 SDR、已有 HDR 目标保留独立 SDR 调整，以及预检不写入编辑记录。
