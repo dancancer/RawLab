@@ -75,6 +75,166 @@ internal static class AIDenoisePanelChecks
         panel.Refresh(DenoiseSettings.Clean, hdrStrength: 0.4);
         check(((StackPanel)panel.FindName("AISurface")).Visibility == Visibility.Collapsed,
             "AI strength slider stays hidden inside HDR mode");
+
+        // On-demand AI model package panel states, button enablement, and single-click dispatch
+        panel.Refresh(DenoiseSettings.Clean);
+        var modelSection = (StackPanel)panel.FindName("AIModelSection");
+        var modelProgress = (ProgressBar)panel.FindName("AIModelProgress");
+        var modelStatus = (TextBlock)panel.FindName("AIModelStatus");
+        var modelNotice = (TextBlock)panel.FindName("AIModelNotice");
+        var downloadBtn = (Button)panel.FindName("AIModelDownload");
+        var retryBtn = (Button)panel.FindName("AIModelRetry");
+        var cancelBtn = (Button)panel.FindName("AIModelCancel");
+        var licenseBtn = (Button)panel.FindName("AIModelLicense");
+        var removeBtn = (Button)panel.FindName("AIModelRemove");
+
+        var downloadClicks = 0;
+        var cancelClicks = 0;
+        var licenseClicks = 0;
+        var removeClicks = 0;
+        panel.AIModelDownloadRequested += () => downloadClicks++;
+        panel.AIModelCancelRequested += () => cancelClicks++;
+        panel.AIModelLicenseRequested += () => licenseClicks++;
+        panel.AIModelRemoveRequested += () => removeClicks++;
+
+        const ulong archiveBytes = 294_125_075UL;
+        const ulong unpackedBytes = 333_603_381UL;
+
+        // 1. NotInstalled
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.NotInstalled(archiveBytes, unpackedBytes), canDownloadModel: true, canRemoveModel: false);
+        check(modelSection.Visibility == Visibility.Visible &&
+              modelStatus.Text == Loc.Format("尚未下载 AI 降噪模型（约 {0} MB）。", "294") &&
+              modelNotice.Visibility == Visibility.Visible &&
+              downloadBtn.Visibility == Visibility.Visible && downloadBtn.IsEnabled &&
+              licenseBtn.Visibility == Visibility.Visible &&
+              removeBtn.Visibility == Visibility.Collapsed &&
+              !toggle.IsEnabled,
+            "NotInstalled state shows size, non-commercial notice, download and license buttons with AI toggle disabled");
+        downloadBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(downloadClicks == 1, "Clicking Download dispatches exactly one download request");
+        licenseBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(licenseClicks == 1, "Clicking License dispatches license dialog request");
+
+        // Export busy disables download button
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.NotInstalled(archiveBytes, unpackedBytes), canDownloadModel: false, canRemoveModel: false);
+        check(!downloadBtn.IsEnabled, "Download button disables while export is active");
+
+        // 2. Downloading
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Downloading(147_062_537UL, archiveBytes, unpackedBytes));
+        check(modelProgress.Visibility == Visibility.Visible && !modelProgress.IsIndeterminate &&
+              Math.Abs(modelProgress.Value - 0.5) < 0.01 &&
+              modelStatus.Text == Loc.Format("正在下载 AI 降噪模型… {0} / {1} MB", "147", "294") &&
+              cancelBtn.Visibility == Visibility.Visible && cancelBtn.IsEnabled &&
+              downloadBtn.Visibility == Visibility.Collapsed,
+            "Downloading state shows real progress, MB counters, and cancel button");
+        cancelBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(cancelClicks == 1, "Clicking Cancel during download dispatches cancel request");
+
+        // 3. Verifying
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Verifying(archiveBytes, unpackedBytes));
+        check(modelProgress.Visibility == Visibility.Visible && modelProgress.IsIndeterminate &&
+              modelStatus.Text == Loc.Text("正在校验 AI 降噪模型…") &&
+              cancelBtn.Visibility == Visibility.Visible,
+            "Verifying state shows indeterminate progress, verifying text, and cancel button");
+
+        // 4. Installing
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Installing(archiveBytes, unpackedBytes));
+        check(modelProgress.Visibility == Visibility.Visible && modelProgress.IsIndeterminate &&
+              modelStatus.Text == Loc.Text("正在安装 AI 降噪模型…") &&
+              cancelBtn.Visibility == Visibility.Visible,
+            "Installing state shows indeterminate progress, installing text, and cancel button");
+
+        // 5. Cancelled
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Cancelled(archiveBytes, unpackedBytes), canDownloadModel: true);
+        check(modelStatus.Text.Contains(Loc.Text("已取消下载 AI 降噪模型。"), StringComparison.Ordinal) &&
+              modelStatus.Text.Contains(Loc.Format("尚未下载 AI 降噪模型（约 {0} MB）。", "294"), StringComparison.Ordinal) &&
+              downloadBtn.Visibility == Visibility.Visible && downloadBtn.IsEnabled,
+            "Cancelled state shows cancelled notice, archive size, and re-enabled download button");
+
+        // 6. Failed
+        var httpErr = new AIModelPackageException(AIModelPackageErrorCode.HttpNotFound, httpStatusCode: 404);
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Failed(httpErr, archiveBytes, unpackedBytes), canDownloadModel: true);
+        check(modelStatus.Text == Loc.Text("服务器上暂未找到模型文件（HTTP 404），请稍后重试或更新应用。") &&
+              retryBtn.Visibility == Visibility.Visible && retryBtn.IsEnabled &&
+              downloadBtn.Visibility == Visibility.Collapsed &&
+              licenseBtn.Visibility == Visibility.Visible,
+            "Failed state shows localized error reason, retry button, and license link");
+        retryBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(downloadClicks == 2, "Clicking Retry dispatches exactly one download request");
+
+        // 7. Installed (Downloaded) — remove button reflects guard
+        var downloadedSource = new AIModelDirectorySource(AIModelDirectoryKind.Downloaded, Path.Combine(output, "fake-model"));
+        panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Installed(downloadedSource, unpackedBytes), canDownloadModel: true, canRemoveModel: false);
+        check(modelStatus.Text == Loc.Format("已下载 AI 降噪模型（约 {0} MB）。", "334") &&
+              removeBtn.Visibility == Visibility.Visible && !removeBtn.IsEnabled &&
+              licenseBtn.Visibility == Visibility.Visible,
+            "Downloaded installed state disables Remove while AI/export/batch guard is active");
+        panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Installed(downloadedSource, unpackedBytes), canDownloadModel: true, canRemoveModel: true);
+        check(removeBtn.IsEnabled, "Downloaded installed state enables Remove when idle");
+        removeBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        check(removeClicks == 1, "Clicking Remove dispatches remove confirmation request");
+
+        // 8. Installed (Bundled / Override) and Unavailable hide the download section
+        panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Installed(new AIModelDirectorySource(AIModelDirectoryKind.Bundled, output), unpackedBytes));
+        check(modelSection.Visibility == Visibility.Collapsed, "Bundled model hides download management section");
+        panel.RefreshAI(true, false, false, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Unavailable());
+        check(modelSection.Visibility == Visibility.Collapsed, "Unavailable model state hides download management section");
+
+        // 9. License text fallbacks when nothing is bundled
+        var emptyDir = Path.Combine(output, "empty-license-probe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(emptyDir);
+        try {
+            check(AIModelLicenseWindow.ReadDualDnLicense(null, emptyDir).Contains("CC BY-NC 4.0", StringComparison.Ordinal) &&
+                  AIModelLicenseWindow.ReadRestormerLicense(null, emptyDir).Contains("Restormer Academic Public License", StringComparison.Ordinal),
+                "License viewer provides embedded DualDn and Restormer notices when nothing is bundled");
+            File.WriteAllText(Path.Combine(emptyDir, "DualDn-LICENSE.txt"), "Installed DualDn license text");
+            check(AIModelLicenseWindow.ReadDualDnLicense(emptyDir, emptyDir) == "Installed DualDn license text",
+                "License viewer prefers license file from installed model directory");
+        } finally {
+            if (Directory.Exists(emptyDir)) Directory.Delete(emptyDir, true);
+        }
+
+        // 10. Multi-language layout fit & state screenshots for model download states
+        try {
+            foreach (var language in new[] { "zh-Hans", "en", "de", "fr", "ja", "es" }) {
+                Loc.Initialize(language); foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
+                var modelStates = new (string Name, AIModelPackageState State, bool CanStart)[] {
+                    ("notInstalled", AIModelPackageState.NotInstalled(archiveBytes, unpackedBytes), false),
+                    ("downloading", AIModelPackageState.Downloading(147_062_537UL, archiveBytes, unpackedBytes), false),
+                    ("failed", AIModelPackageState.Failed(httpErr, archiveBytes, unpackedBytes), false),
+                    ("installed", AIModelPackageState.Installed(downloadedSource, unpackedBytes), true),
+                };
+                foreach (var (name, mState, canStartAI) in modelStates) {
+                    var statePanel = new DenoisePanel { FontSize = 14 }; statePanel.Refresh(DenoiseSettings.Clean);
+                    statePanel.RefreshAI(true, false, canStartAI, new(AIDenoiseStatus.Idle), modelState: mState, canDownloadModel: true, canRemoveModel: true);
+                    var surface = new Border { Width = 360, Background = (Brush)app.FindResource("Surface"), Padding = new Thickness(12), Child = statePanel };
+                    surface.Measure(new Size(360, double.PositiveInfinity));
+                    var height = Math.Max(1, Math.Ceiling(surface.DesiredSize.Height));
+                    surface.Arrange(new Rect(0, 0, 360, height)); surface.UpdateLayout();
+                    check(surface.DesiredSize.Width <= 360, $"AI model panel ({name}) stays within available width: {language}");
+                    if (language is "zh-Hans" or "en") {
+                        var bitmap = new RenderTargetBitmap(360, (int)height, 96, 96, PixelFormats.Pbgra32);
+                        bitmap.Render(surface);
+                        Directory.CreateDirectory(output);
+                        using var stream = File.Create(Path.Combine(output, $"ai-model-{language}-{name}.png"));
+                        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); encoder.Save(stream);
+                    }
+                }
+            }
+        } finally {
+            Loc.Initialize(previousLanguage); foreach (var pair in Loc.Strings) app.Resources[pair.Key] = pair.Value;
+        }
         } finally {
             host.Close();
         }
