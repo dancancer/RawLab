@@ -634,7 +634,8 @@ final class AIModelPackageStoreTests: XCTestCase {
 
     func testManagerStateMachineDoesNotAutoDownloadAndSupportsRetryAndRemove() throws {
         let fixture = try makeSyntheticArchive(label: "manager")
-        let server = try LoopbackHTTPServer(mode: .file(fixture.archiveURL))
+        // 第一次请求由服务器返回 503，之后才提供文件：重试必须真的从失败态走到已安装。
+        let server = try LoopbackHTTPServer(mode: .status(503))
         defer { server.stop() }
 
         let storage = tempRoot.appendingPathComponent("store-manager", isDirectory: true)
@@ -653,16 +654,31 @@ final class AIModelPackageStoreTests: XCTestCase {
         var changeCallbacks = 0
         manager.onInstallStateChanged = { changeCallbacks += 1 }
 
+        let failedExp = expectation(description: "Manager reaches failed state")
         let installedExp = expectation(description: "Manager reaches installed state")
         let cancellable = manager.$state.dropFirst().sink { state in
-            if state.isDownloadedInstalled {
+            if case .failed = state {
+                failedExp.fulfill()
+            } else if state.isDownloadedInstalled {
                 installedExp.fulfill()
             }
         }
         defer { cancellable.cancel() }
 
         manager.startDownload()
+        wait(for: [failedExp], timeout: 5)
+        guard case .failed = manager.state else {
+            return XCTFail("Expected failed state after HTTP 503, got \(manager.state)")
+        }
+        XCTAssertEqual(server.requestCount, 1)
+        XCTAssertEqual(changeCallbacks, 0, "A failed download must not report an install change")
+        try assertNoStrayTempFiles(in: storage)
+
+        // “重试”按钮调用的就是同一个入口。
+        server.setMode(.file(fixture.archiveURL))
+        manager.startDownload()
         wait(for: [installedExp], timeout: 5)
+        XCTAssertEqual(server.requestCount, 2)
 
         XCTAssertTrue(manager.state.isDownloadedInstalled, "Expected downloaded installed state, got \(manager.state)")
         XCTAssertEqual(changeCallbacks, 1)
@@ -954,7 +970,7 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
 
     private let listenFD: Int32
     let port: UInt16
-    private let mode: Mode
+    private var _mode: Mode
     private let lock = NSLock()
     private let stopSignal = DispatchSemaphore(value: 0)
     private var stopped = false
@@ -967,8 +983,14 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
         return _requestCount
     }
 
+    func setMode(_ mode: Mode) {
+        lock.lock()
+        defer { lock.unlock() }
+        _mode = mode
+    }
+
     init(mode: Mode) throws {
-        self.mode = mode
+        self._mode = mode
         let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         var reuse: Int32 = 1
@@ -1061,6 +1083,9 @@ private final class LoopbackHTTPServer: @unchecked Sendable {
         var buffer = [UInt8](repeating: 0, count: 4096)
         _ = Darwin.read(fd, &buffer, buffer.count)
 
+        lock.lock()
+        let mode = _mode
+        lock.unlock()
         switch mode {
         case .status(let code):
             let response = "HTTP/1.1 \(code) Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
