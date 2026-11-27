@@ -483,6 +483,23 @@ RenderStatus runCpuStageChain(ImageData& image, RenderParams& params, const CpuS
     const bool guideNeedsLook = dehaze != 0.0f || clarity != 0.0f || filmOptics;
     const bool guideNeedsPostLook = clarity != 0.0f || filmOptics;
 
+    // Basic v3 分析场的取样位置见 color-contract「Rendering Order」：RAW 与线性缓冲取矩阵与曝光/白平衡
+    // 之后、相机校准之前的亮度，与 processImpl 预建、GPU 着色器读取的场同一函数；显示参考缓冲
+    // 从不预建场、只走 CPU，沿用校准之后的像素。
+    const bool basicToneActive = pass.basicV3 && pass.basicTone.active();
+    const bool fieldAfterCalibration = params.inputType == RenderInputType::DisplayBuffer;
+    BasicToneV3Field chainField;
+    const BasicToneV3Field* basicField = pass.basicField;
+    const bool buildField = basicToneActive && (guide || !basicField);
+    BasicToneV3Field& ownField = guide ? *pass.basicFieldOut : chainField;
+    if (buildField && !fieldAfterCalibration) {
+        // 链条不套矩阵时按单位阵取亮度，与下面进入校准的像素逐位一致。
+        static const ColorConverter::Matrix3x3 identity{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
+        ownField = buildBasicToneV3Field(image, pass.applyMatrix ? pass.toSrgb : identity, pass.exposureWB,
+            pass.analysisWidth, pass.analysisHeight);
+        basicField = &ownField;
+    }
+
     parallelPixelRanges(image.pixels.size(), [&](size_t first, size_t last) {
         for (size_t i = first; i < last; ++i) {
             RGB p = pass.applyMatrix ? ColorConverter::applyMatrix(image.pixels[i], pass.toSrgb) : image.pixels[i];
@@ -493,14 +510,13 @@ RenderStatus runCpuStageChain(ImageData& image, RenderParams& params, const CpuS
         }
     });
     applyCameraCalibration(image, params.calibration);
-    if (pass.basicV3 && pass.basicTone.active()) {
-        if (guide) {
-            *pass.basicFieldOut = buildBasicToneV3Field(image, pass.analysisWidth, pass.analysisHeight);
-            if (guideNeedsLook) applyBasicToneV3WithField(image, pass.basicTone, *pass.basicFieldOut, {});
-        } else if (pass.basicField) {
-            applyBasicToneV3WithField(image, pass.basicTone, *pass.basicField, pass.roiMap);
-        } else {
-            applyBasicToneV3(image, pass.basicTone, pass.analysisWidth, pass.analysisHeight);
+    if (buildField && fieldAfterCalibration) {
+        ownField = buildBasicToneV3Field(image, pass.analysisWidth, pass.analysisHeight);
+        basicField = &ownField;
+    }
+    if (basicToneActive) {
+        if (!guide || guideNeedsLook) {
+            applyBasicToneV3WithField(image, pass.basicTone, *basicField, guide ? SubRectMap{} : pass.roiMap);
         }
         params.highlights = params.shadows = 0.0f;
     }

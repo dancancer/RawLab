@@ -826,10 +826,102 @@ void testStageOrderRoiMatchesFullRender() {
     }
 }
 
+// #697：RAW 无几何导出复用预建的 Basic v3 分析场（校准前像素）；几何导出和 1:1 ROI 引导图
+// 在阶段链内建场，必须取同一位置的像素，否则相机校准会让高光/阴影落点在三条路径间漂移。
+void testBasicToneFieldBeforeCalibrationAcrossPaths() {
+    const auto dng = std::string(TEST_FIXTURE_DIR) + "/bayer-demosaic.dng";
+    auto session = createSession();
+    sony2fuji_gpu_config gpu{SONY2FUJI_GPU_CONFIG_VERSION, sizeof(gpu), SONY2FUJI_GPU_OFF};
+    require(sony2fuji_session_set_gpu_config(session.get(), &gpu) == SONY2FUJI_STATUS_OK, "gpu off failed");
+
+    sony2fuji::EditRecipe recipe;
+    recipe.schemaVersion = 20;
+    recipe.processingVersion = SONY2FUJI_PROCESSING_BASIC_V3;
+    recipe.inputPath = dng;
+    recipe.outputPath = "out.png";
+    recipe.outputFormat = SONY2FUJI_OUTPUT_PNG;
+    recipe.exposureMode = SONY2FUJI_EXPOSURE_SENSOR;
+    recipe.highlights = 0.7f;
+    recipe.shadows = 0.6f;
+    recipe.calibration = {60, 80, 100, -70, -100, 60, 100};
+
+    sony2fuji_render_options_v1 options{};
+    options.version = SONY2FUJI_RENDER_OPTIONS_V1_VERSION;
+    options.struct_size = sizeof(options);
+    options.input_type = SONY2FUJI_INPUT_RAW;
+    options.input_path = dng.c_str();
+    options.output_target = SONY2FUJI_TARGET_BUFFER;
+    options.output_format = SONY2FUJI_OUTPUT_RGB8;
+    options.intent = SONY2FUJI_INTENT_FINAL;
+    options.size_mode = SONY2FUJI_SIZE_NATIVE;
+
+    const std::string json = sony2fuji::serializeEditRecipe(recipe);
+    BufferGuard exportOut;
+    require(sony2fuji_session_render(session.get(), &options, json.c_str(), &exportOut.buf, nullptr) ==
+        SONY2FUJI_STATUS_OK, "RAW export failed");
+
+    // 180° 旋转是逐像素重排，几何本身不重采样，差异只能来自分析场。
+    auto rotated = recipe;
+    rotated.geometry.quarter_turns = 2;
+    const std::string rotatedJson = sony2fuji::serializeEditRecipe(rotated);
+    BufferGuard rotatedOut;
+    require(sony2fuji_session_render(session.get(), &options, rotatedJson.c_str(), &rotatedOut.buf, nullptr) ==
+        SONY2FUJI_STATUS_OK, "RAW geometry export failed");
+
+    auto preview = options;
+    preview.intent = SONY2FUJI_INTENT_PREVIEW;
+    preview.size_mode = SONY2FUJI_SIZE_FIT_LONG_EDGE;
+    preview.preview_long_edge = 1024;
+    preview.interactive_preview = 1;
+    sony2fuji_viewport_roi roi{sizeof(roi), 1, 0.30, 0.20, 0.70, 0.75, 0};
+    preview.viewport_roi = &roi;
+    sony2fuji_viewport_roi_result meta{};
+    meta.struct_size = sizeof(meta);
+    BufferGuard roiOut;
+    require(sony2fuji_session_render(session.get(), &preview, json.c_str(), &roiOut.buf, &meta) ==
+        SONY2FUJI_STATUS_OK, "RAW ROI render failed");
+
+    const auto& full = exportOut.buf;
+    require(rotatedOut.buf.width == full.width && rotatedOut.buf.height == full.height,
+        "180-degree export must keep the canvas size");
+    require(meta.active == 1 && roiOut.buf.width == meta.native_x1 - meta.native_x0 &&
+            roiOut.buf.height == meta.native_y1 - meta.native_y0 &&
+            meta.full_native_width == full.width && meta.full_native_height == full.height,
+        "RAW ROI must be a 1:1 tile of the export");
+
+    // 与逐像素阶段同一上限（见 testStageOrderRoiMatchesFullRender）。
+    const auto compare = [&](const sony2fuji_buffer& other, uint32_t x0, uint32_t y0, bool rotate180,
+                             const std::string& label) {
+        const auto* a = static_cast<const uint8_t*>(full.data);
+        const auto* b = static_cast<const uint8_t*>(other.data);
+        int maxDiff = 0;
+        double sum = 0;
+        for (uint32_t y = 0; y < other.height; ++y) {
+            for (uint32_t x = 0; x < other.width; ++x) {
+                const uint32_t fx = rotate180 ? full.width - 1 - x : x0 + x;
+                const uint32_t fy = rotate180 ? full.height - 1 - y : y0 + y;
+                const size_t f = size_t(fy) * full.stride_bytes + size_t(fx) * 3;
+                const size_t t = size_t(y) * other.stride_bytes + size_t(x) * 3;
+                for (int c = 0; c < 3; ++c) {
+                    const int d = std::abs(int(a[f + c]) - int(b[t + c]));
+                    maxDiff = std::max(maxDiff, d);
+                    sum += d;
+                }
+            }
+        }
+        const double meanDiff = sum / (double(other.width) * other.height * 3);
+        rawlab::test::checkPass(maxDiff <= 2 && meanDiff <= 0.35,
+            label + " (max=" + std::to_string(maxDiff) + " mean=" + std::to_string(meanDiff) + ")");
+    };
+    compare(rotatedOut.buf, 0, 0, true, "calibrated Basic v3 export matches the geometry export");
+    compare(roiOut.buf, meta.native_x0, meta.native_y0, false, "calibrated Basic v3 export matches the 1:1 ROI");
+}
+
 } // namespace
 
 RAWLAB_TEST_MAIN(
     testStageOrderRoiMatchesFullRender();
+    testBasicToneFieldBeforeCalibrationAcrossPaths();
     testSdrBufferRoiParity(240, 160, 0, 2);
     testSdrBufferRoiParity(1400, 900, 1, 2);
     testSdrBufferRoiParity(240, 160, 2, 2);
