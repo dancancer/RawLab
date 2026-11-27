@@ -17,10 +17,10 @@ internal static class EditedPhotoPreviewKey
         EditorAdjustmentRules.IsModified(new(EditorResetKind.All), edit);
 
     internal static string Create(PhotoEditState state, string? look, int edge = Edge, int aiBackend = 2, string aiDevice = "", string? rendererVersion = null,
-        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null, string? aiModelDirectory = null)
     {
         if (state.Edit == null) throw new AdjustmentOperationExpiredException();
-        var resources = ResourceFingerprint(state.Edit.Settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory);
+        var resources = ResourceFingerprint(state.Edit.Settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory, aiModelDirectory);
         return Digest(JsonSerializer.SerializeToUtf8Bytes(new { Schema = 1,
             Renderer = rendererVersion ?? typeof(EditedPhotoPreviewKey).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "development",
             Source = state.Identity,
@@ -28,15 +28,15 @@ internal static class EditedPhotoPreviewKey
     }
 
     internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, int aiBackend = 2, string aiDevice = "",
-        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null) =>
-        ResourceFingerprint(settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory);
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null, string? aiModelDirectory = null) =>
+        ResourceFingerprint(settings, look, FileDigestCache.Shared, aiBackend, aiDevice, hdrLookDirectory, hdrCameraProfileDirectory, aiModelDirectory);
 
     internal static string ResourceFingerprint(AdjustmentSnapshot settings, string? look, FileDigestCache digestCache, int aiBackend = 2, string aiDevice = "",
-        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null, string? aiModelDirectory = null)
     {
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr && !hdr.LookSettings.AssetIsAvailable(hdrLookDirectory, digestCache))
             throw new FileNotFoundException(Loc.Text("外观不可用。"));
-        var fingerprints = ResourcePaths(settings, look, hdrLookDirectory, hdrCameraProfileDirectory).Select(path => {
+        var fingerprints = ResourcePaths(settings, look, hdrLookDirectory, hdrCameraProfileDirectory, aiModelDirectory).Select(path => {
             var (identity, sha256) = digestCache.GetDigest(path);
             return new { Identity = identity, SHA256 = sha256 };
         }).ToArray();
@@ -44,13 +44,16 @@ internal static class EditedPhotoPreviewKey
             Backend = settings.ActiveAIDenoise ? aiBackend : 0, Device = settings.ActiveAIDenoise ? aiDevice : "" }));
     }
     internal static IEnumerable<string> ResourcePaths(AdjustmentSnapshot settings, string? look,
-        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null)
+        string? hdrLookDirectory = null, string? hdrCameraProfileDirectory = null, string? aiModelDirectory = null)
     {
         if (settings.HDR is { Mode: HDRMode.Hdr } hdr) {
             if (hdr.LookSettings.AssetPath(hdrLookDirectory) is {} hdrLook) yield return hdrLook;
             if (hdr.CameraDevelopment?.CameraProfile is {} profile) yield return profile.AssetPathFor(hdrCameraProfileDirectory);
         } else if (look != null) yield return look;
-        if (settings.ActiveAIDenoise) yield return Path.Combine(AppContext.BaseDirectory,"AI","DualDn","manifest.json");
+        if (settings.ActiveAIDenoise) {
+            var resolved = aiModelDirectory ?? AIModelPackageStore.ResolveDefaultModelDirectory() ?? AIModelPackageStore.BundledModelDirectory;
+            yield return Path.Combine(resolved, "manifest.json");
+        }
     }
     private static string Digest(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
 }

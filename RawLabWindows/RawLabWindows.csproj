@@ -32,6 +32,7 @@
     <Content Include="../Shared/BundledLooks/*.cube" Link="LUTs/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/HDR/*" Link="BundledLooks/HDR/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/catalog.json" Link="bundled-looks.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../Shared/ai-models/catalog.json" Link="ai-model-catalog.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/Artwork/*.png" Link="FilmIcons/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../Shared/BundledLooks/NOTICE.md" Link="Licenses/Bundled-Looks.md" CopyToOutputDirectory="PreserveNewest" />
     <Resource Include="../RawLabMac/Resources/AppIcon.png" Link="AppIcon.png" />
