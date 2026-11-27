@@ -965,7 +965,7 @@ public enum AdjustmentTransfer {
         result[Field.curveApplyToLuminosity.rawValue] = .boolean(s.curveSettings.applyToLuminosity)
         result[Field.curveParametric.rawValue] = s.curveSettings.parametric.transferValue
         for (field, key) in scalarKeys { result[field.rawValue] = .number(s[keyPath: key]) }
-        if context.storesLookOnSettings { result[Field.strength.rawValue] = .number(Double(s.clampedLUTStrength)) }
+        if context.storesLookOnSettings { result[Field.strength.rawValue] = .number(s.masterRecipeID != nil ? s.recipeScale : Double(s.clampedLUTStrength)) }
         let look: [String: Value]
         if let recipe = s.masterRecipeID { look = ["kind": .string("recipe"), "id": .string(recipe)] }
         else if context.storesLookOnSettings {

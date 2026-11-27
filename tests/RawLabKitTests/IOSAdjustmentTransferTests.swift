@@ -539,7 +539,7 @@ final class IOSAdjustmentTransferTests: XCTestCase {
         XCTAssertEqual(
             fractional.source.recipe?.strength,
             source.recipeScale,
-            "iOS recipe context records the renderer's actual Float strength"
+            "iOS recipe context records the scale the renderer multiplies by"
         )
         XCTAssertEqual(
             try IOSAdjustmentTransfer.prepare(payload: fractional, target: state(source), context: raw),
