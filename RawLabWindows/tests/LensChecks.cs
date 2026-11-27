@@ -22,7 +22,10 @@ internal static class LensChecks
         var unselected = cpu.Render(raw, new Adjustments { Lens = new(Distortion:true,Manual:true) }, null, 300)!;
         check(unselected.Lens!.State == 4 && Pixels(unselected.Image).SequenceEqual(Pixels(off.Image)),
             "Windows manual mode without selection skips, never auto matches");
-        var candidate = off.Lens!.Candidates.First(p => p.IsMatch && p.HasDistortion);
+        var candidate = off.Lens!.Candidates.FirstOrDefault(p => p.IsMatch && p.HasDistortion);
+        check(candidate != null,
+            $"Lens test precondition failed: sample '{Path.GetFileName(raw)}' has no matching Lensfun profile with distortion data (matched={off.Lens.Candidates.Count(p => p.IsMatch)}, total={off.Lens.Candidates.Count}).");
+        if (candidate == null) return;
         var settings = new Adjustments { Lens = new(true, true, true, true, candidate.Id) };
         var corrected = cpu.Render(raw, settings, null, 300)!;
         check(corrected.Lens!.AppliedDistortion && corrected.Lens.AppliedTca == candidate.HasTca,
