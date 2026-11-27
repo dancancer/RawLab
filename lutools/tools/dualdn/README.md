@@ -123,7 +123,7 @@ Mac 构建的 `RAWLAB_DUALDN_MODEL_DIR` 或 Windows 的 `-DualDnModel` 指向新
 ```bash
 ctest --test-dir "$RAWLAB_BUILD_DIR" --output-on-failure
 "$RAWLAB_BUILD_DIR/dualdn_onnx_tests" "$DUALDN_PACKAGE" cpu
-bash RawLabMac/tests/control-groups.sh
+swift test --filter MacControlGroupTests
 RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 ```
 
