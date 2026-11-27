@@ -58,3 +58,4 @@ add_test(NAME d3d11_diagnostics_warp COMMAND d3d11_trio_tests diagnostics)
 add_test(NAME d3d11_tiling_warp COMMAND d3d11_tiling_tests)
 add_test(NAME d3d11_shader_layout COMMAND d3d11_shader_tests)
 add_test(NAME d3d11_reuse_warp COMMAND d3d11_reuse_tests)
+# CI selection probe (throwaway branch; never merged).
