@@ -624,7 +624,7 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertIn("--no-tests=error", step["run"])
         self.assertIn("$LASTEXITCODE", step["run"])
 
-    def test_automatic_d3d11_build_and_regressions_use_the_selected_windows_steps(self):
+    def test_automatic_d3d11_step_only_builds_and_follows_the_selection(self):
         self.assertEqual(self.workflow["jobs"]["changes"]["outputs"]["d3d11_build"],
                          "${{ steps.select.outputs.d3d11_build }}")
         self.assertIn("windows", _needs_set(self.workflow["jobs"]["result"]))
@@ -637,13 +637,13 @@ class WorkflowContractTests(unittest.TestCase):
         self.assertNotIn("ctest", automatic["run"])
         self.assertNotIn("check-mutations.ps1", automatic["run"])
         self.assertNotIn("continue-on-error", automatic)
-        regressions = [step for step in steps if "run-regressions.ps1" in step.get("run", "")]
-        self.assertEqual(len(regressions), 1)
-        self.assertEqual(_strip_expr(regressions[0]["if"]), "needs.changes.outputs.d3d11_build == 'true'")
-        script = ROOT / "RawLabWindows/tests/native/d3d11/run-regressions.ps1"
-        self.assertIn("ctest --test-dir $build -C Release --output-on-failure --no-tests=error",
-                      script.read_text(encoding="utf-8"))
-        self.assertIn("check-mutations.ps1", script.read_text(encoding="utf-8"))
+        self.assertIn("$LASTEXITCODE", automatic["run"])
+        # 自动步骤只构建：除手动 WARP 步骤外，Windows job 里没有别的步骤（含包装脚本）跑这个工程的回归。
+        d3d11_dir = ROOT / "RawLabWindows/tests/native/d3d11"
+        self.assertEqual(sorted(path.name for path in d3d11_dir.glob("*.ps1")), ["check-mutations.ps1"])
+        for step in steps:
+            if step is not automatic and "check-mutations.ps1" not in step.get("run", ""):
+                self.assertNotIn("d3d11-warp", step.get("run", ""), step.get("name"))
 
     def test_gpu_ai_inputs_are_gated_to_arm64_full_checks(self):
         mac_steps = [step for step in self.workflow["jobs"]["macos"]["steps"]

@@ -885,7 +885,12 @@ class D3D11BuildSelectionTests(unittest.TestCase):
             "lutools/third_party/nlohmann/json.hpp": True,
             "lutools/tests/d3d11_shader_tests.cpp": True,
             "RawLabWindows/tests/native/d3d11/CMakeLists.txt": True,
-            "RawLabWindows/tests/native/d3d11/run-regressions.ps1": True,
+            "RawLabWindows/tests/native/d3d11/check-mutations.ps1": True,
+            # 目录级说明文件不选任何平台，也就不能单独选中这次构建（否则 CI result 会因 Windows job 被跳过而误红）。
+            "RawLabWindows/tests/native/d3d11/AGENTS.md": False,
+            "lutools/src/core/AGENTS.md": False,
+            "lutools/src/gpu/CLAUDE.md": False,
+            "lutools/include/AGENTS.md": False,
             "RawLabWindows/src/Rendering/Renderer.cs": False,
             "lutools/src/ai/directml_device.cpp": False,
             "Shared/specs/adjustments.json": False,
@@ -898,6 +903,9 @@ class D3D11BuildSelectionTests(unittest.TestCase):
                     self.assertEqual(values["d3d11_build"], str(expected).lower())
                     if expected:
                         self.assertEqual(values["windows"], "true")
+        mixed = self.outputs("pull_request", pull(action="synchronize"),
+                             changed=["lutools/src/core/AGENTS.md", "RawLabWindows/README.md"])
+        self.assertEqual(mixed["d3d11_build"], "false")
 
     def test_diff_failure_builds_conservatively_and_manual_dispatch_does_not_add_a_build(self):
         automatic = self.outputs("pull_request", pull(action="synchronize"),
@@ -905,6 +913,13 @@ class D3D11BuildSelectionTests(unittest.TestCase):
         self.assertEqual((automatic["d3d11_build"], automatic["windows"]), ("true", "true"))
         manual = self.outputs("workflow_dispatch", {"inputs": {"platform": "windows", "checks": "models"}})
         self.assertEqual((manual["d3d11_build"], manual["windows"]), ("false", "true"))
+        # 发布与热修复的完整冷门禁保持原有覆盖，不因拿不到差异而附带这一步。
+        release = self.outputs("pull_request", pull("main", "release/0.9.0"),
+                               changed=["lutools/src/gpu/d3d11_photo.cpp"])
+        self.assertEqual((release["d3d11_build"], release["windows"]), ("false", "true"))
+        draft = self.outputs("pull_request", pull(action="synchronize", draft=True),
+                             changed=["lutools/src/gpu/d3d11_photo.cpp"])
+        self.assertEqual(draft["d3d11_build"], "false")
 
 
 if __name__ == "__main__":

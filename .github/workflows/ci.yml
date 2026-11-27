@@ -575,10 +575,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'D3D11 test configure failed.' }
           cmake --build build/d3d11-warp --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'D3D11 test build failed.' }
-      - name: Run affected D3D11 software adapter regressions
-        if: needs.changes.outputs.d3d11_build == 'true'
-        shell: pwsh
-        run: '& ./RawLabWindows/tests/native/d3d11/run-regressions.ps1'
       - name: Run standalone Windows models and runner checks
         if: needs.changes.outputs.models == 'true'
         shell: pwsh

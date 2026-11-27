@@ -68,8 +68,8 @@ CORE_INPUT_FILES = {
 }
 CORE_INPUT_PREFIXES = ("Shared/BundledLooks/",)
 CORE_EXCLUDED_PREFIXES = ("lutools/platform/ios/",)
-# Inputs compiled by RawLabWindows/tests/native/d3d11/CMakeLists.txt, plus its
-# own tests and CMake files. The source include closure uses this one vendored header.
+# Trees that RawLabWindows/tests/native/d3d11/CMakeLists.txt compiles or includes from, plus the
+# project's own directory. Deliberately whole trees: a file list would go stale with every include.
 D3D11_BUILD_INPUT_PREFIXES = (
     "RawLabWindows/tests/native/d3d11/",
     "lutools/src/core/",
@@ -135,18 +135,23 @@ def is_core_path(path):
     return path in CORE_INPUT_FILES or path.startswith(CORE_INPUT_PREFIXES)
 
 
-def wants_d3d11_build(config, draft, paths):
-    """Build the standalone D3D11 project for automatic changes to its CMake inputs.
-
-    `paths` is None when the diff was unavailable; like platform selection, that
-    fails closed instead of assuming the build inputs were untouched.
-    """
-    if config["mode"] != "automatic" or draft:
+def is_d3d11_build_input(path):
+    """Whether a changed path is compiled into the standalone D3D11 test project."""
+    if path.rsplit("/", 1)[-1] in DOC_NAMES or (path.startswith("lutools/") and _is_lutools_doc(path)):
         return False
-    return paths is None or any(
-        path in D3D11_BUILD_INPUT_FILES or path.startswith(D3D11_BUILD_INPUT_PREFIXES)
-        for path in paths
-    )
+    return path in D3D11_BUILD_INPUT_FILES or path.startswith(D3D11_BUILD_INPUT_PREFIXES)
+
+
+def wants_d3d11_build(config, platforms, draft, paths):
+    """Automatic models runs configure and build the standalone D3D11 project when its inputs changed.
+
+    Build only: the WARP regressions and mutation checks stay on the explicit Windows request.
+    `paths` is None when the diff was unavailable; that builds it rather than guessing. The build
+    runs inside the Windows job, so it is never selected without that job.
+    """
+    if config["mode"] != "automatic" or config["checks"] != "models" or draft or "windows" not in platforms:
+        return False
+    return paths is None or any(is_d3d11_build_input(path) for path in paths)
 
 
 def wants_core_ctest(config, platforms, draft, paths):
@@ -512,11 +517,11 @@ def main():
                                             changed_files, github_last_success)
     config = configuration(event_name, event)
     core_ctest = wants_core_ctest(config, platforms, draft, diffs[-1] if diffs else None)
-    d3d11_build = wants_d3d11_build(config, draft, diffs[-1] if diffs else None)
+    d3d11_build = wants_d3d11_build(config, platforms, draft, diffs[-1] if diffs else None)
     if core_ctest:
         reason += "; core inputs changed: macOS arm64 core CTest row added"
     if d3d11_build:
-        reason += "; standalone Windows D3D11 configure/build and regressions added"
+        reason += "; D3D11 test project inputs changed: Windows configure/build added"
     write_selection(platforms, cold, draft, reason, event_name, config, core_ctest=core_ctest,
                     d3d11_build=d3d11_build)
     return 0
