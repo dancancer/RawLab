@@ -132,29 +132,6 @@ compiled from the Public Suffix List (https://publicsuffix.org/list/public_suffi
 and subject to the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/); OkHttp's
 notice ships unchanged in the APK as okhttp3/internal/publicsuffix/NOTICE.
 
-The release APK also contains these libraries, each licensed under Apache 2.0 according
-to its Maven POM (license text: OpenCV-LICENSE.txt). Versions are those resolved for
-the release runtime classpath:
-- AndroidX (https://developer.android.com/jetpack/androidx): activity, activity-compose,
-  activity-ktx 1.10.1; annotation, annotation-jvm 1.9.1; annotation-experimental 1.4.1;
-  arch core-common, core-runtime 2.2.0; autofill 1.0.0; collection, collection-jvm,
-  collection-ktx 1.5.0; concurrent-futures 1.1.0; core, core-ktx 1.13.1; core-viewtree 1.0.0;
-  customview-poolingcontainer 1.0.0; emoji2 1.4.0; exifinterface 1.4.2; graphics-path 1.0.1;
-  interpolator 1.0.0; lifecycle common, common-java8, common-jvm, livedata-core, process,
-  runtime, runtime-android, runtime-compose, runtime-compose-android, runtime-ktx,
-  runtime-ktx-android, viewmodel, viewmodel-android, viewmodel-compose,
-  viewmodel-compose-android, viewmodel-ktx, viewmodel-savedstate,
-  viewmodel-savedstate-android 2.9.0; profileinstaller 1.4.0; savedstate,
-  savedstate-android, savedstate-ktx 1.3.0; startup-runtime 1.1.1; tracing 1.0.0;
-  versionedparcelable 1.1.1.
-- Jetpack Compose (BOM 2025.06.01): animation, animation-core, foundation,
-  foundation-layout, material-ripple, runtime, runtime-saveable, ui, ui-geometry,
-  ui-graphics, ui-text, ui-tooling-preview, ui-unit, ui-util 1.8.3 (with their -android
-  variants); material3 1.3.2; material-icons-core 1.7.8.
-- Kotlin standard library 2.1.20 (kotlin-stdlib, kotlin-stdlib-common; kotlin-stdlib-jdk7
-  and -jdk8 1.9.10), kotlinx-coroutines-android and -core 1.10.2,
-  kotlinx-serialization-core 1.7.3: https://github.com/JetBrains/kotlin,
-  https://github.com/Kotlin/kotlinx.coroutines, https://github.com/Kotlin/kotlinx.serialization
-- JetBrains annotations 23.0.0 (https://github.com/JetBrains/java-annotations),
-  JSpecify 1.0.0 (https://jspecify.dev), Guava listenablefuture 1.0
-  (https://github.com/google/guava), Okio 3.6.0 (https://github.com/square/okio).
+Every Java and Kotlin library in the release APK, including those above, is listed with
+its resolved version and Maven POM license in ThirdPartyLibraries.txt. That list is
+generated at build time from the release runtime classpath.

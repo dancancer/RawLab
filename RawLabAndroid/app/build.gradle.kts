@@ -100,9 +100,11 @@ val prepareExternalLuts by tasks.registering {
         }
     }
 }
+apply(from = "library-notices.gradle.kts")
 val prepareAssets by tasks.registering(Sync::class) {
     dependsOn(prepareExternalLuts)
     into(generatedAssets)
+    from(tasks.named("generateLibraryNotices")) { into("licenses") }
     from(repo.resolve("lutools/flog-2-new")) {
         into("films")
         include("*.cube")
