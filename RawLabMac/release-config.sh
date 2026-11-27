@@ -9,8 +9,7 @@ if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
     : "${RAWLAB_CODESIGN_IDENTITY:?Set RAWLAB_CODESIGN_IDENTITY to the fixed signing certificate}"
     : "${RAWLAB_SPARKLE_PUBLIC_KEY:?Set RAWLAB_SPARKLE_PUBLIC_KEY to the persistent EdDSA public key}"
     if [ "$ARCH" = arm64 ]; then
-        : "${RAWLAB_DUALDN_MODEL_DIR:?Apple Silicon release builds require the complete DualDn model package}"
-        : "${RAWLAB_DUALDN_MANIFEST_SHA256:?Pin RAWLAB_DUALDN_MANIFEST_SHA256 for this model package}"
+        # Apple Silicon 发布包只内置推理运行时，模型改为应用内按需下载，不再强制要求模型目录或 manifest 哈希。
         : "${RAWLAB_ONNXRUNTIME_ROOT:?Apple Silicon release builds require ONNX Runtime 1.23.2}"
         if [ "${RAWLAB_DUALDN:-1}" != 1 ]; then echo 'Apple Silicon release builds require GPU AI denoise.' >&2; exit 2; fi
         export RAWLAB_DUALDN=1

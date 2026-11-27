@@ -37,7 +37,6 @@ AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=OFF)
 AI_LINK_FLAGS=()
 if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
     : "${RAWLAB_ONNXRUNTIME_ROOT:?Set RAWLAB_ONNXRUNTIME_ROOT to ONNX Runtime 1.23.2}"
-    : "${RAWLAB_DUALDN_MODEL_DIR:?Set RAWLAB_DUALDN_MODEL_DIR to the validated 640-pixel model package}"
     if [ "$(cat "$RAWLAB_ONNXRUNTIME_ROOT/VERSION_NUMBER")" != 1.23.2 ]; then
         echo "DualDn currently requires ONNX Runtime 1.23.2." >&2; exit 2
     fi
@@ -46,8 +45,9 @@ if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
         x86_64) ORT_SHA256=8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054 ;;
     esac
     printf '%s  %s\n' "$ORT_SHA256" "$RAWLAB_ONNXRUNTIME_ROOT/lib/libonnxruntime.1.23.2.dylib" | shasum -a 256 -c -
+    # 编译 AI 运行时不强依赖本地模型目录；未提供时清空缓存变量，避免增量构建沿用旧测试包路径。
     AI_CMAKE_FLAGS=(-DSONY2FUJI_ENABLE_AI_DENOISE=ON -DONNXRUNTIME_ROOT="$RAWLAB_ONNXRUNTIME_ROOT"
-        -DRAWLAB_DUALDN_TEST_PACKAGE="$RAWLAB_DUALDN_MODEL_DIR")
+        -DRAWLAB_DUALDN_TEST_PACKAGE="${RAWLAB_DUALDN_MODEL_DIR:-}")
     AI_LINK_FLAGS=("$BUILD/librawlab_dualdn_runtime.a" "$BUILD/librawlab_dualdn_core.a" -L "$RAWLAB_ONNXRUNTIME_ROOT/lib" -lonnxruntime -framework CoreML)
 fi
 # ----------------------------------------------------------------------------
@@ -117,32 +117,36 @@ fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/Licenses/RawLab-GPL-3.0.txt"
 cp "$ROOT/LICENSE-ALIYUN-RUM-EXCEPTION" "$APP/Contents/Resources/Licenses/RawLab-Aliyun-RUM-Exception.txt"
 cp "$ROOT/docs/reference/licensing.md" "$APP/Contents/Resources/Licenses/RawLab-Licensing.md"
+rm -rf "$APP/Contents/Resources/AI/DualDn" "$APP/Contents/Resources/Licenses/DualDn"
 if [ "${RAWLAB_DUALDN:-0}" = 1 ]; then
-    "$BUILD/dualdn_probe" --validate "$RAWLAB_DUALDN_MODEL_DIR"
-    rm -rf "$APP/Contents/Resources/AI/DualDn"
-    mkdir -p "$APP/Contents/Resources/AI/DualDn" "$APP/Contents/Resources/Licenses/DualDn"
-    for resource in manifest.json raw.onnx isp.onnx rgb.onnx DualDn-LICENSE.txt; do
-        cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
-    done
-    for resource in blind_rgb.onnx Restormer-LICENSE.txt; do
-        if [ -f "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
-            cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
-        fi
-    done
-    for resource in raw.mlmodelc rgb.mlmodelc blind_rgb.mlmodelc; do
-        if [ -d "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
-            cp -R "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
-        fi
-    done
-    "$BUILD/dualdn_probe" --validate "$APP/Contents/Resources/AI/DualDn"
-    cp "$RAWLAB_DUALDN_MODEL_DIR/DualDn-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/LICENSE"
-    if [ -f "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" ]; then
-        cp "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/"
-    fi
+    mkdir -p "$APP/Contents/Resources/Licenses/DualDn"
     cp "$RAWLAB_ONNXRUNTIME_ROOT/LICENSE" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-LICENSE"
     cp "$RAWLAB_ONNXRUNTIME_ROOT/ThirdPartyNotices.txt" "$APP/Contents/Resources/Licenses/DualDn/ONNX-Runtime-ThirdPartyNotices.txt"
-else
-    rm -rf "$APP/Contents/Resources/AI/DualDn" "$APP/Contents/Resources/Licenses/DualDn"
+    if [ -n "${RAWLAB_DUALDN_MODEL_DIR:-}" ]; then
+        "$BUILD/dualdn_probe" --validate "$RAWLAB_DUALDN_MODEL_DIR"
+        # 正式发布包只做构建期校验，不复制模型权重及模型许可文件；非发布构建按需随包复制供测试使用。
+        if [ "${RAWLAB_RELEASE:-0}" != 1 ]; then
+            mkdir -p "$APP/Contents/Resources/AI/DualDn"
+            for resource in manifest.json raw.onnx isp.onnx rgb.onnx DualDn-LICENSE.txt; do
+                cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+            done
+            for resource in blind_rgb.onnx Restormer-LICENSE.txt; do
+                if [ -f "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
+                    cp "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+                fi
+            done
+            for resource in raw.mlmodelc rgb.mlmodelc blind_rgb.mlmodelc; do
+                if [ -d "$RAWLAB_DUALDN_MODEL_DIR/$resource" ]; then
+                    cp -R "$RAWLAB_DUALDN_MODEL_DIR/$resource" "$APP/Contents/Resources/AI/DualDn/"
+                fi
+            done
+            "$BUILD/dualdn_probe" --validate "$APP/Contents/Resources/AI/DualDn"
+            cp "$RAWLAB_DUALDN_MODEL_DIR/DualDn-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/LICENSE"
+            if [ -f "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" ]; then
+                cp "$RAWLAB_DUALDN_MODEL_DIR/Restormer-LICENSE.txt" "$APP/Contents/Resources/Licenses/DualDn/"
+            fi
+        fi
+    fi
 fi
 cp "$ROOT/lutools/third_party/Adobe-DNG-SDK-LICENSE.txt" "$APP/Contents/Resources/Licenses/"
 cp "$ROOT/lutools/third_party/nlohmann/LICENSE.MIT" "$APP/Contents/Resources/Licenses/nlohmann-JSON-MIT.txt"
@@ -305,6 +309,13 @@ bash "$ROOT/RawLabMac/sign-bundle.sh" "$APP"
 RAWLAB_RUM_EXPECTED="$([ -n "$RUM_LIB" ] && echo 1 || echo 0)" RAWLAB_ARCH="$ARCH" \
     MACOSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET" bash "$ROOT/RawLabMac/tests/bundle.sh" "$APP"
 if [ "${RAWLAB_RELEASE:-0}" = 1 ]; then
+    # 正式发布包不得内置模型文件，且必须保留按需下载目录清单。
+    if [ -e "$APP/Contents/Resources/AI/DualDn" ]; then
+        echo "Release app must not contain bundled AI models: $APP/Contents/Resources/AI/DualDn" >&2; exit 2
+    fi
+    test -f "$APP/Contents/Resources/ai-model-catalog.json" || {
+        echo "Release app is missing ai-model-catalog.json: $APP" >&2; exit 2
+    }
     RELEASE_ZIP="${RAWLAB_RELEASE_ZIP:-$(dirname "$APP")/RawLab-Mac-$RAWLAB_RELEASE_VERSION-$ARCH.zip}"
     test ! -e "$RELEASE_ZIP" || { echo "Release archive already exists: $RELEASE_ZIP" >&2; exit 2; }
     ditto -c -k --keepParent "$APP" "$RELEASE_ZIP"

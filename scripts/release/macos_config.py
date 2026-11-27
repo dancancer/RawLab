@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Validate public release inputs and write them into an already-built app plist."""
 import base64
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -57,15 +56,6 @@ def configuration(env=os.environ, arch="arm64"):
         raise ValueError("Invalid Developer ID Team ID")
     if arch not in ("arm64", "x86_64"):
         raise ValueError("Release architecture must be arm64 or x86_64")
-    # 只有 Apple Silicon 包含 GPU AI；Intel 发布包不带模型。
-    if arch == "arm64":
-        model = Path(required("RAWLAB_DUALDN_MODEL_DIR"))
-        expected = required("RAWLAB_DUALDN_MANIFEST_SHA256").lower()
-        if hashlib.sha256((model / "manifest.json").read_bytes()).hexdigest() != expected:
-            raise ValueError("DualDn manifest SHA-256 does not match the release input")
-        for resource in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
-            if not (model / resource).is_dir():
-                raise ValueError(f"Release package is missing native GPU model {resource}")
     values = dict(CFBundleShortVersionString=version, CFBundleVersion=build, SUPublicEDKey=key,
                   SUVerifyUpdateBeforeExtraction=True, SURequireSignedFeed=True,
                   SUSignedFeedFailureExpirationInterval=0)
