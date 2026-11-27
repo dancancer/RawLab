@@ -292,6 +292,83 @@ class AgentCommands(unittest.TestCase):
                 result = self.envelope(self.run_cli("--info", alias, "--json"), "info")["result"]
                 self.assertEqual(result["input_type"], "hdr_raster")
 
+    def test_hdr_print_transfer_is_accepted_by_save_preset_for_every_processing_version(self):
+        # The CLI builds HDR transfers from the store's own per-version field table, so what it
+        # prints for any hdr_processing_version must be a preset the store accepts unchanged.
+        capabilities = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
+        if 19 not in capabilities["recipe_versions"]:
+            self.skipTest("CLI runtime has no HDR v19 capability")
+        schemas = {1: 6, 2: 8, 3: 9, 4: 10, 5: 11, 6: 12, 7: 14, 8: 15, 9: 16, 10: 19}
+        # Sample fields keyed by the processing version that introduces them (v8 and v10 add no
+        # transfer field). A field missing from the core table would drop silently from the
+        # printed transfer, so presence at and absence below each version are checked as well as
+        # store acceptance.
+        introduced = {
+            1: {"light.exposure", "hdr.relative_tint", "geometry.quarter_turns"},
+            2: {"tone.black_point", "light.curve"},
+            3: {"color.vibrance", "color.grading.shadows", "color.hsl.hue.red"},
+            4: {"hdr.peak_limit_ev", "hdr.sdr_contrast"},
+            5: {"effects.vignette.amount", "effects.grain.amount"},
+            6: {"detail.sharpening", "effects.clarity"},
+            7: {"hdr.look"},
+            9: {"color.grading.global", "light.curve.parametric", "light.curve.apply_to_luminosity"},
+        }
+        for hdr_version, schema in schemas.items():
+            edits = {
+                "exposure": {"ev": 0.5}, "white_balance": {"mode": "relative", "relative_tint": 6},
+                "tone": {"contrast": 0.3, "saturation": 0.2, "highlights": -0.2, "shadows": 0.2},
+                "geometry": {"quarter_turns": 1, "straighten_degrees": 2.0},
+            }
+            if schema >= 8:
+                edits["tone"].update({"black_point": -0.2, "white_point": 0.4,
+                                      "curve": {"mode": "custom", "points": [[0, 0], [0.5, 0.6], [1, 1]]}})
+            if schema >= 9:
+                edits["color"] = {"vibrance": 0.3}
+                edits["color_grading"] = {"shadows": {"hue": 210, "saturation": 12}}
+            if schema >= 10:
+                edits["rendition"] = {"peak_limit_ev": 2, "sdr_contrast": 0.2}
+            if schema >= 11:
+                edits["effects"] = {"vignette_amount": -40, "grain_amount": 30}
+            if schema >= 12:
+                edits["detail"] = {"sharpening": 1.0, "clarity": 0.4}
+            if schema >= 14:
+                edits["look"] = {"path": "look.cube", "sha256": "ab" * 32, "strength": 0.8}
+            if schema >= 16:
+                edits["color_grading"]["shadows"]["luminance"] = -10
+                edits["color_grading"]["global"] = {"hue": 300, "saturation": 9, "luminance": -4}
+            for input_type in (("hdr_raster", "raw") if schema >= 14 else ("hdr_raster",)):
+                with self.subTest(hdr_processing_version=hdr_version, input_type=input_type):
+                    self.document = {
+                        "schema_version": schema,
+                        "processing": {"family": "rawlab_hdr", "version": hdr_version, "quality": "standard"},
+                        "input": {"path": "source", "type": input_type},
+                        "edits": edits,
+                        "output": {"path": "hdr.jpg", "format": "hdr_jpeg", "base_color": "srgb"},
+                    }
+                    self.write_recipe()
+                    transfer = self.envelope(self.run_cli("--recipe", self.recipe, "--print-transfer", "--json"),
+                                             "print_transfer")["result"]
+                    self.assertEqual(transfer["source"]["hdr_processing_version"], hdr_version)
+                    keys = set(transfer["values"])
+                    for version, fields in introduced.items():
+                        if version <= hdr_version:
+                            self.assertLessEqual(fields, keys, f"v{version} fields missing at v{hdr_version}")
+                        else:
+                            self.assertFalse(fields & keys, f"v{version} fields present at v{hdr_version}")
+                    # Camera development is an input-type rule the CLI keeps: RAW sources only.
+                    self.assertEqual("hdr.camera_development" in transfer["values"], input_type == "raw")
+                    request = self.root / f"preset-{hdr_version}-{input_type}.json"
+                    request.write_text(json.dumps({
+                        "data_dir": str(self.root / f"store-{hdr_version}-{input_type}"),
+                        "name": f"HDR v{hdr_version} {input_type}",
+                        "is_raw": transfer["source"]["is_raw"],
+                        "processing_version": transfer["source"]["processing_version"],
+                        "hdr_processing_version": hdr_version,
+                        "values": transfer["values"],
+                    }), encoding="utf-8")
+                    saved = self.envelope(self.run_cli("--save-preset", "--request", request, "--json"), "save_preset")
+                    self.assertEqual(saved["result"]["action"], "created")
+
     def test_hdr_oversized_long_edge_is_an_argument_error(self):
         capabilities = self.envelope(self.run_cli("--capabilities", "--json"), "capabilities")["result"]
         if 14 not in capabilities["recipe_versions"]:

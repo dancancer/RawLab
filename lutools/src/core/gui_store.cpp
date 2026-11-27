@@ -3467,5 +3467,9 @@ GuiStoreResult syncPhotoEditFromRequestJson(const std::string& requestJson, cons
     }
 }
 
+bool isHdrTransferFieldSupported(const std::string& field, int hdrProcessingVersion) {
+    return hdrSupportedFields(hdrProcessingVersion).count(field) != 0;
+}
+
 } // namespace gui_store
 } // namespace sony2fuji

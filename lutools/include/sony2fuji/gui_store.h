@@ -61,5 +61,10 @@ GuiStoreResult syncPhotoEditFromRequestJson(
     const std::string& requestJson,
     const GuiStoreOptions& options = {});
 
+// Whether an adjustment transfer field may appear in an HDR preset or photo-edit sync at the
+// given hdr_processing_version: the per-version table the two functions above validate against.
+// Input-type rules (fields that only apply to RAW sources) are not part of this table.
+bool isHdrTransferFieldSupported(const std::string& field, int hdrProcessingVersion);
+
 } // namespace gui_store
 } // namespace sony2fuji
