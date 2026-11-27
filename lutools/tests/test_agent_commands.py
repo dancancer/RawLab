@@ -299,6 +299,20 @@ class AgentCommands(unittest.TestCase):
         if 19 not in capabilities["recipe_versions"]:
             self.skipTest("CLI runtime has no HDR v19 capability")
         schemas = {1: 6, 2: 8, 3: 9, 4: 10, 5: 11, 6: 12, 7: 14, 8: 15, 9: 16, 10: 19}
+        # Sample fields keyed by the processing version that introduces them (v8 and v10 add no
+        # transfer field). A field missing from the core table would drop silently from the
+        # printed transfer, so presence at and absence below each version are checked as well as
+        # store acceptance.
+        introduced = {
+            1: {"light.exposure", "hdr.relative_tint", "geometry.quarter_turns"},
+            2: {"tone.black_point", "light.curve"},
+            3: {"color.vibrance", "color.grading.shadows", "color.hsl.hue.red"},
+            4: {"hdr.peak_limit_ev", "hdr.sdr_contrast"},
+            5: {"effects.vignette.amount", "effects.grain.amount"},
+            6: {"detail.sharpening", "effects.clarity"},
+            7: {"hdr.look"},
+            9: {"color.grading.global", "light.curve.parametric", "light.curve.apply_to_luminosity"},
+        }
         for hdr_version, schema in schemas.items():
             edits = {
                 "exposure": {"ev": 0.5}, "white_balance": {"mode": "relative", "relative_tint": 6},
@@ -335,6 +349,12 @@ class AgentCommands(unittest.TestCase):
                     transfer = self.envelope(self.run_cli("--recipe", self.recipe, "--print-transfer", "--json"),
                                              "print_transfer")["result"]
                     self.assertEqual(transfer["source"]["hdr_processing_version"], hdr_version)
+                    keys = set(transfer["values"])
+                    for version, fields in introduced.items():
+                        if version <= hdr_version:
+                            self.assertLessEqual(fields, keys, f"v{version} fields missing at v{hdr_version}")
+                        else:
+                            self.assertFalse(fields & keys, f"v{version} fields present at v{hdr_version}")
                     # Camera development is an input-type rule the CLI keeps: RAW sources only.
                     self.assertEqual("hdr.camera_development" in transfer["values"], input_type == "raw")
                     request = self.root / f"preset-{hdr_version}-{input_type}.json"
