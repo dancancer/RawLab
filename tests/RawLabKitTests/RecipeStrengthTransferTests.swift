@@ -292,4 +292,29 @@ final class RecipeStrengthTransferTests: XCTestCase {
             assertSameRenderFloat(AdjustmentTransfer.effectiveNumbers(iosPasted, context: iosContext.withIOSCapabilities())[.blackPoint]!, expectedBlack, "iOS desktop blackPoint at \(strength)")
         }
     }
+
+    // Removing a recipe materializes its scaled values; the render request must not move at any one-percent strength.
+    func testRemovingRecipeKeepsRenderRequestAtEveryPercentStrength() throws {
+        let recipe = try XCTUnwrap(MasterRecipe.recipe(for: recipeID))
+        for step in 0...200 {
+            let strength = Double(step) / 100
+            var settings = makeRecipeSettings(recipe, strength: strength, version: 4)
+            settings.exposure = -0.6
+            settings.contrast = 0.9
+            settings.tint = 12
+            settings.toneCurve = 0.75
+            settings.blackPoint = -20
+            settings.clarity = 25
+            settings.gradingSettings.shadows = ColorGradingWheel(hue: 210, saturation: 75, luminance: -15)
+            let before = settings.resolvedRenderValues()
+            let tone = settings.renderToneSettings, atmosphere = settings.renderAtmosphereSettings, grading = settings.renderGradingSettings
+
+            XCTAssertTrue(settings.clearMasterRecipe(isRaw: true), "recipe can be removed at \(strength)")
+            XCTAssertNil(settings.masterRecipeID)
+            XCTAssertEqual(settings.resolvedRenderValues(), before, "core render request unchanged at \(strength)")
+            XCTAssertEqual(settings.renderToneSettings, tone, "tone controls unchanged at \(strength)")
+            XCTAssertEqual(settings.renderAtmosphereSettings, atmosphere, "atmosphere unchanged at \(strength)")
+            XCTAssertEqual(settings.renderGradingSettings, grading, "grading unchanged at \(strength)")
+        }
+    }
 }
