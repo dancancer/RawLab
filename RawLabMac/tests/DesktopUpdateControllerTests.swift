@@ -12,6 +12,7 @@ import SwiftUI
 @_cdecl("sony2fuji_release_blob") func stubReleaseBlob(_: UnsafeMutablePointer<sony2fuji_blob>?) {}
 @_cdecl("sony2fuji_sample_tone_curve_v2") func stubSampleToneCurveV2(_: UnsafePointer<sony2fuji_tone_curve_config>?, _: UnsafePointer<sony2fuji_tone_curve_parametric_config>?, _: UnsafePointer<Double>?, _: UnsafeMutablePointer<Double>?, _: UInt32) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
 @_cdecl("sony2fuji_session_set_tone_curves_v2") func stubSessionSetToneCurvesV2(_: OpaquePointer?, _: UnsafePointer<sony2fuji_tone_curve_set_v2_config>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
+@_cdecl("sony2fuji_point_color_preview_swatch") func stubPointColorPreviewSwatch(_: Float, _: Float, _: Float, _: Float, _: Float, _: Float, _: UnsafeMutablePointer<Float>?, _: UnsafeMutablePointer<Float>?) -> sony2fuji_status { SONY2FUJI_STATUS_INVALID_ARGUMENT }
 
 enum ParameterValueField { static var hasPendingInputs = false }
 
