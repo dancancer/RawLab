@@ -7,8 +7,8 @@ public partial class MainWindow
     private sealed record HslProbeWork(ulong Token,int Axis,HslTargetRevision Revision,AdjustmentSnapshot Before,Point Point);
     private readonly HslTargetInteraction hslTarget=new();
     private readonly CurveTargetInteraction curveTarget=new();
-    private bool hslTargetEnabled,hslHistoryActive;
-    private bool curveTargetEnabled,curveHistoryActive;
+    private bool hslHistoryActive;
+    private bool curveHistoryActive;
     private int hslTargetAxis;
     private ToneCurveChannel curveTargetChannel;
     private Point? hslTargetPoint,curveTargetPoint;
@@ -37,14 +37,15 @@ public partial class MainWindow
     }
     private void SetHslTargetMode(bool enabled,int axis)
     {
-        CancelHslTarget();hslTargetEnabled=enabled;hslTargetAxis=axis;
-        if(enabled){CancelWbProbe();CancelPointColorProbe();SetCurveTargetMode(false,curveTargetChannel);EndHoldingBefore();inspection.PinModeEnabled=false;RefreshInspection();}
+        CancelHslTarget();hslTargetAxis=axis;
+        if(enabled)ActivateCanvasProbe(CanvasProbeMode.HslTarget);
+        else canvasProbes.Deactivate(CanvasProbeMode.HslTarget);
         RefreshHslTarget();
     }
     private void RefreshHslTarget()
     {
-        var hslActive=hslTargetEnabled && toolMode==EditorToolMode.Hsl && expandedGroup!=null && !transform.Active;
-        var curveActive=curveTargetEnabled && CurrentTool==EditorAdjustmentTool.ToneCurve && expandedGroup!=null && !transform.Active;
+        var hslActive=canvasProbes.IsHslTarget && toolMode==EditorToolMode.Hsl && expandedGroup!=null && !transform.Active;
+        var curveActive=canvasProbes.IsCurveTarget && CurrentTool==EditorAdjustmentTool.ToneCurve && expandedGroup!=null && !transform.Active;
         ResultCanvas.HslTargetEnabled=hslActive || curveActive;
         HslTargetBanner.Visibility=ResultCanvas.HslTargetEnabled && AdjustmentPanel.Visibility!=Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         HslTargetBannerCaption.Text=Loc.Text(curveActive ? "拖动照片调整曲线；退出目标模式后可平移。" : "拖动照片调整颜色；退出目标模式后可平移。");
@@ -56,18 +57,18 @@ public partial class MainWindow
             HslTargetBannerTitle.Text=Loc.Format("目标调整：{0}",Loc.Text(hslTargetAxis switch {1=>"饱和度",2=>"明度",_=>"色相"}));
             ResultCanvas.HslTargetPoint=hslTargetPoint;
         }
-        HslEditor.SetTarget(hslTargetEnabled,hslTargetAxis,hslTarget.Waiting,hslTarget.Selection,hslTargetNotice);
+        HslEditor.SetTarget(canvasProbes.IsHslTarget,hslTargetAxis,hslTarget.Waiting,hslTarget.Selection,hslTargetNotice);
         RefreshHDRPresentation();
     }
     private void ExitHslTargetClicked(object sender,RoutedEventArgs e)
     {
-        if(curveTargetEnabled)SetCurveTargetMode(false,curveTargetChannel);
-        if(hslTargetEnabled)SetHslTargetMode(false,hslTargetAxis);
+        if(canvasProbes.IsCurveTarget)SetCurveTargetMode(false,curveTargetChannel);
+        if(canvasProbes.IsHslTarget)SetHslTargetMode(false,hslTargetAxis);
     }
     private void BeginHslTarget(Point point,double? keyDelta=null)
     {
         CancelHslTarget(false);
-        if(!hslTargetEnabled || !ResultCanvas.HslTargetEnabled || file==null || closing || exporting || scheduler.Busy ||
+        if(!canvasProbes.IsHslTarget || !ResultCanvas.HslTargetEnabled || file==null || closing || exporting || scheduler.Busy ||
             previewResize.IsEnabled || renderFailed || transform.Active || hslAcceptedWork is not {} work || hslAcceptedRevision is not {} revision ||
             hslAcceptedSettings?.SameAs(settings.Capture())!=true || work.OpenRevision!=openRevision || work.File!=file || work.Lut!=lut ||
             CurrentViewSource is not {} source || work.Source?.SameFile(source) != true)
@@ -81,7 +82,7 @@ public partial class MainWindow
     private void AcceptHslTarget(Work work,HslTargetSample sample,bool current)
     {
         if(work.Probe is not {} probe || !hslTarget.Matches(probe.Token))return;
-        if(!current || !hslTargetEnabled || probe.Axis!=hslTargetAxis || hslAcceptedRevision!=probe.Revision ||
+        if(!current || !canvasProbes.IsHslTarget || probe.Axis!=hslTargetAxis || hslAcceptedRevision!=probe.Revision ||
             file!=work.File || openRevision!=work.OpenRevision || CurrentViewSource is not {} source || work.Source?.SameFile(source) != true ||
             lut!=work.Lut || transform.Active || !probe.Before.SameAs(settings.Capture()))
         {CancelHslTarget();hslTargetNotice=HslTargetAvailability.Stale;RefreshHslTarget();return;}
@@ -131,19 +132,20 @@ public partial class MainWindow
 
     private void SetCurveTargetMode(bool enabled, ToneCurveChannel channel)
     {
-        CancelCurveTarget(); curveTargetEnabled = enabled; curveTargetChannel = channel;
-        if (enabled) { CancelWbProbe(); CancelPointColorProbe(); SetHslTargetMode(false, hslTargetAxis); EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
+        CancelCurveTarget(); curveTargetChannel = channel;
+        if (enabled) ActivateCanvasProbe(CanvasProbeMode.CurveTarget);
+        else canvasProbes.Deactivate(CanvasProbeMode.CurveTarget);
         RefreshCurveTarget();
     }
     private void RefreshCurveTarget()
     {
         RefreshHslTarget();
-        CurveEditor.SetTarget(curveTargetEnabled, curveTargetChannel, curveTarget.Waiting, curveTarget.Selection, curveTargetNotice);
+        CurveEditor.SetTarget(canvasProbes.IsCurveTarget, curveTargetChannel, curveTarget.Waiting, curveTarget.Selection, curveTargetNotice);
     }
     private void BeginCurveTarget(Point point, double? keyDelta = null)
     {
         CancelCurveTarget(false);
-        if (!curveTargetEnabled || !ResultCanvas.HslTargetEnabled || file == null || closing || exporting || scheduler.Busy ||
+        if (!canvasProbes.IsCurveTarget || !ResultCanvas.HslTargetEnabled || file == null || closing || exporting || scheduler.Busy ||
             previewResize.IsEnabled || renderFailed || transform.Active || hslAcceptedWork is not {} work || hslAcceptedRevision is not {} revision ||
             hslAcceptedSettings?.SameAs(settings.Capture()) != true || work.OpenRevision != openRevision || work.File != file || work.Lut != lut ||
             CurrentViewSource is not {} source || work.Source?.SameFile(source) != true)
@@ -163,7 +165,7 @@ public partial class MainWindow
     private void AcceptCurveTarget(Work work, HslTargetSample sample, bool current)
     {
         if (work.Probe is not {} probe || !curveTarget.Matches(probe.Token)) return;
-        if (!current || !curveTargetEnabled || probe.Axis != (int)curveTargetChannel || hslAcceptedRevision != probe.Revision ||
+        if (!current || !canvasProbes.IsCurveTarget || probe.Axis != (int)curveTargetChannel || hslAcceptedRevision != probe.Revision ||
             file != work.File || openRevision != work.OpenRevision || CurrentViewSource is not {} source || work.Source?.SameFile(source) != true ||
             lut != work.Lut || transform.Active || !probe.Before.SameAs(settings.Capture()))
         { CancelCurveTarget(); curveTargetNotice = HslTargetAvailability.Stale; RefreshCurveTarget(); return; }

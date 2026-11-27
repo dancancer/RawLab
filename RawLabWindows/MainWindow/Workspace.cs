@@ -162,15 +162,7 @@ public partial class MainWindow
         if (mode == workspaceLayout.Mode || closing || exporting || UpdateInstallationActive || pendingAllReset != null ||
             (mode == WorkspaceMode.Preview && result == null)) return;
         if (workspaceLayout.Mode == WorkspaceMode.Editing && !SuspendInspectorTool()) return;
-        if (mode != WorkspaceMode.Editing && hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
-        if (mode != WorkspaceMode.Editing && curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
-        if (mode != WorkspaceMode.Editing && wbProbeEnabled) CancelWbProbe();
-        if (mode != WorkspaceMode.Editing && pointColorProbeEnabled) CancelPointColorProbe();
-        if (mode != WorkspaceMode.Editing && inspection.PinModeEnabled)
-        {
-            inspection.PinModeEnabled = false;
-            RefreshInspection();
-        }
+        if (mode != WorkspaceMode.Editing) CancelAllCanvasProbes(includeInspectionPin: true);
         CancelViewingInput();
         HistogramPopup.IsOpen = ProcessingPopup.IsOpen = false;
         workspaceLayout.SetMode(mode);
@@ -232,15 +224,7 @@ public partial class MainWindow
         if (ShowsInspector)
         {
             if (!SuspendInspectorTool()) return;
-            if (hslTargetEnabled) SetHslTargetMode(false, hslTargetAxis);
-            if (curveTargetEnabled) SetCurveTargetMode(false, curveTargetChannel);
-            if (wbProbeEnabled) CancelWbProbe();
-            if (pointColorProbeEnabled) CancelPointColorProbe();
-            if (inspection.PinModeEnabled)
-            {
-                inspection.PinModeEnabled = false;
-                RefreshInspection();
-            }
+            CancelAllCanvasProbes(includeInspectionPin: true);
         }
         workspaceLayout.ToggleInspector();
         ProcessingPopup.IsOpen = false;

@@ -203,7 +203,7 @@ public partial class MainWindow
         if (group == EditorAdjustmentGroup.Looks && settings.IsHDREditing && !wasQuick) { ShowQuickPresets(); return; }
         if (wasQuick) CloseQuickPresets();
         if(expandedGroup==group && !wasQuick || wasQuick && group==EditorAdjustmentGroup.Looks) {
-            SetHslTargetMode(false,hslTargetAxis);SetCurveTargetMode(false,curveTargetChannel);CancelWbProbe();CancelPointColorProbe();CancelParameterInputs();if(!ResolveTransformDraft())return;
+            CancelAllCanvasProbes();CancelParameterInputs();if(!ResolveTransformDraft())return;
             expandedGroup=null;RefreshWorkspaceNavigation();
             return;
         }
@@ -214,10 +214,7 @@ public partial class MainWindow
         if(file==null || exporting || pendingAllReset!=null)return;
         tool = EditorAdjustmentRules.NormalizeTool(tool, settings.IsHDREditing);
         if (quickPresetsVisible) CloseQuickPresets();
-        if(tool!=EditorAdjustmentTool.Hsl)SetHslTargetMode(false,hslTargetAxis);
-        if(tool!=EditorAdjustmentTool.ToneCurve)SetCurveTargetMode(false,curveTargetChannel);
-        if(tool!=EditorAdjustmentTool.WhiteBalance)CancelWbProbe();
-        if(tool!=EditorAdjustmentTool.PointColor)CancelPointColorProbe();
+        DeactivateCanvasProbeForTool(tool);
         CancelParameterInputs();
         if(tool is EditorAdjustmentTool.Geometry or EditorAdjustmentTool.Lens) {
             BeginTransform(tool==EditorAdjustmentTool.Geometry ? TransformTool.Geometry : TransformTool.Lens);
@@ -246,7 +243,7 @@ public partial class MainWindow
     }
     private void CancelParameterInputs()
     {
-        CancelHslTarget();CancelCurveTarget();CancelWbProbe();CancelPointColorProbe();GradingEditor.CancelInputs();PointColorEditor.CancelInputs();SelectiveColorEditor.CancelInputs();BwMixerEditor.CancelInputs();CalibrationEditor.CancelInputs();CurveEditor.CancelInputs();
+        CancelCanvasProbeInputs();GradingEditor.CancelInputs();PointColorEditor.CancelInputs();SelectiveColorEditor.CancelInputs();BwMixerEditor.CancelInputs();CalibrationEditor.CancelInputs();CurveEditor.CancelInputs();
         var draftRows=transform.Active && transform.Tool==TransformTool.Geometry ? ParameterRows(GeometryEditor).ToHashSet() : [];
         foreach(var row in ParameterRows(AdjustmentPanel))if(!draftRows.Contains(row))row.CancelInput();
     }

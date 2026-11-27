@@ -365,12 +365,7 @@ public partial class MainWindow
         inspection.MonitorEnabled = true;
         inspection.PinModeEnabled = !inspection.PinModeEnabled;
         if (inspection.PinModeEnabled)
-        {
-            CancelWbProbe();
-            CancelPointColorProbe();
-            SetCurveTargetMode(false, curveTargetChannel);
-            SetHslTargetMode(false, hslTargetAxis);
-        }
+            CancelAllCanvasProbes();
         RefreshInspection();
     }
 

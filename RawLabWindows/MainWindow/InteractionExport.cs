@@ -90,10 +90,7 @@ public partial class MainWindow
             if(ProcessingPopup.IsOpen || HistogramPopup.IsOpen){ProcessingPopup.IsOpen=HistogramPopup.IsOpen=false;e.Handled=true;return;}
             if(workspaceLayout.LibraryAt(WorkspaceWidth)==LibraryPresentation.Drawer && DismissWorkspaceTransient()){e.Handled=true;return;}
             if(quickPresetsVisible){CloseQuickPresets();e.Handled=true;return;}
-            if(hslTargetEnabled){SetHslTargetMode(false,hslTargetAxis);e.Handled=true;return;}
-            if(curveTargetEnabled){SetCurveTargetMode(false,curveTargetChannel);e.Handled=true;return;}
-            if(wbProbeEnabled){CancelWbProbe();e.Handled=true;return;}
-            if(pointColorProbeEnabled){CancelPointColorProbe();e.Handled=true;return;}
+            if(TryHandleCanvasProbeEscape()){e.Handled=true;return;}
             if(editGesture!=null){CancelParameterInputs();CancelEditGesture();e.Handled=true;return;}
             if(transform.Active){_=ResolveTransformDraft();e.Handled=true;return;}
             if(inspection.HandleEscape()){RefreshInspection();RefreshViewingFrames();e.Handled=true;return;}
