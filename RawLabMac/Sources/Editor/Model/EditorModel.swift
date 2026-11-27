@@ -386,7 +386,8 @@ final class EditorModel: ObservableObject {
     private var cachedMaskSourceFrameID: ObjectIdentifier?
     private var cachedMaskSourceSize: (width: Int, height: Int) = (0, 0)
     private var cachedMaskSourceData: Data?
-    private var sharpenMaskMemoryPressureSource: DispatchSourceMemoryPressure?
+    var sharpenMaskCacheBytes: Int { cachedMaskSourceData?.count ?? 0 }
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
     @Published var adjustmentSheetInCollection = false
     var adjustmentSheetPayload: AdjustmentTransferPayload?
     var adjustmentSheetPreset: AdjustmentPreset?
@@ -486,18 +487,34 @@ final class EditorModel: ObservableObject {
         debounceTimer = timer
         startExternalStoreWatcher()
         let pressureSource = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
-        pressureSource.setEventHandler { [weak self] in self?.clearSharpenMaskPreviewCache() }
+        pressureSource.setEventHandler { [weak self] in self?.reclaimPreviewCaches() }
         pressureSource.resume()
-        sharpenMaskMemoryPressureSource = pressureSource
+        memoryPressureSource = pressureSource
     }
     deinit {
-        sharpenMaskMemoryPressureSource?.cancel()
-        sharpenMaskMemoryPressureSource = nil
+        memoryPressureSource?.cancel()
+        memoryPressureSource = nil
         externalStoreWatcher?.stop(); debounceTimer?.cancel(); viewportResizeWork?.cancel(); saveWork?.cancel(); aiDebounce?.cancel(); aiPreparation?.cancel()
     }
 }
 
 extension EditorModel {
+    func reclaimPreviewCaches() {
+        exactPreviewCache.useScope(nil)
+        completedEditPreview = nil
+        InspectionSamplerCache.shared.clear()
+        InspectionOverlayRenderer.shared.clear()
+        clearSharpenMaskPreviewCache()
+        queue.async { [weak self] in
+            if let self {
+                self.originalCache = nil
+                self.geometryReferenceCache = nil
+                self.engine = nil
+            }
+            HDRSourceCache.shared.clear()
+        }
+    }
+
     func clearSharpenMaskPreviewCache() {
         sharpenMaskRequestEpoch &+= 1
         sharpenMaskPreviewActive = false
