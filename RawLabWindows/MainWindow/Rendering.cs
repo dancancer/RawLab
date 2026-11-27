@@ -211,12 +211,12 @@ public partial class MainWindow
                     ticket.Id != scheduler.Revision ||
                     openRevision != w.OpenRevision;
                 if(w.Probe is {} probe) {
-                    var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    var activeEngine = EnsureRenderEngine(w.GpuMode, w.AIIdentity?.DeviceID ?? "");
                     hslSample=activeEngine.SampleHsl(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,probe.Revision,probe.Point.X,probe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
                 if(w.WbProbe is {} wbProbe) {
-                    var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                    var activeEngine = EnsureRenderEngine(w.GpuMode, w.AIIdentity?.DeviceID ?? "");
                     wbSample=activeEngine.SampleWhiteBalance(w.File,w.Settings,w.Lut,w.Edge,wbProbe.Point.X,wbProbe.Point.Y);
                     return ((RenderedImage?)null,(RenderedImage?)null);
                 }
@@ -229,7 +229,7 @@ public partial class MainWindow
                     if (RenderPreviewHook != null)
                         frame=RenderPreviewHook(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,renderStarted);
                     else {
-                        var activeEngine = EnsureRenderEngine(); activeEngine.SetGpuMode(w.GpuMode);activeEngine.SetAIDevice(w.AIIdentity?.DeviceID ?? "");
+                        var activeEngine = EnsureRenderEngine(w.GpuMode, w.AIIdentity?.DeviceID ?? "");
                         frame=activeEngine.RenderPreview(w.File,w.Settings,w.Lut,w.Edge,w.Interactive,w.Compare,clipping:false,renderStarted:renderStarted,shouldCancel:shouldCancel);
                     }
                     return(frame.Neutral,frame.Result);

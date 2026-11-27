@@ -173,7 +173,13 @@ public partial class DenoisePanel : UserControl
                 AIModelLicense.Visibility=Visibility.Visible;
                 break;
             case AIModelPackageStatus.Installed:
-                AIModelStatus.Text=Loc.Format("已下载 AI 降噪模型（约 {0} MB）。",AIModelPackageException.FormatMegabytes(modelState.UnpackedBytes));
+                if(modelState.Error!=null) {
+                    AIModelStatus.SetResourceReference(TextBlock.ForegroundProperty,"ErrorForeground");
+                    AIModelStatus.Text=modelState.Error.LocalizedMessage+"\n"+
+                        Loc.Format("已下载 AI 降噪模型（约 {0} MB）。",AIModelPackageException.FormatMegabytes(modelState.UnpackedBytes));
+                } else {
+                    AIModelStatus.Text=Loc.Format("已下载 AI 降噪模型（约 {0} MB）。",AIModelPackageException.FormatMegabytes(modelState.UnpackedBytes));
+                }
                 AIModelStatus.Visibility=Visibility.Visible;
                 AIModelLicense.Visibility=Visibility.Visible;
                 AIModelRemove.Visibility=Visibility.Visible;

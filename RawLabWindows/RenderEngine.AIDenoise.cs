@@ -9,6 +9,7 @@ internal sealed partial class RenderEngine
     private readonly string? aiModelDirectory;
     private readonly string aiCacheDirectory;
     internal string? CurrentAIModelDirectory => aiModelDirectory;
+    internal string CurrentAIDeviceID => aiDeviceID;
     private readonly int? aiBackendOverride;
     private string aiDeviceID,aiOperation="unknown";
     private string? aiInputPath,aiNativeDetails;

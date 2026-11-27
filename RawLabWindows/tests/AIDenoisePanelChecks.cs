@@ -187,6 +187,17 @@ internal static class AIDenoisePanelChecks
         removeBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         check(removeClicks == 1, "Clicking Remove dispatches remove confirmation request");
 
+        // 7b. Failed removal while package remains intact stays Installed with error text and no download-retry button
+        var removeErr = new AIModelPackageException(AIModelPackageErrorCode.RemoveFailed, "in use");
+        panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
+            modelState: AIModelPackageState.Installed(downloadedSource, unpackedBytes, removeErr), canDownloadModel: true, canRemoveModel: true);
+        check(modelStatus.Text.Contains(removeErr.LocalizedMessage, StringComparison.Ordinal) &&
+              modelStatus.Text.Contains(Loc.Format("已下载 AI 降噪模型（约 {0} MB）。", "334"), StringComparison.Ordinal) &&
+              removeBtn.Visibility == Visibility.Visible && removeBtn.IsEnabled &&
+              downloadBtn.Visibility == Visibility.Collapsed &&
+              retryBtn.Visibility == Visibility.Collapsed,
+            "Failed removal while package remains intact shows error text and keeps Remove without any download retry button");
+
         // 8. Installed (Bundled / Override) and Unavailable (including missing DirectML hardware) hide download management
         panel.RefreshAI(true, false, true, new(AIDenoiseStatus.Idle),
             modelState: AIModelPackageState.Installed(new AIModelDirectorySource(AIModelDirectoryKind.Bundled, output), unpackedBytes));
@@ -209,6 +220,15 @@ internal static class AIDenoisePanelChecks
 
         // 8b. Batch export effect inspection ("查看应用后的效果") blocks model removal via Busy/BusyChanged
         VerifyBatchInspectGuardsModelRemoval(output, check);
+
+        // 8c. Single-photo export works immediately after install/removal and preserves GpuMode + AI device on engine recreation
+        VerifySinglePhotoExportAfterModelChangeAndEngineConfig(output, check);
+
+        // 8d. Cancelled AI job still unwinding in native code keeps removal blocked until Completion finishes
+        VerifyCancelledAIJobCompletionGuardsModelRemoval(output, check);
+
+        // 8e. Thumbnail AI preparation read error clears IsPreparingAI and notifies false
+        VerifyEditedPhotoPreviewAIReadErrorClearsPreparingFlag(output, check);
 
         // 9. License text fallbacks when nothing is bundled
         var emptyDir = Path.Combine(output, "empty-license-probe-" + Guid.NewGuid().ToString("N"));
@@ -359,6 +379,252 @@ internal static class AIDenoisePanelChecks
         }
     }
 
+    private static void VerifySinglePhotoExportAfterModelChangeAndEngineConfig(string output, Action<bool, string> check)
+    {
+        var root = Path.Combine(output, "export-after-model-change-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(root);
+        MainWindow? window = null;
+        try {
+            window = TestWindowState.CreateIsolatedWindow(root, width: 1200, height: 800);
+            var paths = window.Paths;
+            var manifestBytes = Encoding.UTF8.GetBytes("{\"version\":1}");
+            var manifestSha = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+            var descriptor = new AIModelPackageDescriptor(
+                SchemaVersion: 1,
+                Platform: "windows-x64",
+                Url: "https://example.invalid/test.tar.gz",
+                ArchiveName: "test.tar.gz",
+                ArchiveSha256: new string('a', 64),
+                ArchiveBytes: 64,
+                ManifestSha256: manifestSha,
+                UnpackedBytes: (ulong)manifestBytes.Length,
+                Entries: [new AIModelArchiveEntry("manifest.json", AIModelArchiveEntryKind.File, (ulong)manifestBytes.Length, manifestSha)]);
+            var installedDir = Path.Combine(paths.DualDnModelDirectory, manifestSha);
+            Directory.CreateDirectory(installedDir);
+            File.WriteAllBytes(Path.Combine(installedDir, "manifest.json"), manifestBytes);
+
+            var sampleImage = Path.Combine(root, "sample.png");
+            var sampleBitmap = BitmapSource.Create(32, 24, 96, 96, PixelFormats.Bgr24, null, new byte[32 * 24 * 3], 32 * 3);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(sampleBitmap));
+            using (var fs = File.Create(sampleImage)) png.Save(fs);
+
+            window.Show();
+            var store = new AIModelPackageStore(paths.DualDnModelDirectory, descriptor, allowLoopbackHttp: false);
+            var manager = new AIModelPackageManager(
+                store,
+                isRuntimeSupported: () => true,
+                isHardwareAvailable: () => true,
+                dispatch: action => {
+                    if (window.Dispatcher.HasShutdownStarted) return;
+                    if (window.Dispatcher.CheckAccess()) action();
+                    else window.Dispatcher.BeginInvoke(action);
+                });
+            window.SetAIModelManagerForTests(manager);
+            window.GpuMode.SelectedIndex = 1; // CPU mode (0) — non-default!
+            window.AiPreferenceValue = new AIGpuPreference { DeviceID = "pnp:test-adapter-1" };
+            window.OpenFile(sampleImage);
+            WaitUntilOnDispatcher(() => window.ExactReady && window.CurrentResult != null, TimeSpan.FromSeconds(15));
+            check(!window.Settings.ActiveAIDenoise && window.EngineInstance != null,
+                "Photo opens ready with AI off and an active engine");
+
+            // (a) Remove downloaded model -> OnAIModelInstallStateChanged disposes engine (engine == null) without rescheduling when AI is off; ExportPhoto must still produce the file.
+            check(window.TryRemoveDownloadedAIModelForTests(), "Removing downloaded model succeeds");
+            DrainDispatcher();
+            check(window.EngineInstance == null, "Model removal releases old engine before deletion");
+            var exportAfterRemove = Path.Combine(root, "exported-after-remove.jpg");
+            var exportTask1 = window.ExportPhoto(ExportFormat.Jpeg, exportAfterRemove);
+            WaitForTaskOnDispatcher(exportTask1, TimeSpan.FromSeconds(15));
+            DrainDispatcher();
+            check(File.Exists(exportAfterRemove) && new FileInfo(exportAfterRemove).Length > 0,
+                "Single-photo ExportPhoto succeeds immediately after model removal when AI is off");
+            check(window.EngineInstance != null &&
+                  window.EngineInstance.CurrentGpuMode == 0 &&
+                  window.EngineInstance.CurrentAIDeviceID == "pnp:test-adapter-1",
+                "Lazily recreated engine after model removal preserves requested GPU mode and AI device");
+
+            // (b) Simulate model directory changing while engine is still held (e.g., install finished while scheduler was busy):
+            // recreate on ExportPhoto must pick up the new model directory AND preserve requested GPU mode + AI device.
+            Directory.CreateDirectory(installedDir);
+            File.WriteAllBytes(Path.Combine(installedDir, "manifest.json"), manifestBytes);
+            manager.Refresh();
+            var engineBefore = window.EngineInstance!;
+            check(!string.Equals(engineBefore.CurrentAIModelDirectory, installedDir, StringComparison.OrdinalIgnoreCase),
+                "Existing engine still points to pre-install model directory before export");
+            window.GpuMode.SelectedIndex = 1; // CPU (0)
+            window.AiPreferenceValue = new AIGpuPreference { DeviceID = "pnp:test-adapter-2" };
+            var exportAfterDirChange = Path.Combine(root, "exported-after-dir-change.jpg");
+            var exportTask2 = window.ExportPhoto(ExportFormat.Jpeg, exportAfterDirChange);
+            WaitForTaskOnDispatcher(exportTask2, TimeSpan.FromSeconds(15));
+            DrainDispatcher();
+            check(File.Exists(exportAfterDirChange) && new FileInfo(exportAfterDirChange).Length > 0,
+                "Single-photo ExportPhoto succeeds when model directory changed underneath an existing engine");
+            check(window.EngineInstance != null &&
+                  !ReferenceEquals(window.EngineInstance, engineBefore) &&
+                  string.Equals(window.EngineInstance.CurrentAIModelDirectory, installedDir, StringComparison.OrdinalIgnoreCase) &&
+                  window.EngineInstance.CurrentGpuMode == 0 &&
+                  window.EngineInstance.CurrentAIDeviceID == "pnp:test-adapter-2",
+                "Engine recreated by ExportPhoto after model directory change picks up new model directory, GPU mode, and AI device");
+        } finally {
+            window?.Close();
+            DrainDispatcher();
+            if (Directory.Exists(root)) try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    private static void VerifyCancelledAIJobCompletionGuardsModelRemoval(string output, Action<bool, string> check)
+    {
+        var root = Path.Combine(output, "cancelled-ai-job-guard-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(root);
+        MainWindow? window = null;
+        using var nativeEntered = new ManualResetEventSlim(false);
+        using var releaseNative = new ManualResetEventSlim(false);
+        try {
+            var job = new AIDenoiseJob((_, _, _) => {
+                nativeEntered.Set();
+                releaseNative.Wait(TimeSpan.FromSeconds(10));
+            });
+            window = TestWindowState.CreateIsolatedWindow(root, aiJob: job, width: 1200, height: 800);
+            var paths = window.Paths;
+            var manifestBytes = Encoding.UTF8.GetBytes("{\"version\":1}");
+            var manifestSha = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+            var descriptor = new AIModelPackageDescriptor(
+                SchemaVersion: 1,
+                Platform: "windows-x64",
+                Url: "https://example.invalid/test.tar.gz",
+                ArchiveName: "test.tar.gz",
+                ArchiveSha256: new string('a', 64),
+                ArchiveBytes: 64,
+                ManifestSha256: manifestSha,
+                UnpackedBytes: (ulong)manifestBytes.Length,
+                Entries: [new AIModelArchiveEntry("manifest.json", AIModelArchiveEntryKind.File, (ulong)manifestBytes.Length, manifestSha)]);
+            var installedDir = Path.Combine(paths.DualDnModelDirectory, manifestSha);
+            Directory.CreateDirectory(installedDir);
+            File.WriteAllBytes(Path.Combine(installedDir, "manifest.json"), manifestBytes);
+
+            var sampleImage = Path.Combine(root, "sample.png");
+            var sampleBitmap = BitmapSource.Create(16, 16, 96, 96, PixelFormats.Bgr24, null, new byte[16 * 16 * 3], 16 * 3);
+            var png = new PngBitmapEncoder(); png.Frames.Add(BitmapFrame.Create(sampleBitmap));
+            using (var fs = File.Create(sampleImage)) png.Save(fs);
+
+            window.Show();
+            window.CurrentFile = sampleImage;
+            var store = new AIModelPackageStore(paths.DualDnModelDirectory, descriptor, allowLoopbackHttp: false);
+            var manager = new AIModelPackageManager(
+                store,
+                isRuntimeSupported: () => true,
+                isHardwareAvailable: () => true,
+                dispatch: action => {
+                    if (window.Dispatcher.HasShutdownStarted) return;
+                    if (window.Dispatcher.CheckAccess()) action();
+                    else window.Dispatcher.BeginInvoke(action);
+                });
+            window.SetAIModelManagerForTests(manager);
+            window.SelectToolForTests(EditorAdjustmentTool.Denoise);
+            window.RefreshControlsForTests();
+            DrainDispatcher();
+
+            var removeBtn = (Button)window.DenoiseEditor.FindName("AIModelRemove");
+            check(window.CanRemoveDownloadedAIModelForTests && removeBtn.IsEnabled,
+                "Before starting AI job, Remove button is enabled");
+
+            var identity = AIDenoiseIdentity.Read(sampleImage, new Adjustments(), 2);
+            _ = job.StartAsync(identity, new Adjustments());
+            try {
+                check(nativeEntered.Wait(TimeSpan.FromSeconds(10)), "AI job entered native prepare worker");
+                DrainDispatcher();
+                check(!window.CanRemoveDownloadedAIModelForTests && !removeBtn.IsEnabled,
+                    "Running AI job disables model removal");
+
+                // Cancel flips job.State.IsRunning to false immediately while native worker is still unwinding!
+                job.Cancel();
+                DrainDispatcher();
+                check(!job.State.IsRunning && !job.Completion.IsCompleted,
+                    "After Cancel(), AI job State.IsRunning is false while Completion is still pending");
+                check(!window.CanRemoveDownloadedAIModelForTests && !removeBtn.IsEnabled,
+                    "Cancelled AI job with pending native Completion keeps Remove button disabled");
+                check(!window.TryRemoveDownloadedAIModelForTests() && Directory.Exists(installedDir),
+                    "Removal handler refuses while cancelled AI job native call is still unwinding");
+            } finally {
+                releaseNative.Set();
+            }
+
+            WaitForTaskOnDispatcher(job.Completion, TimeSpan.FromSeconds(10));
+            DrainDispatcher();
+            check(job.Completion.IsCompleted && window.CanRemoveDownloadedAIModelForTests && removeBtn.IsEnabled,
+                "Remove button automatically re-enables once cancelled AI job Completion finishes");
+        } finally {
+            releaseNative.Set();
+            window?.Close();
+            DrainDispatcher();
+            if (Directory.Exists(root)) try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    private static void VerifyEditedPhotoPreviewAIReadErrorClearsPreparingFlag(string output, Action<bool, string> check)
+    {
+        var root = Path.Combine(output, "preview-ai-read-error-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(root);
+        var previousOverride = Environment.GetEnvironmentVariable(AIModelPackageStore.ModelOverrideEnvironmentVariable);
+        try {
+            var paths = TestWindowState.CreateIsolatedPaths(root);
+            var fakeModelDir = Path.Combine(root, "fake-model");
+            Directory.CreateDirectory(fakeModelDir);
+            File.WriteAllText(Path.Combine(fakeModelDir, "manifest.json"), "{\"version\":1}");
+            Environment.SetEnvironmentVariable(AIModelPackageStore.ModelOverrideEnvironmentVariable, fakeModelDir);
+
+            var rawPath = Path.Combine(root, "vanishing.arw");
+            File.WriteAllBytes(rawPath, [1, 2, 3, 4]);
+            var store = new EditStore(paths.EditsDirectory);
+            var settings = new Adjustments();
+            settings.ActiveAIDenoise = true;
+            store.Save(rawPath, settings.Capture(), null);
+            var saved = store.ReadState(rawPath);
+
+            var previews = new EditedPhotoPreviews(store, paths.EditedPhotoPreviewCacheDirectory, paths);
+            var notifications = new List<bool>();
+            var validateHookCalled = false;
+            previews.AIPreparationChanged += active => { lock (notifications) notifications.Add(active); };
+            // Delete the original right after validation passes so AIDenoiseIdentity.Read throws a real FileNotFoundException.
+            previews.ValidateAIInputHook = (path, _, _, _) => {
+                validateHookCalled = true;
+                File.Delete(path);
+            };
+
+            var task = previews.ImageAsync(saved, null, 2, "", CancellationToken.None);
+            WaitForTaskOnDispatcher(task, TimeSpan.FromSeconds(10));
+            check(validateHookCalled, "Thumbnail AI preview reached ValidateAIInput before AIDenoiseIdentity.Read");
+            check(task.IsFaulted && task.Exception?.InnerException is FileNotFoundException,
+                "Thumbnail AI preview surfaces FileNotFoundException when original vanishes before AIDenoiseIdentity.Read");
+            check(!previews.IsPreparingAI,
+                "EditedPhotoPreviews.IsPreparingAI resets to false after AIDenoiseIdentity.Read exception");
+            bool[] snapshot;
+            lock (notifications) snapshot = notifications.ToArray();
+            check(snapshot.SequenceEqual([true, false]),
+                $"AIPreparationChanged emits [true, false] on read failure (got [{string.Join(", ", snapshot)}])");
+
+            var disposeTask = previews.DisposeAsync().AsTask();
+            WaitForTaskOnDispatcher(disposeTask, TimeSpan.FromSeconds(10));
+        } finally {
+            Environment.SetEnvironmentVariable(AIModelPackageStore.ModelOverrideEnvironmentVariable, previousOverride);
+            if (Directory.Exists(root)) try { Directory.Delete(root, true); } catch { }
+        }
+    }
+
+    private static void WaitUntilOnDispatcher(Func<bool> predicate, TimeSpan timeout)
+    {
+        var start = Environment.TickCount64;
+        while (!predicate()) {
+            if (Environment.TickCount64 - start > timeout.TotalMilliseconds)
+                throw new TimeoutException("Timed out waiting for UI condition");
+            var frame = new DispatcherFrame();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
+            timer.Tick += (_, _) => { timer.Stop(); frame.Continue = false; };
+            timer.Start();
+            Dispatcher.PushFrame(frame);
+            timer.Stop();
+        }
+    }
+
     private static void DrainDispatcher()
     {
         var frame = new DispatcherFrame();
@@ -435,8 +701,8 @@ internal static class AIDenoisePanelChecks
             var desiredHeight = Math.Max(0, btn.DesiredSize.Height - btn.Margin.Top - btn.Margin.Bottom);
             var labelText = btn.Content as string ?? "";
             var presenter = FindDescendant<ContentPresenter>(btn);
-            var labelFits = true;
-            if (presenter != null && labelText.Length > 0) {
+            var labelFits = labelText.Length == 0;
+            if (labelText.Length > 0 && presenter != null) {
                 var formattedLabel = new FormattedText(
                     labelText,
                     CultureInfo.CurrentUICulture,

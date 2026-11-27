@@ -152,7 +152,7 @@ public partial class MainWindow
     internal CollectionExportReview PrepareCollectionExport(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory,OutputSharpening outputSharpening=OutputSharpening.Off)
     {
         var activeEditStore=persistence.EnsureStore();
-        return new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure,outputSharpening);
+        return new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,aiPreference.DeviceID,appPaths:appPaths,modelStore:aiModelManager?.Store),TransferSession.EditGeneration).Prepare(Collection,skipping,format,longEdge,directory,CollectionDraftFailure,outputSharpening);
     }
     internal async Task<CollectionExportReview?> PrepareCollectionExportAsync(IReadOnlyCollection<string> skipping,ExportFormat format,int? longEdge,string directory,OutputSharpening outputSharpening=OutputSharpening.Off)
     {
@@ -162,7 +162,7 @@ public partial class MainWindow
         var failures=photos.ToDictionary(photo=>photo.ID,photo=>CollectionDraftFailure(photo.ID));
         var generation=++transferGeneration;var opened=openRevision;var revision=editRevision;var current=file;
         var device=aiPreference.DeviceID;
-        var exporter=new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
+        var exporter=new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device,appPaths:appPaths,modelStore:aiModelManager?.Store),TransferSession.EditGeneration);
         transferPreparing=true;
         try {
             var result=await Task.Run(()=>exporter.Prepare(photos,skipped,format,longEdge,directory,id=>failures.GetValueOrDefault(id),outputSharpening));
@@ -183,7 +183,7 @@ public partial class MainWindow
         var device=aiPreference.DeviceID;
         // RequestedAIBackend 读 WPF GpuMode：在 UI 线程快照，后台派发闭包不得再触碰 DispatcherObject（同 Rendering.cs 惯例）。
         var aiBackend=RequestedAIBackend;
-        var exporter=new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device),TransferSession.EditGeneration);
+        var exporter=new BatchSelectionExport(activeEditStore,batchJournal,ResolveLook,path=>RenderEngine.ValidateAIInput(path,device,appPaths:appPaths,modelStore:aiModelManager?.Store),TransferSession.EditGeneration);
         transferPreparing=true;
         try {
             // 冻结（前后双遍全集重验 + 每目标 look 副本拷贝）经 Task.Run 留在后台线程，UI 线程只完成原子复核、落盘与切换。

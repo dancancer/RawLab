@@ -210,14 +210,24 @@ internal sealed class AIModelPackageStore
             var name = item.Name;
             if (name.StartsWith(".download-", StringComparison.Ordinal) ||
                 name.StartsWith(".staging-", StringComparison.Ordinal) ||
-                name.StartsWith(".replacing-", StringComparison.Ordinal))
+                name.StartsWith(".replacing-", StringComparison.Ordinal) ||
+                name.StartsWith(".removing-", StringComparison.Ordinal))
                 continue;
             try
             {
                 if (item is DirectoryInfo dir)
                 {
-                    if (TempCleanup.IsReparsePoint(dir)) dir.Delete(recursive: false);
-                    else DeleteDirectoryStrict(dir);
+                    if (TempCleanup.IsReparsePoint(dir))
+                    {
+                        dir.Delete(recursive: false);
+                    }
+                    else
+                    {
+                        // 先原子改名再删除：若目录内仍有文件句柄占用，NTFS 重命名直接拒绝且不会删坏包内任何文件。
+                        var removingPath = Path.Combine(StorageRoot, ".removing-" + Guid.NewGuid().ToString("N"));
+                        Directory.Move(dir.FullName, removingPath);
+                        DeleteDirectoryStrict(new DirectoryInfo(removingPath));
+                    }
                 }
                 else
                 {
@@ -609,7 +619,8 @@ internal sealed class AIModelPackageStore
             var name = item.Name;
             if (!name.StartsWith(".download-", StringComparison.Ordinal) &&
                 !name.StartsWith(".staging-", StringComparison.Ordinal) &&
-                !name.StartsWith(".replacing-", StringComparison.Ordinal))
+                !name.StartsWith(".replacing-", StringComparison.Ordinal) &&
+                !name.StartsWith(".removing-", StringComparison.Ordinal))
                 continue;
             if (item is DirectoryInfo dir) TryDeleteDirectorySafe(dir.FullName);
             else TryDeleteFileSafe(item.FullName);

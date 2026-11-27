@@ -134,11 +134,14 @@ public sealed class AIModelPackageStoreTests : IDisposable
         var stalePart = Path.Combine(storage, ".download-crashed.part");
         var staleStaging = Path.Combine(storage, ".staging-crashed");
         var staleReplacing = Path.Combine(storage, ".replacing-crashed");
+        var staleRemoving = Path.Combine(storage, ".removing-crashed");
         File.WriteAllText(stalePart, "leftover");
         Directory.CreateDirectory(staleStaging);
         File.WriteAllText(Path.Combine(staleStaging, "junk.bin"), "leftover");
         Directory.CreateDirectory(staleReplacing);
         File.WriteAllText(Path.Combine(staleReplacing, "old.bin"), "leftover");
+        Directory.CreateDirectory(staleRemoving);
+        File.WriteAllText(Path.Combine(staleRemoving, "removing.bin"), "leftover");
 
         var store = new AIModelPackageStore(
             storage,
@@ -151,6 +154,7 @@ public sealed class AIModelPackageStoreTests : IDisposable
         Assert.False(File.Exists(stalePart));
         Assert.False(Directory.Exists(staleStaging));
         Assert.False(Directory.Exists(staleReplacing));
+        Assert.False(Directory.Exists(staleRemoving));
         AssertNoStrayTempFiles(storage);
     }
 
@@ -720,6 +724,80 @@ public sealed class AIModelPackageStoreTests : IDisposable
         Assert.Equal(1, server.RequestCount);
     }
 
+    [Fact]
+    public async Task RemoveRefusesAtomicallyWhenModelFileIsOpenAndKeepsPackageInstalled()
+    {
+        var fixture = MakeSyntheticArchive("locked-remove");
+        using var server = new LoopbackHttpServer(ServerMode.File(fixture.ArchivePath));
+
+        var storage = Path.Combine(tempRoot, "store-locked-remove");
+        var desc = fixture.Descriptor(server.Url("/locked.tar.gz"));
+        var store = new AIModelPackageStore(
+            storage,
+            desc,
+            allowLoopbackHttp: true,
+            diskSpaceMarginBytes: 1024);
+
+        var manager = new AIModelPackageManager(
+            store,
+            isRuntimeSupported: () => true,
+            isHardwareAvailable: () => true);
+
+        var installedTcs = new TaskCompletionSource<AIModelPackageState>(TaskCreationOptions.RunContinuationsAsynchronously);
+        manager.StateChanged += state =>
+        {
+            if (state.IsDownloadedInstalled) installedTcs.TrySetResult(state);
+        };
+        manager.StartDownload();
+        _ = await installedTcs.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(1, server.RequestCount);
+
+        var installedDir = store.InstalledPackageDirectory();
+        Assert.NotNull(installedDir);
+        var lockedEntry = desc.Entries.Last(e => e.Kind == AIModelArchiveEntryKind.File && !string.Equals(e.Path, "manifest.json", StringComparison.OrdinalIgnoreCase));
+        var lockedFile = Path.Combine(installedDir!, lockedEntry.Path.Replace('/', Path.DirectorySeparatorChar));
+        Assert.True(File.Exists(lockedFile));
+
+        // Hold one model file open without FileShare.Delete (matching a native reader such as std::ifstream).
+        using (var readerHandle = new FileStream(lockedFile, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            // Direct store removal must fail without deleting any file in the package.
+            var ex = Assert.Throws<AIModelPackageException>(() => store.RemoveInstalledPackages());
+            Assert.Equal(AIModelPackageErrorCode.RemoveFailed, ex.Code);
+
+            // Manager removal must also leave the package intact and installed with the failure reported, never a download-retry state.
+            manager.RemoveDownloadedModel();
+            Assert.Equal(AIModelPackageStatus.Installed, manager.State.Status);
+            Assert.True(manager.State.IsDownloadedInstalled);
+            Assert.Equal(AIModelPackageErrorCode.RemoveFailed, manager.State.Error?.Code);
+
+            // Resolver still returns the intact installed directory and every catalog file still matches its hash.
+            Assert.Equal(
+                new AIModelDirectorySource(AIModelDirectoryKind.Downloaded, installedDir!),
+                store.ResolveModelDirectory());
+            foreach (var entry in desc.Entries.Where(e => e.Kind == AIModelArchiveEntryKind.File))
+            {
+                var path = Path.Combine(installedDir!, entry.Path.Replace('/', Path.DirectorySeparatorChar));
+                Assert.True(File.Exists(path), $"File was unexpectedly deleted during failed removal: {entry.Path}");
+                Assert.Equal(entry.Sha256, AIModelPackageStore.ComputeSha256Hex(path, CancellationToken.None));
+            }
+
+            // Calling StartDownload in this state must not issue any download request.
+            manager.StartDownload();
+            await manager.ActiveCompletion.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(1, server.RequestCount);
+            GC.KeepAlive(readerHandle);
+        }
+
+        // Once the handle is released, removal succeeds completely with no leftovers.
+        manager.RemoveDownloadedModel();
+        Assert.Null(store.InstalledPackageDirectory());
+        Assert.Equal(AIModelPackageState.NotInstalled(desc.ArchiveBytes, desc.UnpackedBytes), manager.State);
+        Assert.Null(manager.State.Error);
+        AssertNoStrayTempFiles(storage);
+    }
+
     // MARK: - Helpers
 
     private async Task<AIModelPackageException> AssertHostileArchiveRejected(SyntheticArchive hostile, string storage)
@@ -753,6 +831,7 @@ public sealed class AIModelPackageStoreTests : IDisposable
             Assert.False(name.StartsWith(".download-", StringComparison.Ordinal), "Stray .part file left behind: " + name);
             Assert.False(name.StartsWith(".staging-", StringComparison.Ordinal), "Stray staging dir left behind: " + name);
             Assert.False(name.StartsWith(".replacing-", StringComparison.Ordinal), "Stray backup dir left behind: " + name);
+            Assert.False(name.StartsWith(".removing-", StringComparison.Ordinal), "Stray removing dir left behind: " + name);
         }
     }
 

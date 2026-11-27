@@ -71,7 +71,7 @@ internal sealed class AIModelPackageManager
 
         lock (gate)
         {
-            if (state.IsBusy || !isRuntimeSupported() || Store.Descriptor == null) return;
+            if (state.IsBusy || state.IsInstalled || !isRuntimeSupported() || Store.Descriptor == null) return;
             if (!isHardwareAvailable())
             {
                 var refreshed = ComputeDiskStateLocked();
@@ -222,24 +222,25 @@ internal sealed class AIModelPackageManager
                 removed = true;
             }
         }
-        catch (AIModelPackageException error)
-        {
-            lock (gate)
-            {
-                if (Store.Descriptor is not { } descriptor) return;
-                nextState = AIModelPackageState.Failed(error, descriptor.ArchiveBytes, descriptor.UnpackedBytes);
-                state = nextState;
-            }
-        }
         catch (Exception error)
         {
+            var mapped = error as AIModelPackageException
+                ?? new AIModelPackageException(AIModelPackageErrorCode.RemoveFailed, error.Message, innerException: error);
             lock (gate)
             {
-                if (Store.Descriptor is not { } descriptor) return;
-                nextState = AIModelPackageState.Failed(
-                    new AIModelPackageException(AIModelPackageErrorCode.RemoveFailed, error.Message, innerException: error),
-                    descriptor.ArchiveBytes,
-                    descriptor.UnpackedBytes);
+                var diskState = ComputeDiskStateLocked();
+                if (diskState.IsInstalled && diskState.InstalledSource is { } source)
+                {
+                    nextState = AIModelPackageState.Installed(source, diskState.UnpackedBytes, mapped);
+                }
+                else if (Store.Descriptor is { } descriptor && isRuntimeSupported() && isHardwareAvailable())
+                {
+                    nextState = AIModelPackageState.Failed(mapped, descriptor.ArchiveBytes, descriptor.UnpackedBytes);
+                }
+                else
+                {
+                    nextState = diskState;
+                }
                 state = nextState;
             }
         }

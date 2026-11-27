@@ -420,8 +420,8 @@ internal sealed record AIModelPackageState(
         new(AIModelPackageStatus.Cancelled, DownloadBytes: downloadBytes, UnpackedBytes: unpackedBytes);
     internal static AIModelPackageState Failed(AIModelPackageException error, ulong downloadBytes, ulong unpackedBytes) =>
         new(AIModelPackageStatus.Failed, DownloadBytes: downloadBytes, UnpackedBytes: unpackedBytes, Error: error);
-    internal static AIModelPackageState Installed(AIModelDirectorySource source, ulong unpackedBytes) =>
-        new(AIModelPackageStatus.Installed, UnpackedBytes: unpackedBytes, InstalledSource: source);
+    internal static AIModelPackageState Installed(AIModelDirectorySource source, ulong unpackedBytes, AIModelPackageException? error = null) =>
+        new(AIModelPackageStatus.Installed, UnpackedBytes: unpackedBytes, InstalledSource: source, Error: error);
 }
 
 internal enum AIModelInstallPhaseKind

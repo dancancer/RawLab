@@ -19,7 +19,7 @@ public partial class MainWindow
     private string? ResolveAIModelDirectory()=>RenderEngine.ResolveAIModelDirectory(appPaths,aiModelManager?.Store);
     private bool HasAIModel=>aiModelManager.State.IsInstalled || ResolveAIModelDirectory()!=null;
     private bool CanRemoveDownloadedAIModel=>aiModelManager.State.IsDownloadedInstalled && !aiModelManager.State.IsBusy &&
-        !aiJob.State.IsRunning && !scheduler.Busy && !exporting && !autoExposing && !transferPreparing &&
+        !aiJob.State.IsRunning && aiJob.Completion.IsCompleted && !scheduler.Busy && !exporting && !autoExposing && !transferPreparing &&
         !(photoPreviews?.IsPreparingAI==true) && !closing;
     private bool CanStartAI=>file!=null && (settings.IsHDREditing
         ? HDRCameraAICandidate && settings.HDR!.CameraSettings.AllowsAI && RequestedGpuMode!=2
@@ -98,7 +98,7 @@ public partial class MainWindow
     {
         aiJob.Changed+=()=>{
             if(Dispatcher.HasShutdownStarted)return;
-            Dispatcher.BeginInvoke(new Action(()=>{if(!closing)RefreshControls();}));
+            Dispatcher.BeginInvoke(new Action(()=>{if(closing)FinishClose();else RefreshControls();}));
         };
         DenoiseEditor.AIChanged+=SetAIEnabled;
         DenoiseEditor.AIStrengthChanged+=(value,dragging)=>{

@@ -533,8 +533,8 @@ public partial class BatchExportWindow : Window
         finally
         {
             activeInspections = Math.Max(0, activeInspections - 1);
+            if (!closed && closeRequested && !Busy && IsLoaded) Close();
             NotifyBusyChanged();
-            if (closeRequested && !Busy && IsLoaded) Close();
         }
     }
 }

@@ -32,6 +32,7 @@ internal sealed partial class RenderEngine : IDisposable
     private ((NeutralReferenceKey Reference, int GpuMode, int? ProRAWDecodeVersion) Key, RenderedImage Frame)? original;
     private readonly PreviewRevisionCache<(PreviewKey Key, int Edge), PreviewFrame> previewCache =
         new(256L * 1024 * 1024, FrameBytes, maximumEntries: 16);
+    internal int CurrentGpuMode => gpuMode;
     internal Native.Session Session => session;
     internal Native.CancellationCallback? CancellationCallback { get => cancellationCallback; set => cancellationCallback = value; }
     internal bool HasOriginal => original != null;

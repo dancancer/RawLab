@@ -19,6 +19,8 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
     private PhotoPreviewResourceWatch? resourceWatch;
     internal event Action<string>? Ready;
     internal event Action<bool>? AIPreparationChanged;
+    internal Action<string,string,X3fMode,AppPaths> ValidateAIInputHook { get; set; } = (path,device,x3fMode,paths) =>
+        RenderEngine.ValidateAIInput(path,device,x3fMode,paths);
     internal bool Paused { get { lock(gate)return resume!=null; } }
     internal bool IsPreparingAI { get { lock(gate)return preparing!=null || activeAIWork; } }
     internal void RefreshAll()=>Ready?.Invoke("");
@@ -87,17 +89,20 @@ internal sealed class EditedPhotoPreviews(EditStore store, string? cacheDirector
                 BitmapSource frame;
                 try {
                     if(usesAI) {
-                        RenderEngine.ValidateAIInput(record.Identity.Path,aiDevice,settings.X3fMode,resolvedPaths);
-                        var job=new AIDenoiseJob((identity,snapshot,progress)=>engine.PrepareAI(identity.Source.Path,snapshot,progress));
+                        ValidateAIInputHook(record.Identity.Path,aiDevice,settings.X3fMode,resolvedPaths);
+                        var identity=AIDenoiseIdentity.Read(record.Identity.Path,settings,aiBackend,aiDevice);
+                        var job=new AIDenoiseJob((id,snapshot,progress)=>engine.PrepareAI(id.Source.Path,snapshot,progress));
                         using var cancel=token.Register(job.Cancel);
-                        Task<bool> preparation;
-                        lock(gate) {
-                            if(resume!=null)throw new OperationCanceledException();
-                            preparing=job;
-                            preparation=job.StartAsync(AIDenoiseIdentity.Read(record.Identity.Path,settings,aiBackend,aiDevice),settings);
-                        }
                         bool ready;
-                        try {ready=await preparation.ConfigureAwait(false);}
+                        try {
+                            Task<bool> preparation;
+                            lock(gate) {
+                                if(resume!=null)throw new OperationCanceledException();
+                                preparing=job;
+                                preparation=job.StartAsync(identity,settings);
+                            }
+                            ready=await preparation.ConfigureAwait(false);
+                        }
                         finally {
                             lock(gate){if(ReferenceEquals(preparing,job))preparing=null;}
                         }
