@@ -17,6 +17,7 @@ struct TextFitTests {
         })
         var failures: [String] = []
         failures += recipeSubtitles(root, catalogs)
+        failures += aiModelDownloadSection(catalogs)
         guard failures.isEmpty else {
             failures.forEach { print("FAIL: \($0)") }
             exit(1)
@@ -99,6 +100,89 @@ struct TextFitTests {
             print("PASS: recipe titles and subtitles fit 3-column narrow grid (\(textWidth) pt) in every language")
         }
         return failures
+    }
+
+    // ------------------------------------------------------------------------
+    //  AI 模型按需下载区在最窄调整栏（280 pt - 20 pt 内边距 = 260 pt）下 6 语言完整排版
+    // ------------------------------------------------------------------------
+    @MainActor static func aiModelDownloadSection(_ catalogs: [String: [String: String]]) -> [String] {
+        let panelWidth = MacWorkspaceLayout.inspectorRange.lowerBound - 20
+        let sampleTexts: [(key: String, args: [String])] = [
+            ("尚未下载 AI 降噪模型（约 %@ MB）。", ["588"]),
+            ("模型（DualDn、Restormer）仅限非商业用途。", []),
+            ("正在下载 AI 降噪模型… %@ / %@ MB", ["588", "588"]),
+            ("正在校验 AI 降噪模型…", []),
+            ("正在安装 AI 降噪模型…", []),
+            ("已取消下载 AI 降噪模型。", []),
+            ("已下载 AI 降噪模型（约 %@ MB）。", ["652"]),
+            ("无法删除已下载的模型文件，请重试。", []),
+            ("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。", []),
+        ]
+        let buttonKeys = ["下载模型", "查看许可", "删除已下载模型", "重试", "取消"]
+        let oneLineHeight = fittingHeight("A", size: 11, width: panelWidth)
+        var failures: [String] = []
+
+        for language in languages {
+            guard let strings = catalogs[language] else {
+                failures.append("\(language): missing Localizable.strings catalog")
+                continue
+            }
+            for item in sampleTexts {
+                guard let template = strings[item.key] else {
+                    failures.append("\(language): missing localized key '\(item.key)'")
+                    continue
+                }
+                let rendered = formatString(template, args: item.args)
+                let height = fittingHeight(rendered, size: 11, width: panelWidth)
+                if height < oneLineHeight - 0.5 || height > oneLineHeight * 4 + 0.5 {
+                    failures.append("\(language): AI model text '\(rendered)' height \(height) out of 1..4 lines at \(panelWidth) pt")
+                }
+            }
+            for key in buttonKeys {
+                guard let title = strings[key] else {
+                    failures.append("\(language): missing button key '\(key)'")
+                    continue
+                }
+                let width = singleLineWidth(title, size: 11)
+                if width > panelWidth - 16 {
+                    failures.append("\(language): button '\(title)' width \(width) exceeds narrow panel width \(panelWidth)")
+                }
+            }
+            // 验证“查看许可 + 删除已下载模型”通过 ViewThatFits 在 260 pt 下不溢出（如法语长文案自动折成两行）
+            let licenseTitle = strings["查看许可"] ?? "查看许可"
+            let removeTitle = strings["删除已下载模型"] ?? "删除已下载模型"
+            let adaptiveRow = ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    Button(licenseTitle) {}.buttonStyle(.link).fixedSize()
+                    Spacer(minLength: 0)
+                    Button(removeTitle) {}.buttonStyle(.borderless).fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Button(licenseTitle) {}.buttonStyle(.link)
+                    Button(removeTitle) {}.buttonStyle(.borderless)
+                }
+            }
+            .font(.system(size: 11))
+            .frame(width: panelWidth, alignment: .leading)
+            let rowSize = NSHostingView(rootView: adaptiveRow).fittingSize
+            if rowSize.width > panelWidth + 0.5 {
+                failures.append("\(language): adaptive installed action row width \(rowSize.width) exceeds \(panelWidth) pt")
+            }
+        }
+        if failures.isEmpty {
+            print("PASS: AI model download section texts and adaptive action rows fit narrow inspector (\(panelWidth) pt) in every language")
+        }
+        return failures
+    }
+
+    private static func formatString(_ template: String, args: [String]) -> String {
+        var result = template
+        for arg in args {
+            if let range = result.range(of: "%@") {
+                result.replaceSubrange(range, with: arg)
+            }
+        }
+        return result
     }
 
     // 横排工具名按自然宽度滚动；真实多语言可达性由 HorizontalPickerNativeTests 验证。

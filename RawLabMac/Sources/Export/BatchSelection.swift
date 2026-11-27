@@ -124,7 +124,7 @@ struct MacCollectionExportPreparation {
             let look = state.settings.hdr!.lookSettings
             guard look.assetIsAvailable() else { throw AdjustmentTransferError.missingLook(look.name ?? "HDR LUT") }
         }
-        if !state.settings.isHDREditing && state.settings.aiDenoiseEnabled {
+        if state.settings.activeAIDenoise {
             try RenderEngine.validateAIInput(photo.url, settings: state.settings)
         }
         let look: URL?, lookName: String

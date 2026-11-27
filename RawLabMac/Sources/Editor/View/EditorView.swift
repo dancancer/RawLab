@@ -14,7 +14,10 @@ struct EditorView: View {
     init(model: EditorModel, viewCommands: MacViewCommandState? = nil) {
         self.model = model
         self.viewCommands = viewCommands
-        _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(editDirectory: model.editDirectory))
+        _photoPreviews = StateObject(wrappedValue: MacEditedPhotoPreviews(
+            editDirectory: model.editDirectory,
+            aiModelAccessTracker: model.aiModelAccessTracker
+        ))
     }
     @StateObject private var browser = MacWorkspaceBrowserState()
     @AppStorage("workspace.files.width") private var savedLibraryWidth = Double(MacWorkspaceLayout.defaultLibraryWidth)

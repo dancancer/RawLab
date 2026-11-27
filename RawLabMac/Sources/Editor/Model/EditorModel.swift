@@ -265,7 +265,9 @@ final class EditorModel: ObservableObject {
     @Published var aiState = AIDenoiseState.idle
     @Published var aiModelPackageState: AIModelPackageState = .unavailable
     let aiModelManager: AIModelPackageManager
+    let aiModelAccessTracker: AIModelAccessTracker
     private var aiModelStateCancellable: AnyCancellable?
+    private var aiModelAccessCancellable: AnyCancellable?
     private var batchStateCancellable: AnyCancellable?
     var aiIdentity: AIWorkIdentity?
     var aiGeneration = UUID()
@@ -277,7 +279,14 @@ final class EditorModel: ObservableObject {
     static let aiQueue = DispatchQueue(label: "rawlab.ai.prepare", qos: .utility)
     static let sharedAIModelManager = AIModelPackageManager(
         store: RenderEngine.aiModelStore,
-        isRuntimeSupported: { RenderEngine.aiModelDownloadSupported },
+        isRuntimeSupported: {
+            #if arch(arm64)
+            return RenderEngine.aiAvailable
+            #else
+            return false
+            #endif
+        },
+        isHardwareAvailable: { RenderEngine.aiHardwareAvailable },
         overrideProvider: { RenderEngine.resolvedAIModelOverride },
         bundledProvider: { RenderEngine.bundledAIModel }
     )
@@ -304,6 +313,7 @@ final class EditorModel: ObservableObject {
                 !exporting && geometryDraft == nil && !aiModelPackageState.isBusy
         }
         return file != nil && !RenderEngine.isRasterInput(file) && RenderEngine.aiAvailable &&
+            RenderEngine.aiHardwareAvailable &&
             !(RenderEngine.isX3fInput(file) && settings.x3fMode == .normal) &&
             hasAIModel && !exporting && geometryDraft == nil && !aiModelPackageState.isBusy
     }
@@ -365,6 +375,8 @@ final class EditorModel: ObservableObject {
     var viewportResizeWork: DispatchWorkItem?
     var workerActive = false
     var engine: RenderEngine?
+    // 仅在渲染队列访问：记录由 EditorModel 自行创建的默认引擎，避免外部/测试注入的自定义配置引擎被静默替换。
+    private var managedEngineID: ObjectIdentifier?
     // 与请求调度器一样，仅主线程访问。
     var exactPreviewCache = MacExactPreviewCache()
     // 仅渲染队列读写；主线程使用已发布的来源身份。
@@ -477,8 +489,10 @@ final class EditorModel: ObservableObject {
          batchDirectory: URL = MacBatchJournal.defaultDirectory,
          presetDirectory: URL = AdjustmentPresetStore.defaultDirectory,
          aiModelManager: AIModelPackageManager = EditorModel.sharedAIModelManager,
+         aiModelAccessTracker: AIModelAccessTracker = .shared,
          onUsage: @escaping (UsageEvent) -> Void = { _ in }) {
         self.aiModelManager = aiModelManager
+        self.aiModelAccessTracker = aiModelAccessTracker
         aiModelPackageState = aiModelManager.state
         recentLooksURL = editDirectory.appendingPathComponent("recent-looks.json")
         self.onUsage = onUsage
@@ -532,9 +546,13 @@ final class EditorModel: ObservableObject {
                 self.handleAIModelAvailabilityChanged(installed: newState.isInstalled)
             }
         }
+        aiModelAccessCancellable = aiModelAccessTracker.didChange.sink { [weak self] in
+            self?.objectWillChange.send()
+        }
     }
     deinit {
         aiModelStateCancellable?.cancel()
+        aiModelAccessCancellable?.cancel()
         batchStateCancellable?.cancel()
         memoryPressureSource?.cancel()
         memoryPressureSource = nil
@@ -554,8 +572,36 @@ extension EditorModel {
                 self.originalCache = nil
                 self.geometryReferenceCache = nil
                 self.engine = nil
+                self.managedEngineID = nil
             }
             HDRSourceCache.shared.clear()
+        }
+    }
+
+    /// 仅在 `queue` 上调用：获取当前渲染引擎；由编辑器自行创建的默认引擎会在模型目录变化或原片同路径替换时重建，
+    /// 外部或测试显式注入的自定义配置引擎则保留原配置（同路径替换时仅重置其底层会话）。
+    func ensureEngine(forceRecreate: Bool = false) throws -> RenderEngine {
+        if let existing = engine {
+            if managedEngineID != ObjectIdentifier(existing) {
+                if forceRecreate {
+                    try existing.recreateSession()
+                }
+                return existing
+            }
+            if !forceRecreate && existing.currentAIModelDirectory == RenderEngine.resolvedAIModelDirectory {
+                return existing
+            }
+        }
+        let created = try RenderEngine()
+        engine = created
+        managedEngineID = ObjectIdentifier(created)
+        return created
+    }
+
+    func invalidateManagedEngine() {
+        if let existing = engine, managedEngineID == ObjectIdentifier(existing) {
+            engine = nil
+            managedEngineID = nil
         }
     }
 
@@ -630,10 +676,12 @@ extension EditorModel {
 
     var canRemoveDownloadedAIModel: Bool {
         !aiState.isRunning
+            && !aiModelAccessTracker.hasActiveReaders
             && !busy
             && !exporting
             && !importing
             && !autoExposing
+            && !matchingProcessing
             && !wbProbeSampling
             && !hslTargetInteraction.isWaiting
             && !curveTargetInteraction.isWaiting
@@ -650,13 +698,13 @@ extension EditorModel {
     }
 
     private static func installedAIModelDirectory(for state: AIModelPackageState) -> URL? {
-        if case .installed(let source, _) = state { return source.url }
+        if case .installed(let source, _, _) = state { return source.url }
         return nil
     }
 
     private func handleAIModelAvailabilityChanged(installed: Bool) {
         queue.async { [weak self] in
-            self?.engine = nil
+            self?.invalidateManagedEngine()
         }
         // 通知缩略图协调器重刷可见瓦片，确保下载/替换/移除模型后侧栏与网格即时更新。
         NotificationCenter.default.post(name: RenderEngine.aiModelAvailabilityDidChangeNotification, object: nil)
@@ -664,8 +712,16 @@ extension EditorModel {
             if settings.activeAIDenoise && file != nil && (aiRequiresExplicitRetry || aiState != .ready) && !aiState.isRunning {
                 requestAIDenoise()
             }
+            batch?.revalidateAfterAIModelInstall()
         } else {
-            aiIdentity = nil
+            let hadActiveAI = settings.activeAIDenoise || aiManuallyRequested || aiState != .idle || aiIdentity != nil
+            resetAITask()
+            if hadActiveAI && settings.activeAIDenoise {
+                // 保留已保存的 AI 开关，但移除模型后失效旧的就绪状态与导出可用态，防止假就绪和重装后漏校验。
+                previewOutdated = true
+                scheduler.invalidatePending()
+                refreshBusy()
+            }
         }
     }
 
@@ -763,7 +819,9 @@ extension EditorModel {
             let start = DispatchWorkItem { [weak self] in
                 guard let self, self.aiGeneration == generation else { return }
                 self.aiDebounce = nil
+                let readerLease = self.aiModelAccessTracker.beginReader()
                 Self.aiQueue.async { [weak self] in
+                    defer { readerLease.end() }
                     let outcome = Result {
                         guard !progress.isCancelled else { throw RenderError.aiCancelled }
                         try operation(file, snapshot, progress)

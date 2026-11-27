@@ -43,7 +43,9 @@ extension EditorModel {
         processingMigrationAttemptSource = source
         processingMigrationCancellation = cancellation
         matchingProcessing = true
+        let readerLease = aiModelAccessTracker.beginReader()
         Self.processingMigrationQueue.async { [weak self] in
+            defer { readerLease.end() }
             let outcome = Result {
                 try expected.identity.requireCurrent()
                 try lookIdentity?.requireCurrent()

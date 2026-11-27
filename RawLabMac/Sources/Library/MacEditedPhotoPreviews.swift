@@ -183,6 +183,7 @@ private struct MacAcceptedPhotoPreview {
     private let canonicalEditDirectoryPath: String
     private let cache: EditedPhotoPreviewCache
     private let aiModelDirectory: URL?
+    private let aiModelAccessTracker: AIModelAccessTracker
     let thumbnails: PhotoThumbnails
     private var accepted: (record: MacPhotoEditRecord, task: Task<MacAcceptedPhotoPreview?, Never>)?
     private var activeKeys: [String: (key: PhotoThumbnailCacheKey, identity: OriginalFileIdentity, isEdited: Bool, generation: UInt64)] = [:]
@@ -211,11 +212,13 @@ private struct MacAcceptedPhotoPreview {
 
     init(editDirectory: URL, cacheDirectory: URL? = nil, thumbnails: PhotoThumbnails = .shared,
          aiModelDirectory: URL? = nil,
+         aiModelAccessTracker: AIModelAccessTracker = .shared,
          prepareAI: (@Sendable (URL, Adjustments, AIPreparation) throws -> Void)? = nil,
          renderThumbnail: (@Sendable (URL, Adjustments, URL?) throws -> CGImage?)? = nil) {
         self.editDirectory = editDirectory
         self.canonicalEditDirectoryPath = editDirectory.resolvingSymlinksInPath().standardizedFileURL.path
         self.aiModelDirectory = aiModelDirectory
+        self.aiModelAccessTracker = aiModelAccessTracker
         self.thumbnails = thumbnails
         cache = EditedPhotoPreviewCache(directory: cacheDirectory ?? FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("RawLab/EditedPhotoPreviews"))
@@ -249,6 +252,7 @@ private struct MacAcceptedPhotoPreview {
         }
         worker = MacPhotoPreviewWorker(editDirectory: editDirectory, cache: cache,
                                        aiModelDirectory: aiModelDirectory,
+                                       aiModelAccessTracker: aiModelAccessTracker,
                                        prepareAI: prepareAI, renderThumbnail: renderThumbnail,
                                        aiProgressSink: progressSink)
         weakSelf.value = self
@@ -839,11 +843,13 @@ private struct MacAcceptedPhotoPreview {
             }
         }
         let usesAI = record.state?.settings.activeAIDenoise == true
+        let readerLease = usesAI ? aiModelAccessTracker.beginReader() : nil
         if usesAI {
             activeAIThumbnailTasks += 1
             isRunningAIThumbnail = true
         }
         defer {
+            readerLease?.end()
             if usesAI {
                 activeAIThumbnailTasks = max(0, activeAIThumbnailTasks - 1)
                 isRunningAIThumbnail = activeAIThumbnailTasks > 0
@@ -970,6 +976,7 @@ private actor MacPhotoPreviewWorker {
     let editDirectory: URL
     let cache: EditedPhotoPreviewCache
     private let aiModelDirectory: URL?
+    private let aiModelAccessTracker: AIModelAccessTracker
     private let prepareAI: (@Sendable (URL, Adjustments, AIPreparation) throws -> Void)?
     private let renderThumbnail: (@Sendable (URL, Adjustments, URL?) throws -> CGImage?)?
     private let aiProgressSink: (@Sendable (AIProgressRelay.Event) -> Void)?
@@ -977,12 +984,14 @@ private actor MacPhotoPreviewWorker {
     private var diskReadCount = 0
     init(editDirectory: URL, cache: EditedPhotoPreviewCache,
          aiModelDirectory: URL? = nil,
+         aiModelAccessTracker: AIModelAccessTracker = .shared,
          prepareAI: (@Sendable (URL, Adjustments, AIPreparation) throws -> Void)? = nil,
          renderThumbnail: (@Sendable (URL, Adjustments, URL?) throws -> CGImage?)? = nil,
          aiProgressSink: (@Sendable (AIProgressRelay.Event) -> Void)? = nil) {
         self.editDirectory = editDirectory
         self.cache = cache
         self.aiModelDirectory = aiModelDirectory
+        self.aiModelAccessTracker = aiModelAccessTracker
         self.prepareAI = prepareAI
         self.renderThumbnail = renderThumbnail
         self.aiProgressSink = aiProgressSink
@@ -1022,6 +1031,8 @@ private actor MacPhotoPreviewWorker {
             },
             render: { plan in
                 guard let settings = record.state?.settings else { throw AdjustmentCommitError.expired }
+                let workerLease = settings.activeAIDenoise ? aiModelAccessTracker.beginReader() : nil
+                defer { workerLease?.end() }
                 let engine = (prepareAI == nil || renderThumbnail == nil) ? try RenderEngine() : nil
                 if settings.activeAIDenoise {
                     defer { relay.finish() }

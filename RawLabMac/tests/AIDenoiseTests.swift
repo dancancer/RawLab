@@ -20,6 +20,7 @@ private func check(_ value: @autoclosure () -> Bool, _ message: String) {
         defer { try? FileManager.default.removeItem(at: root) }
         if CommandLine.arguments.count == 1 {
             try AIDenoiseRecoveryChecks.firstPreparation(root: root.appendingPathComponent("first-recovery"))
+            try AIDenoiseRecoveryChecks.modelDownloadHardening(root: root.appendingPathComponent("model-download-hardening"))
         }
         let first = root.appendingPathComponent("first.dng"), second = root.appendingPathComponent("second.dng")
         try Data([1,2,3]).write(to: first); try Data([4,5,6]).write(to: second)
