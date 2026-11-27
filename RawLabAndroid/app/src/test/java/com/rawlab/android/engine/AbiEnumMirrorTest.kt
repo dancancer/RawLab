@@ -1,5 +1,6 @@
 package com.rawlab.android.engine
 
+import com.rawlab.android.adjustments.resolveSharedFixture
 import com.rawlab.android.camera.SonyCameraNative
 import com.rawlab.android.camera.protocol.SonyTetherSession
 import com.rawlab.android.editor.inspection.InspectionOverlayMode
@@ -10,7 +11,6 @@ import com.rawlab.android.looks.DcpFailureReason
 import com.rawlab.android.settings.HslTargetAvailability
 import com.rawlab.android.settings.ToneCurveMode
 import com.rawlab.android.settings.X3fMode
-import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,7 +99,7 @@ class AbiEnumMirrorTest {
     )
 
     private fun fixtureEnums(): Map<String, List<Pair<String, Long>>> {
-        val root = JSONObject(File("../../Shared/fixtures/abi-layout-v1.json").readText())
+        val root = JSONObject(resolveSharedFixture("abi-layout-v1.json").readText())
         val enums = root.getJSONArray("enums")
         return (0 until enums.length()).associate { index ->
             val entry = enums.getJSONObject(index)
