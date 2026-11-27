@@ -51,16 +51,18 @@ CLIENT_DIRECTORIES = {"RawLab/": "ios", "RawLabMac/": "macos",
 CLIENT_FILES = {"global.json": "windows"}
 SHARED_PREFIXES = ("lutools/", "Shared/", "scripts/", "tests/", ".github/workflows/")
 SHARED_FILES = {".gitattributes", "LICENSE", "LICENSE-ALIYUN-RUM-EXCEPTION", ".github/actionlint.yaml"}
-# Inputs of the core CTest build outside lutools/: looks and externalized assets the tests read,
-# CTest drivers and their Python requirements, and the scripts RawLabMac/build.sh runs up to the
-# core build (RAWLAB_CORE_ONLY). lutools/platform/ios/ is iOS framework glue; the iOS job covers it.
+# Inputs of the core CTest row outside lutools/: looks and externalized assets the tests read,
+# CTest drivers and their Python requirements, the row's Rust and dependency-cache helpers, and
+# the scripts RawLabMac/build.sh runs up to the core build (RAWLAB_CORE_ONLY skips the Sparkle and
+# usage-SDK preparation). lutools/platform/ios/ is iOS framework glue; the iOS job covers it.
 CORE_INPUT_FILES = {
     "Shared/assets-manifest.json", "scripts/assets/prepare.py", "scripts/ci/test_abi_layout.py",
     "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt", "scripts/ci/apple-sdk-env.sh",
-    "scripts/rum/prepare-macos.sh", "RawLabMac/build.sh", "RawLabMac/build-env.sh",
-    "RawLabMac/release-config.sh", "RawLabMac/prepare-sparkle.sh", "RawLabMac/build-dependencies.sh",
-    "RawLabMac/build-chroma-dependency.sh", "RawLabMac/build-wavelet-dependency.sh",
-    "RawLabMac/build-tiff-dependency.sh", "RawLabMac/build-lens-dependency.sh",
+    "scripts/ci/prepare-rust.sh", "scripts/ci/native_cache.py",
+    "RawLabMac/build.sh", "RawLabMac/build-env.sh", "RawLabMac/release-config.sh",
+    "RawLabMac/build-dependencies.sh", "RawLabMac/build-chroma-dependency.sh",
+    "RawLabMac/build-wavelet-dependency.sh", "RawLabMac/build-tiff-dependency.sh",
+    "RawLabMac/build-lens-dependency.sh",
 }
 CORE_INPUT_PREFIXES = ("Shared/BundledLooks/",)
 CORE_EXCLUDED_PREFIXES = ("lutools/platform/ios/",)

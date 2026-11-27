@@ -548,16 +548,18 @@ class CoreCtestSelectionTests(unittest.TestCase):
             "lutools/requirements-lutprep.txt", "lutools/third_party/lensfun/README.md",
             "Shared/BundledLooks/HDR/HDR Silver.cube", "Shared/assets-manifest.json", "scripts/assets/prepare.py",
             "scripts/ci/test_abi_layout.py", "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt",
-            "scripts/ci/apple-sdk-env.sh", "scripts/rum/prepare-macos.sh", "RawLabMac/build.sh", "RawLabMac/build-env.sh",
-            "RawLabMac/release-config.sh", "RawLabMac/prepare-sparkle.sh", "RawLabMac/build-dependencies.sh",
-            "RawLabMac/build-lens-dependency.sh")
+            "scripts/ci/apple-sdk-env.sh", "scripts/ci/prepare-rust.sh", "scripts/ci/native_cache.py",
+            "RawLabMac/build.sh", "RawLabMac/build-env.sh", "RawLabMac/release-config.sh",
+            "RawLabMac/build-dependencies.sh", "RawLabMac/build-lens-dependency.sh")
     NOT_CORE = ("lutools/README.md", "lutools/PROJECT_SUMMARY.md", "lutools/AGENTS.md", "lutools/docs/color-contract.md",
                 "lutools/tests/README.md", "lutools/x3f-bridge/NOTES.md", "lutools/platform/ios/build-framework.sh",
                 "lutools/platform/ios/ThirdPartyNotices.md", "RawLabMac/Sources/Editor/Model/EditorModel.swift",
                 "RawLabMac/build-icon.sh", "RawLabMac/sign-bundle.sh", "RawLabMac/tests/edit-model.sh",
                 "RawLab/RawLab/App.swift", "RawLabWindows/README.md", "RawLabAndroid/app/build.gradle.kts",
                 "Shared/specs/adjustments.json", "Shared/RawLabKit/Edit.swift", "scripts/ci/affected_platforms.py",
-                ".github/workflows/ci.yml", "docs/process/ci.md", "README.md", "tools/mcp/server.py")
+                ".github/workflows/ci.yml", "docs/process/ci.md", "README.md", "tools/mcp/server.py",
+                # RAWLAB_CORE_ONLY skips Sparkle and usage-SDK preparation, so the row never runs these.
+                "RawLabMac/prepare-sparkle.sh", "scripts/rum/prepare-macos.sh", "scripts/rum/shared-cache.sh")
 
     def test_core_inputs_are_exactly_what_feeds_the_core_ctest_build(self):
         for path in self.CORE:

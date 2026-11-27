@@ -448,22 +448,22 @@ push) whose changes touch core inputs adds one `macOS models (arm64, ctest)` row
 job. Core inputs are every `lutools/` path except documentation and the iOS framework glue
 under `lutools/platform/ios/`, plus what the core tests read or run outside `lutools/`
 (`Shared/BundledLooks/`, `Shared/assets-manifest.json`, `scripts/assets/prepare.py`, the
-CTest drivers and requirements under `scripts/ci/`) and the scripts `RawLabMac/build.sh`
-runs up to the core build. `affected_platforms.py` owns the list. An unavailable diff runs the
-row. Drafts, release/hotfix `full` gates (which already run native CTest on both
-architectures) and manual groups never add it.
+CTest drivers and requirements under `scripts/ci/`), the row's Rust and dependency-cache
+helpers, and the scripts `RawLabMac/build.sh` runs up to the core build.
+`affected_platforms.py` owns the list. An unavailable diff runs the row. Drafts,
+release/hotfix `full` gates (which already run native CTest on both architectures) and manual
+groups never add it.
 
 The row reuses the macOS job: it restores the arm64 dependency cache, builds the core and its
-tests with `RAWLAB_CORE_ONLY=1 RawLabMac/build.sh` (no app), checks the CTest inventory and
-runs the complete `ci_macos_arm64` label set with the same command as the native `core` group;
-no test is filtered. **CI result** fails when core inputs changed and the row is missing,
+tests with `RAWLAB_CORE_ONLY=1 RawLabMac/build.sh` (no app, Sparkle or usage SDK; refused
+together with `RAWLAB_RELEASE=1`), checks the CTest inventory and runs the complete
+`ci_macos_arm64` label set with the same command as the native `core` group; no test is
+filtered. **CI result** fails when core inputs changed and the row is missing,
 failed, cancelled or skipped. Intel CTest stays in the native and full gates.
 
 A successful row saves the shared arm64 dependency key, so a core change pushed to
-`development` warms it for later PRs. In the 2026-11-27 verification runs a row took about
-25 minutes of runner time. A cold cache added an 11-minute dependency build; the core build
-took 5–10 minutes and CTest 8–13 minutes, depending on the hosted VM. Queueing for a hosted
-macOS slot comes on top of that.
+`development` warms it for later PRs. The row occupies one hosted macOS runner for roughly
+half as long as a native macOS job, plus any queueing for a macOS slot.
 
 ## GitHub-Hosted Apple Runners
 
