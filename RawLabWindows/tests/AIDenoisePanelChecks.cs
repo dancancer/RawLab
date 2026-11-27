@@ -240,6 +240,13 @@ internal static class AIDenoisePanelChecks
             File.WriteAllText(Path.Combine(emptyDir, "DualDn-LICENSE.txt"), "Installed DualDn license text");
             check(AIModelLicenseWindow.ReadDualDnLicense(emptyDir, emptyDir) == "Installed DualDn license text",
                 "License viewer prefers license file from installed model directory");
+            var appWithRuntimeNotices = Path.Combine(emptyDir, "app-base");
+            var runtimeDualDnDir = Path.Combine(appWithRuntimeNotices, "Licenses", "DualDn");
+            Directory.CreateDirectory(runtimeDualDnDir);
+            check(AIModelLicenseWindow.ResolveLicenseDirectory(emptyDir, appWithRuntimeNotices) == emptyDir,
+                "Open license folder prefers installed model directory over app Licenses/DualDn");
+            check(AIModelLicenseWindow.ResolveLicenseDirectory(null, appWithRuntimeNotices) == runtimeDualDnDir,
+                "Open license folder falls back to app Licenses/DualDn when no model is installed");
         } finally {
             if (Directory.Exists(emptyDir)) Directory.Delete(emptyDir, true);
         }

@@ -68,6 +68,8 @@ try {
     if(@([IO.File]::ReadAllBytes($SmokeScript) | Where-Object {$_ -gt 127}).Count -gt 0){throw 'Keep smoke-windows-gpu.ps1 ASCII-safe for Windows PowerShell 5.1.'}
     $smokeParams=@($smokeAst.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
     if('ModelDir' -notin $smokeParams){throw 'smoke-windows-gpu.ps1 must accept an external -ModelDir parameter.'}
+    $smokeText=Get-Content -LiteralPath $SmokeScript -Raw
+    if(!$smokeText.Contains(".TrimEnd('\', '/')")){throw 'smoke-windows-gpu.ps1 must trim trailing path separators before quoting native arguments.'}
 
     $extModel=Join-Path $tempRoot 'ext-model'
     New-Item -ItemType Directory -Force $extModel | Out-Null
@@ -85,7 +87,11 @@ try {
     function Invoke-SmokeProbe([string[]]$Arguments) {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = 'powershell.exe'
-        $psi.Arguments = ($Arguments | ForEach-Object { '"' + ($_ -replace '"','\"') + '"' }) -join ' '
+        $psi.Arguments = ($Arguments | ForEach-Object {
+            $a = $_ -replace '(\\*)"','$1$1\"'
+            if($a.EndsWith('\')){ $a = $a -replace '(\\+)$','$1$1' }
+            '"' + $a + '"'
+        }) -join ' '
         $psi.UseShellExecute = $false
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
@@ -99,8 +105,9 @@ try {
     }
 
     $smokeWork=Join-Path $tempRoot 'smoke-work-1'
+    # Pass trailing backslash on -ModelDir to exercise Tab-completed directory paths.
     $r1=Invoke-SmokeProbe @('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$SmokeScript,
-        '-PackageZip',$badZip,'-DualDnProbe',$stubFile,'-ModelDir',$extModel,'-ProbeRaw',$stubFile,'-CliRaw',$stubFile,'-WorkRoot',$smokeWork)
+        '-PackageZip',$badZip,'-DualDnProbe',$stubFile,'-ModelDir',($extModel + '\'),'-ProbeRaw',$stubFile,'-CliRaw',$stubFile,'-WorkRoot',$smokeWork)
     $flat1=$r1.Output -replace '\r?\n',''
     if($r1.Code -eq 0 -or $flat1 -notmatch 'must not contain bundled AI\\DualDn'){
         throw "smoke-windows-gpu.ps1 did not reject a release ZIP containing AI\DualDn (exit=$($r1.Code)): $($r1.Output)"

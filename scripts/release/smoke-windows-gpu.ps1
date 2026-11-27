@@ -120,7 +120,9 @@ try {
         -not (Test-Path -LiteralPath (Join-Path $ModelDir 'manifest.json') -PathType Leaf)) {
         throw "External model directory is missing manifest.json: $ModelDir"
     }
-    $model = (Resolve-Path -LiteralPath $ModelDir).Path
+    $model = (Resolve-Path -LiteralPath $ModelDir).Path.TrimEnd('\', '/')
+    $probeRawPath = (Resolve-Path -LiteralPath $ProbeRaw).Path.TrimEnd('\', '/')
+    $cliRawPath = (Resolve-Path -LiteralPath $CliRaw).Path.TrimEnd('\', '/')
     if (-not [Environment]::Is64BitProcess) { throw 'Run the smoke from 64-bit PowerShell.' }
     if ([RawLabSmokeMitigation]::PreferSystem32Images()) {
         throw 'PreferSystem32Images is active (WSL entry on port 22); System32\onnxruntime.dll would shadow the packaged runtime. Reconnect with ssh -p 2222.'
@@ -150,8 +152,8 @@ try {
     if ($validated -notmatch 'Validated DualDn package') { throw "Unexpected validate output: $validated" }
     Pass 'dualdn_probe --validate on external ModelDir'
 
-    $probeOut = Join-Path $WorkRoot 'dualdn-pipeline'
-    Invoke-Native $probe ('"{0}" "{1}" "{2}" pipeline directml' -f $ProbeRaw, $model, $probeOut) 'dualdn_probe pipeline directml' | Out-Null
+    $probeOut = (Join-Path $WorkRoot 'dualdn-pipeline').TrimEnd('\', '/')
+    Invoke-Native $probe ('"{0}" "{1}" "{2}" pipeline directml' -f $probeRawPath, $model, $probeOut) 'dualdn_probe pipeline directml' | Out-Null
     $pipeline = Get-Content -LiteralPath (Join-Path $probeOut 'pipeline.json') -Raw | ConvertFrom-Json
     # Forced DirectML must not hide a partial CPU/unknown stage behind one DirectML stage.
     $producer = [string]$pipeline.producer
@@ -161,8 +163,8 @@ try {
     }
     Pass "dualdn_probe DirectML pipeline (route=$($pipeline.route), producer=$($pipeline.producer))"
 
-    $jpeg = Join-Path $WorkRoot 'cli.jpg'
-    Invoke-Native (Join-Path $package 'sony2fuji.exe') ('"{0}" --no-lut -o "{1}"' -f $CliRaw, $jpeg) 'sony2fuji.exe' | Out-Null
+    $jpeg = (Join-Path $WorkRoot 'cli.jpg').TrimEnd('\', '/')
+    Invoke-Native (Join-Path $package 'sony2fuji.exe') ('"{0}" --no-lut -o "{1}"' -f $cliRawPath, $jpeg) 'sony2fuji.exe' | Out-Null
     $bytes = [IO.File]::ReadAllBytes($jpeg)
     if ($bytes.Length -lt 1024 -or $bytes[0] -ne 0xFF -or $bytes[1] -ne 0xD8) { throw "sony2fuji.exe wrote an invalid JPEG ($($bytes.Length) bytes)" }
     Pass "sony2fuji.exe CLI ($(Split-Path -Leaf $CliRaw) -> $($bytes.Length) bytes JPEG)"

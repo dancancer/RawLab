@@ -54,8 +54,8 @@ bash RawLabMac/build.sh
 
 其他构建选项仍遵循 [Mac 构建说明](../../../RawLabMac/README.md)。
 仅含 ONNX 图的包不能用于 Mac AI 运行；必须包含原生 Core ML 图。
-开发构建的 `RAWLAB_DUALDN` 默认关闭；发布开关强制要求 AI 模型与运行库，见[桌面发布流程](../../../docs/process/desktop-release.md)。
-实验构建验证模型后，把模型和动态库放入应用资源/Frameworks，并保留上游许可。
+开发构建的 `RAWLAB_DUALDN` 默认关闭；Apple Silicon 与 Windows 正式发布开关启用 AI 运行时但不内置模型，用户首次使用时在应用内按需下载（见[桌面发布流程](../../../docs/process/desktop-release.md)）。
+非发布实验构建传入模型目录后，校验并把模型和动态库放入应用资源/Frameworks，并保留上游许可；正式发布构建仅随包提供运行库与 `ai-model-catalog.json`。
 Mac 运行验收覆盖 Apple Silicon；Intel 和移动端未验证。Windows 的 DirectML 构建与
 硬件要求见 [Windows AI 降噪说明](../../../RawLabWindows/README.md#实验性-ai-降噪)。
 
@@ -148,6 +148,6 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 
 DualDn 的固定上游许可为 CC BY-NC 4.0（Copyright 2024 OpenImagingLab），
 Restormer v1.0 原始许可为 Academic Public License（非商业用途），ONNX Runtime 为 MIT。
-原文保留在应用的 `Licenses/DualDn`。
+正式发布包在应用内 `Licenses/DualDn` 保留 ONNX Runtime（及 Windows DirectML）运行库许可；DualDn 与 Restormer 上游许可文本随外置模型下载包分发（仅在非发布构建显式随包打包模型时一并复制到 `Licenses/DualDn`）。
 本转换保留原始权重，没有训练或微调；变更包括拆图、固定尺寸、分块运行和 RawLab
 颜色桥接。上游模型及派生产物保留其许可，不因宿主项目许可而重新授权。

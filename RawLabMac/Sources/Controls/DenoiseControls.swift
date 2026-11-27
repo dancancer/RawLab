@@ -395,12 +395,13 @@ private struct MacAIModelLicenseSheet: View {
     }
 
     private var licenseDirectoryURL: URL? {
+        // 去内置模型发布包中 Licenses/DualDn 只放运行时许可；优先打开已下载的模型目录，未下载时再回退到应用内目录。
+        if let installedDirectory, FileManager.default.fileExists(atPath: installedDirectory.path) {
+            return installedDirectory
+        }
         if let dir = Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "Licenses"),
            FileManager.default.fileExists(atPath: dir.path) {
             return dir
-        }
-        if let installedDirectory, FileManager.default.fileExists(atPath: installedDirectory.path) {
-            return installedDirectory
         }
         if let licenses = Bundle.main.url(forResource: "Licenses", withExtension: nil),
            FileManager.default.fileExists(atPath: licenses.path) {
