@@ -33,7 +33,7 @@ public partial class MainWindow
             if(!ResolveTransformDraft() || !SaveEdits())return;
             ClearTransferNoticesOnSourceChange();
             ClearExternalReloadOnSourceChange();
-            ResetAITask();CancelProcessingMigration();CancelWbProbe();CancelPointColorProbe();CancelCurveTarget();CancelHslTarget();RestoreEdits(path); hdrSource = openedHDR;
+            ResetAITask();CancelProcessingMigration();CancelCanvasProbeInputs();RestoreEdits(path); hdrSource = openedHDR;
             CancelViewingInput();view.SourceChanged();neutralResult=null;
             inspection.ResetForNewSource();sourceNativeSize=null;inspectionOverlayCache.Clear();
             lastExportedPath=null;ExportRevealButton.Visibility=Visibility.Collapsed;
@@ -140,7 +140,7 @@ public partial class MainWindow
     private void UpdatePreviewSize(int edge)
     {
         if(syncing || file==null || closing || (edge==requestedPreviewLongEdge && (edge==previewLongEdge || previewResize.IsEnabled)))return;
-        CancelHslTarget();CancelCurveTarget();CancelWbProbe();CancelPointColorProbe();
+        CancelCanvasProbeInputs();
         requestedPreviewLongEdge=edge;previewResize.Stop();
         if(exporting)return;
         if(edge==previewLongEdge){UpdateBusy();return;}

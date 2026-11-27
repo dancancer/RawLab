@@ -62,7 +62,7 @@ public partial class MainWindow
     internal object? HslAcceptedWorkToken => hslAcceptedWork;
     internal HslTargetInteraction HslTarget => hslTarget;
     internal bool HslHistoryActive => hslHistoryActive;
-    internal bool HslTargetEnabled => hslTargetEnabled;
+    internal bool HslTargetEnabled => canvasProbes.IsHslTarget;
     internal HslTargetAvailability? HslTargetNotice => hslTargetNotice;
     internal object? EditGestureInstance => editGesture;
     internal EditorToolMode ToolMode => toolMode;

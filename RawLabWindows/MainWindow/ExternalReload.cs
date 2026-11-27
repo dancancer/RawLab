@@ -119,10 +119,7 @@ public partial class MainWindow
             interacting = false;
         }
 
-        CancelHslTarget();
-        CancelCurveTarget();
-        CancelWbProbe();
-        CancelPointColorProbe();
+        CancelCanvasProbeInputs();
         CancelProcessingMigration();
         ApplyAdoptedEditToUi(reloadResult.AdoptedRecord, reloadResult.PreviousRecord);
         processingMigrationReceipt = file != null ? editStore?.ReadProcessingMigration(file) : null;

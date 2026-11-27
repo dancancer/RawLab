@@ -4,7 +4,6 @@ namespace RawLab.Windows;
 
 public partial class MainWindow
 {
-    private bool pointColorProbeEnabled;
     private string? pointColorProbeNotice;
 
     private bool CanUsePointColorProbe =>
@@ -26,36 +25,30 @@ public partial class MainWindow
 
     private void SetPointColorProbeMode(bool enabled)
     {
-        if (enabled)
+        if (enabled && CanUsePointColorProbe)
         {
-            CancelHslTarget();
-            CancelCurveTarget();
-            CancelWbProbe();
-        }
-        pointColorProbeEnabled = enabled && CanUsePointColorProbe;
-        if (!pointColorProbeEnabled)
-        {
-            pointColorProbeNotice = null;
+            ActivateCanvasProbe(CanvasProbeMode.PointColor);
+            pointColorProbeNotice = Loc.Text("吸管取样");
         }
         else
         {
-            EndHoldingBefore();
-            inspection.PinModeEnabled = false;
-            RefreshInspection();
-            pointColorProbeNotice = Loc.Text("吸管取样");
+            if (enabled) CancelCanvasProbeInputs();
+            canvasProbes.Deactivate(CanvasProbeMode.PointColor);
+            pointColorProbeNotice = null;
         }
         RefreshPointColorPanel();
     }
 
     private void CancelPointColorProbe()
     {
-        if (!pointColorProbeEnabled && pointColorProbeNotice == null && !ResultCanvas.PointColorProbeEnabled) return;
+        if (!canvasProbes.IsPointColor && pointColorProbeNotice == null && !ResultCanvas.PointColorProbeEnabled) return;
         SetPointColorProbeMode(false);
     }
 
     private void RefreshPointColorPanel()
     {
-        ResultCanvas.PointColorProbeEnabled = ShowsInspector && pointColorProbeEnabled &&
+        var active = canvasProbes.IsPointColor;
+        ResultCanvas.PointColorProbeEnabled = ShowsInspector && active &&
             toolMode == EditorToolMode.PointColor && expandedGroup != null &&
             !transform.Active && CanUsePointColorProbe;
         if (toolMode == EditorToolMode.PointColor)
@@ -63,7 +56,7 @@ public partial class MainWindow
             PointColorEditor.Refresh(
                 settings.PointColor,
                 (file, openRevision, settings.IsHDREditing),
-                eyedropperEnabled: pointColorProbeEnabled && CanUsePointColorProbe,
+                eyedropperEnabled: active && CanUsePointColorProbe,
                 eyedropperAvailable: CanUsePointColorProbe,
                 notice: pointColorProbeNotice);
         }
@@ -71,7 +64,7 @@ public partial class MainWindow
 
     private void SamplePointColorAt(Point normPoint)
     {
-        if (!pointColorProbeEnabled || !ResultCanvas.PointColorProbeEnabled || file == null ||
+        if (!canvasProbes.IsPointColor || !ResultCanvas.PointColorProbeEnabled || file == null ||
             closing || exporting || transform.Active || renderFailed ||
             result?.Image is not { } bitmap)
         {
@@ -81,7 +74,7 @@ public partial class MainWindow
         }
         if (settings.PointColor.Swatches.Count >= AdjustmentFieldSpec.SubFields.PointColor.MaxSwatches)
         {
-            pointColorProbeEnabled = false;
+            canvasProbes.Deactivate(CanvasProbeMode.PointColor);
             pointColorProbeNotice = null;
             RefreshPointColorPanel();
             return;
@@ -96,7 +89,7 @@ public partial class MainWindow
         var swatch = InspectionNative.SwatchFromSample(s);
         var updated = settings.PointColor.Swatches.ToList();
         updated.Add(swatch);
-        pointColorProbeEnabled = false;
+        canvasProbes.Deactivate(CanvasProbeMode.PointColor);
         pointColorProbeNotice = null;
         settings.PointColor = new PointColorSettings(updated);
         interacting = false;

@@ -5,7 +5,7 @@ namespace RawLab.Windows;
 public partial class MainWindow
 {
     private sealed record WbProbeWork(ulong Token, HslTargetRevision Revision, AdjustmentSnapshot Before, Point Point);
-    private bool wbProbeEnabled, wbProbeSampling;
+    private bool wbProbeSampling;
     private ulong wbProbeToken;
     private string? wbProbeNotice;
 
@@ -25,12 +25,25 @@ public partial class MainWindow
         };
     }
 
+    private void ResetWbProbeState()
+    {
+        wbProbeSampling = false;
+        wbProbeNotice = null;
+        ++wbProbeToken;
+    }
+
     private void SetWbProbeMode(bool enabled)
     {
-        if (enabled) { CancelHslTarget(); CancelCurveTarget(); CancelPointColorProbe(); }
-        wbProbeEnabled = enabled && CanUseWbProbe;
-        if (!wbProbeEnabled) { wbProbeSampling = false; wbProbeNotice = null; ++wbProbeToken; }
-        else { EndHoldingBefore(); inspection.PinModeEnabled = false; RefreshInspection(); }
+        if (enabled && CanUseWbProbe)
+        {
+            ActivateCanvasProbe(CanvasProbeMode.WhiteBalance);
+        }
+        else
+        {
+            if (enabled) CancelCanvasProbeInputs();
+            canvasProbes.Deactivate(CanvasProbeMode.WhiteBalance);
+            ResetWbProbeState();
+        }
         RefreshWbProbe();
     }
 
@@ -38,26 +51,27 @@ public partial class MainWindow
 
     private void RefreshWbProbe()
     {
-        ResultCanvas.WbProbeEnabled = ShowsInspector && wbProbeEnabled && toolMode == EditorToolMode.WhiteBalance &&
+        var active = canvasProbes.IsWhiteBalance;
+        ResultCanvas.WbProbeEnabled = ShowsInspector && active && toolMode == EditorToolMode.WhiteBalance &&
             expandedGroup != null && !transform.Active && CanUseWbProbe;
         if (toolMode == EditorToolMode.WhiteBalance)
         {
             var raster = file != null && PhotoInput.IsRaster(file) && !settings.IsHDREditing;
             var rasterMasterRecipe = raster && settings.MasterRecipeID != null;
             var notice = wbProbeSampling ? Loc.Text("正在取色…") : wbProbeNotice ??
-                (wbProbeEnabled && CanUseWbProbe ? Loc.Text("点击照片中的中性灰区域取样，按 Esc 退出。") : null);
+                (active && CanUseWbProbe ? Loc.Text("点击照片中的中性灰区域取样，按 Esc 退出。") : null);
             WhiteBalanceEditor.Refresh(settings,
                 WhiteBalanceEditor.IsEnabled && (settings.IsHDREditing || (raster && !rasterMasterRecipe) || (!raster && settings.AsShot != null)),
                 isRaster: raster,
                 wbProbeAvailable: CanUseWbProbe && result != null,
-                wbProbeEnabled: wbProbeEnabled,
+                wbProbeEnabled: active,
                 wbProbeNotice: notice);
         }
     }
 
     private void BeginWbProbe(Point point)
     {
-        if (!wbProbeEnabled || !ResultCanvas.WbProbeEnabled || file == null || closing || exporting ||
+        if (!canvasProbes.IsWhiteBalance || !ResultCanvas.WbProbeEnabled || file == null || closing || exporting ||
             scheduler.Busy || previewResize.IsEnabled || renderFailed || transform.Active ||
             hslAcceptedWork is not {} work || hslAcceptedRevision is not {} revision ||
             hslAcceptedSettings?.SameAs(settings.Capture()) != true || work.OpenRevision != openRevision ||
@@ -82,7 +96,7 @@ public partial class MainWindow
     {
         if (work.WbProbe is not {} probe || probe.Token != wbProbeToken) return;
         wbProbeSampling = false;
-        if (!current || !wbProbeEnabled || hslAcceptedRevision != probe.Revision ||
+        if (!current || !canvasProbes.IsWhiteBalance || hslAcceptedRevision != probe.Revision ||
             file != work.File || openRevision != work.OpenRevision ||
             CurrentViewSource is not {} source || work.Source?.SameFile(source) != true ||
             lut != work.Lut || transform.Active || !probe.Before.SameAs(settings.Capture()))
@@ -124,7 +138,7 @@ public partial class MainWindow
                 settings.Set(Parameter.Temperature, sample.Temperature);
                 settings.Set(Parameter.Tint, sample.Tint);
             }
-            wbProbeEnabled = false;
+            canvasProbes.Deactivate(CanvasProbeMode.WhiteBalance);
             wbProbeNotice = null;
             MarkEdited();
             RefreshControls();
