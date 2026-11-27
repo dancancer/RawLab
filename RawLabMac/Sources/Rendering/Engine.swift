@@ -179,6 +179,7 @@ final class RenderEngine {
     static var aiAvailable: Bool { sony2fuji_ai_available() != 0 }
     static var hdrCameraAIAvailable: Bool { sony2fuji_hdr_camera_ai_available() != 0 }
     static var bundledAIModel: URL? { Bundle.main.url(forResource: "DualDn", withExtension: nil, subdirectory: "AI") }
+    static let aiModelAvailabilityDidChangeNotification = Notification.Name("RawLabMac.RenderEngine.aiModelAvailabilityDidChange")
     static var aiModelOverrideDirectory: URL? = nil
     static var aiModelStore: AIModelPackageStore = .shared
     static var aiModelDownloadSupported: Bool {

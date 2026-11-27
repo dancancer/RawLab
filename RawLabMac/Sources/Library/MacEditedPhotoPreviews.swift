@@ -52,7 +52,7 @@ struct MacPhotoPreviewPlan {
     init(record: MacPhotoEditRecord, films: [Film],
          hdrLookDirectory: URL = HDRLookSettings.directory,
          resourceDigestCache: MacResourceDigestCache = .shared,
-         bundledAIModel: URL? = RenderEngine.bundledAIModel) throws {
+         aiModelDirectory: URL? = RenderEngine.resolvedAIModelDirectory) throws {
         self.record = record
         guard let state = record.state else { throw AdjustmentCommitError.expired }
         if state.settings.isHDREditing { look = nil }
@@ -75,7 +75,7 @@ struct MacPhotoPreviewPlan {
             ))
         }
         if state.settings.activeAIDenoise {
-            guard let model = bundledAIModel else { throw CocoaError(.fileNoSuchFile) }
+            guard let model = aiModelDirectory else { throw CocoaError(.fileNoSuchFile) }
             specs.append(PhotoPreviewResourceSpec(url: model.appendingPathComponent("manifest.json")))
         }
         resourceURLs = specs.map(\.url)
@@ -98,11 +98,11 @@ struct MacPhotoPreviewPlan {
     func isCurrent(in store: MacEditPersistence, films: [Film],
                    hdrLookDirectory: URL = HDRLookSettings.directory,
                    resourceDigestCache: MacResourceDigestCache = .shared,
-                   bundledAIModel: URL? = RenderEngine.bundledAIModel) throws -> Bool {
+                   aiModelDirectory: URL? = RenderEngine.resolvedAIModelDirectory) throws -> Bool {
         guard try store.readState(for: url) == record else { return false }
         return try MacPhotoPreviewPlan(record: record, films: films,
             hdrLookDirectory: hdrLookDirectory, resourceDigestCache: resourceDigestCache,
-            bundledAIModel: bundledAIModel).key == key
+            aiModelDirectory: aiModelDirectory).key == key
     }
 
     static func thumbnailData(_ image: CGImage, edge: Int = Self.edge) throws -> Data {
@@ -163,6 +163,10 @@ private struct MacAcceptedPhotoPreview {
 
     @Published private(set) var revision = 0
     @Published private(set) var aiPreparationProgress: AIPreparationProgress?
+    // 覆盖整个 AI 缩略图执行窗口（含 prepareAI 前的启动窗口与 prepareAI 后的 render 阶段），
+    // 防止在读模型目录或核验缓存期间删除已下载模型。
+    @Published private(set) var isRunningAIThumbnail = false
+    private var activeAIThumbnailTasks = 0
     @Published var isEditorBusy = false {
         didSet {
             guard oldValue, !isEditorBusy, hasDeferredEditedRefresh else { return }
@@ -284,12 +288,13 @@ private struct MacAcceptedPhotoPreview {
     func cachedImage(for record: MacPhotoEditRecord) async -> NSImage? {
         guard MacPhotoPreviewPlan.isEdited(record) else { return nil }
         let films = films, directory = editDirectory, thumbnails = thumbnails
-        let aiModel = aiModelDirectory ?? RenderEngine.bundledAIModel
+        let overrideModel = aiModelDirectory
         let editGen = thumbnails.editGeneration(forPath: record.identity.path)
         guard let resolved = await Task.detached(priority: .utility, operation: { () -> (PhotoThumbnailCacheKey, NSImage)? in
+            let aiModel = overrideModel ?? RenderEngine.resolvedAIModelDirectory
             guard let store = try? MacEditPersistence(directory: directory),
-                  let plan = try? MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel),
-                  (try? plan.isCurrent(in: store, films: films, bundledAIModel: aiModel)) == true else { return nil }
+                  let plan = try? MacPhotoPreviewPlan(record: record, films: films, aiModelDirectory: aiModel),
+                  (try? plan.isCurrent(in: store, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory)) == true else { return nil }
             let key = PhotoThumbnailCacheKey(identity: record.identity, previewKey: plan.key)
             guard let image = thumbnails.cachedImage(for: key) else { return nil }
             return (key, image)
@@ -482,6 +487,16 @@ private struct MacAcceptedPhotoPreview {
                         }
                         if !paths.isEmpty { self.refresh() }
                     }
+                }
+            }
+            .store(in: &persistenceCancellables)
+
+        NotificationCenter.default.publisher(for: RenderEngine.aiModelAvailabilityDidChangeNotification)
+            .sink { [weak self] _ in
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { self?.refresh() }
+                } else {
+                    Task { @MainActor [weak self] in self?.refresh() }
                 }
             }
             .store(in: &persistenceCancellables)
@@ -742,9 +757,10 @@ private struct MacAcceptedPhotoPreview {
         let stateRevision = MacPhotoPreviewPlan.editedRevision(for: record.state, atPath: record.identity.path)
         let editedRevision = stateRevision.map { PhotoThumbnails.EditedRevision(identity: fileIdentity, revision: $0) }
         let edited = editedRevision != nil
-        let films = films, aiModel = aiModelDirectory ?? RenderEngine.bundledAIModel
+        let films = films, overrideModel = aiModelDirectory
         let planInfo = await Task.detached(priority: .utility) { () -> (key: PhotoPreviewCacheKey, resources: [URL])? in
-            guard let plan = try? MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel) else { return nil }
+            let aiModel = overrideModel ?? RenderEngine.resolvedAIModelDirectory
+            guard let plan = try? MacPhotoPreviewPlan(record: record, films: films, aiModelDirectory: aiModel) else { return nil }
             return (plan.key, plan.resourceURLs)
         }.value
         try Task.checkCancellation()
@@ -804,11 +820,12 @@ private struct MacAcceptedPhotoPreview {
         if let hit = await cachedImage(for: record) { return hit }
         let (editGen, editedRevision) = beginEditedRender(for: record)
         if let accepted, accepted.record == record, let ready = await accepted.task.value {
-            let films = films, directory = editDirectory, aiModel = aiModelDirectory ?? RenderEngine.bundledAIModel
+            let films = films, directory = editDirectory, overrideModel = aiModelDirectory
             let current = await Task.detached(priority: .utility) {
+                let aiModel = overrideModel ?? RenderEngine.resolvedAIModelDirectory
                 guard let store = try? MacEditPersistence(directory: directory),
-                      let plan = try? MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel) else { return false }
-                return plan.key == ready.key && (try? plan.isCurrent(in: store, films: films, bundledAIModel: aiModel)) == true
+                      let plan = try? MacPhotoPreviewPlan(record: record, films: films, aiModelDirectory: aiModel) else { return false }
+                return plan.key == ready.key && (try? plan.isCurrent(in: store, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory)) == true
             }.value
             if current {
                 try Task.checkCancellation()
@@ -819,6 +836,17 @@ private struct MacAcceptedPhotoPreview {
                     activeKeys[record.identity.path] = (cacheKey, record.identity, true, editGen)
                 }
                 return ready.image
+            }
+        }
+        let usesAI = record.state?.settings.activeAIDenoise == true
+        if usesAI {
+            activeAIThumbnailTasks += 1
+            isRunningAIThumbnail = true
+        }
+        defer {
+            if usesAI {
+                activeAIThumbnailTasks = max(0, activeAIThumbnailTasks - 1)
+                isRunningAIThumbnail = activeAIThumbnailTasks > 0
             }
         }
         let rendered: (key: PhotoPreviewCacheKey, image: NSImage)
@@ -846,15 +874,15 @@ private struct MacAcceptedPhotoPreview {
             return
         }
         let (editGen, editedRevision) = beginEditedRender(for: record)
-        let films = films, directory = editDirectory, cache = cache, thumbnails = thumbnails, aiModel = aiModelDirectory ?? RenderEngine.bundledAIModel
+        let films = films, directory = editDirectory, cache = cache, thumbnails = thumbnails, overrideModel = aiModelDirectory
         let task = Task.detached(priority: .utility) { () -> MacAcceptedPhotoPreview? in
             do {
                 let store = try MacEditPersistence(directory: directory)
                 var decodedImage: NSImage?
                 let acceptedResult = try EditedPhotoPreviewCoordinator.acceptThumbnail(
                     cache: cache,
-                    makePlan: { try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: aiModel) },
-                    isCurrent: { try $0.isCurrent(in: store, films: films, bundledAIModel: aiModel) },
+                    makePlan: { try MacPhotoPreviewPlan(record: record, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory) },
+                    isCurrent: { try $0.isCurrent(in: store, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory) },
                     key: { $0.key },
                     encode: {
                         let data = try MacPhotoPreviewPlan.thumbnailData(image)
@@ -978,14 +1006,14 @@ private actor MacPhotoPreviewWorker {
     private func render(_ record: MacPhotoEditRecord, films: [Film], progress: AIPreparation,
                         relay: AIProgressRelay) throws -> (key: PhotoPreviewCacheKey, image: NSImage) {
         let store = try MacEditPersistence(directory: editDirectory)
-        let resolvedAIModel = aiModelDirectory ?? RenderEngine.bundledAIModel
+        let overrideModel = aiModelDirectory
         var decodedImage: NSImage?
         var cacheHit = false
         var cacheMiss = false
         let outcome = try EditedPhotoPreviewCoordinator.loadOrRenderThumbnail(
             cache: cache,
-            makePlan: { try MacPhotoPreviewPlan(record: record, films: films, bundledAIModel: resolvedAIModel) },
-            isCurrent: { try $0.isCurrent(in: store, films: films, bundledAIModel: resolvedAIModel) },
+            makePlan: { try MacPhotoPreviewPlan(record: record, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory) },
+            isCurrent: { try $0.isCurrent(in: store, films: films, aiModelDirectory: overrideModel ?? RenderEngine.resolvedAIModelDirectory) },
             key: { $0.key },
             decodeCached: { data in
                 guard let decoded = MacPhotoPreviewPlan.decodeThumbnailImage(data) else { return false }

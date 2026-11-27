@@ -105,6 +105,9 @@ import Combine
 
         try await verifyAIThumbnailPreparationProgress(in: root, sampleImage: image)
         print("PASS: AI thumbnail preparation progress indicator updates, clears on exit/cancel, and enforces single-actor memory cap")
+
+        try await verifyDownloadedAIModelThumbnailAndRefresh(in: root, sampleImage: image)
+        print("PASS: unbundled downloaded AI model resolves for thumbnails and model install/remove triggers preview refresh")
     }
 
     @MainActor static func verifyAIThumbnailPreparationProgress(in root: URL, sampleImage: CGImage) async throws {
@@ -433,5 +436,112 @@ import Combine
               (MacEditPersistence.editedRevision(for: sensorState, atPath: rawPath) != nil) &&
               MacPhotoPreviewPlan.isEditedState(sensorState, atPath: rawPath),
               "RAW .sensor state differs from default .preview on both paths")
+    }
+
+    @MainActor static func verifyDownloadedAIModelThumbnailAndRefresh(in root: URL, sampleImage: CGImage) async throws {
+        _ = NSApplication.shared
+        let workDir = root.appendingPathComponent("downloaded-ai-thumb", isDirectory: true)
+        let storageRoot = workDir.appendingPathComponent("model-storage", isDirectory: true)
+        let looksDir = workDir.appendingPathComponent("looks", isDirectory: true)
+        let editsDir = workDir.appendingPathComponent("edits", isDirectory: true)
+        let batchDir = workDir.appendingPathComponent("batch", isDirectory: true)
+        let cacheDir = workDir.appendingPathComponent("cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
+
+        let manifestBytes = Data("{\"version\":1,\"model\":\"downloaded-test\"}".utf8)
+        let manifestSha = String(repeating: "a", count: 64)
+        let descriptor = AIModelPackageDescriptor(
+            platform: "macos-arm64",
+            url: "https://example.invalid/model.tar.gz",
+            archiveName: "model.tar.gz",
+            archiveSha256: String(repeating: "b", count: 64),
+            archiveBytes: 128,
+            manifestSha256: manifestSha,
+            unpackedBytes: UInt64(manifestBytes.count),
+            entries: [
+                AIModelArchiveEntry(path: "manifest.json", kind: .file, bytes: UInt64(manifestBytes.count), sha256: String(repeating: "c", count: 64)),
+            ]
+        )
+        let isolatedStore = AIModelPackageStore(storageRoot: storageRoot, descriptor: descriptor)
+        let manager = AIModelPackageManager(
+            store: isolatedStore,
+            isRuntimeSupported: { true },
+            overrideProvider: { nil },
+            bundledProvider: { nil }
+        )
+
+        let previousStore = RenderEngine.aiModelStore
+        let previousOverride = RenderEngine.aiModelOverrideDirectory
+        RenderEngine.aiModelStore = isolatedStore
+        RenderEngine.aiModelOverrideDirectory = nil
+        defer {
+            RenderEngine.aiModelStore = previousStore
+            RenderEngine.aiModelOverrideDirectory = previousOverride
+        }
+        check(RenderEngine.bundledAIModel == nil, "Test binary has no bundled AI model")
+        check(RenderEngine.resolvedAIModelDirectory == nil, "Initially no downloaded AI model is installed")
+
+        let photo = workDir.appendingPathComponent("ai-edited.DNG")
+        try Data("raw-fixture-bytes".utf8).write(to: photo)
+        let editStore = try MacEditPersistence(directory: editsDir)
+        var aiSettings = Adjustments()
+        aiSettings.aiDenoiseEnabled = true
+        aiSettings.exposure = 0.35
+        try editStore.save(photo, state: MacPhotoEditState(settings: aiSettings, filmID: ""))
+
+        let model = EditorModel(lookDirectory: looksDir, editDirectory: editsDir, batchDirectory: batchDir, aiModelManager: manager)
+        // Production wiring: no injected aiModelDirectory.
+        let previews = MacEditedPhotoPreviews(
+            editDirectory: editsDir,
+            cacheDirectory: cacheDir,
+            thumbnails: PhotoThumbnails(),
+            prepareAI: { _, _, _ in },
+            renderThumbnail: { _, _, _ in sampleImage }
+        )
+
+        // 1. Without bundled or downloaded model, plan throws and tile reports "预览未更新".
+        var tile = WorkspacePhotoTileState()
+        await tile.refresh(url: photo, previews: previews)
+        check(!tile.adjustedThumbnail && tile.notice == "预览未更新",
+              "Without downloaded model, AI-edited tile falls back with '预览未更新'")
+
+        // 2. Install model into storageRoot and refresh manager -> EditorModel transitions to .installed
+        //    and triggers previews.refresh() via production notification.
+        let installedDir = isolatedStore.installedDirectoryURL!
+        try FileManager.default.createDirectory(at: installedDir, withIntermediateDirectories: true)
+        try manifestBytes.write(to: installedDir.appendingPathComponent("manifest.json"))
+
+        let revisionBeforeInstall = previews.revision
+        manager.refresh()
+        for _ in 0..<50 where previews.revision == revisionBeforeInstall {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(previews.revision > revisionBeforeInstall,
+              "EditorModel AI model install-state change triggers MacEditedPhotoPreviews.refresh()")
+        check(RenderEngine.resolvedAIModelDirectory == installedDir,
+              "RenderEngine.resolvedAIModelDirectory resolves the downloaded model directory")
+
+        let record = try await previews.record(for: photo)
+        let plan = try MacPhotoPreviewPlan(record: record, films: [])
+        check(plan.resourceURLs.contains(installedDir.appendingPathComponent("manifest.json")),
+              "MacPhotoPreviewPlan tracks downloaded manifest.json with no bundled model")
+
+        await tile.refresh(url: photo, previews: previews)
+        check(tile.adjustedThumbnail && tile.notice == nil && tile.thumbnail != nil,
+              "AI-edited tile renders edited thumbnail using downloaded model")
+
+        // 3. Removing the downloaded model through EditorModel triggers another refresh and invalidates AI plan.
+        let revisionBeforeRemove = previews.revision
+        check(model.canRemoveDownloadedAIModel, "Idle EditorModel allows removing downloaded model")
+        model.removeDownloadedAIModel()
+        for _ in 0..<50 where previews.revision == revisionBeforeRemove {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(previews.revision > revisionBeforeRemove,
+              "EditorModel AI model removal triggers MacEditedPhotoPreviews.refresh()")
+        check(RenderEngine.resolvedAIModelDirectory == nil, "Removed model is no longer resolved")
+        await tile.refresh(url: photo, previews: previews)
+        check(!tile.adjustedThumbnail && tile.notice == "预览未更新",
+              "After model removal, AI-edited tile drops stale thumbnail and reports '预览未更新'")
     }
 }

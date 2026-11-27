@@ -223,7 +223,7 @@ struct EditorView: View {
             photoPreviews.refresh()
         }
         .onChange(of: model.busy || model.importing || model.exporting || model.aiState.isRunning, initial: true) { _, busy in photoPreviews.isEditorBusy = busy }
-        .onChange(of: photoPreviews.aiPreparationProgress != nil, initial: true) { _, active in model.previewThumbnailAIRunning = active }
+        .onChange(of: photoPreviews.isRunningAIThumbnail || photoPreviews.aiPreparationProgress != nil, initial: true) { _, active in model.previewThumbnailAIRunning = active }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in photoPreviews.refresh() }
         .onReceive(model.$completedEditPreview) { preview in
             guard let preview else { return }

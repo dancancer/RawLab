@@ -49,7 +49,13 @@ final class RenderEngine {
         lock.lock(); _renderCalls = 0; _failNextRender = false; lock.unlock()
     }
 
+    private static var _resolvedAIModelDirectory: URL? = nil
     static var bundledAIModel: URL? { nil }
+    static let aiModelAvailabilityDidChangeNotification = Notification.Name("RawLabMac.RenderEngine.aiModelAvailabilityDidChange")
+    static var resolvedAIModelDirectory: URL? {
+        get { lock.lock(); defer { lock.unlock() }; return _resolvedAIModelDirectory }
+        set { lock.lock(); _resolvedAIModelDirectory = newValue; lock.unlock() }
+    }
 
     static func isRasterInput(_ url: URL) -> Bool {
         !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
@@ -132,6 +138,7 @@ struct ThumbnailCacheTests {
         try await verifyWatchReadDoesNotDropDecodeOrLivelock(in: root)
         try await verifyRecordNotBlockedBySlowEditedRender(in: root)
         try await verifyThumbnailDecodeTaskCancellation(in: root)
+        try await verifyUnbundledDownloadedAIModelThumbnailResolution(in: root)
 
         print("PASS: thumbnail cache hit without re-decode, edited/unedited key isolation, byte-cost eviction, and edit/reset/refresh invalidation")
     }
@@ -1723,5 +1730,115 @@ struct ThumbnailCacheTests {
         check(img3 != nil, "Non-cancelled queued thumbnail decodes normally")
         check(!gate.recordedNames().contains("p2.png") && thumbnails.decodeCount == 3,
               "Cancelled queued thumbnail never enters decodeThumbnail (entered=\(gate.recordedNames()), decodeCount=\(thumbnails.decodeCount))")
+    }
+
+    @MainActor
+    private static func verifyUnbundledDownloadedAIModelThumbnailResolution(in root: URL) async throws {
+        let dir = root.appendingPathComponent("ai-resolved-model-\(UUID().uuidString)", isDirectory: true)
+        let editsDir = dir.appendingPathComponent("edits", isDirectory: true)
+        let cacheDir = dir.appendingPathComponent("cache", isDirectory: true)
+        let modelA = dir.appendingPathComponent("downloaded-A", isDirectory: true)
+        let modelB = dir.appendingPathComponent("downloaded-B", isDirectory: true)
+        try FileManager.default.createDirectory(at: modelA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: modelB, withIntermediateDirectories: true)
+        try Data("{\"package\":\"A\"}".utf8).write(to: modelA.appendingPathComponent("manifest.json"))
+        try Data("{\"package\":\"B\"}".utf8).write(to: modelB.appendingPathComponent("manifest.json"))
+        let photo = dir.appendingPathComponent("ai-photo.DNG")
+        try Data("raw-ai-fixture".utf8).write(to: photo)
+
+        let store = try MacEditPersistence(directory: editsDir)
+        var settings = Adjustments()
+        settings.aiDenoiseEnabled = true
+        settings.exposure = 0.5
+        try store.save(photo, state: MacPhotoEditState(settings: settings, filmID: ""))
+
+        defer { RenderEngine.resolvedAIModelDirectory = nil }
+        RenderEngine.resolvedAIModelDirectory = nil
+        check(RenderEngine.bundledAIModel == nil, "Test exercises unbundled build with bundledAIModel == nil")
+
+        final class RenderGate: @unchecked Sendable {
+            let releaseRender = DispatchSemaphore(value: 0)
+            private let lock = NSLock()
+            private var shouldBlock = true
+            private var entered = false
+            var hasEntered: Bool {
+                lock.lock(); defer { lock.unlock() }
+                return entered
+            }
+            func markEnteredAndShouldBlock() -> Bool {
+                lock.lock(); defer { lock.unlock() }
+                let value = shouldBlock
+                shouldBlock = false
+                if value { entered = true }
+                return value
+            }
+        }
+        let renderGate = RenderGate()
+        let sample = NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+            NSColor.systemBlue.setFill(); rect.fill(); return true
+        }.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+
+        // Production wiring: no injected aiModelDirectory; resolver is consulted dynamically.
+        let previews = MacEditedPhotoPreviews(
+            editDirectory: editsDir,
+            cacheDirectory: cacheDir,
+            thumbnails: PhotoThumbnails(),
+            prepareAI: { _, _, _ in },
+            renderThumbnail: { _, _, _ in
+                if renderGate.markEnteredAndShouldBlock() {
+                    _ = renderGate.releaseRender.wait(timeout: .now() + 5)
+                }
+                return sample
+            }
+        )
+
+        let record = try await previews.record(for: photo)
+        var threwWithoutModel = false
+        do { _ = try MacPhotoPreviewPlan(record: record, films: []) }
+        catch { threwWithoutModel = true }
+        check(threwWithoutModel, "AI preview plan fails closed when neither bundled nor downloaded model exists")
+
+        // Installing a downloaded model notifies previews to refresh and lets plan/render succeed dynamically.
+        let revBeforeInstall = previews.revision
+        RenderEngine.resolvedAIModelDirectory = modelA
+        NotificationCenter.default.post(name: RenderEngine.aiModelAvailabilityDidChangeNotification, object: nil)
+        check(previews.revision > revBeforeInstall, "Model availability notification refreshes visible previews")
+
+        let planA = try MacPhotoPreviewPlan(record: record, films: [])
+        let renderTask = Task { try await previews.image(for: record) }
+        for _ in 0..<200 where !renderGate.hasEntered {
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        check(renderGate.hasEntered, "AI thumbnail entered renderThumbnail after prepareAI")
+        // Even after prepareAI finished and cleared aiPreparationProgress, isRunningAIThumbnail keeps removal guarded through render.
+        check(previews.isRunningAIThumbnail, "isRunningAIThumbnail stays true through renderThumbnail after prepareAI completes")
+        renderGate.releaseRender.signal()
+        _ = try await renderTask.value
+        check(!previews.isRunningAIThumbnail, "isRunningAIThumbnail clears after AI thumbnail render finishes")
+        let statsA = await previews.renderStats()
+        check(statsA.renders == 1, "First render with downloaded model A succeeded (renders=\(statsA.renders))")
+
+        // Switching the resolved model package must change the cache key and avoid reusing model A's thumbnail.
+        let revBeforeSwap = previews.revision
+        RenderEngine.resolvedAIModelDirectory = modelB
+        NotificationCenter.default.post(name: RenderEngine.aiModelAvailabilityDidChangeNotification, object: nil)
+        check(previews.revision > revBeforeSwap, "Swapping installed model package refreshes visible previews")
+        let planB = try MacPhotoPreviewPlan(record: record, films: [])
+        check(planB.key != planA.key, "Preview cache key changes when resolved AI model package changes")
+        let cachedB = await previews.cachedImage(for: record)
+        check(cachedB == nil, "Thumbnail cached for model A is not reused for model B")
+        _ = try await previews.image(for: record)
+        let statsB = await previews.renderStats()
+        check(statsB.renders == 2, "Model B rendered fresh thumbnail instead of reusing model A (renders=\(statsB.renders))")
+
+        // Removing the model refreshes previews and causes subsequent plans to fail closed again.
+        let revBeforeRemove = previews.revision
+        RenderEngine.resolvedAIModelDirectory = nil
+        NotificationCenter.default.post(name: RenderEngine.aiModelAvailabilityDidChangeNotification, object: nil)
+        check(previews.revision > revBeforeRemove, "Removing model refreshes visible previews")
+        var threwAfterRemove = false
+        do { _ = try MacPhotoPreviewPlan(record: record, films: []) }
+        catch { threwAfterRemove = true }
+        check(threwAfterRemove, "AI preview plan fails closed again after model removal")
     }
 }

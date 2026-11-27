@@ -525,9 +525,10 @@ final class EditorModel: ObservableObject {
         aiModelPackageState = aiModelManager.state
         aiModelStateCancellable = aiModelManager.$state.dropFirst().sink { [weak self] newState in
             guard let self else { return }
-            let wasInstalled = self.aiModelPackageState.isInstalled
+            let previousDirectory = Self.installedAIModelDirectory(for: self.aiModelPackageState)
+            let nextDirectory = Self.installedAIModelDirectory(for: newState)
             self.aiModelPackageState = newState
-            if wasInstalled != newState.isInstalled {
+            if previousDirectory != nextDirectory {
                 self.handleAIModelAvailabilityChanged(installed: newState.isInstalled)
             }
         }
@@ -648,10 +649,17 @@ extension EditorModel {
         aiModelManager.removeDownloadedModel()
     }
 
+    private static func installedAIModelDirectory(for state: AIModelPackageState) -> URL? {
+        if case .installed(let source, _) = state { return source.url }
+        return nil
+    }
+
     private func handleAIModelAvailabilityChanged(installed: Bool) {
         queue.async { [weak self] in
             self?.engine = nil
         }
+        // 通知缩略图协调器重刷可见瓦片，确保下载/替换/移除模型后侧栏与网格即时更新。
+        NotificationCenter.default.post(name: RenderEngine.aiModelAvailabilityDidChangeNotification, object: nil)
         if installed {
             if settings.activeAIDenoise && file != nil && (aiRequiresExplicitRetry || aiState != .ready) && !aiState.isRunning {
                 requestAIDenoise()
