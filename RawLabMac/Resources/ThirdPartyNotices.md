@@ -19,6 +19,10 @@ and code signatures. LibRaw also includes the source patches described below.
 | Nikon HE decoder | Local C++ adaptation of dnglab 0f044c2c and LibRaw PR 826 | https://github.com/dnglab/dnglab/pull/835 | nikon-he/README.md, nikon-he/LICENSE.LGPL-2.1 |
 | LLVM OpenMP runtime | 21.1.8 | https://github.com/llvm/llvm-project/tree/llvmorg-21.1.8/openmp | libomp-LICENSE.TXT |
 | libjpeg-turbo | 3.1.3 | https://github.com/libjpeg-turbo/libjpeg-turbo/tree/3.1.3 | libjpeg-turbo-LICENSE.md, libjpeg-turbo-README.ijg |
+| libultrahdr (gain-map HDR JPEG, statically linked) | 2.0.2 | https://github.com/google/libultrahdr/tree/v2.0.2 | libultrahdr/LICENSE, libultrahdr/LICENSE-APACHE, libultrahdr/LICENSE-MIT (Apache-2.0 OR MIT); libultrahdr/adobe-hdr-gain-map-NOTICE |
+| image_io (bundled in libultrahdr, statically linked) | Copy in libultrahdr 2.0.2 `third_party/image_io` | https://github.com/google/libultrahdr/tree/v2.0.2/third_party/image_io | libultrahdr/image_io-LICENSE (Apache-2.0) |
+| modp_b64 (bundled in image_io, statically linked) | MODP_B64 1.3, copy in libultrahdr 2.0.2 | http://modp.com/release/base64 | libultrahdr/modp_b64-LICENSE (BSD 3-Clause, Nick Galbreath) |
+| libspng (16-bit PNG export, statically linked) | 0.7.4 | https://github.com/randy408/libspng/tree/v0.7.4 | libspng-LICENSE.txt, libspng/LICENSE (BSD-2-Clause AND libpng-2.0) |
 | Little CMS | 2.17 | https://github.com/mm2/Little-CMS/tree/lcms2.17 | Little-CMS-LICENSE |
 | Adobe DNG SDK | 1.7.1 Build 2724 | https://www.adobe.com/go/dng_sdk | dng-sdk/Adobe-DNG-SDK-LICENSE.txt |
 | JPEG XL, Brotli, Highway, skcms | Sources bundled with the pinned DNG SDK | https://download.adobe.com/pub/adobe/dng/dng_sdk_1_7_1_2724_20260908.zip | dng-sdk/ directory |
@@ -56,8 +60,12 @@ This product includes DNG technology under license by Adobe.
 The optional display-chroma filter uses OpenCV core, imgproc and ximgproc,
 with their transitive modules. Pinned source archives and build options are in
 `RawLabMac/build-chroma-dependency.sh`. OpenCV's Apache 2.0 notices, the guided
-filter's BSD notice and the installed third-party notices are included in
-`OpenCV/`. No darktable denoising implementation or executable is bundled.
+filter's BSD notice and the notices of the third-party code compiled into these
+modules (SoftFloat, the MSCR chi table, zlib and, on Apple silicon, NVIDIA's Carotene
+HAL) are included in `OpenCV/`. No darktable denoising implementation or executable
+is bundled.
+
+This product includes Gain Map technology under license by Adobe.
 
 This software is based in part on the work of the Independent JPEG Group.
 
@@ -108,9 +116,7 @@ Changes are extraction into LibRaw table syntax; black/white levels remain
 metadata-driven. No RawSpeed decoder code is included.
 
 RawLab's white-balance implementation incorporates the Adobe DNG SDK's
-temperature conversion model; see Adobe-DNG-SDK-LICENSE.txt. The embedded stb
-image decoder/writer use their MIT option; see stb-MIT-LICENSE.txt. Their original
-dual-license notices remain in the source headers under lutools/src/core.
+temperature conversion model; see Adobe-DNG-SDK-LICENSE.txt.
 
 Fujifilm LUT data and film simulation names are attributed to their respective
 rights holders; no ownership of these assets or official affiliation is claimed.
