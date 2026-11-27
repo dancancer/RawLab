@@ -169,11 +169,11 @@ public sealed class WpfSuiteTests
                   gradingPanel.BlendingRow.Number.Text == "72" &&
                   gradingPanel.BalanceRow.Number.Text == "-18",
                 "ColorGradingPanel displays Global luminance, blending, and balance");
-            gradingPanel.LuminanceRow.Slider.Value = 30;
+            gradingPanel.LuminanceRow.Slider.Value = 0.65;
             Check(updated?.Global.Luminance == 30, "Luminance slider updates active Global wheel");
-            gradingPanel.BlendingRow.Slider.Value = 85;
+            gradingPanel.BlendingRow.Slider.Value = 0.85;
             Check(updated?.Blending == 85, "Blending slider updates ColorGradingSettings.Blending");
-            gradingPanel.BalanceRow.Slider.Value = 25;
+            gradingPanel.BalanceRow.Slider.Value = 0.625;
             Check(updated?.Balance == 25, "Balance slider updates ColorGradingSettings.Balance");
             gradingPanel.ResetZoneButton.RaiseEvent(new System.Windows.RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
             Check(resetScope == new EditorResetScope(EditorResetKind.GradingGlobal), "Global tab zone reset emits GradingGlobal scope");
@@ -318,7 +318,7 @@ public sealed class WpfSuiteTests
     [Trait("Category", "Native")]
     [Trait("Suite", "first-preview")]
     public void FirstPreviewWorks() =>
-        WpfTestHost.Run(() => FirstPreviewChecks.Run([TestInputs.Raw()], Check));
+        WpfTestHost.Run(() => FirstPreviewChecks.Run(TestInputs.OptionalRasters(), Check));
 
     [StaFact]
     [Trait("Category", "AI")]

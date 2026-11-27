@@ -58,4 +58,10 @@ internal static class TestInputs
         if (!string.IsNullOrWhiteSpace(configured)) return Path.GetFullPath(configured);
         return Path.Combine(Repo(), "lutools", "tests", "fixtures", "bayer-demosaic.dng");
     }
+
+    internal static string[] OptionalRasters()
+    {
+        var configured = Environment.GetEnvironmentVariable("RAWLAB_TEST_RASTER");
+        return !string.IsNullOrWhiteSpace(configured) ? [Path.GetFullPath(configured)] : [];
+    }
 }

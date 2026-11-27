@@ -53,7 +53,9 @@ internal static class UnhandledExceptionWindowChecks
             var validParentDir = Path.Combine(root, "LibraryRoot");
             Directory.CreateDirectory(validParentDir);
             var validParent = new LibraryEntry(validParentDir, true);
-            validParent.Load().GetAwaiter().GetResult();
+            var loadParent = validParent.Load();
+            PumpUntil(app.Dispatcher, () => loadParent.IsCompleted, "Timed out loading parent folder");
+            loadParent.GetAwaiter().GetResult();
 
             var brokenChild = new LibraryEntry("   ", true);
             brokenChild.Parent = validParent;
@@ -114,7 +116,7 @@ internal static class UnhandledExceptionWindowChecks
             try
             {
                 window.ReadEmbeddedPreviewHook = _ => throw new FormatException("Simulated corrupted EXIF/preview stream");
-                var dummyPhoto = Path.Combine(root, "bad-embedded.ARW");
+                var dummyPhoto = Path.Combine(root, "bad-embedded.png");
                 File.WriteAllBytes(dummyPhoto, [1, 2, 3]);
                 window.OpenFile(dummyPhoto);
                 PumpUntil(app.Dispatcher, () => embeddedFallbackLogged, "Timed out waiting for embedded preview fallback");
@@ -140,7 +142,7 @@ internal static class UnhandledExceptionWindowChecks
                     new RenderedImage(validResultBitmap, null, dummyBins, 0, 0, 0, null, 0, NativeWidth: 16, NativeHeight: 16));
                 window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(null, 0, 0);
                 window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
-                var renderPhoto = Path.Combine(root, "main-preview-fallback.ARW");
+                var renderPhoto = Path.Combine(root, "main-preview-fallback.png");
                 File.WriteAllBytes(renderPhoto, [1, 2, 3, 4]);
                 window.OpenFile(renderPhoto);
                 PumpUntil(app.Dispatcher, () => window.ExportPng.IsEnabled, "Timed out waiting for initial hooked render");
@@ -173,7 +175,7 @@ internal static class UnhandledExceptionWindowChecks
                 embeddedPlaceholder.Freeze();
                 window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(embeddedPlaceholder, 16, 16);
                 window.RenderPreviewHook = (_, _, _, _, _, _, _) => throw new OverflowException("Initial open main preview overflow");
-                var initialOverflowPhoto = Path.Combine(root, "initial-overflow.ARW");
+                var initialOverflowPhoto = Path.Combine(root, "initial-overflow.png");
                 File.WriteAllBytes(initialOverflowPhoto, [5, 6, 7, 8]);
                 window.OpenFile(initialOverflowPhoto, embeddedPlaceholder);
                 PumpUntil(app.Dispatcher, () =>
@@ -190,7 +192,7 @@ internal static class UnhandledExceptionWindowChecks
                 // 3d. File disappears / CurrentViewSource becomes null while main preview is in-flight:
                 //     - With Win32Exception failure: still calls ApplyMainPreviewFailure instead of hanging on "正在显影…".
                 //     - With failure == null (stale finished render after file deleted): transitions out of "正在显影…" to "预览未更新".
-                var vanishPhoto = Path.Combine(root, "vanish-during-render.ARW");
+                var vanishPhoto = Path.Combine(root, "vanish-during-render.png");
                 File.WriteAllBytes(vanishPhoto, [9, 8, 7, 6]);
                 window.ReadEmbeddedPreviewHook = _ => new EmbeddedPreview(null, 0, 0);
                 window.RenderPreviewHook = (_, _, _, _, _, _, _) => okFrame;
