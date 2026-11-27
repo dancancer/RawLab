@@ -539,6 +539,136 @@ class EditSelectionOutputTests(unittest.TestCase):
         self.assertEqual((values["draft"], values["reference"], values["mode"]), ("true", "draft", "edit"))
 
 
+class CoreCtestSelectionTests(unittest.TestCase):
+    """Core-touching automatic models runs add one arm64 core CTest row; nothing else does."""
+
+    CORE = ("lutools/src/core/pipeline.cpp", "lutools/include/sony2fuji_c_api.h", "lutools/tests/viewport_roi_tests.cpp",
+            "lutools/CMakeLists.txt", "lutools/cmake/lens-dependencies.json", "lutools/examples/DJI_20250602164503_0444_D.DNG",
+            "lutools/docs/edit-json-v3.schema.json", "lutools/x3f-bridge/Cargo.lock", "lutools/lutprep/dcp.py",
+            "lutools/requirements-lutprep.txt", "lutools/third_party/lensfun/README.md",
+            "Shared/BundledLooks/HDR/HDR Silver.cube", "Shared/assets-manifest.json", "scripts/assets/prepare.py",
+            "scripts/ci/test_abi_layout.py", "scripts/ci/check_ctest_inventory.py", "scripts/ci/requirements.txt",
+            "scripts/ci/apple-sdk-env.sh", "scripts/rum/prepare-macos.sh", "RawLabMac/build.sh", "RawLabMac/build-env.sh",
+            "RawLabMac/release-config.sh", "RawLabMac/prepare-sparkle.sh", "RawLabMac/build-dependencies.sh",
+            "RawLabMac/build-lens-dependency.sh")
+    NOT_CORE = ("lutools/README.md", "lutools/PROJECT_SUMMARY.md", "lutools/AGENTS.md", "lutools/docs/color-contract.md",
+                "lutools/tests/README.md", "lutools/x3f-bridge/NOTES.md", "lutools/platform/ios/build-framework.sh",
+                "lutools/platform/ios/ThirdPartyNotices.md", "RawLabMac/Sources/Editor/Model/EditorModel.swift",
+                "RawLabMac/build-icon.sh", "RawLabMac/sign-bundle.sh", "RawLabMac/tests/edit-model.sh",
+                "RawLab/RawLab/App.swift", "RawLabWindows/README.md", "RawLabAndroid/app/build.gradle.kts",
+                "Shared/specs/adjustments.json", "Shared/RawLabKit/Edit.swift", "scripts/ci/affected_platforms.py",
+                ".github/workflows/ci.yml", "docs/process/ci.md", "README.md", "tools/mcp/server.py")
+
+    def test_core_inputs_are_exactly_what_feeds_the_core_ctest_build(self):
+        for path in self.CORE:
+            with self.subTest(path=path):
+                self.assertTrue(selection.is_core_path(path))
+                # A core change always selects macOS, so the row can never be dropped with its platform.
+                self.assertIn("macos", selection.platforms_for(path))
+        for path in self.NOT_CORE:
+            with self.subTest(path=path):
+                self.assertFalse(selection.is_core_path(path))
+
+    def outputs(self, event_name, event, changed=None, diff_error=None):
+        with tempfile.TemporaryDirectory() as directory:
+            event_path, output_path = Path(directory, "event.json"), Path(directory, "output")
+            event_path.write_text(json.dumps(event))
+            env = {"GITHUB_EVENT_NAME": event_name, "GITHUB_EVENT_PATH": str(event_path),
+                   "GITHUB_OUTPUT": str(output_path), "GITHUB_SHA": "m"}
+            def changed_files(base):
+                if diff_error:
+                    raise diff_error
+                return list(changed)
+            saved = {name: getattr(selection, name) for name in ("git_changed_files", "github_last_success")}
+            saved_env, argv = {k: os.environ.get(k) for k in env}, sys.argv
+            selection.git_changed_files, selection.github_last_success = changed_files, lambda event: "base"
+            sys.argv = ["affected_platforms.py", "select"]
+            os.environ.update(env)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(selection.main(), 0)
+            finally:
+                for name, value in saved.items():
+                    setattr(selection, name, value)
+                sys.argv = argv
+                for key, value in saved_env.items():
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            values = dict(line.split("=", 1) for line in output_path.read_text().splitlines())
+            values["macos_matrix"] = json.loads(values["macos_matrix"])
+            return values
+
+    ARM = {"runner": "macos-26", "arch": "arm64", "jobs": "2", "suite": "all"}
+    CTEST = {**ARM, "suite": "ctest"}
+
+    def test_core_changes_add_the_ctest_row_to_automatic_models_runs(self):
+        for event_name, event in (("pull_request", pull(action="synchronize")), ("push", {})):
+            for path in ("lutools/src/core/pipeline.cpp", "Shared/BundledLooks/RawLab_look_2383_sRGB_v1.cube",
+                         "RawLabMac/build.sh"):
+                with self.subTest(event=event_name, path=path):
+                    values = self.outputs(event_name, event, changed=["docs/process/ci.md", path])
+                    self.assertEqual((values["core_ctest"], values["checks"], values["macos"]), ("true", "models", "true"))
+                    self.assertEqual(values["macos_matrix"], [self.ARM, self.CTEST])
+
+    def test_other_changes_add_no_row(self):
+        for changed in (["lutools/README.md", "lutools/docs/color-contract.md"], ["lutools/platform/ios/build-framework.sh"],
+                        ["RawLab/RawLab/App.swift"], ["RawLabMac/Sources/Editor/Model/EditorModel.swift"],
+                        ["Shared/RawLabKit/Edit.swift"], [".github/workflows/ci.yml"], ["docs/process/ci.md"]):
+            with self.subTest(changed=changed):
+                values = self.outputs("pull_request", pull(action="synchronize"), changed=changed)
+                self.assertEqual(values["core_ctest"], "false")
+                self.assertNotIn(self.CTEST, values["macos_matrix"])
+
+    def test_an_unavailable_diff_runs_the_row(self):
+        values = self.outputs("pull_request", pull(action="synchronize"), diff_error=subprocess.CalledProcessError(1, "git"))
+        self.assertEqual((values["core_ctest"], values["macos"]), ("true", "true"))
+        self.assertEqual(values["macos_matrix"], [self.ARM, self.CTEST])
+
+    def test_drafts_release_gates_and_manual_runs_keep_their_coverage(self):
+        core = ["lutools/src/core/pipeline.cpp"]
+        draft = self.outputs("pull_request", pull(draft=True, action="opened"), changed=core)
+        self.assertEqual((draft["core_ctest"], draft["macos_matrix"]), ("false", [self.ARM]))
+        release = self.outputs("pull_request", pull(base="main", head="release/1.0.0", action="synchronize"), changed=core)
+        self.assertEqual((release["core_ctest"], release["checks"]), ("false", "full"))
+        self.assertEqual(release["macos_matrix"], selection.macos_matrix("full"))
+        for checks in ("models", "native", "full"):
+            manual = self.outputs("workflow_dispatch", {"inputs": {"platform": "macos", "checks": checks}})
+            with self.subTest(checks=checks):
+                self.assertEqual(manual["core_ctest"], "false")
+                self.assertEqual(manual["macos_matrix"], selection.macos_matrix(checks))
+
+    def test_the_row_only_exists_in_the_models_matrix(self):
+        self.assertEqual(selection.macos_matrix("models", core_ctest=True), [self.ARM, self.CTEST])
+        for checks in ("contracts", "models", "build", "native", "full"):
+            self.assertNotIn("ctest", [row["suite"] for row in selection.macos_matrix(checks)])
+        for checks in ("build", "native", "full"):
+            with self.assertRaises(ValueError):
+                selection.macos_matrix(checks, core_ctest=True)
+
+    def needs(self, macos_result="success", core_ctest="true", rows=None, checks="models", mode="automatic"):
+        outputs = {platform: "true" for platform in selection.PLATFORMS}
+        outputs.update(mode=mode, scope="affected", checks=checks, contracts="true", models="true", build="false",
+                       native="false", cold="false", core_ctest=core_ctest,
+                       macos_matrix=json.dumps(rows if rows is not None else [self.ARM, self.CTEST]))
+        return {"changes": {"result": "success", "outputs": outputs}, "contracts": {"result": "success"},
+                "windows-batch-selection": {"result": "success"},
+                **{platform: {"result": "success"} for platform in selection.PLATFORMS}, "macos": {"result": macos_result}}
+
+    def test_ci_result_requires_the_row_to_succeed_after_a_core_change(self):
+        self.assertEqual(selection.verify(self.needs()), [])
+        for result in ("failure", "cancelled", "skipped", None):
+            with self.subTest(result=result):
+                errors = selection.verify(self.needs(macos_result=result))
+                self.assertTrue(any("core CTest job finished as" in error for error in errors), errors)
+        missing = selection.verify(self.needs(rows=[self.ARM]))
+        self.assertTrue(any("no core CTest row" in error for error in missing), missing)
+        unplanned = selection.verify(self.needs(core_ctest="false"))
+        self.assertTrue(any("without a core change" in error for error in unplanned), unplanned)
+        self.assertTrue(selection.verify(self.needs(core_ctest="maybe")))
+
+
 class VerifyTests(unittest.TestCase):
     def needs(self, selected, results, changes="success", contracts="success"):
         outputs = {platform: "true" if platform in selected else "false" for platform in selection.PLATFORMS}

@@ -60,6 +60,7 @@ jobs:
       build: ${{ steps.select.outputs.build }}
       native: ${{ steps.select.outputs.native }}
       macos_matrix: ${{ steps.select.outputs.macos_matrix }}
+      core_ctest: ${{ steps.select.outputs.core_ctest }}
       reference: ${{ steps.select.outputs.reference }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -178,7 +179,7 @@ jobs:
         run: python scripts/assets/prepare.py --group all
       - name: Identify native dependency cache
         id: native-key
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         shell: bash
         run: |
           brew install pkg-config autoconf automake libtool
@@ -186,7 +187,7 @@ jobs:
           python -m pip install -r scripts/ci/requirements.txt
           python scripts/ci/native_cache.py key --platform macos --arch "$RAWLAB_ARCH"
       - name: Prepare X3F Rust renderer toolchain
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         shell: bash
         run: |
           bash scripts/ci/prepare-rust.sh aarch64-apple-darwin x86_64-apple-darwin
@@ -194,7 +195,7 @@ jobs:
       # content-addressed by their pins; caching them keeps cold builds off flaky downloads.
       - name: Restore Cargo registry and git cache
         id: cargo-cache
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -211,7 +212,7 @@ jobs:
             ~/.cargo/git/db
       - name: Restore dependency source archives
         id: source-archives-cache
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -223,7 +224,7 @@ jobs:
             .cache/shared/macos-sources
       - name: Restore native dependencies, or only look them up for a cold build
         id: native-cache
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -232,7 +233,7 @@ jobs:
           lookup-only: ${{ needs.changes.outputs.cold == 'true' }}
       - name: Restore SwiftPM cache
         id: swiftpm-cache
-        if: (needs.changes.outputs.checks == 'models' && matrix.arch == 'arm64') || ((needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel'))
+        if: (needs.changes.outputs.checks == 'models' && matrix.arch == 'arm64' && matrix.suite != 'ctest') || ((needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel'))
         continue-on-error: true
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
@@ -241,7 +242,7 @@ jobs:
             rawlab-swiftpm-v1-macos-${{ matrix.runner }}-${{ matrix.arch }}-
           path: .cache/ci/swiftpm
       - name: Run standalone macOS models
-        if: needs.changes.outputs.models == 'true' && matrix.arch == 'arm64'
+        if: needs.changes.outputs.models == 'true' && matrix.arch == 'arm64' && matrix.suite != 'ctest'
         shell: bash
         env:
           RAWLAB_CI_SWIFTPM_CACHE: .cache/ci/swiftpm
@@ -255,11 +256,11 @@ jobs:
         shell: bash
         run: python scripts/ci/ai-inputs.py --platform macos --arch "$RAWLAB_ARCH"
       - name: Install offline GLES shader validator
-        if: needs.changes.outputs.native == 'true'
+        if: needs.changes.outputs.native == 'true' || matrix.suite == 'ctest'
         shell: bash
         run: brew list glslang >/dev/null 2>&1 || brew install glslang
       - name: Build default app and exercise selected native suites
-        if: needs.changes.outputs.build == 'true'
+        if: needs.changes.outputs.build == 'true' || matrix.suite == 'ctest'
         shell: bash
         env:
           RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
@@ -294,7 +295,12 @@ jobs:
           if in_suite core; then
             python scripts/ci/test_native_cache_xcode.py
           fi
-          ci_timed app-build bash RawLabMac/build.sh
+          # The core CTest row of an automatic models run needs the core and its tests, not the app.
+          if [[ "$RAWLAB_MAC_SUITE" == ctest ]]; then
+            ci_timed core-build env RAWLAB_CORE_ONLY=1 bash RawLabMac/build.sh
+          else
+            ci_timed app-build bash RawLabMac/build.sh
+          fi
           lutprep_python="$(command -v python)"
           if in_suite core; then
             mkdir -p "$PWD/.cache/ci/swiftpm/deps" "$PWD/.cache/ci/swiftpm/tests"
@@ -304,6 +310,8 @@ jobs:
             ci_timed dcp-compiler env RAWLAB_LUTPREP_PYTHON="$lutprep_python" bash RawLabMac/tests/dcp-compiler.sh
             ci_timed look-library bash RawLabMac/tests/look-library.sh
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
+          fi
+          if in_suite core || [[ "$RAWLAB_MAC_SUITE" == ctest ]]; then
             python scripts/ci/check_ctest_inventory.py --build-dir lutools/build-macos --ci-label "ci_macos_${RAWLAB_ARCH}" --platform macos
             ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
               -L "^ci_macos_${RAWLAB_ARCH}$" \
@@ -343,7 +351,8 @@ jobs:
           bash RawLabMac/tests/dualdn-api-package.sh
       - name: Save successful native dependencies
         # Intel shards share one key; the core shard (or the full gate's single Intel job) saves it.
-        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel' || matrix.suite == 'build') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
+        # The arm64 core CTest row shares the arm64 key, so a successful core push to development warms it.
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && (matrix.suite == 'all' || matrix.suite == 'core' || matrix.suite == 'intel' || matrix.suite == 'build' || matrix.suite == 'ctest') && steps.native-cache.outcome == 'success' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           key: ${{ steps.native-key.outputs.key }}

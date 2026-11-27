@@ -94,6 +94,8 @@ if grep -qs '^SONY2FUJI_ENABLE_X3F:BOOL=ON$' "$BUILD/CMakeCache.txt"; then
     X3F_LINK_FLAGS=("$BUILD/x3f-rust/$X3F_TARGET/release/librawlab_x3f.a" -liconv)
 fi
 "$BUILD/dng_jxl_tests"
+# CI 的核心 CTest 行只需要上面构建出的核心与测试；应用、打包和签名留给其他构建。
+if [ "${RAWLAB_CORE_ONLY:-0}" = 1 ]; then exit 0; fi
 if [ "${RAWLAB_RELEASE:-0}" != 1 ]; then
     test -n "$APP" && test "$APP" != "/"
     rm -rf "$APP"
