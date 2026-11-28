@@ -73,7 +73,7 @@ case "${1:-}" in
             RawLabMac/tests/histogram.sh RawLabMac/tests/mac-crop-interaction.sh
             RawLabMac/tests/mac-inspection-suite.sh
             RawLabMac/tests/update-trust.sh RawLabMac/tests/usage-privacy-presentation.sh
-            RawLabMac/tests/usage-termination.sh)
+            RawLabMac/tests/usage-termination.sh RawLabMac/tests/text-fit.sh)
         ;;
     ios)
         python3 "$ROOT/scripts/assets/prepare.py" --group luts --quiet
