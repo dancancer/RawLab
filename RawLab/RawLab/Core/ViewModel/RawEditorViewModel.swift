@@ -204,7 +204,10 @@ final class RawEditorViewModel: ObservableObject {
     }
     var sourceKind: ImageSourceKind?
     var sourceIsX3f: Bool {
-        sourceKind == .raw && sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true
+        sourceKind == .raw && (
+            sourceFile?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true ||
+            sourceDisplayName.map { URL(fileURLWithPath: $0).pathExtension.lowercased() == "x3f" } == true
+        )
     }
     var sourceIdentity: PhotoIdentity?
     @Published var importedPhotoRevision = UUID()

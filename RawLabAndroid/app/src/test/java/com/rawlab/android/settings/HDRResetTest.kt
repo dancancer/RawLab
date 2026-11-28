@@ -55,7 +55,7 @@ class HDRResetTest {
         assertEquals(2, reset.proRAWDecodeVersion)
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, reset, context))
         assertEquals(EditorResetResult.NoChange, EditorAdjustmentRules.prepareReset(EditorResetScope.All, reset, context))
-        assertFalse(EditedPhotoPreviewKey.isEdited(reset, PhotoInputKind.RAW))
+        assertFalse(EditedPhotoPreviewKey.isEdited(reset, PhotoInputKind.RAW, isX3f = false))
         val back = reset.withHDRMode(true, false, cameraRaw = true, proRAW = true)
         assertEquals(1.5f, back.exposure)
         assertEquals(rendition, back.hdr!!.renditionSettings)
@@ -82,7 +82,7 @@ class HDRResetTest {
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, dormant, rawContext))
         val edited = proRawHdr(EditSettings()).withHDRMode(false, false, cameraRaw = true, proRAW = true)
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, edited, rawContext))
-        assertFalse(EditedPhotoPreviewKey.isEdited(edited, PhotoInputKind.RAW))
+        assertFalse(EditedPhotoPreviewKey.isEdited(edited, PhotoInputKind.RAW, isX3f = false))
         val sdrEdited = edited.copy(exposure = 1f)
         assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.All, sdrEdited, rawContext))
         val reset = (EditorAdjustmentRules.prepareReset(EditorResetScope.All, sdrEdited, rawContext) as EditorResetResult.Ready).candidate
@@ -90,13 +90,13 @@ class HDRResetTest {
         val hdrWithDormantSdr = EditSettings(film = "velvia", exposure = -.5f)
             .withHDRMode(true, false, cameraRaw = true, proRAW = true)
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, hdrWithDormantSdr, rawContext))
-        assertFalse(EditedPhotoPreviewKey.isEdited(hdrWithDormantSdr, PhotoInputKind.RAW))
+        assertFalse(EditedPhotoPreviewKey.isEdited(hdrWithDormantSdr, PhotoInputKind.RAW, isX3f = false))
         val mapped = hdrWithDormantSdr.copy(hdr = hdrWithDormantSdr.hdr!!.withRendition(HDRRenditionSettings(peakLimitEV = 1f)))
         assertTrue(EditorAdjustmentRules.isModified(EditorResetScope.All, mapped, rawContext))
-        assertTrue(EditedPhotoPreviewKey.isEdited(mapped, PhotoInputKind.RAW))
+        assertTrue(EditedPhotoPreviewKey.isEdited(mapped, PhotoInputKind.RAW, isX3f = false))
         val hdrReset = (EditorAdjustmentRules.prepareReset(EditorResetScope.All, mapped, rawContext) as EditorResetResult.Ready).candidate
         assertFalse(EditorAdjustmentRules.isModified(EditorResetScope.All, hdrReset, rawContext))
-        assertFalse(EditedPhotoPreviewKey.isEdited(hdrReset, PhotoInputKind.RAW))
+        assertFalse(EditedPhotoPreviewKey.isEdited(hdrReset, PhotoInputKind.RAW, isX3f = false))
     }
 
     @Test fun hdrRenditionGroupVisibilityNormalizationAndSingleToolResetWorkIndependently() {

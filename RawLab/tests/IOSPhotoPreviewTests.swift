@@ -200,11 +200,11 @@ struct Sony2FujiProcessor {
         // Full tile load cycle (record + sourceURL + image) must perform 0 redundant hashes on warm cache (at most 1 initial source hash on shared cache).
         FileDigestCache.shared.invalidateAll()
         let sharedBeforeInitialTile = FileDigestCache.shared.digestComputeCount(for: retainedSource)
-        let sharedWarmRec = try await library.record(for: rawID, editDirectory: editsDir)
+        let sharedWarmRec = try await library.record(for: rawID, isX3f: recent.isX3f, editDirectory: editsDir)
         let sharedWarmSrc = try await library.source(for: recent)
         try check(FileDigestCache.shared.digestComputeCount(for: retainedSource) == sharedBeforeInitialTile + 1, "P2-05 initial tile sourceURL hashes retained photo once")
         let sharedBeforeSecondTile = FileDigestCache.shared.digestComputeCount
-        _ = try await library.record(for: rawID, editDirectory: editsDir)
+        _ = try await library.record(for: rawID, isX3f: recent.isX3f, editDirectory: editsDir)
         _ = try await library.source(for: recent)
         _ = try await library.image(sharedWarmSrc, record: sharedWarmRec, look: lutURL, editDirectory: editsDir)
         try check(FileDigestCache.shared.digestComputeCount - sharedBeforeSecondTile == 0 &&
@@ -294,7 +294,12 @@ struct Sony2FujiProcessor {
         try check(editedMap[arwRecent.id] == true, "Non-X3F normal photo with lens flags remains marked edited")
 
         let editedSource = try await library.source(for: editedRecent)
-        let rawRecord = try await library.record(for: editedID, editDirectory: editsDir)
+        try check(flagsRecent.isX3f && editedRecent.isX3f && editedSource.isX3f && !arwRecent.isX3f,
+                  "RecentPhoto and IOSPhotoPreviewSource classify X3F purely by extension without file IO")
+        let flagsRecord = try await library.record(for: flagsID, isX3f: flagsRecent.isX3f, editDirectory: editsDir)
+        try check(!IOSPhotoPreviewPlan.isEdited(flagsRecord, isRaw: flagsRecent.isRaw, isX3f: flagsRecent.isX3f),
+                  "Thumbnail load path for flags-only normal X3F must evaluate as unedited")
+        let rawRecord = try await library.record(for: editedID, isX3f: editedRecent.isX3f, editDirectory: editsDir)
         let plan = try IOSPhotoPreviewPlan(source: editedSource, record: rawRecord, look: nil)
         try check(plan.settings.aiDenoiseEnabled == false &&
                   plan.settings.lensSettings.isEnabled == false &&

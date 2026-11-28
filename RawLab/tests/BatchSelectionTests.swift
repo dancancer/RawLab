@@ -264,11 +264,9 @@ private func checkLegacyNormalX3fCollectionRepair(_ root: URL) throws {
     let collection = IOSBatchSelection()
 
     let x3fURL = root.appendingPathComponent("sigma.X3F")
-    try Data("FOVb-ios-x3f".utf8).write(to: x3fURL)
-    let mislabeledURL = root.appendingPathComponent("mislabeled.raw")
-    try Data("FOVb-ios-mislabeled".utf8).write(to: mislabeledURL)
+    try Data("x3f-ios".utf8).write(to: x3fURL)
     let legacyURL = root.appendingPathComponent("legacy.X3F")
-    try Data("FOVb-ios-legacy".utf8).write(to: legacyURL)
+    try Data("x3f-ios-legacy".utf8).write(to: legacyURL)
     let arwURL = root.appendingPathComponent("sony.ARW")
     try Data("II*\0ios-arw".utf8).write(to: arwURL)
 
@@ -284,12 +282,10 @@ private func checkLegacyNormalX3fCollectionRepair(_ root: URL) throws {
     legacy.x3fMode = .legacy
 
     let x3fID = PhotoIdentity(resourceIdentifier: "ios-x3f")
-    let mislabeledID = PhotoIdentity(resourceIdentifier: "ios-mislabeled")
     let legacyID = PhotoIdentity(resourceIdentifier: "ios-legacy")
     let arwID = PhotoIdentity(resourceIdentifier: "ios-arw")
 
     try seedStore.save(x3fID, state: PhotoEditState(settings: broken))
-    try seedStore.save(mislabeledID, state: PhotoEditState(settings: broken))
     try seedStore.save(legacyID, state: PhotoEditState(settings: legacy))
     try seedStore.save(arwID, state: PhotoEditState(settings: broken))
 
@@ -302,13 +298,12 @@ private func checkLegacyNormalX3fCollectionRepair(_ root: URL) throws {
     })
 
     collection.append(IOSAdjustmentPhoto(identity: x3fID, displayName: "sigma.X3F", file: .externallyManaged(x3fURL), isRaw: true))
-    collection.append(IOSAdjustmentPhoto(identity: mislabeledID, displayName: "mislabeled.raw", file: .externallyManaged(mislabeledURL), isRaw: true))
     collection.append(IOSAdjustmentPhoto(identity: legacyID, displayName: "legacy.X3F", file: .externallyManaged(legacyURL), isRaw: true))
     collection.append(IOSAdjustmentPhoto(identity: arwID, displayName: "sony.ARW", file: .externallyManaged(arwURL), isRaw: true))
 
     let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 1024,
         x3fDefaultMode: { _ in .normal }, probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
-    try BatchExportTests.require(review.ready && review.rows.count == 4, "iOS collection export review must be ready")
+    try BatchExportTests.require(review.ready && review.rows.count == 3, "iOS collection export review must be ready")
     let x3fRow = review.rows[0]
     try BatchExportTests.require(
         x3fRow.settings?.x3fMode == .normal &&
@@ -321,16 +316,11 @@ private func checkLegacyNormalX3fCollectionRepair(_ root: URL) throws {
         "iOS collection export must repair legacy normal X3F in memory"
     )
     try BatchExportTests.require(
-        review.rows[1].settings?.lensSettings.isEnabled == false &&
-        review.rows[1].settings?.aiDenoiseEnabled == false,
-        "iOS collection export must repair mislabeled FOVb X3F in memory"
-    )
-    try BatchExportTests.require(
-        review.rows[2].settings == legacy,
+        review.rows[1].settings == legacy,
         "iOS collection export must leave legacy-mode X3F untouched"
     )
     try BatchExportTests.require(
-        review.rows[3].settings == broken,
+        review.rows[2].settings == broken,
         "iOS collection export must leave non-X3F normal record untouched"
     )
     let job = try collection.freeze(review, store: store, journal: journal, validateActive: { _ in })

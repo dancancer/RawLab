@@ -176,7 +176,7 @@ internal class EditorDependencies(
             val debuggable = (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
             val renderer = EditorRenderer(
                 storage,
-                { if (editStore.available) editStore.readState(it) else null },
+                { id, isX3f -> if (editStore.available) editStore.readState(id, isX3f) else null },
                 debuggable,
                 repairOnOpen = { id, isX3f -> if (editStore.available) editStore.repairLegacyNormalX3fOnOpen(id, isX3f) else null },
             )

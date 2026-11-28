@@ -29,9 +29,8 @@ class X3fLegacyRepairTest {
             val editDir = File(root, "edits")
             val seedStore = EditStore(editDir)
 
-            val x3fFile = File(root, "sigma.X3F").apply { writeText("FOVb-x3f") }
-            val mislabeledFile = File(root, "mislabeled.raw").apply { writeText("FOVb-mislabeled") }
-            val legacyX3fFile = File(root, "legacy.X3F").apply { writeText("FOVb-legacy") }
+            val x3fFile = File(root, "sigma.X3F").apply { writeText("x3f-bytes") }
+            val legacyX3fFile = File(root, "legacy.X3F").apply { writeText("x3f-legacy") }
             val arwFile = File(root, "sony.ARW").apply { writeText("II*\u0000sony") }
 
             val brokenNormal = EditSettings(
@@ -51,12 +50,10 @@ class X3fLegacyRepairTest {
             val legacyX3f = brokenNormal.copy(x3fMode = X3fMode.LEGACY)
 
             val x3fTarget = BatchTarget(PhotoIdentity("x3f"), x3fFile, "sigma.X3F", inputKind = PhotoInputKind.RAW)
-            val mislabeledTarget = BatchTarget(PhotoIdentity("mislabeled"), mislabeledFile, "mislabeled.raw", inputKind = PhotoInputKind.RAW)
             val legacyTarget = BatchTarget(PhotoIdentity("legacy"), legacyX3fFile, "legacy.X3F", inputKind = PhotoInputKind.RAW)
             val arwTarget = BatchTarget(PhotoIdentity("arw"), arwFile, "sony.ARW", inputKind = PhotoInputKind.RAW)
 
             seedStore.save(x3fTarget.identity, brokenNormal)
-            seedStore.save(mislabeledTarget.identity, brokenNormal)
             seedStore.save(legacyTarget.identity, legacyX3f)
             seedStore.save(arwTarget.identity, brokenNormal)
 
@@ -64,7 +61,7 @@ class X3fLegacyRepairTest {
             val rawBefore = propertiesFile.readBytes()
             val store = EditStore(editDir)
 
-            val selection = BatchSelectionState().append(listOf(x3fTarget, mislabeledTarget, legacyTarget, arwTarget))
+            val selection = BatchSelectionState().append(listOf(x3fTarget, legacyTarget, arwTarget))
             val exporter = BatchSelectionExport(File(root, "jobs"), store::readState, { null })
             val review = exporter.prepare(selection, emptySet(), ExportFormat.PNG, 1024, "out") {}
             assertTrue(review.ready)
@@ -77,20 +74,16 @@ class X3fLegacyRepairTest {
             assertFalse(x3fRow.settings!!.lens.autoCrop)
             assertEquals(0.5f, x3fRow.settings!!.exposure)
 
-            val mislabeledRow = review.rows[1]
-            assertFalse("Mislabeled FOVb X3F collection export must clear lens flags", mislabeledRow.settings!!.lens.enabled)
-
-            val legacyRow = review.rows[2]
+            val legacyRow = review.rows[1]
             assertEquals("Legacy-mode X3F must stay untouched", legacyX3f, legacyRow.settings)
 
-            val arwRow = review.rows[3]
+            val arwRow = review.rows[2]
             assertEquals("Non-X3F with normal x3fMode must stay untouched", brokenNormal, arwRow.settings)
 
             val job = exporter.freeze(selection, review) {}
             assertFalse(job.rows[0].target.frozen!!.settings.lens.enabled)
-            assertFalse(job.rows[1].target.frozen!!.settings.lens.enabled)
+            assertTrue(job.rows[1].target.frozen!!.settings.lens.enabled)
             assertTrue(job.rows[2].target.frozen!!.settings.lens.enabled)
-            assertTrue(job.rows[3].target.frozen!!.settings.lens.enabled)
 
             assertArrayEquals("Read-only collection export must leave edits.properties untouched", rawBefore, propertiesFile.readBytes())
         } finally {
@@ -336,19 +329,24 @@ class X3fLegacyRepairTest {
             }
 
             // First open writes repaired flags-only X3F once; second open does 0 writes.
-            val repairedFlags = store.repairLegacyNormalX3fOnOpen(flagsId, isX3f = true)
+            val repairedFlagsResult = store.repairLegacyNormalX3fOnOpen(flagsId, isX3f = true)
+            assertTrue(repairedFlagsResult.repaired)
+            assertNull(repairedFlagsResult.writeError)
             assertEquals(1, writes)
-            assertFalse(repairedFlags.settings!!.lens.enabled)
-            assertEquals(repairedFlags, store.repairLegacyNormalX3fOnOpen(flagsId, isX3f = true))
+            assertFalse(repairedFlagsResult.state.settings!!.lens.enabled)
+            val reopenedFlagsResult = store.repairLegacyNormalX3fOnOpen(flagsId, isX3f = true)
+            assertFalse(reopenedFlagsResult.repaired)
+            assertNull(reopenedFlagsResult.writeError)
+            assertEquals(repairedFlagsResult.state, reopenedFlagsResult.state)
             assertEquals(1, writes)
 
             // Legacy X3F and non-X3F do 0 writes on open.
-            assertEquals(legacyBroken, store.repairLegacyNormalX3fOnOpen(legacyId, isX3f = true).settings)
-            assertEquals(flagsBroken, store.repairLegacyNormalX3fOnOpen(arwId, isX3f = false).settings)
+            assertEquals(legacyBroken, store.repairLegacyNormalX3fOnOpen(legacyId, isX3f = true).state.settings)
+            assertEquals(flagsBroken, store.repairLegacyNormalX3fOnOpen(arwId, isX3f = false).state.settings)
             assertEquals(1, writes)
 
             // Repaired v2 normal X3F commits processing migration and rollback restores repaired baseline.
-            val repairedMigrate = store.repairLegacyNormalX3fOnOpen(migrateId, isX3f = true)
+            val repairedMigrate = store.repairLegacyNormalX3fOnOpen(migrateId, isX3f = true).state
             assertEquals(2, writes)
             assertFalse(repairedMigrate.settings!!.lens.enabled)
             val migrated = store.commitProcessingMigration(
@@ -358,14 +356,9 @@ class X3fLegacyRepairTest {
             )
             assertEquals(ProcessingIdentity.CURRENT, migrated.settings!!.processing)
             assertFalse(migrated.settings!!.lens.enabled)
-            val rolledBack = store.rollbackProcessingMigration(migrated)
+            val rolledBack = store.rollbackProcessingMigration(migrated, isX3f = true)
             assertEquals(repairedMigrate.settings, rolledBack.settings)
             assertFalse(rolledBack.settings!!.lens.enabled)
-
-            // Uniform SDR batch target recognizes mislabeled FOVb X3F.
-            val mislabeled = File(root, "mislabeled.jpeg").apply { writeText("FOVb-batch") }
-            val mislabeledTarget = BatchTarget(PhotoIdentity("mislabeled-batch"), mislabeled, "mislabeled.jpeg", inputKind = PhotoInputKind.RAW)
-            assertTrue(mislabeledTarget.isX3f)
         } finally {
             root.deleteRecursively()
         }
@@ -376,7 +369,7 @@ class X3fLegacyRepairTest {
             val storage = harness.createStorage()
             val editDir = File(harness.root, "edits").apply { mkdirs() }
             val store = EditorEditStore(editDir)
-            val x3fFile = File(harness.root, "import-target.X3F").apply { writeText("FOVb-import") }
+            val x3fFile = File(harness.root, "import-target.X3F").apply { writeText("x3f-import") }
             val x3fUri = fileUri(x3fFile)
             val x3fId = PhotoIdentity(x3fUri.toString())
             val photo = ImportedPhoto(x3fUri, x3fFile.name, x3fFile, x3fId, PhotoInputKind.RAW)
@@ -419,24 +412,143 @@ class X3fLegacyRepairTest {
 
             val renderer = EditorRenderer(
                 storage = storage,
-                restore = { store.readState(it) },
+                restore = { id, isX3f -> store.readState(id, isX3f) },
                 debuggable = false,
                 engineFactory = { fakeEngine },
                 repairOnOpen = { id, isX3f -> store.repairLegacyNormalX3fOnOpen(id, isX3f) },
             )
             val result = renderer.perform(Work.Import(x3fUri, 0, retained = photo, ownsRetained = false), RenderCancellation()) as WorkResult.Preview
             assertFalse("Import preview must render repaired normal X3F settings", result.request.edits.lens.enabled)
+            assertNull(result.request.repairWriteError)
             assertEquals("sigma-28", result.request.edits.lens.profileId)
             assertTrue(observedSettings.all { !it.lens.enabled })
-            assertFalse("Opening X3F photo in editor must write repaired record back to EditStore", store.readState(x3fId).settings!!.lens.enabled)
+            assertFalse("Opening X3F photo in editor must write repaired record back to EditStore", store.readState(x3fId, isX3f = false).settings!!.lens.enabled)
 
             // recoverSource also repairs a broken normal X3F record on disk.
             store.save(x3fId, broken)
             val history = EditorAdjustmentHistory(store, validateSource = { {} })
             history.acceptSource(photo, null)
             val recovered = history.recoverSource(photo)
-            assertFalse(recovered.settings!!.lens.enabled)
-            assertFalse(store.readState(x3fId).settings!!.lens.enabled)
+            assertTrue(recovered.repaired)
+            assertNull(recovered.writeError)
+            assertFalse(recovered.state.settings!!.lens.enabled)
+            assertFalse(store.readState(x3fId, isX3f = false).settings!!.lens.enabled)
+        }
+    }
+
+    @Test fun openRepairWriteFailureOpensInMemoryAndPersistsOnLaterSave() {
+        EditorViewModelTestHarness().use { harness ->
+            val storage = harness.createStorage()
+            val editDir = File(harness.root, "ro-edits").apply { mkdirs() }
+            val x3fFile = File(harness.root, "ro-open.X3F").apply { writeText("x3f-ro") }
+            val x3fUri = fileUri(x3fFile)
+            val x3fId = PhotoIdentity(x3fUri.toString())
+            val photo = ImportedPhoto(x3fUri, x3fFile.name, x3fFile, x3fId, PhotoInputKind.RAW)
+
+            val broken = EditSettings(
+                exposure = 0.45f,
+                x3fMode = X3fMode.NORMAL,
+                lens = LensSettings(distortion = true, tca = true, vignetting = true, profileId = "sigma-40"),
+            )
+            EditStore(editDir).save(x3fId, broken)
+
+            var failWrites = true
+            val failingEditStore = EditorEditStore(editDir) { dir ->
+                EditStore(dir) { from, to ->
+                    if (failWrites) throw java.io.IOException("disk full")
+                    com.rawlab.android.io.replaceFileAtomically(from, to)
+                }
+            }
+
+            // 1) EditorRenderer Work.Import still succeeds with repaired settings and surfaces repairWriteError.
+            val fakeEngine = object : EditorRenderer.RenderEngine {
+                override fun close() = Unit
+                override fun setGpuMode(mode: Int) = Unit
+                override fun cancellationGeneration() = 0L
+                override fun cancelPreview() = Unit
+                override fun releaseRasterCache() = Unit
+                override fun preview(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, cancellationGeneration: Long) =
+                    NativeFrame(4, 4, TestBitmaps.stub(), 6500f, 0f, 0)
+                override fun sampleHsl(input: File, lut: File?, settings: EditSettings, edge: Int, interactive: Boolean, inputKind: PhotoInputKind, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long) =
+                    HslTargetSample.unavailable(revision, HslTargetAvailability.FAILED)
+                override fun export(input: File, lut: File?, settings: EditSettings, output: File, format: ExportFormat, longEdge: Int?, inputKind: PhotoInputKind, cancellationGeneration: Long) = 0
+                override fun autoExposure(input: File, settings: EditSettings, inputKind: PhotoInputKind) = 0f
+                override fun decodeHDRCamera(file: File, info: HDRSourceInfo, edge: Int, cancellationGeneration: Long, camera: HDRCameraDevelopmentSettings, profileDirectory: File?) = error("unused")
+                override fun renderHDR(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun sampleHDRHsl(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, edge: Int, revision: HslTargetRevision, x: Float, y: Float, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
+                override fun estimateHDRExposure(source: EditorRenderer.HdrImageHandle, settings: HDRSettings, cancellationGeneration: Long) = 0f
+                override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = Unit
+            }
+            val renderer = EditorRenderer(
+                storage = storage,
+                restore = { id, isX3f -> failingEditStore.readState(id, isX3f) },
+                debuggable = false,
+                engineFactory = { fakeEngine },
+                repairOnOpen = { id, isX3f -> failingEditStore.repairLegacyNormalX3fOnOpen(id, isX3f) },
+            )
+            val preview = renderer.perform(Work.Import(x3fUri, 0, retained = photo, ownsRetained = false), RenderCancellation()) as WorkResult.Preview
+            assertFalse("Work.Import opens with repaired settings in memory despite write failure", preview.request.edits.lens.enabled)
+            assertEquals("sigma-40", preview.request.edits.lens.profileId)
+            assertNotNull("Work.Import surfaces repairWriteError for save-error reporting", preview.request.repairWriteError)
+            assertTrue("Disk still holds unrepaired record while writes fail",
+                EditStore(editDir).readState(x3fId, isX3f = false).settings!!.lens.enabled)
+
+            // 2) recoverSource also opens in memory with writeError != null and marks repairWritePending.
+            val history = EditorAdjustmentHistory(failingEditStore, validateSource = { {} })
+            history.acceptSource(photo, null)
+            val recovered = history.recoverSource(photo)
+            assertTrue(recovered.repaired)
+            assertNotNull(recovered.writeError)
+            assertFalse(recovered.state.settings!!.lens.enabled)
+
+            // 3) Later save once writes recover persists the repaired settings even when settings equal repaired in-memory state.
+            failWrites = false
+            val commitResult = history.commit(photo, recovered.state.settings!!)
+            assertEquals(com.rawlab.android.editor.EditSaveState.SAVED, commitResult.state)
+            assertFalse("Later save after failed open-repair must persist repaired flags to disk",
+                EditStore(editDir).readState(x3fId, isX3f = false).settings!!.lens.enabled)
+            assertTrue("Deferred repair save must not create an undo transaction",
+                failingEditStore.adjustmentSession!!.transactions.isEmpty())
+        }
+    }
+
+    @Test fun rollbackPreExistingMigrationRepairsLegacyNormalX3fOnDiskAndInMemory() {
+        val root = java.nio.file.Files.createTempDirectory("rawlab-x3f-rollback").toFile()
+        try {
+            val editDir = File(root, "edits").apply { mkdirs() }
+            val store = EditStore(editDir)
+            val x3fId = PhotoIdentity("content://test/rollback-x3f")
+            val arwId = PhotoIdentity("content://test/rollback-arw")
+
+            val staleV2 = EditSettings(
+                exposure = 0.5f,
+                x3fMode = X3fMode.NORMAL,
+                lens = LensSettings(distortion = true, tca = true, vignetting = true, profileId = "sigma-50"),
+                processing = ProcessingIdentity.C5,
+            )
+            val migratedV3 = staleV2.selectX3fMode(X3fMode.NORMAL).copy(
+                exposure = 0.65f,
+                processing = ProcessingIdentity.CURRENT,
+            )
+            val quality = ProcessingMigrationQuality(0.002f, 0.01f, 0.004f, 0.003f, 8)
+
+            // Seed pre-existing migrated receipts whose original still has stale lens switches ON.
+            val savedX3f = store.save(x3fId, staleV2)
+            val savedArw = store.save(arwId, staleV2)
+            val migratedX3f = store.commitProcessingMigration(savedX3f, migratedV3, quality)
+            val migratedArw = store.commitProcessingMigration(savedArw, migratedV3, quality)
+
+            val rolledX3f = store.rollbackProcessingMigration(migratedX3f, isX3f = true)
+            assertEquals(2, rolledX3f.settings!!.processing.version)
+            assertFalse("Android rollback for X3F must return repaired lens switches", rolledX3f.settings!!.lens.enabled)
+            assertEquals("sigma-50", rolledX3f.settings!!.lens.profileId)
+            assertFalse("Android rollback for X3F must write repaired lens switches to disk",
+                EditStore(editDir).readState(x3fId, isX3f = false).settings!!.lens.enabled)
+
+            val rolledArw = store.rollbackProcessingMigration(migratedArw, isX3f = false)
+            assertTrue("Android rollback for non-X3F must keep lens switches", rolledArw.settings!!.lens.enabled)
+        } finally {
+            root.deleteRecursively()
         }
     }
 }

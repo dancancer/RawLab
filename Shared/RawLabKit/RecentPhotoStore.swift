@@ -9,6 +9,10 @@ public struct RecentPhoto: Codable, Equatable, Identifiable, Sendable {
     public let openedAt: Date
     public var previewKey: String?
     public var id: String { identity.key }
+    public var isX3f: Bool {
+        isRaw && (URL(fileURLWithPath: originalFile).pathExtension.lowercased() == "x3f" ||
+                  URL(fileURLWithPath: displayName).pathExtension.lowercased() == "x3f")
+    }
 
     public init(identity: PhotoIdentity, displayName: String, isRaw: Bool, originalFile: String,
                 originalBytes: Int, openedAt: Date, previewKey: String? = nil) {

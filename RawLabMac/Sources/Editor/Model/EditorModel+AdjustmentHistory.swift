@@ -41,6 +41,7 @@ extension EditorModel {
             }
             let previous = committedEdit?.state
             committedEdit = saved
+            pendingX3fRepairPersistence = false
             if clearsProcessingMigration {
                 pendingAllResetRevision = nil
                 processingMigrationReceipt = nil
@@ -78,10 +79,12 @@ extension EditorModel {
             }
             let commitToken = UUID()
             unsettledAsyncCommitTokens.append(commitToken)
+            let savedPendingRepairPersistence = pendingX3fRepairPersistence
             let outcome = session.commitEditAsync(
                 expected: committedEdit!,
                 state: persisted,
                 clearsProcessingMigration: clearsProcessingMigration,
+                forceWhenUnchanged: savedPendingRepairPersistence,
                 completion: { [weak self] finalOutcome, rolledBackRecord in
                     guard let self else { return }
                     switch finalOutcome.status {
@@ -111,7 +114,10 @@ extension EditorModel {
                         self.unsettledAsyncCommitTokens.removeSubrange(idx...)
                         if self.file?.resolvingSymlinksInPath().standardizedFileURL.path == activePath {
                             self.committedEdit = rolledBackRecord
-                            if self.editState(settings: self.settings) != rolledBackRecord?.state {
+                            if savedPendingRepairPersistence {
+                                self.pendingX3fRepairPersistence = true
+                                self.dirty = true
+                            } else if self.editState(settings: self.settings) != rolledBackRecord?.state {
                                 self.dirty = true
                             }
                             if let clearToken, self.pendingMigrationClearToken == clearToken {
@@ -141,6 +147,7 @@ extension EditorModel {
                 throw outcome.error ?? AdjustmentTransferError.incompatible("save")
             }
             committedEdit = saved
+            pendingX3fRepairPersistence = false
             if clearsProcessingMigration {
                 pendingAllResetRevision = nil
                 processingMigrationReceipt = nil

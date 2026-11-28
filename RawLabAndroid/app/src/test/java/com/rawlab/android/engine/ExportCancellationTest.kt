@@ -670,7 +670,7 @@ class ExportCancellationTest {
                     override fun close() = Unit
                 }
                 val renderer = EditorRenderer(
-                    storage, { null }, false,
+                    storage, { _, _ -> null }, false,
                     destinationDeleter = ExportDestinationDeleter { dest, orig -> deleted += dest to orig },
                     engineFactory = { engine }, hdrBridge = hdrBridge,
                 )

@@ -29,6 +29,12 @@ value class PhotoIdentity(val value: String) {
     init { require(value.isNotBlank()) }
 }
 
+data class OpenX3fRepairResult(
+    val state: PhotoEditState,
+    val repaired: Boolean = false,
+    val writeError: Throwable? = null,
+)
+
 /** 当前会话看到的照片调整；磁盘不再为调整记录生成 revision。 */
 data class PhotoEditState(val identity: PhotoIdentity, val settings: EditSettings?) {
     fun sameAs(other: PhotoEditState?): Boolean = other != null && identity == other.identity && settings == other.settings
@@ -36,11 +42,6 @@ data class PhotoEditState(val identity: PhotoIdentity, val settings: EditSetting
     fun repairLegacyNormalX3f(isX3f: Boolean): PhotoEditState {
         val current = settings ?: return this
         val repaired = current.repairLegacyNormalX3f(isX3f)
-        return if (repaired == current) this else copy(settings = repaired)
-    }
-    fun repairLegacyNormalX3f(file: File? = null, displayName: String? = null): PhotoEditState {
-        val current = settings ?: return this
-        val repaired = current.repairLegacyNormalX3f(file, displayName)
         return if (repaired == current) this else copy(settings = repaired)
     }
 }
@@ -107,23 +108,33 @@ class EditStore internal constructor(
     }
 
     // 旧 UI 查询在存储暂不可读时保留最后可读值；单条坏记录始终抛出 UnusableEditRecordException。
-    fun load(identity: PhotoIdentity): EditSettings? = try { readState(identity).settings }
+    fun load(identity: PhotoIdentity): EditSettings? = try { readState(identity, isX3f = false).settings }
         catch (error: UnusableEditRecordException) { throw error }
         catch (_: Exception) {
             lastUnusableRecords[identity]?.let { throw it }
             lastReadableRecords[identity]
         }
 
-    fun readState(identity: PhotoIdentity): PhotoEditState = withStoreLock { read().record(identity) }
     fun readState(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState =
-        readState(identity).repairLegacyNormalX3f(isX3f)
-    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState {
-        if (!isX3f) return readState(identity)
+        withStoreLock { read().record(identity).repairLegacyNormalX3f(isX3f) }
+
+    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): OpenX3fRepairResult {
+        if (!isX3f) return OpenX3fRepairResult(readState(identity, isX3f = false))
         return withStoreLock {
             val current = read()
             val raw = current.record(identity)
             val repaired = raw.repairLegacyNormalX3f(isX3f = true)
-            if (repaired.sameAs(raw)) raw else commit(current, identity, repaired.settings)
+            if (repaired.sameAs(raw)) {
+                OpenX3fRepairResult(raw)
+            } else {
+                try {
+                    OpenX3fRepairResult(commit(current, identity, repaired.settings), repaired = true)
+                } catch (error: UnusableEditRecordException) {
+                    throw error
+                } catch (error: Exception) {
+                    OpenX3fRepairResult(repaired, repaired = true, writeError = error)
+                }
+            }
         }
     }
     fun readStates(identities: Collection<PhotoIdentity>): Map<PhotoIdentity, PhotoEditReadResult> = withStoreLock {
@@ -183,15 +194,17 @@ class EditStore internal constructor(
         updated.record(expected.identity)
     }
 
-    fun rollbackProcessingMigration(expected: PhotoEditState): PhotoEditState = withStoreLock {
+    fun rollbackProcessingMigration(expected: PhotoEditState, isX3f: Boolean): PhotoEditState = withStoreLock {
         val current = read()
-        if (!current.record(expected.identity).sameAs(expected)) throw AdjustmentOperationExpiredException()
+        if (!current.record(expected.identity).repairLegacyNormalX3f(isX3f).sameAs(expected)) {
+            throw AdjustmentOperationExpiredException()
+        }
         val receipt = current.properties.getProperty(migrationKey(expected.identity))?.let { raw ->
             runCatching { ProcessingMigrationReceipt.decode(raw) }.getOrNull()
         } ?: throw AdjustmentOperationExpiredException()
         if (receipt.status != ProcessingMigrationStatus.MIGRATED) throw AdjustmentOperationExpiredException()
         val records = current.records.toMutableMap()
-        records[expected.identity] = receipt.original
+        records[expected.identity] = receipt.original.repairLegacyNormalX3f(isX3f)
         val updated = current.copy(records = records)
         write(updated, expected.identity, receipt.copy(status = ProcessingMigrationStatus.ROLLED_BACK))
         lastReadableRecords = records.toMap()

@@ -114,11 +114,6 @@ data class EditSettings(
     fun repairLegacyNormalX3f(isX3f: Boolean): EditSettings =
         if (isX3f && needsLegacyNormalX3fRepair) selectX3fMode(X3fMode.NORMAL) else this
 
-    fun repairLegacyNormalX3f(file: java.io.File? = null, displayName: String? = null): EditSettings =
-        if (needsLegacyNormalX3fRepair && com.rawlab.android.format.PhotoFiles.isX3fInput(file, displayName)) {
-            selectX3fMode(X3fMode.NORMAL)
-        } else this
-
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) {
         val keepRelativeWb = !customWb && recipeID == null

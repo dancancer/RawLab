@@ -176,13 +176,21 @@ extension RawEditorViewModel {
                     if cancellation.isCancelled { throw CancellationError() }
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
-                    let isX3f = source.isRaw && Adjustments.isX3fInput(inputURL, displayName: source.displayName)
-                    let record = try resolvedIdentity.flatMap {
+                    let isX3f = source.isRaw && (
+                        inputURL.pathExtension.lowercased() == "x3f" ||
+                        URL(fileURLWithPath: source.displayName).pathExtension.lowercased() == "x3f"
+                    )
+                    let openRepair: OpenX3fRepairResult<PhotoEditRecord>? = try resolvedIdentity.flatMap { id in
                         if x3fModeOverride == nil {
-                            return try self.editPersistence?.repairLegacyNormalX3fOnOpen(for: $0, isX3f: isX3f)
+                            return try self.editPersistence?.repairLegacyNormalX3fOnOpen(for: id, isX3f: isX3f)
                         }
-                        return try self.editPersistence?.readState(for: $0)
+                        return try self.editPersistence.map { store in
+                            OpenX3fRepairResult(record: try store.readState(for: id, isX3f: isX3f), repaired: false)
+                        }
                     }
+                    let record = openRepair?.record
+                    let repairedOnOpen = openRepair?.repaired == true
+                    let repairWriteError = openRepair?.writeError
                     if record?.state == nil, let resolvedIdentity {
                         _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
                     }
@@ -256,9 +264,15 @@ extension RawEditorViewModel {
                                 self.statusMessage = hdr.missingResourceMessage
                                 self.hdrResourceNotice = .delivered(isHDREditing: true, missingMessage: hdr.missingResourceMessage)
                                 self.recordImportedComparison(settings:restoredSettings)
-                                self.acceptImportedEditRecord(record,settings:restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
-                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
+                                if let repairWriteError {
+                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
+                                    self.pendingSettings = restoredSettings
+                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
+                                } else if self.editPersistence != nil {
+                                    self.setEditNotice(state == nil ? .idle : .restored)
+                                }
                                 ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                 onSettingsRestored?(restoredSettings); self.importedPhotoRevision = UUID(); onImported?()
                             }
@@ -328,12 +342,18 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(record, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
+                                if let repairWriteError {
+                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
+                                    self.pendingSettings = restoredSettings
+                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
+                                } else if self.editPersistence != nil {
+                                    self.setEditNotice(state == nil ? .idle : .restored)
+                                }
                                 onSettingsRestored?(restoredSettings)
-                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
+                                if repairWriteError == nil { self.startProcessingMigrationIfNeeded(settings: restoredSettings) }
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
@@ -394,12 +414,18 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(record, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
+                                if let repairWriteError {
+                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
+                                    self.pendingSettings = restoredSettings
+                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
+                                } else if self.editPersistence != nil {
+                                    self.setEditNotice(state == nil ? .idle : .restored)
+                                }
                                 onSettingsRestored?(restoredSettings)
-                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
+                                if repairWriteError == nil { self.startProcessingMigrationIfNeeded(settings: restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                     self.importedPhotoRevision = UUID()

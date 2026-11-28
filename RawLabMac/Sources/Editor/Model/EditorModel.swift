@@ -226,6 +226,7 @@ final class EditorModel: ObservableObject {
         processingMigrationReceipt = nil
         pendingAllResetRevision = nil
         pendingMigrationClearToken = nil
+        pendingX3fRepairPersistence = false
         pendingExternalReload = nil
         deferredExternalEditsCheck = false
         deferredExternalReloadAccept = false
@@ -412,6 +413,7 @@ final class EditorModel: ObservableObject {
     var processingMigrationAttemptSource: UUID?
     var pendingAllResetRevision: UUID?
     var pendingMigrationClearToken: UUID?
+    var pendingX3fRepairPersistence = false
     static let processingMigrationQueue = DispatchQueue(label: "rawlab.processing-migration", qos: .utility)
     var interactionEntry: MacPhotoEditState?
     var interactionWasDirty = false

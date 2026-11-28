@@ -122,7 +122,8 @@ data class BatchTarget(
 ) {
     val id: String get() = identity.value
     val isX3f: Boolean get() = inputKind == PhotoInputKind.RAW &&
-        com.rawlab.android.format.PhotoFiles.isX3fInput(sourceFile, displayName)
+        (displayName.substringAfterLast('.', "").equals("x3f", ignoreCase = true) ||
+            sourceFile.extension.equals("x3f", ignoreCase = true))
 }
 
 data class BatchRow(
@@ -187,10 +188,10 @@ data class BatchJob(
 
     companion object {
         fun x3fModeResolver(
-            readRecord: ((PhotoIdentity) -> PhotoEditState)? = null,
+            readRecord: ((PhotoIdentity, Boolean) -> PhotoEditState)? = null,
             x3fDefaultMode: (File) -> X3fMode = { NativeProcessor.x3fDefaultMode(it) },
         ): (BatchTarget) -> X3fMode = { target ->
-            readRecord?.invoke(target.identity)?.settings?.x3fMode ?: x3fDefaultMode(target.sourceFile)
+            readRecord?.invoke(target.identity, target.isX3f)?.settings?.x3fMode ?: x3fDefaultMode(target.sourceFile)
         }
         private fun uniqueRows(targets: List<BatchTarget>, format: ExportFormat): List<BatchRow> {
             val used = mutableSetOf<String>()

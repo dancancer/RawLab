@@ -12,15 +12,6 @@ internal object PhotoFiles {
         it.read(signature) == 4 && signature.contentEquals(byteArrayOf(70, 79, 86, 98))
     }
 
-    fun isX3fName(name: String?): Boolean =
-        name?.substringAfterLast('.', "")?.equals("x3f", ignoreCase = true) == true
-
-    fun hasX3fSignature(file: java.io.File?): Boolean =
-        file != null && file.isFile && runCatching { isX3f(file) }.getOrDefault(false)
-
-    fun isX3fInput(file: java.io.File? = null, displayName: String? = null): Boolean =
-        isX3fName(displayName) || isX3fName(file?.name) || hasX3fSignature(file)
-
     fun kind(name: String, mime: String?): PhotoInputKind? {
         val raw = RawFiles.accepts(name, mime)
         val raster = RasterFiles.accepts(name, mime)

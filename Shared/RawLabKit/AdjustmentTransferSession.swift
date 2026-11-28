@@ -135,6 +135,16 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
     public func editGeneration(forKey key: String) -> UInt64 { ledger.editGeneration(forKey: key) }
     public func isCurrentSave(_ record: Record) -> Bool { ledger.isCurrentSave(record) }
     public func adoptProcessingMigration(_ record: Record) { ledger.adoptProcessingMigration(record) }
+    public func rememberExternalSave(_ record: Record) {
+        syncLock.lock(); defer { syncLock.unlock() }
+        let key = backend.keyOf(backend.identityOf(record))
+        let known = ledger.knownRecord(forKey: key)
+        let changed = known.map {
+            !backend.sameState(backend.stateOf($0), backend.stateOf(record)) ||
+            backend.identityOf($0) != backend.identityOf(record)
+        } ?? true
+        ledger.remember(record, advanceGeneration: changed)
+    }
     fileprivate func sourceValidator(for key: String) -> (() throws -> Void)? {
         validatorLock.lock(); defer { validatorLock.unlock() }; return sourceValidators[key]
     }
@@ -225,7 +235,7 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
 
     @discardableResult
     public func commitEditAsync(expected: Record, state: PhotoEditState, displayName: String = "",
-                                clearsProcessingMigration: Bool = false, isCurrent: () -> Bool = { true },
+                                clearsProcessingMigration: Bool = false, forceWhenUnchanged: Bool = false, isCurrent: () -> Bool = { true },
                                 completion: ((SharedAdjustmentTransferOutcome<Record>, Record?) -> Void)? = nil) -> SharedAdjustmentTransferOutcome<Record> {
         let id = backend.keyOf(backend.identityOf(expected))
         guard isCurrent() else {
@@ -239,7 +249,7 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
             try backend.validateCommitState(state)
             defaultStates[id] = defaultStates[id] ?? backend.stateOf(expected) ?? state
             switch ledger.beginOptimisticEdit(expected: expected, state: state, displayName: displayName,
-                                              forceWhenUnchanged: clearsProcessingMigration, makeRecord: backend.makeRecord) {
+                                              forceWhenUnchanged: clearsProcessingMigration || forceWhenUnchanged, makeRecord: backend.makeRecord) {
             case .unchanged(let before):
                 let unchanged = outcome(id, .unchanged, saved: before)
                 completion?(unchanged, nil); return unchanged
@@ -324,7 +334,16 @@ public extension EditTransferSession where Identity == PhotoIdentity, Record == 
     }
 
     func editGeneration(for identity: PhotoIdentity) -> UInt64 { editGeneration(forKey: identity.key) }
-    func refreshSource(_ identity: PhotoIdentity, validate: @escaping () throws -> Void) { if ledger.knownRecord(forKey: identity.key) != nil { setSourceValidator(validate, forKey: identity.key) } }
+    func refreshSource(_ identity: PhotoIdentity, validate: @escaping () throws -> Void, record: PhotoEditRecord? = nil) {
+        syncLock.lock(); defer { syncLock.unlock() }
+        let key = identity.key
+        guard let known = ledger.knownRecord(forKey: key) else { return }
+        if let record, record.identity == identity,
+           !backend.sameState(backend.stateOf(known), backend.stateOf(record)) || known.identity != record.identity {
+            ledger.remember(record, advanceGeneration: true)
+        }
+        setSourceValidator(validate, forKey: key)
+    }
     @discardableResult func resetToUnmodified(_ identity: PhotoIdentity) throws -> PhotoEditRecord { let c = try backend.resetByIdentity!(identity); adoptProcessingMigration(c); return c }
     func undoPhoto(_ identity: PhotoIdentity, transactionID: UUID? = nil, isCurrent: (String) -> Bool = { _ in true }) -> [IOSAdjustmentTransferOutcome] { historyPhoto(key: identity.key, transactionID: transactionID, undo: true, isCurrent: isCurrent) }
     func redoPhoto(_ identity: PhotoIdentity, transactionID: UUID? = nil, isCurrent: (String) -> Bool = { _ in true }) -> [IOSAdjustmentTransferOutcome] { historyPhoto(key: identity.key, transactionID: transactionID, undo: false, isCurrent: isCurrent) }

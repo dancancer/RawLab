@@ -35,7 +35,7 @@ class HDRBatchPreparationTest {
     private fun test(action: (Fixture)->Unit) {val fixture=Fixture();try {action(fixture)}finally {fixture.root.deleteRecursively()}}
 
     @Test fun mixedTargetsKeepTheirModesAndOwnFrozenSettingsWithoutEditingRecords() = test { f ->
-        val before=f.targets.associateWith { f.store.readState(it.identity) }
+        val before=f.targets.associateWith { f.store.readState(it.identity, isX3f = false) }
         val bytes=f.targets.associateWith { it.sourceFile.readBytes().toList() }
         val draft=f.job();val frozen=f.preparation().freeze(draft,f.directory){false}
         assertEquals(BatchSettingsMode.UNIFORM_FROZEN,draft.settingsMode)
@@ -48,7 +48,7 @@ class HDRBatchPreparationTest {
             row.target.frozen!!.verifyFiles(row.target.sourceFile)
         }
         assertEquals(f.sourceSettings,frozen.source.settings)
-        f.targets.forEach {assertEquals(before[it],f.store.readState(it.identity));assertEquals(bytes[it],it.sourceFile.readBytes().toList())}
+        f.targets.forEach {assertEquals(before[it],f.store.readState(it.identity, isX3f = false));assertEquals(bytes[it],it.sourceFile.readBytes().toList())}
         val frozenLook=frozen.rows.last().target.frozen!!.lookFile!!
         assertNotEquals(f.look.canonicalFile,frozenLook.canonicalFile)
         // C-03：两个共享同一 look 的目标只共享一份内容寻址副本（撤去复用必红）。
@@ -61,11 +61,11 @@ class HDRBatchPreparationTest {
     }
 
     @Test fun previewPreparationUsesTheSameCandidateWithoutSavingAJournal() = test { f ->
-        val before=f.store.readState(f.targets.last().identity)
+        val before=f.store.readState(f.targets.last().identity, isX3f = false)
         val value=f.preparation().prepare(f.targets.last(),0,ExportFormat.JPEG,128)
         assertFalse(value.settings.isHDREditing);assertEquals(.5f,value.settings.exposure)
         assertEquals(f.look,value.lookFile);assertFalse(f.directory.exists())
-        assertEquals(before,f.store.readState(f.targets.last().identity))
+        assertEquals(before,f.store.readState(f.targets.last().identity, isX3f = false))
     }
 
     @Test fun capableCameraRawKeepsDefaultSdrAndRestoresItsHdrRecord() = test { f ->
@@ -87,7 +87,7 @@ class HDRBatchPreparationTest {
             assertEquals(if (proRAW) HDRSourceInfo.PRORAW_DECODE_VERSION else null, result.proRAWDecodeVersion)
             assertEquals(.5f, result.exposure)
             assertEquals(-2f, result.sdrSnapshotSettings()!!.exposure)
-            assertEquals(edits, f.store.readState(target.identity).settings)
+            assertEquals(edits, f.store.readState(target.identity, isX3f = false).settings)
         }
     }
 

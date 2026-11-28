@@ -78,17 +78,17 @@ final class RulesAndTransferTests: XCTestCase {
         let prepared = try session.prepare(payload: payload, targets: [dstTarget])
         let outcomes = session.apply(prepared)
         XCTAssertEqual(outcomes.first?.status, .applied)
-        XCTAssertEqual(try store.readState(for: dstID).state?.settings.exposure, 1.25)
+        XCTAssertEqual(try store.readState(for: dstID, isX3f: false).state?.settings.exposure, 1.25)
 
         XCTAssertTrue(session.canUndoPhoto(dstID))
         let undone = session.undoPhoto(dstID)
         XCTAssertEqual(undone.first?.status, .applied)
-        XCTAssertNil(try store.readState(for: dstID).state)
+        XCTAssertNil(try store.readState(for: dstID, isX3f: false).state)
 
         XCTAssertTrue(session.canRedoPhoto(dstID))
         let redone = session.redoPhoto(dstID)
         XCTAssertEqual(redone.first?.status, .applied)
-        XCTAssertEqual(try store.readState(for: dstID).state?.settings.clarity, 18.0)
+        XCTAssertEqual(try store.readState(for: dstID, isX3f: false).state?.settings.clarity, 18.0)
     }
 
     func testMacTransferSessionCopyApplyUndoRedo() throws {
@@ -137,11 +137,11 @@ final class RulesAndTransferTests: XCTestCase {
         }
 
         for value in [1.0, 2.0, 1.0] {
-            let outcome = session.commitEdit(expected: try store.readState(for: id), state: editState(value))
+            let outcome = session.commitEdit(expected: try store.readState(for: id, isX3f: false), state: editState(value))
             XCTAssertEqual(outcome.status, .applied)
         }
         XCTAssertEqual(session.transactions.count, 3)
-        XCTAssertEqual(try store.readState(for: id).state?.settings.exposure, 1.0)
+        XCTAssertEqual(try store.readState(for: id, isX3f: false).state?.settings.exposure, 1.0)
 
         let firstTxID = session.transactions[0].id
         let outOfOrder = session.undoTransaction(firstTxID)
@@ -152,7 +152,7 @@ final class RulesAndTransferTests: XCTestCase {
         } else {
             XCTFail("Expected AdjustmentCommitError.historyOrder, got \(String(describing: outOfOrder[0].error))")
         }
-        XCTAssertEqual(try store.readState(for: id).state?.settings.exposure, 1.0)
+        XCTAssertEqual(try store.readState(for: id, isX3f: false).state?.settings.exposure, 1.0)
 
         XCTAssertEqual(session.undoPhoto(id).first?.status, .applied)
         XCTAssertEqual(try store.state(for: id)?.settings.exposure, 2.0)
@@ -237,7 +237,7 @@ final class RulesAndTransferTests: XCTestCase {
         let firstOutcomes = session.apply(operation)
         XCTAssertEqual(firstOutcomes.map(\.status), [.applied, .failed])
         XCTAssertEqual(writeCount, 2)
-        let savedA = try store.readState(for: idA)
+        let savedA = try store.readState(for: idA, isX3f: false)
         XCTAssertEqual(savedA.state?.settings.exposure, 1.25)
         XCTAssertNil(try store.state(for: idB))
         XCTAssertEqual(session.transactions.count, 1)
@@ -247,7 +247,7 @@ final class RulesAndTransferTests: XCTestCase {
         let retryOutcomes = session.apply(operation)
         XCTAssertEqual(retryOutcomes.map(\.status), [.applied, .applied])
         XCTAssertEqual(writeCount, 3, "Retry must write only previously failed photo B, not photo A")
-        XCTAssertEqual(try store.readState(for: idA), savedA)
+        XCTAssertEqual(try store.readState(for: idA, isX3f: false), savedA)
         XCTAssertEqual(try store.state(for: idB)?.settings.exposure, 1.25)
         XCTAssertEqual(session.transactions.count, 1)
         XCTAssertEqual(session.transactions[0].parts.map(\.identity), [idA, idB])

@@ -8,7 +8,7 @@ public protocol BatchRenderError: Error {
 
 public enum BatchExportEnvironment {
     public static var isRasterInput: (URL) -> Bool = { PhotoInputClassification.isRasterInput($0) }
-    public static var isX3fInput: (URL) -> Bool = { Adjustments.isX3fInput($0) }
+    public static var isX3fInput: (URL) -> Bool = { $0.pathExtension.lowercased() == "x3f" }
     public static var defaultX3fMode: (URL) throws -> X3fMode = { _ in throw CocoaError(.featureUnsupported) }
     public static var isAICancelledError: (Error) -> Bool = { ($0 as? BatchRenderError)?.isAICancelled == true }
     public static var isOutputIOError: (Error) -> Bool = { ($0 as? BatchRenderError)?.isOutputIO == true }
@@ -334,7 +334,7 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
     }
     public typealias X3fModeResolver = (PhotoIdentity, URL) throws -> X3fMode
     public static func x3fModeResolver(store: EditPersistence? = nil, x3fDefaultMode: @escaping (URL) throws -> X3fMode = Self.defaultX3fMode(for:)) -> X3fModeResolver {
-        { id, url in try (try store ?? EditPersistence.appStore()).readState(for: id).state?.settings.x3fMode ?? x3fDefaultMode(url) }
+        { id, url in try (try store ?? EditPersistence.appStore()).readState(for: id, isX3f: BatchExportEnvironment.isX3fInput(url)).state?.settings.x3fMode ?? x3fDefaultMode(url) }
     }
     public static func resolveX3fMode(identity: PhotoIdentity, url: URL) throws -> X3fMode { try x3fModeResolver()(identity, url) }
     public static func defaultX3fMode(for url: URL) throws -> X3fMode { try BatchExportEnvironment.defaultX3fMode(url) }

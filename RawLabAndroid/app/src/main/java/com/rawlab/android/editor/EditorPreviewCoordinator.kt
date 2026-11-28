@@ -123,7 +123,7 @@ internal class EditorPreviewCoordinator(
         val imported = session.actions.completePendingImport(request.photo.identity)
         if (request.importing) {
             session.actions.releasePreviousPhoto(request.photo)
-            adjustmentHistory.acceptSource(request.photo, request.importedRecord)
+            adjustmentHistory.acceptSource(request.photo, request.importedRecord, repairWritePending = request.repairWriteError != null)
             session.actions.collectionOpened(request.photo.identity.value)
         }
         if (imported) {
@@ -154,8 +154,11 @@ internal class EditorPreviewCoordinator(
         val saved = when {
             navigationOnly -> null
             alreadyDurable -> EditSaveResult(EditSaveState.SAVED)
-            request.importing -> if (!editStore.available) editStore.initialResult else
-                EditSaveResult(if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE)
+            request.importing -> when {
+                !editStore.available -> editStore.initialResult
+                request.repairWriteError != null -> EditSaveResult(EditSaveState.FAILED, request.repairWriteError)
+                else -> EditSaveResult(if (request.restored) EditSaveState.RESTORED else EditSaveState.NONE)
+            }
             else -> null
         }
         val processingMigration = if (request.importing) {
@@ -182,7 +185,7 @@ internal class EditorPreviewCoordinator(
             mutable.value = mutable.value.copy(saveState = result.state, saveError = result.formatMessage(strings))
         }
         if (request.importing && mutable.value.draft == null) session.actions.restoreEditorDraft()
-        session.actions.startMigrationIfNeeded()
+        if (request.repairWriteError == null) session.actions.startMigrationIfNeeded()
         if (!request.interactive) {
             com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordBreadcrumb(
                 category = "preview",
@@ -328,7 +331,8 @@ internal class EditorPreviewCoordinator(
         if (photo != null && adjustmentHistory.snapshot().loaded == null) {
             val edits = mutable.value.edits
             session.commitAdjustments({ adjustmentHistory.recoverSource(photo) }, false) { result ->
-                result.fold({ record ->
+                result.fold({ openRepair ->
+                    val record = openRepair.state
                     if (session.actions.failedDraftSave() && mutable.value.draft != null) {
                         session.actions.applyDraft(completed)
                         return@fold
@@ -340,7 +344,9 @@ internal class EditorPreviewCoordinator(
                         mutable.value = mutable.value.copy(edits = restored)
                         session.actions.includeIndependentRecipeLook(restored)
                         session.actions.renderCommittedForNavigation()
-                        accept(EditSaveResult(if (record.settings == null) EditSaveState.NONE else EditSaveState.RESTORED))
+                        val outcome = openRepair.writeError?.let { EditSaveResult(EditSaveState.FAILED, it) }
+                            ?: EditSaveResult(if (record.settings == null) EditSaveState.NONE else EditSaveState.RESTORED)
+                        accept(outcome)
                     } else persist(photo, edits, completed = ::accept)
                 }, { accept(EditSaveResult(EditSaveState.FAILED, it, reading = true)) })
             }

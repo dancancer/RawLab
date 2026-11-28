@@ -117,9 +117,7 @@ extension RawEditorViewModel {
                         let original = try Self.adjustmentSourceValidation(file)
                         validation = { try photo.validateSource?(); try original() }
                         try validation?()
-                        isX3fTarget = photo.isRaw && file.withReadAccess {
-                            Adjustments.isX3fInput($0, displayName: photo.displayName)
-                        }
+                        isX3fTarget = photo.isX3f
                         defaults = try self.editPersistence?.readState(for: photo.identity, isX3f: isX3fTarget).state?.settings ??
                             file.withReadAccess { try processor.defaultSettings(for: $0, isRaw: photo.isRaw) }
                         if photo.isRaw {

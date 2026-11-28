@@ -25,6 +25,7 @@ internal class EditorAdjustmentHistory(
         internal val sourcePath: String? = null,
         internal val validator: (() -> Unit)? = null,
         internal val interaction: Interaction? = null,
+        internal val repairWritePending: Boolean = false,
     ) {
         val interacting: Boolean get() = interaction != null
 
@@ -70,6 +71,7 @@ internal class EditorAdjustmentHistory(
             sourcePath = sourcePath,
             validator = validator,
             interaction = interaction,
+            repairWritePending = false,
         )
 
         internal fun withInteraction(next: Interaction?) = Snapshot(
@@ -79,6 +81,7 @@ internal class EditorAdjustmentHistory(
             sourcePath = sourcePath,
             validator = validator,
             interaction = next,
+            repairWritePending = repairWritePending,
         )
     }
 
@@ -87,7 +90,7 @@ internal class EditorAdjustmentHistory(
     val session get() = store.adjustmentSession
     fun snapshot(): Snapshot = state.get()
 
-    fun acceptSource(photo: ImportedPhoto, record: PhotoEditState?) {
+    fun acceptSource(photo: ImportedPhoto, record: PhotoEditState?, repairWritePending: Boolean = false) {
         val token = sourceTokens.incrementAndGet()
         val path = photo.file.absolutePath
         val nextValidator = try { validateSource(photo) } catch (error: Exception) { { throw error } }
@@ -102,6 +105,7 @@ internal class EditorAdjustmentHistory(
                 sourcePath = path,
                 validator = nextValidator,
                 interaction = null,
+                repairWritePending = repairWritePending,
             )
             if (state.compareAndSet(current, next)) {
                 published = true
@@ -170,7 +174,7 @@ internal class EditorAdjustmentHistory(
         }
     }
 
-    fun recoverSource(photo: ImportedPhoto): PhotoEditState {
+    fun recoverSource(photo: ImportedPhoto): OpenX3fRepairResult {
         val baseline = state.get()
         val path = photo.file.absolutePath
         if (!baseline.matchesSource(photo, path) || sourceTokens.get() != baseline.sourceToken) {
@@ -181,9 +185,8 @@ internal class EditorAdjustmentHistory(
             val opened = store.reopen()
             if (opened.state == EditSaveState.FAILED) throw opened.error ?: IOException("Edit store is unavailable")
         }
-        val isX3f = photo.inputKind == PhotoInputKind.RAW &&
-            com.rawlab.android.format.PhotoFiles.isX3fInput(photo.file, photo.name)
-        val record = store.repairLegacyNormalX3fOnOpen(photo.identity, isX3f)
+        val openRepair = store.repairLegacyNormalX3fOnOpen(photo.identity, photo.isX3f)
+        val record = openRepair.state
         val nextValidator = try { validateSource(photo) } catch (error: Exception) { { throw error } }
         val token = baseline.sourceToken + 1L
         if (!sourceTokens.compareAndSet(baseline.sourceToken, token)) throw PhotoChangedException()
@@ -197,13 +200,14 @@ internal class EditorAdjustmentHistory(
                 sourcePath = path,
                 validator = nextValidator,
                 interaction = null,
+                repairWritePending = openRepair.writeError != null,
             )
             if (state.compareAndSet(current, next)) break
         }
         session?.refreshSource(photo.identity, historyValidation(photo), record) {
             state.get().sourceToken == token
         }
-        return record
+        return openRepair
     }
 
     fun commit(photo: ImportedPhoto, settings: EditSettings, clearProcessingMigration: Boolean = false): EditSaveResult {
@@ -232,6 +236,7 @@ internal class EditorAdjustmentHistory(
             },
             validateHistorySource = historyValidation(photo),
             clearProcessingMigration = clearProcessingMigration,
+            forceSave = baseline.repairWritePending,
             acceptCommit = { saved -> publishCommitted(baseline.sourceToken, saved) },
         )
         if (result.saved != null) return EditSaveResult(EditSaveState.SAVED)

@@ -151,6 +151,7 @@ class AdjustmentTransferSession(private val store: EditStore) {
         defaultSettings: EditSettings? = null, isCurrent: () -> Boolean = { true }, validateSource: (() -> Unit)? = null,
         validateHistorySource: (() -> Unit)? = validateSource,
         clearProcessingMigration: Boolean = false,
+        forceSave: Boolean = false,
         acceptCommit: (PhotoEditState) -> Boolean = { true }): AdjustmentOutcome {
         val id = before.identity.value
         if (!isCurrent()) return AdjustmentOutcome(id, AdjustmentStatus.BLOCKED, error = draftError())
@@ -161,11 +162,13 @@ class AdjustmentTransferSession(private val store: EditStore) {
             val current = synchronized(stateLock) { knownRecords[id]?.takeIf { it.identity == before.identity } ?: before }
             val desired = if (current.settings == null && settings == defaultSettings) null else settings
             if (desired == current.settings) {
-                val saved = if (clearProcessingMigration) store.save(current.identity, desired, clearProcessingMigration = true) else current
+                val saved = if (clearProcessingMigration || forceSave) {
+                    store.save(current.identity, desired, clearProcessingMigration = clearProcessingMigration)
+                } else current
                 synchronized(stateLock) {
                     if (acceptCommit(saved)) {
                         if (validateHistorySource != null) sourceValidators[id] = validateHistorySource
-                        if (clearProcessingMigration) knownRecords[id] = saved else knownRecords.putIfAbsent(id, current)
+                        if (clearProcessingMigration || forceSave) knownRecords[id] = saved else knownRecords.putIfAbsent(id, current)
                     }
                 }
                 AdjustmentOutcome(id, AdjustmentStatus.UNCHANGED, saved = saved)

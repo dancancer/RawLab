@@ -503,8 +503,14 @@ extension EditorModel {
             return
         }
         var restoredRecord: MacPhotoEditRecord
+        var repairWriteError: Error?
         do {
-            restoredRecord = try editStore!.repairLegacyNormalX3fOnOpen(for: url)
+            let openRepair = try editStore!.repairLegacyNormalX3fOnOpen(for: url)
+            restoredRecord = openRepair.record
+            repairWriteError = openRepair.writeError
+            if openRepair.repaired {
+                session.rememberExternalSave(restoredRecord)
+            }
         } catch let unusable as UnusableEditRecordError {
             guard let cleared = recoverUnusableRecordOnOpen(url, message: unusable.localizedDescription, session: session) else {
                 return
@@ -556,7 +562,8 @@ extension EditorModel {
         }
         let opening=UUID(); pendingOpenID=opening
         if candidate.isHDREditing && candidate.hdrCameraAIEnabled {
-            activateOpen(url, record: restoredRecord, settings: candidate, isHDR: info != nil, cameraHDR: cameraHDR)
+            activateOpen(url, record: restoredRecord, settings: candidate, isHDR: info != nil, cameraHDR: cameraHDR,
+                         repairWriteError: repairWriteError)
             return
         }
         if info != nil || candidate.isHDREditing {
@@ -583,7 +590,8 @@ extension EditorModel {
                         guard self.pendingOpenID==opening else { return }
                         self.importing=false
                         self.activateOpen(url,record:restoredRecord,settings:snapshot,isHDR:info != nil,cameraHDR:cameraHDR,
-                                          neutral:neutral,result:result,hdrEdge:hdrEdge,hdrSource:hdrSource)
+                                          neutral:neutral,result:result,hdrEdge:hdrEdge,hdrSource:hdrSource,
+                                          repairWriteError: repairWriteError)
                     }
                 } catch {
                     DispatchQueue.main.async {
@@ -595,7 +603,8 @@ extension EditorModel {
             return
         }
         importing=false
-        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback)
+        activateOpen(url,record:restoredRecord,settings:candidate,isHDR:false,cameraHDR:cameraHDR,sdrFallback:sdrFallback,
+                     repairWriteError: repairWriteError)
     }
 
     private func recoverUnusableRecordOnOpen(_ url: URL, message: String, session: AdjustmentTransferSession) -> MacPhotoEditRecord? {
@@ -632,7 +641,8 @@ extension EditorModel {
 
     private func activateOpen(_ url: URL,record restoredRecord: MacPhotoEditRecord,settings candidate: Adjustments,
                               isHDR: Bool,cameraHDR: HDRSourceInfo?,neutral stagedNeutral: RenderedImage? = nil,result stagedResult: RenderedImage? = nil,
-                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false) {
+                              hdrEdge: Int? = nil,hdrSource: MacReferenceSource? = nil,sdrFallback: Bool = false,
+                              repairWriteError: Error? = nil) {
         resetAITask()
         cancelViewportResize()
         committedEdit = restoredRecord
@@ -658,8 +668,16 @@ extension EditorModel {
         }
         updatingMetadata = false
         normalizeAdjustmentNavigation()
-        dirty = false
-        saveStatusKey = restored == nil ? "" : "已恢复上次调整"
+        if let repairWriteError {
+            dirty = true
+            pendingX3fRepairPersistence = true
+            saveError = L10n.format("调整未保存：%@", adjustmentErrorMessage(repairWriteError))
+            saveStatusKey = ""
+        } else {
+            dirty = false
+            pendingX3fRepairPersistence = false
+            saveStatusKey = restored == nil ? "" : "已恢复上次调整"
+        }
         processingMigrationReceipt = try? editStore?.processingMigration(for: url)
         clearSaveStatusLater()
         if let stagedResult {

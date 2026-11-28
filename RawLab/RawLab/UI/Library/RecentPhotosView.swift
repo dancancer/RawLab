@@ -79,6 +79,7 @@ enum IOSPhotoThumbnailInput {
     case source(IOSPhotoPreviewSource)
     var identity: PhotoIdentity { switch self { case .recent(let photo): photo.identity; case .source(let photo): photo.identity } }
     var isRaw: Bool { switch self { case .recent(let photo): photo.isRaw; case .source(let photo): photo.isRaw } }
+    var isX3f: Bool { switch self { case .recent(let photo): photo.isX3f; case .source(let photo): photo.isX3f } }
 }
 
 struct IOSPhotoThumbnail: View {
@@ -127,9 +128,9 @@ struct IOSPhotoThumbnail: View {
                 image = previous; notice = "上次预览"; origin = .previous
             }
             guard let directory = model.editPersistence?.directory else { notice = "预览未更新"; return }
-            let record = try await library.record(for: input.identity, editDirectory: directory)
+            let record = try await library.record(for: input.identity, isX3f: input.isX3f, editDirectory: directory)
             try Task.checkCancellation()
-            let modified = IOSPhotoPreviewPlan.isEdited(record, isRaw: input.isRaw)
+            let modified = IOSPhotoPreviewPlan.isEdited(record, isRaw: input.isRaw, isX3f: input.isX3f)
             edited = modified
             let source: IOSPhotoPreviewSource
             switch input {

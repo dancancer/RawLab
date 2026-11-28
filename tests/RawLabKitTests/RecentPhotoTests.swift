@@ -181,12 +181,12 @@ final class RecentPhotoTests: XCTestCase {
         try EditPersistence(directory: dirB).save(idB, state: PhotoEditState(settings: sB))
         try FileManager.default.createSymbolicLink(at: linkDir, withDestinationURL: dirA)
         let openA = try EditPersistence(directory: linkDir)
-        XCTAssertEqual(try openA.readState(for: idA).state?.settings.exposure, 1.0, "RegistryCache symlink initially resolves dirA")
+        XCTAssertEqual(try openA.readState(for: idA, isX3f: false).state?.settings.exposure, 1.0, "RegistryCache symlink initially resolves dirA")
         try FileManager.default.removeItem(at: linkDir)
         try FileManager.default.createSymbolicLink(at: linkDir, withDestinationURL: dirB)
         let openB = try EditPersistence(directory: linkDir)
         XCTAssertTrue(
-            try openB.readState(for: idB).state?.settings.exposure == -1.0 && openB.readState(for: idA).state == nil,
+            try openB.readState(for: idB, isX3f: false).state?.settings.exposure == -1.0 && openB.readState(for: idA, isX3f: false).state == nil,
             "RegistryCache symlink switch dirA -> dirB never leaks dirA cache"
         )
 
@@ -195,20 +195,20 @@ final class RecentPhotoTests: XCTestCase {
         let invStore = try EditPersistence(directory: invDir)
         try invStore.save(idA, state: PhotoEditState(settings: sA))
         let invFile = invDir.appendingPathComponent("edits.json")
-        _ = try invStore.readState(for: idA)
+        _ = try invStore.readState(for: idA, isX3f: false)
         try Data("{\"version\":99,\"records\":{}}".utf8).write(to: invFile)
-        assertRejects { _ = try invStore.readState(for: idA) }
+        assertRejects { _ = try invStore.readState(for: idA, isX3f: false) }
         XCTAssertEqual(try invStore.state(for: idA)?.settings.exposure, 1.0, "Transient/future-version fallback preserves lastReadableStore for legacy state(for:)")
         assertRejects { _ = try EditPersistence(directory: invDir) }
         try FileManager.default.removeItem(at: invFile)
         let emptyAfterDelete = try EditPersistence(directory: invDir)
-        XCTAssertNil(try emptyAfterDelete.readState(for: idA).state, "External edits.json deletion evicts cached snapshot")
+        XCTAssertNil(try emptyAfterDelete.readState(for: idA, isX3f: false).state, "External edits.json deletion evicts cached snapshot")
 
         try invStore.save(idA, state: PhotoEditState(settings: sA))
-        _ = try invStore.readState(for: idA)
+        _ = try invStore.readState(for: idA, isX3f: false)
         try Data("{corrupt".utf8).write(to: invFile)
         XCTAssertTrue(
-            try invStore.readState(for: idA).state == nil && invStore.state(for: idA) == nil,
+            try invStore.readState(for: idA, isX3f: false).state == nil && invStore.state(for: idA) == nil,
             "Root corruption quarantines edits.json and clears cached lastReadableStore"
         )
         XCTAssertTrue(

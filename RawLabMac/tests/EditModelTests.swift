@@ -778,6 +778,83 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         print("PASS: EditorModel reset preparation, stale guards, single commit, draft boundary and retry")
     }
 
+    private static func x3fOpenRepairFailureAndLedgerChecks(root: URL) throws {
+        // Point 1: read-only edits dir must not abort opening a legacy normal-X3F photo.
+        let roDir = root.appendingPathComponent("x3f-ro-edits")
+        let roX3f = root.appendingPathComponent("readonly-open.X3F")
+        try Data("x3f-ro-open".utf8).write(to: roX3f)
+        var broken = Adjustments()
+        broken.x3fMode = .normal
+        broken.exposure = 0.6
+        broken.aiDenoiseEnabled = true
+        broken.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, profileID: "sigma-45", vignetting: true)
+        try MacEditPersistence(directory: roDir).save(roX3f, state: MacPhotoEditState(settings: broken, filmID: ""))
+
+        let fm = FileManager.default
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: roDir.path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roDir.path) }
+
+        let roModel = EditorModel(
+            lookDirectory: root.appendingPathComponent("looks"),
+            editDirectory: roDir,
+            batchDirectory: root.appendingPathComponent("x3f-ro-batch")
+        )
+        roModel.open(roX3f)
+        try check(roModel.file == roX3f,
+                  "EditorModel.open must still open legacy normal X3F when repair write-back fails")
+        try check(!roModel.settings.aiDenoiseEnabled && !roModel.settings.lensSettings.isEnabled &&
+                  roModel.settings.exposure == 0.6 && roModel.settings.lensCorrection?.profileID == "sigma-45",
+                  "EditorModel.open keeps repaired settings in memory when repair write-back fails")
+        try check(roModel.saveError != nil && roModel.dirty,
+                  "EditorModel.open reports failed repair write-back as saveError and marks dirty")
+
+        // Restoring write permissions lets a later save persist the repair.
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roDir.path)
+        try check(roModel.saveEdits() && roModel.saveError == nil && !roModel.dirty,
+                  "Later saveEdits persists the deferred X3F repair once store is writable")
+        let persistedRaw = try Data(contentsOf: roDir.appendingPathComponent("edits.json"))
+        let persistedText = String(decoding: persistedRaw, as: UTF8.self)
+        try check(!persistedText.contains("\"aiDenoiseEnabled\":true"),
+                  "Persisted edits.json clears aiDenoiseEnabled after deferred save")
+
+        // Point 5: open-repair syncs adjustmentSession ledger so editing back to previously known exposure saves.
+        let ledgerDir = root.appendingPathComponent("x3f-ledger-edits")
+        let ledgerX3f = root.appendingPathComponent("ledger-sync.X3F")
+        let otherArw = root.appendingPathComponent("ledger-other.ARW")
+        try Data("x3f-ledger".utf8).write(to: ledgerX3f)
+        try Data("arw-ledger".utf8).write(to: otherArw)
+        let ledgerModel = EditorModel(
+            lookDirectory: root.appendingPathComponent("looks"),
+            editDirectory: ledgerDir,
+            batchDirectory: root.appendingPathComponent("x3f-ledger-batch")
+        )
+        ledgerModel.open(ledgerX3f)
+        ledgerModel.settings.exposure = 0.5
+        try check(ledgerModel.saveEdits(), "initial edit to 0.5 saves and populates ledger")
+        ledgerModel.open(otherArw)
+
+        // Externally write a legacy normal-X3F record with exposure 1.0 + lens/AI on.
+        var externalBroken = broken
+        externalBroken.exposure = 1.0
+        try MacEditPersistence(directory: ledgerDir).save(ledgerX3f, state: MacPhotoEditState(settings: externalBroken, filmID: ""))
+
+        let genBefore = ledgerModel.adjustmentSession?.editGeneration(for: ledgerX3f) ?? 0
+        ledgerModel.open(ledgerX3f)
+        let genAfter = ledgerModel.adjustmentSession?.editGeneration(for: ledgerX3f) ?? 0
+        try check(genAfter > genBefore, "EditorModel.open repair advances adjustmentSession editGeneration")
+        try check(ledgerModel.settings.exposure == 1.0 && !ledgerModel.settings.aiDenoiseEnabled && !ledgerModel.settings.lensSettings.isEnabled,
+                  "EditorModel.open restores repaired external record")
+
+        // Now edit exposure back to the previously known 0.5 and save asynchronously; must actually write 0.5 to disk.
+        ledgerModel.settings.exposure = 0.5
+        _ = ledgerModel.saveEditsAsync()
+        try check(ledgerModel.saveEdits(), "saving back to previously known 0.5 after open-repair must succeed")
+        let finalDisk = try MacEditPersistence(directory: ledgerDir).readState(for: ledgerX3f)
+        try check(finalDisk.state?.settings.exposure == 0.5 && finalDisk.state?.settings.aiDenoiseEnabled == false,
+                  "editing back to previously known exposure after open-repair persists to disk instead of returning unchanged")
+        print("PASS: EditorModel open-repair write failure recovery and ledger sync")
+    }
+
     static func main() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -976,6 +1053,7 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try rasterEditorChecks(root: root, lut: rasterLUT)
         try memoryPressureReclaimChecks(root: root, lut: rasterLUT)
         try unusableRecordOpenRecoveryChecks(root: root)
+        try x3fOpenRepairFailureAndLedgerChecks(root: root)
         print("PASS: EditorModel persistent restore, unseen defaults, reset and failed-save protection")
         try referenceFrameCapChecks(root: root)
         if CommandLine.arguments.count > 1 {

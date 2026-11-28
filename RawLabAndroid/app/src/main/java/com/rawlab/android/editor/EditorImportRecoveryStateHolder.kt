@@ -162,14 +162,16 @@ internal class EditorImportRecoveryStateHolder(
 
     fun handleMissingLook(value: WorkResult.MissingLook) {
         releasePreviousPhoto(value.photo)
-        session.adjustmentHistory.acceptSource(value.photo, value.importedRecord)
+        session.adjustmentHistory.acceptSource(value.photo, value.importedRecord, repairWritePending = value.repairWriteError != null)
         session.actions.collectionOpened(value.photo.identity.value)
+        val saveOutcome = value.repairWriteError?.let { EditSaveResult(EditSaveState.FAILED, it) }
         mutable.value = EditorStateReducer.renderFinished(mutable.value).copy(
             photo = value.photo,
             edits = value.edits,
             preview = null,
             exact = false,
-            saveState = EditSaveState.RESTORED,
+            saveState = saveOutcome?.state ?: EditSaveState.RESTORED,
+            saveError = saveOutcome?.formatMessage(strings),
             error = strings.text(R.string.look_unavailable),
             processingMigration = runCatching { editStore.processingMigration(value.photo.identity) }.getOrNull(),
         )

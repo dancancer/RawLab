@@ -35,30 +35,13 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     private val store by lazy { EditStore(editDirectory) }
     private val storageDelegate = lazy { PhotoStorage(this.context) }
     private val storage by storageDelegate
-    private val rendererDelegate = lazy { EditorRenderer(storage, { store.readState(it) }, BuildConfig.DEBUG) }
+    private val rendererDelegate = lazy { EditorRenderer(storage, { id, isX3f -> store.readState(id, isX3f) }, BuildConfig.DEBUG) }
     private val renderer by rendererDelegate
     private val cache = EditedPhotoPreviewCache.shared(File(context.cacheDir, "edited-photo-previews"))
     private val requests = ConcurrentHashMap.newKeySet<RenderCancellation>()
     private val closed = AtomicBoolean(false)
     private val executor = Executors.newSingleThreadExecutor { action ->
         Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); action.run() }, "rawlab-photo-previews")
-    }
-
-    private fun isX3fAlbumPhoto(photo: AlbumPhoto, input: PhotoInputKind, settings: EditSettings?): Boolean {
-        if (input != PhotoInputKind.RAW || settings?.needsLegacyNormalX3fRepair != true) return false
-        if (PhotoFiles.isX3fName(photo.name)) return true
-        return runCatching {
-            context.contentResolver.openInputStream(photo.uri)?.use { stream ->
-                val signature = ByteArray(4)
-                var offset = 0
-                while (offset < signature.size) {
-                    val read = stream.read(signature, offset, signature.size - offset)
-                    if (read <= 0) return@use false
-                    offset += read
-                }
-                signature.contentEquals(byteArrayOf(70, 79, 86, 98))
-            } ?: false
-        }.getOrDefault(false)
     }
 
     suspend fun states(photos: List<AlbumPhoto>): Map<String, Boolean> = work { cancellation ->
@@ -69,7 +52,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
                 val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
                 when (val result = records[PhotoIdentity(photo.uri.toString())]) {
                     is PhotoEditReadResult.Usable -> {
-                        val isX3f = isX3fAlbumPhoto(photo, input, result.state.settings)
+                        val isX3f = input == PhotoInputKind.RAW && photo.isX3f
                         put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input, isX3f))
                     }
                     is PhotoEditReadResult.Unusable, null -> Unit
@@ -81,9 +64,8 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     suspend fun image(photo: AlbumPhoto): Bitmap = work { cancellation ->
         val identity = PhotoIdentity(photo.uri.toString())
         val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
-        val rawRecord = store.readState(identity)
-        val isX3f = isX3fAlbumPhoto(photo, input, rawRecord.settings)
-        val record = rawRecord.repairLegacyNormalX3f(isX3f)
+        val isX3f = input == PhotoInputKind.RAW && photo.isX3f
+        val record = store.readState(identity, isX3f)
         val settings = record.settings ?: throw AdjustmentOperationExpiredException()
         val stamp = OriginalPhotoSource.fingerprint(context.contentResolver, photo.uri)
         val resources = resources(settings)
@@ -110,7 +92,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     }
 
     suspend fun accept(photo: ImportedPhoto, renderedSettings: EditSettings, image: Bitmap) = work { cancellation ->
-        val isX3f = photo.inputKind == PhotoInputKind.RAW && PhotoFiles.isX3fInput(photo.file, photo.name)
+        val isX3f = photo.isX3f
         val record = store.readState(photo.identity, isX3f)
         val saved = record.settings ?: return@work
         if (renderedSettings.normalizedWhiteBalance() != saved.normalizedWhiteBalance()) return@work

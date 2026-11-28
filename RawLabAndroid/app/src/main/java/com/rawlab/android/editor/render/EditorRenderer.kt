@@ -41,15 +41,15 @@ import java.util.IdentityHashMap
 
 internal class EditorRenderer(
     private val storage: PhotoStorage,
-    private val restore: (PhotoIdentity) -> PhotoEditState?,
+    private val restore: (PhotoIdentity, Boolean) -> PhotoEditState?,
     private val debuggable: Boolean,
     private val destinationDeleter: ExportDestinationDeleter = ExportDestinationDeleter { destination, original ->
         storage.deleteIncompleteDocument(destination, original)
     },
     private val engineFactory: () -> RenderEngine = { NativeRenderEngine(NativeProcessor(lensDatabase = storage.lensDatabase())) },
     private val hdrBridge: HdrRenderBridge = NativeHdrRenderBridge,
-    private val repairOnOpen: (PhotoIdentity, Boolean) -> PhotoEditState? = { identity, isX3f ->
-        restore(identity)?.repairLegacyNormalX3f(isX3f)
+    private val repairOnOpen: (PhotoIdentity, Boolean) -> com.rawlab.android.settings.OpenX3fRepairResult? = { identity, isX3f ->
+        restore(identity, isX3f)?.let { com.rawlab.android.settings.OpenX3fRepairResult(it) }
     },
 ) {
     internal interface HdrImageHandle : Closeable {
@@ -698,9 +698,13 @@ internal class EditorRenderer(
             var hadSavedRecord = false
             try {
                 photo.validateOriginal?.invoke()
-                val isX3f = photo.inputKind == PhotoInputKind.RAW &&
-                    com.rawlab.android.format.PhotoFiles.isX3fInput(photo.file, photo.name)
-                val record = if (work.x3fModeOverride == null) repairOnOpen(photo.identity, isX3f) else restore(photo.identity)
+                val openRepair = if (work.x3fModeOverride == null) {
+                    repairOnOpen(photo.identity, photo.isX3f)
+                } else {
+                    restore(photo.identity, photo.isX3f)?.let { com.rawlab.android.settings.OpenX3fRepairResult(it) }
+                }
+                val record = openRepair?.state
+                val repairWriteError = openRepair?.writeError
                 hadSavedRecord = record?.settings != null
                 var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
                 if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)
@@ -714,10 +718,11 @@ internal class EditorRenderer(
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
-                    WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned)
+                    WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned, repairWriteError)
                 } else perform(Work.Preview(photo, restored, false, work.gpuMode,
                     importing = true, restored = record?.settings != null, importedRecord = record,
-                    persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned), generation)
+                    persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned,
+                    repairWriteError = repairWriteError), generation)
             }
             catch (error: Throwable) {
                 if (error is com.rawlab.android.settings.UnusableEditRecordException ||

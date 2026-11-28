@@ -152,9 +152,8 @@ internal class EditorAdjustmentPreparation(
                     sourceValidator()
                     checkActive()
                     val validate = sourceValidator
-                    val isX3f = photo.inputKind == PhotoInputKind.RAW &&
-                        com.rawlab.android.format.PhotoFiles.isX3fInput(photo.file, photo.name)
-                    val saved = store.readState(identity).repairLegacyNormalX3f(isX3f)
+                    val isX3f = photo.isX3f
+                    val saved = store.readState(identity, isX3f)
                     val targetDefaults = saved.settings ?: photo.defaultEditSettings()
                     val neutral = EditSettings(processing = targetDefaults.processing, x3fMode = targetDefaults.x3fMode)
                     val database by lazy { lensDatabaseProvider() }

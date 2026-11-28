@@ -910,7 +910,7 @@ struct Harness {
                 let keepReceipt = (metadata["migration_receipt"] as? [String: Any])?["status"] as? String == "kept"
                 if keepReceipt {
                     let quality = ProcessingMigrationQuality(rgbRMSE: 0.01, p99Error: 0.02, worstTileRMSE: 0.02, detailRMSE: 0.01, evaluations: 10)
-                    _ = try store.commitProcessingMigration(expected: try store.readState(for: pid), candidate: nil, quality: quality)
+                    _ = try store.commitProcessingMigration(expected: try store.readState(for: pid, isX3f: false), candidate: nil, quality: quality)
                 }
                 eval(scenarioID) {
                     let reopened = try EditPersistence(directory: dir)

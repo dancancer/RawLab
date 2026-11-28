@@ -310,21 +310,34 @@ enum BatchFlowModelTests {
         model.addCollectionPhotos([normal, legacy])
         var settings = Adjustments()
         settings.x3fMode = .normal; settings.aiDenoiseEnabled = true
+        settings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
         try model.editStore!.save(normal, state: MacPhotoEditState(settings: settings, filmID: ""))
-        settings.x3fMode = .legacy; settings.aiDenoiseEnabled = false
-        try model.editStore!.save(legacy, state: MacPhotoEditState(settings: settings, filmID: ""))
-        let rejected = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
-        try require(!rejected.ready && rejected.rows.first?.error?.localizedDescription ==
-                    L10n.text("此 X3F 显影模式不支持 AI 降噪。"),
-                    "moved collection preflight preserves the normal X3F AI restriction")
-        settings.selectX3fMode(.normal)
-        try model.editStore!.save(normal, state: MacPhotoEditState(settings: settings, filmID: ""))
+        var legacySettings = Adjustments()
+        legacySettings.x3fMode = .legacy; legacySettings.aiDenoiseEnabled = false
+        legacySettings.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
+        try model.editStore!.save(legacy, state: MacPhotoEditState(settings: legacySettings, filmID: ""))
+        // Legacy normal-X3F records with AI/lens enabled are repaired in memory during collection preflight;
+        // the legacy-mode X3F sibling remains untouched, while direct normal-mode AI validation still refuses.
         let review = try model.prepareCollectionExport(skipping: [], format: .png, longEdge: nil, directory: directory)
-        try require(review.ready && review.snapshots.map { $0.settings.x3fMode } == [.normal, .legacy],
-                    "collection preparation retains each photo's saved X3F mode")
+        try require(review.ready &&
+                    review.snapshots.map { $0.settings.x3fMode } == [.normal, .legacy] &&
+                    review.snapshots.first?.settings.aiDenoiseEnabled == false &&
+                    review.snapshots.first?.settings.lensSettings.isEnabled == false &&
+                    review.snapshots.last?.settings == legacySettings,
+                    "collection preflight repairs legacy normal X3F AI and lens flags in memory while leaving legacy X3F untouched")
         let job = try model.freezeCollectionExport(review)
-        try require(job.items.map { $0.frozen!.settings.x3fMode } == [.normal, .legacy],
-                    "collection freeze retains mixed normal and legacy X3F identities")
+        try require(job.items.map { $0.frozen!.settings.x3fMode } == [.normal, .legacy] &&
+                    job.items.first?.frozen?.settings.aiDenoiseEnabled == false &&
+                    job.items.first?.frozen?.settings.lensSettings.isEnabled == false &&
+                    job.items.last?.frozen?.settings == legacySettings,
+                    "collection freeze retains mixed normal and legacy X3F identities with repaired normal flags")
+        do {
+            try RenderEngine.validateAIInput(normal, settings: settings)
+            try require(false, "direct normal X3F AI request not covered by record repair must still be refused")
+        } catch {
+            try require(error.localizedDescription == L10n.text("此 X3F 显影模式不支持 AI 降噪。"),
+                        "direct normal X3F AI request retains the unsupported AI denoise refusal")
+        }
         let unedited = directory.appendingPathComponent("unedited.X3F")
         let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("lutools/tests/fixtures/linear-uncompressed.dng")

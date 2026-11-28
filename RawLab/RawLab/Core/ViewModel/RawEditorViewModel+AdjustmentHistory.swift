@@ -42,7 +42,7 @@ extension RawEditorViewModel {
         }
     }
 
-    func acceptImportedEditRecord(_ record: PhotoEditRecord?, settings: RawSettings) {
+    func acceptImportedEditRecord(_ record: PhotoEditRecord?, settings: RawSettings, repairedOnOpen: Bool = false) {
         loadedEditRecord = record
         processingMigrationReceipt = record.flatMap { try? editPersistence?.processingMigration(for: $0.identity) }
         adjustmentInteraction = nil
@@ -50,10 +50,15 @@ extension RawEditorViewModel {
         adjustmentRestoredSettings = nil
         includeIndependentRecipeLook(settings)
         retainEditMetadata(record?.state ?? PhotoEditState(settings: settings, updatedAt: Date(timeIntervalSince1970: 0)))
+        if repairedOnOpen, let record {
+            adjustmentSession?.rememberExternalSave(record)
+        }
         if let source = editorEditSource {
             do { adjustmentSourceValidator = try Self.adjustmentSourceValidation(source.file) }
             catch { adjustmentSourceValidator = { throw error } }
-            if let validate = adjustmentSourceValidator { adjustmentSession?.refreshSource(source.identity, validate: validate) }
+            if let validate = adjustmentSourceValidator {
+                adjustmentSession?.refreshSource(source.identity, validate: validate, record: record)
+            }
         }
         adjustmentHistoryRevision = UUID()
     }

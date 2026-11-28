@@ -86,27 +86,27 @@ class AdjustmentHistoryInstrumentedTest {
             val count = model.adjustmentTransactions.size
             main { model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset); model.applyPresetToCurrentPhoto(preset) }
             phase(QuickPresetPhase.SAVED)
-            assertEquals(.7f, edits.readState(identity).settings!!.exposure)
+            assertEquals(.7f, edits.readState(identity, isX3f = false).settings!!.exposure)
             assertEquals(count + 1, model.adjustmentTransactions.size)
             assertEquals(com.rawlab.android.adjustments.AdjustmentHistoryTransaction.Action.PRESET, model.adjustmentTransactions.last().action)
             main { model.undoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .2f }
             assertEquals("Global Undo dismisses the previous quick preset result", QuickPresetPhase.IDLE, model.quickPreset.value.phase)
             assertTrue(model.quickPreset.value.visible)
             main { model.redoAdjustment() }; await(model) { it.canExport && it.edits.exposure == .7f }
-            val saved = edits.readState(identity)
+            val saved = edits.readState(identity, isX3f = false)
             main { model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.UNCHANGED)
-            assertEquals(saved, edits.readState(identity)); assertEquals(count + 1, model.adjustmentTransactions.size)
+            assertEquals(saved, edits.readState(identity, isX3f = false)); assertEquals(count + 1, model.adjustmentTransactions.size)
             main { model.performAdjustmentHistory(true, model.adjustmentTransactions.last().id) }
             await(model) { it.canExport && it.edits.exposure == .2f }
             main { model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.SAVED)
             main { model.undoQuickPreset() }; phase(QuickPresetPhase.UNDONE)
-            assertEquals(.2f, edits.readState(identity).settings!!.exposure)
+            assertEquals(.2f, edits.readState(identity, isX3f = false).settings!!.exposure)
 
             val originalPrepare = model.prepareAdjustmentOperation
             fun late(invalidate: () -> Unit) {
                 val prepared = java.util.concurrent.CountDownLatch(1)
                 val release = java.util.concurrent.CountDownLatch(1)
-                val before = edits.readState(identity)
+                val before = edits.readState(identity, isX3f = false)
                 val history = model.adjustmentTransactions.toList()
                 var expected = before
                 var expectedHistory = history
@@ -120,17 +120,17 @@ class AdjustmentHistoryInstrumentedTest {
                     assertTrue(prepared.await(30, java.util.concurrent.TimeUnit.SECONDS))
                     main(invalidate)
                     await(model) { it.canExport && !it.committingAdjustments }
-                    expected = edits.readState(identity)
+                    expected = edits.readState(identity, isX3f = false)
                     expectedHistory = model.adjustmentTransactions.toList()
                 } finally { release.countDown(); main { model.prepareAdjustmentOperation = originalPrepare } }
                 await(model) { !model.adjustmentTransfer.value.preparing && !it.committingAdjustments }
                 SystemClock.sleep(150)
-                assertEquals(expected, edits.readState(identity)); assertEquals(expectedHistory, model.adjustmentTransactions)
+                assertEquals(expected, edits.readState(identity, isX3f = false)); assertEquals(expectedHistory, model.adjustmentTransactions)
             }
             late { model.cancelQuickPreset() }
             late { model.closeQuickPresets() }
             late { model.edit(model.state.value.edits.copy(exposure = .4f)) }
-            assertEquals(.4f, edits.readState(identity).settings!!.exposure)
+            assertEquals(.4f, edits.readState(identity, isX3f = false).settings!!.exposure)
             val original = model.state.value.photo!!.uri
             val other = File(context.cacheDir, "quick-other-${UUID.randomUUID()}.png").also(::png)
             try {
@@ -141,9 +141,9 @@ class AdjustmentHistoryInstrumentedTest {
             } finally { other.delete() }
             main { model.showQuickPresets(); model.applyPresetToCurrentPhoto(preset) }; phase(QuickPresetPhase.SAVED)
             main { model.edit(model.state.value.edits.copy(contrast = 1.4f)) }; await(model) { it.canExport }
-            val ordinary = edits.readState(identity)
+            val ordinary = edits.readState(identity, isX3f = false)
             main { model.undoQuickPreset() }; phase(QuickPresetPhase.UNDO_FAILED)
-            assertEquals(ordinary, edits.readState(identity))
+            assertEquals(ordinary, edits.readState(identity, isX3f = false))
         } finally { model.presetStore.delete(preset) }
     }
 
@@ -173,7 +173,7 @@ class AdjustmentHistoryInstrumentedTest {
             assertTrue(captured.isSuccess)
         } finally { main { android.os.StrictMode.setThreadPolicy(old) } }
         assertTrue("Disk access on editor main thread: $violations", violations.isEmpty())
-        assertEquals(model.state.value.edits, edits.readState(identity).settings)
+        assertEquals(model.state.value.edits, edits.readState(identity, isX3f = false).settings)
         assertEquals(0, model.state.value.edits.highlights.toRawBits())
     }
 
@@ -238,27 +238,27 @@ class AdjustmentHistoryInstrumentedTest {
         }
         await(model) { it.canExport }
         assertEquals(1, model.adjustmentTransactions.size)
-        val receipt = edits.readState(identity)
+        val receipt = edits.readState(identity, isX3f = false)
         assertEquals(1f, receipt.settings!!.exposure)
         main { model.updatePreviewSize(512) }
         await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 512 }
-        assertEquals(receipt, edits.readState(identity))
+        assertEquals(receipt, edits.readState(identity, isX3f = false))
         assertEquals(AdjustmentStatus.APPLIED, undo(model).single().status)
         await(model) { it.canExport && it.edits.exposure == 0f }
         assertNull(edits.load(identity))
         main { model.redoAdjustment() }
         await(model) { it.canExport && it.edits.exposure == 1f }
-        val beforeCancel = edits.readState(identity)
+        val beforeCancel = edits.readState(identity, isX3f = false)
         main {
             model.edit(model.state.value.edits.copy(exposure = 2f), interactive = true)
             model.cancelAdjustmentInteraction()
         }
         await(model) { it.canExport && it.edits.exposure == 1f }
-        assertEquals(beforeCancel, edits.readState(identity)); assertEquals(1, model.adjustmentTransactions.size)
+        assertEquals(beforeCancel, edits.readState(identity, isX3f = false)); assertEquals(1, model.adjustmentTransactions.size)
     }
 
     @Test fun targetSampleReleaseMakesOneHistoryAndResizeCancelsPendingSample() = withModel { model, edits, identity ->
-        val before = edits.readState(identity)
+        val before = edits.readState(identity, isX3f = false)
         main {
             model.beginDraft(AdjustmentGroup.HSL)
             model.setHslTargetEnabled(true)
@@ -271,7 +271,7 @@ class AdjustmentHistoryInstrumentedTest {
         val sampled = model.state.value.visibleEdits.hsl
         assertEquals(1, model.state.value.draft!!.undoSteps.size)
         assertTrue(model.adjustmentTransactions.isEmpty())
-        assertEquals(before, edits.readState(identity))
+        assertEquals(before, edits.readState(identity, isX3f = false))
         main {
             model.beginHslTarget(.5f, .5f)
             model.moveHslTarget(40f)
@@ -280,7 +280,7 @@ class AdjustmentHistoryInstrumentedTest {
         }
         await(model) { it.draftReady }
         assertEquals(sampled, model.state.value.visibleEdits.hsl)
-        assertEquals(before, edits.readState(identity))
+        assertEquals(before, edits.readState(identity, isX3f = false))
         main {
             model.beginHslTarget(.5f, .5f)
             assertTrue(model.hslTarget.value.waiting)
@@ -298,24 +298,24 @@ class AdjustmentHistoryInstrumentedTest {
         assertEquals(sampled, model.state.value.visibleEdits.hsl)
         assertEquals(1, model.state.value.draft!!.undoSteps.size)
         assertTrue(model.adjustmentTransactions.isEmpty())
-        assertEquals(before, edits.readState(identity))
+        assertEquals(before, edits.readState(identity, isX3f = false))
 
         assertTrue(result<Boolean> { model.applyDraft(it) })
         await(model) { it.canExport }
-        val saved = edits.readState(identity)
+        val saved = edits.readState(identity, isX3f = false)
         assertEquals(sampled, saved.settings!!.hsl)
         assertEquals(1, model.adjustmentTransactions.size)
         assertFalse(model.hslTarget.value.enabled)
         main { model.updatePreviewSize(64) }
         await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
-        assertEquals(saved, edits.readState(identity))
+        assertEquals(saved, edits.readState(identity, isX3f = false))
     }
 
     // 碳审 Finding 1 回归锁（撤牙 ① 必红）：HSL 草稿期内发生过真实视口边长变化后，渲染收尾
     // 按已记录边长的同边长重试不得被误判为视口变化而 cancelHslTarget 清空取色样本；
     // 草稿关闭后提交预览仍须按草稿期记录的边长收敛。
     @Test fun hslSamplingStaysUsableAfterViewportEdgeChangeDuringHslDraft() = withModel { model, edits, identity ->
-        val before = edits.readState(identity)
+        val before = edits.readState(identity, isX3f = false)
         main {
             model.beginDraft(AdjustmentGroup.HSL)
             // 真实视口变化：草稿分支只记录 requestedPreviewLongEdge，previewLongEdge 保持旧值。
@@ -333,10 +333,10 @@ class AdjustmentHistoryInstrumentedTest {
             model.hslTarget.value.sample?.usable == true) }
         val sampled = model.state.value.visibleEdits.hsl
         assertFalse("HSL drag must still change the draft after an in-draft viewport change", sampled.isIdentity)
-        assertEquals(before, edits.readState(identity))
+        assertEquals(before, edits.readState(identity, isX3f = false))
         assertTrue(result<Boolean> { model.applyDraft(it) })
         await(model) { it.canExport && maxOf(it.preview!!.result.width, it.preview.result.height) <= 64 }
-        assertEquals(sampled, edits.readState(identity).settings!!.hsl)
+        assertEquals(sampled, edits.readState(identity, isX3f = false).settings!!.hsl)
     }
 
     @Test fun externalRecordChangeDoesNotLockOrdinarySave() = withModel { model, edits, identity ->
@@ -407,13 +407,13 @@ class AdjustmentHistoryInstrumentedTest {
         val deadline = SystemClock.uptimeMillis() + 30_000
         while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
         val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
-        val before = edits.readState(identity)
+        val before = edits.readState(identity, isX3f = false)
         val original = File(model.state.value.photo!!.uri.path!!)
         val replacement = File(original.parentFile, "replacement-history.png"); png(replacement)
         Files.move(replacement.toPath(), original.toPath(), StandardCopyOption.REPLACE_EXISTING)
         assertEquals(AdjustmentStatus.CONFLICT, paste(model, operation).single().status)
         assertEquals(AdjustmentStatus.CONFLICT, undo(model).single().status)
-        assertEquals(before, edits.readState(identity))
+        assertEquals(before, edits.readState(identity, isX3f = false))
     }
 
     @Test fun staleSameSessionResultDoesNotLockEditor() = withModel { model, edits, identity ->
@@ -429,15 +429,15 @@ class AdjustmentHistoryInstrumentedTest {
         await(model) { it.canExport && it.edits.exposure == .5f }
         main { model.edit(model.state.value.edits.copy(exposure = .9f)) }
         await(model) { it.canExport && it.edits.exposure == .9f }
-        val current = edits.readState(identity)
+        val current = edits.readState(identity, isX3f = false)
         val history = model.adjustmentTransactions
         main { model.acceptAdjustmentOutcomes(results) }
-        assertEquals(current, edits.readState(identity))
+        assertEquals(current, edits.readState(identity, isX3f = false))
         assertEquals(history, model.adjustmentTransactions)
         await(model) { it.canExport && it.edits.exposure == .9f }
         main { model.edit(model.state.value.edits.copy(exposure = .75f)) }
         await(model) { it.canExport && it.edits.exposure == .75f }
-        assertEquals(.75f, edits.readState(identity).settings!!.exposure)
+        assertEquals(.75f, edits.readState(identity, isX3f = false).settings!!.exposure)
     }
 
     @Test fun preparedPasteExpiresAfterSuccessfulEditWithoutOverwritingCurrentState() = withModel { model, edits, identity ->
@@ -450,17 +450,17 @@ class AdjustmentHistoryInstrumentedTest {
         val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
         main { model.edit(model.state.value.edits.copy(exposure = 1.1f)) }
         await(model) { it.canExport && it.edits.exposure == 1.1f }
-        val current = edits.readState(identity)
+        val current = edits.readState(identity, isX3f = false)
         val history = model.adjustmentTransactions
         val result = paste(model, operation).single()
         assertEquals(AdjustmentStatus.CONFLICT, result.status)
         assertTrue(result.error is AdjustmentOperationExpiredException)
-        assertEquals(current, edits.readState(identity))
+        assertEquals(current, edits.readState(identity, isX3f = false))
         assertEquals(history, model.adjustmentTransactions)
         assertEquals(1.1f, model.state.value.edits.exposure)
         main { model.edit(model.state.value.edits.copy(exposure = .75f)) }
         await(model) { it.canExport && it.edits.exposure == .75f }
-        assertEquals(.75f, edits.readState(identity).settings!!.exposure)
+        assertEquals(.75f, edits.readState(identity, isX3f = false).settings!!.exposure)
     }
 
     @Test fun failedSaveKeepsLatestMemoryForPasteUndoAndRetry() {
@@ -477,12 +477,12 @@ class AdjustmentHistoryInstrumentedTest {
             val deadline = SystemClock.uptimeMillis() + 30_000
             while (model.adjustmentTransfer.value.preparing && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(30)
             val operation = requireNotNull(model.adjustmentTransfer.value.prepared)
-            assertEquals(.5f, edits.readState(identity).settings!!.exposure)
+            assertEquals(.5f, edits.readState(identity, isX3f = false).settings!!.exposure)
 
             failWrite = true
             main { model.edit(model.state.value.edits.copy(exposure = .9f)) }
             await(model) { it.saveState == EditSaveState.FAILED && !it.rendering && !it.committingAdjustments && it.edits.exposure == .9f }
-            assertEquals(.5f, edits.readState(identity).settings!!.exposure)
+            assertEquals(.5f, edits.readState(identity, isX3f = false).settings!!.exposure)
             val failedHistory = model.adjustmentTransactions.size
 
             assertNotEquals(AdjustmentStatus.APPLIED, paste(model, operation).single().status)
@@ -499,7 +499,7 @@ class AdjustmentHistoryInstrumentedTest {
             failWrite = false
             assertTrue(result<Boolean> { model.retrySave(it) })
             await(model) { it.canExport && it.edits.exposure == 1.1f }
-            assertEquals(1.1f, edits.readState(identity).settings!!.exposure)
+            assertEquals(1.1f, edits.readState(identity, isX3f = false).settings!!.exposure)
             assertEquals(historyBefore + 1, model.adjustmentTransactions.size)
         }
     }
@@ -532,10 +532,10 @@ class AdjustmentHistoryInstrumentedTest {
                 await(model) { it.canExport && it.edits.exposure == .5f }
                 main { model.undoAdjustment() }
                 await(model) { it.canExport && it.edits.exposure == .9f }
-                val receipt = edits.readState(firstID)
+                val receipt = edits.readState(firstID, isX3f = false)
                 failSecond = false
                 assertTrue(paste(model, operation).all { it.status == AdjustmentStatus.APPLIED })
-                assertEquals(receipt, edits.readState(firstID)); assertEquals(.9f, model.state.value.edits.exposure)
+                assertEquals(receipt, edits.readState(firstID, isX3f = false)); assertEquals(.9f, model.state.value.edits.exposure)
                 assertEquals(.5f, edits.load(secondID)!!.exposure); assertEquals(.6f, edits.load(secondID)!!.geometry.cropWidth)
                 assertEquals(listOf(secondID.value), history(model, true, operation.id).map { it.targetID })
                 assertEquals(-.2f, edits.load(secondID)!!.exposure)
@@ -551,7 +551,7 @@ class AdjustmentHistoryInstrumentedTest {
         await(model) { it.canExport }
         main { model.copyAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.CONTRAST))) }
         val clipboard = model.adjustmentClipboard
-        val receipt = edits.readState(identity)
+        val receipt = edits.readState(identity, isX3f = false)
         val history = model.adjustmentTransactions
         lateinit var preset: com.rawlab.android.presets.AdjustmentPreset
         val payload = result<Result<AdjustmentPayload>> {
@@ -561,7 +561,7 @@ class AdjustmentHistoryInstrumentedTest {
         try {
             assertEquals(setOf(AdjustmentField.EXPOSURE), preset.payload.fields)
             assertEquals(clipboard, model.adjustmentClipboard)
-            assertEquals(receipt, edits.readState(identity)); assertEquals(history, model.adjustmentTransactions)
+            assertEquals(receipt, edits.readState(identity, isX3f = false)); assertEquals(history, model.adjustmentTransactions)
             main { model.edit(model.state.value.edits.copy(exposure = .3f)) }
             await(model) { it.canExport }
             main { model.prepareAdjustmentPaste(preset.payload, listOf(model.state.value.photo!!.uri),
@@ -628,7 +628,7 @@ class AdjustmentHistoryInstrumentedTest {
             model.capturePresetAdjustments(AdjustmentScope.Custom(setOf(AdjustmentField.EXPOSURE)), it)
         }.getOrThrow()
         assertEquals(.4, captured[AdjustmentField.EXPOSURE]!!.number!!, .00001)
-        assertEquals(1.6f, edits.readState(identity).settings!!.exposure)
+        assertEquals(1.6f, edits.readState(identity, isX3f = false).settings!!.exposure)
         assertEquals(history, model.adjustmentTransactions)
     }
 

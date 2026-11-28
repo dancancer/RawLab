@@ -58,10 +58,10 @@ internal class EditorEditStore(private val directory: File, private val createSt
     } catch (error: Throwable) { EditSaveResult(EditSaveState.FAILED, error, reading = true) }
 
     fun load(identity: PhotoIdentity): EditSettings? = store?.load(identity)
-    fun readState(identity: PhotoIdentity): PhotoEditState =
-        (store ?: throw IOException("Edit store is unavailable")).readState(identity)
+    fun readState(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState =
+        (store ?: throw IOException("Edit store is unavailable")).readState(identity, isX3f)
 
-    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState =
+    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): com.rawlab.android.settings.OpenX3fRepairResult =
         (store ?: throw IOException("Edit store is unavailable")).repairLegacyNormalX3fOnOpen(identity, isX3f)
 
     fun processingMigration(identity: PhotoIdentity) =
@@ -71,8 +71,8 @@ internal class EditorEditStore(private val directory: File, private val createSt
         quality: com.rawlab.android.settings.ProcessingMigrationQuality): PhotoEditState =
         (store ?: throw IOException("Edit store is unavailable")).commitProcessingMigration(expected, candidate, quality)
 
-    fun rollbackProcessingMigration(expected: PhotoEditState): PhotoEditState =
-        (store ?: throw IOException("Edit store is unavailable")).rollbackProcessingMigration(expected)
+    fun rollbackProcessingMigration(expected: PhotoEditState, isX3f: Boolean): PhotoEditState =
+        (store ?: throw IOException("Edit store is unavailable")).rollbackProcessingMigration(expected, isX3f)
 
     fun resetToUnmodified(identity: PhotoIdentity): PhotoEditState {
         var current = handles.get()
