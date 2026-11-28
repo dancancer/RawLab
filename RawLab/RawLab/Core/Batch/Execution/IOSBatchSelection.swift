@@ -10,6 +10,10 @@ public struct IOSAdjustmentPhoto: Identifiable {
     public var error: Error?
     public var validateSource: (() throws -> Void)?
     public var id: String { identity.key }
+    public var isX3f: Bool {
+        isRaw && (file?.withReadAccess { $0.pathExtension.lowercased() == "x3f" } == true ||
+                  URL(fileURLWithPath: displayName).pathExtension.lowercased() == "x3f")
+    }
 
     public init(identity: PhotoIdentity,
                 displayName: String,
@@ -181,7 +185,7 @@ public struct IOSCollectionExportInput {
                 try validateActive(id)
                 let generation = editGeneration(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
-                let record = try store.readState(for: photo.photo.identity, requiringLegacyDecision: true)
+                let record = try store.readState(for: photo.photo.identity, requiringLegacyDecision: true, isX3f: photo.photo.isX3f)
                 let settings: RawSettings
                 if let saved = record.state { settings = saved.settings }
                 else {
@@ -230,7 +234,7 @@ public struct IOSCollectionExportInput {
                 try row.photo.validate()
                 try validateActive(row.id)
                 if row.record?.state == nil {
-                    _ = try store.readState(for: row.photo.photo.identity, requiringLegacyDecision: true)
+                    _ = try store.readState(for: row.photo.photo.identity, requiringLegacyDecision: true, isX3f: row.photo.photo.isX3f)
                 }
                 if let look = row.look, try PhotoIdentity.cachedFallback(for: look).contentIdentifier != row.lookSHA256 {
                     throw AdjustmentCommitError.expired

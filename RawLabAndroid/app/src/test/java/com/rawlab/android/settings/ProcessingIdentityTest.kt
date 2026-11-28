@@ -53,7 +53,7 @@ class ProcessingIdentityTest {
             val protectedBytes = file.readBytes()
             val reopened = EditStore(directory)
             assertThrows(UnusableEditRecordException::class.java) { reopened.load(photo) }
-            assertThrows(UnusableEditRecordException::class.java) { reopened.readState(photo) }
+            assertThrows(UnusableEditRecordException::class.java) { reopened.readState(photo, isX3f = false) }
             assertThrows(UnusableEditRecordException::class.java) { reopened.save(photo, EditSettings()) }
             assertArrayEquals(protectedBytes, file.readBytes())
         } finally { directory.deleteRecursively() }

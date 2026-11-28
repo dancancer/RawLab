@@ -5,6 +5,7 @@ func checkBatchSelection(_ root: URL) throws {
     try checkUnconfirmedAssetEdits(root)
     try checkCollectionHDRJPEG(root)
     try checkCollectionLookDedupe(root)
+    try checkLegacyNormalX3fCollectionRepair(root)
     func check(_ value: Bool, _ message: String) throws { try BatchExportTests.require(value, message) }
     func rejected(_ body: () throws -> Void) -> Bool { do { try body(); return false } catch { return true } }
     let store = try EditPersistence(directory: root.appendingPathComponent("collection-edits"))
@@ -254,4 +255,78 @@ private func checkCollectionLookDedupe(_ root: URL) throws {
         && job.targets[0].frozen?.lookURL?.deletingPathExtension().lastPathComponent == "look-\(job.targets[0].frozen!.lookSHA256!)"
         && job.targets[2].frozen?.lookURL == nil, "the shared copy must be content addressed and only the look rows reference it")
     try job.targets.forEach { try $0.frozen!.verifyFiles(input: $0.sourceURL) }
+}
+
+private func checkLegacyNormalX3fCollectionRepair(_ root: URL) throws {
+    let editDir = root.appendingPathComponent("x3f-collection-edits")
+    let seedStore = try EditPersistence(directory: editDir)
+    let journal = try BatchJournalStore(directory: root.appendingPathComponent("x3f-collection-jobs"))
+    let collection = IOSBatchSelection()
+
+    let x3fURL = root.appendingPathComponent("sigma.X3F")
+    try Data("x3f-ios".utf8).write(to: x3fURL)
+    let legacyURL = root.appendingPathComponent("legacy.X3F")
+    try Data("x3f-ios-legacy".utf8).write(to: legacyURL)
+    let arwURL = root.appendingPathComponent("sony.ARW")
+    try Data("II*\0ios-arw".utf8).write(to: arwURL)
+
+    var broken = RawSettings.default
+    broken.x3fMode = .normal
+    broken.exposure = 0.5
+    broken.aiDenoiseEnabled = true
+    broken.lensCorrection = LensCorrectionSettings(
+        distortion: true, tca: true, autoCrop: false, mode: .manual,
+        profileID: "sigma-35", focalLength: 35, cropFactor: 1.5, vignetting: true
+    )
+    var legacy = broken
+    legacy.x3fMode = .legacy
+
+    let x3fID = PhotoIdentity(resourceIdentifier: "ios-x3f")
+    let legacyID = PhotoIdentity(resourceIdentifier: "ios-legacy")
+    let arwID = PhotoIdentity(resourceIdentifier: "ios-arw")
+
+    try seedStore.save(x3fID, state: PhotoEditState(settings: broken))
+    try seedStore.save(legacyID, state: PhotoEditState(settings: legacy))
+    try seedStore.save(arwID, state: PhotoEditState(settings: broken))
+
+    let editsJSON = editDir.appendingPathComponent("edits.json")
+    let rawBefore = try Data(contentsOf: editsJSON)
+    var writes = 0
+    let store = try EditPersistence(directory: editDir, writeData: { data, destination in
+        writes += 1
+        try data.write(to: destination, options: .atomic)
+    })
+
+    collection.append(IOSAdjustmentPhoto(identity: x3fID, displayName: "sigma.X3F", file: .externallyManaged(x3fURL), isRaw: true))
+    collection.append(IOSAdjustmentPhoto(identity: legacyID, displayName: "legacy.X3F", file: .externallyManaged(legacyURL), isRaw: true))
+    collection.append(IOSAdjustmentPhoto(identity: arwID, displayName: "sony.ARW", file: .externallyManaged(arwURL), isRaw: true))
+
+    let review = collection.prepareExport(store: store, skipping: [], format: .jpeg, longEdge: 1024,
+        x3fDefaultMode: { _ in .normal }, probeHDR: { _ in false }, validateActive: { _ in }, resolveLook: { _ in (nil, nil) })
+    try BatchExportTests.require(review.ready && review.rows.count == 3, "iOS collection export review must be ready")
+    let x3fRow = review.rows[0]
+    try BatchExportTests.require(
+        x3fRow.settings?.x3fMode == .normal &&
+        x3fRow.settings?.aiDenoiseEnabled == false &&
+        x3fRow.settings?.lensSettings.isEnabled == false &&
+        x3fRow.settings?.lensCorrection?.profileID == "sigma-35" &&
+        x3fRow.settings?.lensCorrection?.autoCrop == false &&
+        x3fRow.settings?.exposure == 0.5 &&
+        x3fRow.record?.state?.settings == x3fRow.settings,
+        "iOS collection export must repair legacy normal X3F in memory"
+    )
+    try BatchExportTests.require(
+        review.rows[1].settings == legacy,
+        "iOS collection export must leave legacy-mode X3F untouched"
+    )
+    try BatchExportTests.require(
+        review.rows[2].settings == broken,
+        "iOS collection export must leave non-X3F normal record untouched"
+    )
+    let job = try collection.freeze(review, store: store, journal: journal, validateActive: { _ in })
+    try BatchExportTests.require(job.targets[0].frozen?.settings.lensSettings.isEnabled == false,
+        "iOS collection freeze must freeze repaired settings")
+    let rawAfter = try Data(contentsOf: editsJSON)
+    try BatchExportTests.require(writes == 0 && rawAfter == rawBefore,
+        "iOS read-only collection export must leave edits.json untouched on disk")
 }

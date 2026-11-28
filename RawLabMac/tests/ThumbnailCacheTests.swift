@@ -61,6 +61,8 @@ final class RenderEngine {
         !DirectoryContents.rawExtensions.contains(url.pathExtension.lowercased())
     }
 
+    static func isX3fInput(_ url: URL?) -> Bool { url?.pathExtension.lowercased() == "x3f" }
+
     static func validateAIInput(_ url: URL, settings: Adjustments) throws {}
 
     init() throws {}

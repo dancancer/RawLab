@@ -25,11 +25,11 @@ data class BatchSelectionState(
     val error: String? = null,
 ) {
     val selectedPhotos get() = photos.filter { it.id in selected }
-    fun supportsHDRExport(readRecord: (PhotoIdentity) -> PhotoEditState, skipping: Set<String> = emptySet()): Boolean {
+    fun supportsHDRExport(readRecord: (PhotoIdentity, Boolean) -> PhotoEditState, skipping: Set<String> = emptySet()): Boolean {
         val targets = selectedPhotos.filterNot { it.id in skipping }
         return targets.isNotEmpty() && targets.all { photo ->
             photo.sourceIsHDR && runCatching {
-                (readRecord(photo.identity).settings ?: sourceDefaultSettings(photo.sourceIsHDR,
+                (readRecord(photo.identity, photo.isX3f).settings ?: sourceDefaultSettings(photo.sourceIsHDR,
                     cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)).isHDREditing
             }.getOrDefault(false)
         }
@@ -69,7 +69,7 @@ data class CollectionExportReview(val selectionIDs: List<String>, val rows: List
 
 /** 预检冻结确认页的输入、外观与参数快照；确认前由本会话代次校验目标是否仍有效。 */
 class BatchSelectionExport(private val directory: File,
-    private val readRecord: (PhotoIdentity) -> PhotoEditState,
+    private val readRecord: (PhotoIdentity, Boolean) -> PhotoEditState,
     private val resolveLook: (EditSettings) -> File?,
     private val validateSource: (BatchTarget) -> Unit = {},
     private val validateHDRSource: (BatchTarget, EditSettings) -> Unit = { _, settings -> settings.requireProRAWDecoder() },
@@ -89,7 +89,7 @@ class BatchSelectionExport(private val directory: File,
                 validateActive(photo.id); validateSource(photo)
                 val generation = editGeneration(photo.identity)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
-                val record = readRecord(photo.identity)
+                val record = readRecord(photo.identity, photo.isX3f)
                 val settings = record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(photo.sourceFile, photo.inputKind, photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
                 if (settings.isHDREditing && !photo.sourceIsHDR)
                     throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")

@@ -30,8 +30,10 @@ struct MacPhotoPreviewPlan {
 
     static func isEditedState(_ state: MacPhotoEditState?, atPath path: String) -> Bool {
         guard let state else { return false }
-        let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: path))
-        return MacEditorAdjustmentRules.isModified(scope: .all, snapshot: state,
+        let url = URL(fileURLWithPath: path)
+        let repaired = state.repairingLegacyNormalX3f(isX3f: RenderEngine.isX3fInput(url)).state
+        let raw = !RenderEngine.isRasterInput(url)
+        return MacEditorAdjustmentRules.isModified(scope: .all, snapshot: repaired,
             context: .init(isRaw: raw, defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: ""))
     }
 
@@ -40,8 +42,7 @@ struct MacPhotoPreviewPlan {
     }
 
     static func editedRevision(for state: MacPhotoEditState?, atPath path: String) -> String? {
-        guard let state, isEditedState(state, atPath: path) else { return nil }
-        return MacEditPersistence.stateRevisionDigest(for: state)
+        MacEditPersistence.editedRevision(for: state, atPath: path)
     }
 
     static func editedRevision(for record: MacPhotoEditRecord) -> PhotoThumbnails.EditedRevision? {
@@ -53,6 +54,7 @@ struct MacPhotoPreviewPlan {
          hdrLookDirectory: URL = HDRLookSettings.directory,
          resourceDigestCache: MacResourceDigestCache = .shared,
          aiModelDirectory: URL? = RenderEngine.resolvedAIModelDirectory) throws {
+        let record = record.repairingLegacyNormalX3f().record
         self.record = record
         guard let state = record.state else { throw AdjustmentCommitError.expired }
         if state.settings.isHDREditing { look = nil }
@@ -821,6 +823,7 @@ private struct MacAcceptedPhotoPreview {
         return record
     }
     func image(for record: MacPhotoEditRecord) async throws -> NSImage {
+        let record = record.repairingLegacyNormalX3f().record
         if let hit = await cachedImage(for: record) { return hit }
         let (editGen, editedRevision) = beginEditedRender(for: record)
         if let accepted, accepted.record == record, let ready = await accepted.task.value {
@@ -875,6 +878,7 @@ private struct MacAcceptedPhotoPreview {
         return rendered.image
     }
     func accept(record: MacPhotoEditRecord, image: CGImage) {
+        let record = record.repairingLegacyNormalX3f().record
         guard MacPhotoPreviewPlan.isEdited(record) else {
             _ = invalidateEdited(atPath: record.identity.path)
             return
@@ -1030,7 +1034,7 @@ private actor MacPhotoPreviewWorker {
                 return true
             },
             render: { plan in
-                guard let settings = record.state?.settings else { throw AdjustmentCommitError.expired }
+                guard let settings = plan.record.state?.settings else { throw AdjustmentCommitError.expired }
                 let workerLease = settings.activeAIDenoise ? aiModelAccessTracker.beginReader() : nil
                 defer { workerLease?.end() }
                 let engine = (prepareAI == nil || renderThumbnail == nil) ? try RenderEngine() : nil

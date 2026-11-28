@@ -59,9 +59,9 @@ class ProcessingMigrationCommitTest {
         val original = EditSettings(customWb = true, processing = ProcessingIdentity.C5)
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
         store.save(identity, original)
-        store.commitProcessingMigration(store.readState(identity),
+        store.commitProcessingMigration(store.readState(identity, isX3f = false),
             if (status == ProcessingMigrationStatus.KEPT) null else original.copy(processing = ProcessingIdentity.CURRENT), quality)
-        if (status == ProcessingMigrationStatus.ROLLED_BACK) store.rollbackProcessingMigration(store.readState(identity))
+        if (status == ProcessingMigrationStatus.ROLLED_BACK) store.rollbackProcessingMigration(store.readState(identity, isX3f = false), isX3f = false)
         val receipt = requireNotNull(store.processingMigration(identity))
         val owner = ViewModelStore()
         lateinit var model: EditorViewModel
@@ -102,7 +102,7 @@ class ProcessingMigrationCommitTest {
                 main { model.rollbackProcessingMigration() }
                 await { model.state.value.canExport && model.state.value.processingMigration?.status == ProcessingMigrationStatus.ROLLED_BACK }
                 assertEquals(original, model.state.value.edits)
-                assertEquals(original, store.readState(identity).settings)
+                assertEquals(original, store.readState(identity, isX3f = false).settings)
             }
         } finally {
             main { owner.clear() }
@@ -199,7 +199,7 @@ class ProcessingMigrationCommitTest {
             releaseWrite.countDown()
             await { !model.state.value.committingAdjustments }
             main {
-                val saved = store.readState(identity)
+                val saved = store.readState(identity, isX3f = false)
                 assertEquals(ProcessingIdentity.CURRENT, saved.settings!!.processing)
                 assertEquals("durable success must reach the current editor", saved.settings, model.state.value.edits)
                 val history = field(model, "adjustmentHistory") as EditorAdjustmentHistory
@@ -227,8 +227,8 @@ class ProcessingMigrationCommitTest {
                 model.state.value.preview!!.result.sameAs(reopened.state.value.preview!!.result))
             main { model.edit(model.state.value.edits.copy(exposure = .5f)) }
             await { model.state.value.canExport && model.state.value.edits.exposure == .5f }
-            assertEquals(ProcessingIdentity.CURRENT, store.readState(identity).settings!!.processing)
-            assertEquals(.5f, store.readState(identity).settings!!.exposure, 0f)
+            assertEquals(ProcessingIdentity.CURRENT, store.readState(identity, isX3f = false).settings!!.processing)
+            assertEquals(.5f, store.readState(identity, isX3f = false).settings!!.exposure, 0f)
         } finally {
             releaseFit.countDown(); releaseWrite.countDown()
             main { owner.clear() }
@@ -245,7 +245,7 @@ class ProcessingMigrationCommitTest {
         val store = EditStore(File(context.filesDir, "edits"))
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
         store.save(identity, EditSettings(exposure = .5f, saturation = 1.2f, processing = ProcessingIdentity.C5))
-        store.commitProcessingMigration(store.readState(identity),
+        store.commitProcessingMigration(store.readState(identity, isX3f = false),
             EditSettings(exposure = .6f, saturation = 1.2f, processing = ProcessingIdentity.CURRENT), quality)
         val owner = ViewModelStore()
         lateinit var model: EditorViewModel
@@ -269,7 +269,7 @@ class ProcessingMigrationCommitTest {
             assertEquals(ProcessingIdentity.CURRENT, resetStored.processing)
             assertEquals(model.state.value.edits, resetStored)
             assertThrows(AdjustmentOperationExpiredException::class.java) {
-                store.rollbackProcessingMigration(store.readState(identity))
+                store.rollbackProcessingMigration(store.readState(identity, isX3f = false), isX3f = false)
             }
             lateinit var reopened: EditorViewModel
             main {
@@ -292,7 +292,7 @@ class ProcessingMigrationCommitTest {
             assertNull("Undoing Reset All keeps EditorState.processingMigration null", model.state.value.processingMigration)
             assertNull("Undoing Reset All keeps persisted migration receipt null", store.processingMigration(identity))
             assertThrows(AdjustmentOperationExpiredException::class.java) {
-                store.rollbackProcessingMigration(store.readState(identity))
+                store.rollbackProcessingMigration(store.readState(identity, isX3f = false), isX3f = false)
             }
         } finally {
             main { owner.clear() }
@@ -310,7 +310,7 @@ class ProcessingMigrationCommitTest {
         val store = EditStore(File(context.filesDir, "edits"))
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
         store.save(identity, EditSettings(exposure = .5f, saturation = 1.2f, processing = ProcessingIdentity.C5))
-        store.commitProcessingMigration(store.readState(identity),
+        store.commitProcessingMigration(store.readState(identity, isX3f = false),
             EditSettings(exposure = .6f, saturation = 1.2f, processing = ProcessingIdentity.CURRENT), quality)
         val owner = ViewModelStore()
         lateinit var model: EditorViewModel
@@ -357,7 +357,7 @@ class ProcessingMigrationCommitTest {
         val store = EditStore(File(context.filesDir, "edits"))
         val quality = ProcessingMigrationQuality(.001f, .003f, .002f, .001f, 20)
         store.save(identity, EditSettings(exposure = .5f, processing = ProcessingIdentity.C5))
-        store.commitProcessingMigration(store.readState(identity),
+        store.commitProcessingMigration(store.readState(identity, isX3f = false),
             EditSettings(exposure = .6f, processing = ProcessingIdentity.CURRENT), quality)
         val owner = ViewModelStore()
         val failWrites = AtomicBoolean(false)

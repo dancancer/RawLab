@@ -35,7 +35,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     private val store by lazy { EditStore(editDirectory) }
     private val storageDelegate = lazy { PhotoStorage(this.context) }
     private val storage by storageDelegate
-    private val rendererDelegate = lazy { EditorRenderer(storage, { store.readState(it) }, BuildConfig.DEBUG) }
+    private val rendererDelegate = lazy { EditorRenderer(storage, { id, isX3f -> store.readState(id, isX3f) }, BuildConfig.DEBUG) }
     private val renderer by rendererDelegate
     private val cache = EditedPhotoPreviewCache.shared(File(context.cacheDir, "edited-photo-previews"))
     private val requests = ConcurrentHashMap.newKeySet<RenderCancellation>()
@@ -51,8 +51,10 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
                 cancellation.check()
                 val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
                 when (val result = records[PhotoIdentity(photo.uri.toString())]) {
-                    is PhotoEditReadResult.Usable ->
-                        put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input))
+                    is PhotoEditReadResult.Usable -> {
+                        val isX3f = input == PhotoInputKind.RAW && photo.isX3f
+                        put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input, isX3f))
+                    }
                     is PhotoEditReadResult.Unusable, null -> Unit
                 }
             }
@@ -61,14 +63,16 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
 
     suspend fun image(photo: AlbumPhoto): Bitmap = work { cancellation ->
         val identity = PhotoIdentity(photo.uri.toString())
-        val record = store.readState(identity)
+        val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
+        val isX3f = input == PhotoInputKind.RAW && photo.isX3f
+        val record = store.readState(identity, isX3f)
         val settings = record.settings ?: throw AdjustmentOperationExpiredException()
         val stamp = OriginalPhotoSource.fingerprint(context.contentResolver, photo.uri)
         val resources = resources(settings)
         val key = key(identity, stamp, settings, resources)
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         runCatching { cache.read(key)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }.getOrNull()?.let {
-            cancellation.check(); requireCurrent(record, photo.uri, stamp, resources)
+            cancellation.check(); requireCurrent(record, photo.uri, stamp, resources, isX3f)
             return@work it
         }
         cancellation.check()
@@ -77,7 +81,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
             cancellation.check()
             val result = renderer.perform(thumbnailPreviewWork(imported, settings), cancellation) as WorkResult.Preview
             cancellation.check()
-            requireCurrent(record, photo.uri, stamp, resources)
+            requireCurrent(record, photo.uri, stamp, resources, isX3f)
             val bytes = encode(result.pair.result)
             runCatching { cache.write(key, bytes) }
             result.pair.result
@@ -88,17 +92,18 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     }
 
     suspend fun accept(photo: ImportedPhoto, renderedSettings: EditSettings, image: Bitmap) = work { cancellation ->
-        val record = store.readState(photo.identity)
+        val isX3f = photo.isX3f
+        val record = store.readState(photo.identity, isX3f)
         val saved = record.settings ?: return@work
         if (renderedSettings.normalizedWhiteBalance() != saved.normalizedWhiteBalance()) return@work
-        if (!EditedPhotoPreviewKey.isEdited(saved, photo.inputKind)) return@work
+        if (!EditedPhotoPreviewKey.isEdited(saved, photo.inputKind, isX3f)) return@work
         photo.validateOriginal?.invoke()
         val stamp = OriginalPhotoSource.fingerprint(context.contentResolver, photo.uri)
         val resources = resources(saved)
         cancellation.check()
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         val bytes = encode(image)
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         cache.write(key(photo.identity, stamp, saved, resources), bytes)
         completed.tryEmit(photo.identity)
     }
@@ -128,8 +133,8 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     }
     private fun key(identity: PhotoIdentity, stamp: String, settings: EditSettings, resources: String) =
         EditedPhotoPreviewKey.create("${identity.value.length}:${identity.value}$stamp", settings, resources, rendererVersion = BuildConfig.VERSION_CODE)
-    private fun requireCurrent(record: PhotoEditState, uri: android.net.Uri, stamp: String, resources: String) {
-        if (!record.sameAs(store.readState(record.identity)) || OriginalPhotoSource.fingerprint(context.contentResolver, uri) != stamp ||
+    private fun requireCurrent(record: PhotoEditState, uri: android.net.Uri, stamp: String, resources: String, isX3f: Boolean) {
+        if (!record.sameAs(store.readState(record.identity, isX3f)) || OriginalPhotoSource.fingerprint(context.contentResolver, uri) != stamp ||
             resources(record.settings ?: throw AdjustmentOperationExpiredException()) != resources) throw AdjustmentOperationExpiredException()
     }
     private fun encode(image: Bitmap): ByteArray {

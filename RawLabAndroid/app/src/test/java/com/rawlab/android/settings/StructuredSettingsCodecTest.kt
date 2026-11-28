@@ -109,14 +109,14 @@ class StructuredSettingsCodecTest {
             val store = EditStore(directory)
             for (count in listOf(11, 15, 24, 49)) {
                 val identity = PhotoIdentity("legacy-$count")
-                val old = store.readState(identity)
+                val old = store.readState(identity, isX3f = false)
                 assertEquals(.75f, old.settings!!.exposure)
                 assertEquals(0f, old.settings.blackPoint); assertEquals(0f, old.settings.whitePoint); assertEquals(0f, old.settings.vibrance)
                 assertEquals(old, store.save(old.identity, old.settings))
             }
             assertArrayEquals(bytes, file.readBytes())
             val identity = PhotoIdentity("legacy-49")
-            val before = store.readState(identity)
+            val before = store.readState(identity, isX3f = false)
             val changed = before.settings!!.copy(blackPoint = -37.25f, whitePoint = 42.5f, vibrance = 18.125f)
             store.save(before.identity, changed)
             assertEquals(changed, EditStore(directory).load(identity))
@@ -135,7 +135,7 @@ class StructuredSettingsCodecTest {
             assertArrayEquals(protected, file.readBytes())
             val other = PhotoIdentity("other")
             store.save(other, EditSettings(exposure = .25f))
-            assertEquals(.25f, EditStore(directory).readState(other).settings?.exposure)
+            assertEquals(.25f, EditStore(directory).readState(other, isX3f = false).settings?.exposure)
             val afterOtherSave = Properties().also { file.inputStream().use(it::load) }
             assertEquals(futureValue, afterOtherSave.getProperty(key))
         } finally { directory.deleteRecursively() }
@@ -155,7 +155,7 @@ class StructuredSettingsCodecTest {
             val properties = Properties().apply { setProperty("record.YQ.values", legacyCSVSettings(EditSettings())) }
             file.outputStream().use { properties.store(it, null) }
             val store = EditStore(directory)
-            val before = store.readState(PhotoIdentity("a"))
+            val before = store.readState(PhotoIdentity("a"), isX3f = false)
             properties.setProperty("record.YQ.future", "future-editor-state")
             file.outputStream().use { properties.store(it, null) }
             val bytes = file.readBytes()
@@ -194,7 +194,7 @@ class StructuredSettingsCodecTest {
                 val bytes = file.readBytes()
                 val reopened = EditStore(directory)
                 assertThrows(UnusableEditRecordException::class.java) { reopened.load(PhotoIdentity("a")) }
-                assertThrows(UnusableEditRecordException::class.java) { reopened.readState(PhotoIdentity("a")) }
+                assertThrows(UnusableEditRecordException::class.java) { reopened.readState(PhotoIdentity("a"), isX3f = false) }
                 assertThrows(UnusableEditRecordException::class.java) { reopened.save(PhotoIdentity("a"), EditSettings()) }
                 assertArrayEquals(bytes, file.readBytes())
             }

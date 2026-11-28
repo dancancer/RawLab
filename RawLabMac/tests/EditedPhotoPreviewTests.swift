@@ -50,6 +50,68 @@ import Combine
         let before = try MacPhotoPreviewPlan(record: lookRecord, films: [film])
         try Data("second".utf8).write(to: lut)
         check(try MacPhotoPreviewPlan(record: lookRecord, films: [film]).key != before.key)
+        // Legacy normal X3F thumbnail read-only path: flags-only is unedited, AI/lens cleared in memory, edits.json untouched.
+        let x3fEditsDir = root.appendingPathComponent("x3f-preview-edits")
+        let x3fStore = try MacEditPersistence(directory: x3fEditsDir)
+        let x3fFlagsURL = root.appendingPathComponent("flags-only.X3F")
+        let x3fEditedURL = root.appendingPathComponent("edited.X3F")
+        try Data("FOVb-flags".utf8).write(to: x3fFlagsURL)
+        try Data("FOVb-edited".utf8).write(to: x3fEditedURL)
+        var x3fFlags = Adjustments()
+        x3fFlags.x3fMode = .normal
+        x3fFlags.aiDenoiseEnabled = true
+        x3fFlags.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
+        try x3fStore.save(x3fFlagsURL, state: .init(settings: x3fFlags, filmID: ""))
+        var x3fEdited = x3fFlags
+        x3fEdited.exposure = 0.6
+        x3fEdited.lensCorrection?.profileID = "sigma-45"
+        try x3fStore.save(x3fEditedURL, state: .init(settings: x3fEdited, filmID: ""))
+        let x3fEditsJSON = x3fEditsDir.appendingPathComponent("edits.json")
+        let x3fRawBefore = try Data(contentsOf: x3fEditsJSON)
+        let readFlags = try x3fStore.readState(for: x3fFlagsURL)
+        check(!MacPhotoPreviewPlan.isEdited(readFlags), "Mac thumbnail read-only state does not mark flags-only old normal X3F as edited")
+        let readEdited = try x3fStore.readState(for: x3fEditedURL)
+        check(MacPhotoPreviewPlan.isEdited(readEdited), "Mac thumbnail read-only state keeps real edits on old normal X3F")
+        let x3fPlan = try MacPhotoPreviewPlan(record: readEdited, films: [], aiModelDirectory: nil)
+        check(try x3fPlan.isCurrent(in: x3fStore, films: [], aiModelDirectory: nil),
+              "Mac thumbnail plan succeeds without AI model manifest and matches store currency")
+        let unrepairedEditedState = MacPhotoEditState(settings: x3fEdited, filmID: "")
+        let planRevision = MacPhotoPreviewPlan.editedRevision(for: unrepairedEditedState, atPath: x3fEditedURL.path)
+        let storeRevision = MacEditPersistence.editedRevision(for: unrepairedEditedState, atPath: x3fEditedURL.path)
+        check(planRevision != nil && planRevision == storeRevision,
+              "MacPhotoPreviewPlan.editedRevision matches MacEditPersistence.editedRevision for legacy normal X3F")
+        let unrepairedRecord = MacPhotoEditRecord(identity: try OriginalFileIdentity(x3fEditedURL), state: unrepairedEditedState)
+        final class Capture: @unchecked Sendable {
+            let lock = NSLock()
+            var prepareAICalled = false
+            var renderedSettings: Adjustments?
+        }
+        let x3fCapture = Capture()
+        let x3fSampleImage: CGImage = {
+            let cs = CGColorSpaceCreateDeviceRGB()
+            var px: [UInt8] = [180, 120, 60, 255]
+            let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+            return ctx.makeImage()!
+        }()
+        let x3fPreviews = MacEditedPhotoPreviews(
+            editDirectory: x3fEditsDir,
+            cacheDirectory: root.appendingPathComponent("x3f-preview-cache"),
+            thumbnails: PhotoThumbnails(),
+            prepareAI: { _, _, _ in x3fCapture.lock.lock(); x3fCapture.prepareAICalled = true; x3fCapture.lock.unlock() },
+            renderThumbnail: { _, settings, _ in
+                x3fCapture.lock.lock(); x3fCapture.renderedSettings = settings; x3fCapture.lock.unlock()
+                return x3fSampleImage
+            }
+        )
+        _ = try await x3fPreviews.image(for: unrepairedRecord)
+        check(!x3fCapture.prepareAICalled && !x3fPreviews.isRunningAIThumbnail,
+              "Repaired normal X3F thumbnail render must not invoke prepareAI or mark AI thumbnail running")
+        check(x3fCapture.renderedSettings?.aiDenoiseEnabled == false && x3fCapture.renderedSettings?.lensSettings.isEnabled == false &&
+              x3fCapture.renderedSettings?.exposure == 0.6,
+              "MacPhotoPreviewWorker must render thumbnail with repaired settings from plan.record")
+        check((try Data(contentsOf: x3fEditsJSON)) == x3fRawBefore,
+              "Mac thumbnail read-only path leaves edits.json untouched on disk")
         try store.save(photo, state: lookState)
         let previews = MacEditedPhotoPreviews(editDirectory: root.appendingPathComponent("edits"), cacheDirectory: root.appendingPathComponent("cache"))
         previews.films = [film]

@@ -61,7 +61,7 @@ extension RawEditorViewModel {
         let defaults: PhotoEditState?
         do {
             let store = try requireEditPersistence()
-            expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            expected = try loadedEditRecord ?? store.readState(for: source.identity, isX3f: sourceIsX3f)
             if let quarantined = store.consumeQuarantinedError() {
                 ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
             }
@@ -115,7 +115,12 @@ extension RawEditorViewModel {
     func restoreCommittedSettings() throws -> RawSettings {
         guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
         let store = try requireEditPersistence()
-        let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        let openRepair = try loadedEditRecord.map { OpenX3fRepairResult(record: $0, repaired: false) }
+            ?? store.repairLegacyNormalX3fOnOpen(for: source.identity, isX3f: sourceIsX3f)
+        if let writeError = openRepair.writeError {
+            ErrorDiagnostics.log(writeError, operation: .editPersistence, stage: "repairLegacyNormalX3fOnOpen")
+        }
+        let record = openRepair.record
         if let quarantined = store.consumeQuarantinedError() {
             ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
         }
@@ -129,6 +134,9 @@ extension RawEditorViewModel {
         adjustmentInteractionRejected = false
         hasAdjustmentDraft = false
         loadedEditRecord = record
+        if openRepair.repaired {
+            adjustmentSession?.rememberExternalSave(record)
+        }
         retainEditMetadata(record.state ?? PhotoEditState(settings: restored, updatedAt: Date(timeIntervalSince1970: 0)))
         persistedEditorSettings = PersistedEditorSettings(source: source, settings: restored)
         committedPreviewSettings = restored

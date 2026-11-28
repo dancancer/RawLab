@@ -9,6 +9,10 @@ struct IOSPhotoPreviewSource {
     let file: PhotoSourceFile
     let displayName: String
     let isRaw: Bool
+    var isX3f: Bool {
+        isRaw && (file.withReadAccess { $0.pathExtension.lowercased() == "x3f" } ||
+                  URL(fileURLWithPath: displayName).pathExtension.lowercased() == "x3f")
+    }
 }
 
 struct IOSPhotoPreviewPlan {
@@ -18,20 +22,23 @@ struct IOSPhotoPreviewPlan {
     let record: PhotoEditRecord
     let look: URL?
     let settings: RawSettings
+    private let isX3f: Bool
     private let sourceDigest: String
     private let core: PhotoPreviewPlan
     var key: PhotoPreviewCacheKey { core.key }
 
-    static func isEdited(_ record: PhotoEditRecord, isRaw: Bool) -> Bool {
-        guard let state = record.state else { return false }
+    static func isEdited(_ record: PhotoEditRecord, isRaw: Bool, isX3f: Bool) -> Bool {
+        guard let state = record.repairingLegacyNormalX3f(isX3f: isX3f).record.state else { return false }
         return EditorAdjustmentRules.isModified(.all, snapshot: state,
             context: .init(isRaw: isRaw, defaultExposureMode: isRaw ? RawSettings.default.exposureMode : .sensor))
     }
 
     init(source: IOSPhotoPreviewSource, record: PhotoEditRecord, look: URL?,
          digestCache: FileDigestCache = .shared) throws {
-        self.source = source; self.record = record; self.look = look
-        let state = try record.state ?? source.file.withReadAccess {
+        let isX3f = source.isX3f
+        let repairedRecord = record.repairingLegacyNormalX3f(isX3f: isX3f).record
+        self.source = source; self.record = repairedRecord; self.look = look; self.isX3f = isX3f
+        let state = try repairedRecord.state ?? source.file.withReadAccess {
             PhotoEditState(settings: try Sony2FujiProcessor().defaultSettings(for: $0, isRaw: source.isRaw), updatedAt: Date(timeIntervalSince1970: 0))
         }
         settings = state.settings
@@ -68,7 +75,7 @@ struct IOSPhotoPreviewPlan {
     }
 
     func isCurrent(in store: EditPersistence, digestCache: FileDigestCache = .shared) throws -> Bool {
-        guard record.hasSameAdjustments(as: try store.readState(for: record.identity)) else { return false }
+        guard record.hasSameAdjustments(as: try store.readState(for: record.identity, isX3f: isX3f)) else { return false }
         let measured = try source.file.withReadAccess { try digestCache.digest(for: $0) }
         guard source.identity.contentIdentifier == nil || measured == source.identity.contentIdentifier else {
             throw RecentPhotoError.originalChanged
@@ -148,8 +155,8 @@ struct IOSPhotoPreviewPlan {
         return UIImage(data: data)
     }
 
-    func record(for identity: PhotoIdentity, editDirectory: URL) async throws -> PhotoEditRecord {
-        try await worker.record(for: identity, editDirectory: editDirectory)
+    func record(for identity: PhotoIdentity, isX3f: Bool, editDirectory: URL) async throws -> PhotoEditRecord {
+        try await worker.record(for: identity, isX3f: isX3f, editDirectory: editDirectory)
     }
     func original(_ source: IOSPhotoPreviewSource) async -> UIImage? { await worker.original(source) }
     func image(_ source: IOSPhotoPreviewSource, record: PhotoEditRecord, look: URL?, editDirectory: URL) async throws -> UIImage {
@@ -159,7 +166,7 @@ struct IOSPhotoPreviewPlan {
         return result
     }
     func accept(_ source: IOSPhotoPreviewSource, record: PhotoEditRecord, image: UIImage, look: URL?, editDirectory: URL) async {
-        guard IOSPhotoPreviewPlan.isEdited(record, isRaw: source.isRaw) else { return }
+        guard IOSPhotoPreviewPlan.isEdited(record, isRaw: source.isRaw, isX3f: source.isX3f) else { return }
         do {
             try await worker.accept(source, record: record, image: image, look: look, editDirectory: editDirectory, recentStore: recentStore)
             revision &+= 1
@@ -188,7 +195,7 @@ private actor IOSPhotoPreviewWorker {
                 try Task.checkCancellation()
                 switch states[photo.identity] {
                 case .success(let record):
-                    flags[photo.id] = IOSPhotoPreviewPlan.isEdited(record, isRaw: photo.isRaw)
+                    flags[photo.id] = IOSPhotoPreviewPlan.isEdited(record, isRaw: photo.isRaw, isX3f: photo.isX3f)
                 case .failure(let error) where error is UnusableEditRecordError:
                     break
                 case .failure(let error):
@@ -216,9 +223,9 @@ private actor IOSPhotoPreviewWorker {
         return .init(identity: photo.identity, file: .externallyManaged(try store.sourceURL(for: photo)), displayName: photo.displayName, isRaw: photo.isRaw)
     }
     func lastPreview(_ photo: RecentPhoto, store: RecentPhotoStore) throws -> Data? { try store.lastPreview(for: photo) }
-    func record(for identity: PhotoIdentity, editDirectory: URL) throws -> PhotoEditRecord {
+    func record(for identity: PhotoIdentity, isX3f: Bool, editDirectory: URL) throws -> PhotoEditRecord {
         try Task.checkCancellation()
-        return try EditPersistence(directory: editDirectory).readState(for: identity)
+        return try EditPersistence(directory: editDirectory).readState(for: identity, isX3f: isX3f)
     }
     func original(_ source: IOSPhotoPreviewSource) -> UIImage? {
         guard !Task.isCancelled else { return nil }

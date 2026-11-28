@@ -1011,12 +1011,12 @@ class EditRecordFixtureTest {
                 val keepReceipt = receipt?.optString("status") == "kept"
                 if (keepReceipt) {
                     val quality = ProcessingMigrationQuality(0.01f, 0.02f, 0.02f, 0.01f, 10)
-                    store.commitProcessingMigration(store.readState(pid), null, quality)
+                    store.commitProcessingMigration(store.readState(pid, isX3f = false), null, quality)
                 }
 
                 evaluate(scenarioId) {
                     val reopened = openStoreChecked(dir)
-                    val loaded = reopened.readState(pid).settings ?: throw ExpectationMismatchException("$id: null reloaded settings")
+                    val loaded = reopened.readState(pid, isX3f = false).settings ?: throw ExpectationMismatchException("$id: null reloaded settings")
                     verifySettings(loaded, rec)
                     if (keepReceipt) {
                         check(reopened.processingMigration(pid)?.status == ProcessingMigrationStatus.KEPT, "$id: kept receipt")
@@ -1048,8 +1048,8 @@ class EditRecordFixtureTest {
                 when (expectPolicy) {
                     "load_preserving_values" -> evaluate(id, EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION) {
                         val reopened = openStoreChecked(dir)
-                        val loaded = reopened.readState(targetId).settings ?: throw ExpectationMismatchException("$id: target null")
-                        check(reopened.readState(sibId).settings != null, "$id: sibling null")
+                        val loaded = reopened.readState(targetId, isX3f = false).settings ?: throw ExpectationMismatchException("$id: target null")
+                        check(reopened.readState(sibId, isX3f = false).settings != null, "$id: sibling null")
                         if (preserveRawDiskEntry) {
                             reopened.save(sibId, sibBuilt.copy(exposure = 1.25f))
                             val futureSibEnc = encodeB64(PhotoIdentity("content://test/future_sibling"))
@@ -1063,9 +1063,9 @@ class EditRecordFixtureTest {
                     "reject_isolating_record" -> evaluate(id, EvalCatchScope.EXPECTATION_ONLY) {
                         val reopened = openStoreChecked(dir)
                         var threw = false
-                        try { reopened.readState(targetId) } catch (_: UnusableEditRecordException) { threw = true }
+                        try { reopened.readState(targetId, isX3f = false) } catch (_: UnusableEditRecordException) { threw = true }
                         check(threw, "$id: Tier 2 unknown field in '$scope' must throw UnusableEditRecordException")
-                        check(reopened.readState(sibId).settings != null, "$id: healthy sibling must stay readable")
+                        check(reopened.readState(sibId, isX3f = false).settings != null, "$id: healthy sibling must stay readable")
                         if (preserveRawDiskEntry) {
                             reopened.save(sibId, sibBuilt.copy(exposure = 1.25f))
                             val afterProps = loadProperties(file)
@@ -1102,7 +1102,7 @@ class EditRecordFixtureTest {
                     }
                 }
                 evaluate(id, EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION) {
-                    val loaded = openStoreChecked(dir).readState(pid).settings
+                    val loaded = openStoreChecked(dir).readState(pid, isX3f = false).settings
                         ?: throw ExpectationMismatchException("$id: stripped-optional v2 record decoded null")
                     val expected = built.copy(
                         x3fMode = X3fMode.LEGACY,
@@ -1143,7 +1143,7 @@ class EditRecordFixtureTest {
 
                         evaluate(id, EvalCatchScope.EXPECTATION_OR_PERSISTENCE_REJECTION) {
                             val wireStore = openStoreChecked(wireDir)
-                            val wireLoaded = wireStore.readState(wirePhotoId).settings
+                            val wireLoaded = wireStore.readState(wirePhotoId, isX3f = false).settings
                                 ?: throw ExpectationMismatchException("$id: frozen android_properties legacy wire sample decoded nil")
                             check(wireLoaded.film == wireExpect.getString("film_id"), "$id: wire film_id")
                             check(approx(wireLoaded.strength.toDouble(), wireExpect.getDouble("strength")), "$id: wire strength")
@@ -1178,7 +1178,7 @@ class EditRecordFixtureTest {
                             check(res is EditorResetResult.Ready, "$id: expected Ready, got $res")
                             val candidate = (res as EditorResetResult.Ready).candidate
                             EditStore(dir).save(pid, candidate)
-                            val reloaded = EditStore(dir).readState(pid).settings!!
+                            val reloaded = EditStore(dir).readState(pid, isX3f = false).settings!!
                             check(approx(reloaded.hdr?.exposure?.toDouble() ?: -99.0, -0.5) && reloaded.hdr?.mode == HDRMode.SDR, "$id: dormant HDR preserved")
                             check(reloaded.proRAWDecodeVersion == 2, "$id: proRAWDecodeVersion preserved")
                             check(reloaded.processing.version == 2, "$id: processing.version preserved")
@@ -1201,9 +1201,9 @@ class EditRecordFixtureTest {
                         evaluate(id) {
                             val reopened = openStoreChecked(dir)
                             var threw = false
-                            try { reopened.readState(targetId) } catch (_: UnusableEditRecordException) { threw = true }
+                            try { reopened.readState(targetId, isX3f = false) } catch (_: UnusableEditRecordException) { threw = true }
                             check(threw, "$id: processing.version=99 must throw UnusableEditRecordException")
-                            check(reopened.readState(sibId).settings != null, "$id: healthy sibling must stay readable")
+                            check(reopened.readState(sibId, isX3f = false).settings != null, "$id: healthy sibling must stay readable")
                             reopened.save(sibId, sibBuilt.copy(exposure = 1.5f))
                             val afterProps = loadProperties(file)
                             check(afterProps.getProperty("record.${encodeB64(targetId)}.values") != null, "$id: future record preserved")
@@ -1225,9 +1225,9 @@ class EditRecordFixtureTest {
                         evaluate(id) {
                             val reopened = openStoreChecked(dir)
                             var threw = false
-                            try { reopened.readState(targetId) } catch (_: UnusableEditRecordException) { threw = true }
+                            try { reopened.readState(targetId, isX3f = false) } catch (_: UnusableEditRecordException) { threw = true }
                             check(threw, "$id: corrupt entry must throw UnusableEditRecordException")
-                            check(reopened.readState(sibId).settings != null, "$id: healthy sibling readable")
+                            check(reopened.readState(sibId, isX3f = false).settings != null, "$id: healthy sibling readable")
                             reopened.save(sibId, sibBuilt.copy(exposure = 1.1f))
                             check(file.readText().contains("corrupt-entry-payload"), "$id: corrupt bytes preserved across sibling save")
                         }
@@ -1247,7 +1247,7 @@ class EditRecordFixtureTest {
                         val expectObj = sc.getJSONObject("expect")
                         val assertSignBit = expectObj.optBoolean("assert_sign_bit_positive", false)
                         evaluate(id) {
-                            val loaded = openStoreChecked(dir).readState(pid).settings!!
+                            val loaded = openStoreChecked(dir).readState(pid, isX3f = false).settings!!
                             check(loaded.exposure == 0f, "$id: -0.0 must compare equal to 0f")
                             if (assertSignBit) {
                                 check(java.lang.Float.floatToRawIntBits(loaded.exposure) == 0, "$id: -0.0 must canonicalize to +0.0f")
@@ -1300,9 +1300,9 @@ class EditRecordFixtureTest {
                 evaluate(id) {
                     val reopened = openStoreChecked(dir)
                     var threw = false
-                    try { reopened.readState(targetId) } catch (_: UnusableEditRecordException) { threw = true }
+                    try { reopened.readState(targetId, isX3f = false) } catch (_: UnusableEditRecordException) { threw = true }
                     check(threw, "$id: out-of-range/invalid boundary record must throw UnusableEditRecordException")
-                    check(reopened.readState(sibId).settings != null, "$id: sibling must remain readable")
+                    check(reopened.readState(sibId, isX3f = false).settings != null, "$id: sibling must remain readable")
                 }
             }
         } finally {

@@ -20,7 +20,7 @@ import kotlinx.coroutines.flow.update
 import java.io.File
 
 internal class EditorCollections(private val storage: PhotoStorage, parentScope: CoroutineScope,
-    private val journalRoot: File, readRecord: (PhotoIdentity) -> PhotoEditState,
+    private val journalRoot: File, readRecord: (PhotoIdentity, Boolean) -> PhotoEditState,
     editGeneration: (PhotoIdentity) -> Long,
     private val captureActiveValidation: () -> (String) -> Unit,
     private val awaitPendingEdits: suspend () -> Unit = {},

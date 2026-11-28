@@ -216,6 +216,17 @@ public struct Adjustments: Equatable, Codable {
         aiDenoiseEnabled = false; lensCorrection?.distortion = false; lensCorrection?.tca = false; lensCorrection?.vignetting = false
     }
 
+    public var needsLegacyNormalX3fRepair: Bool {
+        x3fMode == .normal && (lensSettings.isEnabled || aiDenoiseEnabled)
+    }
+
+    @discardableResult
+    public mutating func repairLegacyNormalX3f(isX3f: Bool) -> Bool {
+        guard isX3f, needsLegacyNormalX3fRepair else { return false }
+        selectX3fMode(.normal)
+        return true
+    }
+
     public var geometrySettings: GeometrySettings { get { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) } set { setGeometrySettings(newValue) } }
     public mutating func setGeometrySettings(_ state: GeometrySettings) {
         if isHDREditing { hdr?.geometry = state } else { geometry = state.isIdentity ? nil : state }

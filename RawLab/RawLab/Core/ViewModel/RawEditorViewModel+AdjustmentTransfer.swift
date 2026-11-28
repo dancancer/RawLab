@@ -110,13 +110,15 @@ extension RawEditorViewModel {
                     )
                     var validation: (() throws -> Void)?
                     var defaults = RawSettings.default
+                    var isX3fTarget = false
                     do {
                         if let error = photo.error { throw error }
                         guard let file = photo.file else { throw CocoaError(.fileReadNoSuchFile) }
                         let original = try Self.adjustmentSourceValidation(file)
                         validation = { try photo.validateSource?(); try original() }
                         try validation?()
-                        defaults = try self.editPersistence?.readState(for: photo.identity).state?.settings ??
+                        isX3fTarget = photo.isX3f
+                        defaults = try self.editPersistence?.readState(for: photo.identity, isX3f: isX3fTarget).state?.settings ??
                             file.withReadAccess { try processor.defaultSettings(for: $0, isRaw: photo.isRaw) }
                         if photo.isRaw {
                             let saved = defaults
@@ -169,7 +171,7 @@ extension RawEditorViewModel {
                     } catch { validation = { throw error } }
                     return IOSAdjustmentTransferTarget(identity: photo.identity, displayName: photo.displayName,
                         defaultState: PhotoEditState(settings:defaults), context: context,
-                        isCurrent: { validateCurrent(photo.id) }, validateSource: validation)
+                        isCurrent: { validateCurrent(photo.id) }, validateSource: validation, isX3f: isX3fTarget)
                 }
                 return try session.prepare(payload: effectivePayload, targets: targets, action: action)
             }

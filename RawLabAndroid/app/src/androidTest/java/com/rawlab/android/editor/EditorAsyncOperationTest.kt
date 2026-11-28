@@ -76,7 +76,7 @@ class EditorAsyncOperationTest {
             ready(model)
             val original = model.state.value.edits
             val identity = model.state.value.photo!!.identity
-            val persisted = EditStore(File(context.filesDir, "edits")).readState(identity)
+            val persisted = EditStore(File(context.filesDir, "edits")).readState(identity, isX3f = false)
             val existing = model.state.value.looks.map { it.id }.toSet()
             main { model.beginDraft(AdjustmentGroup.LOOK) }
             model.lookQueue.performAfterPending {
@@ -89,7 +89,7 @@ class EditorAsyncOperationTest {
                 !model.state.value.committingAdjustments && model.state.value.looks.any { it.managed && it.id !in existing } }
             assertNull(model.state.value.draft)
             assertEquals(original, model.state.value.edits)
-            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(identity))
+            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(identity, isX3f = false))
             val added = model.state.value.looks.first { it.managed && it.id !in existing }.id
             main { model.deleteLook(added) }
             await { model.state.value.looks.none { it.id == added } }
@@ -159,7 +159,7 @@ class EditorAsyncOperationTest {
             main { model.beginDraft(AdjustmentGroup.EXPOSURE) }
             await { !model.state.value.rendering }
             val draft = model.state.value.draft
-            val persisted = EditStore(File(context.filesDir, "edits")).readState(photo.identity)
+            val persisted = EditStore(File(context.filesDir, "edits")).readState(photo.identity, isX3f = false)
             (field(model, "queue") as RenderQueue<*, *>).performAfterPending {
                 entered.countDown(); check(release.await(30, TimeUnit.SECONDS))
             }
@@ -169,7 +169,7 @@ class EditorAsyncOperationTest {
             await { !model.state.value.rendering && !model.state.value.committingAdjustments }
             assertEquals(draft, model.state.value.draft)
             assertEquals(before, model.state.value.edits)
-            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(photo.identity))
+            assertEquals(persisted, EditStore(File(context.filesDir, "edits")).readState(photo.identity, isX3f = false))
             main { model.discardDraft() }
         } finally { release.countDown(); main { owner.clear() }; source.delete() }
     }

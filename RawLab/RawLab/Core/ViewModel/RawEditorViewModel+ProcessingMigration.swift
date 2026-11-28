@@ -101,7 +101,7 @@ extension RawEditorViewModel {
         cancelProcessingMigration()
         do {
             try adjustmentSourceValidator?()
-            let saved = try store.rollbackProcessingMigration(expected: expected)
+            let saved = try store.rollbackProcessingMigration(expected: expected, isX3f: sourceIsX3f)
             acceptProcessingMigration(saved, source: source, publish: true)
         } catch { editSaveState = .failed(adjustmentErrorMessage(error)) }
     }

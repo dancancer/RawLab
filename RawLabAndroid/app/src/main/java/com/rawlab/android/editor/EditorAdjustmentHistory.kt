@@ -181,7 +181,15 @@ internal class EditorAdjustmentHistory(
             val opened = store.reopen()
             if (opened.state == EditSaveState.FAILED) throw opened.error ?: IOException("Edit store is unavailable")
         }
-        val record = store.readState(photo.identity)
+        val openRepair = store.repairLegacyNormalX3fOnOpen(photo.identity, photo.isX3f)
+        openRepair.writeError?.let { writeError ->
+            com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
+                operation = "editPersistence",
+                stage = "repairLegacyNormalX3fOnOpen",
+                error = writeError,
+            )
+        }
+        val record = openRepair.state
         val nextValidator = try { validateSource(photo) } catch (error: Exception) { { throw error } }
         val token = baseline.sourceToken + 1L
         if (!sourceTokens.compareAndSet(baseline.sourceToken, token)) throw PhotoChangedException()

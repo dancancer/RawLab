@@ -504,7 +504,18 @@ extension EditorModel {
         }
         var restoredRecord: MacPhotoEditRecord
         do {
-            restoredRecord = try editStore!.readState(for: url)
+            let openRepair = try editStore!.repairLegacyNormalX3fOnOpen(for: url)
+            restoredRecord = openRepair.record
+            if let writeError = openRepair.writeError {
+                DiagnosticCenter.appErrorDiagnostics.record(
+                    writeError as NSError,
+                    operation: .editPersistence,
+                    stage: "repairLegacyNormalX3fOnOpen"
+                )
+            }
+            if openRepair.repaired {
+                session.rememberExternalSave(restoredRecord)
+            }
         } catch let unusable as UnusableEditRecordError {
             guard let cleared = recoverUnusableRecordOnOpen(url, message: unusable.localizedDescription, session: session) else {
                 return

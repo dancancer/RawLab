@@ -24,11 +24,11 @@ import java.nio.file.Files
 
 class EditedPhotoPreviewTest {
     @Test fun savedDefaultsAndResetHaveNoMarker() {
-        assertFalse(EditedPhotoPreviewKey.isEdited(null, PhotoInputKind.RAW))
-        assertFalse(EditedPhotoPreviewKey.isEdited(EditSettings(), PhotoInputKind.RAW))
-        assertFalse(EditedPhotoPreviewKey.isEdited(EditSettings(exposureMode = 2), PhotoInputKind.RASTER))
-        assertTrue(EditedPhotoPreviewKey.isEdited(EditSettings(exposure = .5f), PhotoInputKind.RAW))
-        assertTrue(EditedPhotoPreviewKey.isEdited(EditSettings(geometry = GeometrySettings(quarterTurns = 1)), PhotoInputKind.RAW))
+        assertFalse(EditedPhotoPreviewKey.isEdited(null, PhotoInputKind.RAW, isX3f = false))
+        assertFalse(EditedPhotoPreviewKey.isEdited(EditSettings(), PhotoInputKind.RAW, isX3f = false))
+        assertFalse(EditedPhotoPreviewKey.isEdited(EditSettings(exposureMode = 2), PhotoInputKind.RASTER, isX3f = false))
+        assertTrue(EditedPhotoPreviewKey.isEdited(EditSettings(exposure = .5f), PhotoInputKind.RAW, isX3f = false))
+        assertTrue(EditedPhotoPreviewKey.isEdited(EditSettings(geometry = GeometrySettings(quarterTurns = 1)), PhotoInputKind.RAW, isX3f = false))
         assertTrue(PhotoEditFilter.EDITED.includes(true))
         assertFalse(PhotoEditFilter.UNEDITED.includes(null))
         assertTrue(PhotoEditFilter.ALL.includes(null))
@@ -223,7 +223,7 @@ class EditedPhotoPreviewTest {
                 override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
                 override fun close() = Unit
             }
-            val renderer = EditorRenderer(storage, { null }, false, engineFactory = { engine })
+            val renderer = EditorRenderer(storage, { _, _ -> null }, false, engineFactory = { engine })
             val thumbWork = EditedPhotoPreviews.thumbnailPreviewWork(photo, edits)
             assertFalse(thumbWork.includeNeutral)
             assertEquals(EditedPhotoPreviewKey.EDGE, thumbWork.edge)
@@ -304,7 +304,7 @@ class EditedPhotoPreviewTest {
                 override fun exportProRAW(file: File, info: HDRSourceInfo, edits: EditSettings, output: File, keepHDR: Boolean, edge: Int, cancellationGeneration: Long, lookDirectory: File?) = error("unused")
                 override fun close() = Unit
             }
-            val renderer = EditorRenderer(storage, { null }, false, engineFactory = { engine }, hdrBridge = fakeHdrBridge)
+            val renderer = EditorRenderer(storage, { _, _ -> null }, false, engineFactory = { engine }, hdrBridge = fakeHdrBridge)
             val result = renderer.perform(EditedPhotoPreviews.thumbnailPreviewWork(photo, edits), RenderCancellation()) as WorkResult.Preview
             assertEquals(0, neutralHdrRenderCalls)
             assertEquals(1, resultHdrRenderCalls)

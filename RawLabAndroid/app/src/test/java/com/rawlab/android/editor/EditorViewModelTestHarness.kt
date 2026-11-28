@@ -474,7 +474,7 @@ internal class EditorViewModelTestHarness : AutoCloseable {
                 PhotoInputKind.RAW,
                 validateOriginal = { check(file.isFile) },
             )
-            val record = runCatching { EditStore(editStoreDir).readState(photo.identity) }.getOrNull()
+            val record = runCatching { EditStore(editStoreDir).readState(photo.identity, isX3f = false) }.getOrNull()
             val edits = record?.settings ?: EditSettings()
             WorkResult.Preview(
                 Work.Preview(

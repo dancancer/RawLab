@@ -176,7 +176,23 @@ extension RawEditorViewModel {
                     if cancellation.isCancelled { throw CancellationError() }
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
-                    let record = try resolvedIdentity.flatMap { try self.editPersistence?.readState(for: $0) }
+                    let isX3f = source.isRaw && (
+                        inputURL.pathExtension.lowercased() == "x3f" ||
+                        URL(fileURLWithPath: source.displayName).pathExtension.lowercased() == "x3f"
+                    )
+                    let openRepair: OpenX3fRepairResult<PhotoEditRecord>? = try resolvedIdentity.flatMap { id in
+                        if x3fModeOverride == nil {
+                            return try self.editPersistence?.repairLegacyNormalX3fOnOpen(for: id, isX3f: isX3f)
+                        }
+                        return try self.editPersistence.map { store in
+                            OpenX3fRepairResult(record: try store.readState(for: id, isX3f: isX3f), repaired: false)
+                        }
+                    }
+                    if let writeError = openRepair?.writeError {
+                        ErrorDiagnostics.log(writeError, operation: .editPersistence, stage: "repairLegacyNormalX3fOnOpen")
+                    }
+                    let record = openRepair?.record
+                    let repairedOnOpen = openRepair?.repaired == true
                     if record?.state == nil, let resolvedIdentity {
                         _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
                     }
@@ -250,7 +266,7 @@ extension RawEditorViewModel {
                                 self.statusMessage = hdr.missingResourceMessage
                                 self.hdrResourceNotice = .delivered(isHDREditing: true, missingMessage: hdr.missingResourceMessage)
                                 self.recordImportedComparison(settings:restoredSettings)
-                                self.acceptImportedEditRecord(record,settings:restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
@@ -322,7 +338,7 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(record, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
@@ -388,7 +404,7 @@ extension RawEditorViewModel {
                                 self.isBusy = false
                                 self.sourceRevision = UUID()
                                 self.recordImportedComparison(settings: restoredSettings)
-                                self.acceptImportedEditRecord(record, settings: restoredSettings)
+                                self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
                                 if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }

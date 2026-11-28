@@ -14,7 +14,7 @@ import java.util.concurrent.CancellationException
 /** HDR 统一批量只读目标记录，转换结果归任务所有，不改变来源或目标的编辑模式。 */
 internal class BatchHDRPreparation(
     private val source: BatchSourceSnapshot,
-    private val readRecord: (PhotoIdentity) -> PhotoEditState,
+    private val readRecord: (PhotoIdentity, Boolean) -> PhotoEditState,
     private val resolveLook: (EditSettings) -> File?,
     private val probeSource: (File, Boolean) -> HDRSourceInfo?,
     private val hdrLookDirectory: File? = null,
@@ -34,7 +34,7 @@ internal class BatchHDRPreparation(
         val hash=BatchFrozenSettings.checksum(target.sourceFile)
         val raw = target.inputKind == PhotoInputKind.RAW
         val info = probeSource(target.sourceFile, raw)
-        val record=readRecord(target.identity)
+        val record = readRecord(target.identity, target.isX3f)
         val previous=record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(target.sourceFile, target.inputKind, info != null, cameraRaw = raw)
         if(previous.isHDREditing && info == null) throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE,"hdr.source")
         val payload=AdjustmentTransfer.captureHDRBatch(source.settings,sourceContext,previous.isHDREditing)

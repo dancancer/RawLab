@@ -16,8 +16,8 @@ import UIKit
         var settings=RawSettings.default; settings.exposureMode = .sensor; settings.hdr=HDRSettings()
         let defaults = try model.sourceDefaultSettings
         check(defaults == settings, "HDR fixture did not produce the complete raster HDR defaults")
-        model.acceptImportedEditRecord(try store.readState(for:identity),settings:settings)
-        let absent=try store.readState(for:identity)
+        model.acceptImportedEditRecord(try store.readState(for: identity, isX3f: false),settings:settings)
+        let absent=try store.readState(for: identity, isX3f: false)
         try model.copyAdjustments(scope:.custom([.hdrTemperature]),settings:settings)
         let clipboard=model.adjustmentSession?.clipboard
         let history=model.adjustmentSession?.transactions.map(\.id)
@@ -34,7 +34,7 @@ import UIKit
             "new HDR import cannot capture a preset with relative white balance")
         let library=AdjustmentPresetStore(directory:root.appendingPathComponent("presets"))
         _ = try library.create(name:"Fresh HDR",payload:preset)
-        let receipt=try store.readState(for:identity)
+        let receipt=try store.readState(for: identity, isX3f: false)
         check(receipt.hasSameAdjustments(as: absent) && model.adjustmentSession?.clipboard==clipboard &&
             model.adjustmentSession?.transactions.map(\.id)==history,
             "saving a fresh HDR preset changed its photo, clipboard or history")
@@ -56,7 +56,7 @@ import UIKit
             print("FAIL fresh HDR synchronization capture: \(error)")
             throw error
         }
-        let afterSync=try store.readState(for:identity)
+        let afterSync=try store.readState(for: identity, isX3f: false)
         check(afterSync.hasSameAdjustments(as: absent),"HDR synchronization capture modified the source record")
         print("PASS fresh HDR collection synchronization freezes common and relative WB fields")
         check(model.beginAdjustmentInteraction(settings:settings),"first HDR gesture rejected")

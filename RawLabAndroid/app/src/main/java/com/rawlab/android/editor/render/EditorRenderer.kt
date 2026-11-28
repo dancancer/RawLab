@@ -41,13 +41,16 @@ import java.util.IdentityHashMap
 
 internal class EditorRenderer(
     private val storage: PhotoStorage,
-    private val restore: (PhotoIdentity) -> PhotoEditState?,
+    private val restore: (PhotoIdentity, Boolean) -> PhotoEditState?,
     private val debuggable: Boolean,
     private val destinationDeleter: ExportDestinationDeleter = ExportDestinationDeleter { destination, original ->
         storage.deleteIncompleteDocument(destination, original)
     },
     private val engineFactory: () -> RenderEngine = { NativeRenderEngine(NativeProcessor(lensDatabase = storage.lensDatabase())) },
     private val hdrBridge: HdrRenderBridge = NativeHdrRenderBridge,
+    private val repairOnOpen: (PhotoIdentity, Boolean) -> com.rawlab.android.settings.OpenX3fRepairResult? = { identity, isX3f ->
+        restore(identity, isX3f)?.let { com.rawlab.android.settings.OpenX3fRepairResult(it) }
+    },
 ) {
     internal interface HdrImageHandle : Closeable {
         val sourceInfo: HDRSourceInfo
@@ -695,7 +698,19 @@ internal class EditorRenderer(
             var hadSavedRecord = false
             try {
                 photo.validateOriginal?.invoke()
-                val record = restore(photo.identity)
+                val openRepair = if (work.x3fModeOverride == null) {
+                    repairOnOpen(photo.identity, photo.isX3f)
+                } else {
+                    restore(photo.identity, photo.isX3f)?.let { com.rawlab.android.settings.OpenX3fRepairResult(it) }
+                }
+                openRepair?.writeError?.let { writeError ->
+                    com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
+                        operation = "editPersistence",
+                        stage = "repairLegacyNormalX3fOnOpen",
+                        error = writeError,
+                    )
+                }
+                val record = openRepair?.state
                 hadSavedRecord = record?.settings != null
                 var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
                 if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)

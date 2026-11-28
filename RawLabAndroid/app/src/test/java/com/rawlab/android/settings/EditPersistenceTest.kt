@@ -128,7 +128,7 @@ class EditPersistenceTest {
             propsFile.outputStream().use { props.store(it, null) }
 
             val store = EditStore(directory)
-            val loadedCsv = store.readState(csvIdentity).settings!!
+            val loadedCsv = store.readState(csvIdentity, isX3f = false).settings!!
             assertEquals(0.4f, loadedCsv.highlights, 1e-6f)
             assertEquals(1.25f, loadedCsv.contrast, 1e-6f)
             assertEquals(0.85f, loadedCsv.saturation, 1e-6f)
@@ -136,7 +136,7 @@ class EditPersistenceTest {
             store.save(csvIdentity, loadedCsv.copy(exposure = 0.6f))
             val savedProps = java.util.Properties().also { propsFile.inputStream().use(it::load) }
             assertTrue(savedProps.getProperty("record.$csvEncoded.values").startsWith("v3:"))
-            val reloadedV3 = EditStore(directory).readState(csvIdentity).settings!!
+            val reloadedV3 = EditStore(directory).readState(csvIdentity, isX3f = false).settings!!
             assertEquals(0.4f, reloadedV3.highlights, 1e-6f)
             assertEquals(1.25f, reloadedV3.contrast, 1e-6f)
             assertEquals(0.85f, reloadedV3.saturation, 1e-6f)

@@ -41,7 +41,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
             "Independent store instances preserve both photos"
         )
         XCTAssertEqual(try first.state(for: b)?.settings.exposure, 2, "Existing readers observe another instance's save")
-        let saved = try first.readState(for: a)
+        let saved = try first.readState(for: a, isX3f: false)
         XCTAssertEqual(saved.state?.settings.exposure, 1, "A successful edit creates a readable photo record")
         let metadataOnly = PhotoEditState(settings: saved.state!.settings, updatedAt: Date(timeIntervalSince1970: 999))
         let unchanged = try first.saveState(identity: saved.identity, state: metadataOnly)
@@ -52,10 +52,10 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let later = try second.saveState(identity: saved.identity, state: metadataOnly)
         XCTAssertEqual(later.state?.settings.exposure, 1, "Independent writers use the current session intent instead of a disk revision")
         let missing = PhotoIdentity(resourceIdentifier: "missing")
-        let absent = try first.readState(for: missing)
+        let absent = try first.readState(for: missing, isX3f: false)
         _ = try first.saveState(identity: absent.identity, state: metadataOnly)
         try first.reset(missing)
-        let deleted = try first.readState(for: missing)
+        let deleted = try first.readState(for: missing, isX3f: false)
         XCTAssertNil(deleted.state, "Deletion removes the current record without a revision tombstone")
         _ = try first.saveState(identity: absent.identity, state: metadataOnly)
         XCTAssertEqual(try first.state(for: missing)?.settings, metadataOnly.settings, "A later ordinary save can recreate a deleted record")
@@ -66,7 +66,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
             _ = try failing.saveState(identity: changed.identity, state: .init(settings: settings))
         }
         XCTAssertTrue(
-            try Data(contentsOf: file) == bytes && first.readState(for: a).state?.settings.exposure == 1,
+            try Data(contentsOf: file) == bytes && first.readState(for: a, isX3f: false).state?.settings.exposure == 1,
             "Write failure preserves the registry"
         )
         var invalid = settings; invalid.exposure = .nan
@@ -88,7 +88,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         old.lutID = "saved-look"; old.clarity = 14
         let before = PhotoEditState(settings: old, filmID: "exact-film-id", updatedAt: Date(timeIntervalSince1970: 42))
         try store.save(content, state: before)
-        let expected = try store.readState(for: content)
+        let expected = try store.readState(for: content, isX3f: false)
         var newer = old; newer.processing = .current; newer.highlights = 0.12
         let candidate = before.replacing(settings: newer, preservingFilmID: before.filmID)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.003,
@@ -105,7 +105,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         var later = newer; later.exposure = 1.5
         try reopened.save(photo, state: before.replacing(settings: later, preservingFilmID: before.filmID))
         XCTAssertEqual(try reopened.processingMigration(for: photo)?.original, before, "Creating a preferred resource record preserves the alias backup")
-        let restored = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: photo))
+        let restored = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: photo, isX3f: false), isX3f: false)
         XCTAssertEqual(restored.state, before, "Restart-safe rollback restores full old state and exact film ID")
         let receipt = try XCTUnwrap(reopened.processingMigration(for: photo))
         XCTAssertTrue(
@@ -116,9 +116,9 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
 
         let rejected = PhotoIdentity(resourceIdentifier: "rejected")
         try store.save(rejected, state: before)
-        let rejectedExpected = try store.readState(for: rejected)
+        let rejectedExpected = try store.readState(for: rejected, isX3f: false)
         _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: nil, quality: quality)
-        XCTAssertEqual(try store.readState(for: rejected), rejectedExpected, "Rejected migration retains old version and parameters")
+        XCTAssertEqual(try store.readState(for: rejected, isX3f: false), rejectedExpected, "Rejected migration retains old version and parameters")
         assertRejects("Unchanged rejected record is not repeatedly migrated") {
             _ = try store.commitProcessingMigration(expected: rejectedExpected, candidate: nil, quality: quality)
         }
@@ -137,10 +137,10 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
                 legacyContentIdentifier: legacy ? alias.contentIdentifier : nil
             )
             try store.save(alias, state: before)
-            let expected = try store.readState(for: asset)
+            let expected = try store.readState(for: asset, isX3f: false)
             _ = try store.commitProcessingMigration(expected: expected, candidate: nil, quality: quality)
             let restarted = try EditPersistence(directory: dir)
-            XCTAssertEqual(try restarted.readState(for: asset), expected, "Rejected alias migration preserves the resolved old edit")
+            XCTAssertEqual(try restarted.readState(for: asset, isX3f: false), expected, "Rejected alias migration preserves the resolved old edit")
             let kept = try restarted.processingMigration(for: asset)
             XCTAssertTrue(
                 kept?.status == .kept && kept?.original == before &&
@@ -179,26 +179,26 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         // 1. Migrated -> explicit reset commit -> receipt nil -> rollback expired -> reopen still nil.
         let primary = PhotoIdentity(resourceIdentifier: "reset-asset", contentIdentifier: "reset-bytes")
         try store.save(primary, state: original)
-        _ = try store.commitProcessingMigration(expected: store.readState(for: primary), candidate: migrated, quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: primary, isX3f: false), candidate: migrated, quality: quality)
         XCTAssertEqual(try store.processingMigration(for: primary)?.status, .migrated, "Migration receipt exists before reset")
         _ = try store.saveState(identity: primary, state: neutralCandidate, clearsProcessingMigration: true)
         XCTAssertNil(try store.processingMigration(for: primary), "Explicit reset commit clears migrated receipt")
         do {
-            _ = try store.rollbackProcessingMigration(expected: store.readState(for: primary))
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: primary, isX3f: false), isX3f: false)
             XCTFail("Rollback after reset must throw expired")
         } catch AdjustmentCommitError.expired {}
         let reopenedPrimary = try EditPersistence(directory: dir)
         XCTAssertNil(try reopenedPrimary.processingMigration(for: primary), "Cleared receipt remains nil after reopening store")
         do {
-            _ = try reopenedPrimary.rollbackProcessingMigration(expected: reopenedPrimary.readState(for: primary))
+            _ = try reopenedPrimary.rollbackProcessingMigration(expected: reopenedPrimary.readState(for: primary, isX3f: false), isX3f: false)
             XCTFail("Reopened rollback after reset must throw expired")
         } catch AdjustmentCommitError.expired {}
 
         // Also verify .rolledBack and .kept-only (no primary record) receipts are cleared.
         let rolled = PhotoIdentity(resourceIdentifier: "rolled-asset", contentIdentifier: "rolled-bytes")
         try store.save(rolled, state: original)
-        let rolledMigrated = try store.commitProcessingMigration(expected: store.readState(for: rolled), candidate: migrated, quality: quality)
-        _ = try store.rollbackProcessingMigration(expected: rolledMigrated)
+        let rolledMigrated = try store.commitProcessingMigration(expected: store.readState(for: rolled, isX3f: false), candidate: migrated, quality: quality)
+        _ = try store.rollbackProcessingMigration(expected: rolledMigrated, isX3f: false)
         XCTAssertEqual(try store.processingMigration(for: rolled)?.status, .rolledBack, "Rolled-back receipt exists before reset")
         try store.reset(rolled)
         XCTAssertNil(try EditPersistence(directory: dir).processingMigration(for: rolled), "Reset clears rolled-back receipt")
@@ -206,7 +206,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let keptAlias = PhotoIdentity(contentIdentifier: "kept-only-alias")
         let keptAsset = PhotoIdentity(resourceIdentifier: "kept-only-asset", contentIdentifier: keptAlias.contentIdentifier)
         try store.save(keptAlias, state: original)
-        _ = try store.commitProcessingMigration(expected: store.readState(for: keptAsset), candidate: nil, quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: keptAsset, isX3f: false), candidate: nil, quality: quality)
         try store.reset(keptAlias)
         XCTAssertTrue(
             try store.state(for: keptAsset) == nil && store.processingMigration(for: keptAsset)?.status == .kept,
@@ -224,7 +224,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let unboundAsset = PhotoIdentity(resourceIdentifier: "shared-phasset")
         for id in [assetV1, assetV2, unboundAsset] {
             try store.save(id, state: original)
-            _ = try store.commitProcessingMigration(expected: store.readState(for: id), candidate: migrated, quality: quality)
+            _ = try store.commitProcessingMigration(expected: store.readState(for: id, isX3f: false), candidate: migrated, quality: quality)
         }
         _ = try store.saveState(identity: assetV1, state: neutralCandidate, clearsProcessingMigration: true)
         try store.reset(assetV1)
@@ -240,7 +240,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
             .migrated,
             "Legacy photo:<res> receipt with non-matching contentIdentifier is not deleted"
         )
-        let restoredV2 = try reopenedShared.rollbackProcessingMigration(expected: reopenedShared.readState(for: assetV2))
+        let restoredV2 = try reopenedShared.rollbackProcessingMigration(expected: reopenedShared.readState(for: assetV2, isX3f: false), isX3f: false)
         XCTAssertEqual(restoredV2.state, original, "Sibling PHAsset identity with different bytes can still roll back")
 
         // 2(b). Independent content:<id> import record keeps its receipt intact under both commitEdit-style and write(nil) resets.
@@ -248,7 +248,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let photoSharingContent = PhotoIdentity(resourceIdentifier: "photo-sharing-sha", contentIdentifier: contentImport.contentIdentifier)
         let photoResetNil = PhotoIdentity(resourceIdentifier: "photo-reset-nil", contentIdentifier: contentImport.contentIdentifier)
         try store.save(contentImport, state: original)
-        _ = try store.commitProcessingMigration(expected: store.readState(for: contentImport), candidate: migrated, quality: quality)
+        _ = try store.commitProcessingMigration(expected: store.readState(for: contentImport, isX3f: false), candidate: migrated, quality: quality)
         XCTAssertTrue(
             try store.processingMigration(for: photoSharingContent)?.status == .migrated &&
                 store.processingMigration(for: photoResetNil)?.status == .migrated,
@@ -276,7 +276,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
                 reopenedAlias.state(for: contentImport) == migrated,
             "Independent content:<id> import record and its migration receipt remain completely unaffected"
         )
-        let restoredContent = try reopenedAlias.rollbackProcessingMigration(expected: reopenedAlias.readState(for: contentImport))
+        let restoredContent = try reopenedAlias.rollbackProcessingMigration(expected: reopenedAlias.readState(for: contentImport, isX3f: false), isX3f: false)
         XCTAssertEqual(restoredContent.state, original, "Independent content:<id> import record can still roll back after PhotoKit reset")
     }
 
@@ -290,7 +290,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         try store.save(legacy, state: original)
         let resolved = await store.resolvingLegacyContent(for: stable) { legacy.contentIdentifier }
         XCTAssertEqual(resolved.legacyContentIdentifier, legacy.contentIdentifier, "First open resolves the transferable alias before migration")
-        let expected = try store.readState(for: resolved)
+        let expected = try store.readState(for: resolved, isX3f: false)
         settings.processing = .current
         let candidate = original.replacing(settings: settings, preservingFilmID: original.filmID)
         let quality = ProcessingMigrationQuality(rgbRMSE: 0.001, p99Error: 0.002, worstTileRMSE: 0.003,
@@ -316,31 +316,31 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         XCTAssertNil(try reopened.processingMigration(for: changedContent), "A changed original content identifier cannot reuse the old backup")
         XCTAssertNil(try reopened.processingMigration(for: PhotoIdentity(resourceIdentifier: "migration-resource")), "A missing content identifier cannot match a content-verified backup")
         assertRejects("Changed content cannot roll back the previous original") {
-            _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: changedContent))
+            _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: changedContent, isX3f: false), isX3f: false)
         }
-        _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: current))
+        _ = try reopened.rollbackProcessingMigration(expected: reopened.readState(for: current, isX3f: false), isX3f: false)
         let restarted = try EditPersistence(directory: dir)
         let again = await restarted.resolvingLegacyContent(for: stable) { loads += 1; return legacy.contentIdentifier }
         let rolledBack = try restarted.processingMigration(for: again)
         XCTAssertTrue(
             try again.legacyContentIdentifier == nil && loads == 0 && rolledBack?.status == .rolledBack &&
                 rolledBack?.shouldAttempt(current: original, sourceVersion: 2) == false &&
-                restarted.readState(for: again).state == original,
+                restarted.readState(for: again, isX3f: false).state == original,
             "Rollback marker survives reopening without the legacy lookup hint"
         )
         assertRejects("Reopened rollback cannot migrate automatically again") {
-            _ = try restarted.commitProcessingMigration(expected: restarted.readState(for: again), candidate: candidate, quality: quality)
+            _ = try restarted.commitProcessingMigration(expected: restarted.readState(for: again, isX3f: false), candidate: candidate, quality: quality)
         }
         XCTAssertEqual(try restarted.state(for: legacy), original, "Resource migration and rollback preserve the independent legacy record")
 
         let direct = PhotoIdentity(resourceIdentifier: "rollback-before-reopen", contentIdentifier: "direct-original-bytes")
         let directResolved = await restarted.resolvingLegacyContent(for: direct) { legacy.contentIdentifier }
         let migrated = try restarted.commitProcessingMigration(
-            expected: restarted.readState(for: directResolved),
+            expected: restarted.readState(for: directResolved, isX3f: false),
             candidate: candidate,
             quality: quality
         )
-        _ = try restarted.rollbackProcessingMigration(expected: migrated)
+        _ = try restarted.rollbackProcessingMigration(expected: migrated, isX3f: false)
         let directReopened = try EditPersistence(directory: dir)
         let directIdentity = await directReopened.resolvingLegacyContent(for: direct) { loads += 1; return legacy.contentIdentifier }
         let directReceipt = try directReopened.processingMigration(for: directIdentity)
@@ -419,7 +419,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         try store.save(legacyID, state: legacy)
         let file = directory.appendingPathComponent("edits.json")
         let before = try Data(contentsOf: file)
-        let receipt = try store.readState(for: photo)
+        let receipt = try store.readState(for: photo, isX3f: false)
         XCTAssertTrue(
             receipt.state == legacy && receipt.identity.key == "photo:edited-asset",
             "Different transferable bytes restore the old content edit under the library identity"
@@ -466,7 +466,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         try store.save(content, state: legacy)
         let file = directory.appendingPathComponent("edits.json")
         let before = try Data(contentsOf: file)
-        let restored = try store.readState(for: photo)
+        let restored = try store.readState(for: photo, isX3f: false)
         XCTAssertTrue(
             photo.key == "photo:asset-id" && restored.identity == photo && restored.state == legacy,
             "Photo library identity reads an existing content edit without changing its key"
@@ -490,7 +490,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         settings.exposure = 2
         try store.save(content, state: .init(settings: settings))
         _ = try store.saveState(identity: restored.identity, state: legacy)
-        let refreshed = try store.readState(for: photo)
+        let refreshed = try store.readState(for: photo, isX3f: false)
         let legacyState = try store.state(for: content)
         settings.exposure = -0.5
         let saved = try store.saveState(identity: refreshed.identity, state: .init(settings: settings))
@@ -500,7 +500,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         )
         XCTAssertEqual(try store.state(for: content), legacyState, "Saving photo edits preserves the old content record")
         try store.reset(photo)
-        let deleted = try store.readState(for: photo)
+        let deleted = try store.readState(for: photo, isX3f: false)
         XCTAssertTrue(
             try deleted.state == nil && store.state(for: content) != nil,
             "Photo deletion tombstone prevents old content edits from reappearing"
@@ -515,7 +515,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let oldBytes = try JSONEncoder().encode(["records": [content.key: legacy]])
         try oldBytes.write(to: oldFile)
         let oldStore = try EditPersistence(directory: oldDirectory)
-        let oldRecord = try oldStore.readState(for: photo)
+        let oldRecord = try oldStore.readState(for: photo, isX3f: false)
         XCTAssertTrue(
             try oldRecord.state == legacy && Data(contentsOf: oldFile) == oldBytes,
             "Unversioned content edits remain readable without adding a revision map"
@@ -523,7 +523,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         try FileManager.default.removeItem(at: oldFile)
         try FileManager.default.createDirectory(at: oldFile, withIntermediateDirectories: false)
         XCTAssertEqual(try oldStore.state(for: photo), legacy, "Storage failure retains the last readable fallback edit")
-        assertRejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.readState(for: photo) }
+        assertRejects("Strict fallback reads still report corrupt storage") { _ = try oldStore.readState(for: photo, isX3f: false) }
     }
 
     func testPhotoLibraryContentChange() throws {
@@ -626,16 +626,16 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let store = try EditPersistence(directory: directory), identity = PhotoIdentity(resourceIdentifier: "loaded")
         var settings = RawSettings.default; settings.exposure = 0.4
         try store.save(identity, state: .init(settings: settings))
-        let receipt = try store.readState(for: identity)
+        let receipt = try store.readState(for: identity, isX3f: false)
         let backup = directory.appendingPathExtension("backup")
         try FileManager.default.moveItem(at: directory, to: backup)
         try Data([1]).write(to: directory)
         XCTAssertEqual(try store.state(for: identity)?.settings, settings, "Legacy read retains the last accepted record during storage failure")
-        assertRejects("Strict transaction read never falls back to cached records") { _ = try store.readState(for: identity) }
+        assertRejects("Strict transaction read never falls back to cached records") { _ = try store.readState(for: identity, isX3f: false) }
         assertRejects("Unavailable store cannot commit using the cache") { _ = try store.saveState(identity: receipt.identity, state: nil) }
         try FileManager.default.removeItem(at: directory)
         try FileManager.default.moveItem(at: backup, to: directory)
-        XCTAssertTrue(try store.readState(for: identity).hasSameAdjustments(as: receipt), "Restored storage reads the original record")
+        XCTAssertTrue(try store.readState(for: identity, isX3f: false).hasSameAdjustments(as: receipt), "Restored storage reads the original record")
     }
 
     func testLegacy() throws {
@@ -647,7 +647,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let file = directory.appendingPathComponent("edits.json")
         let bytes = try JSONEncoder().encode(["records": [identity.key: state]])
         try bytes.write(to: file)
-        let store = try EditPersistence(directory: directory), before = try store.readState(for: identity)
+        let store = try EditPersistence(directory: directory), before = try store.readState(for: identity, isX3f: false)
         XCTAssertTrue(
             try before.state == state && Data(contentsOf: file) == bytes,
             "Legacy records read without rewriting or inventing a revision map"
@@ -685,7 +685,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
     func testCorrupt() throws {
         let directory = root.appendingPathComponent("corrupt")
         let store = try EditPersistence(directory: directory), identity = PhotoIdentity(resourceIdentifier: "future")
-        let before = try store.readState(for: identity), file = directory.appendingPathComponent("edits.json")
+        let before = try store.readState(for: identity, isX3f: false), file = directory.appendingPathComponent("edits.json")
         let future = Data("{\"version\":99,\"records\":{}}".utf8)
         try future.write(to: file)
         assertRejects("Future registry version blocks ordinary writes") {
@@ -753,7 +753,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
 
         for id in [brokenAssetBytes1, sameAssetBytes2, independentContent, brokenSubSetting, healthySibling] {
             try store.save(id, state: c5State)
-            _ = try store.commitProcessingMigration(expected: store.readState(for: id),
+            _ = try store.commitProcessingMigration(expected: store.readState(for: id, isX3f: false),
                                                     candidate: migratedState,
                                                     quality: quality)
         }
@@ -793,7 +793,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
                 XCTFail("Broken record must throw UnusableEditRecordError on state(for:)")
             } catch is UnusableEditRecordError {}
             do {
-                _ = try reopened.readState(for: broken)
+                _ = try reopened.readState(for: broken, isX3f: false)
                 XCTFail("Broken record must throw UnusableEditRecordError on readState")
             } catch is UnusableEditRecordError {}
             do {
@@ -837,18 +837,18 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let cleared = try reopened.resetToUnmodified(brokenAssetBytes1)
         XCTAssertTrue(
             try cleared.state == nil &&
-                reopened.readState(for: brokenAssetBytes1).state == nil &&
+                reopened.readState(for: brokenAssetBytes1, isX3f: false).state == nil &&
                 reopened.state(for: brokenAssetBytes1) == nil,
             "resetToUnmodified removes broken PhotoKit record and tombstones content fallback"
         )
         XCTAssertNil(try reopened.processingMigration(for: brokenAssetBytes1), "resetToUnmodified clears target PhotoKit migration receipt")
         XCTAssertTrue(
-            try reopened.readState(for: sameAssetBytes2).state?.settings.exposure == 0.6 &&
+            try reopened.readState(for: sameAssetBytes2, isX3f: false).state?.settings.exposure == 0.6 &&
                 reopened.processingMigration(for: sameAssetBytes2)?.status == .migrated,
             "Same PHAsset with different bytes keeps its record and migration receipt"
         )
         XCTAssertTrue(
-            try reopened.readState(for: independentContent).state?.settings.exposure == 0.6 &&
+            try reopened.readState(for: independentContent, isX3f: false).state?.settings.exposure == 0.6 &&
                 reopened.processingMigration(for: independentContent)?.status == .migrated,
             "Independent content:<id> record and migration receipt remain untouched"
         )
@@ -862,7 +862,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         var recoveredSettings = RawSettings.default; recoveredSettings.exposure = -0.45
         try reopened.save(brokenAssetBytes1, state: PhotoEditState(settings: recoveredSettings))
         XCTAssertEqual(
-            try EditPersistence(directory: directory).readState(for: brokenAssetBytes1).state?.settings.exposure,
+            try EditPersistence(directory: directory).readState(for: brokenAssetBytes1, isX3f: false).state?.settings.exposure,
             -0.45,
             "Recovered photo can save new adjustments normally"
         )
@@ -881,13 +881,13 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
             XCTFail("Broken legacy photo:<asset-id> record must throw UnusableEditRecordError on unverifiedAssetEdit")
         } catch is UnusableEditRecordError {}
         do {
-            _ = try legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true)
+            _ = try legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true, isX3f: false)
             XCTFail("Broken legacy photo:<asset-id> record must throw UnusableEditRecordError when legacy decision is required")
         } catch is UnusableEditRecordError {}
         _ = try legacyBrokenStore.resetToUnmodified(legacyBrokenCurrent)
         XCTAssertTrue(
             try legacyBrokenStore.unverifiedAssetEdit(for: legacyBrokenCurrent) == nil &&
-                legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true).state == nil &&
+                legacyBrokenStore.readState(for: legacyBrokenCurrent, requiringLegacyDecision: true, isX3f: false).state == nil &&
                 legacyBrokenStore.state(for: legacyBrokenCurrent) == nil,
             "resetToUnmodified tombstones broken legacy photo:<asset-id> record for the recovered photo"
         )
@@ -935,7 +935,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         var healedSettings = RawSettings.default; healedSettings.exposure = 0.85
         try EditPersistence(directory: corruptDir).save(healedID, state: PhotoEditState(settings: healedSettings))
         XCTAssertEqual(
-            try EditPersistence(directory: corruptDir).readState(for: healedID).state?.settings.exposure,
+            try EditPersistence(directory: corruptDir).readState(for: healedID, isX3f: false).state?.settings.exposure,
             0.85,
             "Recovered iOS store persists new edits cleanly"
         )
@@ -949,7 +949,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         try store.save(identity, state: .init(settings: settings))
         let readsAfterSave = EditPersistence.registryDiskReadCount(forDirectory: directory)
         _ = try store.state(for: identity)
-        _ = try store.readState(for: identity)
+        _ = try store.readState(for: identity, isX3f: false)
         XCTAssertEqual(
             EditPersistence.registryDiskReadCount(forDirectory: directory),
             readsAfterSave,
@@ -958,7 +958,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
         let file = directory.appendingPathComponent("edits.json")
         try (try Data(contentsOf: file) + Data(" ".utf8)).write(to: file)
         XCTAssertEqual(
-            try store.readState(for: identity).state?.settings.exposure,
+            try store.readState(for: identity, isX3f: false).state?.settings.exposure,
             0.5,
             "An externally appended byte still parses the same record"
         )
@@ -1020,7 +1020,7 @@ final class IOSAdjustmentPersistenceTests: XCTestCase {
             "Cleanup preserves edits.json, .edits.lock, .corrupt-*, and unrelated files"
         )
         XCTAssertEqual(
-            try EditPersistence(directory: directory).readState(for: id).state?.settings.exposure,
+            try EditPersistence(directory: directory).readState(for: id, isX3f: false).state?.settings.exposure,
             0.35,
             "Store remains readable after stale .atomic temp cleanup"
         )

@@ -187,7 +187,7 @@ internal class EditorProcessingMigrationStateHolder(
         session.commitAdjustments({
             if (session.sourceRevision != source || session.editRevision != edit) throw AdjustmentOperationExpiredException()
             validation()
-            val saved = editStore.rollbackProcessingMigration(expected)
+            val saved = editStore.rollbackProcessingMigration(expected, photo.isX3f)
             editStore.adjustmentSession?.adoptProcessingMigration(saved)
             saved to editStore.processingMigration(photo.identity)
         }, false) { result ->

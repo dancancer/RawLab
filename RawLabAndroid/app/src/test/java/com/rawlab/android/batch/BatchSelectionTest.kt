@@ -23,7 +23,7 @@ class BatchSelectionTest {
         val gainMap = BatchTarget(PhotoIdentity("gain-map"), File("photo.jpg"), "photo.jpg",
             inputKind = PhotoInputKind.RASTER, sourceIsHDR = true)
         val records = mutableMapOf<PhotoIdentity, EditSettings>()
-        val read = { identity: PhotoIdentity -> PhotoEditState(identity, records[identity]) }
+        val read = { identity: PhotoIdentity, _: Boolean -> PhotoEditState(identity, records[identity]) }
         var selection = BatchSelectionState().append(listOf(raw, gainMap))
         assertFalse("Unedited camera RAW starts in SDR", selection.supportsHDRExport(read))
         records[raw.identity] = EditSettings().withHDRMode(true, false, cameraRaw = true)
@@ -38,7 +38,7 @@ class BatchSelectionTest {
         assertFalse(selection.supportsHDRExport(read))
         assertFalse(selection.supportsHDRExport(read, skipping = setOf(gainMap.id)))
         assertFalse(BatchSelectionState().supportsHDRExport(read))
-        assertFalse(selection.supportsHDRExport({ throw java.io.IOException("Unreadable saved record") }))
+        assertFalse(selection.supportsHDRExport({ _, _ -> throw java.io.IOException("Unreadable saved record") }))
     }
 
     @Test fun noRecordRasterCollectionUsesSourceDefaultsWithoutSaving() {
@@ -51,7 +51,7 @@ class BatchSelectionTest {
             val review = exporter.prepare(BatchSelectionState().append(listOf(photo)), emptySet(), ExportFormat.PNG, null, null) {}
             assertTrue(review.ready)
             assertEquals(2, review.rows.single().settings!!.exposureMode)
-            assertNull(store.readState(photo.identity).settings)
+            assertNull(store.readState(photo.identity, isX3f = false).settings)
         } finally { root.deleteRecursively() }
     }
 

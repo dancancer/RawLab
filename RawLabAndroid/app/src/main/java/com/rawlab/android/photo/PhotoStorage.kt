@@ -57,6 +57,7 @@ data class AlbumPhoto(val uri: Uri, val name: String, val album: String,
     val width: Int = 0, val height: Int = 0, val orientation: Int = 0,
     val albumId: String = album, val relativePath: String? = null, val mimeType: String? = null, val sourceVersion: String = "") {
     val aspectRatio: Float? get() = albumAspectRatio(width, height, orientation)
+    val isX3f: Boolean get() = name.substringAfterLast('.', "").equals("x3f", ignoreCase = true)
 }
 data class ImportedPhoto(val uri: Uri, val name: String, val file: File,
     val identity: PhotoIdentity = PhotoIdentity(uri.toString()),

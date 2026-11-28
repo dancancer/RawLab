@@ -334,7 +334,7 @@ public struct BatchExportJob: Codable, Equatable, Identifiable {
     }
     public typealias X3fModeResolver = (PhotoIdentity, URL) throws -> X3fMode
     public static func x3fModeResolver(store: EditPersistence? = nil, x3fDefaultMode: @escaping (URL) throws -> X3fMode = Self.defaultX3fMode(for:)) -> X3fModeResolver {
-        { id, url in try (try store ?? EditPersistence.appStore()).readState(for: id).state?.settings.x3fMode ?? x3fDefaultMode(url) }
+        { id, url in try (try store ?? EditPersistence.appStore()).readState(for: id, isX3f: BatchExportEnvironment.isX3fInput(url)).state?.settings.x3fMode ?? x3fDefaultMode(url) }
     }
     public static func resolveX3fMode(identity: PhotoIdentity, url: URL) throws -> X3fMode { try x3fModeResolver()(identity, url) }
     public static func defaultX3fMode(for url: URL) throws -> X3fMode { try BatchExportEnvironment.defaultX3fMode(url) }

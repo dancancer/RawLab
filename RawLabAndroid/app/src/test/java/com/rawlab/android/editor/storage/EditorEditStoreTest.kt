@@ -40,7 +40,7 @@ class EditorEditStoreTest {
             assertArrayEquals(original, archived.readBytes())
             val id = PhotoIdentity("healed-photo")
             assertEquals(EditSaveState.SAVED, store.save(id, EditSettings(exposure = 0.5f)).state)
-            assertEquals(0.5f, store.readState(id).settings?.exposure)
+            assertEquals(0.5f, store.readState(id, isX3f = false).settings?.exposure)
             assertArrayEquals(original, archived.readBytes())
         } finally { root.deleteRecursively() }
     }
@@ -56,15 +56,15 @@ class EditorEditStoreTest {
             assertTrue(store.available)
             assertEquals(EditSaveState.SAVED, store.save(sibling, EditSettings(exposure = .5f)).state)
             assertThrows(UnusableEditRecordException::class.java) { store.load(broken) }
-            assertThrows(UnusableEditRecordException::class.java) { store.readState(broken) }
+            assertThrows(UnusableEditRecordException::class.java) { store.readState(broken, isX3f = false) }
             val failedSave = store.save(broken, EditSettings())
             assertEquals(EditSaveState.FAILED, failedSave.state)
             assertTrue(failedSave.error is UnusableEditRecordException)
             assertNull(store.resetToUnmodified(broken).settings)
-            assertNull(store.readState(broken).settings)
-            assertEquals(.5f, store.readState(sibling).settings?.exposure)
+            assertNull(store.readState(broken, isX3f = false).settings)
+            assertEquals(.5f, store.readState(sibling, isX3f = false).settings?.exposure)
             assertEquals(EditSaveState.SAVED, store.save(broken, EditSettings(exposure = -.25f)).state)
-            assertEquals(-.25f, store.readState(broken).settings?.exposure)
+            assertEquals(-.25f, store.readState(broken, isX3f = false).settings?.exposure)
         } finally { root.deleteRecursively() }
     }
 

@@ -80,11 +80,11 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
                 session.transactions[0].parts.count == 1,
             "Only successfully saved targets enter a partial transaction"
         )
-        let savedA = try store.readState(for: a)
+        let savedA = try store.readState(for: a, isX3f: false)
         failB = false
         let retry = session.apply(operation)
         XCTAssertTrue(
-            try retry.map(\.status) == [.applied, .applied] && store.readState(for: a).hasSameAdjustments(as: savedA),
+            try retry.map(\.status) == [.applied, .applied] && store.readState(for: a, isX3f: false).hasSameAdjustments(as: savedA),
             "Retry saves only the failed target and preserves the successful target"
         )
         let undoA = session.undoPhoto(a)
@@ -108,16 +108,16 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
             "Identical paste creates no history"
         )
         _ = session.undoPhoto(a)
-        let timestampOnly = session.commitEdit(expected: try store.readState(for: a), state: state(0), defaultState: state(0))
+        let timestampOnly = session.commitEdit(expected: try store.readState(for: a, isX3f: false), state: state(0), defaultState: state(0))
         XCTAssertTrue(timestampOnly.status == .unchanged && session.canRedoPhoto(a), "Default absence no-op preserves redo")
-        let newEdit = session.commitEdit(expected: try store.readState(for: a), state: state(2))
+        let newEdit = session.commitEdit(expected: try store.readState(for: a, isX3f: false), state: state(2))
         XCTAssertTrue(newEdit.status == .applied && !session.canRedoPhoto(a), "New edit clears only that photo's redo")
         XCTAssertEqual(
             session.transactions.first?.parts.first(where: { $0.identity == b })?.state,
             .applied,
             "Other photo history survives a new single-photo edit"
         )
-        _ = session.commitEdit(expected: try store.readState(for: a), state: state(1))
+        _ = session.commitEdit(expected: try store.readState(for: a, isX3f: false), state: state(1))
         let remaining = session.undoTransaction(operation.id)
         XCTAssertTrue(
             try remaining.count == 1 && remaining[0].targetID == b.key && remaining[0].status == .applied &&
@@ -257,7 +257,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
             try rejected.map(\.status) == [.blocked] && store.state(for: source)?.settings.exposure == 0.5,
             "Write-time source exclusion rejects a source reintroduced after preparation"
         )
-        let before = try store.readState(for: other)
+        let before = try store.readState(for: other, isX3f: false)
         var micro = before.state!.settings; micro.contrast = 0.61
         let edit = session.commitEdit(expected: before, state: PhotoEditState(settings: micro))
         XCTAssertTrue(
@@ -398,7 +398,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
         let operation = try session.prepare(payload: copy, targets: [
             .init(identity: identity, displayName: "A", defaultState: state(0), context: context)
         ])
-        let edited = session.commitEdit(expected: try store.readState(for: identity), state: state(2))
+        let edited = session.commitEdit(expected: try store.readState(for: identity, isX3f: false), state: state(2))
         XCTAssertEqual(edited.status, .applied, "A local edit succeeds after the paste preflight")
         let result = try XCTUnwrap(session.apply(operation).first)
         XCTAssertTrue(
@@ -412,7 +412,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
         let store = try EditPersistence(directory: root.appendingPathComponent("lineage"))
         let session = IOSAdjustmentTransferSession(store: store)
         let id = PhotoIdentity(resourceIdentifier: "ordered")
-        for value in [1.0, 2, 1] { _ = session.commitEdit(expected: try store.readState(for: id), state: state(value)) }
+        for value in [1.0, 2, 1] { _ = session.commitEdit(expected: try store.readState(for: id, isX3f: false), state: state(value)) }
         let first = session.transactions[0].id
         XCTAssertEqual(session.undoTransaction(first).first?.status, .conflict, "Own ABA cannot undo an older transaction out of order")
         _ = session.undoPhoto(id); XCTAssertEqual(try store.state(for: id)?.settings.exposure, 2, "Latest undo restores immediate predecessor")
@@ -429,7 +429,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
             try bytes.write(to: url, options: .atomic)
         })
         let session = IOSAdjustmentTransferSession(store: store), id = PhotoIdentity(resourceIdentifier: "retry")
-        let before = try store.readState(for: id)
+        let before = try store.readState(for: id, isX3f: false)
         fail = true
         XCTAssertTrue(
             session.commitEdit(expected: before, state: state(1)).status == .failed && session.transactions.isEmpty,
@@ -466,13 +466,13 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
         let content = PhotoIdentity(contentIdentifier: "bytes-1")
         for target in [id, sibling, content] {
             try store.save(target, state: original)
-            let accepted = try store.commitProcessingMigration(expected: store.readState(for: target), candidate: migrated, quality: quality)
+            let accepted = try store.commitProcessingMigration(expected: store.readState(for: target, isX3f: false), candidate: migrated, quality: quality)
             session.adoptProcessingMigration(accepted)
         }
         var edited = newer; edited.exposure = 1.1
         XCTAssertEqual(
             session.commitEdit(
-                expected: try store.readState(for: id),
+                expected: try store.readState(for: id, isX3f: false),
                 state: original.replacing(settings: edited, preservingFilmID: original.filmID)
             ).status,
             .applied,
@@ -481,7 +481,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
         XCTAssertEqual(try store.processingMigration(for: id)?.status, .migrated, "Ordinary session edit preserves migration receipt")
         var neutral = RawSettings.default; neutral.processing = .current
         let resetOutcome = session.commitEdit(
-            expected: try store.readState(for: id),
+            expected: try store.readState(for: id, isX3f: false),
             state: PhotoEditState(settings: neutral),
             clearsProcessingMigration: true
         )
@@ -490,7 +490,7 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
             "Session reset-all commit clears target migration receipt"
         )
         do {
-            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id, isX3f: false), isX3f: false)
             XCTFail("Rollback after session reset must throw expired")
         } catch AdjustmentCommitError.expired {}
         let reopened = try EditPersistence(directory: dir)
@@ -507,16 +507,16 @@ final class IOSAdjustmentTransferSessionTests: XCTestCase {
             "Undoing session reset-all restores pre-reset adjustments while keeping migration receipt nil"
         )
         do {
-            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id))
+            _ = try store.rollbackProcessingMigration(expected: store.readState(for: id, isX3f: false), isX3f: false)
             XCTFail("Rollback after undoing session reset must stay expired")
         } catch AdjustmentCommitError.expired {}
 
         let clearedBroken = try session.resetToUnmodified(id)
         XCTAssertTrue(
             try clearedBroken.state == nil && !session.canUndoPhoto(id) &&
-                store.readState(for: id).state == nil &&
-                store.readState(for: sibling).state?.settings.exposure == 0.75 &&
-                store.readState(for: content).state?.settings.exposure == 0.75,
+                store.readState(for: id, isX3f: false).state == nil &&
+                store.readState(for: sibling, isX3f: false).state?.settings.exposure == 0.75 &&
+                store.readState(for: content, isX3f: false).state?.settings.exposure == 0.75,
             "Session resetToUnmodified clears target history and record while preserving same-PHAsset-other-bytes and content:<id>"
         )
     }

@@ -19,6 +19,25 @@ public extension UnusableEditRecordError {
     }
 }
 
+public struct OpenX3fRepairResult<Record> {
+    public let record: Record
+    public let repaired: Bool
+    public let writeError: Error?
+    public init(record: Record, repaired: Bool, writeError: Error? = nil) {
+        self.record = record
+        self.repaired = repaired
+        self.writeError = writeError
+    }
+}
+
+public extension PhotoEditState {
+    func repairingLegacyNormalX3f(isX3f: Bool) -> (state: PhotoEditState, changed: Bool) {
+        var updated = self
+        let changed = updated.settings.repairLegacyNormalX3f(isX3f: isX3f)
+        return (updated, changed)
+    }
+}
+
 public struct PhotoEditRecord: Equatable {
     public let identity: PhotoIdentity
     public let state: PhotoEditState?
@@ -31,12 +50,25 @@ public struct PhotoEditRecord: Equatable {
         default: return false
         }
     }
+    public func repairingLegacyNormalX3f(isX3f: Bool) -> (record: PhotoEditRecord, changed: Bool) {
+        guard let state else { return (self, false) }
+        let repaired = state.repairingLegacyNormalX3f(isX3f: isX3f)
+        guard repaired.changed else { return (self, false) }
+        return (PhotoEditRecord(identity: identity, state: repaired.state), true)
+    }
 }
 
 public struct MacPhotoEditRecord: Equatable {
     public let identity: OriginalFileIdentity
     public let state: PhotoEditState?
     public init(identity: OriginalFileIdentity, state: PhotoEditState?) { self.identity = identity; self.state = state }
+    public func repairingLegacyNormalX3f() -> (record: MacPhotoEditRecord, changed: Bool) {
+        guard let state else { return (self, false) }
+        let isX3f = URL(fileURLWithPath: identity.path).pathExtension.lowercased() == "x3f"
+        let repaired = state.repairingLegacyNormalX3f(isX3f: isX3f)
+        guard repaired.changed else { return (self, false) }
+        return (MacPhotoEditRecord(identity: identity, state: repaired.state), true)
+    }
 }
 
 internal enum EditRecordCodec {
@@ -123,13 +155,14 @@ internal enum EditRecordCodec {
     }
 
     static func rollbackMigration<Schema: EditRegistrySchema, Identity: Codable>(
-        core: EditRegistryStore<Schema>, key: String, isMac: Bool, envelope: inout EditRegistryEnvelope, stored: StoredMigration<Identity>,
+        core: EditRegistryStore<Schema>, key: String, isMac: Bool, isX3f: Bool, envelope: inout EditRegistryEnvelope, stored: StoredMigration<Identity>,
         encodeRecord: (PhotoEditState) throws -> Data, encodeMigration: (StoredMigration<Identity>) throws -> Data
     ) throws {
         var receipt = stored.receipt
         guard receipt.status == .migrated else { throw AdjustmentCommitError.expired }
-        if isMac { try validateState(receipt.original, isMac: true) }
-        envelope.records[key] = try encodeRecord(receipt.original)
+        let restored = receipt.original.repairingLegacyNormalX3f(isX3f: isX3f).state
+        if isMac { try validateState(restored, isMac: true) }
+        envelope.records[key] = try encodeRecord(restored)
         if !isMac { envelope.deleted?.remove(key) }
         receipt.status = .rolledBack
         var receipts = envelope.processingMigrations ?? [:]
@@ -191,7 +224,7 @@ public final class EditPersistence: @unchecked Sendable {
     }
 
     public func state(for identity: PhotoIdentity) throws -> PhotoEditState? {
-        do { return try readState(for: identity).state }
+        do { return try readState(for: identity, isX3f: false).state }
         catch let error as UnusableEditRecordError { throw error }
         catch { return try record(identity, from: core.lastReadableEnvelope).state }
     }
@@ -233,13 +266,35 @@ public final class EditPersistence: @unchecked Sendable {
         }
     }
 
-    public func readState(for identity: PhotoIdentity, requiringLegacyDecision: Bool = false) throws -> PhotoEditRecord {
+    public func readState(for identity: PhotoIdentity, requiringLegacyDecision: Bool = false, isX3f: Bool) throws -> PhotoEditRecord {
         try validate(identity)
         let store = try core.readEnvelope()
         if requiringLegacyDecision, try unverifiedAssetEdit(for: identity, from: store) != nil {
             throw EditPersistenceError.legacyAssetEditNeedsDecision
         }
-        return try record(identity, from: store)
+        return try record(identity, from: store).repairingLegacyNormalX3f(isX3f: isX3f).record
+    }
+
+    @discardableResult
+    public func repairLegacyNormalX3fOnOpen(for identity: PhotoIdentity, isX3f: Bool) throws -> OpenX3fRepairResult<PhotoEditRecord> {
+        try validate(identity)
+        let initial = try record(identity, from: core.readEnvelope())
+        let checked = initial.repairingLegacyNormalX3f(isX3f: isX3f)
+        guard checked.changed else { return OpenX3fRepairResult(record: initial, repaired: false) }
+        do {
+            let outcome = try core.withWriteLock { () -> (record: PhotoEditRecord, repaired: Bool) in
+                var store = try core.readEnvelope(holdingWriteLock: true)
+                let rawCurrent = try record(identity, from: store)
+                let repaired = rawCurrent.repairingLegacyNormalX3f(isX3f: true)
+                guard repaired.changed, let repairedState = repaired.record.state else { return (repaired.record, false) }
+                return (try write(repairedState, identity: identity, store: &store), true)
+            }
+            return OpenX3fRepairResult(record: outcome.record, repaired: outcome.repaired)
+        } catch let error as UnusableEditRecordError {
+            throw error
+        } catch {
+            return OpenX3fRepairResult(record: checked.record, repaired: true, writeError: error)
+        }
     }
 
     public func readStates(for identities: [PhotoIdentity], requiringLegacyDecision: Bool = false) throws -> [PhotoIdentity: Result<PhotoEditRecord, Error>] {
@@ -297,14 +352,14 @@ public final class EditPersistence: @unchecked Sendable {
         }
     }
 
-    public func rollbackProcessingMigration(expected: PhotoEditRecord) throws -> PhotoEditRecord {
+    public func rollbackProcessingMigration(expected: PhotoEditRecord, isX3f: Bool) throws -> PhotoEditRecord {
         try validate(expected.identity)
         return try core.withWriteLock {
             var store = try core.readEnvelope(holdingWriteLock: true)
-            guard try record(expected.identity, from: store) == expected,
+            guard try record(expected.identity, from: store).repairingLegacyNormalX3f(isX3f: isX3f).record == expected,
                   let stored = storedMigration(expected.identity, from: store) else { throw AdjustmentCommitError.expired }
             try EditRecordCodec.rollbackMigration(
-                core: core, key: expected.identity.editKey, isMac: false, envelope: &store,
+                core: core, key: expected.identity.editKey, isMac: false, isX3f: isX3f, envelope: &store,
                 stored: StoredMigration(identity: expected.identity, receipt: stored.receipt),
                 encodeRecord: Self.encodeState, encodeMigration: { try EditRecordCodec.encoder(legacyV1: false).encode($0) }
             )
@@ -331,12 +386,14 @@ public final class EditPersistence: @unchecked Sendable {
         }
     }
 
-    public func saveTransferredState(_ state: PhotoEditState, expected: PhotoEditRecord) throws -> PhotoEditRecord {
+    public func saveTransferredState(_ state: PhotoEditState, expected: PhotoEditRecord, isX3f: Bool) throws -> PhotoEditRecord {
         let identity = expected.identity; try validate(identity)
         return try core.withWriteLock {
             var store = try core.readEnvelope(holdingWriteLock: true)
             guard try unverifiedAssetEdit(for: identity, from: store) == nil else { throw EditPersistenceError.legacyAssetEditNeedsDecision }
-            guard try record(identity, from: store).hasSameAdjustments(as: expected) else { throw AdjustmentCommitError.expired }
+            guard try record(identity, from: store).repairingLegacyNormalX3f(isX3f: isX3f).record.hasSameAdjustments(as: expected) else {
+                throw AdjustmentCommitError.expired
+            }
             return try write(state, identity: identity, store: &store)
         }
     }
@@ -495,6 +552,36 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     public func state(for url: URL) throws -> PhotoEditState? { try readState(for: url).state }
     public func readState(for url: URL) throws -> MacPhotoEditRecord { try snapshot(identity: try OriginalFileIdentity(url), registry: try core.readEnvelope()) }
+    @discardableResult
+    public func repairLegacyNormalX3fOnOpen(for url: URL) throws -> OpenX3fRepairResult<MacPhotoEditRecord> {
+        let identity = try OriginalFileIdentity(url)
+        let initial = try rawSnapshot(identity: identity, registry: try core.readEnvelope())
+        let checked = initial.repairingLegacyNormalX3f()
+        guard checked.changed else { return OpenX3fRepairResult(record: initial, repaired: false) }
+        do {
+            let pair = try core.performSync(clearingFailedKeys: { _ in [identity.path] }) {
+                try core.withWriteLock { () -> (record: MacPhotoEditRecord, repaired: Bool, notification: PreparedRecordsChange?) in
+                    var updated = try core.readEnvelope(allowCache: false, holdingWriteLock: true)
+                    let currentIdentity = try OriginalFileIdentity(url)
+                    let rawCurrent = try rawSnapshot(identity: currentIdentity, registry: updated)
+                    let repaired = rawCurrent.repairingLegacyNormalX3f()
+                    guard repaired.changed, let repairedState = repaired.record.state else {
+                        return (repaired.record, false, nil)
+                    }
+                    try EditRecordCodec.validateState(repairedState, isMac: true)
+                    updated.records[currentIdentity.path] = try Self.encodeRecord(currentIdentity, state: repairedState)
+                    try core.writeEnvelope(&updated)
+                    return (repaired.record, true, Self.prepareRecordsChanged([currentIdentity.path: repaired.record]))
+                }
+            }
+            postPreparedRecordsChanged(pair.notification)
+            return OpenX3fRepairResult(record: pair.record, repaired: pair.repaired)
+        } catch let error as UnusableEditRecordError {
+            throw error
+        } catch {
+            return OpenX3fRepairResult(record: checked.record, repaired: true, writeError: error)
+        }
+    }
     public func processingMigration(for url: URL) throws -> ProcessingMigrationReceipt<PhotoEditState>? {
         let identity = try OriginalFileIdentity(url)
         return Self.tryParseMigration((try core.readEnvelope()).processingMigrations?[identity.path], identity: identity)?.receipt
@@ -543,9 +630,12 @@ public final class MacEditPersistence: @unchecked Sendable {
 
     public static func editedRevision(for state: PhotoEditState?, atPath path: String) -> String? {
         guard let state else { return nil }
-        let raw = !PhotoInputClassification.isRasterInput(URL(fileURLWithPath: path))
+        let url = URL(fileURLWithPath: path)
+        let isX3f = url.pathExtension.lowercased() == "x3f"
+        let repaired = state.repairingLegacyNormalX3f(isX3f: isX3f).state
+        let raw = !PhotoInputClassification.isRasterInput(url)
         let ctx = EditorAdjustmentContext(isRaw: raw, defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: "")
-        return EditorAdjustmentRules.isModified(scope: .all, snapshot: state, context: ctx) ? stateRevisionDigest(for: state) : nil
+        return EditorAdjustmentRules.isModified(scope: .all, snapshot: repaired, context: ctx) ? stateRevisionDigest(for: repaired) : nil
     }
 
     private static func prepareRecordsChanged(_ changes: [String: MacPhotoEditRecord]) -> PreparedRecordsChange? {
@@ -610,13 +700,14 @@ public final class MacEditPersistence: @unchecked Sendable {
     }
 
     public func rollbackProcessingMigration(expected: MacPhotoEditRecord) throws -> MacPhotoEditRecord {
+        let isX3f = URL(fileURLWithPath: expected.identity.path).pathExtension.lowercased() == "x3f"
         let result = try withSyncLockedEnvelope { updated in
             try expected.identity.requireCurrent()
             guard try snapshot(identity: expected.identity, registry: updated) == expected,
                   let stored = Self.tryParseMigration(updated.processingMigrations?[expected.identity.path], identity: expected.identity) else { throw AdjustmentCommitError.expired }
             let enc = Self.makeLegacyV1Encoder()
             try EditRecordCodec.rollbackMigration(
-                core: core, key: expected.identity.path, isMac: true, envelope: &updated, stored: stored,
+                core: core, key: expected.identity.path, isMac: true, isX3f: isX3f, envelope: &updated, stored: stored,
                 encodeRecord: { try Self.encodeRecord(expected.identity, state: $0) }, encodeMigration: { try enc.encode($0) }
             )
             return try snapshot(identity: expected.identity, registry: updated)
@@ -625,10 +716,14 @@ public final class MacEditPersistence: @unchecked Sendable {
         return result
     }
 
-    private func snapshot(identity: OriginalFileIdentity, registry: EditRegistryEnvelope) throws -> MacPhotoEditRecord {
+    private func rawSnapshot(identity: OriginalFileIdentity, registry: EditRegistryEnvelope) throws -> MacPhotoEditRecord {
         guard let raw = registry.records[identity.path] else { return MacPhotoEditRecord(identity: identity, state: nil) }
         let record = try Self.parseRecord(raw)
         return MacPhotoEditRecord(identity: identity, state: record.identity == identity ? record.state : nil)
+    }
+
+    private func snapshot(identity: OriginalFileIdentity, registry: EditRegistryEnvelope) throws -> MacPhotoEditRecord {
+        try rawSnapshot(identity: identity, registry: registry).repairingLegacyNormalX3f().record
     }
 
     public func save(_ url: URL, state: PhotoEditState) throws { try save([url], state: state) }
@@ -638,7 +733,7 @@ public final class MacEditPersistence: @unchecked Sendable {
             var changed = [String: MacPhotoEditRecord]()
             for url in urls {
                 let identity = try OriginalFileIdentity(url)
-                if try snapshot(identity: identity, registry: updated).state == state { continue }
+                if try rawSnapshot(identity: identity, registry: updated).state == state { continue }
                 updated.records[identity.path] = try Self.encodeRecord(identity, state: state)
                 changed[identity.path] = MacPhotoEditRecord(identity: identity, state: state)
             }
@@ -655,9 +750,10 @@ public final class MacEditPersistence: @unchecked Sendable {
             if let state { try EditRecordCodec.validateState(state, isMac: true) }
             var updated = try core.readEnvelope(allowCache: false, holdingWriteLock: true)
             try identity.requireCurrent()
-            let current = try snapshot(identity: identity, registry: updated)
+            let rawCurrent = try rawSnapshot(identity: identity, registry: updated)
+            let current = rawCurrent.repairingLegacyNormalX3f().record
             if let expected { guard current == expected else { throw AdjustmentCommitError.expired } }
-            stateChanged = current.state != state
+            stateChanged = rawCurrent.state != state
             let clearsMigration = clearsProcessingMigration && updated.processingMigrations?[identity.path] != nil
             guard stateChanged || clearsMigration else { return current }
             if let state { updated.records[identity.path] = try Self.encodeRecord(identity, state: state) }

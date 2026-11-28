@@ -186,7 +186,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         let iosState = PhotoEditState(settings: try sampleIOSSettingsFull(), filmID: "classic-chrome", updatedAt: Date(timeIntervalSince1970: 1_700_000_000))
         try iosStore.save(iosID, state: iosState)
 
-        let iosReloaded = try EditPersistence(directory: iosStoreDir).readState(for: iosID)
+        let iosReloaded = try EditPersistence(directory: iosStoreDir).readState(for: iosID, isX3f: false)
         XCTAssertEqual(iosReloaded.state, iosState)
 
         let photoURL = try makeTempFile(named: "sample-01.ARW")
@@ -213,7 +213,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         let iosDir = temporaryRoot.appendingPathComponent("legacy-ios-store", isDirectory: true)
         try FileManager.default.createDirectory(at: iosDir, withIntermediateDirectories: true)
         try Data(iosRawStoreJSON.utf8).write(to: iosDir.appendingPathComponent("edits.json"))
-        let iosLoaded = try XCTUnwrap(try EditPersistence(directory: iosDir).readState(for: iosIdentity).state)
+        let iosLoaded = try XCTUnwrap(try EditPersistence(directory: iosDir).readState(for: iosIdentity, isX3f: false).state)
         XCTAssertEqual(iosLoaded.filmID, "provia-legacy")
         XCTAssertEqual(iosLoaded.settings.processing, .legacy)
         XCTAssertEqual(iosLoaded.settings.x3fMode, .legacy)
@@ -281,7 +281,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         storeObj["future_store_root"] = "vnext"
         try JSONSerialization.data(withJSONObject: storeObj, options: [.sortedKeys]).write(to: iosFileURL)
 
-        XCTAssertEqual(try EditPersistence(directory: iosDir).readState(for: idTarget).state, state)
+        XCTAssertEqual(try EditPersistence(directory: iosDir).readState(for: idTarget, isX3f: false).state, state)
 
         // Tier 2: unknown field inside processing OR hdr.tone must isolate target & preserve raw entry across sibling saves
         var tier2Rec = targetRec
@@ -298,7 +298,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         let preSaveTargetEntry = try XCTUnwrap((preSaveDoc["records"] as? [String: Any])?[idTarget.editKey] as? [String: Any])
 
         let iosAfterTier2 = try EditPersistence(directory: iosDir)
-        XCTAssertThrowsError(try iosAfterTier2.readState(for: idTarget)) { error in
+        XCTAssertThrowsError(try iosAfterTier2.readState(for: idTarget, isX3f: false)) { error in
             XCTAssertTrue(error is UnusableEditRecordError)
         }
         // Sibling remains readable and writable without clobbering unreadable entry!
@@ -307,7 +307,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         s2.exposure = 1.25
         updatedSibling = updatedSibling.replacing(settings: s2, preservingFilmID: "provia")
         try iosAfterTier2.save(idHealthy, state: updatedSibling)
-        XCTAssertEqual(try iosAfterTier2.readState(for: idHealthy).state?.settings.exposure, 1.25)
+        XCTAssertEqual(try iosAfterTier2.readState(for: idHealthy, isX3f: false).state?.settings.exposure, 1.25)
 
         let postSaveDoc = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: iosFileURL)) as? [String: Any])
         let postSaveTargetEntry = try XCTUnwrap((postSaveDoc["records"] as? [String: Any])?[idTarget.editKey] as? [String: Any])
@@ -434,7 +434,7 @@ final class EditRecordPersistenceTests: XCTestCase {
             iosRecs[iosID.editKey] = iosRec
             iosDoc["records"] = iosRecs
             try JSONSerialization.data(withJSONObject: iosDoc, options: [.sortedKeys]).write(to: iosFileURL)
-            XCTAssertThrowsError(try EditPersistence(directory: iosDir).readState(for: iosID), "iOS should reject \(label)") { error in
+            XCTAssertThrowsError(try EditPersistence(directory: iosDir).readState(for: iosID, isX3f: false), "iOS should reject \(label)") { error in
                 XCTAssertTrue(error is UnusableEditRecordError, "iOS \(label) error: \(error)")
             }
 
@@ -488,8 +488,8 @@ final class EditRecordPersistenceTests: XCTestCase {
         let state = PhotoEditState(settings: RawSettings.default, filmID: "provia", updatedAt: Date(timeIntervalSince1970: 500))
         let beforeReads = EditPersistence.registryDiskReadCount(forDirectory: dir)
         try store.save(id, state: state)
-        _ = try EditPersistence(directory: dir).readState(for: id)
-        _ = try EditPersistence(directory: dir).readState(for: id)
+        _ = try EditPersistence(directory: dir).readState(for: id, isX3f: false)
+        _ = try EditPersistence(directory: dir).readState(for: id, isX3f: false)
         let afterReads = EditPersistence.registryDiskReadCount(forDirectory: dir)
         XCTAssertEqual(afterReads, beforeReads, "Write updates registry cache in place and subsequent reads hit cache")
     }
@@ -533,13 +533,13 @@ final class EditRecordPersistenceTests: XCTestCase {
             XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "iOS \(label) removes active corrupt file")
 
             let id = PhotoIdentity(resourceIdentifier: "recovered-\(label)")
-            XCTAssertNil(try store.readState(for: id).state)
+            XCTAssertNil(try store.readState(for: id, isX3f: false).state)
             XCTAssertNil(try store.state(for: id))
             XCTAssertEqual(diagnosticCount, 1, "Subsequent reads must not emit extra diagnostics for \(label)")
 
             var s = RawSettings.default; s.exposure = 0.75
             try store.save(id, state: PhotoEditState(settings: s))
-            XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id).state?.settings.exposure, 0.75)
+            XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id, isX3f: false).state?.settings.exposure, 0.75)
             XCTAssertEqual(try Data(contentsOf: archived), payload, "Post-recovery save preserves quarantined archive")
         }
 
@@ -555,13 +555,13 @@ final class EditRecordPersistenceTests: XCTestCase {
             let file = dir.appendingPathComponent("edits.json")
             let corruptA = Data("{corrupt-a".utf8)
             try corruptA.write(to: file)
-            XCTAssertNil(try store.readState(for: id).state, "Quarantine clears store to empty")
+            XCTAssertNil(try store.readState(for: id, isX3f: false).state, "Quarantine clears store to empty")
             XCTAssertNil(try store.state(for: id), "Quarantine clears lastReadableStore fallback")
             let firstArchive = try XCTUnwrap(store.lastQuarantinedURL)
 
             let corruptB = Data("{corrupt-b".utf8)
             try corruptB.write(to: file)
-            XCTAssertNil(try store.readState(for: id).state)
+            XCTAssertNil(try store.readState(for: id, isX3f: false).state)
             let secondArchive = try XCTUnwrap(store.lastQuarantinedURL)
             XCTAssertNotEqual(firstArchive, secondArchive)
             XCTAssertEqual(try Data(contentsOf: firstArchive), corruptA)
@@ -590,7 +590,7 @@ final class EditRecordPersistenceTests: XCTestCase {
                     defer { group.leave() }
                     do {
                         let store = try EditPersistence(directory: dir)
-                        _ = try store.readState(for: PhotoIdentity(resourceIdentifier: "p-\(idx)"))
+                        _ = try store.readState(for: PhotoIdentity(resourceIdentifier: "p-\(idx)"), isX3f: false)
                     } catch {
                         countLock.lock(); errors.append(error); countLock.unlock()
                     }
@@ -830,7 +830,7 @@ final class EditRecordPersistenceTests: XCTestCase {
         XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: editsDir.appendingPathComponent("edits.json.sb-symlink").path))
         XCTAssertNotNil(try? FileManager.default.destinationOfSymbolicLink(atPath: editsDir.appendingPathComponent(".dat.nosync-symlink").path))
         XCTAssertEqual(try Data(contentsOf: symlinkTarget), Data("do-not-follow".utf8))
-        XCTAssertEqual(try EditPersistence(directory: editsDir).readState(for: id).state?.settings.exposure, 0.5)
+        XCTAssertEqual(try EditPersistence(directory: editsDir).readState(for: id, isX3f: false).state?.settings.exposure, 0.5)
     }
 
     func testUTF8BOMParityValidFutureVersionAndCorruptPayloadsOnIOSAndMac() throws {
@@ -887,7 +887,7 @@ final class EditRecordPersistenceTests: XCTestCase {
                 XCTAssertNil(reopened.consumeQuarantinedError())
                 let archives = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.contains(".corrupt-") }
                 XCTAssertTrue(archives.isEmpty)
-                XCTAssertEqual(try reopened.readState(for: id).state?.settings.exposure, 0.75)
+                XCTAssertEqual(try reopened.readState(for: id, isX3f: false).state?.settings.exposure, 0.75)
             }
 
             // MacEditPersistence
@@ -986,7 +986,7 @@ final class EditRecordPersistenceTests: XCTestCase {
                 let id = PhotoIdentity(resourceIdentifier: "bom-recover-ios-\(label)")
                 var s = RawSettings.default; s.exposure = 0.25
                 try store.save(id, state: PhotoEditState(settings: s))
-                XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id).state?.settings.exposure, 0.25)
+                XCTAssertEqual(try EditPersistence(directory: dir).readState(for: id, isX3f: false).state?.settings.exposure, 0.25)
                 XCTAssertEqual(try Data(contentsOf: archived), payload)
             }
 
@@ -1917,7 +1917,7 @@ final class EditRecordPersistenceTests: XCTestCase {
             ]
         ])
         try badPayload.write(to: iosDir.appendingPathComponent("edits.json"), options: .atomic)
-        XCTAssertThrowsError(try iosStore.readState(for: PhotoIdentity(resourceIdentifier: "asset-1")))
+        XCTAssertThrowsError(try iosStore.readState(for: PhotoIdentity(resourceIdentifier: "asset-1"), isX3f: false))
     }
 
     func testMacLegacyV1WriteAdapterRoundTripThroughMacEditPersistence() throws {

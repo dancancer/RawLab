@@ -108,6 +108,12 @@ data class EditSettings(
         lens = lens.copy(distortion = false, tca = false, vignetting = false),
     ) else copy(x3fMode = mode)
 
+    val needsLegacyNormalX3fRepair: Boolean
+        get() = x3fMode == X3fMode.NORMAL && lens.enabled
+
+    fun repairLegacyNormalX3f(isX3f: Boolean): EditSettings =
+        if (isX3f && needsLegacyNormalX3fRepair) selectX3fMode(X3fMode.NORMAL) else this
+
     /** Camera-only controls are resolved per target; the persisted edit remains unchanged. */
     fun effectiveFor(input: PhotoInputKind): EditSettings = if (isHDREditing) this else if (input == PhotoInputKind.RASTER) {
         val keepRelativeWb = !customWb && recipeID == null
