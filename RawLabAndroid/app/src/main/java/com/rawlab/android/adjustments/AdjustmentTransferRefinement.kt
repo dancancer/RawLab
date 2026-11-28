@@ -5,8 +5,8 @@ import kotlin.math.abs
 
 internal object AdjustmentTransferRefinement {
     fun apply(payload: AdjustmentPayload, original: EditSettings, target: EditSettings, fullRecipe: Boolean): EditSettings {
-        val rawSourceScale = if ((payload.source.recipe?.settingsVersion ?: 3) >= 4) payload.source.recipe!!.strength else 1.0
-        val sourceScale = if (fullRecipe) rawSourceScale.toFloat().toDouble() else rawSourceScale
+        val sourceScaleFloat = if ((payload.source.recipe?.settingsVersion ?: 3) >= 4) payload.source.recipe!!.strength.toFloat().canonicalZero() else 1f
+        val sourceScale = sourceScaleFloat.toDouble()
         val selectedCurve = payload[AdjustmentField.CURVE]?.let(AdjustmentPayload::curve)
         val selectedApply = payload[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY]?.boolean
         val selectedParametric = payload[AdjustmentField.CURVE_PARAMETRIC]?.let(AdjustmentPayload::parametricCurve)
@@ -45,13 +45,7 @@ internal object AdjustmentTransferRefinement {
             selected["luminance"]?.number ?: 0.0,
         )
         fun desiredWheel(selected: Map<String, AdjustmentValue>?, fallback: ColorGradingWheel): ColorGradingWheel =
-            if (selected == null) fallback
-            else if (fullRecipe) wheelFromObject(selected).scaled(rawSourceScale.toFloat())
-            else ColorGradingWheel.fromNumbers(
-                selected["hue"]!!.number!!,
-                (selected["saturation"]!!.number!! * sourceScale).coerceIn(0.0, 100.0),
-                ((selected["luminance"]?.number ?: 0.0) * sourceScale).coerceIn(-100.0, 100.0),
-            )
+            if (selected == null) fallback else wheelFromObject(selected).scaled(sourceScaleFloat)
         for (field in AdjustmentField.REFINEMENT_OBJECTS) {
             val zone = field.gradingZone ?: continue
             val selected = payload[field]?.objectValue

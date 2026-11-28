@@ -349,6 +349,82 @@ class AdjustmentTransferTest {
         assertEquals(F.TINT.id, outOfRangeTint.field)
     }
 
+    @Test fun partialRecipeExposurePasteBetweenSameRecipeAndStrengthPreservesLogicalValue() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        val request = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.3, 4)),
+            mapOf(F.EXPOSURE to AdjustmentValue.Number(-1.3)),
+        )
+        val target = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 0.3f,
+            masterRecipeSettingsVersion = 4,
+            exposure = 0f,
+        )
+        val result = prepare(request, target, ctx)
+        assertEquals("hamada_daylight_v2", result.recipeID)
+        assertEquals(0.3f, result.strength)
+        assertEquals(-1.3f, result.exposure)
+        assertEquals(result, prepare(request, result, ctx))
+    }
+
+    @Test fun partialRecipePastesBetweenSameRecipeAndStrengthAcceptAllScaledFamiliesAndKeepGenuineRejections() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        for (strength in listOf(0.01, 0.09, 0.3, 0.62, 0.7, 1.3, 1.99, 2.0)) {
+            val recipe = AdjustmentRecipeContext("hamada_daylight_v2", strength, 4)
+            val src = AdjustmentSource("src.ARW", true, 3, recipe)
+            val target = EditSettings(recipeID = "hamada_daylight_v2", strength = strength.toFloat(), masterRecipeSettingsVersion = 4)
+
+            val contrast = prepare(AdjustmentPayload(src, mapOf(F.CONTRAST to AdjustmentValue.Number(0.9))), target, ctx)
+            assertEquals(AdjustmentTransfer.nativeSourceEffective(0.9, F.CONTRAST, recipe), AdjustmentTransfer.effectiveNumbers(contrast)[F.CONTRAST])
+
+            val hsl = prepare(AdjustmentPayload(src, mapOf(F.HSL_HUE_RED to AdjustmentValue.Number(-33.3))), target, ctx)
+            assertEquals(AdjustmentTransfer.nativeSourceEffective(-33.3, F.HSL_HUE_RED, recipe), AdjustmentTransfer.effectiveNumbers(hsl)[F.HSL_HUE_RED])
+
+            val tint = prepare(AdjustmentPayload(src, mapOf(F.TINT to AdjustmentValue.Number(-12.3))), target, ctx)
+            assertEquals(8f + (-12.3f) * strength.toFloat(), 8f + tint.tint * tint.strength)
+
+            val wheel = AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(30.0), "saturation" to AdjustmentValue.Number(80.0), "luminance" to AdjustmentValue.Number(20.0)))
+            val grading = prepare(AdjustmentPayload(src, mapOf(F.GRADING_SHADOWS to wheel)), target, ctx)
+            assertEquals(ColorGradingWheel(30f, 80f, 20f).scaled(strength.toFloat()), grading.renderColorGrading.shadows)
+
+            val curveObj = AdjustmentValue.Object(mapOf("mode" to AdjustmentValue.Text("custom"), "points" to AdjustmentValue.Array(listOf(
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.0), AdjustmentValue.Number(0.0))),
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.5), AdjustmentValue.Number(1.0))),
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(1.0), AdjustmentValue.Number(1.0))),
+            ))))
+            val curved = prepare(AdjustmentPayload(src, mapOf(F.CURVE to curveObj)), target, ctx)
+            assertEquals(AdjustmentPayload.curve(curveObj).scaled(strength.toFloat()), curved.renderCurve)
+        }
+
+        // Genuine rejections stay rejected: out of neutral range, and unreachable Float at target strength 2.0.
+        val outOfNeutralRange = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.3, 4)),
+            mapOf(F.CONTRAST to AdjustmentValue.Number(0.2)),
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) { prepare(outOfNeutralRange, EditSettings(), ctx) }.reason,
+        )
+        val unreachableAt2x = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.0, 4)),
+            mapOf(F.CONTRAST to AdjustmentValue.Number(0.2)),
+        )
+        val target2x = EditSettings(recipeID = "hamada_daylight_v2", strength = 2.0f, masterRecipeSettingsVersion = 4)
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) { prepare(unreachableAt2x, target2x, ctx) }.reason,
+        )
+    }
+
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
         val source = EditSettings(recipeID = "r", strength = .5f, tint = 12f)
         val relative = capture(source, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT)
