@@ -1555,8 +1555,10 @@ class WorkflowContractTests(unittest.TestCase):
     def test_macos_coreml_hardware_gate_script_runs_exact_three_and_refuses_no_gpu(self):
         script = ROOT / "RawLabMac/tests/dualdn-api-package.sh"
         script_text = script.read_text(encoding="utf-8")
-        self.assertIn("/usr/sbin/sysctl", script_text)
+        self.assertIn('PATH="$PATH:/usr/sbin"', script_text)
         self.assertNotIn("|| echo 0", script_text)
+        # 门禁脚本里不留可替换虚拟机判断的测试专用变量。
+        self.assertNotIn("RAWLAB_HARDWARE_GATE", script_text)
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1577,7 +1579,7 @@ class WorkflowContractTests(unittest.TestCase):
                 bin_dir = root / f"bin-{arch}-{hv_vmm}-{ctest_mode}-{len(list(root.glob('bin-*')))}"
                 bin_dir.mkdir(exist_ok=True)
                 (bin_dir / "uname").write_text(f"#!/bin/bash\necho '{arch}'\n", encoding="utf-8")
-                sysctl_stub = bin_dir / "sysctl-stub"
+                sysctl_stub = bin_dir / "sysctl"
                 if hv_vmm is None:
                     sysctl_stub.write_text("#!/bin/bash\nexit 1\n", encoding="utf-8")
                 else:
@@ -1675,7 +1677,6 @@ class WorkflowContractTests(unittest.TestCase):
                     "PATH": f"{bin_dir}:{os.environ['PATH']}",
                     "RAWLAB_ONNXRUNTIME_ROOT": str(ort_dir),
                     "RAWLAB_DUALDN_MODEL_DIR": str(model_dir),
-                    "RAWLAB_HARDWARE_GATE_SYSCTL": str(sysctl_stub),
                 }
                 if extra_env:
                     env.update(extra_env)

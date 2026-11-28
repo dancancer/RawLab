@@ -4,6 +4,7 @@
 # （ai_session_memory、dualdn_native、dualdn_api）。拒绝在非 arm64、虚拟机或缺少
 # 物理 GPU 推理的情况下（含 exit 77 跳过或未触达硬件分支）记为通过。
 # 可传构建目录复用已有 AI-ON 配置（如 lutools/build-macos）。
+# 前置：本工作区已跑过 bash RawLabMac/build.sh（依赖未构建时 cmake 会报找不到 libtiff）。
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -19,8 +20,9 @@ if [ -n "${RAWLAB_ARCH:-}" ] && [ "$RAWLAB_ARCH" != "arm64" ]; then
 fi
 export RAWLAB_ARCH=arm64
 
-SYSCTL_BIN="${RAWLAB_HARDWARE_GATE_SYSCTL:-/usr/sbin/sysctl}"
-if ! HV_VMM="$("$SYSCTL_BIN" -n kern.hv_vmm_present 2>/dev/null)" || [ "$HV_VMM" != "0" ]; then
+# sysctl 在 /usr/sbin，精简 PATH 下可能找不到；查询失败或输出不是 0 一律拒绝。
+PATH="$PATH:/usr/sbin"
+if ! HV_VMM="$(sysctl -n kern.hv_vmm_present 2>/dev/null)" || [ "$HV_VMM" != "0" ]; then
     echo "error: Core ML AI hardware gate requires bare-metal Apple Silicon (kern.hv_vmm_present=0); got '${HV_VMM:-<error>}'" >&2
     exit 1
 fi
