@@ -866,6 +866,7 @@ int main(int argc, char** argv) {
                         "Bayer takeResult after RGB cache-miss prepare returned wrong dimensions");
                 require(session.residentBytes() == 0 && AISession::totalResidentBytes() == 0,
                         "Bayer takeResult retained resident bytes");
+                std::cout << "PASS Bayer RGB cache-miss prepare executed on hardware GPU\n";
             } else {
                 bool rejected = false;
                 try {

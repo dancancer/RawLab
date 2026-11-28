@@ -5,6 +5,8 @@ import re
 import subprocess
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 SHELL_TEST_DIRS = ("Shared/tests", "RawLab/tests", "RawLabMac/tests")
 HELPER_LIBS = (
@@ -17,6 +19,7 @@ OWNER_DOCS_AND_RUNNERS = (
     "RawLabMac/build.sh",
     "docs/process/ci.md",
     "docs/process/desktop-release.md",
+    "docs/process/release-packaging-guide.md",
     "RawLab/AGENTS.md",
     "RawLabMac/README.md",
     "lutools/docs/x3f-rendering.md",
@@ -26,10 +29,37 @@ OWNER_DOCS_AND_RUNNERS = (
     "scripts/ci/test_mac_shell_hygiene.py",
 )
 
+_CI_EXEC_SHELL_SCRIPT_RE = re.compile(
+    r"^\s*(?:ci_timed\s+\S+\s+)?(?:env\s+(?:\S+=\S+\s+)*)?bash\s+((?:Shared|RawLab|RawLabMac)/tests/[A-Za-z0-9_.-]+\.sh)\b"
+)
+
+
+def _ci_executed_apple_scripts(workflow_text: str) -> str:
+    """Return only Apple test shell scripts actually executed by workflow run steps (not notice/echo text)."""
+    workflow = yaml.load(workflow_text, Loader=yaml.BaseLoader)
+    executed: list[str] = []
+    for job in (workflow.get("jobs") or {}).values():
+        for step in job.get("steps") or []:
+            for line in step.get("run", "").splitlines():
+                stripped = line.lstrip()
+                if stripped.startswith("#"):
+                    continue
+                match = _CI_EXEC_SHELL_SCRIPT_RE.match(line)
+                if match:
+                    executed.append(match.group(1))
+    return "\n".join(executed)
+
 
 class AppleShellOwnershipTests(unittest.TestCase):
     def test_every_apple_shell_script_has_explicit_owner(self):
-        owner_corpus = "\n".join((ROOT / rel).read_text(encoding="utf-8") for rel in OWNER_DOCS_AND_RUNNERS)
+        parts = []
+        for rel in OWNER_DOCS_AND_RUNNERS:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            if rel == ".github/workflows/ci.yml":
+                parts.append(_ci_executed_apple_scripts(text))
+            else:
+                parts.append(text)
+        owner_corpus = "\n".join(parts)
         unowned = []
         for directory in SHELL_TEST_DIRS:
             for script in sorted((ROOT / directory).glob("*.sh")):
@@ -38,6 +68,33 @@ class AppleShellOwnershipTests(unittest.TestCase):
                 if not pattern.search(owner_corpus):
                     unowned.append(rel)
         self.assertEqual(unowned, [], f"Unowned Apple shell scripts: {unowned}")
+
+    def test_coreml_hardware_gate_is_owned_by_release_docs_not_ci_notice(self):
+        gate_script = "RawLabMac/tests/dualdn-api-package.sh"
+        gate_cmd = f"bash {gate_script}"
+
+        # Non-executing notice text in ci.yml must not count as workflow ownership.
+        ci_executed = _ci_executed_apple_scripts((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))
+        self.assertNotIn(gate_script, ci_executed, "ci.yml notice text must not count as script ownership")
+
+        # Both release documents must name the hardware gate command in their mandatory pre-publish sections.
+        packaging_text = (ROOT / "docs/process/release-packaging-guide.md").read_text(encoding="utf-8")
+        mac_accept_match = re.search(r"### 4\.1 macOS[\s\S]*?4\. \*\*验收\*\*：([\s\S]*?)(?:\n### |\Z)", packaging_text)
+        self.assertIsNotNone(mac_accept_match, "release-packaging-guide.md missing macOS 4. 验收 section")
+        self.assertIn(
+            gate_cmd,
+            mac_accept_match.group(1),
+            "release-packaging-guide.md macOS acceptance section must name bash RawLabMac/tests/dualdn-api-package.sh",
+        )
+
+        desktop_text = (ROOT / "docs/process/desktop-release.md").read_text(encoding="utf-8")
+        accept_match = re.search(r"## Acceptance and publication([\s\S]*?)(?:\n## |\Z)", desktop_text)
+        self.assertIsNotNone(accept_match, "desktop-release.md missing Acceptance and publication section")
+        self.assertIn(
+            gate_cmd,
+            accept_match.group(1),
+            "desktop-release.md Acceptance and publication section must name bash RawLabMac/tests/dualdn-api-package.sh",
+        )
 
     def test_helper_libraries_are_owned_and_used(self):
         lib_scripts = sorted(

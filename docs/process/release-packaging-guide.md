@@ -88,6 +88,7 @@
    - 生成并验签 `$DIST/appcast-x86_64.xml`。
 4. **验收**：
    - 本机运行 `RawLabMac/tests/smoke.sh`（双架构）、`RawLabMac/tests/update-trust.sh`、`RawLabMac/tests/sparkle-adapter.sh`。
+   - **Apple Silicon 真实硬件 Core ML AI 门禁（发布前必过）**：托管 macOS CI 虚拟机无物理 GPU，`ai_session_memory`、`dualdn_native`、`dualdn_api` 在托管完整检查中明确标为「托管机器上不适用」；发布前必须在真实 Apple Silicon Mac 上执行 `bash RawLabMac/tests/dualdn-api-package.sh` 并全部通过（脚本拒绝在非 `arm64`、虚拟机或未触达硬件 GPU 推理/跳过的情况下通过）。
    - 对 Apple Silicon 正式应用包执行**真实启动冒烟**：启动应用确认不含内置模型，在界面中触发一次应用内模型下载，下载完成后在 Apple Silicon 硬件 GPU（Core ML）上跑通一次 AI 降噪。Intel 正式包不含 AI 功能，只需完成常规启动与更新验收。
    - 传输至 `release-hosts.md` 中的二机验签 Mac mini 执行 `codesign --verify --deep --strict --all-architectures` 及 `DYLD_PRINT_LIBRARIES=1 "<app>/Contents/MacOS/RawLabMac" --smoke missing.raw /tmp/dyld-smoke` 检查动态库闭包（注意：**不要传 `--help`**，GUI 主程序不会退出）。
 

@@ -181,6 +181,14 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
         target_link_libraries(dualdn_native_tests PRIVATE rawlab_dualdn_runtime)
         add_executable(dualdn_directml_tests tests/dualdn_directml_tests.cpp)
         target_link_libraries(dualdn_directml_tests PRIVATE rawlab_dualdn_runtime)
+        # Core ML 真实硬件 GPU 调度与推理门禁在 GitHub 托管 macOS VM 上不适用（无物理 GPU），
+        # 改由真实 Apple Silicon Mac 通过 RawLabMac/tests/dualdn-api-package.sh 执行；
+        # Windows 保持 ci_windows 选择不变。
+        if(APPLE)
+            set(_rawlab_ai_coreml_hw_labels ai hw_gpu)
+        else()
+            set(_rawlab_ai_coreml_hw_labels ai ci_macos_arm64 ci_macos_x86_64 ci_windows)
+        endif()
         rawlab_add_test(
             NAME ai_session_memory
             SOURCES tests/ai_session_memory_tests.cpp
@@ -188,7 +196,7 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
             DEFINES RESTORMER_TEST_LICENSE="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/restormer-v1-LICENSE.txt"
             LIBRARIES rawlab_dualdn_runtime sony2fuji_core
             ARGS "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "${CMAKE_CURRENT_BINARY_DIR}/ai-session-memory-fixture"
-            LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+            LABELS ${_rawlab_ai_coreml_hw_labels}
         )
         if(APPLE)
             rawlab_add_test(
@@ -231,13 +239,13 @@ if(SONY2FUJI_ENABLE_AI_DENOISE)
                 NAME dualdn_api
                 COMMAND dualdn_api_tests
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/bayer-demosaic.dng" "${RAWLAB_DUALDN_TEST_PACKAGE}" "${CMAKE_CURRENT_BINARY_DIR}/dualdn-api-cache"
-                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+                LABELS ${_rawlab_ai_coreml_hw_labels}
             )
             rawlab_add_test(
                 NAME dualdn_native
                 COMMAND dualdn_native_tests "${RAWLAB_DUALDN_TEST_PACKAGE}"
                 SKIP_RETURN_CODE 77
-                LABELS ai ci_macos_arm64 ci_macos_x86_64 ci_windows
+                LABELS ${_rawlab_ai_coreml_hw_labels}
             )
             rawlab_add_test(
                 NAME dualdn_directml
