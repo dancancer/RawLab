@@ -24,8 +24,8 @@ archive's size and SHA-256 before decompressing, extracts into a private staging
 directory, verifies the unpacked tree against both descriptions, and renames it
 atomically to `complete`. A download or verification failure, or an existing
 invalid directory, remains a hard failure for macOS arm64 `native` and desktop
-`full`. Do not drop those steps, add secrets, or call a model-free `build` run a
-full pass. Windows `build/native`, macOS `build`, and iOS/Android groups do not
+`full`. Do not drop those steps, upload private models, add secrets, or call a
+model-free `build` run a full pass. Windows `build/native`, macOS `build`, and iOS/Android groups do not
 require that model package. No signing keys are used in CI.
 Native checks include direct HLSL compilation without a hardware adapter and
 GLES source validation with glslang. CPU neural-inference validation is excluded;
