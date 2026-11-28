@@ -52,6 +52,11 @@ internal static class AdjustmentTransferWB
         if(s.MasterRecipeID!=null) {
             _=Camera(s);var delta=tint-s.AsShotTint!.Value;var scale=AdjustmentTransfer.Scale(s);
             Require(scale!=0 || delta==0);tint=scale==0 ? 0 : delta/scale;
+            var tintModel=F.Tint.Spec().WindowsModel;
+            if(double.IsFinite(tint) && tintModel.Min is {} min && tintModel.Max is {} max && (tint<min || tint>max)) {
+                var clamped=Set(s,false,desired.Temperature,Math.Clamp(tint,min,max));
+                if(Render(clamped)==desired)return clamped;
+            }
         }
         var result=Set(s,false,desired.Temperature,tint);
         if(Render(result)!=desired) {

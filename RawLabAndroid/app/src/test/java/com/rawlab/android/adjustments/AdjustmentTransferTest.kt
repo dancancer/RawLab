@@ -711,6 +711,108 @@ class AdjustmentTransferTest {
         assertEquals(applied, prepare(request, applied, ctx))
     }
 
+    @Test fun customCurveRangeLimitOvershootClampsBeforeExactEquivalence() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        fun curveValue(vararg points: Pair<Double, Double>) = AdjustmentValue.Object(mapOf(
+            "mode" to AdjustmentValue.Text("custom"),
+            "points" to AdjustmentValue.Array(points.map { (x, y) ->
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(x), AdjustmentValue.Number(y)))
+            }),
+        ))
+        val targetHalf = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 0.5f,
+            masterRecipeSettingsVersion = 4,
+        )
+
+        // Same-strength 0.5 -> 0.5: [0.2, 1.0] scales to 0.6000000000000001 and inverts to 1.0000000000000002.
+        val sameStrengthPayload = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.5, 4)),
+            mapOf(F.CURVE to curveValue(0.0 to 0.0, 0.2 to 1.0, 1.0 to 1.0)),
+        )
+        val sameStrengthResult = prepare(sameStrengthPayload, targetHalf, ctx)
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.2, 1.0), ToneCurvePoint(1.0, 1.0)),
+            sameStrengthResult.curve.points,
+        )
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.2, 0.6000000000000001), ToneCurvePoint(1.0, 1.0)),
+            sameStrengthResult.renderCurve.points,
+        )
+
+        // No-recipe [0.2, 0.6] onto v4 target at 0.5 stores [0.2, 1.0] and renders [0.2, 0.6000000000000001].
+        val noRecipe06 = AdjustmentPayload(
+            AdjustmentSource("plain.ARW", true, 3, null),
+            mapOf(F.CURVE to curveValue(0.0 to 0.0, 0.2 to 0.6, 1.0 to 1.0)),
+        )
+        val noRecipe06Result = prepare(noRecipe06, targetHalf, ctx)
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.2, 1.0), ToneCurvePoint(1.0, 1.0)),
+            noRecipe06Result.curve.points,
+        )
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.2, 0.6000000000000001), ToneCurvePoint(1.0, 1.0)),
+            noRecipe06Result.renderCurve.points,
+        )
+
+        // No-recipe [0.1, 0.55] onto v4 target at 0.5 also overshoots (1.0000000000000002) and must clamp to 1.0.
+        val noRecipe055 = AdjustmentPayload(
+            AdjustmentSource("plain.ARW", true, 3, null),
+            mapOf(F.CURVE to curveValue(0.0 to 0.0, 0.1 to 0.55, 1.0 to 1.0)),
+        )
+        val noRecipe055Result = prepare(noRecipe055, targetHalf, ctx)
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.1, 1.0), ToneCurvePoint(1.0, 1.0)),
+            noRecipe055Result.curve.points,
+        )
+        assertEquals(
+            listOf(ToneCurvePoint(0.0, 0.0), ToneCurvePoint(0.1, 0.55), ToneCurvePoint(1.0, 1.0)),
+            noRecipe055Result.renderCurve.points,
+        )
+
+        // Guard: genuinely out-of-range custom curve remains rejected with UNREPRESENTABLE: light.curve.
+        val outOfRange = AdjustmentPayload(
+            AdjustmentSource("plain.ARW", true, 3, null),
+            mapOf(F.CURVE to curveValue(0.0 to 0.0, 0.5 to 0.9, 1.0 to 1.0)),
+        )
+        val thrown = assertThrows(AdjustmentTransferException::class.java) { prepare(outOfRange, targetHalf, ctx) }
+        assertEquals(AdjustmentFailure.UNREPRESENTABLE, thrown.reason)
+        assertEquals("light.curve", thrown.field)
+    }
+
+    @Test fun customCurveOutOfRangeGuardStaysRejectedWithLightCurveDetail() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        val targetHalf = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 0.5f,
+            masterRecipeSettingsVersion = 4,
+        )
+        val outOfRange = AdjustmentPayload(
+            AdjustmentSource("plain.ARW", true, 3, null),
+            mapOf(
+                F.CURVE to AdjustmentValue.Object(mapOf(
+                    "mode" to AdjustmentValue.Text("custom"),
+                    "points" to AdjustmentValue.Array(listOf(
+                        AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.0), AdjustmentValue.Number(0.0))),
+                        AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.5), AdjustmentValue.Number(0.9))),
+                        AdjustmentValue.Array(listOf(AdjustmentValue.Number(1.0), AdjustmentValue.Number(1.0))),
+                    )),
+                )),
+            ),
+        )
+        val thrown = assertThrows(AdjustmentTransferException::class.java) { prepare(outOfRange, targetHalf, ctx) }
+        assertEquals(AdjustmentFailure.UNREPRESENTABLE, thrown.reason)
+        assertEquals("light.curve", thrown.field)
+    }
+
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
         val source = EditSettings(recipeID = "r", strength = .5f, tint = 12f)
         val relative = capture(source, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT)

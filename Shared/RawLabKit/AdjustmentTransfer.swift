@@ -892,12 +892,32 @@ public enum AdjustmentTransfer {
         if field.hslLocation != nil {
             let hslScale = settings.recipeSettingsVersion >= 3 ? scale : 1
             guard hslScale != 0 || value == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            try assignHSL(hslScale == 0 ? 0 : value / hslScale, field: field, to: &settings); return
+            let raw = hslScale == 0 ? 0 : value / hslScale
+            if hslScale != 1, raw.isFinite, !(-100.0...100.0).contains(raw) {
+                let clamped = min(100.0, max(-100.0, raw))
+                if Float(min(100.0, max(-100.0, clamped * hslScale))) == Float(value) {
+                    try assignHSL(clamped, field: field, to: &settings); return
+                }
+            }
+            try assignHSL(raw, field: field, to: &settings); return
         }
         let identity: Double = [.contrast, .saturation].contains(field) ? 1 : 0
         if isRecipeScaled(field, version: settings.recipeSettingsVersion) {
             guard scale != 0 || value == identity else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            settings[keyPath: scalarKeys[field]!] = scale == 0 ? identity : identity + (value - identity) / scale
+            let raw = scale == 0 ? identity : identity + (value - identity) / scale
+            if scale != 1, raw.isFinite, let range = field.spec.macosModel.closedRange, !range.contains(raw) {
+                let clamped = min(range.upperBound, max(range.lowerBound, raw))
+                let rendered: Double
+                if field == .contrast || field == .saturation { rendered = 1 + (clamped - 1) * scale }
+                else if Field.refinementScalars.contains(field) {
+                    let limit = field == .sCurve ? 1.0 : 100.0
+                    rendered = min(limit, max(-limit, clamped * scale))
+                } else { rendered = clamped * scale }
+                if Float(rendered) == Float(value) {
+                    settings[keyPath: scalarKeys[field]!] = clamped; return
+                }
+            }
+            settings[keyPath: scalarKeys[field]!] = raw
         } else { settings[keyPath: scalarKeys[field]!] = value }
     }
     public static func assignHSL(_ value: Double, field: Field, to settings: inout Adjustments) throws {
@@ -1293,7 +1313,13 @@ public enum AdjustmentTransfer {
         if settings.masterRecipeID != nil {
             let delta = desired.tint - (try targetCamera(target ?? settings, context: context)).tint, scale = settings.recipeScale
             guard scale != 0 || delta == 0 else { throw AdjustmentTransferError.unrepresentable("color.white_balance") }
-            settings.tint = scale == 0 ? 0 : delta / scale
+            let raw = scale == 0 ? 0 : delta / scale
+            settings.tint = raw
+            if raw.isFinite, !Adjustments.tintRange.contains(raw) {
+                var clamped = settings
+                clamped.tint = min(Adjustments.tintRange.upperBound, max(Adjustments.tintRange.lowerBound, raw))
+                if renderWB(clamped, context: context) == desired { settings = clamped }
+            }
         } else { settings.tint = desired.tint }
         guard renderWB(settings, context: context) == desired else { throw AdjustmentTransferError.unrepresentable("color.white_balance") }
     }

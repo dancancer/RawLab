@@ -83,9 +83,9 @@ internal object AdjustmentTransferRefinement {
                 val inverted = try {
                     ToneCurveShape(ToneCurveMode.CUSTOM, shape.points.mapIndexed { idx, pt ->
                         when (idx) {
-                            0 -> ToneCurvePoint(pt.x / strength, pt.y / strength)
-                            last -> ToneCurvePoint(1.0 + (pt.x - 1.0) / strength, 1.0 + (pt.y - 1.0) / strength)
-                            else -> ToneCurvePoint(pt.x, pt.x + (pt.y - pt.x) / strength)
+                            0 -> ToneCurvePoint((pt.x / strength).coerceIn(0.0, 1.0), (pt.y / strength).coerceIn(0.0, 1.0))
+                            last -> ToneCurvePoint((1.0 + (pt.x - 1.0) / strength).coerceIn(0.0, 1.0), (1.0 + (pt.y - 1.0) / strength).coerceIn(0.0, 1.0))
+                            else -> ToneCurvePoint(pt.x, (pt.x + (pt.y - pt.x) / strength).coerceIn(0.0, 1.0))
                         }
                     })
                 } catch (_: IllegalArgumentException) {
