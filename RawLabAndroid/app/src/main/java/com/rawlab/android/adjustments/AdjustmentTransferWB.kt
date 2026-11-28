@@ -36,8 +36,16 @@ internal object AdjustmentTransferWB {
         if (!condition) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field)
     }
     private fun resolved(cameraMode: Boolean, temperature: Double?, tint: Double, relative: Boolean,
-        recipe: AdjustmentRecipeContext?, context: AdjustmentTransferContext): Resolved {
+        recipe: AdjustmentRecipeContext?, context: AdjustmentTransferContext, useNativePrecision: Boolean = false): Resolved {
         if (!context.isRaw) return Resolved(true)
+        if (useNativePrecision && relative) {
+            val offset = tint.toFloat().canonicalZero() * (recipe?.strength?.toFloat()?.canonicalZero() ?: 1f)
+            if (cameraMode && offset == 0f) return Resolved(true)
+            val calibration = camera(context)
+            val finalTint = calibration.tint + offset
+            representable(finalTint in -150f..150f, AdjustmentField.TINT.id)
+            return Resolved(false, if (cameraMode) calibration.temperature else temperature!!.toFloat(), finalTint)
+        }
         val offset = tint * if (relative) recipe?.strength ?: 1.0 else 1.0
         if (cameraMode && offset == 0.0) return Resolved(true)
         val calibration = if (cameraMode || relative) camera(context) else null
@@ -110,7 +118,8 @@ internal object AdjustmentTransferWB {
             }
             val cameraMode = mode == "camera" || mode == "none" && payload.source.recipe != null
             val desired = resolved(cameraMode, temperature!!.number, tint!!.number ?: 0.0,
-                payload.source.recipe != null || mode == "camera", payload.source.recipe, context)
+                payload.source.recipe != null || mode == "camera", payload.source.recipe, context,
+                useNativePrecision = fullRecipe)
             if (fullRecipe) {
                 result = result.copy(customWb = mode == "temperature", temperature = temperature.number?.toFloat() ?: 6500f,
                     tint = tint.number?.toFloat() ?: 0f)

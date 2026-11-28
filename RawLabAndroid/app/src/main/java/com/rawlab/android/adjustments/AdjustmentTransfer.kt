@@ -117,7 +117,9 @@ object AdjustmentTransfer {
             // 相同逻辑值和配方上下文复用现有 Float 请求，避免把读取本身变成一个微小编辑。
             if (!contextChanged && context.isRaw == payload.source.isRaw && recipe(target) == payload.source.recipe &&
                 payload[field] == originalValues[field]) return before[field]!!
-            return sourceEffective(value, field, payload.source.recipe).toFloat()
+            // 完整配方复制沿用 Android 原生 Float 缩放，避免源 Double 与本端 Float 请求差 1 ULP。
+            return if (fullRecipe) nativeSourceEffective(value, field, payload.source.recipe!!)
+            else sourceEffective(value, field, payload.source.recipe).toFloat()
         }
         for (field in numericFields) {
             val value = payload[field]?.number
@@ -168,6 +170,18 @@ object AdjustmentTransfer {
             return (value * scale).coerceIn(-limit, limit)
         }
         return if (field in AdjustmentTransferValues.scaled) value * scale else value
+    }
+    private fun nativeSourceEffective(value: Double, field: AdjustmentField, recipe: AdjustmentRecipeContext): Float {
+        val v = value.toFloat().canonicalZero()
+        val scale = recipe.strength.toFloat().canonicalZero()
+        if (field.hslLocation != null) return (v * if (recipe.settingsVersion >= 3) scale else 1f).coerceIn(-100f, 100f).canonicalZero()
+        if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION)
+            return (if (scale == 1f) v else 1f + (v - 1f) * scale).canonicalZero()
+        if (recipe.settingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS) {
+            val limit = if (field == AdjustmentField.S_CURVE) 1f else 100f
+            return (v * scale).coerceIn(-limit, limit).canonicalZero()
+        }
+        return (if (field in AdjustmentTransferValues.scaled) v * scale else v).canonicalZero()
     }
     private fun assignEffective(settings: EditSettings, field: AdjustmentField, value: Float): EditSettings {
         val scaled = field in AdjustmentTransferValues.scaled || field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||

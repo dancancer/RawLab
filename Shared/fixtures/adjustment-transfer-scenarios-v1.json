@@ -5807,6 +5807,138 @@
         "status": "rejected",
         "reason": "missing_look"
       }
+    },
+    {
+      "id": "review-full-v4-recipe-high-strength-non-float-exact-scalars",
+      "target": {
+        "kind": "sdr_raw",
+        "supports_raw_denoise": true,
+        "lens_valid": true,
+        "available_looks": [
+          "recipe:hamada_daylight_v2"
+        ],
+        "as_shot_wb": [
+          5200.0,
+          8.0
+        ],
+        "seed_payload": null
+      },
+      "payload": {
+        "payload_version": 1,
+        "scope_version": 1,
+        "source": {
+          "identifier": "full-v4-high-strength-rounding.ARW",
+          "is_raw": true,
+          "processing_version": 3,
+          "recipe": {
+            "id": "hamada_daylight_v2",
+            "strength": 2.0,
+            "settings_version": 4
+          }
+        },
+        "values": {
+          "looks.reference": {
+            "kind": "recipe",
+            "id": "hamada_daylight_v2"
+          },
+          "looks.strength": 2.0,
+          "light.exposure": 0.5,
+          "light.contrast": 0.9,
+          "light.highlights": 0.125,
+          "light.shadows": 0.25,
+          "color.saturation": 0.92,
+          "color.white_balance.mode": "camera",
+          "color.white_balance.temperature_kelvin": null,
+          "color.white_balance.tint": 5.0,
+          "color.hsl.hue.red": 80.0,
+          "color.hsl.hue.orange": 0.0,
+          "color.hsl.hue.yellow": 0.0,
+          "color.hsl.hue.green": 0.0,
+          "color.hsl.hue.aqua": 0.0,
+          "color.hsl.hue.blue": 0.0,
+          "color.hsl.hue.purple": 0.0,
+          "color.hsl.hue.magenta": 0.0,
+          "color.hsl.saturation.red": 0.0,
+          "color.hsl.saturation.orange": 0.0,
+          "color.hsl.saturation.yellow": 0.0,
+          "color.hsl.saturation.green": 0.0,
+          "color.hsl.saturation.aqua": 0.0,
+          "color.hsl.saturation.blue": 0.0,
+          "color.hsl.saturation.purple": 0.0,
+          "color.hsl.saturation.magenta": 0.0,
+          "color.hsl.lightness.red": 0.0,
+          "color.hsl.lightness.orange": 0.0,
+          "color.hsl.lightness.yellow": 0.0,
+          "color.hsl.lightness.green": 0.0,
+          "color.hsl.lightness.aqua": 0.0,
+          "color.hsl.lightness.blue": 0.0,
+          "color.hsl.lightness.purple": 0.0,
+          "color.hsl.lightness.magenta": 0.0,
+          "light.s_curve": 0.8,
+          "tone.black_point": 80.0,
+          "tone.white_point": 0.0,
+          "color.vibrance": 80.0,
+          "effects.clarity": 0.0,
+          "effects.dehaze": 0.0,
+          "light.curve": {
+            "mode": "custom",
+            "points": [
+              [
+                0.0,
+                0.0
+              ],
+              [
+                0.5,
+                0.7
+              ],
+              [
+                1.0,
+                1.0
+              ]
+            ]
+          },
+          "color.grading.shadows": {
+            "hue": 30.0,
+            "saturation": 80.0,
+            "luminance": 20.0
+          },
+          "color.grading.midtones": {
+            "hue": 0.0,
+            "saturation": 0.0
+          },
+          "color.grading.highlights": {
+            "hue": 0.0,
+            "saturation": 0.0
+          }
+        }
+      },
+      "expect": {
+        "status": "applied",
+        "values": {
+          "looks.reference": {
+            "kind": "recipe",
+            "id": "hamada_daylight_v2"
+          },
+          "looks.strength": 2.0,
+          "light.exposure": 0.5,
+          "light.contrast": 0.9,
+          "color.saturation": 0.92,
+          "light.s_curve": 0.8,
+          "tone.black_point": 80.0,
+          "color.vibrance": 80.0,
+          "color.hsl.hue.red": 80.0,
+          "color.white_balance.tint": 5.0
+        },
+        "effective": {
+          "light.exposure": 1.0,
+          "light.contrast": 0.8,
+          "color.saturation": 0.84,
+          "light.s_curve": 1.0,
+          "tone.black_point": 100.0,
+          "color.vibrance": 100.0,
+          "color.hsl.hue.red": 100.0
+        }
+      }
     }
   ]
 }

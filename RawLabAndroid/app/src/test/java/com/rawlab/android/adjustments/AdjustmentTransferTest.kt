@@ -209,6 +209,146 @@ class AdjustmentTransferTest {
         assertEquals(self, prepare(AdjustmentTransfer.capture(AdjustmentScope.All, self, context), self))
     }
 
+    @Test fun fullV4RawRecipeAtDoubleStrengthPreservesNonFloatExactContrastAndSaturation() {
+        val recipe = AdjustmentRecipeContext("hamada_daylight_v2", 2.0, 4)
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        val values = linkedMapOf<F, V>(
+            F.LOOK to AdjustmentValue.Object(mapOf("kind" to AdjustmentValue.Text("recipe"), "id" to AdjustmentValue.Text("hamada_daylight_v2"))),
+            F.STRENGTH to AdjustmentValue.Number(2.0),
+            F.EXPOSURE to AdjustmentValue.Number(0.5),
+            F.CONTRAST to AdjustmentValue.Number(0.9),
+            F.HIGHLIGHTS to AdjustmentValue.Number(0.125),
+            F.SHADOWS to AdjustmentValue.Number(0.25),
+            F.SATURATION to AdjustmentValue.Number(0.92),
+            F.WHITE_BALANCE_MODE to AdjustmentValue.Text("camera"),
+            F.TEMPERATURE to AdjustmentValue.Null,
+            F.TINT to AdjustmentValue.Number(5.0),
+            F.S_CURVE to AdjustmentValue.Number(0.8),
+            F.BLACK_POINT to AdjustmentValue.Number(80.0),
+            F.WHITE_POINT to AdjustmentValue.Number(0.0),
+            F.VIBRANCE to AdjustmentValue.Number(80.0),
+            F.CLARITY to AdjustmentValue.Number(0.0),
+            F.DEHAZE to AdjustmentValue.Number(0.0),
+            F.CURVE to AdjustmentValue.Object(mapOf("mode" to AdjustmentValue.Text("custom"), "points" to AdjustmentValue.Array(listOf(
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.0), AdjustmentValue.Number(0.0))),
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.5), AdjustmentValue.Number(0.7))),
+                AdjustmentValue.Array(listOf(AdjustmentValue.Number(1.0), AdjustmentValue.Number(1.0))),
+            )))),
+            F.GRADING_SHADOWS to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(30.0), "saturation" to AdjustmentValue.Number(80.0), "luminance" to AdjustmentValue.Number(20.0))),
+            F.GRADING_MIDTONES to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(0.0), "saturation" to AdjustmentValue.Number(0.0))),
+            F.GRADING_HIGHLIGHTS to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(0.0), "saturation" to AdjustmentValue.Number(0.0))),
+        )
+        for (field in F.entries) if (field.hslLocation != null) {
+            values[field] = AdjustmentValue.Number(if (field == F.HSL_HUE_RED) 80.0 else 0.0)
+        }
+        val request = AdjustmentPayload(AdjustmentSource("full-v4-rounding.ARW", true, 3, recipe), values)
+        val result = prepare(request, EditSettings(), ctx)
+        assertEquals("hamada_daylight_v2", result.recipeID)
+        assertEquals(4, result.masterRecipeSettingsVersion)
+        assertEquals(2.0f, result.strength)
+        assertEquals(0.5f, result.exposure)
+        assertEquals(0.9f, result.contrast)
+        assertEquals(0.125f, result.highlights)
+        assertEquals(0.25f, result.shadows)
+        assertEquals(0.92f, result.saturation)
+        assertEquals(5.0f, result.tint)
+        assertEquals(0.8f, result.toneCurve)
+        assertEquals(80.0f, result.blackPoint)
+        assertEquals(80.0f, result.vibrance)
+        assertEquals(80.0f, result.hsl.value(0, 0))
+        assertEquals(result, prepare(request, result, ctx))
+    }
+
+    @Test fun fullV4RawRecipePreservesLogicalValuesAcrossAllPercentStrengthsAndStillRejectsOutOfRange() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        fun fullPayload(strength: Double, overrides: Map<F, V> = emptyMap()): AdjustmentPayload {
+            val values = linkedMapOf<F, V>(
+                F.LOOK to AdjustmentValue.Object(mapOf("kind" to AdjustmentValue.Text("recipe"), "id" to AdjustmentValue.Text("hamada_daylight_v2"))),
+                F.STRENGTH to AdjustmentValue.Number(strength),
+                F.EXPOSURE to AdjustmentValue.Number(-0.3),
+                F.CONTRAST to AdjustmentValue.Number(0.9),
+                F.HIGHLIGHTS to AdjustmentValue.Number(-0.15),
+                F.SHADOWS to AdjustmentValue.Number(0.3),
+                F.SATURATION to AdjustmentValue.Number(0.92),
+                F.WHITE_BALANCE_MODE to AdjustmentValue.Text("camera"),
+                F.TEMPERATURE to AdjustmentValue.Null,
+                F.TINT to AdjustmentValue.Number(5.1),
+                F.S_CURVE to AdjustmentValue.Number(0.3),
+                F.BLACK_POINT to AdjustmentValue.Number(-33.3),
+                F.WHITE_POINT to AdjustmentValue.Number(15.5),
+                F.VIBRANCE to AdjustmentValue.Number(7.1),
+                F.CLARITY to AdjustmentValue.Number(-7.1),
+                F.DEHAZE to AdjustmentValue.Number(33.3),
+                F.CURVE to AdjustmentValue.Object(mapOf("mode" to AdjustmentValue.Text("custom"), "points" to AdjustmentValue.Array(listOf(
+                    AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.0), AdjustmentValue.Number(0.0))),
+                    AdjustmentValue.Array(listOf(AdjustmentValue.Number(0.5), AdjustmentValue.Number(0.7))),
+                    AdjustmentValue.Array(listOf(AdjustmentValue.Number(1.0), AdjustmentValue.Number(1.0))),
+                )))),
+                F.CURVE_PARAMETRIC to AdjustmentValue.Object(mapOf(
+                    "highlights" to AdjustmentValue.Number(25.0),
+                    "lights" to AdjustmentValue.Number(0.0),
+                    "darks" to AdjustmentValue.Number(0.0),
+                    "shadows" to AdjustmentValue.Number(-10.0),
+                    "split_shadow" to AdjustmentValue.Number(0.25),
+                    "split_midtone" to AdjustmentValue.Number(0.5),
+                    "split_highlight" to AdjustmentValue.Number(0.75),
+                )),
+                F.GRADING_SHADOWS to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(210.0), "saturation" to AdjustmentValue.Number(33.3), "luminance" to AdjustmentValue.Number(-12.7))),
+                F.GRADING_MIDTONES to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(0.0), "saturation" to AdjustmentValue.Number(0.0))),
+                F.GRADING_HIGHLIGHTS to AdjustmentValue.Object(mapOf("hue" to AdjustmentValue.Number(0.0), "saturation" to AdjustmentValue.Number(0.0))),
+            )
+            for (field in F.entries) if (field.hslLocation != null) {
+                values[field] = AdjustmentValue.Number(if (field == F.HSL_HUE_RED) -33.3 else 0.0)
+            }
+            values.putAll(overrides)
+            return AdjustmentPayload(AdjustmentSource("full-v4-grid.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", strength, 4)), values)
+        }
+
+        for (pct in 0..200) {
+            val strength = pct / 100.0
+            val payload = fullPayload(strength)
+            val result = prepare(payload, EditSettings(), ctx)
+            assertEquals("strength $strength", strength.toFloat(), result.strength)
+            assertEquals("exposure at $strength", -0.3f, result.exposure)
+            assertEquals("contrast at $strength", 0.9f, result.contrast)
+            assertEquals("highlights at $strength", -0.15f, result.highlights)
+            assertEquals("shadows at $strength", 0.3f, result.shadows)
+            assertEquals("saturation at $strength", 0.92f, result.saturation)
+            assertEquals("tint at $strength", 5.1f, result.tint)
+            assertEquals("s_curve at $strength", 0.3f, result.toneCurve)
+            assertEquals("black_point at $strength", -33.3f, result.blackPoint)
+            assertEquals("white_point at $strength", 15.5f, result.whitePoint)
+            assertEquals("vibrance at $strength", 7.1f, result.vibrance)
+            assertEquals("clarity at $strength", -7.1f, result.clarity)
+            assertEquals("dehaze at $strength", 33.3f, result.dehaze)
+            assertEquals("hsl red hue at $strength", -33.3f, result.hsl.value(0, 0))
+            assertEquals("grading shadows sat at $strength", 33.3f, result.colorGrading.shadows.saturation)
+            assertEquals("grading shadows lum at $strength", -12.7f, result.colorGrading.shadows.luminance)
+            assertEquals("curve mid y at $strength", 0.7, result.curve.points[1].y, 0.0)
+            assertEquals("parametric highlights at $strength", 25.0, result.curve.parametric.highlights, 0.0)
+            assertEquals("idempotent at $strength", result, prepare(payload, result, ctx))
+        }
+
+        // Genuine unrepresentable full-recipe requests remain rejected.
+        val outOfRangeExposure = assertThrows(AdjustmentTransferException::class.java) {
+            prepare(fullPayload(1.0, mapOf(F.EXPOSURE to AdjustmentValue.Number(6.0))), EditSettings(), ctx)
+        }
+        assertEquals(AdjustmentFailure.UNREPRESENTABLE, outOfRangeExposure.reason)
+        val outOfRangeTint = assertThrows(AdjustmentTransferException::class.java) {
+            prepare(fullPayload(2.0, mapOf(F.TINT to AdjustmentValue.Number(150.0))), EditSettings(), ctx)
+        }
+        assertEquals(AdjustmentFailure.UNREPRESENTABLE, outOfRangeTint.reason)
+        assertEquals(F.TINT.id, outOfRangeTint.field)
+    }
+
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
         val source = EditSettings(recipeID = "r", strength = .5f, tint = 12f)
         val relative = capture(source, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT)

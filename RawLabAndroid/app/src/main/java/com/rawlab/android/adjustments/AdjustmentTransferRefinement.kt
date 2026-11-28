@@ -5,7 +5,8 @@ import kotlin.math.abs
 
 internal object AdjustmentTransferRefinement {
     fun apply(payload: AdjustmentPayload, original: EditSettings, target: EditSettings, fullRecipe: Boolean): EditSettings {
-        val sourceScale = if ((payload.source.recipe?.settingsVersion ?: 3) >= 4) payload.source.recipe!!.strength else 1.0
+        val rawSourceScale = if ((payload.source.recipe?.settingsVersion ?: 3) >= 4) payload.source.recipe!!.strength else 1.0
+        val sourceScale = if (fullRecipe) rawSourceScale.toFloat().toDouble() else rawSourceScale
         val selectedCurve = payload[AdjustmentField.CURVE]?.let(AdjustmentPayload::curve)
         val selectedApply = payload[AdjustmentField.CURVE_APPLY_TO_LUMINOSITY]?.boolean
         val selectedParametric = payload[AdjustmentField.CURVE_PARAMETRIC]?.let(AdjustmentPayload::parametricCurve)
@@ -44,7 +45,9 @@ internal object AdjustmentTransferRefinement {
             selected["luminance"]?.number ?: 0.0,
         )
         fun desiredWheel(selected: Map<String, AdjustmentValue>?, fallback: ColorGradingWheel): ColorGradingWheel =
-            if (selected == null) fallback else ColorGradingWheel.fromNumbers(
+            if (selected == null) fallback
+            else if (fullRecipe) wheelFromObject(selected).scaled(rawSourceScale.toFloat())
+            else ColorGradingWheel.fromNumbers(
                 selected["hue"]!!.number!!,
                 (selected["saturation"]!!.number!! * sourceScale).coerceIn(0.0, 100.0),
                 ((selected["luminance"]?.number ?: 0.0) * sourceScale).coerceIn(-100.0, 100.0),
