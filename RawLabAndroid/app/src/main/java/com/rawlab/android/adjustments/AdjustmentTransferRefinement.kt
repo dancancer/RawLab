@@ -111,17 +111,22 @@ internal object AdjustmentTransferRefinement {
             if (!desired.isIdentity) unrepresentable(field)
             return desired
         }
-        val sat = (desired.saturation.toDouble() / strength.toDouble()).toFloat()
-        val lum = (desired.luminance.toDouble() / strength.toDouble()).toFloat()
-        val satCandidates = listOf(sat, Math.nextDown(sat), Math.nextUp(sat)).filter { it in 0f..100f }
-        val lumCandidates = listOf(lum, Math.nextDown(lum), Math.nextUp(lum)).filter { it in -100f..100f }
-        for (sc in satCandidates) {
-            for (lc in lumCandidates) {
-                val value = desired.copy(saturation = sc.canonicalZero(), luminance = lc.canonicalZero())
-                if (scaled(value, strength) == desired) return value
-            }
-        }
-        unrepresentable(field)
+        val sub = AdjustmentFieldSpec.SubFields.ColorGradingWheel
+        val satRange = sub.saturationMin.toFloat()..sub.saturationMax.toFloat()
+        val lumRange = sub.luminanceMin.toFloat()..sub.luminanceMax.toFloat()
+        val sat = AdjustmentTransfer.solveScaledFloat(
+            desired.saturation.canonicalZero(),
+            (desired.saturation.toDouble() / strength.toDouble()).toFloat(),
+            satRange,
+        ) { x -> scaled(desired.copy(saturation = x), strength).saturation }
+            ?: unrepresentable(field)
+        val lum = AdjustmentTransfer.solveScaledFloat(
+            desired.luminance.canonicalZero(),
+            (desired.luminance.toDouble() / strength.toDouble()).toFloat(),
+            lumRange,
+        ) { x -> scaled(desired.copy(luminance = x), strength).luminance }
+            ?: unrepresentable(field)
+        return desired.copy(saturation = sat, luminance = lum)
     }
 
     private fun scaled(value: ColorGradingWheel, strength: Float) = value.scaled(strength)

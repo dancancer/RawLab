@@ -120,18 +120,24 @@ object AdjustmentTransfer {
             // 沿用 Android 原生 Float 缩放计算源期望，避免源 Double 与本端 Float 请求差 1 ULP。
             return nativeSourceEffective(value, field, payload.source.recipe)
         }
+        val solvedEffective = hashMapOf<AdjustmentField, Float>()
         for (field in numericFields) {
             val value = payload[field]?.number
             if (value != null) {
-                result = if (fullRecipe)
-                    AdjustmentTransferValues.setLogical(result, field, value)
-                else assignEffective(result, field, expected(field))
+                if (fullRecipe) {
+                    result = AdjustmentTransferValues.setLogical(result, field, value)
+                } else {
+                    result = assignEffective(result, field, expected(field))
+                    solvedEffective[field] = effectiveNumbers(result)[field]!!
+                }
             } else if (contextChanged && effectiveNumbers(result)[field] != before[field]) {
                 result = assignEffective(result, field, before[field]!!)
+                solvedEffective[field] = effectiveNumbers(result)[field]!!
             }
         }
-        for (field in numericFields) if (effectiveNumbers(result)[field] != expected(field)) {
+        for (field in numericFields) if (field !in solvedEffective && effectiveNumbers(result)[field] != expected(field)) {
             result = assignEffective(result, field, expected(field))
+            solvedEffective[field] = effectiveNumbers(result)[field]!!
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
@@ -143,7 +149,11 @@ object AdjustmentTransfer {
         result = AdjustmentTransferValues.applyObjects(payload, result, context)
         result = AdjustmentTransferRefinement.apply(payload, target, result, fullRecipe)
         val actual = effectiveNumbers(result)
-        for (field in numericFields) if (actual[field] != expected(field)) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+        for (field in numericFields) {
+            if (actual[field] != (solvedEffective[field] ?: expected(field))) {
+                throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+            }
+        }
         return if (AdjustmentTransferValues.values(result, context) == originalValues && result.masterRecipeSettingsVersion == target.masterRecipeSettingsVersion) target else result
     }
 
@@ -172,24 +182,103 @@ object AdjustmentTransfer {
         }
         return (if (field in AdjustmentTransferValues.scaled) v * scale else v).canonicalZero()
     }
+    private fun floatOrdinal(value: Float): Long {
+        val bits = value.canonicalZero().toRawBits()
+        return if (bits >= 0) bits.toLong() else -(bits and 0x7fffffff).toLong()
+    }
+    private fun ordinalToFloat(ordinal: Long): Float =
+        Float.fromBits(if (ordinal >= 0L) ordinal.toInt() else ((-ordinal).toInt() or Int.MIN_VALUE)).canonicalZero()
+    internal fun solveScaledFloat(
+        wanted: Float,
+        initial: Float,
+        range: ClosedFloatingPointRange<Float>,
+        render: (Float) -> Float,
+    ): Float? {
+        val clamped = initial.coerceIn(range.start, range.endInclusive).canonicalZero()
+        val r0 = render(clamped)
+        if (r0 == wanted) return clamped
+        val down = Math.nextDown(clamped).takeIf { it >= range.start }?.canonicalZero()
+        val rDown = down?.let(render)
+        if (rDown == wanted) return down
+        val up = Math.nextUp(clamped).takeIf { it <= range.endInclusive }?.canonicalZero()
+        val rUp = up?.let(render)
+        if (rUp == wanted) return up
+        // 无精确解时，若期望值严格落在合法范围内两个相邻 Float 逻辑值的渲染结果之间，取渲染结果更近者。
+        val lo: Float
+        val hi: Float
+        val rLo: Float
+        val rHi: Float
+        when {
+            down != null && rDown!! < wanted && wanted < r0 -> {
+                lo = down; rLo = rDown; hi = clamped; rHi = r0
+            }
+            up != null && r0 < wanted && wanted < rUp!! -> {
+                lo = clamped; rLo = r0; hi = up; rHi = rUp
+            }
+            // Only 1 + (x - 1) * s fields (contrast/saturation) below 0.5 form multi-Float plateaus; search assumes render is non-decreasing in logical x.
+            r0 < wanted -> {
+                val rMax = render(range.endInclusive)
+                if (wanted > rMax) return null
+                if (wanted == rMax) return range.endInclusive.canonicalZero()
+                var a = floatOrdinal(clamped)
+                var b = floatOrdinal(range.endInclusive)
+                while (a + 1L < b) {
+                    val mid = (a + b) / 2L
+                    if (render(ordinalToFloat(mid)) < wanted) a = mid else b = mid
+                }
+                lo = ordinalToFloat(a); hi = ordinalToFloat(b)
+                rLo = render(lo); rHi = render(hi)
+                if (rHi == wanted) return hi
+            }
+            else -> {
+                val rMin = render(range.start)
+                if (wanted < rMin) return null
+                if (wanted == rMin) return range.start.canonicalZero()
+                var a = floatOrdinal(range.start)
+                var b = floatOrdinal(clamped)
+                while (a + 1L < b) {
+                    val mid = (a + b) / 2L
+                    if (render(ordinalToFloat(mid)) <= wanted) a = mid else b = mid
+                }
+                lo = ordinalToFloat(a); hi = ordinalToFloat(b)
+                rLo = render(lo); rHi = render(hi)
+                if (rLo == wanted) return lo
+            }
+        }
+        if (!(rLo < wanted && wanted < rHi)) return null
+        val dLo = kotlin.math.abs(rLo.toDouble() - wanted.toDouble())
+        val dHi = kotlin.math.abs(rHi.toDouble() - wanted.toDouble())
+        return when {
+            dLo < dHi -> if (r0 == rLo) clamped else lo
+            dHi < dLo -> if (r0 == rHi) clamped else hi
+            r0 == rLo || r0 == rHi -> clamped
+            else -> lo
+        }.canonicalZero()
+    }
     private fun assignEffective(settings: EditSettings, field: AdjustmentField, value: Float): EditSettings {
-        val scaled = field in AdjustmentTransferValues.scaled || field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
-            settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS
+        val scaled = settings.recipeID != null && (field in AdjustmentTransferValues.scaled ||
+            field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
+            settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS)
         val identity = if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION) 1.0 else 0.0
         val scale = settings.recipeScale.toDouble()
         if (scaled && scale == 0.0 && value.toDouble() != identity) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         val logical = if (!scaled) value.toDouble() else if (scale == 0.0) identity else identity + (value - identity) / scale
         val range = field.spec.androidModel.floatRange
         val clamped = if (range != null) logical.toFloat().coerceIn(range.start, range.endInclusive) else logical.toFloat()
-        val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, clamped.toDouble()) }.getOrNull()
-        if (candidate != null && effectiveNumbers(candidate)[field] == value) return candidate
-        // 反解后只尝试相邻的本端 Float 表示；只有实际 JNI 请求完全一致才接受。
-        val native = candidate?.let { AdjustmentTransferValues.logical(it, field).toFloat() } ?: clamped
-        for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
-            val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
-            if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
+        if (!scaled || range == null) {
+            val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, clamped.toDouble()) }.getOrNull()
+            if (candidate != null && effectiveNumbers(candidate)[field] == value) return candidate
+            val native = candidate?.let { AdjustmentTransferValues.logical(it, field).toFloat() } ?: clamped
+            for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
+                val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
+                if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
+            }
+            throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         }
-        throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+        val solved = solveScaledFloat(value.canonicalZero(), clamped, range) { x ->
+            effectiveNumbers(AdjustmentTransferValues.setLogical(settings, field, x.toDouble()))[field]!!
+        } ?: throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+        return AdjustmentTransferValues.setLogical(settings, field, solved.toDouble())
     }
 
     private fun captureHDR(scope: AdjustmentScope, settings: EditSettings, context: AdjustmentTransferContext): AdjustmentPayload {

@@ -171,20 +171,27 @@ Mac 原生预检按需要通过当前 core 解析目标 RAW 的 WB/降噪能力�
 检查目标本身不保存，关闭预检也不延续异步提交。
 
 Android adapter 按 JNI 的实际 Float request 校验等价性：contrast/saturation 的偏移转为
-逻辑 multiplier，highlights 翻转方向；反算配方参数时保护未选字段，不能用容差或新的
-clamp 掩盖不可表示的请求。Android 不支持非零 RAW FBDD 或 post-RGB 降噪；缺省 chroma
-和 wavelet 只在其实际 native 请求等价时转换。本端白平衡沿用 native 舍入及目标校准。
+逻辑 multiplier，highlights 翻转方向；反算配方参数时保护未选字段，有精确本端 Float
+表示时必须精确匹配，仅当期望渲染结果严格落在合法范围内两个相邻 Float 逻辑值的渲染结果
+之间时存入渲染结果更近的逻辑值，不引入固定容差常数或新的 clamp 来掩盖超范围/零强度等
+不可表示请求。Android 不支持非零 RAW FBDD 或 post-RGB 降噪；缺省 chroma 和 wavelet 只
+在其实际 native 请求等价时转换。本端白平衡沿用 native 舍入及目标校准。
 
 Windows 同样比较实际 Float request，保留可准确表达的原始逻辑小数，不将 Float 尾差
 写回用户输入。曝光受本端 `[-4,4]` EV 限制；非零 RAW FBDD/post-RGB 请求明确 blocked。
 完整 legacy HSL 配方按本端当前 renderer 反算，再次复制报告当前版本。原生预检为每个
 RAW 读取目标校准，镜头请求检查实际畸变/TCA 应用结果；任一目标失败仍保留为独立结果。
 
-配方强度的缩放精度：Mac、iOS 与 Windows 用 Double 逻辑值与 Double 强度相乘，到渲染请求才转 Float；Android
-的强度与逻辑标量/HSL/色轮/tint 本身存为 Float，按 Float 相乘。强度或逻辑值不是 Float 精确值（例如 30%
-强度，或 200% 强度下 `light.contrast = 0.9`）时，Android 的请求可与其余三端相差一个 Float 最小单位。各端
-仍只按本端实际请求做精确校验，不用容差抹平；完整与部分配方粘贴时，Android 均按本端 Float 缩放结果计算
-源期望并做精确校验。
+配方强度的缩放精度：Mac、iOS 与 Windows 用 Double 逻辑值与 Double 强度相乘，到渲染请求才转 Float，
+仍只按本端实际请求做精确校验，不用容差抹平。Android 的强度与逻辑标量/HSL/色轮/tint 本身存为 Float，
+按 Float 相乘；完整与部分配方粘贴时，Android 均按本端 Float 缩放结果计算源期望：
+- 存在精确本端 Float 逻辑值时，始终存入该精确值（与既往精确校验逐位一致）。
+- 当目标强度导致相邻合法 Float 逻辑值的渲染结果跨过源期望（无精确解，但源期望严格落在合法范围内两个相邻
+  Float 逻辑值的渲染结果之间）时，存入渲染结果距离源期望更近的逻辑值（无容差常数）。偏差因此不超过这两个
+  相邻渲染结果间距的一半，即本端在该处能表示的最小步长之内；它由字段的 Float 存储精度和目标强度决定，不是
+  可调参数。
+- 无法被合法范围内相邻逻辑值夹住的请求继续按 `unrepresentable` 拒绝，包括超出滑块合法范围的值、最终绝对
+  tint 超出 `[-150, 150]` 的请求，以及目标强度为 0 时的非中性期望。
 
 ## 保存、重试和历史
 
