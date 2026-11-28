@@ -38,6 +38,8 @@ _PREPARE = importlib.util.module_from_spec(_PREPARE_SPEC)
 _PREPARE_SPEC.loader.exec_module(_PREPARE)
 
 PLATFORMS = ("macos-arm64", "windows-x64")
+REPLAY_KIND = "replay-tensors"
+ASSETS_RELEASE_URL_PREFIX = "https://github.com/dancancer/RawLab/releases/download/assets-v1"
 LICENSE_FILES = ("DualDn-LICENSE.txt", "Restormer-LICENSE.txt")
 # 平台包完整性是发布规则，不是核心协议：核心把 Core ML 和通用 RGB 模型当作可选项，
 # 缺了它们的包能通过核心校验，却不能在对应平台上运行 AI 降噪。
@@ -283,6 +285,35 @@ def prepare_model_tree(source: Path | str, platform: str, destination: Path | st
     return destination_path
 
 
+def prepare_replay_tree(source: Path | str, destination: Path | str) -> tuple[Path, str]:
+    """Copy only the 13 CI replay tensors from a validated source tree; never mutate source."""
+    source_path = Path(source)
+    if source_path.is_symlink():
+        raise ValueError(f"Refusing symbolic-link model directory: {source_path}")
+    source_path = source_path.resolve()
+    destination_path = Path(destination)
+    if _path_is_inside(destination_path, source_path):
+        raise ValueError(f"Output path must be outside source model directory: {destination_path}")
+    validate_model_tree(source_path, "macos-arm64", source_package=True)
+    all_source_files, _ = _walk_model_tree(source_path)
+    manifest_sha, _ = _sha256_file(source_path / "manifest.json")
+    for relative in sorted(SOURCE_ONLY_TEST_TENSORS):
+        if relative not in all_source_files:
+            raise ValueError(f"Missing required replay tensor: {relative}")
+        if all_source_files[relative].stat().st_size == 0:
+            raise ValueError(f"Replay tensor is empty: {relative}")
+    if destination_path.exists() or destination_path.is_symlink():
+        raise ValueError(f"Destination already exists: {destination_path}")
+    try:
+        destination_path.mkdir(parents=True)
+        for relative in sorted(SOURCE_ONLY_TEST_TENSORS):
+            shutil.copyfile(all_source_files[relative], destination_path / relative)
+    except Exception:
+        shutil.rmtree(destination_path, ignore_errors=True)
+        raise
+    return destination_path, manifest_sha
+
+
 def _add_canonical_member(tar, relative: str, kind: str, size: int, source) -> None:
     info = tarfile.TarInfo(relative)
     info.mtime = info.uid = info.gid = 0
@@ -448,7 +479,8 @@ def _archive_inventory(
     expected_unpacked_bytes: int | None = None,
     expected_member_count: int | None = None,
     max_tar_bytes: int | None = None,
-) -> tuple[list[dict], int, str]:
+    require_manifest: bool = True,
+) -> tuple[list[dict], int, str | None]:
     entries: list[dict] = []
     folded: dict[str, str] = {}
     kinds: dict[str, str] = {}
@@ -527,7 +559,7 @@ def _archive_inventory(
                     if kinds.get(parent_name) == "file":
                         raise ValueError(f"Archive file is used as a directory: {parent_name}")
                     parent = parent.parent
-            if manifest_sha is None:
+            if require_manifest and manifest_sha is None:
                 raise ValueError("Archive is missing root manifest.json")
             if comparator.mismatch or comparator.expected:
                 raise ValueError("Tar stream is not the canonical builder serialization")
@@ -542,6 +574,24 @@ def _archive_platform_and_digest_name(archive_path: Path) -> tuple[str, str]:
     if match is None:
         raise ValueError(f"Invalid AI model archive name: {archive_path.name}")
     return match.group(1), match.group(2)
+
+
+def _replay_archive_digest_name(archive_path: Path) -> str:
+    match = re.fullmatch(r"rawlab-ai-replay-tensors-([0-9a-f]{12})\.tar\.gz", archive_path.name)
+    if match is None:
+        raise ValueError(f"Invalid AI replay tensor archive name: {archive_path.name}")
+    return match.group(1)
+
+
+def _check_replay_entries(entries: list[dict]) -> None:
+    if any(entry.get("kind") != "file" for entry in entries):
+        raise ValueError("Replay tensor archive must contain only regular files")
+    paths = {entry["path"] for entry in entries}
+    if paths != SOURCE_ONLY_TEST_TENSORS:
+        missing = sorted(SOURCE_ONLY_TEST_TENSORS - paths)
+        unexpected = sorted(paths - SOURCE_ONLY_TEST_TENSORS)
+        detail = f"missing {missing[0]}" if missing else f"unexpected {unexpected[0]}"
+        raise ValueError(f"Replay tensor archive members do not match expected set: {detail}")
 
 
 def describe_model_archive(archive_path: Path | str, platform: str | None = None) -> dict:
@@ -565,9 +615,34 @@ def describe_model_archive(archive_path: Path | str, platform: str | None = None
     }
 
 
-def verify_model_archive(archive_path: Path | str, description: dict) -> None:
-    """Check archive bytes first, then enforce its described contents and canonical encoding."""
+def describe_replay_archive(
+    archive_path: Path | str,
+    manifest_sha256: str,
+    *,
+    url_prefix: str = ASSETS_RELEASE_URL_PREFIX,
+) -> dict:
+    if not isinstance(manifest_sha256, str) or _SHA256_RE.fullmatch(manifest_sha256) is None:
+        raise ValueError("Invalid manifest SHA-256 for replay tensor archive")
     archive = Path(archive_path)
+    archive_sha, archive_bytes = _sha256_file(archive)
+    if archive_sha[:12] != _replay_archive_digest_name(archive):
+        raise ValueError(f"Archive filename does not match SHA-256: {archive.name}")
+    entries, unpacked_bytes, _ = _archive_inventory(archive, require_manifest=False)
+    _check_replay_entries(entries)
+    return {
+        "schemaVersion": 1,
+        "kind": REPLAY_KIND,
+        "manifestSha256": manifest_sha256,
+        "url": f"{url_prefix.rstrip('/')}/{archive.name}",
+        "archiveName": archive.name,
+        "archiveSha256": archive_sha,
+        "archiveBytes": archive_bytes,
+        "unpackedBytes": unpacked_bytes,
+        "entries": entries,
+    }
+
+
+def _verify_archive_bytes(archive: Path, description: dict) -> tuple[str, int]:
     if not isinstance(description, dict):
         raise ValueError("Unsupported AI model archive description")
     expected_bytes = description.get("archiveBytes")
@@ -586,6 +661,13 @@ def verify_model_archive(archive_path: Path | str, description: dict) -> None:
         raise ValueError(f"Archive size mismatch: expected {actual_bytes}, got {hashed_bytes}")
     if actual_sha != expected_sha:
         raise ValueError(f"Archive SHA-256 mismatch: expected {expected_sha}, got {actual_sha}")
+    return actual_sha, actual_bytes
+
+
+def verify_model_archive(archive_path: Path | str, description: dict) -> None:
+    """Check archive bytes first, then enforce its described contents and canonical encoding."""
+    archive = Path(archive_path)
+    actual_sha, _ = _verify_archive_bytes(archive, description)
 
     if type(description.get("schemaVersion")) is not int or description["schemaVersion"] != 1:
         raise ValueError("Unsupported AI model archive description")
@@ -619,6 +701,50 @@ def verify_model_archive(archive_path: Path | str, description: dict) -> None:
         raise ValueError("Archive members do not match the description")
     if unpacked != expected_unpacked:
         raise ValueError(f"Unpacked size mismatch: expected {expected_unpacked}, got {unpacked}")
+
+
+def verify_replay_archive(archive_path: Path | str, description: dict) -> None:
+    """Check replay archive bytes first, then enforce its described tensor contents and canonical encoding."""
+    archive = Path(archive_path)
+    actual_sha, _ = _verify_archive_bytes(archive, description)
+
+    if type(description.get("schemaVersion")) is not int or description["schemaVersion"] != 1:
+        raise ValueError("Unsupported AI replay archive description")
+    if description.get("kind") != REPLAY_KIND:
+        raise ValueError("Description has an unsupported archive kind")
+    if description.get("archiveName") != archive.name:
+        raise ValueError(f"Archive name mismatch: expected {description.get('archiveName')!r}, got {archive.name!r}")
+    if _replay_archive_digest_name(archive) != actual_sha[:12]:
+        raise ValueError("Archive filename does not match its SHA-256")
+    manifest_sha = description.get("manifestSha256")
+    if not isinstance(manifest_sha, str) or _SHA256_RE.fullmatch(manifest_sha) is None:
+        raise ValueError("Description has an invalid manifest SHA-256")
+    expected_unpacked = description.get("unpackedBytes")
+    if type(expected_unpacked) is not int or expected_unpacked < 0:
+        raise ValueError("Description has an invalid unpacked size")
+    expected_entries = description.get("entries")
+    if not isinstance(expected_entries, list):
+        raise ValueError("Description has no member list")
+
+    actual_entries, unpacked, _ = _archive_inventory(
+        archive,
+        expected_unpacked_bytes=expected_unpacked,
+        expected_member_count=len(expected_entries),
+        max_tar_bytes=_canonical_tar_bytes(expected_entries),
+        require_manifest=False,
+    )
+    if actual_entries != expected_entries:
+        raise ValueError("Archive members do not match the description")
+    if unpacked != expected_unpacked:
+        raise ValueError(f"Unpacked size mismatch: expected {expected_unpacked}, got {unpacked}")
+    _check_replay_entries(actual_entries)
+
+
+def verify_archive(archive_path: Path | str, description: dict) -> None:
+    if isinstance(description, dict) and description.get("kind") == REPLAY_KIND:
+        verify_replay_archive(archive_path, description)
+    else:
+        verify_model_archive(archive_path, description)
 
 
 def _write_description(path: Path, description: dict) -> None:
@@ -669,6 +795,39 @@ def _command_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_replay(source: Path, output_dir: Path) -> dict:
+    with tempfile.TemporaryDirectory(prefix=".rawlab-ai-replay-", dir=output_dir) as temporary_dir:
+        temporary_root = Path(temporary_dir)
+        tree, manifest_sha = prepare_replay_tree(source, temporary_root / "tree")
+        staged_archive = create_model_archive(tree, temporary_root / "staged.tar.gz")
+        staged_digest, staged_size = _sha256_file(staged_archive)
+        final_archive = output_dir / f"rawlab-ai-replay-tensors-{staged_digest[:12]}.tar.gz"
+        if final_archive.exists():
+            existing_digest, existing_size = _sha256_file(final_archive)
+            if (existing_digest, existing_size) != (staged_digest, staged_size):
+                raise ValueError(f"Hash-named archive collision at {final_archive}")
+        else:
+            os.replace(staged_archive, final_archive)
+        description = describe_replay_archive(final_archive, manifest_sha)
+        verify_replay_archive(final_archive, description)
+        _write_description(output_dir / f"{final_archive.name}.json", description)
+        return description
+
+
+def _command_build_replay(args: argparse.Namespace) -> int:
+    source = Path(args.source)
+    if source.is_symlink():
+        raise ValueError(f"Refusing symbolic-link model directory: {source}")
+    source = source.resolve()
+    output_dir = Path(args.output_dir)
+    if _path_is_inside(output_dir, source):
+        raise ValueError(f"Output path must be outside source model directory: {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    description = _build_replay(source, output_dir)
+    print(json.dumps(description, ensure_ascii=False, indent=2))
+    return 0
+
+
 def _command_verify(args: argparse.Namespace) -> int:
     archive = Path(args.archive)
     description_path = Path(args.description)
@@ -676,7 +835,7 @@ def _command_verify(args: argparse.Namespace) -> int:
         description = json.loads(description_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError(f"Cannot read description {description_path}: {exc}") from exc
-    verify_model_archive(archive, description)
+    verify_archive(archive, description)
     print(f"verified {archive.name}")
     return 0
 
@@ -694,6 +853,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     build_parser.add_argument("--probe", help="optional dualdn_probe executable used to validate each prepared tree")
     build_parser.set_defaults(handler=_command_build)
+    replay_parser = subparsers.add_parser("build-replay", help="build CI replay-tensor archive from a model package")
+    replay_parser.add_argument("--source", required=True, help="complete DualDn model directory")
+    replay_parser.add_argument("--output-dir", required=True, help="directory for replay archive and JSON description")
+    replay_parser.set_defaults(handler=_command_build_replay)
     verify_parser = subparsers.add_parser("verify", help="verify an archive against its JSON description")
     verify_parser.add_argument("--archive", required=True, help="archive to verify")
     verify_parser.add_argument("--description", required=True, help="JSON description produced by build")

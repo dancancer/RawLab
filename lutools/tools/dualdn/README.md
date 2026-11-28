@@ -149,5 +149,6 @@ RAWLAB_BUILD_DIR="$RAWLAB_BUILD_DIR" bash RawLabMac/tests/ai-denoise.sh
 DualDn 的固定上游许可为 CC BY-NC 4.0（Copyright 2024 OpenImagingLab），
 Restormer v1.0 原始许可为 Academic Public License（非商业用途），ONNX Runtime 为 MIT。
 正式发布包在应用内 `Licenses/DualDn` 保留 ONNX Runtime（及 Windows DirectML）运行库许可；DualDn 与 Restormer 上游许可文本随外置模型下载包分发（仅在非发布构建显式随包打包模型时一并复制到 `Licenses/DualDn`）。
+`export.py` / `export_restormer.py` 使用固定随机种子输入生成的 13 个数值回放张量（`*.f32`，含对应模型期望输出）单独打包供 CI 回放测试使用（描述文件在 `scripts/ci/ai-replay-tensors.json`，不随桌面应用分发），其期望输出沿用 DualDn / Restormer 相同的上游非商业许可条款。
 本转换保留原始权重，没有训练或微调；变更包括拆图、固定尺寸、分块运行和 RawLab
 颜色桥接。上游模型及派生产物保留其许可，不因宿主项目许可而重新授权。

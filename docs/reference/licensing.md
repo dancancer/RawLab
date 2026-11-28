@@ -117,9 +117,16 @@ commercial model rights to downstream users.
 Model revision, original weight SHA-256, conversion protocol and packaging
 boundaries are recorded in [the DualDn contract](../architecture/dualdn-inline-denoise.md).
 The catalog pins the exact converted package checksums, and each downloadable
-model archive retains its upstream license files. ONNX Runtime, DirectML,
-Restormer source, Sparkle and Velopack keep their separate component licenses in
-the desktop dependency notices.
+model archive retains its upstream license files. The separate CI numerical
+replay tensor archive (`scripts/ci/ai-replay-tensors.json`, hosted on `assets-v1`
+and not shipped inside release applications) holds deterministic seeded random
+inputs and expected model outputs produced from the DualDn and Restormer
+checkpoints by `lutools/tools/dualdn/export.py` and `export_restormer.py`; those
+model outputs carry the same upstream noncommercial terms (DualDn CC BY-NC 4.0
+and Restormer Academic Public License) and are assembled only alongside the
+verified model archive and its license files. ONNX Runtime, DirectML, Restormer
+source, Sparkle and Velopack keep their separate component licenses in the
+desktop dependency notices.
 
 ## Historical MIT Notice
 
