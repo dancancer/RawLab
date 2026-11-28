@@ -181,6 +181,7 @@ rawlab_ios_camera_sources() {
                 "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraIncrementalImport.swift"
                 "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraBrowser.swift"
                 "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraTether.swift"
+                "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraQRScanner.swift"
                 "$ROOT/RawLab/RawLab/UI/Camera/IOSCameraWorkspace.swift"
             )
             ;;

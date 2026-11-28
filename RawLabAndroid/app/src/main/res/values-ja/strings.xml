@@ -153,7 +153,7 @@
     <string name="camera_original_missing">"元の写真にアクセスできません"</string>
     <string name="camera_original_unavailable">"元の写真を利用できません"</string>
     <string name="camera_pairing">"スマートフォンとカメラのペアリング番号を確認してください"</string>
-    <string name="camera_pairing_failed">"Bluetooth ペアリングを完了できませんでした。カメラが Bluetooth ペアリング画面になっているか確認するか、下の「カメラの Wi-Fi に接続」を使用してください。"</string>
+    <string name="camera_pairing_failed">"Bluetooth ペアリングが完了しませんでした。カメラが Bluetooth ペアリング画面であることを確認するか、下の「カメラ Wi-Fi に接続」を使用してください。"</string>
     <string name="camera_param_aperture">"絞り"</string>
     <string name="camera_param_busy">"カメラ設定を更新中…"</string>
     <string name="camera_param_ev">"露出補正"</string>
@@ -175,6 +175,10 @@
     <string name="camera_preview_unavailable">"プレビューを利用できません"</string>
     <string name="camera_previous">"前の写真"</string>
     <string name="camera_progress">"読み込みの進捗"</string>
+    <string name="camera_qr_guide">"カメラの「スマートフォン接続」画面に表示された QR コードに向けてください"</string>
+    <string name="camera_qr_invalid">"カメラの Wi-Fi QR コードを認識できません。カメラ画面の QR コードに向けてください。"</string>
+    <string name="camera_qr_permission">"カメラの QR コードをスキャンするにはカメラ権限が必要です。カメラへのアクセスを許可するか、下から手動で Wi-Fi に接続してください。"</string>
+    <string name="camera_qr_unavailable">"カメラのスキャナーを開けませんでした。手動で Wi-Fi に接続してください。"</string>
     <string name="camera_resume">"未完了分を続行"</string>
     <string name="camera_resume_previous">"%1$sのテザー撮影を再開"</string>
     <string name="camera_resume_registered">"登録済みの受信タスクを復元しました。接続中断中に撮影した写真は、カメラから手動で取り込んでください。"</string>
@@ -185,6 +189,7 @@
     <string name="camera_saved">"読み込み済み"</string>
     <string name="camera_saved_count">"%1$d / %2$d 枚を保存済み"</string>
     <string name="camera_saved_to_album">"システムギャラリーに保存済み"</string>
+    <string name="camera_scan_qr">"カメラの QR コードをスキャン"</string>
     <string name="camera_scanning">"カメラを検索中…"</string>
     <string name="camera_select">"選択"</string>
     <string name="camera_select_all">"すべて選択"</string>

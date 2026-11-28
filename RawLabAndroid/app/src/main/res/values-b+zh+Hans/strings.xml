@@ -175,6 +175,10 @@
     <string name="camera_preview_unavailable">"预览不可用"</string>
     <string name="camera_previous">"上一张"</string>
     <string name="camera_progress">"导入进度"</string>
+    <string name="camera_qr_guide">"对准相机「智能手机连接」画面中的二维码"</string>
+    <string name="camera_qr_invalid">"未识别到相机 Wi-Fi 二维码，请对准相机屏幕上的二维码。"</string>
+    <string name="camera_qr_permission">"需要相机权限才能扫描相机二维码，请允许相机权限或在下方手动连接 Wi-Fi。"</string>
+    <string name="camera_qr_unavailable">"无法打开相机扫码，请改用手动连接 Wi-Fi。"</string>
     <string name="camera_resume">"继续未完成"</string>
     <string name="camera_resume_previous">"恢复 %1$s 的联机"</string>
     <string name="camera_resume_registered">"已恢复已登记的接收任务。断线期间拍摄的照片请从相机手动导入。"</string>
@@ -185,6 +189,7 @@
     <string name="camera_saved">"已导入"</string>
     <string name="camera_saved_count">"已保存 %1$d / %2$d 张"</string>
     <string name="camera_saved_to_album">"已保存到系统相册"</string>
+    <string name="camera_scan_qr">"扫描相机二维码"</string>
     <string name="camera_scanning">"正在查找相机…"</string>
     <string name="camera_select">"选中"</string>
     <string name="camera_select_all">"全选。"</string>

@@ -282,6 +282,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, failure = null, message = null) }
         connectAfterStop { connection.useLegacyWifi() }
     }
+    fun connectWithWifiQr(credentials: CameraWifiQrCredentials) {
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
+        val model = credentials.model?.let(SonyCameraModel::fromAdvertisement) ?: SonyCameraModel.UNKNOWN
+        mutable.update { it.copy(model = model, failure = null, message = null) }
+        connectAfterStop { connection.connectWithWifiCredentials(credentials.ssid, credentials.password, credentials.model) }
+    }
     private fun connectAfterStop(connect: () -> Unit) {
         disconnect()
         val current = generation
@@ -373,6 +379,22 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun setTetherResume(resume: Boolean) { if (!tether.state.value.active) resumeTether = resume }
     fun confirmCardSaving(confirmed: Boolean) { if (!tether.state.value.active) mutable.update { it.copy(cardSavingConfirmed = confirmed) } }
     fun permissionDenied() { mutable.update { it.copy(message = R.string.camera_permissions) } }
+    fun qrCameraPermissionDenied() {
+        CameraDiagnostics.breadcrumb(
+            stage = "qrCameraPermissionDenied",
+            message = "Camera permission denied for QR scanner",
+            level = "warn",
+        )
+        mutable.update { it.copy(message = R.string.camera_qr_permission) }
+    }
+    fun qrScannerUnavailable() {
+        CameraDiagnostics.breadcrumb(
+            stage = "qrScannerUnavailable",
+            message = "Camera QR scanner unavailable",
+            level = "warn",
+        )
+        mutable.update { it.copy(message = R.string.camera_qr_unavailable) }
+    }
     fun dismissMessage() { mutable.update { it.copy(failure = null, message = null) } }
     /** 放弃全部读不出的导入记录：删除隔离日志，其待发布媒体由随后的孤儿清理回收。 */
     fun discardUnreadableLogs() {

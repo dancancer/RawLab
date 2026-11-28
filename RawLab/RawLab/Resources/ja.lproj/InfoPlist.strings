@@ -2,3 +2,4 @@
 "NSPhotoLibraryAddUsageDescription" = "読み込んだ写真や編集した写真を写真ライブラリに保存できます。";
 "NSBluetoothAlwaysUsageDescription" = "Sonyカメラを検索してペアリングし、カメラのWi-Fiに接続します。";
 "NSLocalNetworkUsageDescription" = "カメラに接続して原本を閲覧し、写真を受信してリモート撮影を行います。";
+"NSCameraUsageDescription" = "カメラ画面に表示された Wi-Fi QR コードをスキャンして接続します。";

@@ -2,3 +2,4 @@
 "NSPhotoLibraryAddUsageDescription" = "Permet d’enregistrer les photos importées ou modifiées dans votre photothèque.";
 "NSBluetoothAlwaysUsageDescription" = "Rechercher et associer votre appareil Sony pour rejoindre son Wi-Fi.";
 "NSLocalNetworkUsageDescription" = "Se connecter à l’appareil pour parcourir les originaux, recevoir des photos et photographier à distance.";
+"NSCameraUsageDescription" = "Scanne le QR code Wi-Fi affiché sur votre appareil photo pour établir la connexion.";

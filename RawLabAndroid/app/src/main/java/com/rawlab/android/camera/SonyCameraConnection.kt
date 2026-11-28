@@ -490,6 +490,38 @@ internal class SonyCameraConnection internal constructor(
         platform.post { beginOperation(); setStage(Stage.MANUAL_WIFI) }
     }
 
+    /** Joins the camera Wi-Fi hotspot directly using credentials scanned from its QR code. */
+    fun connectWithWifiCredentials(ssid: String, password: String, modelHint: String? = null) {
+        platform.post { connectWithWifiCredentialsOnMain(ssid, password, modelHint) }
+    }
+
+    private fun connectWithWifiCredentialsOnMain(ssid: String, password: String, modelHint: String?) {
+        beginOperation()
+        if (!isSupported()) return fail(Failure.UNSUPPORTED)
+        if (!platform.hasPermissions(cameraWifiPermissions(platform.sdkInt))) return fail(Failure.PERMISSION)
+        if (!platform.isLocationEnabled()) return fail(Failure.LOCATION_OFF)
+        if (!platform.isConnectivityAvailable()) return fail(Failure.WIFI)
+        if (!CameraWifiQrCode.isValidSsid(ssid) || !CameraWifiQrCode.isValidPassphrase(password)) {
+            fail(Failure.WIFI, "invalid QR Wi-Fi credentials")
+            return
+        }
+        selectedDevice = null
+        selectedId = "qr-wifi:$ssid"
+        pendingPassword = password
+        wifiCredentialsReady = true
+        CameraDiagnostics.breadcrumb(
+            stage = "qrWifiConnectStart",
+            message = "Connecting to camera Wi-Fi from scanned QR credentials",
+            context = mapOf(
+                "knownModel" to (modelHint?.let(SonyCameraModel::fromAdvertisement)?.name ?: SonyCameraModel.UNKNOWN.name),
+            ),
+        )
+        setStage(Stage.WIFI_STARTING)
+        if (!active) return
+        startBleTimeout(wifiStartingTimeoutMs)
+        waitForAccessPoint(ssid)
+    }
+
     /** 手动连接当前 Wi-Fi，以协议握手确认相机能力，不根据 SSID 推断机型。 */
     fun useLegacyWifi() {
         platform.post {
@@ -893,6 +925,9 @@ internal class SonyCameraConnection internal constructor(
         for (result in results) {
             val bssid = result.bssid ?: continue
             if (result.ssid == name && result.timestampMicros >= scanStartedMicros - WIFI_FRESHNESS_US) {
+                if (selectedId.isNullOrBlank()) {
+                    SonyCameraModel.networkIdentity(name, bssid)?.let { selectedId = it }
+                }
                 val security = selectWifiSecurity(result.capabilities)
                 debugLog("Found fresh cached AP; requesting WifiNetworkSpecifier (withBssid=true, security=$security)")
                 requestWiFi(
@@ -1236,7 +1271,7 @@ internal class SonyCameraConnection internal constructor(
                 if (expectedGeneration != generation || !active || pendingSSID == null) return@registerWifiScanReceiver
                 debugLog("Wi-Fi scan broadcast updated=$updated")
                 findFreshAccessPoint()
-                if (active && pendingSSID != null && !updated) {
+                if (active && pendingSSID != null && (!updated || selectedId?.startsWith("qr-wifi:") == true)) {
                     fallbackToSsidOnlyWifi()
                 }
             }

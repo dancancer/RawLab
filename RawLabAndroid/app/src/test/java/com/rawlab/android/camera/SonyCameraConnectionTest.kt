@@ -44,9 +44,11 @@ class SonyCameraConnectionTest {
             activeActions -= action
         }
         override fun elapsedMicros(): Long = nowMs * 1_000L
+        var bluetoothPresent = true
+        var bluetoothEnabled = true
         override fun hasPermissions(permissions: List<String>): Boolean = true
-        override fun isBluetoothPresent(): Boolean = true
-        override fun isBluetoothEnabled(): Boolean = true
+        override fun isBluetoothPresent(): Boolean = bluetoothPresent
+        override fun isBluetoothEnabled(): Boolean = bluetoothEnabled
         override fun isLocationEnabled(): Boolean = true
 
         var onScanEntry: ((SonyCameraConnection.BleScanEntry) -> Unit)? = null
@@ -1578,5 +1580,83 @@ class SonyCameraConnectionTest {
         assertFalse(isSonyCameraBleName(""))
         assertFalse(isSonyCameraBleName("   "))
         assertFalse(isSonyCameraBleName(null))
+    }
+
+    @Test
+    fun connectWithWifiCredentialsRequestsWifiSpecifierWithoutBluetooth() {
+        val platform = FakePlatform().apply {
+            bluetoothPresent = false
+            bluetoothEnabled = false
+        }
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+        platform.scanResultsList = listOf(
+            SonyCameraConnection.WifiApResult(
+                ssid = "DIRECT-6hE1:ZV-E10",
+                bssid = "36:90:ea:e6:55:39",
+                timestampMicros = platform.elapsedMicros(),
+                capabilities = "[WPA2-PSK-CCMP][ESS]",
+            ),
+        )
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "ft67rvUx", "ZV-E10")
+        platform.drain()
+
+        assertEquals("DIRECT-6hE1:ZV-E10", platform.requestedSsid)
+        assertEquals("ft67rvUx", platform.requestedPassword)
+        assertEquals("36:90:ea:e6:55:39", platform.requestedBssid)
+        assertEquals(SonyCameraConnection.WifiSecurity.WPA2, platform.requestedSecurity)
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertTrue(listener.failures.isEmpty())
+
+        val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
+        val network = stubNetwork()
+        val props = stubLinkProperties()
+        platform.gatewayForProperties = { gateway }
+        platform.activeWifiCallbacks!!.onAvailable(network, props)
+        platform.drain()
+        assertEquals("qr-wifi:DIRECT-6hE1:ZV-E10", listener.connected.single().third)
+        conn.close()
+    }
+
+    @Test
+    fun connectWithWifiCredentialsFallsBackToSsidOnlyWhenApScanMisses() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+        platform.scanResultsList = emptyList()
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "ft67rvUx", "ZV-E10")
+        platform.drain()
+        platform.advanceBy(5_000L)
+
+        assertEquals("DIRECT-6hE1:ZV-E10", platform.requestedSsid)
+        assertEquals("ft67rvUx", platform.requestedPassword)
+        assertNull(platform.requestedBssid)
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertTrue(listener.failures.isEmpty())
+
+        val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
+        val network = stubNetwork()
+        val props = stubLinkProperties()
+        platform.gatewayForProperties = { gateway }
+        platform.activeWifiCallbacks!!.onAvailable(network, props)
+        platform.drain()
+        assertEquals("qr-wifi:DIRECT-6hE1:ZV-E10", listener.connected.single().third)
+        conn.close()
+    }
+
+    @Test
+    fun connectWithWifiCredentialsRejectsInvalidPasswordWithoutRequestingWifi() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "short", "ZV-E10")
+        platform.drain()
+
+        assertNull(platform.requestedSsid)
+        assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+        conn.close()
     }
 }

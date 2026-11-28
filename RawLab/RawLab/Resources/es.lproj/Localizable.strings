@@ -328,6 +328,7 @@
 "宽度" = "Anchura";
 "密码" = "Contraseña";
 "密码已复制，仅本机可用，2 分钟后自动清除。" = "Contraseña copiada (solo en este dispositivo; se borra en 2 minutos).";
+"对准相机「智能手机连接」画面中的二维码" = "Apunta al código QR en la pantalla de Conexión con smartphone de la cámara";
 "对比" = "Comparación";
 "对比度" = "Contraste";
 "对比方式" = "Modo de comparación";
@@ -491,6 +492,7 @@
 "打开相机智能手机连接，在系统「设置 → 无线局域网」加入相机显示的 Wi-Fi（无互联网属正常情况），再返回点击“已连接，继续”。" = "Abre Conexión smartphone en la cámara, únete a su Wi-Fi en «Ajustes → Wi-Fi» (es normal que no tenga Internet) y vuelve para pulsar «Conectado, continuar».";
 "打开系统设置" = "Abrir ajustes del sistema";
 "打开编辑" = "Abrir en el editor";
+"扫描相机二维码" = "Escanear código QR de la cámara";
 "批量导出" = "Exportación por lotes";
 "批量编辑" = "Edición por lotes";
 "找不到 HDR 相机配置，请重新导入。" = "Falta el perfil de cámara HDR. Impórtalo de nuevo.";
@@ -585,6 +587,7 @@
 "无法导出诊断包。" = "No se pudo exportar el paquete de diagnóstico.";
 "无法导出错误日志。" = "No se pudo exportar el registro de errores.";
 "无法恢复编辑草稿，已保留已应用的调整。" = "No se pudo restaurar el borrador de edición; se conservaron los ajustes aplicados.";
+"无法打开相机扫码，请改用手动连接 Wi-Fi。" = "No se pudo abrir el escáner de cámara. Conéctate al Wi-Fi manualmente.";
 "无法按所选设置处理 JPEG。" = "No se pudo procesar el JPEG con estos ajustes.";
 "无法显示处理结果" = "No se pueden mostrar los resultados del procesamiento";
 "无法生成预览" = "No se puede generar una vista previa";
@@ -674,6 +677,7 @@
 "未编辑" = "Sin editar";
 "未能加入相机 Wi-Fi。请在系统 Wi-Fi 设置连接后返回。" = "No se pudo conectar al Wi-Fi de la cámara. Conéctate en los ajustes Wi-Fi del sistema y vuelve.";
 "未获得相册读取权限，请手动核对保存结果，或在系统设置中授权。" = "No se concedió acceso de lectura a Fotos. Comprueba los resultados manualmente o autoriza el acceso en Ajustes del sistema.";
+"未识别到相机 Wi-Fi 二维码，请对准相机屏幕上的二维码。" = "No se reconoció ningún código QR Wi-Fi de cámara. Apunta al código QR en la pantalla de la cámara.";
 "未读取到拍摄参数" = "No se pudieron leer los parámetros de captura";
 "未调整" = "Sin ajustar";
 "未选择任何调整。" = "No se ha seleccionado ningún ajuste.";
@@ -1172,6 +1176,7 @@
 "隐私设置" = "Configuración de privacidad";
 "隐藏密码" = "Ocultar contraseña";
 "隐藏照片信息" = "Ocultar información de la foto";
+"需要相机权限才能扫描相机二维码，请允许相机权限或在下方手动连接 Wi-Fi。" = "Se requiere permiso de cámara para escanear el código QR de la cámara. Permite el acceso a la cámara o conéctate al Wi-Fi manualmente abajo.";
 "霓虹都市 · 冷青粉紫" = "Ciudad de neón · cian frío y rosa púrpura";
 "青" = "Cian";
 "青色" = "Cianes";
