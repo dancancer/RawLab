@@ -16,6 +16,7 @@ struct IOSCameraWorkspace: View {
     @State private var confirmClearOriginals = false
     @State private var showHandoffPassword = false
     @State private var handoffPasswordCopied = false
+    @State private var showQRScanner = false
     private var previousCamera: CameraDeviceIdentity? { model.device ?? model.manifest.tether?.camera ?? model.manifest.jobs.last?.camera }
     /// iOS 进入后台即断开相机（系统也会挂起网络）；连接期间禁止自动锁屏，避免停下来挑片就被迫重连。
     private var keepsScreenAwake: Bool { path.contains(where: [Route.importer, .tether].contains) && model.connected }
@@ -80,6 +81,13 @@ struct IOSCameraWorkspace: View {
             Button(L10n.text("开始新的联机")) { choose(.tethering, resume: false) }
             Button(L10n.text("取消"), role: .cancel) {}
         } message: { Text(L10n.text("请先检查相机上的拍摄结果。新会话不会补拍，未完成照片可在导入记录中继续接收。")) }
+        .sheet(isPresented: $showQRScanner) {
+            IOSCameraQRScannerSheet { credentials in
+                showQRScanner = false
+                model.clearNotice()
+                connection.joinFromQRCode(credentials)
+            }
+        }
     }
     private var home: some View {
         ScrollView {
@@ -317,6 +325,10 @@ struct IOSCameraWorkspace: View {
                         Label(L10n.text("输入 Wi-Fi 名称与密码"), systemImage: "wifi").frame(maxWidth: .infinity, minHeight: 44)
                     }.buttonStyle(.bordered).disabled(mode == .tethering && !cardConfirmed)
                         .accessibilityIdentifier("camera.manual")
+                    Button { showQRScanner = true } label: {
+                        Label(L10n.text("扫描相机二维码"), systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity, minHeight: 44)
+                    }.buttonStyle(.bordered).disabled(mode == .tethering && !cardConfirmed)
+                        .accessibilityIdentifier("camera.scan.qr")
                 }
                 if !connection.status.isEmpty && !connection.connecting && !connection.searching {
                     Text(connection.status).font(.footnote).foregroundStyle(.secondary)

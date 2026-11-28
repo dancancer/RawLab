@@ -164,10 +164,12 @@ internal class CameraTetherTransport(
         if (usesLegacyContents) opened.captureWithConfirmedCardSaving(cardSavingConfirmed) else opened.capture()
     }
 
-    fun hasPendingHostImage(): Boolean {
+    fun pendingHostHint(): Long {
         checkRunning()
-        return usesLegacyContents && remote?.pendingLegacyCapture() != null
+        return if (usesLegacyContents) remote?.pendingLegacyHostHint() ?: 0L else 0L
     }
+
+    fun hasPendingHostImage(): Boolean = (pendingHostHint() and 0x8000L) != 0L
 
     fun drainHostImages(): List<CameraHostOriginal> {
         checkRunning()

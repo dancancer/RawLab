@@ -187,7 +187,7 @@ private fun CameraConnectionScreen(model: CameraImportViewModel, onBack: () -> U
                     ) {
                         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(stringResource(message), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                            if (message == R.string.camera_permissions) {
+                            if (message == R.string.camera_permissions || message == R.string.camera_qr_permission) {
                                 TextButton(
                                     onClick = {
                                         context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,

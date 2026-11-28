@@ -11,6 +11,7 @@ val allowedLicenseNames = mapOf(
     "The Apache License, Version 2.0" to "Apache-2.0",
     "Apache License, Version 2.0" to "Apache-2.0",
     "Apache-2.0" to "Apache-2.0",
+    "Apache 2.0" to "Apache-2.0",
 )
 // 通用许可的原文位置（assets/licenses 下）。
 val licenseTextFiles = mapOf("Apache-2.0" to "OpenCV-LICENSE.txt")
@@ -18,6 +19,8 @@ val licenseTextFiles = mapOf("Apache-2.0" to "OpenCV-LICENSE.txt")
 val reviewedLicenseCombinations = mapOf(
     "com.github.mwiede:jsch" to (setOf("Revised BSD", "ISC") to
         "BSD-3-Clause AND ISC (JSch with bundled JZlib and jBCrypt; license text: jsch-LICENSE.txt)"),
+    "androidx.camera:camera-core" to (setOf("The Apache Software License, Version 2.0", "BSD License") to
+        "Apache-2.0 AND BSD-3-Clause (AndroidX CameraX with bundled libyuv; license texts: OpenCV-LICENSE.txt, libyuv-LICENSE.txt)"),
 )
 
 data class PomInfo(val licenses: List<String>, val parent: String?)

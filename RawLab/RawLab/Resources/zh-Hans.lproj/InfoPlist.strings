@@ -2,3 +2,4 @@
 "NSPhotoLibraryAddUsageDescription" = "允许将导入或编辑的照片保存到照片图库。";
 "NSBluetoothAlwaysUsageDescription" = "用于查找并配对 Sony 相机，以连接相机 Wi-Fi。";
 "NSLocalNetworkUsageDescription" = "用于连接相机、浏览原件、接收照片及联机拍摄。";
+"NSCameraUsageDescription" = "用于扫描相机屏幕上的 Wi-Fi 二维码以建立连接。";

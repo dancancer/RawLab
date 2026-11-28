@@ -10526,5 +10526,45 @@
     "fr": "Ces modèles sont réservés à un usage non commercial. Chacun conserve la licence de ses auteurs d’origine et n’est pas soumis à la licence GPL de RawLab.",
     "ja": "以下のモデルは非商用利用のみに許諾されています。それぞれ原作者のライセンスが適用され、RawLab の GPL ライセンスは適用されません。",
     "es": "Estos modelos son solo para uso no comercial. Cada uno conserva la licencia de sus autores originales y no está cubierto por la licencia GPL de RawLab."
+  },
+  "扫描相机二维码": {
+    "zh-Hans": "扫描相机二维码",
+    "en": "Scan camera QR code",
+    "de": "Kamera-QR-Code scannen",
+    "fr": "Scanner le QR code de l’appareil",
+    "ja": "カメラの QR コードをスキャン",
+    "es": "Escanear código QR de la cámara"
+  },
+  "对准相机「智能手机连接」画面中的二维码": {
+    "zh-Hans": "对准相机「智能手机连接」画面中的二维码",
+    "en": "Point at the QR code on the camera’s Smartphone Connection screen",
+    "de": "Auf den QR-Code im Menü „Smartphone-Verbindung“ der Kamera richten",
+    "fr": "Visez le QR code affiché dans « Connexion smartphone » sur l’appareil",
+    "ja": "カメラの「スマートフォン接続」画面に表示された QR コードに向けてください",
+    "es": "Apunta al código QR en la pantalla de Conexión con smartphone de la cámara"
+  },
+  "未识别到相机 Wi-Fi 二维码，请对准相机屏幕上的二维码。": {
+    "zh-Hans": "未识别到相机 Wi-Fi 二维码，请对准相机屏幕上的二维码。",
+    "en": "No camera Wi-Fi QR code recognized. Aim at the QR code on the camera screen.",
+    "de": "Kein Kamera-WLAN-QR-Code erkannt. Richten Sie die Kamera auf den QR-Code des Kameradisplays.",
+    "fr": "Aucun QR code Wi-Fi d’appareil reconnu. Visez le QR code sur l’écran de l’appareil.",
+    "ja": "カメラの Wi-Fi QR コードを認識できません。カメラ画面の QR コードに向けてください。",
+    "es": "No se reconoció ningún código QR Wi-Fi de cámara. Apunta al código QR en la pantalla de la cámara."
+  },
+  "需要相机权限才能扫描相机二维码，请允许相机权限或在下方手动连接 Wi-Fi。": {
+    "zh-Hans": "需要相机权限才能扫描相机二维码，请允许相机权限或在下方手动连接 Wi-Fi。",
+    "en": "Camera permission is required to scan the camera QR code. Allow camera access or connect to Wi-Fi manually below.",
+    "de": "Für das Scannen des Kamera-QR-Codes ist die Kameraberechtigung erforderlich. Erlauben Sie den Kamerazugriff oder verbinden Sie sich unten manuell per WLAN.",
+    "fr": "L’autorisation d’accès à l’appareil photo est requise pour scanner le QR code. Autorisez l’accès ou connectez-vous manuellement au Wi-Fi ci-dessous.",
+    "ja": "カメラの QR コードをスキャンするにはカメラ権限が必要です。カメラへのアクセスを許可するか、下から手動で Wi-Fi に接続してください。",
+    "es": "Se requiere permiso de cámara para escanear el código QR de la cámara. Permite el acceso a la cámara o conéctate al Wi-Fi manualmente abajo."
+  },
+  "无法打开相机扫码，请改用手动连接 Wi-Fi。": {
+    "zh-Hans": "无法打开相机扫码，请改用手动连接 Wi-Fi。",
+    "en": "Could not open the camera scanner. Connect to Wi-Fi manually instead.",
+    "de": "Der Kamera-Scanner konnte nicht geöffnet werden. Verbinden Sie sich stattdessen manuell per WLAN.",
+    "fr": "Impossible d’ouvrir le scanner de l’appareil photo. Connectez-vous plutôt au Wi-Fi manuellement.",
+    "ja": "カメラのスキャナーを開けませんでした。手動で Wi-Fi に接続してください。",
+    "es": "No se pudo abrir el escáner de cámara. Conéctate al Wi-Fi manualmente."
   }
 }

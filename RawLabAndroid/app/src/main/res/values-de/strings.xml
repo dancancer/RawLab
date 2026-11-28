@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"Benutzername"</string>
     <string name="camera_auto">"Automatisch"</string>
     <string name="camera_back_photos">"Auswahl fortsetzen"</string>
+    <string name="camera_ble_manual_wifi">"Diese Kamera unterstützt keine automatische Bluetooth-Verbindung. Verbinden Sie sich manuell mit dem WLAN der Kamera."</string>
     <string name="camera_bluetooth">"Verbindung zur Kamera wird hergestellt …"</string>
     <string name="camera_bluetooth_off">"Schalten Sie Bluetooth am Smartphone ein und versuchen Sie es erneut."</string>
     <string name="camera_busy">"Ein Importvorgang läuft noch"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"Original nicht verfügbar"</string>
     <string name="camera_original_unavailable">"Originale nicht verfügbar"</string>
     <string name="camera_pairing">"Prüfen Sie die Kopplungsnummer auf dem Smartphone und der Kamera"</string>
+    <string name="camera_pairing_failed">"Die Bluetooth-Kopplung wurde nicht abgeschlossen. Prüfen Sie, ob sich die Kamera auf dem Bluetooth-Kopplungsbildschirm befindet, oder nutzen Sie unten „Mit Kamera-WLAN verbinden“."</string>
     <string name="camera_param_aperture">"Blende"</string>
     <string name="camera_param_busy">"Kameraeinstellungen werden aktualisiert …"</string>
     <string name="camera_param_ev">"Belichtungskorrektur"</string>
@@ -173,6 +175,10 @@
     <string name="camera_preview_unavailable">"Vorschau nicht verfügbar"</string>
     <string name="camera_previous">"Vorheriges Foto"</string>
     <string name="camera_progress">"Importfortschritt"</string>
+    <string name="camera_qr_guide">"Auf den QR-Code im Menü „Smartphone-Verbindung“ der Kamera richten"</string>
+    <string name="camera_qr_invalid">"Kein Kamera-WLAN-QR-Code erkannt. Richten Sie die Kamera auf den QR-Code des Kameradisplays."</string>
+    <string name="camera_qr_permission">"Für das Scannen des Kamera-QR-Codes ist die Kameraberechtigung erforderlich. Erlauben Sie den Kamerazugriff oder verbinden Sie sich unten manuell per WLAN."</string>
+    <string name="camera_qr_unavailable">"Der Kamera-Scanner konnte nicht geöffnet werden. Verbinden Sie sich stattdessen manuell per WLAN."</string>
     <string name="camera_resume">"Unvollständige fortsetzen"</string>
     <string name="camera_resume_previous">"Tethering mit %1$s fortsetzen"</string>
     <string name="camera_resume_registered">"Registrierte Übertragungen wurden wiederhergestellt. Importieren Sie während der Unterbrechung aufgenommene Fotos manuell von der Kamera."</string>
@@ -183,6 +189,7 @@
     <string name="camera_saved">"Importiert"</string>
     <string name="camera_saved_count">"%1$d / %2$d Fotos gespeichert"</string>
     <string name="camera_saved_to_album">"In der Systemgalerie gespeichert"</string>
+    <string name="camera_scan_qr">"Kamera-QR-Code scannen"</string>
     <string name="camera_scanning">"Kamera wird gesucht …"</string>
     <string name="camera_select">"Auswählen"</string>
     <string name="camera_select_all">"Alle auswählen"</string>

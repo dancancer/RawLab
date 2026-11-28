@@ -41,9 +41,10 @@ class CameraTetherStateTest {
     }
 
     @Test fun aRequestedShotChecksTheCardEvenIfTheHostNotificationIsMissing() {
-        assertFalse(needsCardReconciliation(SonyCameraModel.ZVE10, false, 3_999, 0, 1_000))
-        assertTrue(needsCardReconciliation(SonyCameraModel.ZVE10, false, 4_000, 0, 1_000))
-        assertFalse(needsCardReconciliation(SonyCameraModel.ZVE10, false, 6_000, 5_000, 1_000))
+        assertFalse(needsCardReconciliation(SonyCameraModel.ZVE10, false, 6_999, 0, 1_000))
+        assertTrue(needsCardReconciliation(SonyCameraModel.ZVE10, false, 7_000, 0, 1_000))
+        assertFalse(needsCardReconciliation(SonyCameraModel.ZVE10, false, 12_999, 5_000, 1_000))
+        assertTrue(needsCardReconciliation(SonyCameraModel.ZVE10, false, 13_000, 5_000, 1_000))
     }
 
     @Test fun aHostNotificationDoesNotWaitForTheIdleCardCheck() {

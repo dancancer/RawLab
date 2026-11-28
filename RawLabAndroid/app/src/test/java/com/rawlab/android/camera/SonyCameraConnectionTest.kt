@@ -1,10 +1,14 @@
 package com.rawlab.android.camera
 
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.net.LinkProperties
 import android.net.Network
+import com.rawlab.android.R
+import com.rawlab.android.diagnostics.DiagnosticEnvironmentInfo
+import com.rawlab.android.diagnostics.DiagnosticSessionStore
 import com.rawlab.android.editor.TestEditorApplication
 import org.junit.Assert.*
 import org.junit.Test
@@ -40,9 +44,11 @@ class SonyCameraConnectionTest {
             activeActions -= action
         }
         override fun elapsedMicros(): Long = nowMs * 1_000L
+        var bluetoothPresent = true
+        var bluetoothEnabled = true
         override fun hasPermissions(permissions: List<String>): Boolean = true
-        override fun isBluetoothPresent(): Boolean = true
-        override fun isBluetoothEnabled(): Boolean = true
+        override fun isBluetoothPresent(): Boolean = bluetoothPresent
+        override fun isBluetoothEnabled(): Boolean = bluetoothEnabled
         override fun isLocationEnabled(): Boolean = true
 
         var onScanEntry: ((SonyCameraConnection.BleScanEntry) -> Unit)? = null
@@ -57,8 +63,18 @@ class SonyCameraConnectionTest {
             }
         }
 
-        override fun registerBondReceiver(onBondChanged: (String, Int) -> Unit): SonyCameraConnection.Handle =
-            object : SonyCameraConnection.Handle { override fun close() = Unit }
+        var onBondChangedCallback: ((String, Int) -> Unit)? = null
+        var bondReceiverClosed = false
+        override fun registerBondReceiver(onBondChanged: (String, Int) -> Unit): SonyCameraConnection.Handle {
+            onBondChangedCallback = onBondChanged
+            bondReceiverClosed = false
+            return object : SonyCameraConnection.Handle {
+                override fun close() {
+                    bondReceiverClosed = true
+                    if (onBondChangedCallback === onBondChanged) onBondChangedCallback = null
+                }
+            }
+        }
 
         var wifiScanReturn = true
         var scanResultsList: List<SonyCameraConnection.WifiApResult> = emptyList()
@@ -153,30 +169,47 @@ class SonyCameraConnectionTest {
 
     private class FakeGatt(
         override val address: String = "AA:BB:CC:DD:EE:FF",
+        private val requiredCharacteristics: Boolean = true,
+        private val wifiOnCharacteristic: Boolean = requiredCharacteristics,
+        private val mtuResult: Int = 158,
+        private val mtuStatus: Int = BluetoothGatt.GATT_SUCCESS,
+        private val requestMtuReturn: Boolean = true,
+        private val pairingInitStatus: Int = BluetoothGatt.GATT_SUCCESS,
+        private val serviceSummary: String = if (requiredCharacteristics) "8000cc00:[cc06,cc07,cc08],8000ee00:[ee01]" else "none",
     ) : SonyCameraConnection.GattHandle {
         var callback: SonyCameraConnection.GattClientCallback? = null
         var disconnected = false
         var closed = false
+        var discoverServicesCalls = 0
+        var writePairingInitCalled = false
         var writeWifiOnCalled = false
+        var readSsidCalled = false
         override fun requestMtu(mtu: Int): Boolean {
-            callback?.onMtuChanged(this, 158, BluetoothGatt.GATT_SUCCESS)
+            if (!requestMtuReturn) return false
+            callback?.onMtuChanged(this, mtuResult, mtuStatus)
             return true
         }
         override fun discoverServices(): Boolean {
+            discoverServicesCalls++
             callback?.onServicesDiscovered(this, BluetoothGatt.GATT_SUCCESS)
             return true
         }
-        override fun hasRequiredCharacteristics(): Boolean = true
-        override fun hasWifiOnCharacteristic(): Boolean = true
+        override fun hasRequiredCharacteristics(): Boolean = requiredCharacteristics
+        override fun hasWifiOnCharacteristic(): Boolean = wifiOnCharacteristic
+        override fun sonyServiceSummary(): String = serviceSummary
         override fun writePairingInit(): Boolean {
-            callback?.onCharacteristicWrite(this, UUID.fromString("0000ee01-0000-1000-8000-00805f9b34fb"), BluetoothGatt.GATT_SUCCESS)
+            writePairingInitCalled = true
+            callback?.onCharacteristicWrite(this, UUID.fromString("0000ee01-0000-1000-8000-00805f9b34fb"), pairingInitStatus)
             return true
         }
         override fun writeWifiOn(): Boolean {
             writeWifiOnCalled = true
             return true
         }
-        override fun readSsid(): Boolean = true
+        override fun readSsid(): Boolean {
+            readSsidCalled = true
+            return true
+        }
         override fun readPassword(): Boolean = true
         override fun disconnect() { disconnected = true }
         override fun close() { closed = true }
@@ -186,8 +219,10 @@ class SonyCameraConnectionTest {
         val stages = mutableListOf<SonyCameraConnection.Stage>()
         val failures = mutableListOf<SonyCameraConnection.Failure>()
         val connected = mutableListOf<Triple<Network, InetAddress, String>>()
+        var manualWifiFallbackCount = 0
         override fun onCandidates(items: List<CameraCandidate>) = Unit
         override fun onStage(stage: SonyCameraConnection.Stage) { stages += stage }
+        override fun onManualWifiFallback() { manualWifiFallbackCount++ }
         override fun onConnected(network: Network, address: InetAddress, cameraId: String) {
             connected += Triple(network, address, cameraId)
         }
@@ -1031,5 +1066,597 @@ class SonyCameraConnectionTest {
             nowMs = 250L,
         )
         assertEquals("sony-wifi:aa:bb:cc:dd:ee:ff", upgradeSelector.pollSelected(nowMs = 250L)!!.second)
+    }
+
+    @Test
+    fun unbondedCameraWithoutRequiredCharacteristicsFallsBackToManualWifiWithoutBonding() {
+        // Case A: ZV-E10 advertises BLE, is unbonded, negotiates small MTU (23), and lacks 8000cc00/8000ee00.
+        // Must probe GATT first, NEVER call createBond(), close GATT, and switch directly to MANUAL_WIFI.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt = FakeGatt(
+                address = "34:90:EA:E6:D5:3A",
+                requiredCharacteristics = false,
+                mtuResult = 23,
+            )
+            var createBondCalls = 0
+            var gattConnectCalls = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt.address,
+                    name = "ZV-E10",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb ->
+                        gattConnectCalls++
+                        gatt.callback = cb
+                        gatt
+                    },
+                    createBond = {
+                        createBondCalls++
+                        true
+                    },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt.address)
+            platform.drain()
+
+            assertEquals("Must open GATT before bonding to probe services", 1, gattConnectCalls)
+            assertEquals("Must not call createBond() before service discovery", 0, createBondCalls)
+            assertEquals(SonyCameraConnection.Stage.BLUETOOTH, listener.stages.last())
+
+            gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+
+            assertEquals(0, createBondCalls)
+            assertEquals(1, gatt.discoverServicesCalls)
+            assertTrue("GATT must be closed on MANUAL_WIFI fallback", gatt.disconnected && gatt.closed)
+            assertEquals(SonyCameraConnection.Stage.MANUAL_WIFI, listener.stages.last())
+            assertEquals(1, listener.manualWifiFallbackCount)
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+
+        // Case B: requestMtu() returns false -> still discovers services and falls back cleanly to MANUAL_WIFI.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt = FakeGatt(
+                address = "34:90:EA:E6:D5:3A",
+                requiredCharacteristics = false,
+                requestMtuReturn = false,
+            )
+            var createBondCalls = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt.address,
+                    name = "ZV-E10",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb -> gatt.callback = cb; gatt },
+                    createBond = { createBondCalls++; true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt.address)
+            platform.drain()
+            gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+
+            assertEquals(0, createBondCalls)
+            assertEquals(1, gatt.discoverServicesCalls)
+            assertEquals(SonyCameraConnection.Stage.MANUAL_WIFI, listener.stages.last())
+            assertEquals(1, listener.manualWifiFallbackCount)
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+    }
+
+    @Test
+    fun unbondedCameraWithRequiredCharacteristicsDiscoversServicesThenBondsAndProceeds() {
+        // Case A: GATT stays up across BOND_BONDED -> proceeds directly to writePairingInit + writeWifiOn.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true)
+            var createBondCalls = 0
+            var gattConnectCalls = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb -> gattConnectCalls++; gatt.callback = cb; gatt },
+                    createBond = { createBondCalls++; true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt.address)
+            platform.drain()
+            assertEquals(1, gattConnectCalls)
+            assertEquals(0, createBondCalls)
+
+            gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+
+            assertEquals("Must call createBond() only after confirming required GATT services", 1, createBondCalls)
+            assertEquals(SonyCameraConnection.Stage.PAIRING, listener.stages.last())
+            assertFalse("Must wait for BOND_BONDED before writing ee01", gatt.writePairingInitCalled)
+
+            platform.onBondChangedCallback!!.invoke(gatt.address, BluetoothDevice.BOND_BONDING)
+            platform.onBondChangedCallback!!.invoke(gatt.address, BluetoothDevice.BOND_BONDED)
+            platform.drain()
+
+            assertEquals(1, gattConnectCalls)
+            assertTrue(gatt.writePairingInitCalled)
+            assertTrue(gatt.writeWifiOnCalled)
+            assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+
+        // Case B: GATT drops during PAIRING -> does not fail; reopens GATT on BOND_BONDED without re-bonding.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt1 = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true)
+            val gatt2 = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true)
+            var createBondCalls = 0
+            var gattConnectCalls = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt1.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb ->
+                        gattConnectCalls++
+                        val handle = if (gattConnectCalls == 1) gatt1 else gatt2
+                        handle.callback = cb
+                        handle
+                    },
+                    createBond = { createBondCalls++; true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt1.address)
+            platform.drain()
+            gatt1.callback!!.onConnectionStateChange(gatt1, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(SonyCameraConnection.Stage.PAIRING, listener.stages.last())
+            assertEquals(1, createBondCalls)
+
+            // Disconnect during PAIRING must close stale GATT without failing the bond attempt.
+            gatt1.callback!!.onConnectionStateChange(gatt1, 19, BluetoothProfile.STATE_DISCONNECTED)
+            platform.drain()
+            assertTrue(listener.failures.isEmpty())
+            assertTrue(gatt1.closed)
+
+            platform.onBondChangedCallback!!.invoke(gatt1.address, BluetoothDevice.BOND_BONDED)
+            platform.drain()
+            assertEquals(2, gattConnectCalls)
+            assertEquals(1, createBondCalls)
+
+            gatt2.callback!!.onConnectionStateChange(gatt2, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(1, createBondCalls)
+            assertTrue(gatt2.writePairingInitCalled)
+            assertTrue(gatt2.writeWifiOnCalled)
+            assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+
+        // Case C: Bonding rejected (BOND_NONE) -> fails with Failure.PAIRING and dedicated pairing failure string.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true)
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb -> gatt.callback = cb; gatt },
+                    createBond = { true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt.address)
+            platform.drain()
+            gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(SonyCameraConnection.Stage.PAIRING, listener.stages.last())
+
+            platform.onBondChangedCallback!!.invoke(gatt.address, BluetoothDevice.BOND_NONE)
+            platform.drain()
+            assertEquals(listOf(SonyCameraConnection.Failure.PAIRING), listener.failures)
+            assertEquals(R.string.camera_pairing_failed, cameraFailureMessage(SonyCameraConnection.Failure.PAIRING))
+            assertNotEquals(R.string.camera_connection_failed, cameraFailureMessage(SonyCameraConnection.Failure.PAIRING))
+        }
+
+        // Case D: Bonded camera WITH required services but small MTU (<67) still fails with Failure.BLUETOOTH.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true, mtuResult = 23)
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = true,
+                    connectGatt = { cb -> gatt.callback = cb; gatt },
+                    createBond = { true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt.address)
+            platform.drain()
+            gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+
+            assertEquals(listOf(SonyCameraConnection.Failure.BLUETOOTH), listener.failures)
+            assertFalse(gatt.writePairingInitCalled)
+        }
+
+        // Case E: Reused pre-bond GATT fails ee01 with GATT_INSUFFICIENT_AUTHENTICATION (5) -> retries once on fresh post-bond GATT.
+        run {
+            val platform = FakePlatform()
+            val listener = RecordingListener()
+            val gatt1 = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true, pairingInitStatus = 5)
+            val gatt2 = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true, pairingInitStatus = BluetoothGatt.GATT_SUCCESS)
+            var createBondCalls = 0
+            var gattConnectCalls = 0
+            val (conn, _) = createConnection(platform, listener)
+
+            conn.scan()
+            platform.drain()
+            platform.onScanEntry?.invoke(
+                SonyCameraConnection.BleScanEntry(
+                    id = gatt1.address,
+                    name = "ILCE-7CM2",
+                    isSony = true,
+                    isBonded = false,
+                    connectGatt = { cb ->
+                        gattConnectCalls++
+                        val handle = if (gattConnectCalls == 1) gatt1 else gatt2
+                        handle.callback = cb
+                        handle
+                    },
+                    createBond = { createBondCalls++; true },
+                ),
+            )
+            platform.drain()
+            conn.connect(gatt1.address)
+            platform.drain()
+            gatt1.callback!!.onConnectionStateChange(gatt1, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(SonyCameraConnection.Stage.PAIRING, listener.stages.last())
+
+            platform.onBondChangedCallback!!.invoke(gatt1.address, BluetoothDevice.BOND_BONDED)
+            platform.drain()
+            assertTrue(gatt1.writePairingInitCalled)
+            assertTrue(gatt1.closed)
+            assertEquals("Must reopen GATT once when pre-bond handle rejects ee01", 2, gattConnectCalls)
+            assertTrue(listener.failures.isEmpty())
+
+            gatt2.callback!!.onConnectionStateChange(gatt2, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+            platform.drain()
+            assertEquals(1, createBondCalls)
+            assertTrue(gatt2.writePairingInitCalled)
+            assertTrue(gatt2.writeWifiOnCalled)
+            assertEquals(SonyCameraConnection.Stage.WIFI_STARTING, listener.stages.last())
+            assertTrue(listener.failures.isEmpty())
+            conn.close()
+        }
+    }
+
+    @Test
+    fun cameraConnectionRecordsRedactedDiagnosticsBreadcrumbsAndErrors() {
+        val diagDir = Files.createTempDirectory("sony-conn-diag-test").toFile()
+        val store = DiagnosticSessionStore(
+            directory = diagDir,
+            environment = DiagnosticEnvironmentInfo(
+                appVersion = "0.13.0",
+                build = "25",
+                osVersion = "15",
+                deviceModel = "TEST_DEVICE",
+            ),
+        )
+        store.setRecordingEnabled(true)
+        CameraDiagnostics.storeOverride = store
+        try {
+            // 1. ZV-E10 manual Wi-Fi fallback records breadcrumbs without leaking MAC or raw custom ad name.
+            run {
+                val platform = FakePlatform()
+                val listener = RecordingListener()
+                val gatt = FakeGatt(
+                    address = "34:90:EA:E6:D5:3A",
+                    requiredCharacteristics = false,
+                    mtuResult = 23,
+                    serviceSummary = "none",
+                )
+                val (conn, _) = createConnection(platform, listener)
+                conn.scan()
+                platform.drain()
+                platform.onScanEntry?.invoke(
+                    SonyCameraConnection.BleScanEntry(
+                        id = gatt.address,
+                        name = "ZV-E10.secret-owner",
+                        isSony = true,
+                        isBonded = false,
+                        connectGatt = { cb -> gatt.callback = cb; gatt },
+                        createBond = { true },
+                    ),
+                )
+                platform.drain()
+                conn.connect(gatt.address)
+                platform.drain()
+                gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+                platform.drain()
+                conn.close()
+            }
+
+            // 2. Pairing rejection records recent-error entry under operation "camera".
+            run {
+                val platform = FakePlatform()
+                val listener = RecordingListener()
+                val gatt = FakeGatt(address = "B0:65:3A:51:C5:E8", requiredCharacteristics = true)
+                val (conn, _) = createConnection(platform, listener)
+                conn.scan()
+                platform.drain()
+                platform.onScanEntry?.invoke(
+                    SonyCameraConnection.BleScanEntry(
+                        id = gatt.address,
+                        name = "ILCE-7CM2.my-private-tag",
+                        isSony = true,
+                        isBonded = false,
+                        connectGatt = { cb -> gatt.callback = cb; gatt },
+                        createBond = { true },
+                    ),
+                )
+                platform.drain()
+                conn.connect(gatt.address)
+                platform.drain()
+                gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+                platform.drain()
+                platform.onBondChangedCallback!!.invoke(gatt.address, BluetoothDevice.BOND_NONE)
+                platform.drain()
+            }
+
+            // 3. Wi-Fi credential exchange never leaks SSID, password, or IPv4 addresses.
+            run {
+                val platform = FakePlatform()
+                val listener = RecordingListener()
+                val gatt = FakeGatt(address = "AA:BB:CC:DD:EE:FF", requiredCharacteristics = true)
+                val (conn, _) = createConnection(platform, listener)
+                advanceToWifiStarting(conn, platform, gatt)
+                platform.scanResultsList = listOf(
+                    SonyCameraConnection.WifiApResult(
+                        "DIRECT-x123:ILCE-7CM2",
+                        "02:11:22:33:44:55",
+                        platform.elapsedMicros() + 3_000_000L,
+                    ),
+                )
+                deliverCredentials(platform, gatt)
+                CameraDiagnostics.error(
+                    stage = "openImportSession",
+                    error = java.io.IOException("connect failed to 192.168.122.1:15740"),
+                )
+                conn.close()
+            }
+
+            val pkg = store.buildReportPackage(stopActiveRecording = true)
+            val breadcrumbEntries = pkg.breadcrumbsJSONL
+                .lineSequence()
+                .filter { it.isNotBlank() }
+                .map { org.json.JSONObject(it) }
+                .toList()
+            val cameraStages = breadcrumbEntries
+                .filter { it.optString("category") == "camera" }
+                .map { it.optString("stage") }
+                .toSet()
+            assertTrue("Expected bleConnectStart breadcrumb", "bleConnectStart" in cameraStages)
+            assertTrue("Expected gattServicesDiscovered breadcrumb", "gattServicesDiscovered" in cameraStages)
+            assertTrue("Expected bleManualWifiFallback breadcrumb", "bleManualWifiFallback" in cameraStages)
+            assertTrue("Expected bleBondStart breadcrumb", "bleBondStart" in cameraStages)
+            assertTrue("Expected bleBondState breadcrumb", "bleBondState" in cameraStages)
+            assertTrue("Expected wifiRequest breadcrumb", "wifiRequest" in cameraStages)
+
+            val errorsJson = org.json.JSONObject(pkg.recentErrorsJSON)
+            val events = errorsJson.getJSONArray("events")
+            val errorItems = (0 until events.length()).map { events.getJSONObject(it) }
+            assertTrue(
+                "Expected PAIRING failure in recent-errors.json",
+                errorItems.any {
+                    it.optString("operation") == "camera" &&
+                        it.optString("stage") == "bleWifiConnection" &&
+                        it.optString("message").contains("PAIRING")
+                },
+            )
+            assertTrue(
+                "Expected openImportSession failure in recent-errors.json",
+                errorItems.any {
+                    it.optString("operation") == "camera" &&
+                        it.optString("stage") == "openImportSession"
+                },
+            )
+
+            val combined = pkg.breadcrumbsJSONL + "\n" + pkg.recentErrorsJSON
+            assertFalse("MAC address must not leak to diagnostics", combined.contains("34:90:EA:E6:D5:3A", ignoreCase = true))
+            assertFalse("MAC address must not leak to diagnostics", combined.contains("B0:65:3A:51:C5:E8", ignoreCase = true))
+            assertFalse("Custom camera name must not leak", combined.contains("secret-owner"))
+            assertFalse("Custom camera name must not leak", combined.contains("my-private-tag"))
+            assertFalse("Camera SSID must not leak", combined.contains("DIRECT-x123"))
+            assertFalse("Camera Wi-Fi password must not leak", combined.contains("secretpass"))
+            assertFalse("Camera IP must be redacted", combined.contains("192.168.122.1"))
+        } finally {
+            CameraDiagnostics.storeOverride = null
+            diagDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun bondedCameraWithoutWifiOnFallsBackToManualWifiWithoutWritingEe01() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val gatt = FakeGatt(
+            address = "34:90:EA:E6:D5:3A",
+            requiredCharacteristics = false,
+            wifiOnCharacteristic = false,
+            mtuResult = 517,
+            serviceSummary = "8000cc00:[cc01(N),cc02(W),cc05(RN),cc06(R),cc07(R)],8000ee00:[ee01(W)]",
+        )
+        var createBondCalls = 0
+        val (conn, _) = createConnection(platform, listener)
+
+        conn.scan()
+        platform.drain()
+        platform.onScanEntry?.invoke(
+            SonyCameraConnection.BleScanEntry(
+                id = gatt.address,
+                name = "ZV-E10",
+                isSony = true,
+                isBonded = true,
+                connectGatt = { cb -> gatt.callback = cb; gatt },
+                createBond = { createBondCalls++; true },
+            ),
+        )
+        platform.drain()
+        conn.connect(gatt.address)
+        platform.drain()
+        gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+        platform.drain()
+
+        assertEquals(0, createBondCalls)
+        assertFalse("Must not write ee01 when cc08 is absent", gatt.writePairingInitCalled)
+        assertFalse("Must not read cc06 when cc08 is absent", gatt.readSsidCalled)
+        assertEquals(SonyCameraConnection.Stage.MANUAL_WIFI, listener.stages.last())
+        assertEquals(1, listener.manualWifiFallbackCount)
+        assertTrue(listener.failures.isEmpty())
+        conn.close()
+    }
+
+    @Test
+    fun sonyCameraBleNameMatcherIdentifiesSonyModelsAndRejectsUnrelatedDevices() {
+        assertTrue(isSonyCameraBleName("ZV-E10"))
+        assertTrue(isSonyCameraBleName("ZV-1"))
+        assertTrue(isSonyCameraBleName("ILCE-7CM2.xp"))
+        assertTrue(isSonyCameraBleName("ILCE-7M4"))
+        assertTrue(isSonyCameraBleName("ILME-FX3"))
+        assertTrue(isSonyCameraBleName("DSC-RX100M7"))
+        assertTrue(isSonyCameraBleName("zv-e10"))
+        assertFalse(isSonyCameraBleName("HUAWEI FreeBuds SE 4 ANC"))
+        assertFalse(isSonyCameraBleName("ONIX XP1"))
+        assertFalse(isSonyCameraBleName(""))
+        assertFalse(isSonyCameraBleName("   "))
+        assertFalse(isSonyCameraBleName(null))
+    }
+
+    @Test
+    fun connectWithWifiCredentialsRequestsWifiSpecifierWithoutBluetooth() {
+        val platform = FakePlatform().apply {
+            bluetoothPresent = false
+            bluetoothEnabled = false
+        }
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+        platform.scanResultsList = listOf(
+            SonyCameraConnection.WifiApResult(
+                ssid = "DIRECT-6hE1:ZV-E10",
+                bssid = "36:90:ea:e6:55:39",
+                timestampMicros = platform.elapsedMicros(),
+                capabilities = "[WPA2-PSK-CCMP][ESS]",
+            ),
+        )
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "ft67rvUx", "ZV-E10")
+        platform.drain()
+
+        assertEquals("DIRECT-6hE1:ZV-E10", platform.requestedSsid)
+        assertEquals("ft67rvUx", platform.requestedPassword)
+        assertEquals("36:90:ea:e6:55:39", platform.requestedBssid)
+        assertEquals(SonyCameraConnection.WifiSecurity.WPA2, platform.requestedSecurity)
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertTrue(listener.failures.isEmpty())
+
+        val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
+        val network = stubNetwork()
+        val props = stubLinkProperties()
+        platform.gatewayForProperties = { gateway }
+        platform.activeWifiCallbacks!!.onAvailable(network, props)
+        platform.drain()
+        assertEquals("qr-wifi:DIRECT-6hE1:ZV-E10", listener.connected.single().third)
+        conn.close()
+    }
+
+    @Test
+    fun connectWithWifiCredentialsFallsBackToSsidOnlyWhenApScanMisses() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+        platform.scanResultsList = emptyList()
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "ft67rvUx", "ZV-E10")
+        platform.drain()
+        platform.advanceBy(5_000L)
+
+        assertEquals("DIRECT-6hE1:ZV-E10", platform.requestedSsid)
+        assertEquals("ft67rvUx", platform.requestedPassword)
+        assertNull(platform.requestedBssid)
+        assertEquals(SonyCameraConnection.Stage.WIFI_CONFIRMATION, listener.stages.last())
+        assertTrue(listener.failures.isEmpty())
+
+        val gateway = InetAddress.getByName("192.168.122.1") as Inet4Address
+        val network = stubNetwork()
+        val props = stubLinkProperties()
+        platform.gatewayForProperties = { gateway }
+        platform.activeWifiCallbacks!!.onAvailable(network, props)
+        platform.drain()
+        assertEquals("qr-wifi:DIRECT-6hE1:ZV-E10", listener.connected.single().third)
+        conn.close()
+    }
+
+    @Test
+    fun connectWithWifiCredentialsRejectsInvalidPasswordWithoutRequestingWifi() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val (conn, _) = createConnection(platform, listener)
+
+        conn.connectWithWifiCredentials("DIRECT-6hE1:ZV-E10", "short", "ZV-E10")
+        platform.drain()
+
+        assertNull(platform.requestedSsid)
+        assertEquals(listOf(SonyCameraConnection.Failure.WIFI), listener.failures)
+        conn.close()
     }
 }

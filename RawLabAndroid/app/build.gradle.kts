@@ -343,6 +343,12 @@ dependencies {
     implementation("com.fasterxml.jackson.core:jackson-core:2.18.3")
     implementation("com.github.mwiede:jsch:2.28.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    val cameraXVersion = "1.4.2"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
+    implementation("com.google.zxing:core:3.5.3")
     debugImplementation("androidx.compose.ui:ui-tooling")
     // Keep ActivityScenario helpers in the debug app instead of launching another package.
     debugImplementation("androidx.test:core:1.6.1")

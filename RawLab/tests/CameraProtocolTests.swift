@@ -53,6 +53,28 @@ import Foundation
         var credentials = Data([10, 0, 0]); credentials.append("DIRECT-X".data(using: .ascii)!)
         try check(try CameraWire.wifiCredential(credentials, password: false) == "DIRECT-X", "BLE credentials use the framed ASCII value")
         try rejects("Credential length mismatch is rejected") { _ = try CameraWire.wifiCredential(Data([2, 0, 0, 65]), password: false) }
+        try check(
+            CameraWifiQrCode.parse("W01:S:6hE1;P:ft67rvUx;C:ZV-E10;M:3690EAE65539;") ==
+                CameraWifiQrCredentials(ssid: "DIRECT-6hE1:ZV-E10", password: "ft67rvUx", model: "ZV-E10", format: .sonyW01),
+            "Sony W01 QR code expands suffix and model into DIRECT SSID"
+        )
+        try check(
+            CameraWifiQrCode.parse("W01:S:DIRECT-mRE1:ILCE-6400;P:pass1234;C:ILCE-6400;M:707414B1EFA7;") ==
+                CameraWifiQrCredentials(ssid: "DIRECT-mRE1:ILCE-6400", password: "pass1234", model: "ILCE-6400", format: .sonyW01),
+            "Sony W01 QR code preserves full DIRECT SSID containing colon"
+        )
+        try check(
+            CameraWifiQrCode.parse(#"WIFI:T:WPA;S:DIRECT-a1b2\:ZV-E10;P:pa\;ss\\1234;;"#) ==
+                CameraWifiQrCredentials(ssid: "DIRECT-a1b2:ZV-E10", password: #"pa;ss\1234"#, model: "ZV-E10", format: .standardWifi),
+            "Standard WIFI QR code unescapes colons, semicolons, and backslashes"
+        )
+        try check(
+            CameraWifiQrCode.parse("WIFI:T:nopass;S:Guest;P:12345678;;") == nil &&
+                CameraWifiQrCode.parse("WIFI:T:WEP;S:OldCam;P:12345678;;") == nil &&
+                CameraWifiQrCode.parse("W01:S:6hE1;P:short;C:ZV-E10;") == nil &&
+                CameraWifiQrCode.parse("https://example.com") == nil,
+            "QR parser rejects open/WEP, short passwords, and unrelated payloads"
+        )
         var page = Data(repeating: 0, count: 144); page.appendLE(UInt32(101))
         try rejects("Oversized mobile page is rejected before allocation") { _ = try CameraWire.mobilePage(page, owner: UUID()) }
         var properties = Data(); properties.appendLE(UInt64(1)); properties.appendLE(UInt16(0x5010)); properties.appendLE(UInt16(3))

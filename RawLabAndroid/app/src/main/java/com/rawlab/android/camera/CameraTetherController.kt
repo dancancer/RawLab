@@ -213,10 +213,9 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                         .onSuccess { publishParameters(current, it) }
                         .onFailure { publishParameterFailure(current, CameraParameterFailure.UNAVAILABLE, it.message) }
                     openLive(current, liveUrl, this)
-                    // 基线之前的临时手机队列不属于这次新拍范围。
-                    if (current.transport.usesLegacyContents) current.transport.drainHostImages()
                     var lastCheck = clock()
                     var requestedAt = 0L
+                    var lastHostHint = 0L
                     var busy = 0
                     var lastParameterRead = clock()
                     ready(current)
@@ -239,7 +238,6 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                                 current.run = checkNotNull(current.run).copy(shutterRequestedAt = System.currentTimeMillis()).also(journal::save)
                                 updateRun(checkNotNull(current.run))
                             }
-                            requestedAt = clock()
                             try { current.transport.capture() }
                             catch (notSent: SonyTetherSession.CaptureNotSentException) {
                                 storeLock.withLock {
@@ -251,17 +249,33 @@ internal class CameraTetherController(private val scope: CoroutineScope, private
                                 mutable.update { it.copy(phase = CameraTetherPhase.READY, failure = CameraTetherFailure.SETTINGS) }
                                 continue
                             }
+                            requestedAt = clock()
+                            lastHostHint = 0L
                             current.requestAcknowledged = true
+                            if (com.rawlab.android.BuildConfig.DEBUG) {
+                                android.util.Log.d("RawLabCamera", "tether capture acknowledged legacy=${current.transport.usesLegacyContents}")
+                            }
                             mutable.update { it.copy(phase = CameraTetherPhase.WAITING) }
                         }
                         val now = clock()
-                        val pending = current.transport.usesLegacyContents && current.transport.hasPendingHostImage()
+                        val hostHint = if (current.transport.usesLegacyContents) current.transport.pendingHostHint() else 0L
+                        val pending = (hostHint and 0x8000L) != 0L && hostHint != lastHostHint
+                        lastHostHint = hostHint
                         if (needsCardReconciliation(model, pending, now, lastCheck, requestedAt, current.transport.usesLegacyContents)) {
-                            val host = if (pending) current.transport.drainHostImages() else emptyList()
-                            if (current.transport.usesLegacyContents) stopLive(current)
-                            if (current.transport.usesLegacyContents) mutable.update { it.copy(phase = CameraTetherPhase.RECEIVING) }
+                            if (com.rawlab.android.BuildConfig.DEBUG) {
+                                android.util.Log.d(
+                                    "RawLabCamera",
+                                    "tether reconcile pending=$pending legacy=${current.transport.usesLegacyContents} sinceReq=${if (requestedAt != 0L) now - requestedAt else -1} sinceCheck=${now - lastCheck}",
+                                )
+                            }
+                            if (current.transport.usesLegacyContents) {
+                                // D215 仅作为有新拍照片的发现线索；直接停取景并切到 0x9212 从卡内下载一次原件，
+                                // 避免先经 0xffffc001 白白下载一遍再丢弃，同时切 0x9212 本身也会清掉旧 D215 状态。
+                                stopLive(current)
+                                mutable.update { it.copy(phase = CameraTetherPhase.RECEIVING) }
+                            }
                             try {
-                                observe(current, cameraId, model, destination, host)
+                                observe(current, cameraId, model, destination)
                                 busy = 0
                             } catch (error: SonyTetherSession.RemoteResponseException) {
                                 if (current.transport.usesLegacyContents || error.kind != CameraMediaSession.FailureKind.TRANSIENT_READ || ++busy > 10) throw error
@@ -725,11 +739,12 @@ internal fun monotonicMillis() = System.nanoTime() / 1_000_000
 /** 只结束本连接中已确认请求的收片等待；恢复旧任务不能代替未知快门结果的人工确认。 */
 internal fun canFinishShutterWait(acknowledged: Boolean, priorBatches: Set<String>?, job: CameraImportJob): Boolean =
     acknowledged && priorBatches != null && job.id !in priorBatches && job.status == CameraJobStatus.COMPLETE
-/** 快门请求本身也是核对线索，不能因 host 通知缺失而一直等到空闲周期。 */
+/** 快门请求本身也是核对线索，不能因 host 通知缺失而一直等到空闲周期；首检未见到新片时按有界间隔重试，避免单次过早切卡后干等超时。 */
 internal fun needsCardReconciliation(model: SonyCameraModel, hostPending: Boolean, now: Long, lastCheck: Long, requestedAt: Long, legacyContents: Boolean = model == SonyCameraModel.ZVE10): Boolean {
-    val requestedSinceCheck = requestedAt > lastCheck && now - requestedAt >= 3_000
+    val requestedFirstCheck = requestedAt > lastCheck && now - requestedAt >= if (legacyContents) 6_000L else 3_000L
+    val requestedRetryCheck = requestedAt != 0L && lastCheck >= requestedAt && now - lastCheck >= if (legacyContents) 8_000L else 1_500L
     // ZV 逐对象核对会暂停取景；有拍摄线索时立即处理，空闲时降低完整核对频率。
-    return hostPending || requestedSinceCheck || now - lastCheck >= if (legacyContents) 120_000L else 1_500L
+    return hostPending || requestedFirstCheck || requestedRetryCheck || now - lastCheck >= if (legacyContents) 120_000L else 1_500L
 }
 private class CameraTetherLiveException : IOException("Camera live view unavailable")
 private class CameraTetherUnknownShotException : IOException("Capture result needs confirmation")

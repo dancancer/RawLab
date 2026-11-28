@@ -7753,6 +7753,48 @@
       "formats": [],
       "source": "120 中画幅",
       "types": []
+    },
+    "camera_scan_qr": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "扫描相机二维码",
+      "types": []
+    },
+    "camera_qr_guide": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "对准相机「智能手机连接」画面中的二维码",
+      "types": []
+    },
+    "camera_qr_invalid": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "未识别到相机 Wi-Fi 二维码，请对准相机屏幕上的二维码。",
+      "types": []
+    },
+    "camera_qr_permission": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "需要相机权限才能扫描相机二维码，请允许相机权限或在下方手动连接 Wi-Fi。",
+      "types": []
+    },
+    "camera_qr_unavailable": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "无法打开相机扫码，请改用手动连接 Wi-Fi。",
+      "types": []
+    },
+    "camera_ble_manual_wifi": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "此相机不支持蓝牙自动连接，请手动连接相机 Wi-Fi。",
+      "types": []
+    },
+    "camera_pairing_failed": {
+      "file": "strings.xml",
+      "formats": [],
+      "source": "蓝牙配对未完成。请确认相机处于蓝牙配对画面，或改用下方的“连接相机 Wi-Fi”手动连接。",
+      "types": []
     }
   },
   "overrides": {
@@ -9286,6 +9328,22 @@
       "fr": "Limite du grand côté (px)",
       "ja": "長辺の上限（px）",
       "zh-Hans": "长边上限（px）"
+    },
+    "此相机不支持蓝牙自动连接，请手动连接相机 Wi-Fi。": {
+      "zh-Hans": "此相机不支持蓝牙自动连接，请手动连接相机 Wi-Fi。",
+      "en": "This camera does not support automatic Bluetooth connection. Connect to the camera’s Wi-Fi manually.",
+      "de": "Diese Kamera unterstützt keine automatische Bluetooth-Verbindung. Verbinden Sie sich manuell mit dem WLAN der Kamera.",
+      "fr": "Cet appareil photo ne prend pas en charge la connexion Bluetooth automatique. Connectez-vous manuellement au Wi-Fi de l’appareil.",
+      "ja": "このカメラは Bluetooth 自動接続に対応していません。カメラの Wi-Fi に手動で接続してください。",
+      "es": "Esta cámara no admite la conexión automática por Bluetooth. Conéctate manualmente al Wi-Fi de la cámara."
+    },
+    "蓝牙配对未完成。请确认相机处于蓝牙配对画面，或改用下方的“连接相机 Wi-Fi”手动连接。": {
+      "zh-Hans": "蓝牙配对未完成。请确认相机处于蓝牙配对画面，或改用下方的“连接相机 Wi-Fi”手动连接。",
+      "en": "Bluetooth pairing did not complete. Check that the camera is on its Bluetooth pairing screen, or use “Connect to camera Wi-Fi” below.",
+      "de": "Die Bluetooth-Kopplung wurde nicht abgeschlossen. Prüfen Sie, ob sich die Kamera auf dem Bluetooth-Kopplungsbildschirm befindet, oder nutzen Sie unten „Mit Kamera-WLAN verbinden“.",
+      "fr": "Le jumelage Bluetooth n’a pas abouti. Vérifiez que l’appareil est sur son écran de jumelage Bluetooth ou utilisez « Se connecter au Wi-Fi de l’appareil » ci-dessous.",
+      "ja": "Bluetooth ペアリングが完了しませんでした。カメラが Bluetooth ペアリング画面であることを確認するか、下の「カメラ Wi-Fi に接続」を使用してください。",
+      "es": "El emparejamiento Bluetooth no se completó. Comprueba que la cámara esté en la pantalla de emparejamiento Bluetooth o usa «Conectar al Wi-Fi de la cámara» abajo."
     }
   }
 }

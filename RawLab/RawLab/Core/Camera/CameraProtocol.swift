@@ -660,3 +660,147 @@ enum CameraWire {
         return side
     }
 }
+
+struct CameraWifiQrCredentials: Equatable {
+    enum Format: Equatable {
+        case sonyW01
+        case standardWifi
+    }
+
+    let ssid: String
+    let password: String
+    let model: String?
+    let format: Format
+}
+
+enum CameraWifiQrCode {
+    private static let maxPayloadLength = 1024
+    private static let allowedWifiSecurity: Set<String> = ["", "WPA", "WPA2", "WPA3", "SAE", "WPA/WPA2", "WPA2/WPA3"]
+
+    static func parse(_ raw: String) -> CameraWifiQrCredentials? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= maxPayloadLength else { return nil }
+        let upper = trimmed.uppercased()
+        if upper.hasPrefix("W01:") {
+            return parseSonyW01(String(trimmed.dropFirst(4)))
+        }
+        if upper.hasPrefix("WIFI:") {
+            return parseStandardWifi(String(trimmed.dropFirst(5)))
+        }
+        return nil
+    }
+
+    private static func parseSonyW01(_ body: String) -> CameraWifiQrCredentials? {
+        let fields = splitEscapedFields(body, unescapeColons: false)
+        guard let rawSsid = fields["S"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawSsid.isEmpty,
+              let password = fields["P"] else { return nil }
+        let modelField = fields["C"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedModel = (modelField?.isEmpty == false) ? modelField : nil
+        let ssid: String
+        if !rawSsid.hasPrefix("DIRECT-"), let normalizedModel {
+            ssid = "DIRECT-\(rawSsid):\(normalizedModel)"
+        } else {
+            ssid = rawSsid
+        }
+        guard isValidSsid(ssid), isValidPassphrase(password) else { return nil }
+        return CameraWifiQrCredentials(
+            ssid: ssid,
+            password: password,
+            model: normalizedModel ?? extractDirectModel(ssid),
+            format: .sonyW01
+        )
+    }
+
+    private static func parseStandardWifi(_ body: String) -> CameraWifiQrCredentials? {
+        let fields = splitEscapedFields(body, unescapeColons: true)
+        let security = fields["T"]?.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() ?? ""
+        guard allowedWifiSecurity.contains(security) else { return nil }
+        guard let ssid = fields["S"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !ssid.isEmpty,
+              let password = fields["P"],
+              isValidSsid(ssid),
+              isValidPassphrase(password) else { return nil }
+        return CameraWifiQrCredentials(
+            ssid: ssid,
+            password: password,
+            model: extractDirectModel(ssid),
+            format: .standardWifi
+        )
+    }
+
+    private static func splitEscapedFields(_ body: String, unescapeColons: Bool) -> [String: String] {
+        var result: [String: String] = [:]
+        var token = ""
+        let chars = Array(body)
+        var index = 0
+        func flushToken() {
+            guard !token.isEmpty else { return }
+            if let colon = token.firstIndex(of: ":"), colon > token.startIndex {
+                let key = String(token[..<colon]).trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                let rawValue = String(token[token.index(after: colon)...])
+                if !key.isEmpty, result[key] == nil {
+                    result[key] = unescapeValue(rawValue, unescapeColons: unescapeColons)
+                }
+            }
+            token.removeAll(keepingCapacity: true)
+        }
+        while index < chars.count {
+            let ch = chars[index]
+            if ch == "\\", index + 1 < chars.count {
+                token.append(ch)
+                token.append(chars[index + 1])
+                index += 2
+                continue
+            }
+            if ch == ";" {
+                flushToken()
+                index += 1
+                continue
+            }
+            token.append(ch)
+            index += 1
+        }
+        flushToken()
+        return result
+    }
+
+    private static func unescapeValue(_ raw: String, unescapeColons: Bool) -> String {
+        var out = ""
+        let chars = Array(raw)
+        var index = 0
+        while index < chars.count {
+            let ch = chars[index]
+            if ch == "\\", index + 1 < chars.count {
+                let next = chars[index + 1]
+                let shouldUnescape = next == "\\" || next == ";" ||
+                    (unescapeColons && (next == ":" || next == "," || next == "\""))
+                if shouldUnescape {
+                    out.append(next)
+                    index += 2
+                    continue
+                }
+            }
+            out.append(ch)
+            index += 1
+        }
+        return out
+    }
+
+    static func isValidSsid(_ ssid: String) -> Bool {
+        let count = ssid.utf8.count
+        guard (1...32).contains(count) else { return false }
+        return !ssid.unicodeScalars.contains { $0.value < 32 || $0.value == 127 }
+    }
+
+    static func isValidPassphrase(_ password: String) -> Bool {
+        guard (8...63).contains(password.count) else { return false }
+        return password.unicodeScalars.allSatisfy { $0.value >= 32 && $0.value <= 126 }
+    }
+
+    private static func extractDirectModel(_ ssid: String) -> String? {
+        guard ssid.hasPrefix("DIRECT-"), let colon = ssid.firstIndex(of: ":") else { return nil }
+        let suffix = String(ssid[ssid.index(after: colon)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return suffix.isEmpty ? nil : suffix
+    }
+}

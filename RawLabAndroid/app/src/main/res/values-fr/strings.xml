@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"Nom d\'utilisateur"</string>
     <string name="camera_auto">"Auto"</string>
     <string name="camera_back_photos">"Continuer la sélection"</string>
+    <string name="camera_ble_manual_wifi">"Cet appareil photo ne prend pas en charge la connexion Bluetooth automatique. Connectez-vous manuellement au Wi-Fi de l’appareil."</string>
     <string name="camera_bluetooth">"Connexion à l’appareil photo…"</string>
     <string name="camera_bluetooth_off">"Activez le Bluetooth du téléphone, puis réessayez."</string>
     <string name="camera_busy">"Une tâche d’importation est toujours en cours"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"Original inaccessible"</string>
     <string name="camera_original_unavailable">"Originaux indisponibles"</string>
     <string name="camera_pairing">"Vérifiez le numéro d’association sur le téléphone et l’appareil photo"</string>
+    <string name="camera_pairing_failed">"Le jumelage Bluetooth n’a pas abouti. Vérifiez que l’appareil est sur son écran de jumelage Bluetooth ou utilisez « Se connecter au Wi-Fi de l’appareil » ci-dessous."</string>
     <string name="camera_param_aperture">"Ouverture"</string>
     <string name="camera_param_busy">"Mise à jour des réglages de l’appareil…"</string>
     <string name="camera_param_ev">"Correction d’exposition"</string>
@@ -173,6 +175,10 @@
     <string name="camera_preview_unavailable">"Aperçu indisponible"</string>
     <string name="camera_previous">"Photo précédente"</string>
     <string name="camera_progress">"Progression de l’importation"</string>
+    <string name="camera_qr_guide">"Visez le QR code affiché dans « Connexion smartphone » sur l’appareil"</string>
+    <string name="camera_qr_invalid">"Aucun QR code Wi-Fi d’appareil reconnu. Visez le QR code sur l’écran de l’appareil."</string>
+    <string name="camera_qr_permission">"L’autorisation d’accès à l’appareil photo est requise pour scanner le QR code. Autorisez l’accès ou connectez-vous manuellement au Wi-Fi ci-dessous."</string>
+    <string name="camera_qr_unavailable">"Impossible d’ouvrir le scanner de l’appareil photo. Connectez-vous plutôt au Wi-Fi manuellement."</string>
     <string name="camera_resume">"Reprendre les éléments restants"</string>
     <string name="camera_resume_previous">"Reprendre le mode connecté de %1$s"</string>
     <string name="camera_resume_registered">"Les transferts enregistrés ont été restaurés. Importez manuellement les photos prises pendant l’interruption."</string>
@@ -183,6 +189,7 @@
     <string name="camera_saved">"Importée"</string>
     <string name="camera_saved_count">"%1$d / %2$d photos enregistrées"</string>
     <string name="camera_saved_to_album">"Enregistré dans la galerie système"</string>
+    <string name="camera_scan_qr">"Scanner le QR code de l’appareil"</string>
     <string name="camera_scanning">"Recherche de l’appareil photo…"</string>
     <string name="camera_select">"Sélectionner"</string>
     <string name="camera_select_all">"Tout sélectionner"</string>

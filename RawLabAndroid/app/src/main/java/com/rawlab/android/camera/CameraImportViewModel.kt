@@ -282,6 +282,12 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         mutable.update { it.copy(model = SonyCameraModel.UNKNOWN, failure = null, message = null) }
         connectAfterStop { connection.useLegacyWifi() }
     }
+    fun connectWithWifiQr(credentials: CameraWifiQrCredentials) {
+        if (mutable.value.transferring || mutable.value.preparing || mutable.value.closing) return
+        val model = credentials.model?.let(SonyCameraModel::fromAdvertisement) ?: SonyCameraModel.UNKNOWN
+        mutable.update { it.copy(model = model, failure = null, message = null) }
+        connectAfterStop { connection.connectWithWifiCredentials(credentials.ssid, credentials.password, credentials.model) }
+    }
     private fun connectAfterStop(connect: () -> Unit) {
         disconnect()
         val current = generation
@@ -373,6 +379,22 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     fun setTetherResume(resume: Boolean) { if (!tether.state.value.active) resumeTether = resume }
     fun confirmCardSaving(confirmed: Boolean) { if (!tether.state.value.active) mutable.update { it.copy(cardSavingConfirmed = confirmed) } }
     fun permissionDenied() { mutable.update { it.copy(message = R.string.camera_permissions) } }
+    fun qrCameraPermissionDenied() {
+        CameraDiagnostics.breadcrumb(
+            stage = "qrCameraPermissionDenied",
+            message = "Camera permission denied for QR scanner",
+            level = "warn",
+        )
+        mutable.update { it.copy(message = R.string.camera_qr_permission) }
+    }
+    fun qrScannerUnavailable() {
+        CameraDiagnostics.breadcrumb(
+            stage = "qrScannerUnavailable",
+            message = "Camera QR scanner unavailable",
+            level = "warn",
+        )
+        mutable.update { it.copy(message = R.string.camera_qr_unavailable) }
+    }
     fun dismissMessage() { mutable.update { it.copy(failure = null, message = null) } }
     /** 放弃全部读不出的导入记录：删除隔离日志，其待发布媒体由随后的孤儿清理回收。 */
     fun discardUnreadableLogs() {
@@ -416,8 +438,18 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
 
     override fun onCandidates(items: List<CameraCandidate>) { mutable.update { it.copy(candidates = items) } }
     override fun onStage(stage: SonyCameraConnection.Stage) { mutable.update { it.copy(stage = stage, failure = null, message = null) } }
+    override fun onManualWifiFallback() { mutable.update { it.copy(message = R.string.camera_ble_manual_wifi) } }
     override fun onConnected(network: Network, address: InetAddress, cameraId: String) {
         debugCameraLog("onConnected mode=${mutable.value.mode} closing=${mutable.value.closing} foreground=$foreground")
+        CameraDiagnostics.breadcrumb(
+            stage = "networkConnected",
+            message = "Camera Wi-Fi network ready",
+            context = mapOf(
+                "mode" to mutable.value.mode.name,
+                "closing" to mutable.value.closing.toString(),
+                "foreground" to foreground.toString(),
+            ),
+        )
         if (mutable.value.closing) return
         if (!foreground) {
             pendingConnected = PendingConnection(network, address, cameraId)
@@ -472,7 +504,16 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                             null
                         }
                     },
-                    onDiagnostic = { debugCameraLog(SonySshTunnel.redactIps(it)) },
+                    onDiagnostic = { message ->
+                        val redacted = SonySshTunnel.redactIps(message)
+                        debugCameraLog(redacted)
+                        CameraDiagnostics.breadcrumb(
+                            stage = "sessionAuthProbe",
+                            message = redacted,
+                            level = "warn",
+                            context = mapOf("mode" to targetMode.name),
+                        )
+                    },
                 )
             }
 
@@ -485,6 +526,11 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
 
             when (resolution) {
                 is CameraAuthResolution.Direct -> {
+                    CameraDiagnostics.breadcrumb(
+                        stage = "sessionResolved",
+                        message = "Camera session resolved over direct PTP/IP",
+                        context = mapOf("transport" to "direct", "mode" to targetMode.name),
+                    )
                     if (targetMode == CameraMode.IMPORT) {
                         val connected = resolution.importSession
                             ?: return@launch onFailure(SonyCameraConnection.Failure.DISCONNECTED)
@@ -509,6 +555,11 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                     }
                 }
                 is CameraAuthResolution.SshConnected -> {
+                    CameraDiagnostics.breadcrumb(
+                        stage = "sessionResolved",
+                        message = "Camera session resolved over SSH tunnel",
+                        context = mapOf("transport" to "ssh", "mode" to targetMode.name),
+                    )
                     val tunnel = resolution.tunnel
                     sshTunnel?.close()
                     sshTunnel = tunnel
@@ -537,10 +588,23 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                     }
                 }
                 is CameraAuthResolution.PromptAuth -> {
+                    CameraDiagnostics.breadcrumb(
+                        stage = "sessionAuthPrompt",
+                        message = "Camera requires SSH Access Authentication",
+                        context = mapOf(
+                            "fingerprintChanged" to resolution.prompt.fingerprintChanged.toString(),
+                            "hasSavedCredentials" to resolution.prompt.hasSavedCredentials.toString(),
+                        ),
+                    )
                     pendingAuthTarget = PendingConnection(network, address, cameraId)
                     mutable.update { it.copy(stage = null, accessAuth = resolution.prompt, message = null) }
                 }
                 is CameraAuthResolution.Failed -> {
+                    CameraDiagnostics.failure(
+                        stage = "sessionAuthFailed",
+                        reason = resolution.failure.name,
+                        context = mapOf("mode" to targetMode.name),
+                    )
                     pendingDirectTether?.close()
                     onFailure(resolution.failure)
                 }
@@ -654,6 +718,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                     }
                     else -> {
                         debugCameraLog("submitAccessAuth failed: ${error.javaClass.simpleName}: ${SonySshTunnel.redactIps(error.message)}")
+                        CameraDiagnostics.error(stage = "sshAuthSubmit", error = error)
                         onFailure(SonyCameraConnection.Failure.DISCONNECTED)
                     }
                 }
@@ -730,6 +795,11 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
         }.onFailure { error ->
             val redactedMessage = error.message?.replace(Regex("""\b\d{1,3}(?:\.\d{1,3}){3}\b"""), "<ip>")
             debugCameraLog("connectImport failed ${error.javaClass.simpleName} at ${error.stackTrace.firstOrNull()} msg=$redactedMessage")
+            CameraDiagnostics.error(
+                stage = "openImportSession",
+                error = error,
+                context = mapOf("initializeRemote" to initializeRemote.toString()),
+            )
             onFailure(
                 if (error is CameraMediaSession.UnsupportedCameraException) {
                     SonyCameraConnection.Failure.UNSUPPORTED
@@ -742,6 +812,15 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
 
     private fun finishImportConnect(connected: ConnectedCameraImport, cameraId: String) {
         debugCameraLog("connectImport success assets=${connected.listing.assets.size} model=${connected.device.model} fw=${connected.device.firmware}")
+        CameraDiagnostics.breadcrumb(
+            stage = "importConnected",
+            message = "Camera import session connected",
+            context = mapOf(
+                "assetCount" to connected.listing.assets.size.toString(),
+                "knownModel" to SonyCameraModel.fromIdentity(connected.device.model, connected.device.firmware).name,
+                "legacySession" to (connected.session is SonyLegacyImportSession).toString(),
+            ),
+        )
         device = connected.device
         this@CameraImportViewModel.cameraId = cameraId
         assets = connected.listing.assets.associateBy { it.key() }
@@ -778,6 +857,7 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
                 }
                 if (!alive && current == generation) {
                     debugCameraLog("import heartbeat failed")
+                    CameraDiagnostics.failure(stage = "importHeartbeat", reason = "DISCONNECTED")
                     onFailure(SonyCameraConnection.Failure.DISCONNECTED)
                     return@launch
                 }
@@ -786,15 +866,13 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
     }
 
     override fun onFailure(reason: SonyCameraConnection.Failure) {
-        val message = when (reason) {
-            SonyCameraConnection.Failure.UNSUPPORTED -> R.string.camera_supported
-            SonyCameraConnection.Failure.PERMISSION -> R.string.camera_permissions
-            SonyCameraConnection.Failure.BLUETOOTH_OFF -> R.string.camera_bluetooth_off
-            SonyCameraConnection.Failure.LOCATION_OFF -> R.string.camera_location_off
-            SonyCameraConnection.Failure.NOT_FOUND -> R.string.camera_not_found
-            SonyCameraConnection.Failure.DISCONNECTED -> R.string.camera_disconnected
-            else -> R.string.camera_connection_failed
-        }
+        CameraDiagnostics.breadcrumb(
+            stage = "cameraFailureUi",
+            message = "Presenting camera connection failure",
+            level = "warn",
+            context = mapOf("reason" to reason.name),
+        )
+        val message = cameraFailureMessage(reason)
         disconnect()
         mutable.update { it.copy(message = message) }
     }
@@ -1109,6 +1187,17 @@ internal class CameraImportViewModel(application: Application) : AndroidViewMode
 }
 
 internal const val CAMERA_IMPORT_HEARTBEAT_MS = 10_000L
+
+internal fun cameraFailureMessage(reason: SonyCameraConnection.Failure): Int = when (reason) {
+    SonyCameraConnection.Failure.UNSUPPORTED -> R.string.camera_supported
+    SonyCameraConnection.Failure.PERMISSION -> R.string.camera_permissions
+    SonyCameraConnection.Failure.BLUETOOTH_OFF -> R.string.camera_bluetooth_off
+    SonyCameraConnection.Failure.LOCATION_OFF -> R.string.camera_location_off
+    SonyCameraConnection.Failure.NOT_FOUND -> R.string.camera_not_found
+    SonyCameraConnection.Failure.PAIRING -> R.string.camera_pairing_failed
+    SonyCameraConnection.Failure.DISCONNECTED -> R.string.camera_disconnected
+    else -> R.string.camera_connection_failed
+}
 
 /** 相机能完整应答（含错误响应码）即视为会话仍在；只有已关闭或传输层异常才算断开。 */
 internal fun pingCameraSession(opened: CameraMediaSession?): Boolean {

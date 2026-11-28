@@ -219,6 +219,13 @@ struct IOSCameraManualWiFiHandoff: Equatable {
         } catch { fail(L10n.text("无法读取相机 Wi-Fi 信息，请手动连接。")) }
     }
 
+    func joinFromQRCode(_ credentials: CameraWifiQrCredentials) {
+        stop()
+        connectionKey = "SSID:" + credentials.ssid
+        label = credentials.model ?? credentials.ssid
+        join(ssid: credentials.ssid, password: credentials.password, preserveIdentity: true)
+    }
+
     func join(ssid: String, password: String, preserveIdentity: Bool = false) {
         let name = ssid.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.utf8.count <= 32, (8...63).contains(password.utf8.count) else {

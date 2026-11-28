@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"Username"</string>
     <string name="camera_auto">"Auto"</string>
     <string name="camera_back_photos">"Continue selecting"</string>
+    <string name="camera_ble_manual_wifi">"This camera does not support automatic Bluetooth connection. Connect to the camera’s Wi-Fi manually."</string>
     <string name="camera_bluetooth">"Connecting to camera…"</string>
     <string name="camera_bluetooth_off">"Turn on Bluetooth on your phone and try again."</string>
     <string name="camera_busy">"An import task is still in progress"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"Original unavailable"</string>
     <string name="camera_original_unavailable">"Originals unavailable"</string>
     <string name="camera_pairing">"Check the pairing number on your phone and camera"</string>
+    <string name="camera_pairing_failed">"Bluetooth pairing did not complete. Check that the camera is on its Bluetooth pairing screen, or use “Connect to camera Wi-Fi” below."</string>
     <string name="camera_param_aperture">"Aperture"</string>
     <string name="camera_param_busy">"Updating camera settings…"</string>
     <string name="camera_param_ev">"Exposure compensation"</string>
@@ -173,6 +175,10 @@
     <string name="camera_preview_unavailable">"Preview unavailable"</string>
     <string name="camera_previous">"Previous photo"</string>
     <string name="camera_progress">"Import progress"</string>
+    <string name="camera_qr_guide">"Point at the QR code on the camera’s Smartphone Connection screen"</string>
+    <string name="camera_qr_invalid">"No camera Wi-Fi QR code recognized. Aim at the QR code on the camera screen."</string>
+    <string name="camera_qr_permission">"Camera permission is required to scan the camera QR code. Allow camera access or connect to Wi-Fi manually below."</string>
+    <string name="camera_qr_unavailable">"Could not open the camera scanner. Connect to Wi-Fi manually instead."</string>
     <string name="camera_resume">"Continue unfinished"</string>
     <string name="camera_resume_previous">"Resume tethering with %1$s"</string>
     <string name="camera_resume_registered">"Registered transfers have been restored. Import photos taken while disconnected manually from the camera."</string>
@@ -183,6 +189,7 @@
     <string name="camera_saved">"Imported"</string>
     <string name="camera_saved_count">"Saved %1$d / %2$d photos"</string>
     <string name="camera_saved_to_album">"Saved to system gallery"</string>
+    <string name="camera_scan_qr">"Scan camera QR code"</string>
     <string name="camera_scanning">"Searching for camera…"</string>
     <string name="camera_select">"Select"</string>
     <string name="camera_select_all">"Select all"</string>

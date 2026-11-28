@@ -2,3 +2,4 @@
 "NSPhotoLibraryAddUsageDescription" = "Permite guardar fotos importadas o editadas en tu fototeca.";
 "NSBluetoothAlwaysUsageDescription" = "Buscar y enlazar tu cámara Sony para conectar su Wi-Fi.";
 "NSLocalNetworkUsageDescription" = "Conectar con la cámara para explorar originales, recibir fotos y disparar a distancia.";
+"NSCameraUsageDescription" = "Escanea el código QR Wi-Fi mostrado en tu cámara para conectarte.";

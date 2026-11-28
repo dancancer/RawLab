@@ -227,6 +227,7 @@
 		5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */; };
 		019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */; };
 		C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */; };
+		AA2026112823100000000001 /* IOSCameraQRScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2026112823100000000002 /* IOSCameraQRScanner.swift */; };
 		D941E65A54F645C882ABF673 /* CameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */; };
 		D941E65A54F645C882ABF675 /* CameraJPEGProcessing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */; };
 		D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */; };
@@ -553,6 +554,7 @@
 		D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraBrowser.swift"; sourceTree = "<group>"; };
 		2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraTether.swift"; sourceTree = "<group>"; };
 		93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraWorkspace.swift"; sourceTree = "<group>"; };
+		AA2026112823100000000002 /* IOSCameraQRScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraQRScanner.swift"; sourceTree = "<group>"; };
 		D941E65A54F645C882ABF674 /* CameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraIncrementalImport.swift"; sourceTree = "<group>"; };
 		D941E65A54F645C882ABF676 /* CameraJPEGProcessing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraJPEGProcessing.swift"; sourceTree = "<group>"; };
 		D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IOSCameraIncrementalImport.swift"; sourceTree = "<group>"; };
@@ -1041,6 +1043,7 @@
 			isa = PBXGroup;
 			children = (
 				93E7376E68242B4014EB181C /* IOSCameraWorkspace.swift */,
+				AA2026112823100000000002 /* IOSCameraQRScanner.swift */,
 				2EA91506B497FFB8E5975C08 /* IOSCameraTether.swift */,
 				D5F21B6EE6116E86020A1D2A /* IOSCameraBrowser.swift */,
 				D941E65A54F645C882ABF678 /* IOSCameraIncrementalImport.swift */,
@@ -1382,6 +1385,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C009FC8A9FF9663CB6E78F2E /* IOSCameraWorkspace.swift in Sources */,
+				AA2026112823100000000001 /* IOSCameraQRScanner.swift in Sources */,
 				019C9D6304C5447B6D340843 /* IOSCameraTether.swift in Sources */,
 				5AC6FBB3EBE874026F931E0E /* IOSCameraBrowser.swift in Sources */,
 				D941E65A54F645C882ABF677 /* IOSCameraIncrementalImport.swift in Sources */,

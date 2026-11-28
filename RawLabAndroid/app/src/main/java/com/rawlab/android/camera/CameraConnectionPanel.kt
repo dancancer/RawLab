@@ -36,30 +36,40 @@ internal fun cameraWifiPermissions(sdk: Int): List<String> = buildList {
     if (sdk >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.NEARBY_WIFI_DEVICES)
 }
 
-private enum class CameraConnectionAction { DISCOVER, JOIN, CURRENT_WIFI }
+private enum class CameraConnectionAction { DISCOVER, JOIN, CURRENT_WIFI, QR_SCAN }
 
 @Composable
 internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImportViewModel, enabled: Boolean = true) {
     val context = LocalContext.current
     val sdk = Build.VERSION.SDK_INT
+    val hasCamera = remember(context) { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
     var pendingAction by rememberSaveable { mutableStateOf<CameraConnectionAction?>(null) }
     var pendingCandidate by rememberSaveable { mutableStateOf<String?>(null) }
+    var qrScannerOpen by rememberSaveable { mutableStateOf(false) }
     fun required(action: CameraConnectionAction) = when (action) {
         CameraConnectionAction.DISCOVER -> cameraBluetoothPermissions(sdk)
         CameraConnectionAction.CURRENT_WIFI -> cameraWifiPermissions(sdk)
         CameraConnectionAction.JOIN -> (cameraBluetoothPermissions(sdk) + cameraWifiPermissions(sdk)).distinct()
+        CameraConnectionAction.QR_SCAN -> (listOf(Manifest.permission.CAMERA) + cameraWifiPermissions(sdk)).distinct()
     }
     fun perform(action: CameraConnectionAction) = when (action) {
         CameraConnectionAction.DISCOVER -> model.scan()
         CameraConnectionAction.CURRENT_WIFI -> model.useLegacyWifi()
         CameraConnectionAction.JOIN -> pendingCandidate?.let(model::connect) ?: Unit
+        CameraConnectionAction.QR_SCAN -> { qrScannerOpen = true }
     }
     fun missing(action: CameraConnectionAction) = required(action)
         .filter { context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
     val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         pendingAction?.let { action ->
             pendingAction = null
-            if (missing(action).isEmpty()) perform(action) else model.permissionDenied()
+            val remaining = missing(action)
+            when {
+                remaining.isEmpty() -> perform(action)
+                action == CameraConnectionAction.QR_SCAN && Manifest.permission.CAMERA in remaining ->
+                    model.qrCameraPermissionDenied()
+                else -> model.permissionDenied()
+            }
         }
     }
     fun request(action: CameraConnectionAction, candidate: String? = null) {
@@ -122,27 +132,37 @@ internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImport
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+    if (state.mode == CameraMode.TETHER) {
+        Surface(
+            shape = CameraControlShape,
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (state.cardSavingConfirmed) MaterialTheme.colorScheme.outlineVariant
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
+            ),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().toggleable(state.cardSavingConfirmed, role = Role.Checkbox,
+                    onValueChange = model::confirmCardSaving).padding(horizontal = 8.dp, vertical = 4.dp)
+                    .testTag("tether-card-confirm"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(state.cardSavingConfirmed, onCheckedChange = null)
+                Text(stringResource(R.string.tether_card_confirm), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
     if (stage == SonyCameraConnection.Stage.MANUAL_WIFI) {
         Text(stringResource(R.string.camera_manual_guide), style = MaterialTheme.typography.bodyMedium)
-        if (state.mode == CameraMode.TETHER) {
-            Surface(
+        if (hasCamera) {
+            Button(
+                onClick = { request(CameraConnectionAction.QR_SCAN) },
                 shape = CameraControlShape,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (state.cardSavingConfirmed) MaterialTheme.colorScheme.outlineVariant
-                    else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f),
-                ),
+                enabled = available && (state.mode != CameraMode.TETHER || state.cardSavingConfirmed),
+                modifier = Modifier.fillMaxWidth().testTag("camera-scan-qr"),
             ) {
-                Row(
-                    Modifier.fillMaxWidth().toggleable(state.cardSavingConfirmed, role = Role.Checkbox,
-                        onValueChange = model::confirmCardSaving).padding(horizontal = 8.dp, vertical = 4.dp)
-                        .testTag("tether-card-confirm"),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(state.cardSavingConfirmed, onCheckedChange = null)
-                    Text(stringResource(R.string.tether_card_confirm), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                }
+                Text(stringResource(R.string.camera_scan_qr))
             }
         }
         OutlinedButton(onClick = { context.startActivity(Intent(Settings.ACTION_WIFI_SETTINGS)) }, shape = CameraControlShape,
@@ -165,10 +185,34 @@ internal fun CameraConnectionPanel(state: CameraImportState, model: CameraImport
     OutlinedButton(onClick = { request(CameraConnectionAction.DISCOVER) }, shape = CameraControlShape,
         enabled = available && (stage == null || stage == SonyCameraConnection.Stage.SCANNING || stage == SonyCameraConnection.Stage.MANUAL_WIFI),
         modifier = Modifier.fillMaxWidth().testTag("camera-find")) { Text(stringResource(R.string.camera_find)) }
-    if (stage == null || stage == SonyCameraConnection.Stage.SCANNING)
+    if (stage == null || stage == SonyCameraConnection.Stage.SCANNING) {
+        if (hasCamera) {
+            OutlinedButton(
+                onClick = { request(CameraConnectionAction.QR_SCAN) },
+                enabled = available && (state.mode != CameraMode.TETHER || state.cardSavingConfirmed),
+                shape = CameraControlShape,
+                modifier = Modifier.fillMaxWidth().testTag("camera-scan-qr"),
+            ) {
+                Text(stringResource(R.string.camera_scan_qr))
+            }
+        }
         TextButton(onClick = model::prepareLegacyWifi, enabled = available, modifier = Modifier.fillMaxWidth().testTag("camera-legacy-connect")) {
             Text(stringResource(R.string.camera_manual_wifi))
         }
+    }
+    if (qrScannerOpen) {
+        CameraQrScannerDialog(
+            onScanned = { credentials ->
+                qrScannerOpen = false
+                model.connectWithWifiQr(credentials)
+            },
+            onDismiss = { qrScannerOpen = false },
+            onUnavailable = {
+                qrScannerOpen = false
+                model.qrScannerUnavailable()
+            },
+        )
+    }
 }
 
 @Composable
