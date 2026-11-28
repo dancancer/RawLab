@@ -126,17 +126,18 @@ object AdjustmentTransfer {
             if (value != null) {
                 if (fullRecipe) {
                     result = AdjustmentTransferValues.setLogical(result, field, value)
-                    if (effectiveNumbers(result)[field] != expected(field)) {
-                        result = assignEffective(result, field, expected(field))
-                    }
                 } else {
                     result = assignEffective(result, field, expected(field))
+                    solvedEffective[field] = effectiveNumbers(result)[field]!!
                 }
-                solvedEffective[field] = effectiveNumbers(result)[field]!!
             } else if (contextChanged && effectiveNumbers(result)[field] != before[field]) {
                 result = assignEffective(result, field, before[field]!!)
                 solvedEffective[field] = effectiveNumbers(result)[field]!!
             }
+        }
+        for (field in numericFields) if (field !in solvedEffective && effectiveNumbers(result)[field] != expected(field)) {
+            result = assignEffective(result, field, expected(field))
+            solvedEffective[field] = effectiveNumbers(result)[field]!!
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
@@ -214,6 +215,7 @@ object AdjustmentTransfer {
             up != null && r0 < wanted && wanted < rUp!! -> {
                 lo = clamped; rLo = r0; hi = up; rHi = rUp
             }
+            // Only 1 + (x - 1) * s fields (contrast/saturation) below 0.5 form multi-Float plateaus; search assumes render is non-decreasing in logical x.
             r0 < wanted -> {
                 val rMax = render(range.endInclusive)
                 if (wanted > rMax) return null
@@ -254,19 +256,26 @@ object AdjustmentTransfer {
         }.canonicalZero()
     }
     private fun assignEffective(settings: EditSettings, field: AdjustmentField, value: Float): EditSettings {
-        val scaled = field in AdjustmentTransferValues.scaled || field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
-            settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS
+        val scaled = settings.recipeID != null && (field in AdjustmentTransferValues.scaled ||
+            field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
+            settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS)
         val identity = if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION) 1.0 else 0.0
         val scale = settings.recipeScale.toDouble()
         if (scaled && scale == 0.0 && value.toDouble() != identity) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         val logical = if (!scaled) value.toDouble() else if (scale == 0.0) identity else identity + (value - identity) / scale
         val range = field.spec.androidModel.floatRange
+        val clamped = if (range != null) logical.toFloat().coerceIn(range.start, range.endInclusive) else logical.toFloat()
         if (!scaled || range == null) {
-            val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, logical) }.getOrNull()
+            val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, clamped.toDouble()) }.getOrNull()
             if (candidate != null && effectiveNumbers(candidate)[field] == value) return candidate
+            val native = candidate?.let { AdjustmentTransferValues.logical(it, field).toFloat() } ?: clamped
+            for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
+                val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
+                if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
+            }
             throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         }
-        val solved = solveScaledFloat(value.canonicalZero(), logical.toFloat(), range) { x ->
+        val solved = solveScaledFloat(value.canonicalZero(), clamped, range) { x ->
             effectiveNumbers(AdjustmentTransferValues.setLogical(settings, field, x.toDouble()))[field]!!
         } ?: throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         return AdjustmentTransferValues.setLogical(settings, field, solved.toDouble())

@@ -118,13 +118,13 @@ internal object AdjustmentTransferRefinement {
             desired.saturation.canonicalZero(),
             (desired.saturation.toDouble() / strength.toDouble()).toFloat(),
             satRange,
-        ) { x -> (x * strength).coerceIn(satRange.start, satRange.endInclusive).canonicalZero() }
+        ) { x -> scaled(desired.copy(saturation = x), strength).saturation }
             ?: unrepresentable(field)
         val lum = AdjustmentTransfer.solveScaledFloat(
             desired.luminance.canonicalZero(),
             (desired.luminance.toDouble() / strength.toDouble()).toFloat(),
             lumRange,
-        ) { x -> (x * strength).coerceIn(lumRange.start, lumRange.endInclusive).canonicalZero() }
+        ) { x -> scaled(desired.copy(luminance = x), strength).luminance }
             ?: unrepresentable(field)
         return desired.copy(saturation = sat, luminance = lum)
     }

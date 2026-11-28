@@ -692,6 +692,25 @@ class AdjustmentTransferTest {
         assertEquals(Math.nextDown(1.0f), AdjustmentTransfer.effectiveNumbers(resolvedUnselected)[F.EXPOSURE])
     }
 
+    @Test fun contrastBelowHalfPlateauRequiresOrdinalBinarySearch() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        // Contrast 0.2 at 1.0x onto 1.01x: clamped (0.20792079f) and both immediate Float neighbors
+        // all render 0.19999999f < 0.2f because x < 0.5f loses precision in (x - 1f);
+        // ordinal binary search finds the adjacent bracket (0.20792082f -> 0.19999999f,
+        // 0.20792083f -> 0.20000005f) and stores 0.20792079f.
+        val src100 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.0, 4))
+        val target101 = EditSettings(recipeID = "hamada_daylight_v2", strength = 1.01f, masterRecipeSettingsVersion = 4)
+        val request = AdjustmentPayload(src100, mapOf(F.CONTRAST to AdjustmentValue.Number(0.2)))
+        val applied = prepare(request, target101, ctx)
+        assertEquals(0.20792079f, applied.contrast)
+        assertEquals(0.19999999f, AdjustmentTransfer.effectiveNumbers(applied)[F.CONTRAST])
+        assertEquals(applied, prepare(request, applied, ctx))
+    }
+
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
         val source = EditSettings(recipeID = "r", strength = .5f, tint = 12f)
         val relative = capture(source, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT)
