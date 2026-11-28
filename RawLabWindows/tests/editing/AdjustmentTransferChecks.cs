@@ -791,7 +791,7 @@ internal static class AdjustmentTransferChecks
         Check(pastedTint[Parameter.Tint] == 150.0 && pastedTint.Request("", null, 0, null).Tint == 8.15f,
             "Same-strength 0.001 relative tint endpoint stores 150.0 and renders 8.15");
 
-        // Out-of-range guards per family remain rejected as Unrepresentable.
+        // Out-of-range guards per family remain rejected as Unrepresentable with today's exact detail strings.
         var badScalarSource = MakeV4(1.0);
         badScalarSource.Set(Parameter.Exposure, 3.0);
         badScalarSource.Set(Parameter.Contrast, 0.0);
@@ -799,15 +799,37 @@ internal static class AdjustmentTransferChecks
         badScalarSource.Atmosphere = badScalarSource.Atmosphere with { Clarity = 60.0 };
         badScalarSource.Hsl = badScalarSource.Hsl.WithValue(0, 0, 60.0);
         badScalarSource.Set(Parameter.Tint, 100.0);
-        foreach (var badField in new[] { F.Exposure, F.Contrast, F.BlackPoint, F.Clarity, F.HslHueRed, F.Tint })
+        foreach (var (badField, expectedDetail) in new[] {
+            (F.Exposure, Loc.Text("调整记录无效，原有文件未被覆盖。")),
+            (F.Contrast, Loc.Text("调整记录无效，原有文件未被覆盖。")),
+            (F.BlackPoint, Loc.Text("无效的黑白场或鲜艳度参数")),
+            (F.Clarity, Loc.Text("无效的清晰度或去朦胧参数")),
+            (F.HslHueRed, Loc.Text("无效的 HSL 参数")),
+            (F.Tint, Loc.Text("调整记录无效，原有文件未被覆盖。"))
+        })
         {
             try
             {
                 Prepare(Copy(badScalarSource, badField), halfTarget, recipeContext);
                 throw new Exception("Out-of-range " + badField.ID() + " was not rejected");
             }
-            catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable) { }
+            catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable &&
+                ex.Detail.StartsWith(expectedDetail, StringComparison.Ordinal)) { }
         }
+
+        // Pins parity between the Double-storing clients (Windows and Swift) when rawExact is already in range, not that the rejection is desirable.
+        var android63Payload = new AdjustmentPayload(
+            new AdjustmentSource("android-63.ARW", true, 3, new AdjustmentRecipeContext(recipe.Id, 0.6299999952316284, 4)),
+            new Dictionary<F, JsonElement> { [F.Exposure] = Value(5.0) });
+        var target63 = MakeV4(0.63);
+        target63.Set(Parameter.Exposure, 0.0);
+        try
+        {
+            Prepare(android63Payload, target63, recipeContext);
+            throw new Exception("Android 63% exposure=5.0 onto 0.63 target should match Swift/development rejection");
+        }
+        catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable &&
+            ex.Detail == Loc.Text("调整记录无效，原有文件未被覆盖。")) { }
 
         Console.WriteLine("PASS: Windows global color-grading wheel strength conversion checks");
     }

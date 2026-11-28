@@ -362,7 +362,6 @@ public static class AdjustmentTransfer
             if(EffectiveNumbers(preferred)[field]==value)return preferred;
         }
         var logical=!scaled ? value : scale==0 ? identity : identity+(value-identity)/scale;
-        if(TryClamped(logical) is {} clampedLogical) return clampedLogical;
         var candidate=AdjustmentTransferValues.SetLogical(s,field,logical);
         if(EffectiveNumbers(candidate)[field]==value) return candidate;
         // Windows 在百分比运算中间转为 Float；尝试相邻请求桶，最终仍以真实 request 完全相等为准。
