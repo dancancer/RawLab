@@ -1359,6 +1359,22 @@ class WorkflowContractTests(unittest.TestCase):
         build_only = self._run_mac_build("all", "false")
         self.assertEqual([c for c in build_only if c.startswith("ctest ")], [])
 
+    def test_mac_native_model_suite_runs_ai_denoise_and_edited_photo_previews(self):
+        mac_build = next(s for s in self.workflow["jobs"]["macos"]["steps"] if "RawLabMac/build.sh" in s.get("run", ""))
+        run_text = _non_comment_text(mac_build["run"])
+        self.assertIn("ci_timed ai-denoise bash RawLabMac/tests/ai-denoise.sh", run_text)
+        self.assertIn("ci_timed edited-photo-previews bash RawLabMac/tests/edited-photo-previews.sh", run_text)
+
+        arm_all = self._run_mac_build("all", "true", "arm64")
+        self.assertIn("bash RawLabMac/tests/ai-denoise.sh", arm_all)
+        self.assertIn("bash RawLabMac/tests/edited-photo-previews.sh", arm_all)
+
+        for suite, native, arch in (("intel", "true", "x86_64"), ("all", "false", "arm64"), ("ctest", "false", "arm64")):
+            with self.subTest(suite=suite, native=native, arch=arch):
+                calls = self._run_mac_build(suite, native, arch)
+                self.assertNotIn("bash RawLabMac/tests/ai-denoise.sh", calls)
+                self.assertNotIn("bash RawLabMac/tests/edited-photo-previews.sh", calls)
+
     def test_build_jobs_cache_cargo_and_source_archives_around_the_native_build(self):
         build_markers = {"macos": "RawLabMac/build.sh", "windows": "build.ps1", "android": "assembleRelease",
                          "ios": "build-framework.sh"}
