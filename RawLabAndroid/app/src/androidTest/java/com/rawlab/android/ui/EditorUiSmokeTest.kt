@@ -185,6 +185,17 @@ class EditorUiSmokeTest {
             compose.onNodeWithText(compose.activity.getString(R.string.editor_compare_wipe)).performClick()
             compose.onNodeWithTag("comparison-wipe").assertIsDisplayed()
 
+            // 直方图浮层是独立窗口，盖住按钮就点不到：两者在屏幕上不得相交。
+            compose.openWorkbenchTool(2)
+            compose.toggleWorkbenchHistogram()
+            fun screenBounds(tag: String) = compose.onNodeWithTag(tag).fetchSemanticsNode().let {
+                androidx.compose.ui.geometry.Rect(it.positionOnScreen, androidx.compose.ui.geometry.Size(it.size.width.toFloat(), it.size.height.toFloat()))
+            }
+            assertFalse("histogram covers the comparison mode button",
+                screenBounds("rgb-histogram-popup").overlaps(screenBounds("comparison-mode")))
+            compose.toggleWorkbenchHistogram()
+            compose.cancelWorkbenchDraft(model)
+
             val exportRobot = ExportRobot(compose)
             exportRobot.openExportSheet(compose.activity.getString(R.string.export))
             InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)

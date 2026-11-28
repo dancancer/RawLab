@@ -408,7 +408,7 @@ internal fun PhotoCanvas(
                     HDRMonitoring((if (before) hdr.neutral else hdr.result).statistics, hdrPreview.display,
                         hdrParameters.mode, hdrParameters.falseColor, hdrPreview.onModeChange, hdrPreview.onFalseColorChange,
                         Modifier.align(Alignment.TopEnd)
-                            .padding(top = if (compare || workspaceControls) 48.dp else 8.dp, end = 8.dp))
+                            .padding(top = if (compare) 64.dp else if (workspaceControls) 48.dp else 8.dp, end = 8.dp))
                 }
                 if (hslTarget == null && wbProbe == null && pointColorProbe == null) {
                     BoxWithConstraints(Modifier.fillMaxSize().padding(top = if (workspaceControls) 48.dp else 0.dp)) {
@@ -425,9 +425,11 @@ internal fun PhotoCanvas(
                 }.onGloballyPositioned { labelBounds["bottom-overlay"] = it.boundsInWindow() }) { bottomOverlay() }
                 if (compare) {
                     var menu by remember { mutableStateOf(false) }
-                    Box(Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 0.dp, end = 56.dp)) {
-                        IconButton(onClick = { menu = true }, Modifier.size(48.dp).testTag("comparison-mode")) {
-                            Icon(AppIcons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode))
+                    // 贴右上角并带底色；直方图与 HDR 监看在对比时让到它下方（见各自的 top）。
+                    Box(Modifier.align(Alignment.TopEnd).padding(top = 8.dp, end = 8.dp)) {
+                        IconButton(onClick = { menu = true }, Modifier.size(48.dp)
+                            .background(Color.Black.copy(alpha = .65f), CircleShape).testTag("comparison-mode")) {
+                            Icon(AppIcons.Outlined.SwapHoriz, stringResource(R.string.editor_compare_mode), tint = Color.White)
                         }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.editor_compare_side_by_side)) }, onClick = { menu = false; onModeChange(ComparisonMode.SIDE_BY_SIDE) })
@@ -564,7 +566,7 @@ internal fun PhotoCanvas(
                 }
             } else null
             RgbHistogramOverlay(if (before) pair.neutralHistogram else pair.resultHistogram, before, showOverlays && hslTarget == null && wbProbe == null && pair.hdr == null,
-                Modifier.align(Alignment.TopEnd).padding(top = if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
+                Modifier.align(Alignment.TopEnd).padding(top = if (compare) 56.dp else if (workspaceControls) 48.dp else 8.dp, end = 8.dp),
                 showToggle = !workspaceControls, expandedOverride = histogramExpanded, onExpandedChange = onHistogramExpandedChange,
                 luminanceCursor = liveLumCursor)
         }
