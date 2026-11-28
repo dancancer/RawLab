@@ -566,6 +566,7 @@ struct CameraSkipAndLimitTests {
             ("testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack", testI14SamplingNegativeSafetyMiddleAndTailSingleByteTamperFallsBack),
             ("testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy", testI14SamplingFallbackWhenMissingChangedAdjustedJPEGOrLegacy),
             ("testI14SameSessionRAWToRAWIncrementalBehaviorUnchanged", testI14SameSessionRAWToRAWIncrementalBehaviorUnchanged),
+            ("testSimulatedRestartDrainsBackendQueueBeforeReopeningStore", testSimulatedRestartDrainsBackendQueueBeforeReopeningStore),
             ("testIN4SkippedFailedItemsPersistAcrossRestart", testIN4SkippedFailedItemsPersistAcrossRestart),
             ("testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart", testIN4SkippedAssetsFIFOOverMaximumLimitSurvivesRestart),
             ("testIN5TransientTransferAndBusyErrorsDoNotMarkItemFailed", testIN5TransientTransferAndBusyErrorsDoNotMarkItemFailed),
@@ -1289,9 +1290,95 @@ struct CameraSkipAndLimitTests {
     }
 
     @MainActor static func drainBackend(_ backend: CameraWorkspaceBackend) async {
-        await withCheckedContinuation { continuation in
-            backend.loadHistory { _ in continuation.resume() }
+        // Barrier on the serial owner queue without enqueuing a `loadHistory` closure that
+        // strongly captures `backend` and resumes before libdispatch runs Block_release.
+        backend.queue.sync {}
+    }
+
+    @MainActor static func withReleasedBackend(_ body: @MainActor () async throws -> DispatchQueue) async throws {
+        let queue = try await body()
+        // Drain after `body` drops all strong references to controller/backend/store so any
+        // in-flight queue block or asyncAfter timer that promoted `[weak self]` finishes and
+        // runs `CameraOriginalStore.deinit` (releasing flock) before reopening the directory.
+        queue.sync {}
+    }
+
+    @MainActor static func testSimulatedRestartDrainsBackendQueueBeforeReopeningStore() async throws {
+        final class ScopeExitHook {
+            private let action: () -> Void
+            init(_ action: @escaping () -> Void) { self.action = action }
+            deinit { action() }
         }
+
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("rawlab-restart-lock-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // 1) While a `loadHistory` closure on `backend.queue` has already resumed its caller but
+        //    has not yet exited and released `self` (Block_release), reopening `CameraOriginalStore`
+        //    on the same directory deterministically throws "Camera storage is already in use".
+        let releaseHold = DispatchSemaphore(value: 0)
+        weak var heldBackend: CameraWorkspaceBackend?
+        weak var heldStore: CameraOriginalStore?
+        var heldQueue: DispatchQueue?
+        do {
+            let store = try CameraOriginalStore(directory: root)
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID())
+            heldStore = store
+            heldBackend = backend
+            heldQueue = backend.queue
+            await withCheckedContinuation { entered in
+                backend.loadHistory { _ in
+                    entered.resume()
+                    releaseHold.wait()
+                }
+            }
+        }
+        try check(heldBackend != nil && heldStore != nil,
+                  "Restart lock: in-flight loadHistory block keeps backend and store alive after caller scope exits")
+        var lockErrorMessage: String?
+        do {
+            _ = try CameraOriginalStore(directory: root)
+        } catch {
+            lockErrorMessage = error.localizedDescription
+        }
+        try check(lockErrorMessage == "Camera storage is already in use",
+                  "Restart lock: reopening while previous loadHistory block retains store throws 'Camera storage is already in use'")
+        releaseHold.signal()
+        heldQueue?.sync {}
+        try check(heldBackend == nil && heldStore == nil,
+                  "Restart lock: draining queue after releasing hold deallocates backend and store")
+
+        // 2) withReleasedBackend must wait until a loadHistory block that resumed before Block_release
+        //    has finished and released its strong capture of backend/store before returning.
+        let allowExit = DispatchSemaphore(value: 0)
+        let flagLock = NSLock()
+        var blockCompleted = false
+        weak var weakBackend: CameraWorkspaceBackend?
+        weak var weakStore: CameraOriginalStore?
+        try await withReleasedBackend {
+            let store = try CameraOriginalStore(directory: root)
+            let backend = CameraWorkspaceBackend(storage: store, clientID: UUID())
+            weakStore = store
+            weakBackend = backend
+            let onScopeExit = ScopeExitHook { allowExit.signal() }
+            await withCheckedContinuation { entered in
+                backend.loadHistory { _ in
+                    entered.resume()
+                    allowExit.wait()
+                    flagLock.lock()
+                    blockCompleted = true
+                    flagLock.unlock()
+                }
+            }
+            _ = onScopeExit
+            return backend.queue
+        }
+        let completed = { flagLock.lock(); defer { flagLock.unlock() }; return blockCompleted }()
+        try check(completed && weakBackend == nil && weakStore == nil,
+                  "Restart lock: withReleasedBackend waits for in-flight loadHistory block to exit and deallocate store")
+        let reopened = try CameraOriginalStore(directory: root)
+        try check(reopened.directory == root,
+                  "Restart lock: reopening CameraOriginalStore succeeds immediately after withReleasedBackend")
     }
 
     @MainActor static func testIN4SkippedFailedItemsPersistAcrossRestart() async throws {
@@ -1301,7 +1388,7 @@ struct CameraSkipAndLimitTests {
         let endpoint = IOSCameraEndpoint(host: "192.168.122.1", connectionKey: "SSID:I-N4", label: "Fake")
         let baseMillis = UInt64(Date().timeIntervalSince1970 * 1000) + 10_000
 
-        @MainActor func runInitialSessionAndSkip() async throws {
+        try await withReleasedBackend {
             let store = try CameraOriginalStore(directory: root)
             let channel = FakeSonyCameraChannel(entries: [
                 FakeSonyCameraEntry(content: 1, name: "DSC00001.ARW", createdMillis: baseMillis + 1_000, bytes: validRAWBytes(1)),
@@ -1324,10 +1411,8 @@ struct CameraSkipAndLimitTests {
             await withCheckedContinuation { continuation in
                 controller.stop { continuation.resume() }
             }
-            await drainBackend(backend)
+            return backend.queue
         }
-
-        try await runInitialSessionAndSkip()
 
         // Simulate app restart with fresh CameraOriginalStore + CameraWorkspaceBackend + IOSCameraController
         // and reassigned PTP handles (content 101..104) plus a newly shot 4th file.
@@ -1629,7 +1714,7 @@ struct CameraSkipAndLimitTests {
             func resetWrites() { counterLock.lock(); writeCount = 0; counterLock.unlock() }
             func readWrites() -> Int { counterLock.lock(); defer { counterLock.unlock() }; return writeCount }
 
-            @MainActor func runMixedBatch() async throws {
+            try await withReleasedBackend {
                 let store = try CameraOriginalStore(directory: root) {
                     counterLock.lock()
                     writeCount += 1
@@ -1657,9 +1742,8 @@ struct CameraSkipAndLimitTests {
                 await withCheckedContinuation { continuation in
                     controller.stop { continuation.resume() }
                 }
-                await drainBackend(backend)
+                return backend.queue
             }
-            try await runMixedBatch()
 
             // Reopen from disk to prove per-photo manifests durably saved all state and published files.
             let reopened = try CameraOriginalStore(directory: root)
@@ -1856,7 +1940,7 @@ struct CameraSkipAndLimitTests {
             try Data([0x49, 0x49, 0x2a, 0]).write(to: residueDir.appendingPathComponent("DSC_TMP.ARW.partial"))
 
             var firstRecoverWrites = 0
-            @MainActor func verifyFirstUpgradeBoot() async throws {
+            try await withReleasedBackend {
                 let restartedStore = try CameraOriginalStore(directory: root) { firstRecoverWrites += 1 }
                 let channel = FakeSonyCameraChannel(entries: [])
                 let backend = CameraWorkspaceBackend(storage: restartedStore, clientID: UUID()) { _, purpose, _ in
@@ -1881,10 +1965,8 @@ struct CameraSkipAndLimitTests {
                           controller.storedOriginalsBytes == UInt64(upgradeBytes.count) &&
                           adoptedData == upgradeBytes,
                           "P2-22 cross-version migration: Re-adopts complete orphan into history & byte count with 1 write, deletes empty dirs, and preserves nonempty residues")
-                await drainBackend(backend)
+                return backend.queue
             }
-            try await verifyFirstUpgradeBoot()
-            await Task.yield()
 
             // Idempotency: reopening after re-adoption performs 0 manifest writes and preserves the entry.
             var secondRecoverWrites = 0
@@ -2237,7 +2319,7 @@ struct CameraSkipAndLimitTests {
                                 created: "\(baseMillis + UInt64(index))", modified: "")
         }
 
-        func populateAndReopenCheck() async throws {
+        try await withReleasedBackend {
             let store = try CameraOriginalStore(directory: root)
             // Save 1 valid historical original to verify all originals survive restart after >10,000 skips.
             let channel = FakeSonyCameraChannel(entries: [
@@ -2278,9 +2360,8 @@ struct CameraSkipAndLimitTests {
                 }
             }
             try store.skipFailedIncrementalItems(job2.id)
+            return backend.queue
         }
-
-        try await populateAndReopenCheck()
 
         // Reopen store from disk: must not throw "Invalid camera storage manifest" and must preserve originals + newest 10,000 skipped items.
         let reopened = try CameraOriginalStore(directory: root)
@@ -2385,7 +2466,7 @@ struct CameraSkipAndLimitTests {
             defer { try? FileManager.default.removeItem(at: root) }
             let shot = FakeSonyCameraEntry(content: 20_001, name: "DSC20001.ARW",
                                            createdMillis: baseMillis + 60_000, bytes: validRAWBytes(83))
-            @MainActor func recordTetherSession() async throws {
+            try await withReleasedBackend {
                 let store1 = try CameraOriginalStore(directory: root)
                 let ch1 = FakeSonyCameraChannel(mode: .mobile, supportsTethering: true, entries: [])
                 let backend1 = CameraWorkspaceBackend(storage: store1, clientID: UUID()) { _, purpose, _ in
@@ -2399,9 +2480,8 @@ struct CameraSkipAndLimitTests {
                 await withCheckedContinuation { continuation in
                     ctrl1.stop { continuation.resume() }
                 }
-                await drainBackend(backend1)
+                return backend1.queue
             }
-            try await recordTetherSession()
 
             let over10001 = [shot] + exact10000
             let store2 = try CameraOriginalStore(directory: root)
