@@ -235,7 +235,7 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
 
     @discardableResult
     public func commitEditAsync(expected: Record, state: PhotoEditState, displayName: String = "",
-                                clearsProcessingMigration: Bool = false, forceWhenUnchanged: Bool = false, isCurrent: () -> Bool = { true },
+                                clearsProcessingMigration: Bool = false, isCurrent: () -> Bool = { true },
                                 completion: ((SharedAdjustmentTransferOutcome<Record>, Record?) -> Void)? = nil) -> SharedAdjustmentTransferOutcome<Record> {
         let id = backend.keyOf(backend.identityOf(expected))
         guard isCurrent() else {
@@ -249,7 +249,7 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
             try backend.validateCommitState(state)
             defaultStates[id] = defaultStates[id] ?? backend.stateOf(expected) ?? state
             switch ledger.beginOptimisticEdit(expected: expected, state: state, displayName: displayName,
-                                              forceWhenUnchanged: clearsProcessingMigration || forceWhenUnchanged, makeRecord: backend.makeRecord) {
+                                              forceWhenUnchanged: clearsProcessingMigration, makeRecord: backend.makeRecord) {
             case .unchanged(let before):
                 let unchanged = outcome(id, .unchanged, saved: before)
                 completion?(unchanged, nil); return unchanged

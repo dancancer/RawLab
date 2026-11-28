@@ -419,7 +419,6 @@ class X3fLegacyRepairTest {
             )
             val result = renderer.perform(Work.Import(x3fUri, 0, retained = photo, ownsRetained = false), RenderCancellation()) as WorkResult.Preview
             assertFalse("Import preview must render repaired normal X3F settings", result.request.edits.lens.enabled)
-            assertNull(result.request.repairWriteError)
             assertEquals("sigma-28", result.request.edits.lens.profileId)
             assertTrue(observedSettings.all { !it.lens.enabled })
             assertFalse("Opening X3F photo in editor must write repaired record back to EditStore", store.readState(x3fId, isX3f = false).settings!!.lens.enabled)
@@ -429,14 +428,12 @@ class X3fLegacyRepairTest {
             val history = EditorAdjustmentHistory(store, validateSource = { {} })
             history.acceptSource(photo, null)
             val recovered = history.recoverSource(photo)
-            assertTrue(recovered.repaired)
-            assertNull(recovered.writeError)
-            assertFalse(recovered.state.settings!!.lens.enabled)
+            assertFalse(recovered.settings!!.lens.enabled)
             assertFalse(store.readState(x3fId, isX3f = false).settings!!.lens.enabled)
         }
     }
 
-    @Test fun openRepairWriteFailureOpensInMemoryAndPersistsOnLaterSave() {
+    @Test fun openRepairWriteFailureOpensInMemoryAndLaterUserEditPersistsRepair() {
         EditorViewModelTestHarness().use { harness ->
             val storage = harness.createStorage()
             val editDir = File(harness.root, "ro-edits").apply { mkdirs() }
@@ -460,7 +457,7 @@ class X3fLegacyRepairTest {
                 }
             }
 
-            // 1) EditorRenderer Work.Import still succeeds with repaired settings and surfaces repairWriteError.
+            // 1) EditorRenderer Work.Import still succeeds with repaired settings in memory.
             val fakeEngine = object : EditorRenderer.RenderEngine {
                 override fun close() = Unit
                 override fun setGpuMode(mode: Int) = Unit
@@ -489,26 +486,24 @@ class X3fLegacyRepairTest {
             val preview = renderer.perform(Work.Import(x3fUri, 0, retained = photo, ownsRetained = false), RenderCancellation()) as WorkResult.Preview
             assertFalse("Work.Import opens with repaired settings in memory despite write failure", preview.request.edits.lens.enabled)
             assertEquals("sigma-40", preview.request.edits.lens.profileId)
-            assertNotNull("Work.Import surfaces repairWriteError for save-error reporting", preview.request.repairWriteError)
             assertTrue("Disk still holds unrepaired record while writes fail",
                 EditStore(editDir).readState(x3fId, isX3f = false).settings!!.lens.enabled)
 
-            // 2) recoverSource also opens in memory with writeError != null and marks repairWritePending.
+            // 2) recoverSource also opens in memory with repaired settings without throwing.
             val history = EditorAdjustmentHistory(failingEditStore, validateSource = { {} })
             history.acceptSource(photo, null)
             val recovered = history.recoverSource(photo)
-            assertTrue(recovered.repaired)
-            assertNotNull(recovered.writeError)
-            assertFalse(recovered.state.settings!!.lens.enabled)
+            assertFalse(recovered.settings!!.lens.enabled)
 
-            // 3) Later save once writes recover persists the repaired settings even when settings equal repaired in-memory state.
+            // 3) Later user edit once writes recover saves and persists the repaired settings to disk.
             failWrites = false
-            val commitResult = history.commit(photo, recovered.state.settings!!)
+            val userEdited = recovered.settings!!.copy(exposure = 1.25f)
+            val commitResult = history.commit(photo, userEdited)
             assertEquals(com.rawlab.android.editor.EditSaveState.SAVED, commitResult.state)
-            assertFalse("Later save after failed open-repair must persist repaired flags to disk",
-                EditStore(editDir).readState(x3fId, isX3f = false).settings!!.lens.enabled)
-            assertTrue("Deferred repair save must not create an undo transaction",
-                failingEditStore.adjustmentSession!!.transactions.isEmpty())
+            val stored = EditStore(editDir).readState(x3fId, isX3f = false).settings!!
+            assertEquals(1.25f, stored.exposure)
+            assertFalse("Later user edit after failed open-repair persists repaired flags to disk", stored.lens.enabled)
+            assertEquals("sigma-40", stored.lens.profileId)
         }
     }
 

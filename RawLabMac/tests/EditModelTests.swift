@@ -805,17 +805,23 @@ private func pixels(_ image: CGImage) -> Data { image.dataProvider!.data! as Dat
         try check(!roModel.settings.aiDenoiseEnabled && !roModel.settings.lensSettings.isEnabled &&
                   roModel.settings.exposure == 0.6 && roModel.settings.lensCorrection?.profileID == "sigma-45",
                   "EditorModel.open keeps repaired settings in memory when repair write-back fails")
-        try check(roModel.saveError != nil && roModel.dirty,
-                  "EditorModel.open reports failed repair write-back as saveError and marks dirty")
+        try check(roModel.saveError == nil && !roModel.dirty,
+                  "EditorModel.open does not surface a save-error banner or dirty state when open-repair cannot write")
 
-        // Restoring write permissions lets a later save persist the repair.
+        // Restoring write permissions lets a later user edit save and persist the repaired record.
         try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: roDir.path)
+        roModel.settings.exposure = 1.25
         try check(roModel.saveEdits() && roModel.saveError == nil && !roModel.dirty,
-                  "Later saveEdits persists the deferred X3F repair once store is writable")
+                  "Later user edit saves once store is writable")
         let persistedRaw = try Data(contentsOf: roDir.appendingPathComponent("edits.json"))
         let persistedText = String(decoding: persistedRaw, as: UTF8.self)
-        try check(!persistedText.contains("\"aiDenoiseEnabled\":true"),
-                  "Persisted edits.json clears aiDenoiseEnabled after deferred save")
+        try check(!persistedText.contains("\"aiDenoiseEnabled\":true") &&
+                  !persistedText.contains("\"distortion\":true"),
+                  "Persisted edits.json clears stale AI and lens flags after later user edit")
+        let persistedRead = try MacEditPersistence(directory: roDir).readState(for: roX3f)
+        try check(persistedRead.state?.settings.exposure == 1.25 &&
+                  persistedRead.state?.settings.lensCorrection?.profileID == "sigma-45",
+                  "Persisted record retains the user edit and non-flag lens preferences")
 
         // Point 5: open-repair syncs adjustmentSession ledger so editing back to previously known exposure saves.
         let ledgerDir = root.appendingPathComponent("x3f-ledger-edits")

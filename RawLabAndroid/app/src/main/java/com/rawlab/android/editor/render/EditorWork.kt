@@ -98,7 +98,7 @@ internal sealed interface Work {
         val gpuMode: Int, val importing: Boolean = false, val restored: Boolean = false,
         val edge: Int = 1600, val draft: Boolean = false, val importedRecord: PhotoEditState? = null,
         val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
-        val includeNeutral: Boolean = true, val repairWriteError: Throwable? = null) : Work
+        val includeNeutral: Boolean = true) : Work
     data class DetailPreview(val photo: ImportedPhoto, val edits: EditSettings, val roi: ViewportRoiRequest,
         val gpuMode: Int, val sourceRevision: Long, val editRevision: Long,
         val baseResultHeadroom: Float = 0f, val baseNeutralHeadroom: Float = 0f,
@@ -120,8 +120,7 @@ internal sealed interface WorkResult {
     data class Preview(val request: Work.Preview, val pair: PreviewPair) : WorkResult
     data class DetailPreview(val request: Work.DetailPreview, val overlay: PreviewDetailOverlay?) : WorkResult
     data class MissingLook(val photo: ImportedPhoto, val edits: EditSettings, val importedRecord: PhotoEditState?,
-        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false,
-        val repairWriteError: Throwable? = null) : WorkResult
+        val persistOnImport: Boolean = false, val ownsImportedInput: Boolean = false) : WorkResult
     data class HslProbe(val request: Work.HslProbe, val sample: HslTargetSample) : WorkResult
     data class WbProbe(val request: Work.WbProbe, val sample: com.rawlab.android.engine.NativeProcessor.WbProbeSample) : WorkResult
     data class CameraHDRPreflight(val request: Work.CameraHDRPreflight) : WorkResult

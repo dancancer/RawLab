@@ -188,9 +188,11 @@ extension RawEditorViewModel {
                             OpenX3fRepairResult(record: try store.readState(for: id, isX3f: isX3f), repaired: false)
                         }
                     }
+                    if let writeError = openRepair?.writeError {
+                        ErrorDiagnostics.log(writeError, operation: .editPersistence, stage: "repairLegacyNormalX3fOnOpen")
+                    }
                     let record = openRepair?.record
                     let repairedOnOpen = openRepair?.repaired == true
-                    let repairWriteError = openRepair?.writeError
                     if record?.state == nil, let resolvedIdentity {
                         _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
                     }
@@ -266,13 +268,7 @@ extension RawEditorViewModel {
                                 self.recordImportedComparison(settings:restoredSettings)
                                 self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings=nil; self.failedDraftSource=nil
-                                if let repairWriteError {
-                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
-                                    self.pendingSettings = restoredSettings
-                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
-                                } else if self.editPersistence != nil {
-                                    self.setEditNotice(state == nil ? .idle : .restored)
-                                }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                 onSettingsRestored?(restoredSettings); self.importedPhotoRevision = UUID(); onImported?()
                             }
@@ -345,15 +341,9 @@ extension RawEditorViewModel {
                                 self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if let repairWriteError {
-                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
-                                    self.pendingSettings = restoredSettings
-                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
-                                } else if self.editPersistence != nil {
-                                    self.setEditNotice(state == nil ? .idle : .restored)
-                                }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
-                                if repairWriteError == nil { self.startProcessingMigrationIfNeeded(settings: restoredSettings) }
+                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
                                 if x3fModeOverride != nil { self.queueSettingsSave(restoredSettings) }
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
@@ -417,15 +407,9 @@ extension RawEditorViewModel {
                                 self.acceptImportedEditRecord(record, settings: restoredSettings, repairedOnOpen: repairedOnOpen)
                                 self.persistedEditorSettings = nil
                                 self.failedDraftSource = nil
-                                if let repairWriteError {
-                                    ErrorDiagnostics.log(repairWriteError, operation: .editPersistence, stage: "saveEdits")
-                                    self.pendingSettings = restoredSettings
-                                    self.editSaveState = .failed(self.adjustmentErrorMessage(repairWriteError))
-                                } else if self.editPersistence != nil {
-                                    self.setEditNotice(state == nil ? .idle : .restored)
-                                }
+                                if self.editPersistence != nil { self.setEditNotice(state == nil ? .idle : .restored) }
                                 onSettingsRestored?(restoredSettings)
-                                if repairWriteError == nil { self.startProcessingMigrationIfNeeded(settings: restoredSettings) }
+                                self.startProcessingMigrationIfNeeded(settings: restoredSettings)
                                 if self.hasImage && adjustedImage != nil {
                                     ErrorDiagnostics.app.recordImportSuccess(attemptID: importRevision, context: importContext)
                                     self.importedPhotoRevision = UUID()

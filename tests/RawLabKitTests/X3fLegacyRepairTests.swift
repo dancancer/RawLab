@@ -550,11 +550,14 @@ final class X3fLegacyRepairTests: XCTestCase {
         XCTAssertEqual(try iosStore.readState(for: iosID, isX3f: false).state?.settings.aiDenoiseEnabled, true,
                        "Disk remains unrepaired while writes fail")
 
-        // Later save once writes succeed persists the repaired state.
+        // Later user edit once writes succeed saves and persists the repaired state.
         failWrites = false
         let iosSession = IOSAdjustmentTransferSession(store: iosStore)
-        let iosCommit = iosSession.commitEdit(expected: iosRepair.record, state: try XCTUnwrap(iosRepair.record.state))
-        XCTAssertNotNil(iosCommit.saved)
+        var iosEdited = try XCTUnwrap(iosRepair.record.state)
+        iosEdited.settings.exposure = 1.25
+        let iosCommit = iosSession.commitEdit(expected: iosRepair.record, state: iosEdited)
+        XCTAssertEqual(iosCommit.status, .applied)
+        XCTAssertEqual(try iosStore.readState(for: iosID, isX3f: false).state?.settings.exposure, 1.25)
         XCTAssertEqual(try iosStore.readState(for: iosID, isX3f: false).state?.settings.aiDenoiseEnabled, false)
         XCTAssertEqual(try iosStore.readState(for: iosID, isX3f: false).state?.settings.lensSettings.isEnabled, false)
 
@@ -576,8 +579,11 @@ final class X3fLegacyRepairTests: XCTestCase {
 
         failWrites = false
         let macSession = MacAdjustmentTransferSession(store: macStore)
-        let macCommit = macSession.commitEdit(expected: macRepair.record, state: try XCTUnwrap(macRepair.record.state))
-        XCTAssertNotNil(macCommit.saved)
+        var macEdited = try XCTUnwrap(macRepair.record.state)
+        macEdited.settings.exposure = 1.25
+        let macCommit = macSession.commitEdit(expected: macRepair.record, state: macEdited)
+        XCTAssertEqual(macCommit.status, .applied)
+        XCTAssertEqual(try macStore.readState(for: macX3f).state?.settings.exposure, 1.25)
         let rawMacText = String(decoding: try Data(contentsOf: macDir.appendingPathComponent("edits.json")), as: UTF8.self)
         XCTAssertFalse(rawMacText.contains("\"aiDenoiseEnabled\":true"))
     }

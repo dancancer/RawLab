@@ -703,8 +703,14 @@ internal class EditorRenderer(
                 } else {
                     restore(photo.identity, photo.isX3f)?.let { com.rawlab.android.settings.OpenX3fRepairResult(it) }
                 }
+                openRepair?.writeError?.let { writeError ->
+                    com.rawlab.android.diagnostics.DiagnosticRegistry.peek()?.recordError(
+                        operation = "editPersistence",
+                        stage = "repairLegacyNormalX3fOnOpen",
+                        error = writeError,
+                    )
+                }
                 val record = openRepair?.state
-                val repairWriteError = openRepair?.writeError
                 hadSavedRecord = record?.settings != null
                 var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
                 if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)
@@ -718,11 +724,10 @@ internal class EditorRenderer(
                     val validation = native.preview(photo.file, null, restored.copy(film = "neutral", recipeID = null), 256, false, photo.inputKind, generation)
                     if (debuggable)
                         android.util.Log.i("RawLabImport", "missingLookValidationBackend=${validation.backend}")
-                    WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned, repairWriteError)
+                    WorkResult.MissingLook(photo, restored, record, work.x3fModeOverride != null, owned)
                 } else perform(Work.Preview(photo, restored, false, work.gpuMode,
                     importing = true, restored = record?.settings != null, importedRecord = record,
-                    persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned,
-                    repairWriteError = repairWriteError), generation)
+                    persistOnImport = work.x3fModeOverride != null, ownsImportedInput = owned), generation)
             }
             catch (error: Throwable) {
                 if (error is com.rawlab.android.settings.UnusableEditRecordException ||

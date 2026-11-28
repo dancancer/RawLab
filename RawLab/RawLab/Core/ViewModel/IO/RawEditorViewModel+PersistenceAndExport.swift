@@ -84,8 +84,7 @@ extension RawEditorViewModel {
             retainEditMetadata(saved.state ?? candidate)
             pendingSettings = nil
             adjustmentHistoryRevision = UUID()
-            let wasFailed: Bool = if case .failed = editSaveState { true } else { false }
-            if outcome.status == .applied || wasFailed { setEditNotice(.saved) }
+            if outcome.status == .applied { setEditNotice(.saved) }
             return true
         }
         if let error = outcome.error { ErrorDiagnostics.log(error, operation: .editPersistence, stage: "saveEdits") }
@@ -118,6 +117,9 @@ extension RawEditorViewModel {
         let store = try requireEditPersistence()
         let openRepair = try loadedEditRecord.map { OpenX3fRepairResult(record: $0, repaired: false) }
             ?? store.repairLegacyNormalX3fOnOpen(for: source.identity, isX3f: sourceIsX3f)
+        if let writeError = openRepair.writeError {
+            ErrorDiagnostics.log(writeError, operation: .editPersistence, stage: "repairLegacyNormalX3fOnOpen")
+        }
         let record = openRepair.record
         if let quarantined = store.consumeQuarantinedError() {
             ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
@@ -139,13 +141,7 @@ extension RawEditorViewModel {
         persistedEditorSettings = PersistedEditorSettings(source: source, settings: restored)
         committedPreviewSettings = restored
         currentPreviewSettings = restored
-        if let writeError = openRepair.writeError {
-            ErrorDiagnostics.log(writeError, operation: .editPersistence, stage: "saveEdits")
-            pendingSettings = restored
-            editSaveState = .failed(adjustmentErrorMessage(writeError))
-        } else {
-            setEditNotice(record.state == nil ? .idle : .restored)
-        }
+        setEditNotice(record.state == nil ? .idle : .restored)
         return restored
     }
 
