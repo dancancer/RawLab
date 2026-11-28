@@ -38,12 +38,13 @@ internal object AdjustmentTransferWB {
     private fun resolved(cameraMode: Boolean, temperature: Double?, tint: Double, relative: Boolean,
         recipe: AdjustmentRecipeContext?, context: AdjustmentTransferContext): Resolved {
         if (!context.isRaw) return Resolved(true)
-        val offset = tint * if (relative) recipe?.strength ?: 1.0 else 1.0
-        if (cameraMode && offset == 0.0) return Resolved(true)
+        val tintFloat = tint.toFloat().canonicalZero()
+        val offset = if (relative) tintFloat * (recipe?.strength?.toFloat()?.canonicalZero() ?: 1f) else tintFloat
+        if (cameraMode && offset == 0f) return Resolved(true)
         val calibration = if (cameraMode || relative) camera(context) else null
         val finalTint = if (relative) calibration!!.tint + offset else offset
-        representable(finalTint in -150.0..150.0, AdjustmentField.TINT.id)
-        return Resolved(false, if (cameraMode) calibration!!.temperature else temperature!!.toFloat(), finalTint.toFloat())
+        representable(finalTint in -150f..150f, AdjustmentField.TINT.id)
+        return Resolved(false, if (cameraMode) calibration!!.temperature else temperature!!.toFloat(), finalTint)
     }
     private fun applyResolved(desired: Resolved, original: EditSettings, context: AdjustmentTransferContext): EditSettings {
         if (desired.camera) return original.copy(customWb = false, temperature = 6500f, tint = 0f)
@@ -144,28 +145,30 @@ internal object AdjustmentTransferWB {
         val desired: Resolved
         if (cameraMode) {
             val offset = when {
-                tint != null -> (tint.number ?: 0.0) * (payload.source.recipe?.strength ?: 1.0)
-                target.recipeID != null -> (target.tint * target.recipeScale).toDouble()
-                !target.customWb -> 0.0
-                else -> (previous.tint - camera(context).tint).toDouble()
+                tint != null -> (tint.number?.toFloat() ?: 0f).canonicalZero() * (payload.source.recipe?.strength?.toFloat()?.canonicalZero() ?: 1f)
+                target.recipeID != null -> target.tint * target.recipeScale
+                !target.customWb -> 0f
+                else -> previous.tint - camera(context).tint
             }
             if (temperature == null && target.customWb) representable(previous.temperature == camera(context).temperature, "unselected white balance temperature")
-            desired = if (offset == 0.0) Resolved(true) else {
-                val calibration = camera(context); val finalTint = calibration.tint + offset
-                representable(finalTint in -150.0..150.0, AdjustmentField.TINT.id)
-                Resolved(false, calibration.temperature, finalTint.toFloat())
+            desired = if (offset == 0f) Resolved(true) else {
+                val calibration = camera(context)
+                val finalTint = if (tint == null && target.recipeID == null && target.customWb) previous.tint else calibration.tint + offset
+                representable(finalTint in -150f..150f, AdjustmentField.TINT.id)
+                Resolved(false, calibration.temperature, finalTint)
             }
-            if (result.recipeID == null && offset != 0.0 && mode == null && !contextChanged)
+            if (result.recipeID == null && offset != 0f && mode == null && !contextChanged)
                 throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "select white balance mode with relative tint")
-            if (result.recipeID == null && offset != 0.0 && mode != null && tint == null)
+            if (result.recipeID == null && offset != 0f && mode != null && tint == null)
                 throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, "unselected white balance tint")
         } else {
             val fixedTemperature = temperature?.number?.toFloat() ?: if (previous.camera) camera(context).temperature else previous.temperature
             val fixedTint = tint?.number?.let { value ->
-                payload.source.recipe?.let { camera(context).tint + value * it.strength } ?: value
-            } ?: (if (previous.camera) camera(context).tint else previous.tint).toDouble()
-            representable(fixedTint in -150.0..150.0, AdjustmentField.TINT.id)
-            desired = Resolved(false, fixedTemperature, fixedTint.toFloat())
+                val v = value.toFloat().canonicalZero()
+                payload.source.recipe?.let { camera(context).tint + v * it.strength.toFloat().canonicalZero() } ?: v
+            } ?: if (previous.camera) camera(context).tint else previous.tint
+            representable(fixedTint in -150f..150f, AdjustmentField.TINT.id)
+            desired = Resolved(false, fixedTemperature, fixedTint)
         }
         result = applyResolved(desired, result, context)
         if (cameraMode && result.recipeID != null) result = result.copy(customWb = false)
