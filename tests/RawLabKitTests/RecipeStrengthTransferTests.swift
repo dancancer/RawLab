@@ -657,4 +657,111 @@ final class RecipeStrengthTransferTests: XCTestCase {
             XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable("light.curve"))
         }
     }
+
+    func testScalarHSLAndTintRangeLimitOvershootOnMacAndIOS() throws {
+        let recipe = try XCTUnwrap(MasterRecipe.recipe(for: recipeID))
+
+        struct LimitCase {
+            let field: AdjustmentTransferField
+            let strength: Double
+            let storedLimit: Double
+            let renderedLiteral: Double
+            let apply: (inout Adjustments) -> Void
+            let reset: (inout Adjustments) -> Void
+            let readStored: (Adjustments) -> Double
+        }
+
+        let cases: [LimitCase] = [
+            .init(field: .hslHueRed, strength: 0.69, storedLimit: 100.0, renderedLiteral: 69.0,
+                  apply: { $0.setHSL(.hue, channel: 0, value: 100.0) },
+                  reset: { $0.setHSL(.hue, channel: 0, value: 0.0) },
+                  readStored: { $0.hslSettings.value(.hue, channel: 0) }),
+            .init(field: .blackPoint, strength: 0.69, storedLimit: 100.0, renderedLiteral: 69.0,
+                  apply: { $0.blackPoint = 100.0 },
+                  reset: { $0.blackPoint = 0.0 },
+                  readStored: { $0.blackPoint }),
+            .init(field: .clarity, strength: 0.69, storedLimit: 100.0, renderedLiteral: 69.0,
+                  apply: { $0.clarity = 100.0 },
+                  reset: { $0.clarity = 0.0 },
+                  readStored: { $0.clarity }),
+            .init(field: .exposure, strength: 0.237, storedLimit: 5.0, renderedLiteral: 1.185,
+                  apply: { $0.exposure = 5.0 },
+                  reset: { $0.exposure = 0.0 },
+                  readStored: { $0.exposure }),
+            .init(field: .contrast, strength: 0.001, storedLimit: 0.0, renderedLiteral: 0.999,
+                  apply: { $0.contrast = 0.0 },
+                  reset: { $0.contrast = 1.0 },
+                  readStored: { $0.contrast }),
+        ]
+
+        for item in cases {
+            var source = makeRecipeSettings(recipe, strength: item.strength, version: 4)
+            item.apply(&source)
+            var target = makeRecipeSettings(recipe, strength: item.strength, version: 4)
+            item.reset(&target)
+
+            let macPayload = try MacAdjustmentTransfer.capture(scope: .custom([item.field]), snapshot: macState(source), context: macContext)
+            let macPasted = try MacAdjustmentTransfer.prepare(payload: macPayload, target: macState(target), context: macContext).settings
+            XCTAssertEqual(item.readStored(macPasted), item.storedLimit, "Mac stored \(item.field.rawValue) at \(item.strength)")
+            let macRendered = AdjustmentTransfer.effectiveNumbers(macPasted, context: macContext.withMacCapabilities())[item.field]!
+            assertSameRenderFloat(macRendered, item.renderedLiteral, "Mac rendered \(item.field.rawValue) at \(item.strength)")
+
+            let iosPayload = try IOSAdjustmentTransfer.capture(scope: .custom([item.field]), snapshot: PhotoEditState(settings: source), context: iosContext)
+            let iosPasted = try IOSAdjustmentTransfer.prepare(payload: iosPayload, target: PhotoEditState(settings: target), context: iosContext).settings
+            XCTAssertEqual(item.readStored(iosPasted), item.storedLimit, "iOS stored \(item.field.rawValue) at \(item.strength)")
+            let iosRendered = AdjustmentTransfer.effectiveNumbers(iosPasted, context: iosContext.withIOSCapabilities())[item.field]!
+            assertSameRenderFloat(iosRendered, item.renderedLiteral, "iOS rendered \(item.field.rawValue) at \(item.strength)")
+        }
+
+        // Relative tint = 150 at 0.001 -> 0.001 with as-shot (5200, 8): rendered tint = 8.15.
+        var tintSource = makeRecipeSettings(recipe, strength: 0.001, version: 4)
+        tintSource.tint = 150.0
+        var tintTarget = makeRecipeSettings(recipe, strength: 0.001, version: 4)
+        tintTarget.tint = 0.0
+
+        let macTintPayload = try MacAdjustmentTransfer.capture(scope: .custom([.tint]), snapshot: macState(tintSource), context: macContext)
+        let macTintPasted = try MacAdjustmentTransfer.prepare(payload: macTintPayload, target: macState(tintTarget), context: macContext).settings
+        XCTAssertEqual(macTintPasted.tint, 150.0, "Mac stored relative tint at 0.001")
+        assertSameRenderFloat(AdjustmentTransfer.renderWB(macTintPasted, context: macContext.withMacCapabilities()).tint, 8.15, "Mac rendered relative tint at 0.001")
+
+        let iosTintPayload = try IOSAdjustmentTransfer.capture(scope: .custom([.tint]), snapshot: PhotoEditState(settings: tintSource), context: iosContext)
+        let iosTintPasted = try IOSAdjustmentTransfer.prepare(payload: iosTintPayload, target: PhotoEditState(settings: tintTarget), context: iosContext).settings
+        XCTAssertEqual(iosTintPasted.tint, 150.0, "iOS stored relative tint at 0.001")
+        assertSameRenderFloat(AdjustmentTransfer.renderWB(iosTintPasted, context: iosContext.withIOSCapabilities()).tint, 8.15, "iOS rendered relative tint at 0.001")
+    }
+
+    func testOutOfRangeRequestsPreserveExactRejectionDetailStringsOnMacAndIOS() throws {
+        let recipe = try XCTUnwrap(MasterRecipe.recipe(for: recipeID))
+
+        // Guards: genuinely out-of-range requests per family stay rejected with today's exact detail string.
+        struct GuardCase {
+            let field: AdjustmentTransferField
+            let detail: String
+            let apply: (inout Adjustments) -> Void
+            let reset: (inout Adjustments) -> Void
+        }
+        let guards: [GuardCase] = [
+            .init(field: .exposure, detail: "native range", apply: { $0.exposure = 3.0 }, reset: { $0.exposure = 0.0 }),
+            .init(field: .contrast, detail: "native range", apply: { $0.contrast = 0.0 }, reset: { $0.contrast = 1.0 }),
+            .init(field: .blackPoint, detail: "native range", apply: { $0.blackPoint = 60.0 }, reset: { $0.blackPoint = 0.0 }),
+            .init(field: .clarity, detail: "native range", apply: { $0.clarity = 60.0 }, reset: { $0.clarity = 0.0 }),
+            .init(field: .hslHueRed, detail: "color.hsl.hue.red", apply: { $0.setHSL(.hue, channel: 0, value: 60.0) }, reset: { $0.setHSL(.hue, channel: 0, value: 0.0) }),
+            .init(field: .tint, detail: "native range", apply: { $0.tint = 100.0 }, reset: { $0.tint = 0.0 }),
+        ]
+        for guardCase in guards {
+            var badSource = makeRecipeSettings(recipe, strength: 1.0, version: 4)
+            guardCase.apply(&badSource)
+            var halfTarget = makeRecipeSettings(recipe, strength: 0.5, version: 4)
+            guardCase.reset(&halfTarget)
+
+            let macBad = try MacAdjustmentTransfer.capture(scope: .custom([guardCase.field]), snapshot: macState(badSource), context: macContext)
+            XCTAssertThrowsError(try MacAdjustmentTransfer.prepare(payload: macBad, target: macState(halfTarget), context: macContext), "Mac guard \(guardCase.field.rawValue)") { error in
+                XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable(guardCase.detail), "Mac guard detail \(guardCase.field.rawValue)")
+            }
+            let iosBad = try IOSAdjustmentTransfer.capture(scope: .custom([guardCase.field]), snapshot: PhotoEditState(settings: badSource), context: iosContext)
+            XCTAssertThrowsError(try IOSAdjustmentTransfer.prepare(payload: iosBad, target: PhotoEditState(settings: halfTarget), context: iosContext), "iOS guard \(guardCase.field.rawValue)") { error in
+                XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable(guardCase.detail), "iOS guard detail \(guardCase.field.rawValue)")
+            }
+        }
+    }
 }

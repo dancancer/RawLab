@@ -347,8 +347,18 @@ public static class AdjustmentTransfer
             s.MasterRecipeSettingsVersion>=4 && AdjustmentFields.RefinementScalars.Contains(field);
         var identity=field is F.Contrast or F.Saturation ? 1.0 : 0.0;var scale=Scale(s);
         if(scaled && scale==0 && value!=identity) throw new AdjustmentTransferException(AdjustmentFailure.Unrepresentable,field.ID());
+        var model=field.Spec().WindowsModel;
+        AdjustmentSnapshot? TryClamped(double raw)
+        {
+            if(!scaled || s.MasterRecipeID==null || scale==1 || !double.IsFinite(raw) ||
+                model.Min is not {} min || model.Max is not {} max || raw>=min && raw<=max) return null;
+            var clamped=AdjustmentTransferValues.SetLogical(s,field,Math.Clamp(raw,min,max));
+            return EffectiveNumbers(clamped)[field]==value ? clamped : null;
+        }
         if(precise is {} exact) {
-            var preferred=AdjustmentTransferValues.SetLogical(s,field,!scaled ? exact : scale==0 ? identity : identity+(exact-identity)/scale);
+            var rawExact=!scaled ? exact : scale==0 ? identity : identity+(exact-identity)/scale;
+            if(TryClamped(rawExact) is {} clampedExact) return clampedExact;
+            var preferred=AdjustmentTransferValues.SetLogical(s,field,rawExact);
             if(EffectiveNumbers(preferred)[field]==value)return preferred;
         }
         var logical=!scaled ? value : scale==0 ? identity : identity+(value-identity)/scale;

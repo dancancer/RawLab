@@ -747,6 +747,90 @@ internal static class AdjustmentTransferChecks
         Reject(() => Prepare(Copy(badCurve, F.Curve), halfTarget, recipeContext),
             "Out-of-range custom curve inversion stays unrepresentable");
 
+        // Scalars, HSL, v4 refinement scalars, and relative tint endpoint overshoots.
+        var scalar69Source = MakeV4(0.69);
+        scalar69Source.Hsl = scalar69Source.Hsl.WithValue(0, 0, 100.0);
+        scalar69Source.ToneControls = scalar69Source.ToneControls with { BlackPoint = 100.0 };
+        scalar69Source.Atmosphere = scalar69Source.Atmosphere with { Clarity = 100.0 };
+        var scalar69Target = MakeV4(0.69);
+        scalar69Target.Hsl = scalar69Target.Hsl.WithValue(0, 0, 0.0);
+        scalar69Target.ToneControls = scalar69Target.ToneControls with { BlackPoint = 0.0 };
+        scalar69Target.Atmosphere = scalar69Target.Atmosphere with { Clarity = 0.0 };
+
+        var pastedHsl69 = Prepare(Copy(scalar69Source, F.HslHueRed), scalar69Target, recipeContext).Settings.Restore();
+        Check(pastedHsl69.Hsl.Value(0, 0) == 100.0 && (float)pastedHsl69.RenderHsl.Value(0, 0) == 69.0f,
+            "Same-strength 0.69 HSL hue red endpoint stores 100 and renders 69");
+
+        var pastedBlack69 = Prepare(Copy(scalar69Source, F.BlackPoint), scalar69Target, recipeContext).Settings.Restore();
+        Check(pastedBlack69.ToneControls.BlackPoint == 100.0 && (float)pastedBlack69.RenderToneControls.BlackPoint == 69.0f,
+            "Same-strength 0.69 black point endpoint stores 100 and renders 69");
+
+        var pastedClarity69 = Prepare(Copy(scalar69Source, F.Clarity), scalar69Target, recipeContext).Settings.Restore();
+        Check(pastedClarity69.Atmosphere.Clarity == 100.0 && (float)pastedClarity69.RenderAtmosphere.Clarity == 69.0f,
+            "Same-strength 0.69 clarity endpoint stores 100 and renders 69");
+
+        var expSource = MakeV4(0.237);
+        expSource.Set(Parameter.Exposure, 5.0);
+        var expTarget = MakeV4(0.237);
+        expTarget.Set(Parameter.Exposure, 0.0);
+        var pastedExp = Prepare(Copy(expSource, F.Exposure), expTarget, recipeContext).Settings.Restore();
+        Check(pastedExp[Parameter.Exposure] == 5.0 && AdjustmentTransfer.EffectiveNumbers(pastedExp.Capture())[F.Exposure] == 1.185f,
+            "Same-strength 0.237 exposure endpoint stores 5.0 and renders 1.185");
+
+        var lowStrengthSource = MakeV4(0.001);
+        lowStrengthSource.Set(Parameter.Contrast, 0.0);
+        lowStrengthSource.Set(Parameter.Tint, 150.0);
+        var lowStrengthTarget = MakeV4(0.001);
+        lowStrengthTarget.Set(Parameter.Contrast, 1.0);
+        lowStrengthTarget.Set(Parameter.Tint, 0.0);
+        var pastedContrast = Prepare(Copy(lowStrengthSource, F.Contrast), lowStrengthTarget, recipeContext).Settings.Restore();
+        Check(pastedContrast[Parameter.Contrast] == 0.0 && AdjustmentTransfer.EffectiveNumbers(pastedContrast.Capture())[F.Contrast] == 0.999f,
+            "Same-strength 0.001 contrast endpoint stores 0.0 and renders 0.999");
+
+        var pastedTint = Prepare(Copy(lowStrengthSource, F.Tint), lowStrengthTarget, recipeContext).Settings.Restore();
+        Check(pastedTint[Parameter.Tint] == 150.0 && pastedTint.Request("", null, 0, null).Tint == 8.15f,
+            "Same-strength 0.001 relative tint endpoint stores 150.0 and renders 8.15");
+
+        // Out-of-range guards per family remain rejected as Unrepresentable with today's exact detail strings.
+        var badScalarSource = MakeV4(1.0);
+        badScalarSource.Set(Parameter.Exposure, 3.0);
+        badScalarSource.Set(Parameter.Contrast, 0.0);
+        badScalarSource.ToneControls = badScalarSource.ToneControls with { BlackPoint = 60.0 };
+        badScalarSource.Atmosphere = badScalarSource.Atmosphere with { Clarity = 60.0 };
+        badScalarSource.Hsl = badScalarSource.Hsl.WithValue(0, 0, 60.0);
+        badScalarSource.Set(Parameter.Tint, 100.0);
+        foreach (var (badField, expectedDetail) in new[] {
+            (F.Exposure, Loc.Text("调整记录无效，原有文件未被覆盖。")),
+            (F.Contrast, Loc.Text("调整记录无效，原有文件未被覆盖。")),
+            (F.BlackPoint, Loc.Text("无效的黑白场或鲜艳度参数")),
+            (F.Clarity, Loc.Text("无效的清晰度或去朦胧参数")),
+            (F.HslHueRed, Loc.Text("无效的 HSL 参数")),
+            (F.Tint, Loc.Text("调整记录无效，原有文件未被覆盖。"))
+        })
+        {
+            try
+            {
+                Prepare(Copy(badScalarSource, badField), halfTarget, recipeContext);
+                throw new Exception("Out-of-range " + badField.ID() + " was not rejected");
+            }
+            catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable &&
+                ex.Detail.StartsWith(expectedDetail, StringComparison.Ordinal)) { }
+        }
+
+        // Pins parity between the Double-storing clients (Windows and Swift) when rawExact is already in range, not that the rejection is desirable.
+        var android63Payload = new AdjustmentPayload(
+            new AdjustmentSource("android-63.ARW", true, 3, new AdjustmentRecipeContext(recipe.Id, 0.6299999952316284, 4)),
+            new Dictionary<F, JsonElement> { [F.Exposure] = Value(5.0) });
+        var target63 = MakeV4(0.63);
+        target63.Set(Parameter.Exposure, 0.0);
+        try
+        {
+            Prepare(android63Payload, target63, recipeContext);
+            throw new Exception("Android 63% exposure=5.0 onto 0.63 target should match Swift/development rejection");
+        }
+        catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable &&
+            ex.Detail == Loc.Text("调整记录无效，原有文件未被覆盖。")) { }
+
         Console.WriteLine("PASS: Windows global color-grading wheel strength conversion checks");
     }
 

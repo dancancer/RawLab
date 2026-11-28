@@ -83,9 +83,9 @@ internal object AdjustmentTransferRefinement {
                 val inverted = try {
                     ToneCurveShape(ToneCurveMode.CUSTOM, shape.points.mapIndexed { idx, pt ->
                         when (idx) {
-                            0 -> ToneCurvePoint(pt.x / strength, pt.y / strength)
-                            last -> ToneCurvePoint(1.0 + (pt.x - 1.0) / strength, 1.0 + (pt.y - 1.0) / strength)
-                            else -> ToneCurvePoint(pt.x, pt.x + (pt.y - pt.x) / strength)
+                            0 -> ToneCurvePoint((pt.x / strength).coerceIn(0.0, 1.0), (pt.y / strength).coerceIn(0.0, 1.0))
+                            last -> ToneCurvePoint((1.0 + (pt.x - 1.0) / strength).coerceIn(0.0, 1.0), (1.0 + (pt.y - 1.0) / strength).coerceIn(0.0, 1.0))
+                            else -> ToneCurvePoint(pt.x, (pt.x + (pt.y - pt.x) / strength).coerceIn(0.0, 1.0))
                         }
                     })
                 } catch (_: IllegalArgumentException) {
@@ -96,12 +96,19 @@ internal object AdjustmentTransferRefinement {
         }
         val p = desired.parametric
         val logicalParametric = if (p.isIdentity || strength == 1.0) p else {
-            val h = p.highlights / strength
-            val l = p.lights / strength
-            val d = p.darks / strength
-            val s = p.shadows / strength
-            if (listOf(h, l, d, s).any { !it.isFinite() || it !in -100.0..100.0 }) unrepresentable(AdjustmentField.CURVE_PARAMETRIC)
-            ToneCurveParametric(h, l, d, s, p.splitShadow, p.splitMidtone, p.splitHighlight)
+            val sub = AdjustmentFieldSpec.SubFields.LightCurveParametric
+            val raw = listOf(p.highlights, p.lights, p.darks, p.shadows).map { it / strength }
+            if (raw.any { !it.isFinite() }) unrepresentable(AdjustmentField.CURVE_PARAMETRIC)
+            val clamped = raw.map { it.coerceIn(sub.bandMin, sub.bandMax) }
+            val candidate = ToneCurveParametric(clamped[0], clamped[1], clamped[2], clamped[3], p.splitShadow, p.splitMidtone, p.splitHighlight)
+            val scaled = candidate.scaled(strength)
+            if (abs(scaled.highlights - p.highlights) > 1e-12 ||
+                abs(scaled.lights - p.lights) > 1e-12 ||
+                abs(scaled.darks - p.darks) > 1e-12 ||
+                abs(scaled.shadows - p.shadows) > 1e-12) {
+                unrepresentable(AdjustmentField.CURVE_PARAMETRIC)
+            }
+            candidate
         }
         return ToneCurveSettings(scaledShape.mode, scaledShape.points, scaledShape.channels, desired.applyToLuminosity, logicalParametric)
     }
