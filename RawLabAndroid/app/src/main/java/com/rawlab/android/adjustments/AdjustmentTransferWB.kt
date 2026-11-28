@@ -49,22 +49,23 @@ internal object AdjustmentTransferWB {
     private fun applyResolved(desired: Resolved, original: EditSettings, context: AdjustmentTransferContext): EditSettings {
         if (desired.camera) return original.copy(customWb = false, temperature = 6500f, tint = 0f)
         var result = original.copy(customWb = true, temperature = desired.temperature)
-        if (result.recipeID == null) result = result.copy(tint = desired.tint) else {
-            val delta = desired.tint.toDouble() - camera(context).tint
-            val scale = result.recipeScale.toDouble()
-            representable(scale != 0.0 || delta == 0.0)
-            val range = AdjustmentField.TINT.spec.androidModel.floatRange!!
-            val logical = (if (scale == 0.0) 0f else (delta / scale).toFloat())
-                .coerceIn(range.start, range.endInclusive).canonicalZero()
-            result = result.copy(tint = logical)
-            if (render(result, context) != desired) {
-                val exact = listOf(Math.nextDown(logical), Math.nextUp(logical)).mapNotNull {
-                    runCatching { result.copy(tint = it.canonicalZero()) }.getOrNull()
-                }.firstOrNull { render(it, context) == desired }
-                if (exact != null) result = exact
-            }
+        if (result.recipeID == null) {
+            result = result.copy(tint = desired.tint)
+            representable(render(result, context) == desired)
+            return result
         }
-        representable(render(result, context) == desired)
+        val delta = desired.tint.toDouble() - camera(context).tint
+        val scale = result.recipeScale.toDouble()
+        representable(scale != 0.0 || delta == 0.0)
+        val range = AdjustmentField.TINT.spec.androidModel.floatRange!!
+        val initial = if (scale == 0.0) 0f else (delta / scale).toFloat()
+        val solved = AdjustmentTransfer.solveScaledFloat(desired.tint.canonicalZero(), initial, range) { x ->
+            render(result.copy(tint = x), context).tint.canonicalZero()
+        }
+        representable(solved != null)
+        result = result.copy(tint = solved!!)
+        val actual = render(result, context)
+        representable(actual.camera == desired.camera && actual.temperature == desired.temperature)
         return result
     }
 
@@ -179,10 +180,11 @@ internal object AdjustmentTransferWB {
             desired = Resolved(false, fixedTemperature, fixedTint)
         }
         result = applyResolved(desired, result, context)
+        val solved = render(result, context)
         if (cameraMode && result.recipeID != null) result = result.copy(customWb = false)
         if (!contextChanged) result = result.copy(temperature = if (temperature == null) target.temperature else result.temperature,
             tint = if (tint == null) target.tint else result.tint, customWb = if (mode == null) target.customWb else result.customWb)
-        representable(render(result, context) == desired)
+        representable(render(result, context) == solved)
         return result
     }
 }

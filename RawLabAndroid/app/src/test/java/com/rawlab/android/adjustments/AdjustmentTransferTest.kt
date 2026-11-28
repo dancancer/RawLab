@@ -405,7 +405,7 @@ class AdjustmentTransferTest {
             assertEquals(AdjustmentPayload.curve(curveObj).scaled(strength.toFloat()), curved.renderCurve)
         }
 
-        // Genuine rejections stay rejected: out of neutral range, and unreachable Float at target strength 2.0.
+        // Genuine rejections stay rejected: out of neutral range.
         val outOfNeutralRange = AdjustmentPayload(
             AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.3, 4)),
             mapOf(F.CONTRAST to AdjustmentValue.Number(0.2)),
@@ -414,15 +414,17 @@ class AdjustmentTransferTest {
             AdjustmentFailure.UNREPRESENTABLE,
             assertThrows(AdjustmentTransferException::class.java) { prepare(outOfNeutralRange, EditSettings(), ctx) }.reason,
         )
-        val unreachableAt2x = AdjustmentPayload(
+        // Contrast 0.2 at 1.0x onto 2.0x has no exact Float (0.59999996f -> 0.19999993f, 0.6f -> 0.20000005f),
+        // so Android stores the nearer representable Float (0.6f).
+        val bracketedAt2x = AdjustmentPayload(
             AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.0, 4)),
             mapOf(F.CONTRAST to AdjustmentValue.Number(0.2)),
         )
         val target2x = EditSettings(recipeID = "hamada_daylight_v2", strength = 2.0f, masterRecipeSettingsVersion = 4)
-        assertEquals(
-            AdjustmentFailure.UNREPRESENTABLE,
-            assertThrows(AdjustmentTransferException::class.java) { prepare(unreachableAt2x, target2x, ctx) }.reason,
-        )
+        val nearestAt2x = prepare(bracketedAt2x, target2x, ctx)
+        assertEquals(0.6f, nearestAt2x.contrast)
+        assertEquals(0.20000005f, AdjustmentTransfer.effectiveNumbers(nearestAt2x)[F.CONTRAST])
+        assertEquals(nearestAt2x, prepare(bracketedAt2x, nearestAt2x, ctx))
     }
 
     @Test fun partialRecipePasteAcceptsSliderEndpointsAcrossSameAndCrossStrength() {
@@ -598,6 +600,96 @@ class AdjustmentTransferTest {
             ctx,
         )
         assertEquals(-76.92308f, sameStrengthClamped.hsl.value(0, 0))
+    }
+
+    @Test fun partialRecipePasteStoresNearestRepresentableFloatAndPreservesGuards() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        // Exposure 1.0 at source strength 1.0 -> wanted rendered exposure is 1.0f (0x3f800000).
+        // At target strength 1.7f (0x3fd9999a):
+        //   0x3f169696 (0.58823526f) * 1.7f = 0x3f7fffff (0.99999994f), |diff| = 2^-24 (1 Float step below 1.0f)
+        //   0x3f169697 (0.5882353f)  * 1.7f = 0x3f800001 (1.0000001f),  |diff| = 2^-23 (1 Float step above 1.0f)
+        // No Float renders 1.0f exactly; 0.58823526f is strictly nearer.
+        val request = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.0, 4)),
+            mapOf(F.EXPOSURE to AdjustmentValue.Number(1.0)),
+        )
+        val target17 = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 1.7f,
+            masterRecipeSettingsVersion = 4,
+        )
+        val applied = prepare(request, target17, ctx)
+        assertEquals(0x3f169696, applied.exposure.toRawBits())
+        assertEquals(0.58823526f, applied.exposure)
+        val rendered = AdjustmentTransfer.effectiveNumbers(applied)[F.EXPOSURE]!!
+        assertEquals(Math.nextDown(1.0f), rendered)
+        assertEquals(1, kotlin.math.abs(rendered.toRawBits() - 1.0f.toRawBits()))
+        assertEquals(applied, prepare(request, applied, ctx))
+
+        // Guard: strength-0 target with non-neutral wanted result remains rejected.
+        val targetZero = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 0f,
+            masterRecipeSettingsVersion = 4,
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) { prepare(request, targetZero, ctx) }.reason,
+        )
+
+        // Guard: out-of-range wanted result remains rejected.
+        val outOfRange = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.7, 4)),
+            mapOf(F.EXPOSURE to AdjustmentValue.Number(4.0)),
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) { prepare(outOfRange, EditSettings(), ctx) }.reason,
+        )
+
+        // All other strength-scaled families (HSL, refinement scalar, grading wheel, relative tint)
+        // and unselected re-solve on strength change also store the nearest representable Float.
+        val src100 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.0, 4))
+        val target111 = EditSettings(recipeID = "hamada_daylight_v2", strength = 1.11f, masterRecipeSettingsVersion = 4)
+
+        val hslApplied = prepare(AdjustmentPayload(src100, mapOf(F.HSL_HUE_RED to AdjustmentValue.Number(80.0))), target111, ctx)
+        assertEquals(1, kotlin.math.abs(hslApplied.renderHsl.value(0, 0).toRawBits() - 80.0f.toRawBits()))
+
+        val bpApplied = prepare(AdjustmentPayload(src100, mapOf(F.BLACK_POINT to AdjustmentValue.Number(80.0))), target111, ctx)
+        assertEquals(1, kotlin.math.abs(bpApplied.renderBlackPoint.toRawBits() - 80.0f.toRawBits()))
+
+        val wheelObj = AdjustmentValue.Object(mapOf(
+            "hue" to AdjustmentValue.Number(30.0),
+            "saturation" to AdjustmentValue.Number(80.0),
+            "luminance" to AdjustmentValue.Number(45.5),
+        ))
+        val wheelApplied = prepare(AdjustmentPayload(src100, mapOf(F.GRADING_SHADOWS to wheelObj)), target111, ctx)
+        assertEquals(1, kotlin.math.abs(wheelApplied.renderColorGrading.shadows.saturation.toRawBits() - 80.0f.toRawBits()))
+
+        val src75 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.75, 4))
+        val target116 = EditSettings(recipeID = "hamada_daylight_v2", strength = 1.16f, masterRecipeSettingsVersion = 4)
+        val tintApplied = prepare(AdjustmentPayload(src75, mapOf(F.TINT to AdjustmentValue.Number(-150.0))), target116, ctx)
+        val tintRendered = 8f + tintApplied.tint * tintApplied.strength
+        assertEquals(1, kotlin.math.abs(tintRendered.toRawBits() - (-104.5f).toRawBits()))
+
+        // Unselected field re-solved when strength changes from 1.0 to 1.7.
+        val strengthChangePayload = AdjustmentPayload(
+            AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 1.7, 4)),
+            mapOf(F.STRENGTH to AdjustmentValue.Number(1.7)),
+        )
+        val targetWithExposure = EditSettings(
+            recipeID = "hamada_daylight_v2",
+            strength = 1.0f,
+            masterRecipeSettingsVersion = 4,
+            exposure = 1.0f,
+        )
+        val resolvedUnselected = prepare(strengthChangePayload, targetWithExposure, ctx)
+        assertEquals(0x3f169696, resolvedUnselected.exposure.toRawBits())
+        assertEquals(Math.nextDown(1.0f), AdjustmentTransfer.effectiveNumbers(resolvedUnselected)[F.EXPOSURE])
     }
 
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
