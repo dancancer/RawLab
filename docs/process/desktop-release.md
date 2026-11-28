@@ -77,7 +77,11 @@ ML) without requiring or bundling the model package; the build fails after
 packaging if `Contents/Resources/AI/DualDn` exists or if
 `Contents/Resources/ai-model-catalog.json` is missing. The runtime exposes AI
 when a Core ML GPU is available, and users trigger a one-time in-app download
-when they use AI denoise. Intel has no supported GPU backend, so an `x86_64`
+when they use AI denoise. Before publishing the Apple Silicon package, run the
+real-hardware Core ML AI gate (`bash RawLabMac/tests/dualdn-api-package.sh`) on
+a physical Apple Silicon Mac alongside the real-launch smoke test; hosted macOS
+CI VMs mark `ai_session_memory`, `dualdn_native` and `dualdn_api` not
+applicable. Intel has no supported GPU backend, so an `x86_64`
 release build disables AI compilation and omits ONNX Runtime and AI controls; it
 rejects `RAWLAB_DUALDN=1`. Intel application and updater acceptance remains
 separate from Apple Silicon GPU validation.
@@ -225,6 +229,13 @@ journal or unresolved installation state still blocks settings repair and cleanu
 
 Before publishing, run the release plan's UI, hardware and actual update matrix.
 A build or fake-adapter test is not a successful install/restart/recovery test.
+For the Apple Silicon macOS package, alongside the real-launch in-app model
+download and AI denoise smoke test, running
+`bash RawLabMac/tests/dualdn-api-package.sh` on a physical Apple Silicon Mac is a
+mandatory pre-publish step: it runs `ai_session_memory`, `dualdn_native` and
+`dualdn_api` (which are marked not applicable on hosted macOS VMs) against the
+real Core ML hardware GPU and refuses to count a non-hardware or skipped run as a
+pass.
 No-hardware skips must remain visible; they do not establish GPU acceptance.
 Use separate test keys and a prerelease source for seed-to-next-version testing.
 The existing 0.8.2 release requires one manual installation of the trusted seed.

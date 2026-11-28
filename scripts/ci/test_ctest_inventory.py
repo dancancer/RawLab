@@ -217,7 +217,7 @@ class CTestInventoryTests(unittest.TestCase):
             data = {
                 "tests": [
                     _make_entry("tiff_ifd", ["core", "ci_macos_arm64"], "tiff_ifd_tests"),
-                    _make_entry("ai_session_memory", ["ai", "ci_macos_arm64"], "ai_session_memory_tests"),
+                    _make_entry("ai_session_memory", ["ai", "hw_gpu"], "ai_session_memory_tests"),
                     _make_entry("dualdn_session", ["ai", "ci_macos_arm64"], "dualdn_session_tests"),
                 ]
             }
@@ -408,6 +408,181 @@ endif()
                 ],
             )
             self.assertEqual(by_name["metal_edit_pixel_golden"], by_name["metal_workspace"])
+
+    def test_macos_coreml_hw_tests_are_excluded_from_hosted_macos_and_visible(self) -> None:
+        hw_entries = [
+            _make_entry("tiff_ifd", ["core", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "tiff_ifd_tests"),
+            _make_entry("dualdn_session", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "dualdn_session_tests"),
+            _make_entry("coreml_gpu_placement", ["ai", "gpu", "ci_macos_arm64", "ci_macos_x86_64"], "coreml_gpu_placement_tests"),
+            _make_entry("ai_session_memory", ["ai", "hw_gpu"], "ai_session_memory_tests"),
+            _make_entry("dualdn_native", ["ai", "hw_gpu"], "dualdn_native_tests"),
+            _make_entry("dualdn_api", ["ai", "hw_gpu"], "dualdn_api_tests"),
+        ]
+        self.assertEqual(cci.validate_ctest_inventory({"tests": hw_entries}, ci_label="ci_macos_arm64"), [])
+        self.assertEqual(cci.validate_ctest_inventory({"tests": hw_entries}, ci_label="ci_macos_x86_64"), [])
+
+        # Windows keeps ci_windows selection for all three tests unchanged.
+        win_entries = [
+            _make_entry("ai_session_memory", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "ai_session_memory_tests"),
+            _make_entry("dualdn_native", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "dualdn_native_tests"),
+            _make_entry("dualdn_api", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "dualdn_api_tests"),
+        ]
+        self.assertEqual(cci.validate_ctest_inventory({"tests": win_entries}, ci_label="ci_windows"), [])
+
+        # Re-adding ci_macos_arm64 or ci_macos_x86_64 to any of the three must fail closed.
+        for name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
+            for label in ("ci_macos_arm64", "ci_macos_x86_64"):
+                with self.subTest(name=name, label=label):
+                    bad = {"tests": [_make_entry(name, ["ai", label])]}
+                    errors = cci.validate_ctest_inventory(bad, ci_label=label)
+                    self.assertTrue(any(name in e and label in e for e in errors), errors)
+
+        # CLI output must explicitly name the three hosted-inapplicable tests and where they run.
+        with tempfile.TemporaryDirectory() as tmp:
+            json_path = Path(tmp) / "ctest.json"
+            json_path.write_text(json.dumps({"tests": hw_entries}), encoding="utf-8")
+            res = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/ci/check_ctest_inventory.py"),
+                    "--json",
+                    str(json_path),
+                    "--ci-label",
+                    "ci_macos_arm64",
+                    "--skip-orphan-check",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("not applicable on hosted machines", res.stdout)
+            for name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
+                self.assertIn(name, res.stdout)
+            self.assertIn("RawLabMac/tests/dualdn-api-package.sh", res.stdout)
+
+    @unittest.skipUnless(shutil.which("cmake"), "cmake is required")
+    def test_ai_denoise_cmake_routes_three_coreml_tests_to_hw_gpu_on_apple_only(self) -> None:
+        ai_cmake = (ROOT / "lutools/cmake/ai-denoise.cmake").as_posix()
+        probe_script = f"""
+macro(add_library)
+endmacro()
+macro(add_executable)
+endmacro()
+macro(target_include_directories)
+endmacro()
+macro(target_link_libraries)
+endmacro()
+macro(target_compile_definitions)
+endmacro()
+macro(target_sources)
+endmacro()
+macro(enable_language)
+endmacro()
+macro(set_property)
+endmacro()
+macro(set_source_files_properties)
+endmacro()
+macro(add_custom_command)
+endmacro()
+macro(find_package)
+endmacro()
+function(find_path var)
+    set(${{var}} "/fake/ort/include" PARENT_SCOPE)
+endfunction()
+function(find_library var)
+    set(${{var}} "/fake/ort/lib/libonnxruntime.dylib" PARENT_SCOPE)
+endfunction()
+function(rawlab_add_test)
+    set(one_val NAME TARGET SKIP_RETURN_CODE)
+    set(multi_val SOURCES COMMAND ARGS INCLUDES INCLUDES_BEFORE LIBRARIES DEFINES COMPILE_OPTIONS LINK_OPTIONS LABELS ENVIRONMENT)
+    cmake_parse_arguments(ARG "" "${{one_val}}" "${{multi_val}}" ${{ARGN}})
+    string(JOIN "," lbls ${{ARG_LABELS}})
+    file(APPEND "${{OUT_FILE}}" "${{ARG_NAME}}=${{lbls}}\\n")
+endfunction()
+set(APPLE "${{SIM_APPLE}}")
+set(WIN32 "${{SIM_WIN32}}")
+set(IOS "${{SIM_IOS}}")
+set(ANDROID "${{SIM_ANDROID}}")
+set(CMAKE_CURRENT_SOURCE_DIR "{(ROOT / 'lutools').as_posix()}")
+set(CMAKE_CURRENT_BINARY_DIR "${{OUT_DIR}}")
+include("{ai_cmake}")
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            probe = root / "probe.cmake"
+            probe.write_text(probe_script, encoding="utf-8")
+
+            def eval_cmake(defines: dict[str, str]) -> dict[str, set[str]]:
+                out_file = root / f"out_{len(list(root.glob('out_*')))}.txt"
+                cmd = ["cmake", f"-DOUT_FILE={out_file}", f"-DOUT_DIR={root}"]
+                for k, v in defines.items():
+                    cmd.append(f"-D{k}={v}")
+                cmd.extend(["-P", str(probe)])
+                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                parsed: dict[str, set[str]] = {}
+                for line in out_file.read_text(encoding="utf-8").splitlines():
+                    if "=" in line:
+                        name, raw_labels = line.split("=", 1)
+                        parsed[name] = set(filter(None, raw_labels.split(",")))
+                return parsed
+
+            # 1. macOS arm64 full (APPLE=ON, AI=ON, real package): the three carry hw_gpu and no ci_macos_*.
+            mac_full = eval_cmake({
+                "SIM_APPLE": "ON",
+                "SIM_WIN32": "OFF",
+                "SIM_IOS": "OFF",
+                "SIM_ANDROID": "OFF",
+                "BUILD_TESTING": "ON",
+                "SONY2FUJI_ENABLE_AI_DENOISE": "ON",
+                "SONY2FUJI_ENABLE_DIRECTML": "OFF",
+                "RAWLAB_DUALDN_TEST_PACKAGE": "/fake/model/package",
+            })
+            for hw_name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
+                self.assertIn(hw_name, mac_full)
+                self.assertIn("hw_gpu", mac_full[hw_name], hw_name)
+                self.assertNotIn("ci_macos_arm64", mac_full[hw_name], hw_name)
+                self.assertNotIn("ci_macos_x86_64", mac_full[hw_name], hw_name)
+            for retained in (
+                "dualdn_session",
+                "dualdn_package",
+                "dualdn_package_chinese",
+                "dualdn_package_supplementary",
+                "coreml_gpu_placement",
+            ):
+                self.assertIn(retained, mac_full)
+                self.assertIn("ci_macos_arm64", mac_full[retained], retained)
+            mac_entries = [_make_entry(n, sorted(lbls)) for n, lbls in mac_full.items()]
+            self.assertEqual(cci.validate_ctest_inventory({"tests": mac_entries}, ci_label="ci_macos_arm64"), [])
+
+            # 2. Windows full (WIN32=ON, APPLE=OFF, AI=ON, real package): unchanged ci_windows selection.
+            win_full = eval_cmake({
+                "SIM_APPLE": "OFF",
+                "SIM_WIN32": "ON",
+                "SIM_IOS": "OFF",
+                "SIM_ANDROID": "OFF",
+                "BUILD_TESTING": "ON",
+                "SONY2FUJI_ENABLE_AI_DENOISE": "ON",
+                "SONY2FUJI_ENABLE_DIRECTML": "OFF",
+                "RAWLAB_DUALDN_TEST_PACKAGE": "/fake/model/package",
+            })
+            for name in ("ai_session_memory", "dualdn_native", "dualdn_api", "dualdn_session"):
+                self.assertIn(name, win_full)
+                self.assertIn("ci_windows", win_full[name], name)
+                self.assertNotIn("hw_gpu", win_full[name], name)
+            win_entries = [_make_entry(n, sorted(lbls)) for n, lbls in win_full.items()]
+            self.assertEqual(cci.validate_ctest_inventory({"tests": win_entries}, ci_label="ci_windows"), [])
+
+            # 3. macOS AI=OFF (native / models ctest row): dualdn_api_disabled stays selected on ci_macos_arm64.
+            mac_no_ai = eval_cmake({
+                "SIM_APPLE": "ON",
+                "SIM_WIN32": "OFF",
+                "SIM_IOS": "OFF",
+                "SIM_ANDROID": "OFF",
+                "BUILD_TESTING": "ON",
+                "SONY2FUJI_ENABLE_AI_DENOISE": "OFF",
+            })
+            self.assertIn("dualdn_api_disabled", mac_no_ai)
+            self.assertIn("ci_macos_arm64", mac_no_ai["dualdn_api_disabled"])
 
 
 if __name__ == "__main__":

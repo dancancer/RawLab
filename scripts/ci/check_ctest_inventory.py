@@ -26,6 +26,13 @@ FORBIDDEN_ON_CI: dict[str, set[str]] = {
     "ci_windows": {"hw_gpu", "external_raw", "gles_shader", "ai_model"},
 }
 
+MACOS_COREML_HW_TESTS: tuple[str, ...] = (
+    "ai_session_memory",
+    "dualdn_native",
+    "dualdn_api",
+)
+MACOS_COREML_HW_GATE_CMD = "bash RawLabMac/tests/dualdn-api-package.sh"
+
 # Test source filenames in lutools/tests/ mapped to target executable stem when they differ,
 # or documented as non-CTest probes/benchmarks/helpers/platform-specific targets.
 NON_CTEST_OR_HELPER_SOURCES: dict[str, str] = {
@@ -222,6 +229,16 @@ def validate_ctest_inventory(
                     f"CTest {name} carries forbidden label(s) {sorted(forbidden)} "
                     f"alongside {ci_label}"
                 )
+            if ci_label in {"ci_macos_arm64", "ci_macos_x86_64"} and name in MACOS_COREML_HW_TESTS:
+                if has_ci:
+                    errors.append(
+                        f"CTest {name} requires a physical Apple Silicon GPU (Core ML) and "
+                        f"must not carry {ci_label}; run via {MACOS_COREML_HW_GATE_CMD}"
+                    )
+                if "hw_gpu" not in labels:
+                    errors.append(
+                        f"CTest {name} must carry hw_gpu on macOS so hosted CI excludes it explicitly"
+                    )
 
     if ci_label is not None and ci_count == 0:
         errors.append(f"Zero CTests carry CI label {ci_label}")
@@ -325,6 +342,17 @@ def main(argv: list[str] | None = None) -> int:
     if args.ci_label:
         selected = sum(1 for t in tests if args.ci_label in test_labels(t))
         print(f"PASS: {len(tests)} CTest(s) verified ({selected} selected by -L ^{args.ci_label}$)")
+        if args.ci_label in {"ci_macos_arm64", "ci_macos_x86_64"}:
+            present_hw_ai = [
+                name for name in MACOS_COREML_HW_TESTS
+                if any(t.get("name") == name for t in tests)
+            ]
+            if present_hw_ai:
+                print(
+                    "NOTICE: not applicable on hosted machines (no physical Apple Silicon GPU) — "
+                    f"excluded from {args.ci_label}: {', '.join(present_hw_ai)}; "
+                    f"run on a real Apple Silicon Mac via `{MACOS_COREML_HW_GATE_CMD}`"
+                )
     else:
         print(f"PASS: {len(tests)} CTest(s) verified with valid LABELS")
     return 0

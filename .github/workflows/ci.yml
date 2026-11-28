@@ -341,16 +341,33 @@ jobs:
             ci_timed edited-photo-previews bash RawLabMac/tests/edited-photo-previews.sh
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
-      - name: Exercise real-package DualDn C API on Core ML
-        # native 门的 build-macos 无包（dualdn_api_disabled，RAWLAB_TEST_AI 断言块被编译掉）；
-        # 本步骤用专用 AI-ON 构建目录跑真包 dualdn_api，输入缺失由脚本硬失败。full 已由
-        # ai-inputs 注入的 build.sh 构建走 core ctest 覆盖同一断言，不在 full 重复执行。
-        if: success() && needs.changes.outputs.checks == 'native' && matrix.arch == 'arm64'
+      - name: Record Core ML hardware-only AI tests not applicable on hosted macOS
+        # 托管 macOS arm64 VM 无物理 GPU，无法运行真实 Core ML 硬件推理门禁；
+        # ai_session_memory / dualdn_native / dualdn_api 通过 hw_gpu 标签排除出托管 CTest，
+        # native 门亦不再跑真包 dualdn_api，三项统一改到真实 Apple Silicon Mac 发布前必跑。
+        if: success() && (needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && matrix.arch == 'arm64'
         shell: bash
         run: |
           mkdir -p build/ci
-          exec > >(tee build/ci/macos-dualdn-api.log) 2>&1
-          bash RawLabMac/tests/dualdn-api-package.sh
+          notice="NOT APPLICABLE ON HOSTED MACOS (no physical Apple Silicon GPU): ai_session_memory, dualdn_native, dualdn_api — excluded from hosted macOS arm64 native/full; run on a real Apple Silicon Mac via \`bash RawLabMac/tests/dualdn-api-package.sh\` (mandatory pre-release gate)."
+          printf '%s\n' "$notice" | tee build/ci/macos-ai-hardware-gate.log
+          if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+            {
+              echo "### Core ML AI Hardware Gate (Not Applicable on Hosted macOS)"
+              echo ""
+              echo "Hosted macOS arm64 VMs have no physical GPU, so these three Core ML hardware tests are **not applicable on hosted machines** (托管机器上不适用) and are excluded from hosted \`native\` and \`full\`:"
+              echo ""
+              echo "- \`ai_session_memory\`"
+              echo "- \`dualdn_native\`"
+              echo "- \`dualdn_api\`"
+              echo ""
+              echo "Run them on a real Apple Silicon Mac before release:"
+              echo ""
+              echo '```bash'
+              echo "bash RawLabMac/tests/dualdn-api-package.sh"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Save successful native dependencies
         # Intel shards share one key; the core shard (or the full gate's single Intel job) saves it.
         # The arm64 core CTest row shares the arm64 key, so a successful core push to development warms it.

@@ -23,8 +23,8 @@ VM), `ai-inputs.py` fetches the pinned `macos-arm64` model archive from
 archive's size and SHA-256 before decompressing, extracts into a private staging
 directory, verifies the unpacked tree against both descriptions, and renames it
 atomically to `complete`. A download or verification failure, or an existing
-invalid directory, remains a hard failure for macOS arm64 `native` and desktop
-`full`. Do not drop those steps, upload private models, add secrets, or call a
+invalid directory, remains a hard failure for desktop `full` and the Apple
+Silicon hardware AI gate (`RawLabMac/tests/dualdn-api-package.sh`). Do not drop those steps, upload private models, add secrets, or call a
 model-free `build` run a full pass. Windows `build/native`, macOS `build`, and iOS/Android groups do not
 require that model package. No signing keys are used in CI.
 Native checks include direct HLSL compilation without a hardware adapter and
@@ -326,18 +326,25 @@ gate's honest skip pair otherwise.
   launches a packaged app, executes emulator/device smoke, uses secrets or sends
   RUM traffic; running `RawLabAndroid/scripts/smoke-release-apk.sh` on the
   actual signed release APK remains a mandatory pre-publish gate.
-- macOS explicitly excludes `native_dcp_metal`, `gpu_photo` and `metal_denoise`
-  from the CI CTest invocation. Other tests may exercise an available GPU
-  opportunistically; this is not a guaranteed physical GPU gate.
+- macOS explicitly excludes `native_dcp_metal`, `gpu_photo`, `metal_denoise`,
+  and (on AI-enabled builds) the three Core ML hardware-GPU tests
+  `ai_session_memory`, `dualdn_native` and `dualdn_api` (`hw_gpu` label, no
+  `ci_macos_*` label) from the CI CTest invocation. Other tests may exercise an
+  available GPU opportunistically; this is not a guaranteed physical GPU gate.
 - The fast macOS CTest selects `dualdn_api` only in its no-package
-  `dualdn_api_disabled` form, because `RAWLAB_DUALDN_TEST_PACKAGE` is unset
-  there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. The
-  arm64 `native` gate retains that check through
-  `RawLabMac/tests/dualdn-api-package.sh`, which configures a dedicated
-  AI-enabled build against the pinned ONNX Runtime and the validated DualDn
-  package and runs the real `dualdn_api` test. In `full`, `ai-inputs.py` injects
-  the package into `build.sh`, so its `build-macos` CTest runs the real-package
-  tests. A missing model or runtime is a hard failure, not a skip; hosted routing
+  `dualdn_api_disabled` form, because `SONY2FUJI_ENABLE_AI_DENOISE` is OFF
+  there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. Hosted
+  macOS arm64 `native` does not run `RawLabMac/tests/dualdn-api-package.sh`. In
+  `full`, `ai-inputs.py` still provisions the pinned ONNX Runtime and validated
+  DualDn package into `build.sh`, builds with AI enabled, validates the package,
+  and runs `dualdn_session`, `dualdn_package*`, `coreml_gpu_placement` and all
+  other non-hardware CTests; `ai_session_memory`, `dualdn_native` and
+  `dualdn_api` remain registered in CTest (checked by
+  `check_ctest_inventory.py`) but are excluded from `-L ^ci_macos_arm64$` and
+  explicitly recorded in the job log and step summary as not applicable on
+  hosted machines. Those three run on a real Apple Silicon Mac via
+  `bash RawLabMac/tests/dualdn-api-package.sh` as a mandatory pre-release gate.
+  A missing model or runtime remains a hard failure, not a skip; hosted routing
   does not provide a license or silently manufacture a model package.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
@@ -512,8 +519,13 @@ currently document three-core/7 GB arm64 VMs, four-core/14 GB Intel VMs and Xcod
 not a claim of GA availability. Logs and the SDK guard determine the actual
 image/toolchain. No larger paid runner, signing identity or persistent Mac is
 required by this route. Hosted VMs do not establish physical Metal/Core ML or
-iPhone acceptance; retained hardware-dependent tests may fail without a device,
-and that is not permission to skip them or claim a hardware pass.
+iPhone acceptance, and a hosted run is never a hardware pass. The three Core ML
+hardware-GPU AI tests (`ai_session_memory`, `dualdn_native`, `dualdn_api`) are
+marked not applicable on hosted macOS arm64 (excluded via `hw_gpu` and named
+explicitly in the job log and step summary) and run instead on a real Apple
+Silicon Mac via `bash RawLabMac/tests/dualdn-api-package.sh` as a mandatory
+pre-release gate; any other retained hardware-dependent test may fail without a
+device, and that is never permission to skip it or claim a hardware pass.
 
 The arm64 `all` coverage, Intel suite coverage, cache cold/warm rules and bounded
 CTest parallelism stay unchanged. Moving hosts does not authorize model uploads;

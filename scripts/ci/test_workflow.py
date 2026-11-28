@@ -1461,6 +1461,205 @@ class WorkflowContractTests(unittest.TestCase):
             _invalid_env_context_errors({"jobs": {"b": {"env": {"BAD": "${{ format('}} {0}', runner.temp) }}"}}}})
         )
 
+    def test_macos_hosted_ci_excludes_coreml_hw_ai_gate_with_visible_notice(self):
+        mac_steps = self.workflow["jobs"]["macos"]["steps"]
+        # Neither native nor full executes the hardware gate script on hosted macOS runners.
+        for step in mac_steps:
+            run_text = _non_comment_text(step.get("run", ""))
+            self.assertNotRegex(
+                run_text,
+                r"(?m)^\s*(?:bash\s+)?RawLabMac/tests/dualdn-api-package\.sh\b",
+                f"hosted macOS step must not execute dualdn-api-package.sh: {step.get('name')}",
+            )
+
+        notice_steps = [
+            step for step in mac_steps
+            if "NOT APPLICABLE ON HOSTED MACOS" in step.get("run", "")
+        ]
+        self.assertEqual(len(notice_steps), 1, "expected one explicit macOS Core ML hardware notice step")
+        notice_step = notice_steps[0]
+        expr = _strip_expr(notice_step["if"])
+
+        for checks in ("native", "full"):
+            ctx_arm = {
+                "_success": True,
+                "needs": {"changes": {"outputs": {"checks": checks}}},
+                "matrix": {"arch": "arm64"},
+            }
+            ctx_intel = {
+                "_success": True,
+                "needs": {"changes": {"outputs": {"checks": checks}}},
+                "matrix": {"arch": "x86_64"},
+            }
+            self.assertTrue(_gha_truthy(_eval_gha_expr(expr, ctx_arm)), (checks, "arm64"))
+            self.assertFalse(_gha_truthy(_eval_gha_expr(expr, ctx_intel)), (checks, "x86_64"))
+        for checks in ("models", "build", "contracts"):
+            ctx = {
+                "_success": True,
+                "needs": {"changes": {"outputs": {"checks": checks}}},
+                "matrix": {"arch": "arm64"},
+            }
+            self.assertFalse(_gha_truthy(_eval_gha_expr(expr, ctx)), checks)
+
+        # Execute the step body to confirm both job log and GITHUB_STEP_SUMMARY name all three tests.
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "summary.md"
+            res = subprocess.run(
+                ["bash", "--noprofile", "--norc", "-euo", "pipefail", "-c", notice_step["run"]],
+                cwd=tmp,
+                env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)},
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            log_file = Path(tmp) / "build/ci/macos-ai-hardware-gate.log"
+            self.assertTrue(log_file.is_file())
+            log_text = log_file.read_text(encoding="utf-8")
+            summary_text = summary.read_text(encoding="utf-8")
+            for label, content in (("stdout", res.stdout), ("log", log_text), ("summary", summary_text)):
+                for test_name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
+                    self.assertIn(test_name, content, f"{label} missing {test_name}")
+                self.assertIn("RawLabMac/tests/dualdn-api-package.sh", content, label)
+                self.assertRegex(content.lower(), r"not applicable on hosted", label)
+                self.assertNotRegex(content, r"(?m)^SKIP\b", f"{label} must not emit line-leading SKIP")
+
+    def test_macos_coreml_hardware_gate_script_runs_exact_three_and_refuses_no_gpu(self):
+        script = ROOT / "RawLabMac/tests/dualdn-api-package.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ort_dir = root / "ort"
+            model_dir = root / "model"
+            ort_dir.mkdir()
+            model_dir.mkdir()
+            (model_dir / "manifest.json").write_text("{}", encoding="utf-8")
+            calls_log = root / "calls.log"
+            build_dir = root / "build-ai"
+
+            def run_gate(arch: str, hv_vmm: str, ctest_mode: str) -> subprocess.CompletedProcess[str]:
+                bin_dir = root / f"bin-{arch}-{hv_vmm}-{ctest_mode}"
+                bin_dir.mkdir(exist_ok=True)
+                (bin_dir / "uname").write_text(f"#!/bin/bash\necho '{arch}'\n", encoding="utf-8")
+                (bin_dir / "sysctl").write_text(f"#!/bin/bash\necho '{hv_vmm}'\n", encoding="utf-8")
+                (bin_dir / "xcode-select").write_text("#!/bin/bash\necho /Applications/Xcode.app/Contents/Developer\n", encoding="utf-8")
+                (bin_dir / "cmake").write_text(
+                    f'#!/bin/bash\nprintf "cmake %s\\n" "$*" >> "{calls_log}"\nexit 0\n',
+                    encoding="utf-8",
+                )
+                if ctest_mode == "pass":
+                    junit_body = (
+                        '<testsuite name="ctest">'
+                        '<testcase name="ai_session_memory" status="run"/>'
+                        '<testcase name="dualdn_native" status="run"/>'
+                        '<testcase name="dualdn_api" status="run"/>'
+                        '</testsuite>'
+                    )
+                    ctest_out = (
+                        "PASS AI session residency release, prepare cleanup, 16.77MP Bayer peak RSS, and Bayer RGB cache-miss prepare\\n"
+                        "PASS native float32 Core ML, tensor validation, GPU-only Auto and Force failure\\n"
+                        "PASS Saving-phase cancellation publishes no final AI cache\\n"
+                    )
+                elif ctest_mode == "skipped_native":
+                    junit_body = (
+                        '<testsuite name="ctest">'
+                        '<testcase name="ai_session_memory" status="run"/>'
+                        '<testcase name="dualdn_native" status="run"><skipped message="exit 77"/></testcase>'
+                        '<testcase name="dualdn_api" status="run"/>'
+                        '</testsuite>'
+                    )
+                    ctest_out = (
+                        "PASS AI session residency release\\n"
+                        "SKIP native Core ML resources or Apple Silicon GPU unavailable\\n"
+                        "PASS Saving-phase cancellation publishes no final AI cache\\n"
+                    )
+                elif ctest_mode == "no_gpu_api":
+                    junit_body = (
+                        '<testsuite name="ctest">'
+                        '<testcase name="ai_session_memory" status="run"/>'
+                        '<testcase name="dualdn_native" status="run"/>'
+                        '<testcase name="dualdn_api" status="run"/>'
+                        '</testsuite>'
+                    )
+                    ctest_out = (
+                        "PASS AI session residency release\\n"
+                        "PASS native float32 Core ML\\n"
+                        "PASS unavailable GPU rejected; hardware inference NOT REACHED\\n"
+                    )
+                elif ctest_mode == "missing_one":
+                    junit_body = (
+                        '<testsuite name="ctest">'
+                        '<testcase name="dualdn_api" status="run"/>'
+                        '</testsuite>'
+                    )
+                    ctest_out = (
+                        "PASS AI session residency release\\n"
+                        "PASS native float32 Core ML\\n"
+                        "PASS Saving-phase cancellation publishes no final AI cache\\n"
+                    )
+                else:
+                    raise ValueError(ctest_mode)
+
+                (bin_dir / "ctest").write_text(
+                    "#!/bin/bash\nset -euo pipefail\n"
+                    f'printf "ctest %s\\n" "$*" >> "{calls_log}"\n'
+                    'junit=""\n'
+                    'while [ "$#" -gt 0 ]; do\n'
+                    '  if [ "$1" = "--output-junit" ]; then junit="$2"; shift 2; else shift; fi\n'
+                    'done\n'
+                    f'if [ -n "$junit" ]; then printf %s \'{junit_body}\' > "$junit"; fi\n'
+                    f'printf "{ctest_out}"\n',
+                    encoding="utf-8",
+                )
+                for p in bin_dir.iterdir():
+                    p.chmod(0o755)
+
+                calls_log.write_text("", encoding="utf-8")
+                env = {
+                    **os.environ,
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "RAWLAB_ONNXRUNTIME_ROOT": str(ort_dir),
+                    "RAWLAB_DUALDN_MODEL_DIR": str(model_dir),
+                }
+                return subprocess.run(
+                    ["bash", str(script), str(build_dir)],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                )
+
+            # 1. Refuses non-arm64 host.
+            res_x86 = run_gate("x86_64", "0", "pass")
+            self.assertNotEqual(res_x86.returncode, 0)
+            self.assertIn("arm64", res_x86.stderr)
+
+            # 2. Refuses virtualized macOS VM (kern.hv_vmm_present=1).
+            res_vm = run_gate("arm64", "1", "pass")
+            self.assertNotEqual(res_vm.returncode, 0)
+            self.assertIn("kern.hv_vmm_present=1", res_vm.stderr)
+
+            # 3. Refuses skipped dualdn_native (exit 77).
+            res_skip = run_gate("arm64", "0", "skipped_native")
+            self.assertNotEqual(res_skip.returncode, 0)
+            self.assertIn("skipped", res_skip.stderr)
+
+            # 4. Refuses non-GPU dualdn_api path ("hardware inference NOT REACHED").
+            res_nogpu = run_gate("arm64", "0", "no_gpu_api")
+            self.assertNotEqual(res_nogpu.returncode, 0)
+            self.assertIn("hardware inference NOT REACHED", res_nogpu.stderr)
+
+            # 5. Refuses partial test execution (missing any of the three).
+            res_missing = run_gate("arm64", "0", "missing_one")
+            self.assertNotEqual(res_missing.returncode, 0)
+            self.assertIn("missing=", res_missing.stderr)
+
+            # 6. Passes when all three run on real Apple Silicon hardware and builds/selects exact three.
+            res_ok = run_gate("arm64", "0", "pass")
+            self.assertEqual(res_ok.returncode, 0, res_ok.stdout + res_ok.stderr)
+            self.assertIn("PASS: Apple Silicon Core ML hardware gate (3/3:", res_ok.stdout)
+            recorded = calls_log.read_text(encoding="utf-8")
+            self.assertIn("--target ai_session_memory_tests dualdn_native_tests dualdn_api_tests", recorded)
+            self.assertIn("-R ^(ai_session_memory|dualdn_native|dualdn_api)$", recorded)
+            self.assertIn("--no-tests=error", recorded)
+
 
 if __name__ == "__main__":
     unittest.main()
