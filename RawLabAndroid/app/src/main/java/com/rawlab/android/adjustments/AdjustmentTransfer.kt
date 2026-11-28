@@ -125,13 +125,13 @@ object AdjustmentTransfer {
             if (value != null) {
                 result = if (fullRecipe)
                     AdjustmentTransferValues.setLogical(result, field, value)
-                else assignEffective(result, field, expected(field), preferred = value)
+                else assignEffective(result, field, expected(field))
             } else if (contextChanged && effectiveNumbers(result)[field] != before[field]) {
                 result = assignEffective(result, field, before[field]!!)
             }
         }
         for (field in numericFields) if (effectiveNumbers(result)[field] != expected(field)) {
-            result = assignEffective(result, field, expected(field), preferred = payload[field]?.number)
+            result = assignEffective(result, field, expected(field))
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
@@ -172,22 +172,12 @@ object AdjustmentTransfer {
         }
         return (if (field in AdjustmentTransferValues.scaled) v * scale else v).canonicalZero()
     }
-    private fun assignEffective(
-        settings: EditSettings,
-        field: AdjustmentField,
-        value: Float,
-        preferred: Double? = null,
-    ): EditSettings {
+    private fun assignEffective(settings: EditSettings, field: AdjustmentField, value: Float): EditSettings {
         val scaled = field in AdjustmentTransferValues.scaled || field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
             settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS
         val identity = if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION) 1.0 else 0.0
         val scale = settings.recipeScale.toDouble()
         if (scaled && scale == 0.0 && value.toDouble() != identity) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
-        if (effectiveNumbers(settings)[field] == value) return settings
-        if (preferred != null) {
-            val direct = runCatching { AdjustmentTransferValues.setLogical(settings, field, preferred) }.getOrNull()
-            if (direct != null && effectiveNumbers(direct)[field] == value) return direct
-        }
         val logical = if (!scaled) value.toDouble() else if (scale == 0.0) identity else identity + (value - identity) / scale
         val range = field.spec.androidModel.floatRange
         val clamped = if (range != null) logical.toFloat().coerceIn(range.start, range.endInclusive) else logical.toFloat()
