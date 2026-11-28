@@ -647,8 +647,23 @@ final class SonyCameraSession {
             var bytes = Data(); bytes.appendLE(value)
             _ = try client.operation(0x9207, parameters: [code], outgoing: bytes)
         }
+        let pollAutofocus = state[0xd213] != nil && state[0x500a]?.number != 1
+        func waitForShutterAutofocus() throws {
+            for attempt in 0..<15 {
+                try pause(0.1)
+                let current = try properties()
+                guard let indication = current[0xd213]?.number else {
+                    if attempt >= 4 { break }
+                    continue
+                }
+                if indication == 2 || indication == 6 { break }
+                if indication == 3 && attempt >= 4 { break }
+            }
+        }
         do {
-            half = true; try button(0xd2c1, 2); try pause(0.5)
+            half = true; try button(0xd2c1, 2)
+            if pollAutofocus { try waitForShutterAutofocus() }
+            else { try pause(0.5) }
             full = true; try button(0xd2c2, 2); try pause(0.035)
             try button(0xd2c2, 1); full = false; try pause(1)
             try button(0xd2c1, 1); half = false

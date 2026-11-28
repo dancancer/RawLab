@@ -1567,4 +1567,77 @@ class CameraTetherLivenessTest {
             }
         }
     }
+
+    @Test
+    fun legacyHostHintDownloadsCardOriginalOnceWithoutDrainingTemporaryHostObject() = withWorkspace { _, store, journal, lock ->
+        val shot = FakeCardEntry(101, 1, "DSC00101.ARW", 1_730_000_001_000L, rawPayload(51))
+        FakeTetherCameraServer(legacy = true).use { camera ->
+            camera.extraProps += FakeTetherCameraServer.ExtraProp(0xd215, 4, false, 1, 0L)
+            camera.onShutterTriggered = {
+                camera.addEntry(shot)
+                camera.setExtraProp(0xd215, 0x8001L, enabled = 1)
+            }
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(
+                    camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.ZVE10, "qr-wifi:DIRECT-6hE1:ZV-E10", CameraImportDestination(), false, true,
+                )
+                clock.awaitParked(controller)
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                camera.resetCounters()
+
+                controller.capture()
+                // One tick processes capture + immediate 0xD215 host hint -> switches straight to card without draining 0xffffc001.
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(listOf("DSC00101.ARW"), controller.state.value.saved.map { it.photo.name })
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertNull(controller.state.value.failure)
+                assertEquals("Card original must be downloaded exactly once (never drained first via 0xffffc001)", 1, camera.downloadCalls.get())
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
+
+    @Test
+    fun legacyCaptureRetriesReconciliationWhenCardWriteFinishesAfterFirstCheck() = withWorkspace { _, store, journal, lock ->
+        val delayedShot = FakeCardEntry(102, 1, "DSC00102.ARW", 1_730_000_002_000L, rawPayload(52))
+        FakeTetherCameraServer(legacy = true).use { camera ->
+            val clock = VirtualLoopClock(camera, initialMillis = 10_000L)
+            val controllerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val controller = CameraTetherController(controllerScope, store, journal, lock, {}, clock::now, clock::pause)
+            try {
+                controller.start(
+                    camera.socketFactory(), InetAddress.getLoopbackAddress(), UUID.randomUUID(),
+                    SonyCameraModel.ZVE10, "qr-wifi:DIRECT-6hE1:ZV-E10", CameraImportDestination(), false, true,
+                )
+                clock.awaitParked(controller)
+                camera.resetCounters()
+
+                controller.capture()
+                // Capture runs on first tick; no host hint yet, so no premature card check before 6s.
+                assertTrue(clock.stepParkedTick(controller))
+                assertEquals(CameraTetherPhase.WAITING, controller.state.value.phase)
+                assertEquals(0, camera.handles1007Calls.get())
+
+                // At +6s, first fallback reconciliation runs and finds nothing yet.
+                assertTrue(clock.stepParkedTick(controller, deltaMillis = 6_000L))
+                assertEquals(1, camera.handles1007Calls.get())
+                assertEquals(CameraTetherPhase.WAITING, controller.state.value.phase)
+
+                // Photo finishes writing to card after the first check; +8s retry must discover and download it.
+                camera.addEntry(delayedShot)
+                assertTrue(clock.stepParkedTick(controller, deltaMillis = 8_000L))
+                assertEquals(2, camera.handles1007Calls.get())
+                assertEquals(listOf("DSC00102.ARW"), controller.state.value.saved.map { it.photo.name })
+                assertEquals(CameraTetherPhase.READY, controller.state.value.phase)
+                assertNull(controller.state.value.failure)
+            } finally {
+                controller.stop(); controller.join(); clock.close(); controllerScope.cancel()
+            }
+        }
+    }
 }

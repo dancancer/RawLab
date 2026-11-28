@@ -700,12 +700,11 @@ final class CameraWorkspaceBackend {
             } else if Date().timeIntervalSince(began) > 8 { throw CameraProtocolError.timeout }
         }
         guard session.family != nil else { return }
-        let store = try store(), record = store.snapshot.tether
-        let pending = record?.shutterRequestedAt != nil
+        let store = try store()
         let hostHint = properties[0xd215]?.number ?? 0
         let newHostHint = hostHint & 0x8000 != 0 && hostHint != run.lastHostHint
         run.lastHostHint = hostHint
-        if Date() >= run.nextCardCheck || newHostHint || pending && session.family == .legacy {
+        if Date() >= run.nextCardCheck || newHostHint {
             let wasLegacy = session.family == .legacy
             run.receiving = true
             defer { run.receiving = false }
@@ -750,7 +749,8 @@ final class CameraWorkspaceBackend {
                     publishProperties(run, values: properties, session: sessionNow)
                     run.emit(.phase(store.snapshot.tether?.shutterRequestedAt == nil ? .ready : .waiting))
                 }
-                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? 120 : 1.5)
+                let stillWaiting = store.snapshot.tether?.shutterRequestedAt != nil
+                run.nextCardCheck = Date().addingTimeInterval(wasLegacy ? (stillWaiting ? 8 : 120) : 1.5)
             } catch CameraProtocolError.photoLimitExceeded {
                 run.listingLimitExceeded = true
                 run.knownAssets = []
@@ -1068,7 +1068,7 @@ final class CameraWorkspaceBackend {
             do {
                 try session.capture(cardConfirmed: run.cardConfirmed) { try store.markShutterRequested(owner: run.id) }
                 try store.acknowledgeShutter(owner: run.id)
-                self.publishManifest(run); run.nextCardCheck = Date().addingTimeInterval(3)
+                self.publishManifest(run); run.nextCardCheck = Date().addingTimeInterval(session.family == .legacy ? 6 : 1.5)
                 run.emit(.phase(.waiting))
             } catch CameraProtocolError.captureNotSent(let reason) {
                 try store.clearUnsentShutter(owner: run.id)

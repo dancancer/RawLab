@@ -32,6 +32,7 @@ public final class SonyTetherSession implements Closeable {
     private boolean sessionOpened;
     private long remoteReadyNanos;
     private int propertyEnumTables=2;
+    private String lastReportedPropSnapshot;
 
     public static final class RemoteResponseException extends CameraMediaSession.PhotoTransferException {
         public final int operation, code;
@@ -283,11 +284,39 @@ public final class SonyTetherSession implements Closeable {
         return hash;
     }
 
-    public synchronized LegacyObject pendingLegacyCapture() throws IOException {
+    public synchronized long pendingLegacyHostHint() throws IOException {
         if(!hasLegacyContents()) throw new IOException("Legacy capture requires a Sony legacy capture capability");
-        Property ready=properties().get(0xd215);
-        if(ready==null || (ready.number()&0x8000)==0) return null;
+        Map<Integer,Property> current=properties();
+        reportKeyProperties("poll", current);
+        Property ready=current.get(0xd215);
+        return ready==null ? 0L : ready.number();
+    }
+
+    public synchronized boolean hasPendingLegacyCapture() throws IOException {
+        return (pendingLegacyHostHint() & 0x8000L) != 0L;
+    }
+
+    public synchronized LegacyObject pendingLegacyCapture() throws IOException {
+        if(!hasPendingLegacyCapture()) return null;
         return legacyObject(0xffffc001);
+    }
+
+    private void reportKeyProperties(String tag, Map<Integer,Property> state) {
+        String snapshot = String.format(Locale.ROOT,
+            "focusMode=%s focusArea=%s focusInd=%s shutter=%s drive=%s dest=%s host=%s",
+            propHex(state, 0x500a), propHex(state, 0xd22c), propHex(state, 0xd213),
+            propHex(state, 0xd20d), propHex(state, 0x5013), propHex(state, 0xd222), propHex(state, 0xd215));
+        if (!"poll".equals(tag) || !snapshot.equals(lastReportedPropSnapshot)) {
+            lastReportedPropSnapshot = snapshot;
+            reporter.report("remote_props_" + tag + " " + snapshot);
+        }
+    }
+
+    private static String propHex(Map<Integer,Property> state, int code) {
+        Property prop = state.get(code);
+        if (prop == null) return "null";
+        try { return "0x" + Long.toHexString(prop.number()); }
+        catch (IOException ignored) { return "non-num"; }
     }
 
     public synchronized String downloadLegacyPending(LegacyObject object,OutputStream destination) throws IOException {
@@ -670,17 +699,30 @@ public final class SonyTetherSession implements Closeable {
         if(!captureReady) throw new CaptureNotSentException("Reopen remote session after contents transfer");
         Map<Integer,Property> state;
         try { state=properties(); } catch(IOException failure) { throw new CaptureNotSentException(failure); }
+        reportKeyProperties("capture_preflight", state);
         Property destination = state.get(0xd222), drive = state.get(0x5013);
         if (!legacyCardConfirmed && (destination == null || (destination.number() & 0x10) == 0))
             throw new CaptureNotSentException("Choose camera-card saving before capture");
         if (drive == null || drive.number() != 1) throw new CaptureNotSentException("Choose single-shot drive mode on the camera");
         if (!operations.contains(0x9207) || !controls.contains(0xd2c1) || !controls.contains(0xd2c2))
             throw new CaptureNotSentException("Remote shutter controls not advertised");
+        boolean pollAutofocus = state.containsKey(0xd213);
+        if (pollAutofocus) {
+            Property focusMode = state.get(0x500a);
+            if (focusMode != null) {
+                try { pollAutofocus = focusMode.number() != 1L; } catch (IOException ignored) {}
+            }
+        }
         boolean half = false, full = false;
         IOException error = null;
         captureInFlight=true;
         try {
-            half = true; button(0xd2c1,2); pause(500);
+            half = true; button(0xd2c1,2);
+            if (pollAutofocus) {
+                waitForShutterAutofocus();
+            } else {
+                pause(500);
+            }
             full = true; button(0xd2c2,2); pause(35);
             button(0xd2c2,1); full = false; pause(1000);
             button(0xd2c1,1); half = false;
@@ -696,6 +738,25 @@ public final class SonyTetherSession implements Closeable {
             if(stopRequested) close();
         }
         if (error != null) { reporter.report("remote_capture_result_unknown_check_camera"); throw error; }
+    }
+
+    private void waitForShutterAutofocus() throws IOException {
+        for (int attempt = 0; attempt < 15; attempt++) {
+            pause(100);
+            Map<Integer,Property> current = properties();
+            reportKeyProperties("af_wait", current);
+            Property indication = current.get(0xd213);
+            Long value = null;
+            if (indication != null) {
+                try { value = indication.number(); } catch (IOException ignored) {}
+            }
+            if (value == null) {
+                if (attempt >= 4) break;
+                continue;
+            }
+            if (value == 2L || value == 6L) break;
+            if (value == 3L && attempt >= 4) break;
+        }
     }
 
     private void button(int control,int value) throws IOException {
