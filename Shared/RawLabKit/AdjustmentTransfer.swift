@@ -812,17 +812,17 @@ public enum AdjustmentTransfer {
         for (field, key) in scalarKeys {
             if let value = payload[field]?.number {
                 if fullRecipe { resultSettings[keyPath: key] = value }
-                else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &resultSettings) }
+                else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &resultSettings, context: context) }
             } else if contextChanged && effectiveNumbers(resultSettings, context: context)[field] != before[field] {
-                try assignEffective(before[field]!, field: field, to: &resultSettings)
+                try assignEffective(before[field]!, field: field, to: &resultSettings, context: context)
             }
         }
         for field in Field.allCases where field.hslLocation != nil {
             if let value = payload[field]?.number {
                 if fullRecipe { try assignHSL(value, field: field, to: &resultSettings) }
-                else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &resultSettings) }
+                else { try assignEffective(sourceEffective(value, field: field, recipe: payload.source.recipe), field: field, to: &resultSettings, context: context) }
             } else if contextChanged && effectiveNumbers(resultSettings, context: context)[field] != before[field] {
-                try assignEffective(before[field]!, field: field, to: &resultSettings)
+                try assignEffective(before[field]!, field: field, to: &resultSettings, context: context)
             }
         }
         if context.storesLookOnSettings {
@@ -830,7 +830,7 @@ public enum AdjustmentTransfer {
                 guard let value = payload[field]?.number else { continue }
                 let expected = sourceEffective(value, field: field, recipe: payload.source.recipe)
                 if Float(effectiveNumbers(resultSettings, context: context)[field]!) != Float(expected) {
-                    try assignEffective(expected, field: field, to: &resultSettings)
+                    try assignEffective(expected, field: field, to: &resultSettings, context: context)
                 }
             }
         }
@@ -887,16 +887,19 @@ public enum AdjustmentTransfer {
         }
         return isRecipeScaled(field) ? value * scale : value
     }
-    public static func assignEffective(_ value: Double, field: Field, to settings: inout Adjustments) throws {
+    public static func assignEffective(_ value: Double, field: Field, to settings: inout Adjustments,
+                                       context: AdjustmentTransferContext? = nil) throws {
         let scale = settings.recipeScale
+        let range = (context?.storesLookOnSettings == true ? field.spec.iosModel : field.spec.macosModel).closedRange
         if field.hslLocation != nil {
             let hslScale = settings.recipeSettingsVersion >= 3 ? scale : 1
             guard hslScale != 0 || value == 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             let raw = hslScale == 0 ? 0 : value / hslScale
-            if hslScale != 1, raw.isFinite, !(-100.0...100.0).contains(raw) {
-                let clamped = min(100.0, max(-100.0, raw))
-                if Float(min(100.0, max(-100.0, clamped * hslScale))) == Float(value) {
-                    try assignHSL(clamped, field: field, to: &settings); return
+            if hslScale != 1, raw.isFinite, let range, !range.contains(raw) {
+                var candidate = settings
+                try assignHSL(min(range.upperBound, max(range.lowerBound, raw)), field: field, to: &candidate)
+                if Float(effectiveNumbers(candidate, context: context)[field]!) == Float(value) {
+                    settings = candidate; return
                 }
             }
             try assignHSL(raw, field: field, to: &settings); return
@@ -905,16 +908,11 @@ public enum AdjustmentTransfer {
         if isRecipeScaled(field, version: settings.recipeSettingsVersion) {
             guard scale != 0 || value == identity else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             let raw = scale == 0 ? identity : identity + (value - identity) / scale
-            if scale != 1, raw.isFinite, let range = field.spec.macosModel.closedRange, !range.contains(raw) {
-                let clamped = min(range.upperBound, max(range.lowerBound, raw))
-                let rendered: Double
-                if field == .contrast || field == .saturation { rendered = 1 + (clamped - 1) * scale }
-                else if Field.refinementScalars.contains(field) {
-                    let limit = field == .sCurve ? 1.0 : 100.0
-                    rendered = min(limit, max(-limit, clamped * scale))
-                } else { rendered = clamped * scale }
-                if Float(rendered) == Float(value) {
-                    settings[keyPath: scalarKeys[field]!] = clamped; return
+            if scale != 1, raw.isFinite, let range, !range.contains(raw) {
+                var candidate = settings
+                candidate[keyPath: scalarKeys[field]!] = min(range.upperBound, max(range.lowerBound, raw))
+                if Float(effectiveNumbers(candidate, context: context)[field]!) == Float(value) {
+                    settings = candidate; return
                 }
             }
             settings[keyPath: scalarKeys[field]!] = raw
