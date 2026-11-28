@@ -25,7 +25,7 @@ internal static class AdjustmentTransferChecks
         if (candidate.Settings.Restore()[Parameter.Exposure] != 1.25 || candidate.Settings.Processing != ProcessingIdentity.Legacy)
             throw new Exception("Frozen logical values preserve target processing");
         Console.WriteLine("PASS: Windows selective payload capture, frozen JSON and processing provenance");
-        Vectors(); Scenarios(); DecimalVectors(); AdapterChecks(); TransferNoticeLifecycleChecks();
+        Vectors(); Scenarios(); DecimalVectors(); AdapterChecks(); GlobalGradingStrengthConversionChecks(); TransferNoticeLifecycleChecks();
     }
     private static void Check(bool condition,string message) {if(!condition)throw new Exception(message);}
     private static void Reject(Action action,string message)
@@ -615,6 +615,139 @@ internal static class AdjustmentTransferChecks
             "ordinary denoise target AI reports the generic ignored-target notice");
         Check(Prepare(Payload((F.Exposure,1)),ai).Settings.AIDenoiseEnabled,"other fields preserve AI");
         Console.WriteLine("PASS: Windows recipe, partial fields, WB, lens, denoise and AI transfer boundaries");
+    }
+
+    private static void GlobalGradingStrengthConversionChecks()
+    {
+        var recipe = MasterRecipe.Find("hamada_daylight_v2")!;
+        var recipeContext = Context with { AvailableLookIDs = new HashSet<string> { "recipe:" + recipe.Id } };
+        Adjustments MakeV4(double strength, ColorGradingWheel? global = null)
+        {
+            var a = new Adjustments();
+            a.ResolveWhiteBalance((5200, 8));
+            a.ApplyMasterRecipe(recipe);
+            a.Set(Parameter.Strength, strength);
+            a.ColorGrading = a.ColorGrading with { Global = global ?? new() };
+            return a;
+        }
+        void RejectUnrepresentableGlobal(Action action, string message)
+        {
+            try { action(); }
+            catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable && ex.Detail == F.GradingGlobal.ID()) { return; }
+            throw new Exception(message);
+        }
+
+        // (a) Pasting global wheel across different v4 recipe strengths preserves rendered global wheel.
+        var source = MakeV4(0.5, new(180, 40, 20));
+        var target = MakeV4(2.0);
+        var globalPayload = Copy(source, F.GradingGlobal);
+        var pastedGlobal = Prepare(globalPayload, target, recipeContext).Settings.Restore();
+        Check(pastedGlobal.ColorGrading.Global == new ColorGradingWheel(180, 10, 5),
+            "Cross-strength global grading paste solves logical wheel for target strength");
+        Check(pastedGlobal.RenderGrading.Global == new ColorGradingWheel(180, 20, 10),
+            "Cross-strength global grading paste preserves rendered global wheel");
+
+        // (b) Pasting only recipe strength preserves target's rendered global wheel.
+        var strengthOnly = Prepare(Payload((F.Strength, 2.0)), source, recipeContext).Settings.Restore();
+        Check(strengthOnly[Parameter.Strength] == 2.0 &&
+              strengthOnly.ColorGrading.Global == new ColorGradingWheel(180, 10, 5) &&
+              strengthOnly.RenderGrading.Global == new ColorGradingWheel(180, 20, 10),
+            "Strength-only paste preserves target rendered global wheel");
+
+        // (c) Full v4 recipe paste carries the logical global wheel unchanged at strength 0 and clamped strength 2.0.
+        foreach (var (strength, wheel) in new[] { (0.0, new ColorGradingWheel(180, 20, 10)), (2.0, new ColorGradingWheel(180, 80, 60)) })
+        {
+            var fullSource = MakeV4(strength, wheel);
+            var fullPayload = AdjustmentTransfer.Capture(AdjustmentScope.Standard, Edit(fullSource), recipeContext);
+            var neutral = new Adjustments();
+            neutral.ResolveWhiteBalance((5200, 8));
+            var fullPasted = Prepare(fullPayload, neutral, recipeContext).Settings.Restore();
+            Check(fullPasted.ColorGrading.Global == wheel,
+                "Full v4 recipe paste carries logical global wheel unchanged at strength " + strength);
+        }
+
+        // (d) Unrepresentable global wheel requests fail with Unrepresentable("color.grading.global"), matching zone wheels.
+        var zeroTarget = MakeV4(0.0);
+        var neutralGlobal = new Adjustments { ColorGrading = new() { Global = new(180, 20, 10) } };
+        RejectUnrepresentableGlobal(() => Prepare(Copy(neutralGlobal, F.GradingGlobal), zeroTarget, recipeContext),
+            "Non-neutral global wheel onto strength-0 target is unrepresentable");
+        var globalOnlyNeutralRecipe = recipe with {
+            ExposureDelta = 0, ShadowsDelta = 0, HighlightsDelta = 0, ContrastDelta = 0, SaturationDelta = 0, TintDelta = 0,
+            Hsl = new(new double[8], new double[8], new double[8]),
+            Tone = new(), Atmosphere = new(), Grading = new(), Curve = new()
+        };
+        var globalOnlyTarget = new Adjustments();
+        globalOnlyTarget.ResolveWhiteBalance((5200, 8));
+        globalOnlyTarget.ApplyMasterRecipe(globalOnlyNeutralRecipe);
+        globalOnlyTarget.Set(Parameter.Strength, 0.5);
+        globalOnlyTarget.ColorGrading = new() { Global = new(180, 40, 20) };
+        RejectUnrepresentableGlobal(() => Prepare(Payload((F.Strength, 0.0)), globalOnlyTarget, recipeContext),
+            "Strength-only paste to 0 on target with non-neutral global wheel is unrepresentable");
+        var highSat = new Adjustments { ColorGrading = new() { Global = new(180, 60, 0) } };
+        var halfTarget = MakeV4(0.5);
+        RejectUnrepresentableGlobal(() => Prepare(Copy(highSat, F.GradingGlobal), halfTarget, recipeContext),
+            "Out-of-range global wheel inversion is unrepresentable");
+
+        // (e) Endpoint overshoot rounding (69.0 / 0.69 = 100.00000000000001) clamps to limit and accepts when exact rendering matches.
+        var source69 = MakeV4(0.69, new(180, 100, 0));
+        source69.ColorGrading = source69.ColorGrading with { Shadows = new(180, 100, -100) };
+        var target69 = MakeV4(0.69);
+        target69.ColorGrading = target69.ColorGrading with { Shadows = new() };
+
+        var pastedGlobal69 = Prepare(Copy(source69, F.GradingGlobal), target69, recipeContext).Settings.Restore();
+        Check(pastedGlobal69.ColorGrading.Global == new ColorGradingWheel(180, 100, 0) &&
+              pastedGlobal69.RenderGrading.Global == new ColorGradingWheel(180, 69, 0),
+            "Same-strength 0.69 global wheel endpoint stores 100 and renders 69");
+
+        var pastedShadows69 = Prepare(Copy(source69, F.GradingShadows), target69, recipeContext).Settings.Restore();
+        Check(pastedShadows69.ColorGrading.Shadows == new ColorGradingWheel(180, 100, -100) &&
+              pastedShadows69.RenderGrading.Shadows == new ColorGradingWheel(180, 69, -69),
+            "Same-strength 0.69 shadows wheel endpoint stores (100, -100) and renders (69, -69)");
+
+        var neutral69 = new Adjustments { ColorGrading = new() { Global = new(180, 69, 0) } };
+        var noRecipeTo69 = Prepare(Copy(neutral69, F.GradingGlobal), target69, recipeContext).Settings.Restore();
+        Check(noRecipeTo69.ColorGrading.Global == new ColorGradingWheel(180, 100, 0) &&
+              noRecipeTo69.RenderGrading.Global == new ColorGradingWheel(180, 69, 0),
+            "No-recipe 69 onto 0.69 global wheel stores 100 and renders 69");
+
+        var target100 = MakeV4(1.0, new(180, 69, 0));
+        var dropTo69 = Prepare(Payload((F.Strength, 0.69)), target100, recipeContext).Settings.Restore();
+        Check(dropTo69.ColorGrading.Global == new ColorGradingWheel(180, 100, 0) &&
+              dropTo69.RenderGrading.Global == new ColorGradingWheel(180, 69, 0),
+            "Strength-only 1.0 -> 0.69 preserves unselected global wheel 69 by storing 100");
+
+        var highShadowSat = new Adjustments { ColorGrading = new() { Shadows = new(180, 60, 0) } };
+        Reject(() => Prepare(Copy(highShadowSat, F.GradingShadows), halfTarget, recipeContext),
+            "Out-of-range shadows wheel inversion (60 at 0.5) stays unrepresentable");
+
+        // Parametric curve (0.69 -> 0.69, highlights = 100, shadows = -100) and custom curve (0.002 -> 0.002, y = 1.0) endpoint overshoots.
+        var paramSource = MakeV4(0.69);
+        paramSource.Curve = new(paramSource.Curve.Mode, paramSource.Curve.Points, paramSource.Curve.Channels,
+            paramSource.Curve.ApplyToLuminosity, new(100, 0, 0, -100));
+        var paramTarget = MakeV4(0.69);
+        paramTarget.Curve = new(paramTarget.Curve.Mode, paramTarget.Curve.Points, paramTarget.Curve.Channels,
+            paramTarget.Curve.ApplyToLuminosity, new());
+        var pastedParam = Prepare(Copy(paramSource, F.CurveParametric), paramTarget, recipeContext).Settings.Restore();
+        Check(pastedParam.Curve.Parametric == new ToneCurveParametric(100, 0, 0, -100) &&
+              pastedParam.RenderCurve.Parametric.Highlights == 69 &&
+              pastedParam.RenderCurve.Parametric.Shadows == -69,
+            "Same-strength 0.69 parametric curve endpoint stores (100, -100) and renders (69, -69)");
+        var badParam = new Adjustments { Curve = new(ToneCurveMode.Legacy, null, null, false, new(60, 0, 0, 0)) };
+        Reject(() => Prepare(Copy(badParam, F.CurveParametric), halfTarget, recipeContext),
+            "Out-of-range parametric curve inversion (60 at 0.5) stays unrepresentable");
+
+        var curveSource = MakeV4(0.002);
+        curveSource.Curve = new(ToneCurveMode.Custom, [new(0, 0), new(0.5, 1.0), new(1, 1)]);
+        var curveTarget = MakeV4(0.002);
+        curveTarget.Curve = new();
+        var pastedCurve = Prepare(Copy(curveSource, F.Curve), curveTarget, recipeContext).Settings.Restore();
+        Check(pastedCurve.Curve.Points.SequenceEqual([new ToneCurvePoint(0, 0), new ToneCurvePoint(0.5, 1.0), new ToneCurvePoint(1, 1)]),
+            "Same-strength 0.002 custom curve endpoint stores y=1.0");
+        var badCurve = new Adjustments { Curve = new(ToneCurveMode.Custom, [new(0, 0), new(0.5, 0.9), new(1, 1)]) };
+        Reject(() => Prepare(Copy(badCurve, F.Curve), halfTarget, recipeContext),
+            "Out-of-range custom curve inversion stays unrepresentable");
+
+        Console.WriteLine("PASS: Windows global color-grading wheel strength conversion checks");
     }
 
     private static void TransferNoticeLifecycleChecks()

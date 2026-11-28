@@ -67,7 +67,7 @@ Mac 的 UI 百分比、native snapshot 或 Agent render recipe。
 | `light.exposure_mode` | `scene/preview/sensor`；raster 来源只允许 sensor。raster 目标接受三种模式并保持 sensor，因为 RAW 曝光基准对普通图片无意义。 |
 | `detail.sharpening` | `[0,2]`。 |
 | `color.hsl.<axis>.<channel>` | 24 个独立数值，`[-100,100]`，保留小数。 |
-| `color.grading.shadows/midtones/highlights` | 每个明暗区为完整 `{hue,saturation}` 对象；hue 为 `[0,360)` 度，saturation 为 `[0,100]`。即使 saturation 为 0，仍保留待用 hue；不随配方强度缩放。 |
+| `color.grading.shadows/midtones/highlights/global` | 每个色轮为 `{hue,saturation}` 对象（可选 `luminance`，默认 `0`）；hue 为 `[0,360)` 度，saturation 为 `[0,100]`，luminance 为 `[-100,100]`。即使 saturation 和 luminance 为 0，仍保留待用 hue。`settings_version < 4` 的配方不随配方强度缩放；`settings_version >= 4` 的配方按配方强度缩放四个色轮（三明暗区与 `global`）的 saturation 与 luminance。`color.grading.blending`（`[0,100]`，默认 50）与 `color.grading.balance`（`[-100,100]`，默认 0）不随配方强度缩放。 |
 | `light.curve` | 完整 `{mode,points}` 对象。`legacy` 的 points 必须为空；`custom` 为 2～33 个 `[x,y]`，值在 `[0,1]`，固定端点 `[0,0]`、`[1,1]`，x 严格递增、y 非递减。与 `light.s_curve` 独立选择，custom 渲染不叠加旧 scalar。 |
 | `effects.clarity`、`effects.dehaze` | `[-100,100]`，默认 0；不随配方强度缩放。native/Agent 边界除以 100，交换与存储保留原值。 |
 | `effects.vignette.*`、`effects.grain.*` | 各辅助值独立；范围沿原字段目录。 |

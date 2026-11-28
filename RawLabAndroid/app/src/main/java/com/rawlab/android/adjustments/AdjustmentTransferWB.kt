@@ -77,8 +77,14 @@ internal object AdjustmentTransferWB {
         }
         var result = original
         if (selected.isEmpty()) {
-            if (context.isRaw && contextChanged && render(result, context) != render(target, context))
-                result = applyResolved(render(target, context), result, context)
+            if (context.isRaw && contextChanged && render(result, context) != render(target, context)) {
+                val desired = render(target, context)
+                result = applyResolved(desired, result, context)
+                if (!target.customWb && result.recipeID != null) {
+                    val camera = result.copy(customWb = false, temperature = target.temperature)
+                    if (render(camera, context) == desired) result = camera
+                }
+            }
             return result
         }
         if (!context.isRaw && payload.source.isRaw) {
