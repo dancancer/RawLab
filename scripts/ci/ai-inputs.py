@@ -7,13 +7,20 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import tarfile
+import shutil
+import stat
 import tempfile
-import urllib.request
+import zipfile
 
 MANIFEST = "38cbd6884bb181db859ffc668cf754a55331be732592e0d4cdf9a2d41a19486a"
-ORT = {"arm64": "b4d513ab2b26f088c66891dbbc1408166708773d7cc4163de7bdca0e9bbb7856",
-       "x86_64": "d10359e16347b57d9959f7e80a225a5b4a66ed7d7e007274a15cae86836485a6"}
+ORT_VERSION = "1.23.2"
+ORT_PACKAGE = {
+    "url": f"https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/{ORT_VERSION}/microsoft.ml.onnxruntime.{ORT_VERSION}.nupkg",
+    "archiveName": f"microsoft.ml.onnxruntime.{ORT_VERSION}.nupkg",
+    "archiveSha256": "25fe172f7fcdf34f2b5b02c8b997f6b88abc282956849d4af4335af23d0c4e4a",
+    "archiveBytes": 123371574,
+}
+ORT_NUGET_RID = {"arm64": "osx-arm64", "x86_64": "osx-x64"}
 ORT_LIBRARY = {"arm64": "d306d2bc768540766c7ed8a1e0ff05d2870c77a934ebeee4a7bafa1b732ef299",
                "x86_64": "8c9c78de65ea3786f987c0d980e9c1b13a3a5fbc6b3e2965ba05b450e6e4c054"}
 
@@ -144,6 +151,80 @@ def restore_model_package(
         tree_dir.rename(model_dir)
 
 
+def _extract_ort_nuget_package(archive_path: Path, tree_dir: Path, arch: str) -> None:
+    rid = ORT_NUGET_RID[arch]
+    dylib_name = f"libonnxruntime.{ORT_VERSION}.dylib"
+    required_files = {
+        f"runtimes/{rid}/native/libonnxruntime.dylib": Path("lib") / dylib_name,
+        "LICENSE": Path("LICENSE"),
+        "ThirdPartyNotices.txt": Path("ThirdPartyNotices.txt"),
+    }
+    include_prefix = "build/native/include/"
+    tree_resolved = tree_dir.resolve()
+    extracted_targets: set[Path] = set()
+    found_required: set[str] = set()
+
+    with zipfile.ZipFile(archive_path) as bundle:
+        for info in bundle.infolist():
+            name = info.filename
+            if name in required_files:
+                if info.is_dir():
+                    raise ValueError(f"ONNX Runtime package entry is a directory: {name}")
+                dest_rel = required_files[name]
+                found_required.add(name)
+            elif name.startswith(include_prefix):
+                rel = name[len(include_prefix):]
+                if not rel or info.is_dir():
+                    continue
+                dest_rel = Path("include") / rel
+            else:
+                continue
+
+            if stat.S_ISLNK(info.external_attr >> 16):
+                raise ValueError(f"Refusing symlink member in ONNX Runtime package: {name}")
+            if "\\" in name or dest_rel.is_absolute() or ".." in dest_rel.parts:
+                raise ValueError(f"Refusing unsafe path in ONNX Runtime package: {name}")
+            dest = (tree_resolved / dest_rel).resolve()
+            if dest == tree_resolved or tree_resolved not in dest.parents:
+                raise ValueError(f"ONNX Runtime package path escapes extraction root: {name}")
+            if dest in extracted_targets:
+                raise ValueError(f"Duplicate extracted path in ONNX Runtime package: {name}")
+            extracted_targets.add(dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with bundle.open(info, "r") as src, dest.open("wb") as dst:
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
+
+    missing = sorted(set(required_files) - found_required)
+    if missing:
+        raise ValueError(f"ONNX Runtime package is missing required file: {missing[0]}")
+    if not (tree_dir / "include/onnxruntime_cxx_api.h").is_file():
+        raise ValueError("ONNX Runtime package is missing required header: include/onnxruntime_cxx_api.h")
+
+    dylib_path = tree_dir / "lib" / dylib_name
+    os.chmod(dylib_path, 0o755)
+    (tree_dir / "lib/libonnxruntime.dylib").symlink_to(dylib_name)
+    (tree_dir / "VERSION_NUMBER").write_text(f"{ORT_VERSION}\n", encoding="utf-8")
+
+
+def restore_ort_runtime(runtime: Path, arch: str) -> None:
+    runtime.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".stage-", dir=runtime.parent) as stage_root_str:
+        stage_root = Path(stage_root_str)
+        archive_path = stage_root / ORT_PACKAGE["archiveName"]
+        tree_dir = stage_root / "tree"
+        tree_dir.mkdir()
+        _PREPARE.download_with_retry(
+            ORT_PACKAGE["url"],
+            archive_path,
+            ORT_PACKAGE["archiveSha256"],
+            ORT_PACKAGE["archiveBytes"],
+        )
+        _extract_ort_nuget_package(archive_path, tree_dir, arch)
+        if not _PREPARE.file_matches(tree_dir / f"lib/libonnxruntime.{ORT_VERSION}.dylib", ORT_LIBRARY[arch]):
+            raise ValueError("ONNX Runtime library SHA-256 mismatch")
+        tree_dir.rename(runtime)
+
+
 def main(argv: list[str] | None = None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--platform", choices=("macos", "windows"), required=True)
@@ -167,28 +248,11 @@ def main(argv: list[str] | None = None):
         for name in ("raw.mlmodelc", "rgb.mlmodelc", "blind_rgb.mlmodelc"):
             if not (model / name).is_dir():
                 raise ValueError(f"Missing Core ML release model: {name}")
-        name = f"onnxruntime-osx-{args.arch}-1.23.2"
-        root = cache / "onnxruntime" / "1.23.2"
-        root.mkdir(parents=True, exist_ok=True)
-        archive = root / f"{name}.tgz"
-        if not archive.is_file():
-            temporary = archive.with_suffix(".download")
-            try:
-                urllib.request.urlretrieve(f"https://github.com/microsoft/onnxruntime/releases/download/v1.23.2/{name}.tgz", temporary)
-                if digest(temporary) != ORT[args.arch]:
-                    raise ValueError("ONNX Runtime archive SHA-256 mismatch")
-                temporary.replace(archive)
-            finally:
-                temporary.unlink(missing_ok=True)
-        if digest(archive) != ORT[args.arch]:
-            raise ValueError("Cached ONNX Runtime archive SHA-256 mismatch")
-        runtime = root / name
-        if not runtime.is_dir():
-            with tempfile.TemporaryDirectory(dir=root) as stage:
-                with tarfile.open(archive) as bundle:
-                    bundle.extractall(stage, filter="data")
-                Path(stage, name).rename(runtime)
-        if digest(runtime / "lib/libonnxruntime.1.23.2.dylib") != ORT_LIBRARY[args.arch]:
+        name = f"onnxruntime-osx-{args.arch}-{ORT_VERSION}"
+        runtime = cache / "onnxruntime" / ORT_VERSION / name
+        if not runtime.exists() and not runtime.is_symlink():
+            restore_ort_runtime(runtime, args.arch)
+        if not _PREPARE.file_matches(runtime / f"lib/libonnxruntime.{ORT_VERSION}.dylib", ORT_LIBRARY[args.arch]):
             raise ValueError("Cached ONNX Runtime library SHA-256 mismatch")
         values["RAWLAB_ONNXRUNTIME_ROOT"] = str(runtime.resolve())
     output = os.environ.get("GITHUB_ENV")
