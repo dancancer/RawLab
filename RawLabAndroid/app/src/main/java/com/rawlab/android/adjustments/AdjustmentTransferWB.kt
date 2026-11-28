@@ -53,11 +53,13 @@ internal object AdjustmentTransferWB {
             val delta = desired.tint.toDouble() - camera(context).tint
             val scale = result.recipeScale.toDouble()
             representable(scale != 0.0 || delta == 0.0)
-            val logical = if (scale == 0.0) 0f else (delta / scale).toFloat()
+            val range = AdjustmentField.TINT.spec.androidModel.floatRange!!
+            val logical = (if (scale == 0.0) 0f else (delta / scale).toFloat())
+                .coerceIn(range.start, range.endInclusive).canonicalZero()
             result = result.copy(tint = logical)
             if (render(result, context) != desired) {
                 val exact = listOf(Math.nextDown(logical), Math.nextUp(logical)).mapNotNull {
-                    runCatching { result.copy(tint = it) }.getOrNull()
+                    runCatching { result.copy(tint = it.canonicalZero()) }.getOrNull()
                 }.firstOrNull { render(it, context) == desired }
                 if (exact != null) result = exact
             }

@@ -425,6 +425,181 @@ class AdjustmentTransferTest {
         )
     }
 
+    @Test fun partialRecipePasteAcceptsSliderEndpointsAcrossSameAndCrossStrength() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:hamada_daylight_v2"),
+            cameraTemperature = 5200f,
+            cameraTint = 8f,
+        )
+        // Exposure endpoints (-5.0, +5.0) at strength 0.97: inversion gives +/-5.0000005f.
+        val src97 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.97, 4))
+        val target97 = EditSettings(recipeID = "hamada_daylight_v2", strength = 0.97f, masterRecipeSettingsVersion = 4)
+        assertEquals(-5.0f, prepare(AdjustmentPayload(src97, mapOf(F.EXPOSURE to AdjustmentValue.Number(-5.0))), target97, ctx).exposure)
+        assertEquals(5.0f, prepare(AdjustmentPayload(src97, mapOf(F.EXPOSURE to AdjustmentValue.Number(5.0))), target97, ctx).exposure)
+        // Cross-strength exposure endpoint where inversion overshoots -5.0f.
+        val neutralSrc = AdjustmentSource("neutral.ARW", true, 3, null)
+        assertEquals(-5.0f, prepare(AdjustmentPayload(neutralSrc, mapOf(F.EXPOSURE to AdjustmentValue.Number(-4.850000381469727))), target97, ctx).exposure)
+
+        // Contrast endpoints (0.0 and 2.0) at low strength 0.09: inversion overshoots legal range by >1 ULP.
+        val src09 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.09, 4))
+        val target09 = EditSettings(recipeID = "hamada_daylight_v2", strength = 0.09f, masterRecipeSettingsVersion = 4)
+        assertEquals(0.0f, prepare(AdjustmentPayload(src09, mapOf(F.CONTRAST to AdjustmentValue.Number(0.0))), target09, ctx).contrast)
+        assertEquals(2.0f, prepare(AdjustmentPayload(src09, mapOf(F.CONTRAST to AdjustmentValue.Number(2.0))), target09, ctx).contrast)
+        // Cross-strength contrast endpoints exercising clamping of the inverted candidate back into [0, 2].
+        assertEquals(0.0f, prepare(AdjustmentPayload(neutralSrc, mapOf(F.CONTRAST to AdjustmentValue.Number(0.9099999666213989))), target09, ctx).contrast)
+        assertEquals(2.0f, prepare(AdjustmentPayload(neutralSrc, mapOf(F.CONTRAST to AdjustmentValue.Number(1.090000033378601))), target09, ctx).contrast)
+
+        // Relative tint endpoints when inversion overshoots +/-150f (by 1 ULP at 0.061 and by >1 ULP at 0.001 with camTint=100).
+        val tintCtx0 = ctx.copy(cameraTint = 0f)
+        val targetTint061 = EditSettings(recipeID = "hamada_daylight_v2", strength = 0.061f, masterRecipeSettingsVersion = 4)
+        val srcTint061 = AdjustmentSource("src.ARW", true, 3, AdjustmentRecipeContext("hamada_daylight_v2", 0.061, 4))
+        assertEquals(-150.0f, prepare(AdjustmentPayload(srcTint061, mapOf(F.TINT to AdjustmentValue.Number(-150.0))), targetTint061, tintCtx0).tint)
+        assertEquals(-150.0f, prepare(AdjustmentPayload(neutralSrc, mapOf(
+            F.WHITE_BALANCE_MODE to AdjustmentValue.Text("temperature"),
+            F.TEMPERATURE to AdjustmentValue.Number(5200.0),
+            F.TINT to AdjustmentValue.Number(-9.15000057220459),
+        )), targetTint061, tintCtx0).tint)
+        val tintCtx100 = ctx.copy(cameraTint = 100f)
+        val targetTint001 = EditSettings(recipeID = "hamada_daylight_v2", strength = 0.001f, masterRecipeSettingsVersion = 4)
+        assertEquals(-150.0f, prepare(AdjustmentPayload(neutralSrc, mapOf(
+            F.WHITE_BALANCE_MODE to AdjustmentValue.Text("temperature"),
+            F.TEMPERATURE to AdjustmentValue.Number(5200.0),
+            F.TINT to AdjustmentValue.Number(99.8499984741211),
+        )), targetTint001, tintCtx100).tint)
+
+        // Genuine unrepresentable requests just beyond the representable endpoints remain rejected.
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) {
+                prepare(AdjustmentPayload(neutralSrc, mapOf(F.EXPOSURE to AdjustmentValue.Number(-4.850000858306885))), target97, ctx)
+            }.reason,
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) {
+                prepare(AdjustmentPayload(neutralSrc, mapOf(F.CONTRAST to AdjustmentValue.Number(0.9099999070167542))), target09, ctx)
+            }.reason,
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) {
+                prepare(AdjustmentPayload(neutralSrc, mapOf(F.CONTRAST to AdjustmentValue.Number(1.0900001525878906))), target09, ctx)
+            }.reason,
+        )
+        assertEquals(
+            AdjustmentFailure.UNREPRESENTABLE,
+            assertThrows(AdjustmentTransferException::class.java) {
+                prepare(AdjustmentPayload(neutralSrc, mapOf(
+                    F.WHITE_BALANCE_MODE to AdjustmentValue.Text("temperature"),
+                    F.TEMPERATURE to AdjustmentValue.Number(5200.0),
+                    F.TINT to AdjustmentValue.Number(-9.150001525878906),
+                )), targetTint061, tintCtx0)
+            }.reason,
+        )
+    }
+
+    @Test fun partialRecipePasteInvertsInManyToOneStrengthZeroAndClampRegions() {
+        val ctx = context.copy(
+            availableLookIDs = setOf("recipe:r"),
+            cameraTemperature = 5200f,
+            cameraTint = 60f,
+        )
+        // Guard: strength-0 target writes neutral logical values and reports applied (not unchanged).
+        val zeroTarget = EditSettings(
+            recipeID = "r",
+            strength = 0f,
+            masterRecipeSettingsVersion = 4,
+            exposure = 2.5f,
+            contrast = 1.8f,
+            toneCurve = 0.7f,
+            vibrance = 60f,
+            tint = 45f,
+            hsl = HslSettings(List(24) { if (it == 0) -80f else 0f }),
+        )
+        val zeroRecipe = AdjustmentRecipeContext("r", 0.0, 4)
+        val zeroReset = prepare(
+            payload(
+                F.EXPOSURE to AdjustmentValue.Number(0.0),
+                F.CONTRAST to AdjustmentValue.Number(1.0),
+                F.S_CURVE to AdjustmentValue.Number(0.0),
+                F.VIBRANCE to AdjustmentValue.Number(0.0),
+                F.HSL_HUE_RED to AdjustmentValue.Number(0.0),
+                F.TINT to AdjustmentValue.Number(0.0),
+                recipe = zeroRecipe,
+            ),
+            zeroTarget,
+            ctx,
+        )
+        assertNotEquals(zeroTarget, zeroReset)
+        assertEquals(0f, zeroReset.exposure)
+        assertEquals(1f, zeroReset.contrast)
+        assertEquals(0f, zeroReset.toneCurve)
+        assertEquals(0f, zeroReset.vibrance)
+        assertEquals(0f, zeroReset.hsl.value(0, 0))
+        assertEquals(0f, zeroReset.tint)
+
+        // Guard: pasting {STRENGTH: 0, EXPOSURE: 0, CONTRAST: 1, TINT: 0} onto a strength-1 target writes neutral values.
+        val strengthOneTarget = EditSettings(
+            recipeID = "r",
+            strength = 1.0f,
+            masterRecipeSettingsVersion = 4,
+            exposure = 2.5f,
+            contrast = 1.8f,
+            tint = 35f,
+        )
+        val toZero = prepare(
+            payload(
+                F.STRENGTH to AdjustmentValue.Number(0.0),
+                F.EXPOSURE to AdjustmentValue.Number(0.0),
+                F.CONTRAST to AdjustmentValue.Number(1.0),
+                F.TINT to AdjustmentValue.Number(0.0),
+                recipe = zeroRecipe,
+            ),
+            strengthOneTarget,
+            ctx,
+        )
+        assertNotEquals(strengthOneTarget, toZero)
+        assertEquals(0f, toZero.strength)
+        assertEquals(0f, toZero.exposure)
+        assertEquals(1f, toZero.contrast)
+        assertEquals(0f, toZero.tint)
+
+        // Guard: no-recipe HSL / vibrance 100 onto a strength-2.0 v4 target stores 50 (not 100).
+        val target2x = EditSettings(recipeID = "r", strength = 2.0f, masterRecipeSettingsVersion = 4)
+        val fromNoRecipeClamp = prepare(
+            payload(
+                F.HSL_HUE_RED to AdjustmentValue.Number(100.0),
+                F.VIBRANCE to AdjustmentValue.Number(100.0),
+            ),
+            target2x,
+            ctx,
+        )
+        assertEquals(50.0f, fromNoRecipeClamp.hsl.value(0, 0))
+        assertEquals(50.0f, fromNoRecipeClamp.vibrance)
+
+        // Guard: no-recipe tint 150 onto a recipe target with cameraTint 60 stores 90 (not 150).
+        val target1x = EditSettings(recipeID = "r", strength = 1.0f, masterRecipeSettingsVersion = 4)
+        val tintClamped = prepare(
+            payload(
+                F.WHITE_BALANCE_MODE to AdjustmentValue.Text("temperature"),
+                F.TEMPERATURE to AdjustmentValue.Number(5200.0),
+                F.TINT to AdjustmentValue.Number(150.0),
+            ),
+            target1x,
+            ctx,
+        )
+        assertEquals(90.0f, tintClamped.tint)
+
+        // Guard: same recipe & strength with a clamped source value (HSL = -100 at 1.3) stores -76.92308f.
+        val target13 = EditSettings(recipeID = "r", strength = 1.3f, masterRecipeSettingsVersion = 4)
+        val sameStrengthClamped = prepare(
+            payload(F.HSL_HUE_RED to AdjustmentValue.Number(-100.0), recipe = AdjustmentRecipeContext("r", 1.3, 4)),
+            target13,
+            ctx,
+        )
+        assertEquals(-76.92308f, sameStrengthClamped.hsl.value(0, 0))
+    }
+
     @Test fun whiteBalanceUsesTargetCalibrationAndFixedValuesRemainFixed() {
         val source = EditSettings(recipeID = "r", strength = .5f, tint = 12f)
         val relative = capture(source, F.WHITE_BALANCE_MODE, F.TEMPERATURE, F.TINT)

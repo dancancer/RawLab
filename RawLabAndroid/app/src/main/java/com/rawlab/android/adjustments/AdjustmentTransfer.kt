@@ -179,10 +179,12 @@ object AdjustmentTransfer {
         val scale = settings.recipeScale.toDouble()
         if (scaled && scale == 0.0 && value.toDouble() != identity) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
         val logical = if (!scaled) value.toDouble() else if (scale == 0.0) identity else identity + (value - identity) / scale
-        val candidate = AdjustmentTransferValues.setLogical(settings, field, logical)
-        if (effectiveNumbers(candidate)[field] == value) return candidate
+        val range = field.spec.androidModel.floatRange
+        val clamped = if (range != null) logical.toFloat().coerceIn(range.start, range.endInclusive) else logical.toFloat()
+        val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, clamped.toDouble()) }.getOrNull()
+        if (candidate != null && effectiveNumbers(candidate)[field] == value) return candidate
         // 反解后只尝试相邻的本端 Float 表示；只有实际 JNI 请求完全一致才接受。
-        val native = AdjustmentTransferValues.logical(candidate, field).toFloat()
+        val native = candidate?.let { AdjustmentTransferValues.logical(it, field).toFloat() } ?: clamped
         for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
             val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
             if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
