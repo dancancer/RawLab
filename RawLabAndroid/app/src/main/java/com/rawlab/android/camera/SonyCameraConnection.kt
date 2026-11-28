@@ -1293,11 +1293,44 @@ internal class SonyCameraConnection internal constructor(
                 .build()
             scanner.startScan(null, settings, callback)
             debugLog("BLE scan started (LOW_LATENCY)")
+            connectedSonyEntries().forEach(onEntry)
             return object : Handle {
                 override fun close() {
                     scanner.stopScan(callback)
                 }
             }
+        }
+
+        private fun connectedSonyEntries(): List<BleScanEntry> {
+            val manager = bluetoothManager ?: return emptyList()
+            val connected = LinkedHashMap<String, BluetoothDevice>()
+            for (profile in intArrayOf(BluetoothProfile.GATT, BluetoothProfile.GATT_SERVER)) {
+                val devices = try {
+                    manager.getConnectedDevices(profile)
+                } catch (_: SecurityException) {
+                    emptyList()
+                }
+                devices.forEach { device ->
+                    connected.putIfAbsent(device.address.uppercase(Locale.ROOT), device)
+                }
+            }
+            val matched = connected.values.mapNotNull { device ->
+                val name = try { device.name } catch (_: SecurityException) { null }
+                val uuids = try { device.uuids?.map { it.uuid }.orEmpty() } catch (_: SecurityException) { emptyList() }
+                val isSony = CONTROL_SERVICE in uuids || PAIRING_SERVICE in uuids || isSonyCameraBleName(name)
+                if (!isSony) return@mapNotNull null
+                val bonded = try { device.bondState == BluetoothDevice.BOND_BONDED } catch (_: SecurityException) { false }
+                BleScanEntry(
+                    id = device.address,
+                    name = name?.takeIf { it.isNotBlank() } ?: SONY_CAMERA_LABEL,
+                    isSony = true,
+                    isBonded = bonded,
+                    connectGatt = { cb -> connectAndroidGatt(device, cb) },
+                    createBond = { device.createBond() },
+                )
+            }
+            debugLog("Connected GATT devices checked total=${connected.size} matchedSony=${matched.size}")
+            return matched
         }
 
         private fun toBleEntry(result: ScanResult): BleScanEntry? {
@@ -1596,6 +1629,14 @@ internal class SonyCameraConnection internal constructor(
         override fun hasWifiOnCharacteristic(): Boolean =
             characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) != null
 
+        private fun propertiesLabel(properties: Int): String = buildString {
+            if (properties and BluetoothGattCharacteristic.PROPERTY_READ != 0) append('R')
+            if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0) append('W')
+            if (properties and BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE != 0) append('w')
+            if (properties and BluetoothGattCharacteristic.PROPERTY_NOTIFY != 0) append('N')
+            if (properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) append('I')
+        }
+
         override fun sonyServiceSummary(): String {
             val sonyServices = source.services.orEmpty().filter {
                 it.uuid.toString().lowercase(Locale.ROOT).startsWith("8000")
@@ -1603,7 +1644,10 @@ internal class SonyCameraConnection internal constructor(
             if (sonyServices.isEmpty()) return "none"
             return sonyServices.joinToString(",") { service ->
                 val prefix = service.uuid.toString().substring(0, 8).lowercase(Locale.ROOT)
-                val chars = service.characteristics.orEmpty().joinToString(",") { shortUuid(it.uuid) }
+                val chars = service.characteristics.orEmpty().joinToString(",") { item ->
+                    val flags = propertiesLabel(item.properties)
+                    if (flags.isEmpty()) shortUuid(item.uuid) else "${shortUuid(item.uuid)}($flags)"
+                }
                 "$prefix:[$chars]"
             }
         }
@@ -1849,4 +1893,13 @@ internal class ManualWifiSelector(
         val dualWait = if (obs.isDirectSsid && !obs.validated) 0L else dualWlanSettleDelayMs
         return best.firstSeenMs + maxOf(bssidWait, dualWait)
     }
+}
+
+private val SONY_CAMERA_BLE_NAME_PREFIXES = listOf("ILCE-", "ILME-", "ZV-", "DSC-", "SLT-", "NEX-")
+
+internal fun isSonyCameraBleName(name: String?): Boolean {
+    val trimmed = name?.trim()?.takeIf { it.isNotEmpty() } ?: return false
+    if (SonyCameraModel.fromAdvertisement(trimmed) != SonyCameraModel.UNKNOWN) return true
+    val upper = trimmed.uppercase(Locale.ROOT)
+    return SONY_CAMERA_BLE_NAME_PREFIXES.any { prefix -> upper.startsWith(prefix) }
 }

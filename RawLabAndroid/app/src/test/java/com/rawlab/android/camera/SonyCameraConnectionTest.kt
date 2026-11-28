@@ -181,6 +181,7 @@ class SonyCameraConnectionTest {
         var discoverServicesCalls = 0
         var writePairingInitCalled = false
         var writeWifiOnCalled = false
+        var readSsidCalled = false
         override fun requestMtu(mtu: Int): Boolean {
             if (!requestMtuReturn) return false
             callback?.onMtuChanged(this, mtuResult, mtuStatus)
@@ -203,7 +204,10 @@ class SonyCameraConnectionTest {
             writeWifiOnCalled = true
             return true
         }
-        override fun readSsid(): Boolean = true
+        override fun readSsid(): Boolean {
+            readSsidCalled = true
+            return true
+        }
         override fun readPassword(): Boolean = true
         override fun disconnect() { disconnected = true }
         override fun close() { closed = true }
@@ -1517,5 +1521,62 @@ class SonyCameraConnectionTest {
             CameraDiagnostics.storeOverride = null
             diagDir.deleteRecursively()
         }
+    }
+
+    @Test
+    fun bondedCameraWithoutWifiOnFallsBackToManualWifiWithoutWritingEe01() {
+        val platform = FakePlatform()
+        val listener = RecordingListener()
+        val gatt = FakeGatt(
+            address = "34:90:EA:E6:D5:3A",
+            requiredCharacteristics = false,
+            wifiOnCharacteristic = false,
+            mtuResult = 517,
+            serviceSummary = "8000cc00:[cc01(N),cc02(W),cc05(RN),cc06(R),cc07(R)],8000ee00:[ee01(W)]",
+        )
+        var createBondCalls = 0
+        val (conn, _) = createConnection(platform, listener)
+
+        conn.scan()
+        platform.drain()
+        platform.onScanEntry?.invoke(
+            SonyCameraConnection.BleScanEntry(
+                id = gatt.address,
+                name = "ZV-E10",
+                isSony = true,
+                isBonded = true,
+                connectGatt = { cb -> gatt.callback = cb; gatt },
+                createBond = { createBondCalls++; true },
+            ),
+        )
+        platform.drain()
+        conn.connect(gatt.address)
+        platform.drain()
+        gatt.callback!!.onConnectionStateChange(gatt, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+        platform.drain()
+
+        assertEquals(0, createBondCalls)
+        assertFalse("Must not write ee01 when cc08 is absent", gatt.writePairingInitCalled)
+        assertFalse("Must not read cc06 when cc08 is absent", gatt.readSsidCalled)
+        assertEquals(SonyCameraConnection.Stage.MANUAL_WIFI, listener.stages.last())
+        assertEquals(1, listener.manualWifiFallbackCount)
+        assertTrue(listener.failures.isEmpty())
+        conn.close()
+    }
+
+    @Test
+    fun sonyCameraBleNameMatcherIdentifiesSonyModelsAndRejectsUnrelatedDevices() {
+        assertTrue(isSonyCameraBleName("ZV-E10"))
+        assertTrue(isSonyCameraBleName("ZV-1"))
+        assertTrue(isSonyCameraBleName("ILCE-7CM2.xp"))
+        assertTrue(isSonyCameraBleName("ILCE-7M4"))
+        assertTrue(isSonyCameraBleName("ILME-FX3"))
+        assertTrue(isSonyCameraBleName("DSC-RX100M7"))
+        assertTrue(isSonyCameraBleName("zv-e10"))
+        assertFalse(isSonyCameraBleName("HUAWEI FreeBuds SE 4 ANC"))
+        assertFalse(isSonyCameraBleName("ONIX XP1"))
+        assertFalse(isSonyCameraBleName(""))
+        assertFalse(isSonyCameraBleName("   "))
+        assertFalse(isSonyCameraBleName(null))
     }
 }
