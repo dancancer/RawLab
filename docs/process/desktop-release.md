@@ -43,10 +43,16 @@ or by explicitly setting `RAWLAB_DUALDN_MODEL_DIR` / `-DualDnModel`. Within the
 macOS matrix, only the Apple Silicon full job provisions AI inputs; its default
 cache root is `~/.cache/rawlab-ci`. The Intel full job still builds and runs its
 native suites without AI models or CPU neural inference. Windows uses its
-runner's shared cache root. Provisioning is an administrator action, not an
-unverified public download. A missing model fails AI-enabled Apple Silicon macOS
-and Windows full checks. Intel full checks do not require these models. CI never
-reads signing private keys.
+runner's shared cache root. When the default cache directory is absent on a
+runner, `scripts/ci/ai-inputs.py` fetches the pinned `macos-arm64` model archive
+(`Shared/ai-models/catalog.json`) and CI replay-tensor archive
+(`scripts/ci/ai-replay-tensors.json`) from `assets-v1`, verifies archive size,
+SHA-256 and every extracted member in a private staging directory, and renames
+it atomically to `complete`. An already-present directory or explicit
+`RAWLAB_DUALDN_MODEL_DIR` is never downloaded over or overwritten; a download or
+validation failure still fails AI-enabled Apple Silicon macOS and Windows full
+checks. Intel full checks do not require these models. CI never reads signing
+private keys.
 
 ## macOS
 

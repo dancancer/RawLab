@@ -12,13 +12,21 @@ deploy, sign, notarize or create releases. Verification is not release authoriza
 
 Full macOS and Windows checks compile with the pinned GPU AI models and inference
 runtimes. Model provisioning and shared-cache paths are specified in
-[desktop release packaging](desktop-release.md). `ai-inputs.py` validates an
-already-provisioned licensed model package; it does not download that package.
-A fresh hosted VM has no such local package: macOS arm64 `native` and desktop
-`full` remain hard-failing until an authorized cloud provisioning path supplies
-it. Do not drop those steps, upload private models, add secrets, or call a
-model-free `build` run a full pass. Windows `build/native`, macOS `build`, and
-iOS/Android groups do not require that model package. No signing keys are used in CI.
+[desktop release packaging](desktop-release.md). When the default shared-cache
+directory (`$RAWLAB_AI_SHARED_CACHE/ai-models/<manifest-sha256>/complete`) is
+already present, `ai-inputs.py` validates it offline without downloading; an
+explicit `RAWLAB_DUALDN_MODEL_DIR` is likewise validated in place without
+downloading. When that default directory is absent (such as on a fresh hosted
+VM), `ai-inputs.py` fetches the pinned `macos-arm64` model archive from
+`Shared/ai-models/catalog.json` and the CI replay-tensor archive from
+`scripts/ci/ai-replay-tensors.json` (both published on `assets-v1`), checks each
+archive's size and SHA-256 before decompressing, extracts into a private staging
+directory, verifies the unpacked tree against both descriptions, and renames it
+atomically to `complete`. A download or verification failure, or an existing
+invalid directory, remains a hard failure for macOS arm64 `native` and desktop
+`full`. Do not drop those steps, add secrets, or call a model-free `build` run a
+full pass. Windows `build/native`, macOS `build`, and iOS/Android groups do not
+require that model package. No signing keys are used in CI.
 Native checks include direct HLSL compilation without a hardware adapter and
 GLES source validation with glslang. CPU neural-inference validation is excluded;
 ordinary CPU photo processing and deterministic ISP tests remain applicable.

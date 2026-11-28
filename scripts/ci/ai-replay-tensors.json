@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "kind": "replay-tensors",
+  "manifestSha256": "38cbd6884bb181db859ffc668cf754a55331be732592e0d4cdf9a2d41a19486a",
+  "url": "https://github.com/dancancer/RawLab/releases/download/assets-v1/rawlab-ai-replay-tensors-ced6a0507a4c.tar.gz",
+  "archiveName": "rawlab-ai-replay-tensors-ced6a0507a4c.tar.gz",
+  "archiveSha256": "ced6a0507a4c86424e97b422159f44201cebacdb32d95a617faeb463729d67dc",
+  "archiveBytes": 39167195,
+  "unpackedBytes": 44236860,
+  "entries": [
+    {
+      "path": "blind_rgb-encoded_rgb.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "32f54bd71ef66018dd71f2a8165cc0698081c5bc7a2e2711ce31c2577cef6aaf"
+    },
+    {
+      "path": "blind_rgb-expected.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "e4000ec107cb9b909262fa1cef5846f732b586685621b0050b2c82ee4dfd8b10"
+    },
+    {
+      "path": "isp-camera_to_xyz.f32",
+      "kind": "file",
+      "bytes": 36,
+      "sha256": "7abd572fd3d915a967856d9b117456ad4190998a8b54cc19c7b2639c78ac8d1f"
+    },
+    {
+      "path": "isp-expected.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "7216ccf63832b9de023927dfb8c93dafb3aeed3cdc984e30e44cee530de9e611"
+    },
+    {
+      "path": "isp-mosaic.f32",
+      "kind": "file",
+      "bytes": 1638400,
+      "sha256": "14a50c14260b77a0fe553ed58bf9126b40e5a9e41bfab114382f845232d3e76d"
+    },
+    {
+      "path": "isp-wb.f32",
+      "kind": "file",
+      "bytes": 16,
+      "sha256": "c53cbf4ce0976b59571750e8473487250fc90e6792fa10a31a1b81bf94711f04"
+    },
+    {
+      "path": "raw-b.f32",
+      "kind": "file",
+      "bytes": 4,
+      "sha256": "c5e46f5bcf58f16c32246e63c7436f71f5b2b822d82780e409c6c9b47d3dbe4c"
+    },
+    {
+      "path": "raw-expected.f32",
+      "kind": "file",
+      "bytes": 6553600,
+      "sha256": "c3309b735774417f5956cbe65519c8288c45a547e847b57d63448866a9acb884"
+    },
+    {
+      "path": "raw-k.f32",
+      "kind": "file",
+      "bytes": 4,
+      "sha256": "bbc5659ebb6cb8a55ec745364d8e9e2e0c8fa225776a5a679c60a27a9d3d1b66"
+    },
+    {
+      "path": "raw-packed_raw.f32",
+      "kind": "file",
+      "bytes": 6553600,
+      "sha256": "6058a0ca8a16627f0a98424fd5d4a9951777a7080760e347bb6767ef65f8cdd8"
+    },
+    {
+      "path": "rgb-expected.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "95137bb3f8cc591cb6b259a30d57b9f37a09e98eece8413ea01f4b9f485d0ecd"
+    },
+    {
+      "path": "rgb-noise_rgb.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "13e5d372ce4e936ef9b1243c9806aa1fa557ce70d5dd8e2e1a602ba35f46840a"
+    },
+    {
+      "path": "rgb-skip_rgb.f32",
+      "kind": "file",
+      "bytes": 4915200,
+      "sha256": "fef474340657f1daeaf0f52554a19caa3f1749f4a0ed08db965104943acad5d6"
+    }
+  ]
+}
