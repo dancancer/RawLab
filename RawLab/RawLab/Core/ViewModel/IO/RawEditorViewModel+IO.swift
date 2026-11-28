@@ -176,7 +176,13 @@ extension RawEditorViewModel {
                     if cancellation.isCancelled { throw CancellationError() }
                     let resolvedIdentity = identity ?? (try? PhotoIdentity.fallback(for: inputURL))
                     importIdentity = resolvedIdentity
-                    let record = try resolvedIdentity.flatMap { try self.editPersistence?.readState(for: $0) }
+                    let isX3f = source.isRaw && Adjustments.isX3fInput(inputURL, displayName: source.displayName)
+                    let record = try resolvedIdentity.flatMap {
+                        if x3fModeOverride == nil {
+                            return try self.editPersistence?.repairLegacyNormalX3fOnOpen(for: $0, isX3f: isX3f)
+                        }
+                        return try self.editPersistence?.readState(for: $0)
+                    }
                     if record?.state == nil, let resolvedIdentity {
                         _ = try self.editPersistence?.unverifiedAssetEdit(for: resolvedIdentity)
                     }

@@ -89,7 +89,9 @@ class BatchSelectionExport(private val directory: File,
                 validateActive(photo.id); validateSource(photo)
                 val generation = editGeneration(photo.identity)
                 val inputHash = BatchFrozenSettings.checksum(photo.sourceFile)
-                val record = readRecord(photo.identity)
+                val isX3f = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW &&
+                    com.rawlab.android.format.PhotoFiles.isX3fInput(photo.sourceFile, photo.displayName)
+                val record = readRecord(photo.identity).repairLegacyNormalX3f(isX3f)
                 val settings = record.settings ?: com.rawlab.android.photo.defaultEditSettingsFor(photo.sourceFile, photo.inputKind, photo.sourceIsHDR, cameraRaw = photo.inputKind == com.rawlab.android.format.PhotoInputKind.RAW)
                 if (settings.isHDREditing && !photo.sourceIsHDR)
                     throw AdjustmentTransferException(AdjustmentFailure.INCOMPATIBLE, "hdr.source")

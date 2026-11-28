@@ -23,9 +23,11 @@ internal enum class PhotoEditFilter {
 
 internal object EditedPhotoPreviewKey {
     const val EDGE = 512
-    fun isEdited(settings: EditSettings?, input: PhotoInputKind): Boolean = settings != null &&
-        EditorAdjustmentRules.isModified(EditorResetScope.All, settings,
-            EditorResetContext(input, sourceDefaultSettings(false, inputKind = input)))
+    fun isEdited(settings: EditSettings?, input: PhotoInputKind, isX3f: Boolean = false): Boolean =
+        settings?.repairLegacyNormalX3f(isX3f)?.let { repaired ->
+            EditorAdjustmentRules.isModified(EditorResetScope.All, repaired,
+                EditorResetContext(input, sourceDefaultSettings(false, inputKind = input)))
+        } ?: false
 
     fun create(source: String, settings: EditSettings, resources: String, edge: Int = EDGE, rendererVersion: Int = 1): String {
         val hash = MessageDigest.getInstance("SHA-256")

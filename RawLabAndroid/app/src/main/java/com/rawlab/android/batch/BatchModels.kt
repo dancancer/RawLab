@@ -122,8 +122,7 @@ data class BatchTarget(
 ) {
     val id: String get() = identity.value
     val isX3f: Boolean get() = inputKind == PhotoInputKind.RAW &&
-        (displayName.substringAfterLast('.', "").equals("x3f", ignoreCase = true) ||
-            sourceFile.extension.equals("x3f", ignoreCase = true))
+        com.rawlab.android.format.PhotoFiles.isX3fInput(sourceFile, displayName)
 }
 
 data class BatchRow(

@@ -25,18 +25,19 @@ public struct TransferTargetDescriptor<Identity: Equatable> {
     public let id: String, targetIdentity: Identity?, url: URL, displayName: String, defaultState: PhotoEditState
     public var context: AdjustmentTransferContext; public var expectedIdentity: Identity? { targetIdentity }
     public var isCurrent: (() -> Bool)?, validateSource: (() throws -> Void)?, resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)?, resolveDefaultState: (() throws -> PhotoEditState)?
+    public var isX3f: Bool
 
     fileprivate init(id: String, targetIdentity: Identity?, url: URL, displayName: String, defaultState: PhotoEditState, context: AdjustmentTransferContext,
-                     isCurrent: (() -> Bool)? = nil, validateSource: (() throws -> Void)? = nil, resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)? = nil, resolveDefaultState: (() throws -> PhotoEditState)? = nil) {
+                     isCurrent: (() -> Bool)? = nil, validateSource: (() throws -> Void)? = nil, resolveMetadata: ((PhotoEditState) throws -> PhotoEditState)? = nil, resolveDefaultState: (() throws -> PhotoEditState)? = nil, isX3f: Bool = false) {
         self.id = id; self.targetIdentity = targetIdentity; self.url = url; self.displayName = displayName; self.defaultState = defaultState; self.context = context
-        self.isCurrent = isCurrent; self.validateSource = validateSource; self.resolveMetadata = resolveMetadata; self.resolveDefaultState = resolveDefaultState
+        self.isCurrent = isCurrent; self.validateSource = validateSource; self.resolveMetadata = resolveMetadata; self.resolveDefaultState = resolveDefaultState; self.isX3f = isX3f
     }
 }
 
 public extension TransferTargetDescriptor where Identity == PhotoIdentity {
     var identity: PhotoIdentity { targetIdentity! }
-    init(identity: PhotoIdentity, displayName: String, defaultState: PhotoEditState, context: AdjustmentTransferContext, isCurrent: (() -> Bool)? = nil, validateSource: (() throws -> Void)? = nil) {
-        self.init(id: identity.key, targetIdentity: identity, url: URL(fileURLWithPath: "/\(identity.key)"), displayName: displayName, defaultState: defaultState, context: context, isCurrent: isCurrent, validateSource: validateSource)
+    init(identity: PhotoIdentity, displayName: String, defaultState: PhotoEditState, context: AdjustmentTransferContext, isCurrent: (() -> Bool)? = nil, validateSource: (() throws -> Void)? = nil, isX3f: Bool = false) {
+        self.init(id: identity.key, targetIdentity: identity, url: URL(fileURLWithPath: "/\(identity.key)"), displayName: displayName, defaultState: defaultState, context: context, isCurrent: isCurrent, validateSource: validateSource, isX3f: isX3f)
     }
 }
 
@@ -63,11 +64,12 @@ public struct PreparedTransferOperation<Record> {
         public let id: String, displayName: String; public let original: Record?; public let candidate: PhotoEditState?
         public let unchanged: Bool; public let isCurrent: (() -> Bool)?; public let validateSource: (() throws -> Void)?
         public let error: Error?; public let editGeneration: UInt64; public var notices: [AdjustmentTransferNotice] = []
+        public let isX3f: Bool
 
         public init(id: String, displayName: String = "", original: Record?, candidate: PhotoEditState?, unchanged: Bool,
-                    isCurrent: (() -> Bool)?, validateSource: (() throws -> Void)? = nil, error: Error?, editGeneration: UInt64 = 0, notices: [AdjustmentTransferNotice] = []) {
+                    isCurrent: (() -> Bool)?, validateSource: (() throws -> Void)? = nil, error: Error?, editGeneration: UInt64 = 0, notices: [AdjustmentTransferNotice] = [], isX3f: Bool = false) {
             self.id = id; self.displayName = displayName; self.original = original; self.candidate = candidate; self.unchanged = unchanged
-            self.isCurrent = isCurrent; self.validateSource = validateSource; self.error = error; self.editGeneration = editGeneration; self.notices = notices
+            self.isCurrent = isCurrent; self.validateSource = validateSource; self.error = error; self.editGeneration = editGeneration; self.notices = notices; self.isX3f = isX3f
         }
     }
 
@@ -100,7 +102,7 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
         let readPreparedTarget: (TransferTargetDescriptor<Identity>, (String) -> Record?) throws -> (record: Record, baseState: PhotoEditState, context: AdjustmentTransferContext)
         let captureState: (AdjustmentTransferScope, PhotoEditState, AdjustmentTransferContext) throws -> AdjustmentTransferPayload
         let prepareState: (AdjustmentTransferPayload, PhotoEditState, AdjustmentTransferContext) throws -> PhotoEditState
-        let saveTransferred: (PhotoEditState, Record) throws -> Record, saveEdited: (Identity, PhotoEditState?, Bool) throws -> Record
+        let saveTransferred: (PhotoEditState, Record, Bool) throws -> Record, saveEdited: (Identity, PhotoEditState?, Bool) throws -> Record
         let prepareCommitState: (PhotoEditState, Record, PhotoEditState?) -> PhotoEditState?
         let resetByIdentity: ((Identity) throws -> Record)?, resetByURL: ((URL) throws -> Record)?
         let deliverReadyCompletedCommits: () -> Void
@@ -166,11 +168,11 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
                 let candidate = try backend.prepareState(payload, read.baseState, context)
                 prepared.append(.init(id: target.id, displayName: target.displayName, original: read.record, candidate: candidate,
                                       unchanged: backend.sameState(candidate, read.baseState), isCurrent: target.isCurrent, validateSource: target.validateSource,
-                                      error: nil, editGeneration: editGeneration, notices: notices))
+                                      error: nil, editGeneration: editGeneration, notices: notices, isX3f: target.isX3f))
             } catch {
                 prepared.append(.init(id: target.id, displayName: target.displayName, original: nil, candidate: nil, unchanged: false,
                                       isCurrent: target.isCurrent, validateSource: target.validateSource, error: error,
-                                      editGeneration: ledger.editGeneration(forKey: target.id)))
+                                      editGeneration: ledger.editGeneration(forKey: target.id), isX3f: target.isX3f))
             }
         }
         if shouldCancel() { throw CancellationError() }
@@ -193,9 +195,11 @@ public final class EditTransferSession<Identity: Equatable, Record: Equatable> {
         let defaults = operation.targets.reduce(into: [String: PhotoEditState]()) { map, target in
             if let original = target.original, let candidate = target.candidate { map[target.id] = backend.stateOf(original) ?? candidate }
         }
+        let x3fTargets = Set(operation.targets.filter(\.isX3f).map(\.id))
         return ledger.applyTargets(
             operationID: operation.id, action: operation.action, fields: operation.payload.fields, sourceIdentifier: operation.payload.source.identifier,
-            targets: specs, skipping: skipping, rememberUnchanged: backend.rememberUnchanged, saveTarget: { try self.backend.saveTransferred($1, $0) },
+            targets: specs, skipping: skipping, rememberUnchanged: backend.rememberUnchanged,
+            saveTarget: { try self.backend.saveTransferred($1, $0, x3fTargets.contains(self.backend.keyOf(self.backend.identityOf($0)))) },
             onRemembered: { saved, targetID in
                 if let fallback = defaults[targetID] { self.defaultStates[targetID] = self.defaultStates[targetID] ?? fallback }
                 if let validator = validators[targetID] { self.setSourceValidator(validator, forKey: self.backend.keyOf(self.backend.identityOf(saved))) }
@@ -299,12 +303,13 @@ public extension EditTransferSession where Identity == PhotoIdentity, Record == 
         self.init(backend: Backend(
             storeHasPendingCommits: { false }, storeFlushPendingCommits: { true }, prepareSync: {},
             readPreparedTarget: { target, _ in
-                let original = try store.readState(for: target.identity, requiringLegacyDecision: true)
-                return (original, original.state ?? target.defaultState, target.context)
+                let original = try store.readState(for: target.identity, requiringLegacyDecision: true, isX3f: target.isX3f)
+                let fallback = target.defaultState.repairingLegacyNormalX3f(isX3f: target.isX3f).state
+                return (original, original.state ?? fallback, target.context)
             },
             captureState: { try IOSAdjustmentTransfer.capture(scope: $0, snapshot: $1, context: $2) },
             prepareState: { try IOSAdjustmentTransfer.prepare(payload: $0, target: $1, context: $2) },
-            saveTransferred: { try store.saveTransferredState($0.withUpdatedAt(Date()), expected: $1) },
+            saveTransferred: { try store.saveTransferredState($0.withUpdatedAt(Date()), expected: $1, isX3f: $2) },
             saveEdited: { try store.saveState(identity: $0, state: $1, clearsProcessingMigration: $2) },
             prepareCommitState: { state, before, defaultState in
                 (before.state == nil && defaultState.map { state.hasSameAdjustments(as: $0) } == true) ? nil : state.withUpdatedAt(Date())
@@ -341,7 +346,7 @@ public extension EditTransferSession where Identity == OriginalFileIdentity, Rec
             },
             captureState: { try MacAdjustmentTransfer.capture(scope: $0, snapshot: $1, context: $2) },
             prepareState: { try MacAdjustmentTransfer.prepare(payload: $0, target: $1, context: $2) },
-            saveTransferred: { try store.saveState(identity: $1.identity, state: $0) },
+            saveTransferred: { state, expected, _ in try store.saveState(identity: expected.identity, state: state) },
             saveEdited: { try store.saveState(identity: $0, state: $1, clearsProcessingMigration: $2) },
             prepareCommitState: { state, _, _ in state }, resetByIdentity: nil, resetByURL: { try store.resetToUnmodified($0) },
             deliverReadyCompletedCommits: { _ = store.deliverReadyCompletedCommits() },

@@ -152,7 +152,9 @@ internal class EditorAdjustmentPreparation(
                     sourceValidator()
                     checkActive()
                     val validate = sourceValidator
-                    val saved = store.readState(identity)
+                    val isX3f = photo.inputKind == PhotoInputKind.RAW &&
+                        com.rawlab.android.format.PhotoFiles.isX3fInput(photo.file, photo.name)
+                    val saved = store.readState(identity).repairLegacyNormalX3f(isX3f)
                     val targetDefaults = saved.settings ?: photo.defaultEditSettings()
                     val neutral = EditSettings(processing = targetDefaults.processing, x3fMode = targetDefaults.x3fMode)
                     val database by lazy { lensDatabaseProvider() }
@@ -211,7 +213,7 @@ internal class EditorAdjustmentPreparation(
                     AdjustmentTransferTarget(identity, displayName,
                         targetDefaults, transferContext,
                         isCurrent = { work.isCurrent(identity.value) }, validateSource = validate,
-                        validateHistorySource = historySourceValidation(photo))
+                        validateHistorySource = historySourceValidation(photo), isX3f = isX3f)
                 } catch (error: java.util.concurrent.CancellationException) { throw error }
                   catch (error: Exception) {
                     owned.remove(identity.value)?.delete()

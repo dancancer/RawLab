@@ -8,7 +8,7 @@ public protocol BatchRenderError: Error {
 
 public enum BatchExportEnvironment {
     public static var isRasterInput: (URL) -> Bool = { PhotoInputClassification.isRasterInput($0) }
-    public static var isX3fInput: (URL) -> Bool = { $0.pathExtension.lowercased() == "x3f" }
+    public static var isX3fInput: (URL) -> Bool = { Adjustments.isX3fInput($0) }
     public static var defaultX3fMode: (URL) throws -> X3fMode = { _ in throw CocoaError(.featureUnsupported) }
     public static var isAICancelledError: (Error) -> Bool = { ($0 as? BatchRenderError)?.isAICancelled == true }
     public static var isOutputIOError: (Error) -> Bool = { ($0 as? BatchRenderError)?.isOutputIO == true }

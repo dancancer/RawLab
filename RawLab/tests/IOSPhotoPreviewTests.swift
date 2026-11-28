@@ -70,6 +70,7 @@ struct Sony2FujiProcessor {
 
         try await verifyHundredPhotoReloadAndPartialCorruption(in: root)
         try await verifyPreviewHashDeduplicationAndCurrency(in: root)
+        try await verifyLegacyNormalX3fPreviewRepair(in: root)
     }
 
     private static func verifyHundredPhotoReloadAndPartialCorruption(in root: URL) async throws {
@@ -244,5 +245,64 @@ struct Sony2FujiProcessor {
         } catch RecentPhotoError.originalChanged {
             print("PASS: P2-05 tampered retained original invalidates digest cache and throws originalChanged")
         }
+    }
+
+    private static func verifyLegacyNormalX3fPreviewRepair(in root: URL) async throws {
+        let editsDir = root.appendingPathComponent("x3f-preview-edits")
+        let recentsDir = root.appendingPathComponent("x3f-preview-recents")
+        let cacheDir = root.appendingPathComponent("x3f-preview-cache")
+        let seedStore = try EditPersistence(directory: editsDir)
+        let recentStore = try RecentPhotoStore(directory: recentsDir, maximumEntries: 100, maximumOriginalBytes: 64 * 1024 * 1024)
+
+        let flagsOnlyFile = root.appendingPathComponent("flags-only.X3F")
+        let editedFile = root.appendingPathComponent("edited.X3F")
+        let arwFile = root.appendingPathComponent("sony.ARW")
+        try Data("FOVb-flags-only".utf8).write(to: flagsOnlyFile)
+        try Data("FOVb-edited".utf8).write(to: editedFile)
+        try Data("II*\0sony".utf8).write(to: arwFile)
+
+        let flagsID = try PhotoIdentity.fallback(for: flagsOnlyFile, resourceIdentifier: "x3f-flags")
+        let editedID = try PhotoIdentity.fallback(for: editedFile, resourceIdentifier: "x3f-edited")
+        let arwID = try PhotoIdentity.fallback(for: arwFile, resourceIdentifier: "arw-normal")
+
+        let flagsRecent = try recentStore.recordOpened(url: flagsOnlyFile, identity: flagsID, displayName: "flags-only.X3F", isRaw: true)
+        let editedRecent = try recentStore.recordOpened(url: editedFile, identity: editedID, displayName: "edited.X3F", isRaw: true)
+        let arwRecent = try recentStore.recordOpened(url: arwFile, identity: arwID, displayName: "sony.ARW", isRaw: true)
+
+        var flagsOnly = RawSettings.default
+        flagsOnly.x3fMode = .normal
+        flagsOnly.aiDenoiseEnabled = true
+        flagsOnly.lensCorrection = LensCorrectionSettings(distortion: true, tca: true, vignetting: true)
+        try seedStore.save(flagsID, state: PhotoEditState(settings: flagsOnly))
+        try seedStore.save(arwID, state: PhotoEditState(settings: flagsOnly))
+
+        var edited = flagsOnly
+        edited.exposure = 0.6
+        edited.lensCorrection?.profileID = "sigma-35"
+        try seedStore.save(editedID, state: PhotoEditState(settings: edited))
+
+        let editsJSON = editsDir.appendingPathComponent("edits.json")
+        let rawBefore = try Data(contentsOf: editsJSON)
+
+        let library = await MainActor.run {
+            IOSPhotoPreviewLibrary(recentStore: recentStore, cacheDirectory: cacheDir)
+        }
+        await library.reload(editDirectory: editsDir)
+        let editedMap = await MainActor.run { library.edited }
+        try check(editedMap[flagsRecent.id] == false, "Flags-only legacy normal X3F recent photo must not be marked edited")
+        try check(editedMap[editedRecent.id] == true, "Edited legacy normal X3F recent photo remains marked edited")
+        try check(editedMap[arwRecent.id] == true, "Non-X3F normal photo with lens flags remains marked edited")
+
+        let editedSource = try await library.source(for: editedRecent)
+        let rawRecord = try await library.record(for: editedID, editDirectory: editsDir)
+        let plan = try IOSPhotoPreviewPlan(source: editedSource, record: rawRecord, look: nil)
+        try check(plan.settings.aiDenoiseEnabled == false &&
+                  plan.settings.lensSettings.isEnabled == false &&
+                  plan.settings.lensCorrection?.profileID == "sigma-35" &&
+                  plan.settings.exposure == 0.6,
+                  "IOSPhotoPreviewPlan repairs legacy normal X3F in memory")
+        try check(try plan.isCurrent(in: seedStore), "Repaired IOSPhotoPreviewPlan matches store in isCurrent without mutating disk")
+        try check((try Data(contentsOf: editsJSON)) == rawBefore, "iOS preview read-only path must leave edits.json untouched on disk")
+        print("PASS: iOS photo preview repairs legacy normal X3F in memory without mutating disk")
     }
 }

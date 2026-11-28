@@ -181,7 +181,13 @@ public struct IOSCollectionExportInput {
                 try validateActive(id)
                 let generation = editGeneration(id)
                 guard ExportSize.isValid(longEdge) else { throw BatchExportError.global(L10n.text("导出尺寸无效。")) }
-                let record = try store.readState(for: photo.photo.identity, requiringLegacyDecision: true)
+                let rawRecord = try store.readState(for: photo.photo.identity, requiringLegacyDecision: true)
+                let isX3f = photo.photo.isRaw && (
+                    Adjustments.isX3fInput(nil, displayName: photo.photo.displayName) ||
+                    (rawRecord.state?.settings.needsLegacyNormalX3fRepair == true &&
+                     (photo.photo.file?.withReadAccess { Adjustments.isX3fInput($0) } == true))
+                )
+                let record = rawRecord.repairingLegacyNormalX3f(isX3f: isX3f).record
                 let settings: RawSettings
                 if let saved = record.state { settings = saved.settings }
                 else {

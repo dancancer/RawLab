@@ -44,6 +44,23 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
         Thread({ Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND); action.run() }, "rawlab-photo-previews")
     }
 
+    private fun isX3fAlbumPhoto(photo: AlbumPhoto, input: PhotoInputKind, settings: EditSettings?): Boolean {
+        if (input != PhotoInputKind.RAW || settings?.needsLegacyNormalX3fRepair != true) return false
+        if (PhotoFiles.isX3fName(photo.name)) return true
+        return runCatching {
+            context.contentResolver.openInputStream(photo.uri)?.use { stream ->
+                val signature = ByteArray(4)
+                var offset = 0
+                while (offset < signature.size) {
+                    val read = stream.read(signature, offset, signature.size - offset)
+                    if (read <= 0) return@use false
+                    offset += read
+                }
+                signature.contentEquals(byteArrayOf(70, 79, 86, 98))
+            } ?: false
+        }.getOrDefault(false)
+    }
+
     suspend fun states(photos: List<AlbumPhoto>): Map<String, Boolean> = work { cancellation ->
         val records = store.readStates(photos.map { PhotoIdentity(it.uri.toString()) })
         buildMap(photos.size) {
@@ -51,8 +68,10 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
                 cancellation.check()
                 val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
                 when (val result = records[PhotoIdentity(photo.uri.toString())]) {
-                    is PhotoEditReadResult.Usable ->
-                        put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input))
+                    is PhotoEditReadResult.Usable -> {
+                        val isX3f = isX3fAlbumPhoto(photo, input, result.state.settings)
+                        put(photo.uri.toString(), EditedPhotoPreviewKey.isEdited(result.state.settings, input, isX3f))
+                    }
                     is PhotoEditReadResult.Unusable, null -> Unit
                 }
             }
@@ -61,14 +80,17 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
 
     suspend fun image(photo: AlbumPhoto): Bitmap = work { cancellation ->
         val identity = PhotoIdentity(photo.uri.toString())
-        val record = store.readState(identity)
+        val input = PhotoFiles.kind(photo.name, photo.mimeType) ?: PhotoInputKind.RAW
+        val rawRecord = store.readState(identity)
+        val isX3f = isX3fAlbumPhoto(photo, input, rawRecord.settings)
+        val record = rawRecord.repairLegacyNormalX3f(isX3f)
         val settings = record.settings ?: throw AdjustmentOperationExpiredException()
         val stamp = OriginalPhotoSource.fingerprint(context.contentResolver, photo.uri)
         val resources = resources(settings)
         val key = key(identity, stamp, settings, resources)
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         runCatching { cache.read(key)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } }.getOrNull()?.let {
-            cancellation.check(); requireCurrent(record, photo.uri, stamp, resources)
+            cancellation.check(); requireCurrent(record, photo.uri, stamp, resources, isX3f)
             return@work it
         }
         cancellation.check()
@@ -77,7 +99,7 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
             cancellation.check()
             val result = renderer.perform(thumbnailPreviewWork(imported, settings), cancellation) as WorkResult.Preview
             cancellation.check()
-            requireCurrent(record, photo.uri, stamp, resources)
+            requireCurrent(record, photo.uri, stamp, resources, isX3f)
             val bytes = encode(result.pair.result)
             runCatching { cache.write(key, bytes) }
             result.pair.result
@@ -88,17 +110,18 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     }
 
     suspend fun accept(photo: ImportedPhoto, renderedSettings: EditSettings, image: Bitmap) = work { cancellation ->
-        val record = store.readState(photo.identity)
+        val isX3f = photo.inputKind == PhotoInputKind.RAW && PhotoFiles.isX3fInput(photo.file, photo.name)
+        val record = store.readState(photo.identity, isX3f)
         val saved = record.settings ?: return@work
         if (renderedSettings.normalizedWhiteBalance() != saved.normalizedWhiteBalance()) return@work
-        if (!EditedPhotoPreviewKey.isEdited(saved, photo.inputKind)) return@work
+        if (!EditedPhotoPreviewKey.isEdited(saved, photo.inputKind, isX3f)) return@work
         photo.validateOriginal?.invoke()
         val stamp = OriginalPhotoSource.fingerprint(context.contentResolver, photo.uri)
         val resources = resources(saved)
         cancellation.check()
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         val bytes = encode(image)
-        requireCurrent(record, photo.uri, stamp, resources)
+        requireCurrent(record, photo.uri, stamp, resources, isX3f)
         cache.write(key(photo.identity, stamp, saved, resources), bytes)
         completed.tryEmit(photo.identity)
     }
@@ -128,8 +151,8 @@ internal class EditedPhotoPreviews(context: Context) : AutoCloseable {
     }
     private fun key(identity: PhotoIdentity, stamp: String, settings: EditSettings, resources: String) =
         EditedPhotoPreviewKey.create("${identity.value.length}:${identity.value}$stamp", settings, resources, rendererVersion = BuildConfig.VERSION_CODE)
-    private fun requireCurrent(record: PhotoEditState, uri: android.net.Uri, stamp: String, resources: String) {
-        if (!record.sameAs(store.readState(record.identity)) || OriginalPhotoSource.fingerprint(context.contentResolver, uri) != stamp ||
+    private fun requireCurrent(record: PhotoEditState, uri: android.net.Uri, stamp: String, resources: String, isX3f: Boolean) {
+        if (!record.sameAs(store.readState(record.identity, isX3f)) || OriginalPhotoSource.fingerprint(context.contentResolver, uri) != stamp ||
             resources(record.settings ?: throw AdjustmentOperationExpiredException()) != resources) throw AdjustmentOperationExpiredException()
     }
     private fun encode(image: Bitmap): ByteArray {

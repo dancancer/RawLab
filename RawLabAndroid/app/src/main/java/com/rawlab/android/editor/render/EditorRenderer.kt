@@ -48,6 +48,9 @@ internal class EditorRenderer(
     },
     private val engineFactory: () -> RenderEngine = { NativeRenderEngine(NativeProcessor(lensDatabase = storage.lensDatabase())) },
     private val hdrBridge: HdrRenderBridge = NativeHdrRenderBridge,
+    private val repairOnOpen: (PhotoIdentity, Boolean) -> PhotoEditState? = { identity, isX3f ->
+        restore(identity)?.repairLegacyNormalX3f(isX3f)
+    },
 ) {
     internal interface HdrImageHandle : Closeable {
         val sourceInfo: HDRSourceInfo
@@ -695,7 +698,9 @@ internal class EditorRenderer(
             var hadSavedRecord = false
             try {
                 photo.validateOriginal?.invoke()
-                val record = restore(photo.identity)
+                val isX3f = photo.inputKind == PhotoInputKind.RAW &&
+                    com.rawlab.android.format.PhotoFiles.isX3fInput(photo.file, photo.name)
+                val record = if (work.x3fModeOverride == null) repairOnOpen(photo.identity, isX3f) else restore(photo.identity)
                 hadSavedRecord = record?.settings != null
                 var restored = record?.settings ?: photo.defaultEditSettings(work.x3fModeOverride)
                 if (work.x3fModeOverride != null) restored = restored.copy(x3fMode = work.x3fModeOverride)

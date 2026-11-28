@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 data class AdjustmentTransferTarget(val identity: PhotoIdentity, val displayName: String,
     val defaultSettings: EditSettings, val context: AdjustmentTransferContext,
     val isCurrent: () -> Boolean = { true }, val validateSource: (() -> Unit)? = null,
-    val validateHistorySource: (() -> Unit)? = validateSource)
+    val validateHistorySource: (() -> Unit)? = validateSource, val isX3f: Boolean = false)
 enum class AdjustmentStatus { APPLIED, UNCHANGED, SKIPPED, BLOCKED, CONFLICT, FAILED }
 data class AdjustmentOutcome(val targetID: String, val status: AdjustmentStatus,
     val saved: PhotoEditState? = null, val error: Throwable? = null, val requiresHistoryDecision: Boolean = false)
@@ -94,8 +94,8 @@ class AdjustmentTransferSession(private val store: EditStore) {
                     if (!target.isCurrent()) throw draftError()
                     target.validateSource?.invoke()
                     val generation = editGeneration(target.identity)
-                    val original = store.readState(target.identity)
-                    val before = original.settings ?: target.defaultSettings
+                    val original = store.readState(target.identity, target.isX3f)
+                    val before = (original.settings ?: target.defaultSettings).repairLegacyNormalX3f(target.isX3f)
                     val notices = mutableListOf<AdjustmentTransferNotice>()
                     val candidate = AdjustmentTransfer.prepare(payload, before, target.context.copy(
                         onTransferNotice = { notices.add(it) }))

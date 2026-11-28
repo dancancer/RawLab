@@ -33,6 +33,16 @@ value class PhotoIdentity(val value: String) {
 data class PhotoEditState(val identity: PhotoIdentity, val settings: EditSettings?) {
     fun sameAs(other: PhotoEditState?): Boolean = other != null && identity == other.identity && settings == other.settings
     fun copySettings(): PhotoEditState = copy(settings = settings?.copy())
+    fun repairLegacyNormalX3f(isX3f: Boolean): PhotoEditState {
+        val current = settings ?: return this
+        val repaired = current.repairLegacyNormalX3f(isX3f)
+        return if (repaired == current) this else copy(settings = repaired)
+    }
+    fun repairLegacyNormalX3f(file: File? = null, displayName: String? = null): PhotoEditState {
+        val current = settings ?: return this
+        val repaired = current.repairLegacyNormalX3f(file, displayName)
+        return if (repaired == current) this else copy(settings = repaired)
+    }
 }
 
 class PhotoChangedException : IOException("The original photo changed. Select it again.")
@@ -105,6 +115,17 @@ class EditStore internal constructor(
         }
 
     fun readState(identity: PhotoIdentity): PhotoEditState = withStoreLock { read().record(identity) }
+    fun readState(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState =
+        readState(identity).repairLegacyNormalX3f(isX3f)
+    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState {
+        if (!isX3f) return readState(identity)
+        return withStoreLock {
+            val current = read()
+            val raw = current.record(identity)
+            val repaired = raw.repairLegacyNormalX3f(isX3f = true)
+            if (repaired.sameAs(raw)) raw else commit(current, identity, repaired.settings)
+        }
+    }
     fun readStates(identities: Collection<PhotoIdentity>): Map<PhotoIdentity, PhotoEditReadResult> = withStoreLock {
         val snapshot = read()
         identities.associateWith { identity ->

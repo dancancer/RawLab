@@ -216,6 +216,37 @@ public struct Adjustments: Equatable, Codable {
         aiDenoiseEnabled = false; lensCorrection?.distortion = false; lensCorrection?.tca = false; lensCorrection?.vignetting = false
     }
 
+    public var needsLegacyNormalX3fRepair: Bool {
+        x3fMode == .normal && (lensSettings.isEnabled || aiDenoiseEnabled)
+    }
+
+    public static func isX3fInput(_ url: URL?, displayName: String? = nil) -> Bool {
+        if url?.pathExtension.lowercased() == "x3f" { return true }
+        if let displayName, (displayName as NSString).pathExtension.lowercased() == "x3f" { return true }
+        return hasX3fSignature(url)
+    }
+
+    private static func hasX3fSignature(_ url: URL?) -> Bool {
+        guard let url, url.isFileURL else { return false }
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let header = try? handle.read(upToCount: 4), header.count == 4 else { return false }
+        return header.elementsEqual([0x46, 0x4F, 0x56, 0x62]) // "FOVb"
+    }
+
+    @discardableResult
+    public mutating func repairLegacyNormalX3f(isX3f: Bool) -> Bool {
+        guard isX3f, needsLegacyNormalX3fRepair else { return false }
+        selectX3fMode(.normal)
+        return true
+    }
+
+    @discardableResult
+    public mutating func repairLegacyNormalX3f(for url: URL?, displayName: String? = nil) -> Bool {
+        guard needsLegacyNormalX3fRepair else { return false }
+        return repairLegacyNormalX3f(isX3f: Self.isX3fInput(url, displayName: displayName))
+    }
+
     public var geometrySettings: GeometrySettings { get { isHDREditing ? hdr!.geometry : (geometry ?? GeometrySettings()) } set { setGeometrySettings(newValue) } }
     public mutating func setGeometrySettings(_ state: GeometrySettings) {
         if isHDREditing { hdr?.geometry = state } else { geometry = state.isIdentity ? nil : state }

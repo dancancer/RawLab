@@ -61,7 +61,10 @@ extension RawEditorViewModel {
         let defaults: PhotoEditState?
         do {
             let store = try requireEditPersistence()
-            expected = try loadedEditRecord ?? store.readState(for: source.identity)
+            let isX3f = sourceKind == .raw && source.file.withReadAccess {
+                Adjustments.isX3fInput($0, displayName: sourceDisplayName)
+            }
+            expected = try loadedEditRecord ?? store.repairLegacyNormalX3fOnOpen(for: source.identity, isX3f: isX3f)
             if let quarantined = store.consumeQuarantinedError() {
                 ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
             }
@@ -115,7 +118,10 @@ extension RawEditorViewModel {
     func restoreCommittedSettings() throws -> RawSettings {
         guard let source = editorEditSource else { throw EditPersistenceError.corruptStore }
         let store = try requireEditPersistence()
-        let record = try loadedEditRecord ?? store.readState(for: source.identity)
+        let isX3f = sourceKind == .raw && source.file.withReadAccess {
+            Adjustments.isX3fInput($0, displayName: sourceDisplayName)
+        }
+        let record = try loadedEditRecord ?? store.repairLegacyNormalX3fOnOpen(for: source.identity, isX3f: isX3f)
         if let quarantined = store.consumeQuarantinedError() {
             ErrorDiagnostics.log(quarantined, operation: .editPersistence, stage: "quarantineStore")
         }

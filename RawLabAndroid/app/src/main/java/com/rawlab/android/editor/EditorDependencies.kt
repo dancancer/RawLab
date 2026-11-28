@@ -174,7 +174,12 @@ internal class EditorDependencies(
             val editStore = EditorEditStore(File(application.filesDir, "edits"), editStoreFactory)
             val draftStore = EditorDraftStore(File(application.filesDir, "editor-draft"))
             val debuggable = (application.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-            val renderer = EditorRenderer(storage, { if (editStore.available) editStore.readState(it) else null }, debuggable)
+            val renderer = EditorRenderer(
+                storage,
+                { if (editStore.available) editStore.readState(it) else null },
+                debuggable,
+                repairOnOpen = { id, isX3f -> if (editStore.available) editStore.repairLegacyNormalX3fOnOpen(id, isX3f) else null },
+            )
             val mainHandler = Handler(Looper.getMainLooper())
             val usageLazy = lazy(LazyThreadSafetyMode.SYNCHRONIZED) { UsageAnalyticsRegistry.get(application) }
             return EditorDependencies(

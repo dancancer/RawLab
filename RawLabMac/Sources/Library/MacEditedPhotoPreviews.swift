@@ -30,8 +30,9 @@ struct MacPhotoPreviewPlan {
 
     static func isEditedState(_ state: MacPhotoEditState?, atPath path: String) -> Bool {
         guard let state else { return false }
+        let repaired = state.repairingLegacyNormalX3f(for: URL(fileURLWithPath: path)).state
         let raw = !RenderEngine.isRasterInput(URL(fileURLWithPath: path))
-        return MacEditorAdjustmentRules.isModified(scope: .all, snapshot: state,
+        return MacEditorAdjustmentRules.isModified(scope: .all, snapshot: repaired,
             context: .init(isRaw: raw, defaultExposureMode: raw ? Adjustments().exposureMode : .sensor, neutralFilmID: ""))
     }
 
@@ -53,6 +54,7 @@ struct MacPhotoPreviewPlan {
          hdrLookDirectory: URL = HDRLookSettings.directory,
          resourceDigestCache: MacResourceDigestCache = .shared,
          aiModelDirectory: URL? = RenderEngine.resolvedAIModelDirectory) throws {
+        let record = record.repairingLegacyNormalX3f().record
         self.record = record
         guard let state = record.state else { throw AdjustmentCommitError.expired }
         if state.settings.isHDREditing { look = nil }

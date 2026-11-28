@@ -61,6 +61,9 @@ internal class EditorEditStore(private val directory: File, private val createSt
     fun readState(identity: PhotoIdentity): PhotoEditState =
         (store ?: throw IOException("Edit store is unavailable")).readState(identity)
 
+    fun repairLegacyNormalX3fOnOpen(identity: PhotoIdentity, isX3f: Boolean): PhotoEditState =
+        (store ?: throw IOException("Edit store is unavailable")).repairLegacyNormalX3fOnOpen(identity, isX3f)
+
     fun processingMigration(identity: PhotoIdentity) =
         (store ?: throw IOException("Edit store is unavailable")).processingMigration(identity)
 
