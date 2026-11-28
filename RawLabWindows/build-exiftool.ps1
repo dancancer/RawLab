@@ -9,15 +9,26 @@ New-Item -ItemType Directory -Force $cache | Out-Null
 # This is the Windows packager linked by exiftool.org. Its ZIP differs from
 # the SourceForge distribution, so pin this archive's own SHA-256.
 if (!(Test-Path $archive) -or (Get-FileHash $archive -Algorithm SHA256).Hash -ne $sha256) {
-    # This host times out now and then (it failed a hosted check once); the checksum below still gates the result.
+    # The packager's host times out now and then (it failed hosted checks more than once), so an
+    # unmodified copy on the project's asset release is tried next; the checksum below gates either one.
+    $sources = @(
+        'https://oliverbetz.de/cms/files/Artikel/ExifTool-for-Windows/exiftool-13.59_64.zip',
+        'https://github.com/dancancer/RawLab/releases/download/assets-v1/exiftool-13.59_64.zip'
+    )
+    $downloaded = $false
     foreach ($attempt in 1..3) {
-        try {
-            Invoke-WebRequest 'https://oliverbetz.de/cms/files/Artikel/ExifTool-for-Windows/exiftool-13.59_64.zip' -OutFile $archive
-            break
-        } catch {
-            if ($attempt -eq 3) { throw }
-            Start-Sleep -Seconds (5 * $attempt)
+        foreach ($source in $sources) {
+            try {
+                Invoke-WebRequest $source -OutFile $archive
+                $downloaded = $true
+                break
+            } catch {
+                $failure = $_
+            }
         }
+        if ($downloaded) { break }
+        if ($attempt -eq 3) { throw $failure }
+        Start-Sleep -Seconds (5 * $attempt)
     }
 }
 if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $sha256) { throw 'ExifTool archive checksum mismatch.' }
