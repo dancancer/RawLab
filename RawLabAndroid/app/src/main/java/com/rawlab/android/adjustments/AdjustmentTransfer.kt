@@ -125,13 +125,13 @@ object AdjustmentTransfer {
             if (value != null) {
                 result = if (fullRecipe)
                     AdjustmentTransferValues.setLogical(result, field, value)
-                else assignEffective(result, field, expected(field))
+                else assignEffective(result, field, expected(field), preferred = value)
             } else if (contextChanged && effectiveNumbers(result)[field] != before[field]) {
                 result = assignEffective(result, field, before[field]!!)
             }
         }
         for (field in numericFields) if (effectiveNumbers(result)[field] != expected(field)) {
-            result = assignEffective(result, field, expected(field))
+            result = assignEffective(result, field, expected(field), preferred = payload[field]?.number)
         }
         result = AdjustmentTransferWB.apply(payload, target, result, context, fullRecipe, contextChanged)
         payload[AdjustmentField.EXPOSURE_MODE]?.text?.let { mode ->
@@ -172,17 +172,29 @@ object AdjustmentTransfer {
         }
         return (if (field in AdjustmentTransferValues.scaled) v * scale else v).canonicalZero()
     }
-    private fun assignEffective(settings: EditSettings, field: AdjustmentField, value: Float): EditSettings {
+    private fun assignEffective(
+        settings: EditSettings,
+        field: AdjustmentField,
+        value: Float,
+        preferred: Double? = null,
+    ): EditSettings {
         val scaled = field in AdjustmentTransferValues.scaled || field.hslLocation != null && settings.masterRecipeSettingsVersion >= 3 ||
             settings.masterRecipeSettingsVersion >= 4 && field in AdjustmentField.REFINEMENT_SCALARS
         val identity = if (field == AdjustmentField.CONTRAST || field == AdjustmentField.SATURATION) 1.0 else 0.0
         val scale = settings.recipeScale.toDouble()
         if (scaled && scale == 0.0 && value.toDouble() != identity) throw AdjustmentTransferException(AdjustmentFailure.UNREPRESENTABLE, field.id)
+        if (effectiveNumbers(settings)[field] == value) return settings
+        if (preferred != null) {
+            val direct = runCatching { AdjustmentTransferValues.setLogical(settings, field, preferred) }.getOrNull()
+            if (direct != null && effectiveNumbers(direct)[field] == value) return direct
+        }
         val logical = if (!scaled) value.toDouble() else if (scale == 0.0) identity else identity + (value - identity) / scale
-        val candidate = AdjustmentTransferValues.setLogical(settings, field, logical)
-        if (effectiveNumbers(candidate)[field] == value) return candidate
+        val range = field.spec.androidModel.floatRange
+        val clamped = if (range != null) logical.toFloat().coerceIn(range.start, range.endInclusive) else logical.toFloat()
+        val candidate = runCatching { AdjustmentTransferValues.setLogical(settings, field, clamped.toDouble()) }.getOrNull()
+        if (candidate != null && effectiveNumbers(candidate)[field] == value) return candidate
         // 反解后只尝试相邻的本端 Float 表示；只有实际 JNI 请求完全一致才接受。
-        val native = AdjustmentTransferValues.logical(candidate, field).toFloat()
+        val native = candidate?.let { AdjustmentTransferValues.logical(it, field).toFloat() } ?: clamped
         for (neighbor in listOf(Math.nextDown(native), Math.nextUp(native))) {
             val alternative = runCatching { AdjustmentTransferValues.setLogical(settings, field, neighbor.toDouble()) }.getOrNull()
             if (alternative != null && effectiveNumbers(alternative)[field] == value) return alternative
