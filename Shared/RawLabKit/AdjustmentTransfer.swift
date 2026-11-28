@@ -392,7 +392,8 @@ public enum AdjustmentTransferRefinement {
     public typealias Field = AdjustmentTransferField
 
     public static func values(curve: ToneCurveSettings, grading: ColorGradingSettings) -> [Field: Value] {
-        var result: [Field: Value] = [.curve: curve.transferValue, .curveParametric: curve.parametric.transferValue]
+        var result: [Field: Value] = [.curve: curve.transferValue, .curveParametric: curve.parametric.transferValue,
+                                      .gradingGlobal: grading.global.transferValue]
         for field in Field.refinementObjects { if let zone = field.gradingZone { result[field] = grading[zone].transferValue } }
         return result
     }
@@ -400,8 +401,8 @@ public enum AdjustmentTransferRefinement {
     public static func applying(_ payload: AdjustmentTransferPayload, original: [Field: Value],
                                 previousScale: Double, targetScale: Double, fullRecipe: Bool) throws -> [Field: Value] {
         var result = original
-        for field in Array(Field.refinementObjects) + [.curveParametric] {
-            guard let originalValue = original[field] ?? (field == .curveParametric ? ToneCurveParametric().transferValue : nil) else { continue }
+        for field in Array(Field.refinementObjects) + [.curveParametric, .gradingGlobal] {
+            guard let originalValue = original[field] ?? (field == .curveParametric ? ToneCurveParametric().transferValue : field == .gradingGlobal ? ColorGradingWheel().transferValue : nil) else { continue }
             let expected = try payload[field].map { try scaled($0, field: field, by: payload.source.recipe?.refinementScale ?? 1) } ?? scaled(originalValue, field: field, by: previousScale)
             let preferred = fullRecipe ? payload[field] ?? originalValue : originalValue
             let value = try logical(expected, field: field, strength: targetScale, preserving: preferred)
@@ -414,7 +415,7 @@ public enum AdjustmentTransferRefinement {
     public static func scaled(_ value: Value, field: Field, by strength: Double) throws -> Value {
         if field == .curve, let curve = value.curve { return curve.scaled(by: strength).transferValue }
         if field == .curveParametric, let parametric = value.parametricCurve { return parametric.scaled(by: strength).transferValue }
-        guard field.gradingZone != nil, let wheel = value.gradingWheel else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }
+        guard (field.gradingZone != nil || field == .gradingGlobal), let wheel = value.gradingWheel else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }
         return ColorGradingWheel(hue: wheel.hue, saturation: min(100, max(0, wheel.saturation * strength)), luminance: min(100, max(-100, wheel.luminance * strength))).transferValue
     }
 
@@ -446,7 +447,7 @@ public enum AdjustmentTransferRefinement {
                                               shadows: p.shadows / strength, splitShadow: p.splitShadow, splitMidtone: p.splitMidtone, splitHighlight: p.splitHighlight)
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
-        } else if field.gradingZone != nil, let wheel = effective.gradingWheel {
+        } else if (field.gradingZone != nil || field == .gradingGlobal), let wheel = effective.gradingWheel {
             guard strength != 0 || (wheel.saturation == 0 && wheel.luminance == 0) else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             let inverse = ColorGradingWheel(hue: wheel.hue, saturation: strength == 0 ? 0 : wheel.saturation / strength, luminance: strength == 0 ? 0 : wheel.luminance / strength)
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
@@ -844,7 +845,7 @@ public enum AdjustmentTransfer {
         if let lum = payload[.curveApplyToLuminosity]?.boolean { resultSettings.curveSettings.applyToLuminosity = lum }
         if let p = refinements[.curveParametric]?.parametricCurve { resultSettings.curveSettings.parametric = p }
         for field in Field.refinementObjects { if let z = field.gradingZone, let w = refinements[field]?.gradingWheel { resultSettings.gradingSettings[z] = w } }
-        if let g = payload[.gradingGlobal]?.gradingWheel { resultSettings.gradingSettings.global = g }
+        if let g = refinements[.gradingGlobal]?.gradingWheel { resultSettings.gradingSettings.global = g }
         if let b = payload[.gradingBlending]?.number { resultSettings.gradingSettings.blending = b }
         if let bal = payload[.gradingBalance]?.number { resultSettings.gradingSettings.balance = bal }
         try validate(resultSettings)
@@ -1164,7 +1165,15 @@ public enum AdjustmentTransfer {
         if selected.isEmpty {
             if context.isRaw && contextChanged && renderWB(result, context: context) != renderWB(target, context: context) {
                 try requireTargetCalibration(target, context: context)
-                try applyResolvedWB(renderWB(target, context: context), to: &result, target: target, context: context)
+                let desired = renderWB(target, context: context)
+                try applyResolvedWB(desired, to: &result, target: target, context: context)
+                let targetIsAsShot = context.usesAsShotWhiteBalanceFromSettings ? target.usesAsShotWhiteBalance : (target.whiteBalanceMode == .camera)
+                if targetIsAsShot && result.masterRecipeID != nil {
+                    var camera = result
+                    camera.whiteBalanceMode = .camera
+                    camera.temperature = target.temperature
+                    if renderWB(camera, context: context) == desired { result = camera }
+                }
             }
             return
         }

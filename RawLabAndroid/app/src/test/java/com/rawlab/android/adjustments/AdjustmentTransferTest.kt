@@ -622,6 +622,56 @@ class AdjustmentTransferTest {
         assertEquals(12f, rasterTarget.tint)
     }
 
+    @Test fun strengthOnlyPastePreservesCameraWhiteBalanceWithRecipeTint() {
+        val wbContext = context.copy(cameraTemperature = 5200f, cameraTint = 8f)
+        val target = EditSettings(
+            recipeID = "r",
+            strength = 0.5f,
+            customWb = false,
+            temperature = 6500f,
+            tint = 10f,
+        )
+        val beforeRender = requireNotNull(target.resetRenderValues(PhotoInputKind.RAW, 5200f, 8f))
+        val pasted = prepare(payload(F.STRENGTH to AdjustmentValue.Number(1.0)), target, wbContext)
+        val afterRender = requireNotNull(pasted.resetRenderValues(PhotoInputKind.RAW, 5200f, 8f))
+
+        assertFalse(pasted.customWb)
+        assertEquals(6500f, pasted.temperature)
+        assertEquals(5.0f, pasted.tint)
+        assertEquals(1f, afterRender.core[8])
+        assertEquals(5200f, afterRender.core[9])
+        assertEquals(13f, afterRender.core[10])
+        assertEquals(beforeRender.core[8], afterRender.core[8])
+        assertEquals(beforeRender.core[9], afterRender.core[9])
+        assertEquals(beforeRender.core[10], afterRender.core[10])
+
+        val values = AdjustmentTransferValues.values(pasted, wbContext)
+        assertEquals(AdjustmentValue.Text("camera"), values[F.WHITE_BALANCE_MODE])
+        assertEquals(AdjustmentValue.Null, values[F.TEMPERATURE])
+        assertEquals(AdjustmentValue.Number(5.0), values[F.TINT])
+
+        // Round-tripping strength back to 0.5 restores the exact original settings.
+        val roundTripped = prepare(payload(F.STRENGTH to AdjustmentValue.Number(0.5)), pasted, wbContext)
+        assertEquals(target, roundTripped)
+
+        // Explicit fixed temperature matching camera temperature stays fixed.
+        val fixedTarget = target.copy(customWb = true, temperature = 5200f)
+        val fixedPasted = prepare(payload(F.STRENGTH to AdjustmentValue.Number(1.0)), fixedTarget, wbContext)
+        assertTrue(fixedPasted.customWb)
+        assertEquals(5200f, fixedPasted.temperature)
+        assertEquals(5.0f, fixedPasted.tint)
+
+        // Removing the recipe via neutral look still converts recipe tint to fixed temperature WB.
+        val detached = prepare(
+            payload(F.LOOK to AdjustmentValue.Object(mapOf("kind" to AdjustmentValue.Text("neutral"), "id" to AdjustmentValue.Null))),
+            target,
+            wbContext,
+        )
+        assertTrue(detached.customWb)
+        assertEquals(5200f, detached.temperature)
+        assertEquals(13f, detached.tint)
+    }
+
     @Test fun nullLegacyDenoiseMapsToTheExistingDisabledPathButUnsupportedRequestsNotify() {
         val original = EditSettings(denoise = DenoiseSettings(true, 10f, 72f, 100f), displayChromaDenoise = 2)
         val result = prepare(payload(F.WAVELET_DENOISE to AdjustmentValue.Null), original)

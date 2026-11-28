@@ -33,9 +33,7 @@ internal static class AdjustmentTransferRefinement
         curve = new(curve.Mode, curve.Points, curve.Channels, applyFinal, curve.Parametric);
         var originalGrading = original.ColorGrading ?? new();
         var grading = target.ColorGrading ?? new();
-        foreach (var field in AdjustmentFields.RefinementObjects) {
-            if (field.GradingZone() is not {} zone) continue;
-            var current = originalGrading[zone];
+        ColorGradingWheel ResolveWheel(F field, ColorGradingWheel current) {
             var selected = payload[field] is {} wheel ? AdjustmentTransferValues.ParseWheel(wheel) : null;
             var desired = selected == null ? Scaled(current, previousScale) : Scaled(selected, sourceScale);
             ColorGradingWheel logical;
@@ -46,8 +44,13 @@ internal static class AdjustmentTransferRefinement
                 logical = new(desired.Hue, targetScale == 0 ? 0 : desired.Saturation / targetScale, targetScale == 0 ? 0 : desired.Luminance / targetScale);
             }
             if (!logical.IsValid || !Equivalent(Scaled(logical, targetScale), desired)) throw Unrepresentable(field);
-            grading = grading.With(zone, logical);
+            return logical;
         }
+        foreach (var field in AdjustmentFields.RefinementObjects) {
+            if (field.GradingZone() is not {} zone) continue;
+            grading = grading.With(zone, ResolveWheel(field, originalGrading[zone]));
+        }
+        grading = grading with { Global = ResolveWheel(F.GradingGlobal, originalGrading.Global) };
         return target with { Curve = curve.IsDefault ? null : curve, ColorGrading = grading.IsDefault ? null : grading };
     }
 

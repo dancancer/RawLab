@@ -25,7 +25,7 @@ internal static class AdjustmentTransferChecks
         if (candidate.Settings.Restore()[Parameter.Exposure] != 1.25 || candidate.Settings.Processing != ProcessingIdentity.Legacy)
             throw new Exception("Frozen logical values preserve target processing");
         Console.WriteLine("PASS: Windows selective payload capture, frozen JSON and processing provenance");
-        Vectors(); Scenarios(); DecimalVectors(); AdapterChecks(); TransferNoticeLifecycleChecks();
+        Vectors(); Scenarios(); DecimalVectors(); AdapterChecks(); GlobalGradingStrengthConversionChecks(); TransferNoticeLifecycleChecks();
     }
     private static void Check(bool condition,string message) {if(!condition)throw new Exception(message);}
     private static void Reject(Action action,string message)
@@ -615,6 +615,80 @@ internal static class AdjustmentTransferChecks
             "ordinary denoise target AI reports the generic ignored-target notice");
         Check(Prepare(Payload((F.Exposure,1)),ai).Settings.AIDenoiseEnabled,"other fields preserve AI");
         Console.WriteLine("PASS: Windows recipe, partial fields, WB, lens, denoise and AI transfer boundaries");
+    }
+
+    private static void GlobalGradingStrengthConversionChecks()
+    {
+        var recipe = MasterRecipe.Find("hamada_daylight_v2")!;
+        var recipeContext = Context with { AvailableLookIDs = new HashSet<string> { "recipe:" + recipe.Id } };
+        Adjustments MakeV4(double strength, ColorGradingWheel? global = null)
+        {
+            var a = new Adjustments();
+            a.ResolveWhiteBalance((5200, 8));
+            a.ApplyMasterRecipe(recipe);
+            a.Set(Parameter.Strength, strength);
+            a.ColorGrading = a.ColorGrading with { Global = global ?? new() };
+            return a;
+        }
+        void RejectUnrepresentableGlobal(Action action, string message)
+        {
+            try { action(); }
+            catch (AdjustmentTransferException ex) when (ex.Failure == AdjustmentFailure.Unrepresentable && ex.Detail == F.GradingGlobal.ID()) { return; }
+            throw new Exception(message);
+        }
+
+        // (a) Pasting global wheel across different v4 recipe strengths preserves rendered global wheel.
+        var source = MakeV4(0.5, new(180, 40, 20));
+        var target = MakeV4(2.0);
+        var globalPayload = Copy(source, F.GradingGlobal);
+        var pastedGlobal = Prepare(globalPayload, target, recipeContext).Settings.Restore();
+        Check(pastedGlobal.ColorGrading.Global == new ColorGradingWheel(180, 10, 5),
+            "Cross-strength global grading paste solves logical wheel for target strength");
+        Check(pastedGlobal.RenderGrading.Global == new ColorGradingWheel(180, 20, 10),
+            "Cross-strength global grading paste preserves rendered global wheel");
+
+        // (b) Pasting only recipe strength preserves target's rendered global wheel.
+        var strengthOnly = Prepare(Payload((F.Strength, 2.0)), source, recipeContext).Settings.Restore();
+        Check(strengthOnly[Parameter.Strength] == 2.0 &&
+              strengthOnly.ColorGrading.Global == new ColorGradingWheel(180, 10, 5) &&
+              strengthOnly.RenderGrading.Global == new ColorGradingWheel(180, 20, 10),
+            "Strength-only paste preserves target rendered global wheel");
+
+        // (c) Full v4 recipe paste carries the logical global wheel unchanged at strength 0 and clamped strength 2.0.
+        foreach (var (strength, wheel) in new[] { (0.0, new ColorGradingWheel(180, 20, 10)), (2.0, new ColorGradingWheel(180, 80, 60)) })
+        {
+            var fullSource = MakeV4(strength, wheel);
+            var fullPayload = AdjustmentTransfer.Capture(AdjustmentScope.Standard, Edit(fullSource), recipeContext);
+            var neutral = new Adjustments();
+            neutral.ResolveWhiteBalance((5200, 8));
+            var fullPasted = Prepare(fullPayload, neutral, recipeContext).Settings.Restore();
+            Check(fullPasted.ColorGrading.Global == wheel,
+                "Full v4 recipe paste carries logical global wheel unchanged at strength " + strength);
+        }
+
+        // (d) Unrepresentable global wheel requests fail with Unrepresentable("color.grading.global"), matching zone wheels.
+        var zeroTarget = MakeV4(0.0);
+        var neutralGlobal = new Adjustments { ColorGrading = new() { Global = new(180, 20, 10) } };
+        RejectUnrepresentableGlobal(() => Prepare(Copy(neutralGlobal, F.GradingGlobal), zeroTarget, recipeContext),
+            "Non-neutral global wheel onto strength-0 target is unrepresentable");
+        var globalOnlyNeutralRecipe = recipe with {
+            ExposureDelta = 0, ShadowsDelta = 0, HighlightsDelta = 0, ContrastDelta = 0, SaturationDelta = 0, TintDelta = 0,
+            Hsl = new(new double[8], new double[8], new double[8]),
+            Tone = new(), Atmosphere = new(), Grading = new(), Curve = new()
+        };
+        var globalOnlyTarget = new Adjustments();
+        globalOnlyTarget.ResolveWhiteBalance((5200, 8));
+        globalOnlyTarget.ApplyMasterRecipe(globalOnlyNeutralRecipe);
+        globalOnlyTarget.Set(Parameter.Strength, 0.5);
+        globalOnlyTarget.ColorGrading = new() { Global = new(180, 40, 20) };
+        RejectUnrepresentableGlobal(() => Prepare(Payload((F.Strength, 0.0)), globalOnlyTarget, recipeContext),
+            "Strength-only paste to 0 on target with non-neutral global wheel is unrepresentable");
+        var highSat = new Adjustments { ColorGrading = new() { Global = new(180, 60, 0) } };
+        var halfTarget = MakeV4(0.5);
+        RejectUnrepresentableGlobal(() => Prepare(Copy(highSat, F.GradingGlobal), halfTarget, recipeContext),
+            "Out-of-range global wheel inversion is unrepresentable");
+
+        Console.WriteLine("PASS: Windows global color-grading wheel strength conversion checks");
     }
 
     private static void TransferNoticeLifecycleChecks()

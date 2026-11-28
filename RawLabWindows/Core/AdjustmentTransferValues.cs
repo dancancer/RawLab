@@ -266,9 +266,8 @@ internal static class AdjustmentTransferValues
             var updated = new ToneCurveSettings(current.Mode, current.Points, current.Channels, current.ApplyToLuminosity, parametric);
             s = s with { Curve = updated.IsDefault ? null : updated };
         }
-        if (p[F.GradingGlobal] != null || p[F.GradingBlending] != null || p[F.GradingBalance] != null) {
+        if (p[F.GradingBlending] != null || p[F.GradingBalance] != null) {
             var grading = s.ColorGrading ?? new();
-            if (p[F.GradingGlobal] is {} globalElem) grading = grading with { Global = ParseWheel(globalElem) };
             if (p[F.GradingBlending] is {} blendingElem && Number(blendingElem) is {} blending) grading = grading with { Blending = blending };
             if (p[F.GradingBalance] is {} balanceElem && Number(balanceElem) is {} balance) grading = grading with { Balance = balance };
             s = s with { ColorGrading = grading.IsDefault ? null : grading };
