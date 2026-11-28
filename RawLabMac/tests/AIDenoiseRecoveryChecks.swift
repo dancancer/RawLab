@@ -107,16 +107,26 @@ enum AIDenoiseRecoveryChecks {
                 try RenderEngine.validateAIInput(raw, settings: aiSettings)
                 throw failure("validateAIInput should fail when AI hardware is unavailable")
             } catch RenderError.aiFailed(let message) {
-                try assertTrue(message == L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"),
-                               "validateAIInput reports hardware unavailability before missing-model (\(message))")
+                if RenderEngine.aiAvailable {
+                    try assertTrue(message == L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"),
+                                   "validateAIInput reports hardware unavailability before missing-model (\(message))")
+                } else {
+                    try assertTrue(message == L10n.text("此构建未安装 AI 降噪模型。"),
+                                   "validateAIInput reports missing AI runtime on non-AI build (\(message))")
+                }
             }
             let engineNoModel = try RenderEngine(gpuMode: SONY2FUJI_GPU_OFF, aiModelDirectory: nil)
             do {
                 try engineNoModel.prepareAI(raw, settings: aiSettings, progress: AIPreparation { _, _, _ in })
                 throw failure("configureAI should fail when AI hardware is unavailable")
             } catch RenderError.aiFailed(let message) {
-                try assertTrue(message == L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"),
-                               "configureAI reports hardware unavailability before missing-model (\(message))")
+                if RenderEngine.aiAvailable {
+                    try assertTrue(message == L10n.text("AI 降噪需要 Apple Silicon GPU 和 macOS 14.4 或更新版本。"),
+                                   "configureAI reports hardware unavailability before missing-model (\(message))")
+                } else {
+                    try assertTrue(message == L10n.text("此构建未安装 AI 降噪模型。"),
+                                   "configureAI reports missing AI runtime on non-AI build (\(message))")
+                }
             }
 
             let manager = AIModelPackageManager(
@@ -128,8 +138,13 @@ enum AIDenoiseRecoveryChecks {
                            "Manager state is .unavailable when AI hardware is unavailable and nothing is installed")
             let installedDir = try installSyntheticPackage()
             manager.refresh()
-            try assertTrue(manager.state.isDownloadedInstalled,
-                           "Previously downloaded model remains .installed when AI hardware is unavailable so it can be removed")
+            if RenderEngine.aiAvailable {
+                try assertTrue(manager.state.isDownloadedInstalled,
+                               "Previously downloaded model remains .installed when AI hardware is unavailable so it can be removed")
+            } else {
+                try assertTrue(manager.state == .unavailable,
+                               "Manager state stays .unavailable on non-AI build even when a downloaded model directory exists")
+            }
             let editor = EditorModel(
                 lookDirectory: root.appendingPathComponent("hw-looks"),
                 editDirectory: root.appendingPathComponent("hw-edits"),
