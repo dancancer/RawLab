@@ -685,6 +685,31 @@ class AIInputsRestoreTests(unittest.TestCase):
                 self.assertEqual(values["RAWLAB_ONNXRUNTIME_ROOT"], str(runtime.resolve()))
                 self.assertEqual(self.requests, [])
 
+    def test_macos_ort_existing_runtime_with_wrong_library_fails_without_download(self) -> None:
+        cache = self.root / "cache-ort-existing-bad"
+        runtime = cache / "onnxruntime" / AI_INPUTS.ORT_VERSION / f"onnxruntime-osx-arm64-{AI_INPUTS.ORT_VERSION}"
+        dylib = runtime / f"lib/libonnxruntime.{AI_INPUTS.ORT_VERSION}.dylib"
+        dylib.parent.mkdir(parents=True)
+        dylib.write_bytes(b"not-the-pinned-library")
+        self.requests.clear()
+        with self.assertRaisesRegex(ValueError, "Cached ONNX Runtime library SHA-256 mismatch"):
+            self._run_ai_inputs(
+                ["--platform", "macos", "--arch", "arm64"],
+                env={
+                    "RAWLAB_AI_SHARED_CACHE": str(cache),
+                    "RAWLAB_DUALDN_MODEL_DIR": str(self.source),
+                },
+                extra_patches=(
+                    mock.patch.object(
+                        AI_INPUTS._PREPARE,
+                        "download_with_retry",
+                        side_effect=AssertionError("must not download over an existing runtime directory"),
+                    ),
+                ),
+            )
+        self.assertEqual(dylib.read_bytes(), b"not-the-pinned-library")
+        self.assertEqual(self.requests, [])
+
     def test_macos_ort_refuses_path_traversal_and_symlink_in_nuget(self) -> None:
         cases = (
             (
