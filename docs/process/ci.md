@@ -333,19 +333,24 @@ gate's honest skip pair otherwise.
   available GPU opportunistically; this is not a guaranteed physical GPU gate.
 - The fast macOS CTest selects `dualdn_api` only in its no-package
   `dualdn_api_disabled` form, because `SONY2FUJI_ENABLE_AI_DENOISE` is OFF
-  there and the `RAWLAB_TEST_AI` Core ML assertions are compiled out. Hosted
-  macOS arm64 `native` does not run `RawLabMac/tests/dualdn-api-package.sh`. In
-  `full`, `ai-inputs.py` still provisions the pinned ONNX Runtime and validated
-  DualDn package into `build.sh`, builds with AI enabled, validates the package,
-  and runs `dualdn_session`, `dualdn_package*`, `coreml_gpu_placement` and all
-  other non-hardware CTests; `ai_session_memory`, `dualdn_native` and
-  `dualdn_api` remain registered in CTest (checked by
-  `check_ctest_inventory.py`) but are excluded from `-L ^ci_macos_arm64$` and
-  explicitly recorded in the job log and step summary as not applicable on
-  hosted machines. Those three run on a real Apple Silicon Mac via
-  `bash RawLabMac/tests/dualdn-api-package.sh` as a mandatory pre-release gate.
-  A missing model or runtime remains a hard failure, not a skip; hosted routing
-  does not provide a license or silently manufacture a model package.
+  there (and `RAWLAB_TEST_AI` is defined only when `SONY2FUJI_ENABLE_AI_DENOISE`
+  is ON with `RAWLAB_DUALDN_TEST_PACKAGE` set). Hosted macOS arm64 `native` does
+  not run `RawLabMac/tests/dualdn-api-package.sh` and records in the job log and
+  step summary that the real-package `dualdn_api` check is not applicable on
+  hosted machines (while `dualdn_api_disabled` still runs in `native` CTest and
+  `ai_session_memory`/`dualdn_native` are not built in `native`). In `full`,
+  `ai-inputs.py` still provisions the pinned ONNX Runtime and validated DualDn
+  package into `build.sh`, builds with AI enabled, validates the package, and
+  runs `dualdn_session`, `dualdn_package*`, `coreml_gpu_placement` and all other
+  non-hardware CTests; `check_ctest_inventory.py` is invoked with
+  `--ai-enabled --ai-package-enabled` so it fails closed unless all three
+  (`ai_session_memory`, `dualdn_native`, `dualdn_api`) are registered with
+  `hw_gpu` and without `ci_macos_arm64`, and emits the job-log and step-summary
+  notice directly from the observed CTest inventory. Those three run on a real
+  Apple Silicon Mac via `bash RawLabMac/tests/dualdn-api-package.sh` as a
+  mandatory pre-release gate. A missing model or runtime remains a hard failure,
+  not a skip; hosted routing does not provide a license or silently manufacture
+  a model package.
 - Windows does not invoke `build.ps1 -Test`: that entry point's default suite
   requires physical D3D11 and an external RAW path. The hosted suite uses the
   already-public tracked DJI DNG and explicitly selected CPU-safe cases.

@@ -212,13 +212,22 @@ class CTestInventoryTests(unittest.TestCase):
     def test_ai_package_and_model_gated_sources_match_cmake_gates(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tdir = Path(tmp)
-            for name in ("tiff_ifd_tests.cpp", "ai_session_memory_tests.cpp", "dualdn_session_tests.cpp", "dualdn_onnx_tests.cpp"):
+            for name in (
+                "tiff_ifd_tests.cpp",
+                "ai_session_memory_tests.cpp",
+                "dualdn_session_tests.cpp",
+                "dualdn_native_tests.cpp",
+                "dualdn_api_tests.cpp",
+                "dualdn_onnx_tests.cpp",
+            ):
                 (tdir / name).write_text("int main() { return 0; }\n", encoding="utf-8")
             data = {
                 "tests": [
                     _make_entry("tiff_ifd", ["core", "ci_macos_arm64"], "tiff_ifd_tests"),
                     _make_entry("ai_session_memory", ["ai", "hw_gpu"], "ai_session_memory_tests"),
                     _make_entry("dualdn_session", ["ai", "ci_macos_arm64"], "dualdn_session_tests"),
+                    _make_entry("dualdn_native", ["ai", "hw_gpu"], "dualdn_native_tests"),
+                    _make_entry("dualdn_api", ["ai", "hw_gpu"], "dualdn_api_tests"),
                 ]
             }
             self.assertEqual(
@@ -418,8 +427,24 @@ endif()
             _make_entry("dualdn_native", ["ai", "hw_gpu"], "dualdn_native_tests"),
             _make_entry("dualdn_api", ["ai", "hw_gpu"], "dualdn_api_tests"),
         ]
-        self.assertEqual(cci.validate_ctest_inventory({"tests": hw_entries}, ci_label="ci_macos_arm64"), [])
-        self.assertEqual(cci.validate_ctest_inventory({"tests": hw_entries}, ci_label="ci_macos_x86_64"), [])
+        self.assertEqual(
+            cci.validate_ctest_inventory(
+                {"tests": hw_entries},
+                ci_label="ci_macos_arm64",
+                ai_enabled=True,
+                ai_package_present=True,
+            ),
+            [],
+        )
+        self.assertEqual(
+            cci.validate_ctest_inventory(
+                {"tests": hw_entries},
+                ci_label="ci_macos_x86_64",
+                ai_enabled=True,
+                ai_package_present=True,
+            ),
+            [],
+        )
 
         # Windows keeps ci_windows selection for all three tests unchanged.
         win_entries = [
@@ -427,7 +452,15 @@ endif()
             _make_entry("dualdn_native", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "dualdn_native_tests"),
             _make_entry("dualdn_api", ["ai", "ci_macos_arm64", "ci_macos_x86_64", "ci_windows"], "dualdn_api_tests"),
         ]
-        self.assertEqual(cci.validate_ctest_inventory({"tests": win_entries}, ci_label="ci_windows"), [])
+        self.assertEqual(
+            cci.validate_ctest_inventory(
+                {"tests": win_entries},
+                ci_label="ci_windows",
+                ai_enabled=True,
+                ai_package_present=True,
+            ),
+            [],
+        )
 
         # Re-adding ci_macos_arm64 or ci_macos_x86_64 to any of the three must fail closed.
         for name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
@@ -437,10 +470,29 @@ endif()
                     errors = cci.validate_ctest_inventory(bad, ci_label=label)
                     self.assertTrue(any(name in e and label in e for e in errors), errors)
 
-        # CLI output must explicitly name the three hosted-inapplicable tests and where they run.
+        # On macOS full (ai_enabled + ai_package_present), omitting or renaming any of the three must fail closed.
+        renamed_entries = [
+            _make_entry("tiff_ifd", ["core", "ci_macos_arm64"], "tiff_ifd_tests"),
+            _make_entry("ai_session_memory", ["ai", "hw_gpu"], "ai_session_memory_tests"),
+            _make_entry("dualdn_native_renamed", ["ai", "hw_gpu"], "dualdn_native_tests"),
+            _make_entry("dualdn_api_renamed", ["ai", "hw_gpu"], "dualdn_api_tests"),
+        ]
+        missing_errors = cci.validate_ctest_inventory(
+            {"tests": renamed_entries},
+            ci_label="ci_macos_arm64",
+            ai_enabled=True,
+            ai_package_present=True,
+        )
+        self.assertTrue(any("dualdn_native" in e and "missing" in e for e in missing_errors), missing_errors)
+        self.assertTrue(any("dualdn_api" in e and "missing" in e for e in missing_errors), missing_errors)
+
+        # CLI output must distinguish "registered and excluded" from "absent" and emit log + step summary dynamically.
         with tempfile.TemporaryDirectory() as tmp:
-            json_path = Path(tmp) / "ctest.json"
+            root = Path(tmp)
+            json_path = root / "ctest.json"
             json_path.write_text(json.dumps({"tests": hw_entries}), encoding="utf-8")
+            notice_log = root / "notice.log"
+            summary_md = root / "summary.md"
             res = subprocess.run(
                 [
                     sys.executable,
@@ -449,16 +501,90 @@ endif()
                     str(json_path),
                     "--ci-label",
                     "ci_macos_arm64",
+                    "--ai-enabled",
+                    "--ai-package-enabled",
+                    "--notice-log",
+                    str(notice_log),
+                    "--write-step-summary",
                     "--skip-orphan-check",
                 ],
+                env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary_md)},
                 capture_output=True,
                 text=True,
                 check=True,
             )
-            self.assertIn("not applicable on hosted machines", res.stdout)
-            for name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
-                self.assertIn(name, res.stdout)
-            self.assertIn("RawLabMac/tests/dualdn-api-package.sh", res.stdout)
+            log_text = notice_log.read_text(encoding="utf-8")
+            summary_text = summary_md.read_text(encoding="utf-8")
+            for label_name, content in (("stdout", res.stdout), ("log", log_text), ("summary", summary_text)):
+                self.assertRegex(content.lower(), r"not applicable on hosted", label_name)
+                for name in ("ai_session_memory", "dualdn_native", "dualdn_api"):
+                    self.assertIn(name, content, f"{label_name} missing {name}")
+                self.assertIn("RawLabMac/tests/dualdn-api-package.sh", content, label_name)
+                self.assertNotRegex(content, r"(?m)^SKIP\b", label_name)
+
+            # Sandbox Experiment 1: AI OFF build-dir with --ai-enabled --ai-package-enabled must fail and write no notice.
+            ai_off_dir = root / "ai-off-build"
+            ai_off_dir.mkdir()
+            (ai_off_dir / "CMakeCache.txt").write_text(
+                "SONY2FUJI_ENABLE_AI_DENOISE:BOOL=OFF\n",
+                encoding="utf-8",
+            )
+            fake_ctest = root / "fake-ctest.py"
+            fake_ctest.write_text(
+                "#!/usr/bin/env python3\nimport json\n"
+                + f"print(json.dumps({{'tests': [{_make_entry('tiff_ifd', ['core', 'ci_macos_arm64'], 'tiff_ifd_tests')!r}]}}))\n",
+                encoding="utf-8",
+            )
+            fake_ctest.chmod(0o755)
+            ai_off_notice = root / "ai-off-notice.log"
+            ai_off_res = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/ci/check_ctest_inventory.py"),
+                    "--build-dir",
+                    str(ai_off_dir),
+                    "--ctest-bin",
+                    str(fake_ctest),
+                    "--ci-label",
+                    "ci_macos_arm64",
+                    "--ai-enabled",
+                    "--ai-package-enabled",
+                    "--notice-log",
+                    str(ai_off_notice),
+                    "--skip-orphan-check",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(ai_off_res.returncode, 0)
+            self.assertIn("SONY2FUJI_ENABLE_AI_DENOISE", ai_off_res.stderr)
+            self.assertFalse(ai_off_notice.exists(), "failed check must not write exclusion notice")
+
+            # Sandbox Experiment 2: two of the three renamed with --ai-enabled --ai-package-enabled must fail.
+            renamed_json = root / "renamed.json"
+            renamed_json.write_text(json.dumps({"tests": renamed_entries}), encoding="utf-8")
+            renamed_notice = root / "renamed-notice.log"
+            renamed_res = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/ci/check_ctest_inventory.py"),
+                    "--json",
+                    str(renamed_json),
+                    "--ci-label",
+                    "ci_macos_arm64",
+                    "--ai-enabled",
+                    "--ai-package-enabled",
+                    "--notice-log",
+                    str(renamed_notice),
+                    "--skip-orphan-check",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(renamed_res.returncode, 0)
+            self.assertIn("dualdn_native", renamed_res.stderr)
+            self.assertIn("dualdn_api", renamed_res.stderr)
+            self.assertFalse(renamed_notice.exists(), "failed check must not write partial notice")
 
     @unittest.skipUnless(shutil.which("cmake"), "cmake is required")
     def test_ai_denoise_cmake_routes_three_coreml_tests_to_hw_gpu_on_apple_only(self) -> None:

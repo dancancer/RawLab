@@ -13,16 +13,22 @@ if [ "$HOST_ARCH" != "arm64" ]; then
     echo "error: Core ML AI hardware gate requires a physical Apple Silicon (arm64) Mac; got $HOST_ARCH" >&2
     exit 1
 fi
-if [ "$(sysctl -n kern.hv_vmm_present 2>/dev/null || echo 0)" = "1" ]; then
-    echo "error: Core ML AI hardware gate refuses virtualized macOS runners (kern.hv_vmm_present=1); run on a physical Apple Silicon Mac" >&2
+if [ -n "${RAWLAB_ARCH:-}" ] && [ "$RAWLAB_ARCH" != "arm64" ]; then
+    echo "error: Core ML AI hardware gate requires RAWLAB_ARCH=arm64 (or unset); got $RAWLAB_ARCH" >&2
+    exit 1
+fi
+export RAWLAB_ARCH=arm64
+
+SYSCTL_BIN="${RAWLAB_HARDWARE_GATE_SYSCTL:-/usr/sbin/sysctl}"
+if ! HV_VMM="$("$SYSCTL_BIN" -n kern.hv_vmm_present 2>/dev/null)" || [ "$HV_VMM" != "0" ]; then
+    echo "error: Core ML AI hardware gate requires bare-metal Apple Silicon (kern.hv_vmm_present=0); got '${HV_VMM:-<error>}'" >&2
     exit 1
 fi
 
 export DEVELOPER_DIR="${DEVELOPER_DIR:-$(xcode-select -p)}"
 # 输入优先用显式注入；缺失时剥掉 GITHUB_ENV 交给 ai-inputs 自解析。
 if [ -z "${RAWLAB_ONNXRUNTIME_ROOT:-}" ] || [ -z "${RAWLAB_DUALDN_MODEL_DIR:-}" ]; then
-    AI_ARCH="${RAWLAB_ARCH:-$HOST_ARCH}"
-    AI_INPUTS="$(env -u GITHUB_ENV python3 scripts/ci/ai-inputs.py --platform macos --arch "$AI_ARCH")"
+    AI_INPUTS="$(env -u GITHUB_ENV python3 scripts/ci/ai-inputs.py --platform macos --arch arm64)"
     eval "$(printf '%s' "$AI_INPUTS" | python3 -c 'import json,sys
 for key, value in json.load(sys.stdin).items():
     if key.startswith("RAWLAB_"):
@@ -49,8 +55,9 @@ rawlab_mac_make_temp_dir GATE_TMP rawlab-mac-ai-hw-gate
 JUNIT_XML="$GATE_TMP/ctest.xml"
 CTEST_LOG="$GATE_TMP/ctest.log"
 
-# 串行执行：ai_session_memory 含 16.77MP 峰值 RSS/堆预算门禁，避免并发叠加内存或争用 GPU。
-ctest --test-dir "$BUILD" \
+# 强制串行执行（覆盖环境 CTEST_PARALLEL_LEVEL）：ai_session_memory 含 16.77MP 峰值 RSS/堆预算门禁，
+# 避免并发叠加内存或争用 GPU。
+ctest --test-dir "$BUILD" --parallel 1 \
     -R '^(ai_session_memory|dualdn_native|dualdn_api)$' \
     --output-on-failure --verbose --no-tests=error \
     --output-junit "$JUNIT_XML" 2>&1 | tee "$CTEST_LOG"
@@ -76,13 +83,13 @@ if missing or unexpected:
 
 for name in expected:
     tc = cases[name]
-    status = tc.attrib.get("status", "")
-    if status != "run":
-        sys.exit(f"FAIL: hardware gate test {name} did not run (status={status!r})")
     if tc.find("skipped") is not None:
         sys.exit(f"FAIL: hardware gate test {name} was skipped; a physical Apple Silicon GPU pass is required")
     if tc.find("failure") is not None or tc.find("error") is not None:
         sys.exit(f"FAIL: hardware gate test {name} failed")
+    status = tc.attrib.get("status", "")
+    if status != "run":
+        sys.exit(f"FAIL: hardware gate test {name} did not run (status={status!r})")
 
 log_text = log_path.read_text(encoding="utf-8", errors="replace")
 if "hardware inference NOT REACHED" in log_text:
@@ -91,8 +98,8 @@ if "PASS Saving-phase cancellation publishes no final AI cache" not in log_text:
     sys.exit("FAIL: dualdn_api did not complete the hardware Core ML GPU Saving-phase cancellation path")
 if "PASS native float32 Core ML" not in log_text:
     sys.exit("FAIL: dualdn_native did not complete native Core ML GPU verification")
-if "PASS AI session residency release" not in log_text:
-    sys.exit("FAIL: ai_session_memory did not complete")
+if "PASS Bayer RGB cache-miss prepare executed on hardware GPU" not in log_text:
+    sys.exit("FAIL: ai_session_memory did not execute Bayer RGB cache-miss prepare on hardware GPU")
 
 print(f"PASS: Apple Silicon Core ML hardware gate ({len(expected)}/{len(expected)}: {', '.join(expected)})")
 PY

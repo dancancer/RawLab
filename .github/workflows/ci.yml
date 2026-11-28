@@ -265,6 +265,7 @@ jobs:
         shell: bash
         env:
           RAWLAB_SOURCE_ARCHIVE_CACHE: ${{ github.workspace }}/.cache/ci/rawlab-deps
+          RAWLAB_CI_CHECKS: ${{ needs.changes.outputs.checks }}
           RAWLAB_CI_NATIVE: ${{ needs.changes.outputs.native }}
           RAWLAB_CI_CACHE_HIT: ${{ needs.changes.outputs.cold != 'true' && steps.native-cache.outputs.cache-hit == 'true' }}
         run: |
@@ -313,7 +314,11 @@ jobs:
             ci_timed look-import-model bash RawLabMac/tests/look-import-model.sh
           fi
           if in_suite core || [[ "$RAWLAB_MAC_SUITE" == ctest ]]; then
-            python scripts/ci/check_ctest_inventory.py --build-dir lutools/build-macos --ci-label "ci_macos_${RAWLAB_ARCH}" --platform macos
+            inv_ai_args=()
+            if [[ "${RAWLAB_CI_CHECKS:-}" == full && "$RAWLAB_ARCH" == arm64 ]]; then
+              inv_ai_args=(--ai-enabled --ai-package-enabled --notice-log "$PWD/build/ci/macos-ai-hardware-gate.log" --write-step-summary)
+            fi
+            python scripts/ci/check_ctest_inventory.py --build-dir lutools/build-macos --ci-label "ci_macos_${RAWLAB_ARCH}" --platform macos "${inv_ai_args[@]+"${inv_ai_args[@]}"}"
             ci_timed ctest ctest --test-dir lutools/build-macos --parallel 2 --output-on-failure --no-tests=error \
               -L "^ci_macos_${RAWLAB_ARCH}$" \
               --output-junit "$PWD/build/ci/macos-ctest.xml"
@@ -341,27 +346,24 @@ jobs:
             ci_timed edited-photo-previews bash RawLabMac/tests/edited-photo-previews.sh
           fi
           python scripts/ci/native_cache.py inventory --platform macos --arch "$RAWLAB_ARCH"
-      - name: Record Core ML hardware-only AI tests not applicable on hosted macOS
-        # 托管 macOS arm64 VM 无物理 GPU，无法运行真实 Core ML 硬件推理门禁；
-        # ai_session_memory / dualdn_native / dualdn_api 通过 hw_gpu 标签排除出托管 CTest，
-        # native 门亦不再跑真包 dualdn_api，三项统一改到真实 Apple Silicon Mac 发布前必跑。
-        if: success() && (needs.changes.outputs.checks == 'native' || needs.changes.outputs.checks == 'full') && matrix.arch == 'arm64'
+      - name: Record real-package DualDn C API not applicable on hosted macOS native
+        # full 门的通告由上方 check_ctest_inventory.py --ai-enabled --ai-package-enabled
+        # 在实际核实三项均已注册且带 hw_gpu 后动态生成；native 门无 AI 包构建（CTest 仅跑
+        # dualdn_api_disabled，未构建 ai_session_memory/dualdn_native），此处仅如实记录
+        # 原 native 门真包 dualdn_api 步骤在托管 VM 上不适用，三项均改由真实 Apple Silicon Mac 执行。
+        if: success() && needs.changes.outputs.checks == 'native' && matrix.arch == 'arm64'
         shell: bash
         run: |
           mkdir -p build/ci
-          notice="NOT APPLICABLE ON HOSTED MACOS (no physical Apple Silicon GPU): ai_session_memory, dualdn_native, dualdn_api — excluded from hosted macOS arm64 native/full; run on a real Apple Silicon Mac via \`bash RawLabMac/tests/dualdn-api-package.sh\` (mandatory pre-release gate)."
+          notice="NOT APPLICABLE ON HOSTED MACOS (no physical Apple Silicon GPU): real-package dualdn_api is not run on hosted macOS arm64 native (dualdn_api_disabled still runs in CTest; ai_session_memory and dualdn_native are not built in native) — run all three Core ML hardware tests (ai_session_memory, dualdn_native, dualdn_api) on a real Apple Silicon Mac via \`bash RawLabMac/tests/dualdn-api-package.sh\` (mandatory pre-release gate)."
           printf '%s\n' "$notice" | tee build/ci/macos-ai-hardware-gate.log
           if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
             {
               echo "### Core ML AI Hardware Gate (Not Applicable on Hosted macOS)"
               echo ""
-              echo "Hosted macOS arm64 VMs have no physical GPU, so these three Core ML hardware tests are **not applicable on hosted machines** (托管机器上不适用) and are excluded from hosted \`native\` and \`full\`:"
+              echo "Hosted macOS arm64 VMs have no physical GPU, so hosted \`native\` does not run the real-package \`dualdn_api\` Core ML test (**not applicable on hosted machines** / 托管机器上不适用; \`dualdn_api_disabled\` still runs in \`native\` CTest, and \`ai_session_memory\`/\`dualdn_native\` are not built in \`native\`)."
               echo ""
-              echo "- \`ai_session_memory\`"
-              echo "- \`dualdn_native\`"
-              echo "- \`dualdn_api\`"
-              echo ""
-              echo "Run them on a real Apple Silicon Mac before release:"
+              echo "Run all three Core ML hardware tests (\`ai_session_memory\`, \`dualdn_native\`, \`dualdn_api\`) on a real Apple Silicon Mac before release:"
               echo ""
               echo '```bash'
               echo "bash RawLabMac/tests/dualdn-api-package.sh"

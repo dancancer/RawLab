@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -26,11 +27,14 @@ FORBIDDEN_ON_CI: dict[str, set[str]] = {
     "ci_windows": {"hw_gpu", "external_raw", "gles_shader", "ai_model"},
 }
 
-MACOS_COREML_HW_TESTS: tuple[str, ...] = (
+MACOS_COREML_HW_AI_TESTS: tuple[str, ...] = (
     "ai_session_memory",
+)
+MACOS_COREML_HW_PACKAGE_TESTS: tuple[str, ...] = (
     "dualdn_native",
     "dualdn_api",
 )
+MACOS_COREML_HW_TESTS: tuple[str, ...] = MACOS_COREML_HW_AI_TESTS + MACOS_COREML_HW_PACKAGE_TESTS
 MACOS_COREML_HW_GATE_CMD = "bash RawLabMac/tests/dualdn-api-package.sh"
 
 # Test source filenames in lutools/tests/ mapped to target executable stem when they differ,
@@ -198,9 +202,11 @@ def validate_ctest_inventory(
         return [f"Unknown CI label: {ci_label}"]
 
     ci_count = 0
+    observed_names: set[str] = set()
     observed_stems: set[str] = set()
     for entry in tests:
         name = entry.get("name", "<unnamed>")
+        observed_names.add(name)
         labels = test_labels(entry)
         if not labels:
             errors.append(f"Unlabeled CTest: {name}")
@@ -242,6 +248,19 @@ def validate_ctest_inventory(
 
     if ci_label is not None and ci_count == 0:
         errors.append(f"Zero CTests carry CI label {ci_label}")
+
+    if ci_label in {"ci_macos_arm64", "ci_macos_x86_64"}:
+        expected_hw_ai: list[str] = []
+        if ai_enabled:
+            expected_hw_ai.extend(MACOS_COREML_HW_AI_TESTS)
+        if ai_enabled and ai_package_present:
+            expected_hw_ai.extend(MACOS_COREML_HW_PACKAGE_TESTS)
+        for req_name in expected_hw_ai:
+            if req_name not in observed_names:
+                errors.append(
+                    f"Expected Core ML hardware CTest {req_name} is missing from "
+                    "ctest --show-only=json-v1 (must be registered with hw_gpu, not absent)"
+                )
 
     if tests_dir is not None and observed_stems:
         if portable_hdr_enabled is None:
@@ -291,6 +310,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ci-label", choices=sorted(REQUIRED_UNLESS_EXCLUDED), help="CI label to verify")
     parser.add_argument("--platform", choices=("macos", "windows", "linux"), help="Host platform for source check")
     parser.add_argument("--ai-enabled", action="store_true", help="Expect SONY2FUJI_ENABLE_AI_DENOISE=ON test targets")
+    parser.add_argument(
+        "--ai-package-enabled",
+        action="store_true",
+        help="Expect RAWLAB_DUALDN_TEST_PACKAGE-gated CTests to be registered",
+    )
+    parser.add_argument(
+        "--notice-log",
+        type=Path,
+        help="Write the observed macOS Core ML hardware-exclusion notice to this file",
+    )
+    parser.add_argument(
+        "--write-step-summary",
+        action="store_true",
+        help="Append the observed macOS Core ML hardware-exclusion notice to GITHUB_STEP_SUMMARY",
+    )
     parser.add_argument("--skip-orphan-check", action="store_true", help="Skip lutools/tests/*.{cpp,mm} source check")
     parser.add_argument("--ctest-bin", default="ctest", help="Path to ctest executable")
     parser.add_argument("--config", help="CMake configuration for multi-config generators (auto-detected if omitted)")
@@ -307,8 +341,14 @@ def main(argv: list[str] | None = None) -> int:
         config = resolve_ctest_config(cache, args.config)
         data = load_ctest_json(args.build_dir, args.ctest_bin, config=config)
 
-    ai_enabled = args.ai_enabled or _cache_truthy(cache, "SONY2FUJI_ENABLE_AI_DENOISE")
-    ai_package_present = bool(cache.get("RAWLAB_DUALDN_TEST_PACKAGE", "").strip()) if cache else None
+    cache_ai_enabled = _cache_truthy(cache, "SONY2FUJI_ENABLE_AI_DENOISE")
+    cache_ai_package_present = bool(cache.get("RAWLAB_DUALDN_TEST_PACKAGE", "").strip())
+    ai_enabled = args.ai_enabled or cache_ai_enabled
+    ai_package_present = (
+        True
+        if args.ai_package_enabled
+        else (cache_ai_package_present if cache else None)
+    )
     ai_model_present = bool(cache.get("RAWLAB_DUALDN_TEST_MODEL", "").strip()) if cache else None
     portable_hdr = _cache_truthy(cache, "SONY2FUJI_TEST_PORTABLE_HDR") if "SONY2FUJI_TEST_PORTABLE_HDR" in cache else None
     libraw_src = cache.get("SONY2FUJI_TEST_LIBRAW_SOURCE", "")
@@ -321,17 +361,29 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     tests_dir = None if args.skip_orphan_check else LUTOOLS_TESTS_DIR
-    errors = validate_ctest_inventory(
-        data,
-        ci_label=args.ci_label,
-        platform=args.platform,
-        tests_dir=tests_dir,
-        ai_enabled=ai_enabled,
-        ai_package_present=ai_package_present,
-        ai_model_present=ai_model_present,
-        portable_hdr_enabled=portable_hdr,
-        libraw_source_present=libraw_source_present,
-        glslang_available=glslang_available,
+    errors: list[str] = []
+    if cache:
+        if args.ai_enabled and not cache_ai_enabled:
+            errors.append(
+                "--ai-enabled was required, but CMakeCache.txt has SONY2FUJI_ENABLE_AI_DENOISE != ON"
+            )
+        if args.ai_package_enabled and not cache_ai_package_present:
+            errors.append(
+                "--ai-package-enabled was required, but CMakeCache.txt has empty RAWLAB_DUALDN_TEST_PACKAGE"
+            )
+    errors.extend(
+        validate_ctest_inventory(
+            data,
+            ci_label=args.ci_label,
+            platform=args.platform,
+            tests_dir=tests_dir,
+            ai_enabled=ai_enabled,
+            ai_package_present=ai_package_present,
+            ai_model_present=ai_model_present,
+            portable_hdr_enabled=portable_hdr,
+            libraw_source_present=libraw_source_present,
+            glslang_available=glslang_available,
+        )
     )
     if errors:
         for err in errors:
@@ -342,17 +394,51 @@ def main(argv: list[str] | None = None) -> int:
     if args.ci_label:
         selected = sum(1 for t in tests if args.ci_label in test_labels(t))
         print(f"PASS: {len(tests)} CTest(s) verified ({selected} selected by -L ^{args.ci_label}$)")
+        observed_hw_ai: list[str] = []
         if args.ci_label in {"ci_macos_arm64", "ci_macos_x86_64"}:
-            present_hw_ai = [
+            observed_hw_ai = [
                 name for name in MACOS_COREML_HW_TESTS
-                if any(t.get("name") == name for t in tests)
-            ]
-            if present_hw_ai:
-                print(
-                    "NOTICE: not applicable on hosted machines (no physical Apple Silicon GPU) — "
-                    f"excluded from {args.ci_label}: {', '.join(present_hw_ai)}; "
-                    f"run on a real Apple Silicon Mac via `{MACOS_COREML_HW_GATE_CMD}`"
+                if any(
+                    t.get("name") == name
+                    and "hw_gpu" in test_labels(t)
+                    and args.ci_label not in test_labels(t)
+                    for t in tests
                 )
+            ]
+        if (args.notice_log or args.write_step_summary) and not observed_hw_ai:
+            print(
+                "FAIL: --notice-log/--write-step-summary requested, but no registered and "
+                f"hw_gpu-excluded Core ML hardware CTests were observed for {args.ci_label}",
+                file=sys.stderr,
+            )
+            return 1
+        if observed_hw_ai:
+            joined = ", ".join(observed_hw_ai)
+            notice = (
+                "NOT APPLICABLE ON HOSTED MACOS (no physical Apple Silicon GPU): "
+                f"observed registered and excluded from {args.ci_label} via hw_gpu: {joined} — "
+                f"run on a real Apple Silicon Mac via `{MACOS_COREML_HW_GATE_CMD}` "
+                "(mandatory pre-release gate)."
+            )
+            print(notice)
+            if args.notice_log:
+                args.notice_log.parent.mkdir(parents=True, exist_ok=True)
+                args.notice_log.write_text(notice + "\n", encoding="utf-8")
+            if args.write_step_summary and os.environ.get("GITHUB_STEP_SUMMARY"):
+                bullet_lines = "\n".join(f"- `{name}`" for name in observed_hw_ai)
+                summary_block = (
+                    "### Core ML AI Hardware Gate (Not Applicable on Hosted macOS)\n\n"
+                    f"Verified registered in CTest with `hw_gpu` and excluded from `{args.ci_label}` "
+                    "because hosted macOS arm64 VMs have no physical GPU "
+                    "(**not applicable on hosted machines** / 托管机器上不适用):\n\n"
+                    f"{bullet_lines}\n\n"
+                    "Run them on a real Apple Silicon Mac before release:\n\n"
+                    "```bash\n"
+                    f"{MACOS_COREML_HW_GATE_CMD}\n"
+                    "```\n"
+                )
+                with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as stream:
+                    stream.write(summary_block)
     else:
         print(f"PASS: {len(tests)} CTest(s) verified with valid LABELS")
     return 0
