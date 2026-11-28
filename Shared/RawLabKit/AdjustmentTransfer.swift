@@ -431,9 +431,10 @@ public enum AdjustmentTransferRefinement {
                 if shape.mode == .custom {
                     let last = shape.points.count - 1
                     let inverted = shape.points.enumerated().map { idx, pt in
-                        if idx == 0 { return ToneCurvePoint(x: pt.x / strength, y: pt.y / strength) }
-                        if idx == last { return ToneCurvePoint(x: 1 + (pt.x - 1) / strength, y: 1 + (pt.y - 1) / strength) }
-                        return ToneCurvePoint(x: pt.x, y: pt.x + (pt.y - pt.x) / strength)
+                        let clamp01 = { (v: Double) in min(1, max(0, v)) }
+                        if idx == 0 { return ToneCurvePoint(x: clamp01(pt.x / strength), y: clamp01(pt.y / strength)) }
+                        if idx == last { return ToneCurvePoint(x: clamp01(1 + (pt.x - 1) / strength), y: clamp01(1 + (pt.y - 1) / strength)) }
+                        return ToneCurvePoint(x: pt.x, y: clamp01(pt.x + (pt.y - pt.x) / strength))
                     }
                     inverse = inverse.replacing(channel, with: .init(mode: .custom, points: inverted))
                 }
@@ -443,13 +444,17 @@ public enum AdjustmentTransferRefinement {
         } else if field == .curveParametric, let p = effective.parametricCurve {
             if p.isIdentity { return effective }
             guard strength != 0 else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            let inverse = ToneCurveParametric(highlights: p.highlights / strength, lights: p.lights / strength, darks: p.darks / strength,
-                                              shadows: p.shadows / strength, splitShadow: p.splitShadow, splitMidtone: p.splitMidtone, splitHighlight: p.splitHighlight)
+            let clampBand = { (v: Double) in min(100, max(-100, v)) }
+            let inverse = ToneCurveParametric(highlights: clampBand(p.highlights / strength), lights: clampBand(p.lights / strength),
+                                              darks: clampBand(p.darks / strength), shadows: clampBand(p.shadows / strength),
+                                              splitShadow: p.splitShadow, splitMidtone: p.splitMidtone, splitHighlight: p.splitHighlight)
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
         } else if (field.gradingZone != nil || field == .gradingGlobal), let wheel = effective.gradingWheel {
             guard strength != 0 || (wheel.saturation == 0 && wheel.luminance == 0) else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
-            let inverse = ColorGradingWheel(hue: wheel.hue, saturation: strength == 0 ? 0 : wheel.saturation / strength, luminance: strength == 0 ? 0 : wheel.luminance / strength)
+            let sat = strength == 0 ? 0 : min(100, max(0, wheel.saturation / strength))
+            let lum = strength == 0 ? 0 : min(100, max(-100, wheel.luminance / strength))
+            let inverse = ColorGradingWheel(hue: wheel.hue, saturation: sat, luminance: lum)
             guard inverse.isValid else { throw AdjustmentTransferError.unrepresentable(field.rawValue) }
             result = inverse.transferValue
         } else { throw AdjustmentTransferError.invalidPayload(field.rawValue) }

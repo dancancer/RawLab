@@ -41,7 +41,10 @@ internal static class AdjustmentTransferRefinement
             else if (Equivalent(Scaled(current, targetScale), desired)) logical = current;
             else {
                 if (targetScale == 0 && (desired.Saturation != 0 || desired.Luminance != 0)) throw Unrepresentable(field);
-                logical = new(desired.Hue, targetScale == 0 ? 0 : desired.Saturation / targetScale, targetScale == 0 ? 0 : desired.Luminance / targetScale);
+                logical = new(
+                    desired.Hue,
+                    targetScale == 0 ? 0 : Math.Clamp(desired.Saturation / targetScale, 0, 100),
+                    targetScale == 0 ? 0 : Math.Clamp(desired.Luminance / targetScale, -100, 100));
             }
             if (!logical.IsValid || !Equivalent(Scaled(logical, targetScale), desired)) throw Unrepresentable(field);
             return logical;
@@ -66,9 +69,9 @@ internal static class AdjustmentTransferRefinement
                 var last = shape.Points.Count - 1;
                 try {
                     result = result.Replacing(channel, new(ToneCurveMode.Custom, shape.Points.Select((p, idx) =>
-                        idx == 0 ? new ToneCurvePoint(p.X / strength, p.Y / strength) :
-                        idx == last ? new ToneCurvePoint(1.0 + (p.X - 1.0) / strength, 1.0 + (p.Y - 1.0) / strength) :
-                        new ToneCurvePoint(p.X, p.X + (p.Y - p.X) / strength))));
+                        idx == 0 ? new ToneCurvePoint(Math.Clamp(p.X / strength, 0, 1), Math.Clamp(p.Y / strength, 0, 1)) :
+                        idx == last ? new ToneCurvePoint(Math.Clamp(1.0 + (p.X - 1.0) / strength, 0, 1), Math.Clamp(1.0 + (p.Y - 1.0) / strength, 0, 1)) :
+                        new ToneCurvePoint(p.X, Math.Clamp(p.X + (p.Y - p.X) / strength, 0, 1)))));
                 } catch (ArgumentOutOfRangeException) {
                     throw Unrepresentable(F.Curve);
                 }
@@ -76,14 +79,20 @@ internal static class AdjustmentTransferRefinement
         }
         var p = desired.Parametric;
         var logicalParametric = p.IsIdentity || strength == 1 ? p : new ToneCurveParametric(
-            p.Highlights / strength,
-            p.Lights / strength,
-            p.Darks / strength,
-            p.Shadows / strength,
+            Math.Clamp(p.Highlights / strength, -100, 100),
+            Math.Clamp(p.Lights / strength, -100, 100),
+            Math.Clamp(p.Darks / strength, -100, 100),
+            Math.Clamp(p.Shadows / strength, -100, 100),
             p.SplitShadow,
             p.SplitMidtone,
             p.SplitHighlight);
         if (!logicalParametric.IsValid) throw Unrepresentable(F.CurveParametric);
+        var scaledParametric = logicalParametric.Scaled(strength);
+        if (Math.Abs(scaledParametric.Highlights - p.Highlights) > 1e-12 ||
+            Math.Abs(scaledParametric.Lights - p.Lights) > 1e-12 ||
+            Math.Abs(scaledParametric.Darks - p.Darks) > 1e-12 ||
+            Math.Abs(scaledParametric.Shadows - p.Shadows) > 1e-12)
+            throw Unrepresentable(F.CurveParametric);
         return new(result.Mode, result.Points, result.Channels, result.ApplyToLuminosity, logicalParametric);
     }
 

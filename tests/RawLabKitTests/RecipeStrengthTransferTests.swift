@@ -504,4 +504,157 @@ final class RecipeStrengthTransferTests: XCTestCase {
         XCTAssertEqual(iosDetached.temperature, 5200.0)
         XCTAssertEqual(iosDetached.tint, 13.0)
     }
+
+    func testGradingWheelAndCurveEndpointOvershootOnMacAndIOS() throws {
+        let recipe = try XCTUnwrap(MasterRecipe.recipe(for: recipeID))
+
+        // 1) Same-strength 0.69 -> 0.69: 69.0 / 0.69 = 100.00000000000001 in Double.
+        //    Must clamp candidate to 100 and accept when exact scaled rendering matches 69.
+        var source69 = makeRecipeSettings(recipe, strength: 0.69, version: 4)
+        source69.gradingSettings.global = ColorGradingWheel(hue: 180, saturation: 100, luminance: 0)
+        source69.gradingSettings.shadows = ColorGradingWheel(hue: 180, saturation: 100, luminance: -100)
+        var target69 = makeRecipeSettings(recipe, strength: 0.69, version: 4)
+        target69.gradingSettings.global = ColorGradingWheel()
+        target69.gradingSettings.shadows = ColorGradingWheel()
+
+        for field in [AdjustmentTransferField.gradingGlobal, .gradingShadows] {
+            let expectedStored = field == .gradingGlobal
+                ? ColorGradingWheel(hue: 180, saturation: 100, luminance: 0)
+                : ColorGradingWheel(hue: 180, saturation: 100, luminance: -100)
+            let expectedRendered = field == .gradingGlobal
+                ? ColorGradingWheel(hue: 180, saturation: 69, luminance: 0)
+                : ColorGradingWheel(hue: 180, saturation: 69, luminance: -69)
+
+            let macPayload = try MacAdjustmentTransfer.capture(scope: .custom([field]), snapshot: macState(source69), context: macContext)
+            let macPasted = try MacAdjustmentTransfer.prepare(payload: macPayload, target: macState(target69), context: macContext).settings
+            let macStored = field == .gradingGlobal ? macPasted.gradingSettings.global : macPasted.gradingSettings.shadows
+            let macRendered = field == .gradingGlobal ? macPasted.renderGradingSettings.global : macPasted.renderGradingSettings.shadows
+            XCTAssertEqual(macStored, expectedStored, "Mac \(field.rawValue) 0.69->0.69 stored")
+            XCTAssertEqual(macRendered, expectedRendered, "Mac \(field.rawValue) 0.69->0.69 rendered")
+
+            let iosPayload = try IOSAdjustmentTransfer.capture(scope: .custom([field]), snapshot: PhotoEditState(settings: source69), context: iosContext)
+            let iosPasted = try IOSAdjustmentTransfer.prepare(payload: iosPayload, target: PhotoEditState(settings: target69), context: iosContext).settings
+            let iosStored = field == .gradingGlobal ? iosPasted.gradingSettings.global : iosPasted.gradingSettings.shadows
+            let iosRendered = field == .gradingGlobal ? iosPasted.renderGradingSettings.global : iosPasted.renderGradingSettings.shadows
+            XCTAssertEqual(iosStored, expectedStored, "iOS \(field.rawValue) 0.69->0.69 stored")
+            XCTAssertEqual(iosRendered, expectedRendered, "iOS \(field.rawValue) 0.69->0.69 rendered")
+        }
+
+        // 2) No-recipe -> 0.69 ({180, 69, 0} onto 0.69) and strength-only 1.0 -> 0.69 preserving unselected global wheel.
+        var neutral69 = Adjustments()
+        neutral69.gradingSettings.global = ColorGradingWheel(hue: 180, saturation: 69, luminance: 0)
+        let macNoRecipe = try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.gradingGlobal]), snapshot: macState(neutral69), context: macContext),
+            target: macState(target69),
+            context: macContext
+        ).settings
+        XCTAssertEqual(macNoRecipe.gradingSettings.global, ColorGradingWheel(hue: 180, saturation: 100, luminance: 0))
+        XCTAssertEqual(macNoRecipe.renderGradingSettings.global, ColorGradingWheel(hue: 180, saturation: 69, luminance: 0))
+
+        let iosNoRecipe = try IOSAdjustmentTransfer.prepare(
+            payload: try IOSAdjustmentTransfer.capture(scope: .custom([.gradingGlobal]), snapshot: PhotoEditState(settings: neutral69), context: iosContext),
+            target: PhotoEditState(settings: target69),
+            context: iosContext
+        ).settings
+        XCTAssertEqual(iosNoRecipe.gradingSettings.global, ColorGradingWheel(hue: 180, saturation: 100, luminance: 0))
+        XCTAssertEqual(iosNoRecipe.renderGradingSettings.global, ColorGradingWheel(hue: 180, saturation: 69, luminance: 0))
+
+        var target100 = makeRecipeSettings(recipe, strength: 1.0, version: 4)
+        target100.gradingSettings.global = ColorGradingWheel(hue: 180, saturation: 69, luminance: 0)
+        var strength69 = Adjustments()
+        strength69.strength = 0.69
+        let macStrengthDrop = try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.strength]), snapshot: macState(strength69), context: macContext),
+            target: macState(target100),
+            context: macContext
+        ).settings
+        XCTAssertEqual(macStrengthDrop.gradingSettings.global, ColorGradingWheel(hue: 180, saturation: 100, luminance: 0))
+        XCTAssertEqual(macStrengthDrop.renderGradingSettings.global, ColorGradingWheel(hue: 180, saturation: 69, luminance: 0))
+
+        let iosStrengthDrop = try IOSAdjustmentTransfer.prepare(
+            payload: try IOSAdjustmentTransfer.capture(scope: .custom([.strength]), snapshot: PhotoEditState(settings: strength69), context: iosContext),
+            target: PhotoEditState(settings: target100),
+            context: iosContext
+        ).settings
+        XCTAssertEqual(iosStrengthDrop.gradingSettings.global, ColorGradingWheel(hue: 180, saturation: 100, luminance: 0))
+        XCTAssertEqual(iosStrengthDrop.renderGradingSettings.global.hue, 180)
+        assertSameRenderFloat(iosStrengthDrop.renderGradingSettings.global.saturation, 69, "iOS strength drop rendered sat")
+        assertSameRenderFloat(iosStrengthDrop.renderGradingSettings.global.luminance, 0, "iOS strength drop rendered lum")
+
+        // 3) Guard: genuinely out-of-range 60 at strength 0.5 (quotient 120) must still be rejected.
+        var outOfRangeWheel = Adjustments()
+        outOfRangeWheel.gradingSettings.global = ColorGradingWheel(hue: 180, saturation: 60, luminance: 0)
+        outOfRangeWheel.gradingSettings.shadows = ColorGradingWheel(hue: 180, saturation: 60, luminance: 0)
+        var targetHalf = makeRecipeSettings(recipe, strength: 0.5, version: 4)
+        targetHalf.gradingSettings.global = ColorGradingWheel()
+        targetHalf.gradingSettings.shadows = ColorGradingWheel()
+        for field in [AdjustmentTransferField.gradingGlobal, .gradingShadows] {
+            let macBad = try MacAdjustmentTransfer.capture(scope: .custom([field]), snapshot: macState(outOfRangeWheel), context: macContext)
+            XCTAssertThrowsError(try MacAdjustmentTransfer.prepare(payload: macBad, target: macState(targetHalf), context: macContext)) { error in
+                XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable(field.rawValue))
+            }
+            let iosBad = try IOSAdjustmentTransfer.capture(scope: .custom([field]), snapshot: PhotoEditState(settings: outOfRangeWheel), context: iosContext)
+            XCTAssertThrowsError(try IOSAdjustmentTransfer.prepare(payload: iosBad, target: PhotoEditState(settings: targetHalf), context: iosContext)) { error in
+                XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable(field.rawValue))
+            }
+        }
+
+        // 4) Identical quotient-overshoot pattern in parametric curve (0.69 -> 0.69, highlights = 100, shadows = -100)
+        //    and custom tone curve (0.002 -> 0.002, interior point (0.5, 1.0)).
+        var paramSource = makeRecipeSettings(recipe, strength: 0.69, version: 4)
+        paramSource.curveSettings.parametric = ToneCurveParametric(highlights: 100, lights: 0, darks: 0, shadows: -100)
+        var paramTarget = makeRecipeSettings(recipe, strength: 0.69, version: 4)
+        paramTarget.curveSettings.parametric = ToneCurveParametric()
+        let macParam = try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.curveParametric]), snapshot: macState(paramSource), context: macContext),
+            target: macState(paramTarget),
+            context: macContext
+        ).settings
+        XCTAssertEqual(macParam.curveSettings.parametric, ToneCurveParametric(highlights: 100, lights: 0, darks: 0, shadows: -100))
+        XCTAssertEqual(macParam.renderCurveSettings.parametric.highlights, 69)
+        XCTAssertEqual(macParam.renderCurveSettings.parametric.shadows, -69)
+        let iosParam = try IOSAdjustmentTransfer.prepare(
+            payload: try IOSAdjustmentTransfer.capture(scope: .custom([.curveParametric]), snapshot: PhotoEditState(settings: paramSource), context: iosContext),
+            target: PhotoEditState(settings: paramTarget),
+            context: iosContext
+        ).settings
+        XCTAssertEqual(iosParam.curveSettings.parametric, ToneCurveParametric(highlights: 100, lights: 0, darks: 0, shadows: -100))
+
+        var badParamSource = Adjustments()
+        badParamSource.curveSettings.parametric = ToneCurveParametric(highlights: 60)
+        XCTAssertThrowsError(try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.curveParametric]), snapshot: macState(badParamSource), context: macContext),
+            target: macState(targetHalf),
+            context: macContext
+        )) { error in
+            XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable("light.curve.parametric"))
+        }
+
+        var curveSource = makeRecipeSettings(recipe, strength: 0.002, version: 4)
+        curveSource.curveSettings = ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.5, y: 1.0), .init(x: 1, y: 1)])
+        var curveTarget = makeRecipeSettings(recipe, strength: 0.002, version: 4)
+        curveTarget.curveSettings = ToneCurveSettings()
+        let macCurve = try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: macState(curveSource), context: macContext),
+            target: macState(curveTarget),
+            context: macContext
+        ).settings
+        XCTAssertEqual(macCurve.curveSettings.points, [.init(x: 0, y: 0), .init(x: 0.5, y: 1.0), .init(x: 1, y: 1)])
+        let iosCurve = try IOSAdjustmentTransfer.prepare(
+            payload: try IOSAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: PhotoEditState(settings: curveSource), context: iosContext),
+            target: PhotoEditState(settings: curveTarget),
+            context: iosContext
+        ).settings
+        XCTAssertEqual(iosCurve.curveSettings.points, [.init(x: 0, y: 0), .init(x: 0.5, y: 1.0), .init(x: 1, y: 1)])
+
+        var badCurveSource = Adjustments()
+        badCurveSource.curveSettings = ToneCurveSettings(mode: .custom, points: [.init(x: 0, y: 0), .init(x: 0.5, y: 0.9), .init(x: 1, y: 1)])
+        XCTAssertThrowsError(try MacAdjustmentTransfer.prepare(
+            payload: try MacAdjustmentTransfer.capture(scope: .custom([.curve]), snapshot: macState(badCurveSource), context: macContext),
+            target: macState(targetHalf),
+            context: macContext
+        )) { error in
+            XCTAssertEqual(error as? AdjustmentTransferError, .unrepresentable("light.curve"))
+        }
+    }
 }
