@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"ユーザー名"</string>
     <string name="camera_auto">"自動"</string>
     <string name="camera_back_photos">"選択を続ける"</string>
+    <string name="camera_ble_manual_wifi">"このカメラは Bluetooth 自動接続に対応していません。カメラの Wi-Fi に手動で接続してください。"</string>
     <string name="camera_bluetooth">"カメラに接続中…"</string>
     <string name="camera_bluetooth_off">"スマートフォンの Bluetooth をオンにして、もう一度お試しください。"</string>
     <string name="camera_busy">"読み込みタスクがまだ実行中です"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"元の写真にアクセスできません"</string>
     <string name="camera_original_unavailable">"元の写真を利用できません"</string>
     <string name="camera_pairing">"スマートフォンとカメラのペアリング番号を確認してください"</string>
+    <string name="camera_pairing_failed">"Bluetooth ペアリングを完了できませんでした。カメラが Bluetooth ペアリング画面になっているか確認するか、下の「カメラの Wi-Fi に接続」を使用してください。"</string>
     <string name="camera_param_aperture">"絞り"</string>
     <string name="camera_param_busy">"カメラ設定を更新中…"</string>
     <string name="camera_param_ev">"露出補正"</string>

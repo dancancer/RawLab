@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"Username"</string>
     <string name="camera_auto">"Auto"</string>
     <string name="camera_back_photos">"Continue selecting"</string>
+    <string name="camera_ble_manual_wifi">"This camera does not support automatic Bluetooth connection. Connect to the camera’s Wi-Fi manually."</string>
     <string name="camera_bluetooth">"Connecting to camera…"</string>
     <string name="camera_bluetooth_off">"Turn on Bluetooth on your phone and try again."</string>
     <string name="camera_busy">"An import task is still in progress"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"Original unavailable"</string>
     <string name="camera_original_unavailable">"Originals unavailable"</string>
     <string name="camera_pairing">"Check the pairing number on your phone and camera"</string>
+    <string name="camera_pairing_failed">"Bluetooth pairing did not complete. Check that the camera is on its Bluetooth pairing screen, or use “Connect to camera Wi-Fi” below."</string>
     <string name="camera_param_aperture">"Aperture"</string>
     <string name="camera_param_busy">"Updating camera settings…"</string>
     <string name="camera_param_ev">"Exposure compensation"</string>

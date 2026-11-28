@@ -64,6 +64,8 @@ internal class SonyCameraConnection internal constructor(
     interface Listener {
         fun onCandidates(items: List<CameraCandidate>)
         fun onStage(stage: Stage)
+        /** 相机未提供 Sony BLE 自动拉起 Wi-Fi 服务，已自动切换至手动 Wi-Fi 引导。 */
+        fun onManualWifiFallback() {}
         /** 上层用返回 Network 的 socketFactory 连接相机 TCP 15740。 */
         fun onConnected(network: Network, address: InetAddress, cameraId: String)
         fun onFailure(reason: Failure)
@@ -114,6 +116,7 @@ internal class SonyCameraConnection internal constructor(
         fun discoverServices(): Boolean
         fun hasRequiredCharacteristics(): Boolean
         fun hasWifiOnCharacteristic(): Boolean
+        fun sonyServiceSummary(): String = ""
         fun writePairingInit(): Boolean
         fun writeWifiOn(): Boolean
         fun readSsid(): Boolean
@@ -254,6 +257,11 @@ internal class SonyCameraConnection internal constructor(
     private var readAttempts = 0
     private var gattConnectAttempts = 0
     private var gattConnected = false
+    private var deviceBonded = false
+    private var gattServicesDiscovered = false
+    private var negotiatedMtu = 0
+    private var usingPreBondGatt = false
+    private var retriedPostBondGatt = false
     private var scanStartedMicros = 0L
     private var pendingSSID: String? = null
     private var pendingPassword: String? = null
@@ -279,17 +287,45 @@ internal class SonyCameraConnection internal constructor(
             platform.post {
                 if (!isCurrentGatt(source)) return@post
                 debugLog("GATT onConnectionStateChange status=$status newState=$newState stage=$stage attempt=$gattConnectAttempts")
+                CameraDiagnostics.breadcrumb(
+                    stage = "gattConnectionState",
+                    message = "BLE GATT connection state changed",
+                    level = if (status == BluetoothGatt.GATT_SUCCESS) "info" else "warn",
+                    context = mapOf(
+                        "gattStatus" to status.toString(),
+                        "newState" to newState.toString(),
+                        "stage" to (stage?.name ?: "NONE"),
+                        "attempt" to gattConnectAttempts.toString(),
+                        "bonded" to deviceBonded.toString(),
+                    ),
+                )
                 if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                     gattConnected = true
+                    negotiatedMtu = 0
+                    gattServicesDiscovered = false
                     val requested = try {
                         source.requestMtu(BLE_MTU)
                     } catch (_: SecurityException) {
-                        fail(Failure.PERMISSION)
+                        fail(Failure.PERMISSION, "requestMtu SecurityException")
                         return@post
                     }
-                    if (!requested) fail(Failure.BLUETOOTH)
+                    if (!requested) {
+                        val discovered = try {
+                            source.discoverServices()
+                        } catch (_: SecurityException) {
+                            fail(Failure.PERMISSION, "discoverServices SecurityException")
+                            return@post
+                        }
+                        if (!discovered) fail(Failure.BLUETOOTH, "requestMtu and discoverServices returned false")
+                    }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
-                    if (stage == Stage.BLUETOOTH && !gattConnected &&
+                    val wasConnected = gattConnected
+                    gattConnected = false
+                    gattServicesDiscovered = false
+                    if (stage == Stage.PAIRING) {
+                        // Peer or OS dropped GATT during SMP bonding; keep waiting for ACTION_BOND_STATE_CHANGED.
+                        closeGatt()
+                    } else if (stage == Stage.BLUETOOTH && !wasConnected &&
                         status != BluetoothGatt.GATT_SUCCESS && gattConnectAttempts < MAX_GATT_CONNECT_ATTEMPTS
                     ) {
                         val current = generation
@@ -304,7 +340,10 @@ internal class SonyCameraConnection internal constructor(
                             }
                         }.also { platform.postDelayed(it, delayMs) }
                     } else if (stage == Stage.BLUETOOTH || (stage == Stage.WIFI_STARTING && !wifiCredentialsReady)) {
-                        fail(Failure.BLUETOOTH)
+                        fail(
+                            Failure.BLUETOOTH,
+                            "gatt disconnect status=$status newState=$newState attempt=$gattConnectAttempts",
+                        )
                     }
                 }
             }
@@ -314,17 +353,25 @@ internal class SonyCameraConnection internal constructor(
             platform.post {
                 if (!isCurrentGatt(source)) return@post
                 debugLog("GATT onMtuChanged mtu=$mtu status=$status")
-                if (status != BluetoothGatt.GATT_SUCCESS || mtu < 67) {
-                    fail(Failure.BLUETOOTH)
-                    return@post
-                }
+                negotiatedMtu = if (status == BluetoothGatt.GATT_SUCCESS) mtu else 0
+                CameraDiagnostics.breadcrumb(
+                    stage = "gattMtuChanged",
+                    message = "BLE GATT MTU negotiated",
+                    level = if (status == BluetoothGatt.GATT_SUCCESS && mtu >= 67) "info" else "warn",
+                    context = mapOf(
+                        "mtu" to mtu.toString(),
+                        "gattStatus" to status.toString(),
+                    ),
+                )
+                // Always discover services before rejecting small MTU so cameras without
+                // Sony BLE Wi-Fi handoff services (e.g. ZV-E10) cleanly fall back to MANUAL_WIFI.
                 val discovered = try {
                     source.discoverServices()
                 } catch (_: SecurityException) {
-                    fail(Failure.PERMISSION)
+                    fail(Failure.PERMISSION, "discoverServices SecurityException")
                     return@post
                 }
-                if (!discovered) fail(Failure.BLUETOOTH)
+                if (!discovered) fail(Failure.BLUETOOTH, "discoverServices returned false")
             }
         }
 
@@ -332,23 +379,48 @@ internal class SonyCameraConnection internal constructor(
             platform.post {
                 if (!isCurrentGatt(source)) return@post
                 val hasRequired = if (status == BluetoothGatt.GATT_SUCCESS) source.hasRequiredCharacteristics() else false
-                debugLog("GATT onServicesDiscovered status=$status hasRequired=$hasRequired")
+                val hasWifiOn = if (status == BluetoothGatt.GATT_SUCCESS) source.hasWifiOnCharacteristic() else false
+                val sonyServices = if (status == BluetoothGatt.GATT_SUCCESS) source.sonyServiceSummary() else ""
+                debugLog("GATT onServicesDiscovered status=$status hasRequired=$hasRequired hasWifiOn=$hasWifiOn mtu=$negotiatedMtu services=$sonyServices")
+                CameraDiagnostics.breadcrumb(
+                    stage = "gattServicesDiscovered",
+                    message = "BLE GATT services discovered",
+                    level = if (status == BluetoothGatt.GATT_SUCCESS) "info" else "warn",
+                    context = buildMap {
+                        put("gattStatus", status.toString())
+                        put("hasRequired", hasRequired.toString())
+                        put("hasWifiOn", hasWifiOn.toString())
+                        put("mtu", negotiatedMtu.toString())
+                        put("bonded", deviceBonded.toString())
+                        if (sonyServices.isNotBlank()) put("sonyServices", sonyServices)
+                    },
+                )
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    fail(Failure.BLUETOOTH)
+                    fail(Failure.BLUETOOTH, "discoverServices status=$status")
                     return@post
                 }
                 if (!hasRequired) {
+                    CameraDiagnostics.breadcrumb(
+                        stage = "bleManualWifiFallback",
+                        message = "Camera lacks Sony BLE Wi-Fi handoff characteristics; switching to manual Wi-Fi",
+                        level = "warn",
+                        context = buildMap {
+                            put("hasWifiOn", hasWifiOn.toString())
+                            put("mtu", negotiatedMtu.toString())
+                            if (sonyServices.isNotBlank()) put("sonyServices", sonyServices)
+                        },
+                    )
                     beginOperation()
                     setStage(Stage.MANUAL_WIFI)
+                    if (active) listener.onManualWifiFallback()
                     return@post
                 }
-                val wrote = try {
-                    source.writePairingInit()
-                } catch (_: SecurityException) {
-                    fail(Failure.PERMISSION)
+                gattServicesDiscovered = true
+                if (!deviceBonded) {
+                    startBonding()
                     return@post
                 }
-                if (!wrote) fail(Failure.BLUETOOTH)
+                proceedAfterBondedAndDiscovered(source)
             }
         }
 
@@ -356,12 +428,42 @@ internal class SonyCameraConnection internal constructor(
             platform.post {
                 if (!isCurrentGatt(source)) return@post
                 debugLog("GATT onCharacteristicWrite uuid=${shortUuid(uuid)} status=$status")
+                CameraDiagnostics.breadcrumb(
+                    stage = "gattWrite",
+                    message = "BLE characteristic write completed",
+                    level = if (status == BluetoothGatt.GATT_SUCCESS) "info" else "warn",
+                    context = mapOf(
+                        "uuid" to shortUuid(uuid),
+                        "gattStatus" to status.toString(),
+                    ),
+                )
                 when (uuid) {
                     PAIRING_INIT_CHARACTERISTIC -> {
-                        if (status != BluetoothGatt.GATT_SUCCESS) fail(Failure.PAIRING) else activateWifi(source)
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            if (usingPreBondGatt && !retriedPostBondGatt) {
+                                retriedPostBondGatt = true
+                                usingPreBondGatt = false
+                                CameraDiagnostics.breadcrumb(
+                                    stage = "gattPostBondRetry",
+                                    message = "ee01 write failed on pre-bond GATT handle; reopening GATT",
+                                    level = "warn",
+                                    context = mapOf("gattStatus" to status.toString()),
+                                )
+                                closeGatt()
+                                gattConnectAttempts = 0
+                                openGatt()
+                            } else {
+                                fail(Failure.PAIRING, "ee01 write status=$status")
+                            }
+                        } else {
+                            usingPreBondGatt = false
+                            activateWifi(source)
+                        }
                     }
                     WIFI_ON_CHARACTERISTIC -> {
-                        if (status != BluetoothGatt.GATT_SUCCESS) fail(Failure.WIFI) else {
+                        if (status != BluetoothGatt.GATT_SUCCESS) {
+                            fail(Failure.WIFI, "cc08 write status=$status")
+                        } else {
                             readAttempts = 0
                             scheduleSSIDRead(source)
                         }
@@ -420,8 +522,12 @@ internal class SonyCameraConnection internal constructor(
                 handle = platform.registerManualWifiNetwork(callbacks)
                 networkHandle = handle
                 debugLog("Manual Wi-Fi registered")
+                CameraDiagnostics.breadcrumb(
+                    stage = "manualWifiStart",
+                    message = "Listening for manually connected camera Wi-Fi",
+                )
             } catch (_: SecurityException) {
-                fail(Failure.PERMISSION)
+                fail(Failure.PERMISSION, "registerManualWifiNetwork SecurityException")
                 return@post
             }
             if (active && stage == Stage.MANUAL_WIFI && cameraNetwork == null && networkHandle === handle) {
@@ -429,7 +535,7 @@ internal class SonyCameraConnection internal constructor(
                 wifiRequestTimeout = Runnable {
                     if (timeoutGeneration == generation && active && stage == Stage.MANUAL_WIFI && cameraNetwork == null) {
                         debugLog("Manual Wi-Fi timed out waiting for camera network")
-                        fail(Failure.WIFI)
+                        fail(Failure.WIFI, "manual Wi-Fi timeout")
                     }
                 }.also { platform.postDelayed(it, manualWifiTimeoutMs) }
             }
@@ -470,18 +576,28 @@ internal class SonyCameraConnection internal constructor(
         try {
             val handle = platform.startBleScan(
                 onEntry = { entry -> platform.post { handleScanResult(current, entry) } },
-                onFailed = { platform.post { if (current == generation && active && scanning) fail(Failure.BLUETOOTH) } },
-            ) ?: return fail(Failure.BLUETOOTH)
+                onFailed = { errorCode ->
+                    platform.post {
+                        if (current == generation && active && scanning) {
+                            fail(Failure.BLUETOOTH, "BLE scan failed errorCode=$errorCode")
+                        }
+                    }
+                },
+            ) ?: return fail(Failure.BLUETOOTH, "BluetoothLeScanner unavailable")
             scanHandle = handle
+            CameraDiagnostics.breadcrumb(
+                stage = "bleScanStart",
+                message = "Started BLE scan for Sony cameras",
+            )
         } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
+            fail(Failure.PERMISSION, "startBleScan SecurityException")
             return
         }
         bleScanTimeout = Runnable {
             if (current != generation || !active || !scanning) return@Runnable
             scanning = false
             stopBleScan()
-            if (devices.isEmpty()) fail(Failure.NOT_FOUND)
+            if (devices.isEmpty()) fail(Failure.NOT_FOUND, "BLE scan timed out with 0 candidates")
         }.also { platform.postDelayed(it, BLE_SCAN_TIMEOUT_MS) }
     }
 
@@ -499,29 +615,32 @@ internal class SonyCameraConnection internal constructor(
         if (!platform.isLocationEnabled()) return fail(Failure.LOCATION_OFF)
 
         val selected = devices.entries.firstOrNull { it.key.equals(id, ignoreCase = true) }?.value
-            ?: return fail(Failure.NOT_FOUND)
+            ?: return fail(Failure.NOT_FOUND, "selected BLE candidate missing")
         selectedDevice = selected
         selectedId = selected.id
-        scanning = false
-        stopBleScan()
-        val bonded = try {
+        deviceBonded = try {
             selected.isBonded
         } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
+            fail(Failure.PERMISSION, "isBonded SecurityException")
             return
         }
-        setStage(if (bonded) Stage.BLUETOOTH else Stage.PAIRING)
+        scanning = false
+        stopBleScan()
+        CameraDiagnostics.breadcrumb(
+            stage = "bleConnectStart",
+            message = "Connecting to selected Sony camera over BLE GATT",
+            context = mapOf(
+                "bonded" to deviceBonded.toString(),
+                "knownModel" to SonyCameraModel.fromAdvertisement(selected.name).name,
+            ),
+        )
+        // Always probe GATT services before initiating OS bonding so cameras without
+        // Sony BLE Wi-Fi handoff services (e.g. ZV-E10) fall back to MANUAL_WIFI
+        // instead of failing at createBond().
+        setStage(Stage.BLUETOOTH)
         if (!active) return
         startBleTimeout()
-        try {
-            if (bonded) {
-                openGatt()
-            } else {
-                if (registerBondReceiver() && active && !selected.createBond()) fail(Failure.PAIRING)
-            }
-        } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
-        }
+        openGatt()
     }
 
     private fun beginOperation() {
@@ -539,6 +658,15 @@ internal class SonyCameraConnection internal constructor(
         if (devices.putIfAbsent(entry.id, entry) == null) {
             deviceNames[entry.id] = entry.name
             debugLog("BLE candidate discovered (total=${devices.size})")
+            CameraDiagnostics.breadcrumb(
+                stage = "bleCandidateFound",
+                message = "Discovered Sony BLE candidate",
+                context = mapOf(
+                    "candidateCount" to devices.size.toString(),
+                    "knownModel" to SonyCameraModel.fromAdvertisement(entry.name).name,
+                    "bonded" to entry.isBonded.toString(),
+                ),
+            )
             emitCandidates()
         }
     }
@@ -548,18 +676,62 @@ internal class SonyCameraConnection internal constructor(
     }
 
     private fun openGatt() {
-        val device = selectedDevice ?: return fail(Failure.BLUETOOTH)
+        val device = selectedDevice ?: return fail(Failure.BLUETOOTH, "missing selected device for GATT")
         setStage(Stage.BLUETOOTH)
         if (!active) return
         gattConnectAttempts++
         gattConnected = false
+        gattServicesDiscovered = false
+        negotiatedMtu = 0
+        usingPreBondGatt = false
         debugLog("Opening GATT (attempt=$gattConnectAttempts)")
+        CameraDiagnostics.breadcrumb(
+            stage = "gattOpen",
+            message = "Opening BLE GATT connection",
+            context = mapOf(
+                "attempt" to gattConnectAttempts.toString(),
+                "bonded" to deviceBonded.toString(),
+            ),
+        )
         try {
             gatt = device.connectGatt(gattCallback)
-            if (gatt == null) fail(Failure.BLUETOOTH)
+            if (gatt == null) fail(Failure.BLUETOOTH, "connectGatt returned null")
         } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
+            fail(Failure.PERMISSION, "connectGatt SecurityException")
         }
+    }
+
+    private fun startBonding() {
+        val selected = selectedDevice ?: return fail(Failure.PAIRING, "missing selected device for bonding")
+        setStage(Stage.PAIRING)
+        if (!active) return
+        startBleTimeout()
+        CameraDiagnostics.breadcrumb(
+            stage = "bleBondStart",
+            message = "Initiating Bluetooth bond after verifying Sony BLE services",
+            context = mapOf("mtu" to negotiatedMtu.toString()),
+        )
+        try {
+            if (registerBondReceiver() && active && !selected.createBond()) {
+                fail(Failure.PAIRING, "createBond returned false")
+            }
+        } catch (_: SecurityException) {
+            fail(Failure.PERMISSION, "createBond SecurityException")
+        }
+    }
+
+    private fun proceedAfterBondedAndDiscovered(source: GattHandle) {
+        if (negotiatedMtu < 67) {
+            fail(Failure.BLUETOOTH, "negotiated MTU too small: $negotiatedMtu")
+            return
+        }
+        val wrote = try {
+            source.writePairingInit()
+        } catch (_: SecurityException) {
+            fail(Failure.PERMISSION, "writePairingInit SecurityException")
+            return
+        }
+        if (!wrote) fail(Failure.BLUETOOTH, "writePairingInit returned false")
     }
 
     private fun isCurrentGatt(source: GattHandle): Boolean {
@@ -608,11 +780,22 @@ internal class SonyCameraConnection internal constructor(
     ) {
         if (!isCurrentGatt(source)) return
         debugLog("GATT onCharacteristicRead uuid=${shortUuid(key)} status=$status bytes=${value?.size ?: 0}")
+        CameraDiagnostics.breadcrumb(
+            stage = "gattRead",
+            message = "BLE characteristic read completed",
+            level = if (status == BluetoothGatt.GATT_SUCCESS) "info" else "warn",
+            context = mapOf(
+                "uuid" to shortUuid(key),
+                "gattStatus" to status.toString(),
+                "bytes" to (value?.size ?: 0).toString(),
+                "attempt" to readAttempts.toString(),
+            ),
+        )
         if (status != BluetoothGatt.GATT_SUCCESS) {
             if (key == SSID_CHARACTERISTIC && status == 157 && readAttempts < 8) {
                 scheduleSSIDRead(source)
             } else {
-                fail(Failure.WIFI)
+                fail(Failure.WIFI, "gatt read uuid=${shortUuid(key)} status=$status attempt=$readAttempts")
             }
             return
         }
@@ -773,6 +956,12 @@ internal class SonyCameraConnection internal constructor(
                             (latestCaps.isBlank() || advertisesWpa3Sae(latestCaps))
                     if (shouldRetryWpa3) {
                         debugLog("WifiNetworkCallbacks.onUnavailable under WPA2 (capsBlank=${latestCaps.isBlank()}); retrying with WPA3")
+                        CameraDiagnostics.breadcrumb(
+                            stage = "wifiRetryWpa3",
+                            message = "Camera Wi-Fi unavailable under WPA2; retrying with WPA3",
+                            level = "warn",
+                            context = mapOf("capsBlank" to latestCaps.isBlank().toString()),
+                        )
                         retriedWpa3 = true
                         networkHandle = null
                         cancelWifiRequestTimeout()
@@ -788,7 +977,7 @@ internal class SonyCameraConnection internal constructor(
                         return@post
                     }
                     debugLog("WifiNetworkCallbacks.onUnavailable")
-                    fail(Failure.WIFI)
+                    fail(Failure.WIFI, "WifiNetworkSpecifier onUnavailable security=$activeWifiSecurity retriedWpa3=$retriedWpa3")
                 }
             }
 
@@ -796,7 +985,7 @@ internal class SonyCameraConnection internal constructor(
                 platform.post {
                     if (isCurrentNetwork(current, handle)) {
                         debugLog("WifiNetworkCallbacks.onLost")
-                        fail(Failure.DISCONNECTED)
+                        fail(Failure.DISCONNECTED, "camera Wi-Fi network lost")
                     }
                 }
             }
@@ -804,14 +993,23 @@ internal class SonyCameraConnection internal constructor(
         setStage(Stage.WIFI_CONFIRMATION)
         if (!active) return
         debugLog("Requesting WifiNetworkSpecifier (withBssid=${!bssid.isNullOrBlank()}, security=$security)")
+        CameraDiagnostics.breadcrumb(
+            stage = "wifiRequest",
+            message = "Requesting camera Wi-Fi network",
+            context = mapOf(
+                "withBssid" to (!bssid.isNullOrBlank()).toString(),
+                "security" to security.name,
+                "isRetry" to isRetry.toString(),
+            ),
+        )
         try {
             handle = platform.requestWifiNetwork(name, password, bssid, security, callbacks)
             networkHandle = handle
         } catch (_: SecurityException) {
-            fail(Failure.PERMISSION)
+            fail(Failure.PERMISSION, "requestWifiNetwork SecurityException")
             return
         } catch (_: IllegalArgumentException) {
-            fail(Failure.WIFI)
+            fail(Failure.WIFI, "requestWifiNetwork IllegalArgumentException")
             return
         }
         if (active && stage == Stage.WIFI_CONFIRMATION && cameraNetwork == null && networkHandle === handle) {
@@ -819,7 +1017,7 @@ internal class SonyCameraConnection internal constructor(
             wifiRequestTimeout = Runnable {
                 if (timeoutGeneration == generation && active && stage == Stage.WIFI_CONFIRMATION && cameraNetwork == null) {
                     debugLog("WifiNetworkSpecifier request timed out")
-                    fail(Failure.WIFI)
+                    fail(Failure.WIFI, "WifiNetworkSpecifier request timed out")
                 }
             }.also { platform.postDelayed(it, wifiRequestTimeoutMs) }
         }
@@ -836,6 +1034,14 @@ internal class SonyCameraConnection internal constructor(
         if (networkHandle !== handle || cameraNetwork != null) return
         val gateway = platform.defaultIpv4Gateway(properties)
         debugLog("inspectNetwork hasGateway=${gateway != null}")
+        CameraDiagnostics.breadcrumb(
+            stage = "networkInspect",
+            message = "Inspected camera Wi-Fi network properties",
+            context = mapOf(
+                "hasGateway" to (gateway != null).toString(),
+                "stage" to (stage?.name ?: "NONE"),
+            ),
+        )
         gateway ?: return
         cameraNetwork = network
         cameraAddress = gateway
@@ -851,6 +1057,11 @@ internal class SonyCameraConnection internal constructor(
         if (stage == value) return
         stage = value
         debugLog("Stage -> $value")
+        CameraDiagnostics.breadcrumb(
+            stage = "stageChanged",
+            message = "Camera connection stage changed",
+            context = mapOf("stage" to value.name),
+        )
         listener.onStage(value)
     }
 
@@ -860,9 +1071,9 @@ internal class SonyCameraConnection internal constructor(
         bleTimeout = Runnable {
             if (current != generation || !active) return@Runnable
             when (stage) {
-                Stage.PAIRING -> fail(Failure.PAIRING)
-                Stage.BLUETOOTH -> fail(Failure.BLUETOOTH)
-                Stage.WIFI_STARTING -> fail(Failure.WIFI)
+                Stage.PAIRING -> fail(Failure.PAIRING, "BLE pairing timeout")
+                Stage.BLUETOOTH -> fail(Failure.BLUETOOTH, "BLE connection timeout")
+                Stage.WIFI_STARTING -> fail(Failure.WIFI, "camera Wi-Fi start timeout")
                 else -> Unit
             }
         }.also { platform.postDelayed(it, timeoutMs) }
@@ -894,9 +1105,16 @@ internal class SonyCameraConnection internal constructor(
         }
     }
 
-    private fun fail(reason: Failure) {
+    private fun fail(reason: Failure, detail: String? = null) {
         if (!active) return
-        debugLog("Connection failed reason=$reason stage=$stage")
+        val failedStage = stage
+        debugLog("Connection failed reason=$reason stage=$failedStage detail=$detail")
+        CameraDiagnostics.failure(
+            stage = "bleWifiConnection",
+            reason = reason.name,
+            detail = detail,
+            context = mapOf("stage" to (failedStage?.name ?: "NONE")),
+        )
         active = false
         releaseResources()
         listener.onFailure(reason)
@@ -917,6 +1135,11 @@ internal class SonyCameraConnection internal constructor(
         wifiCredentialsReady = false
         gattConnectAttempts = 0
         gattConnected = false
+        deviceBonded = false
+        gattServicesDiscovered = false
+        negotiatedMtu = 0
+        usingPreBondGatt = false
+        retriedPostBondGatt = false
         pendingSSID = null
         pendingPassword = null
         activeWifiCapabilities = ""
@@ -951,16 +1174,50 @@ internal class SonyCameraConnection internal constructor(
                 if (selectedAddress != deviceAddress) return@registerBondReceiver
                 when (bondState) {
                     BluetoothDevice.BOND_BONDED -> {
+                        deviceBonded = true
                         unregisterBondReceiver()
+                        val currentGatt = gatt
+                        val reuseGatt = currentGatt != null && gattConnected && gattServicesDiscovered && negotiatedMtu >= 67
+                        CameraDiagnostics.breadcrumb(
+                            stage = "bleBondState",
+                            message = "Bluetooth bond established",
+                            context = mapOf(
+                                "bondState" to "BOND_BONDED",
+                                "reuseGatt" to reuseGatt.toString(),
+                            ),
+                        )
                         setStage(Stage.BLUETOOTH)
-                        openGatt()
+                        if (!active) return@registerBondReceiver
+                        if (reuseGatt) {
+                            usingPreBondGatt = true
+                            proceedAfterBondedAndDiscovered(currentGatt!!)
+                        } else {
+                            closeGatt()
+                            gattConnectAttempts = 0
+                            openGatt()
+                        }
                     }
-                    BluetoothDevice.BOND_NONE -> fail(Failure.PAIRING)
+                    BluetoothDevice.BOND_BONDING -> {
+                        CameraDiagnostics.breadcrumb(
+                            stage = "bleBondState",
+                            message = "Bluetooth bonding in progress",
+                            context = mapOf("bondState" to "BOND_BONDING"),
+                        )
+                    }
+                    BluetoothDevice.BOND_NONE -> {
+                        CameraDiagnostics.breadcrumb(
+                            stage = "bleBondState",
+                            message = "Bluetooth bond ended in BOND_NONE",
+                            level = "warn",
+                            context = mapOf("bondState" to "BOND_NONE"),
+                        )
+                        fail(Failure.PAIRING, "bond state transitioned to BOND_NONE")
+                    }
                 }
             }
             true
         } catch (_: Exception) {
-            fail(Failure.PAIRING)
+            fail(Failure.PAIRING, "registerBondReceiver failed")
             false
         }
     }
@@ -1101,6 +1358,8 @@ internal class SonyCameraConnection internal constructor(
                 override fun onReceive(context: Context, intent: Intent) {
                     val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
                     val bondState = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+                    val prevBondState = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
+                    if (bondState == BluetoothDevice.BOND_NONE && prevBondState == BluetoothDevice.BOND_NONE) return
                     onBondChanged(device.address, bondState)
                 }
             }
@@ -1336,6 +1595,18 @@ internal class SonyCameraConnection internal constructor(
 
         override fun hasWifiOnCharacteristic(): Boolean =
             characteristic(CONTROL_SERVICE, WIFI_ON_CHARACTERISTIC) != null
+
+        override fun sonyServiceSummary(): String {
+            val sonyServices = source.services.orEmpty().filter {
+                it.uuid.toString().lowercase(Locale.ROOT).startsWith("8000")
+            }
+            if (sonyServices.isEmpty()) return "none"
+            return sonyServices.joinToString(",") { service ->
+                val prefix = service.uuid.toString().substring(0, 8).lowercase(Locale.ROOT)
+                val chars = service.characteristics.orEmpty().joinToString(",") { shortUuid(it.uuid) }
+                "$prefix:[$chars]"
+            }
+        }
 
         @Suppress("DEPRECATION")
         private fun writeDefault(item: BluetoothGattCharacteristic, value: ByteArray): Boolean {

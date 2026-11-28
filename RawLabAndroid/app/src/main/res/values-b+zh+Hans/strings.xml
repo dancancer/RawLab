@@ -43,6 +43,7 @@
     <string name="camera_auth_user">"用户名"</string>
     <string name="camera_auto">"自动"</string>
     <string name="camera_back_photos">"继续挑选"</string>
+    <string name="camera_ble_manual_wifi">"此相机不支持蓝牙自动连接，请手动连接相机 Wi-Fi。"</string>
     <string name="camera_bluetooth">"正在连接相机…"</string>
     <string name="camera_bluetooth_off">"请打开手机蓝牙后重试。"</string>
     <string name="camera_busy">"导入任务仍在进行"</string>
@@ -152,6 +153,7 @@
     <string name="camera_original_missing">"原片无法访问"</string>
     <string name="camera_original_unavailable">"原片不可用"</string>
     <string name="camera_pairing">"请核对手机和相机的配对数字"</string>
+    <string name="camera_pairing_failed">"蓝牙配对未完成。请确认相机处于蓝牙配对画面，或改用下方的“连接相机 Wi-Fi”手动连接。"</string>
     <string name="camera_param_aperture">"光圈"</string>
     <string name="camera_param_busy">"正在更新相机设置…"</string>
     <string name="camera_param_ev">"曝光补偿"</string>
